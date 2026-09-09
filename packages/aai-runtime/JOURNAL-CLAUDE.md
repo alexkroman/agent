@@ -1,4 +1,4 @@
-# JOURNAL-CLAUDE.md — the durable journal's test topology and contract points
+# JOURNAL-CLAUDE.md — the durable journal and the replay engine's decisions
 
 A SIBLING of `packages/aai-runtime/CLAUDE.md` rather than a second package
 guide, for the reason `packages/aai-server/MODAL-CLAUDE.md` is one: Claude Code
@@ -6,11 +6,387 @@ auto-loads only `CLAUDE.md`, so a sibling is read on demand and is the right
 shape for REFERENCE — which all of this is. It moved here when that guide hit
 its 120,000-char cap, and the rule for what may follow it is the same: a
 decision somebody needs resident while working elsewhere in the package belongs
-in `CLAUDE.md`; the topology of the journal's own tests, and the minutiae of
-what its contract does and does not promise, belong here.
+in `CLAUDE.md`; the journal's own decisions, the engine's walk, the topology of
+their tests and the minutiae of what the contract does and does not promise
+belong here.
 
-Start from "A run's journal has THREE homes" in that guide — it is what these
-three sections qualify.
+The guide keeps the one thing a reader elsewhere in the package needs — which
+journal a deployment gets, and in what order — under the same heading this file
+opens with, and points here for the rest. It grew a second time when
+`ctx.messages`' tool arm and per-tool error classification had nowhere to be
+written down: the whole `## A run's journal has THREE homes` section came over
+then, subsections and all, which is why the pointer stubs `CLAUDE.md` used to
+carry for "An attempt is a LEASE" and "A failure of the JOURNAL is not a failure
+of the RUN" are gone — the accounts they pointed at are below.
+
+## A run's journal has THREE homes, and the order between them is a decision
+
+`selectJournal` (`workflow-runtime.ts`) picks the replay engine's journal:
+**platform, then postgres, then memory**, and the boot line names whichever won.
+
+- **platform** — `createPlatformJournal`, one `POST /:slug/workflow-journal` per
+  operation, beside the queue, session state and upload records that already work
+  this way. The statements run on the platform's own database
+  (`aai-server/platform-workflow-journal.ts`), which mirrors
+  `workflow-journal-schema.ts` with a `slug` added to every key.
+- **postgres** — `createPostgresJournal` over the agent's own `DATABASE_URL`,
+  which is what a self-hosted deployment has and the platform never provisions.
+- **memory** — a `Map`, for trying a workflow out before provisioning anything.
+
+**The order is what closed the bug, and it is not "most specific wins".** A
+deployed guest could reach NEITHER durable backend: the platform provisions no
+tenant database, so every deployed run journaled into a sandbox that self-exits
+after `AGENT_IDLE_EXIT_MS`. A step's result, its attempt count and an open
+approval window died with it — and nothing reported it, because from inside the
+system a step whose result was lost is indistinguishable from one never reached.
+The run sat suspended looking healthy, so "durable" was true of the interface and
+false of every deployment.
+
+Platform BEFORE postgres for a second reason: a deployed guest may also carry an
+author-supplied `DATABASE_URL`, and its runs belong beside its session state
+rather than split across two databases with the wake sweep able to see only one
+of them.
+
+**The platform pair is read from THIS PROCESS's environment**
+(`platformGuestOptions`), never the agent's — the distinction that already cost
+a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
+secret, so under the tenant spelling an agent would choose the base URL and
+bearer its own journal was sent to. `CLAUDE.md`'s "`AAI_PUBLIC_BASE_URL` is what
+a THIRD PARTY dials" carries the rest.
+
+**Memory is last and the boot line SAYS so.** A durability tradeoff absent from
+the log reads as a bug, and this is the one an author is most likely to hit by
+accident.
+
+### A journal read is a round trip, and four shapes issued it N times
+
+**The ~840 ms is DECOMPOSABLE now, and was a total for as long as it was
+quoted.** Every RPC carries a W3C `traceparent` (`_trace-context.ts`) and logs
+its own elapsed at debug; `aai-server`'s `withReserved` logs `waitedMs` and
+`workMs` under the same id. So `elapsed - (waited + work)` is the hop, and
+"was it our pool" is answerable from two log lines rather than from a guess —
+which matters because `ADMIN_POOL_MAX` had already been widened once on the
+assumption that it was. One span per CALL: a run's whole walk is not one trace,
+which would need the trace minted at the delivery and carried through
+`workflow-run-context.ts`.
+
+Every platform-arm `JournalStore` call is one `POST /:slug/workflow-journal`,
+measured at **~840 ms of server time**, on a route holding one of
+`ADMIN_POOL_MAX` connections for the whole request — so these are the pool a
+run's own WRITES queue behind. `use-transcript-workflow` sustained ~2 a second
+on ONE run: a fan-out's `settledSince` re-reads the WHOLE journal once per step,
+the overlapping walks above each do it again, and a delivery's opening was three
+SEQUENTIAL round trips, then two, and is now ONE.
+
+`_journal-shared-reads.ts` collapses the first two — `getRun`, `readSteps` and
+`readSleeps` being the reads that are pure functions of a run id — and its
+module doc carries the argument. The one thing to know first: it is a
+**COALESCER, not a cache**, so a caller arriving mid-flight gets a TRAILING read
+and none is answered from a read that started before it asked. `settledSince`
+exists to rely on exactly that; a cache would silently defeat it.
+`ReplayOptions.steps` is the third — the step read is issued BESIDE the
+`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
+admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
+
+**The record read joined them, and `setStatus`'s `expect` is what made that
+possible.** `execute` opened with `await journal.getRun(runId)` and only then
+issued the rest, so a delivery cost two round trips before a body could run;
+folding the read in leaves one, nothing in the opening depending on the record.
+Two things are load-bearing, both argued at the call site: a run this delivery
+may not walk answers `false` rather than moving, so an eager set can neither
+resurrect a terminal run nor undo an `abandon`; and a LOST eager set is
+**re-asked, never believed** — issued beside the record read it can reach the
+store ahead of a racing `start`'s `createRun` and decline a run that is alive,
+which `workflow-concurrent-delivery.test.ts` shrinks to a step the body needed
+and nothing ever ran. `workflow-engine-opening.test.ts` states both. The
+speedup also moved where a cancel lands, which is why law 1 relaxes its
+per-name floor for a cancelled run and `cancelsMidWalk`'s floor was
+re-measured.
+
+The FOURTH is a WAIT, and it was the worst of them because it grew with the
+number of DELIVERIES rather than with the body: a settled step was answered from
+the walk's snapshot and every elapsed `ctx.sleep` was still a `claimSleep` round
+trip, so a polling run's traffic was quadratic. `JournalStore.readSleeps` and
+"A wait was outside the whole-read guarantee" below carry the measurement and
+the rule for using the snapshot.
+
+### A clock, a random number and a uuid are AFFORDANCES
+
+`ctx.now()`, `ctx.random()` and `ctx.uuid()` journal what they read — one value
+per reach, keyed `now!0` / `random!0` / `uuid!0` in a POSITIONAL space of their
+own, appended through `appendStep` so no `JournalStore` method was added and
+every backend carries them already. They are the shape two shipped templates
+were hand-rolling (`transcription-workflow`'s `startClock`,
+`call-audit-workflow`'s two `now` reads), and `guard-invariants` rule 30 stays
+the lexical backstop with its remedy naming them.
+
+**`workflow-replay-determinism.ts`'s module doc is the argument**, and the three
+decisions it records are the ones not to relitigate: their own key space (per
+KIND, so inserting one shifts no other); NO attempt lease (a lease bounds
+abandonment and these have no body to abandon); and one float per `random()` call
+rather than a seeded sequence. A fourth thing it settles is why they RECORD a
+divergence reach and never raise one — an unrecorded reach fails the next step on
+a healthy resume, and raising is unsound without `claimAttempt`'s corroboration.
+
+**Inside a `ctx.step` they are REFUSED**, by the same `currentRun()?.step` test
+and for the same key-shift reason as the section below.
+
+### A wait is keyed by NAME, and `ctx.sleep` takes a label for it
+
+`ctx.sleep(label, until, options?)` and `ctx.waitFor(token, options?)` journal
+their waits as `sleep!<label>#<occurrence>` and `hook!<token>#<occurrence>` —
+name plus occurrence, exactly like `ctx.step`. The occurrence counters are PER
+NAME, so a loop is one label and N rows, and inserting a wait shifts nothing.
+
+They were two bare ordinals, and then a body reaching a different NUMBER of waits
+read its predecessor's record. Two shapes, both legal code with no author mistake
+in them beyond a condition:
+
+```ts no-check
+if (somethingAboutTheClock) await ctx.sleep("early", 1000);
+await ctx.sleep("schedule", WEEK_MS); // sleep!1 on walk 1, sleep!0 on walk 2
+```
+
+Positionally, walk 2 read the elapsed `early` record and the week-long wait
+resolved instantly, reporting `completed` with the clock unmoved. The hook
+version is worse: the body is handed the other wait's PAYLOAD.
+`workflow-replay-wait.test.ts`'s "a body that reaches a different NUMBER of
+waits" pins all three cases and A/Bs green against positional keys.
+
+Three things not to relitigate:
+
+- **`label` is REQUIRED, and `Literal<Label>` types it.** The same constraint
+  `ctx.step`'s name carries, for the same reason — an identity computed at run
+  time is the hazard the whole scheme exists to remove. It was a breaking
+  signature change, taken while there are no external consumers.
+- **`correlationId` is NOT defaulted from `label`.** They answer different
+  questions: `label` decides which journal ROW this wait is, `correlationId`
+  decides which waits one `wakeUp` ends. A polled schedule wants one label and one
+  id across every iteration; two independent waits want two labels and may
+  want a shared id.
+- **The three determinism reads stay positional** (`now!0`, `random!0`,
+  `uuid!0`). They take no argument to name, and they journal through `appendStep`
+  so a reach is at least recorded for the divergence check. `sdk/workflow-ctx.ts`
+  carries why requiring a literal there is the worse trade.
+
+What is left is one shape, and it is strictly better than what it replaced: a
+label or token that is ITSELF non-deterministic mints a key no walk has reached,
+so the run registers a fresh wait and PARKS on something nobody can signal. That
+hangs rather than answering wrongly, and nothing detects it —
+`workflow-replay-divergence.ts` states the residual and why the NEW-key report
+that would catch it is not built. `waitTokenDiverged` there is the nearest thing:
+it compares the token `claimHook` hands back against the one the walk reached, so
+it is an assertion about the KEY SCHEME (unreachable while a key names its token)
+rather than about the body, and it is what caught the positional case.
+
+### A step body may not WAIT, and the engine refuses one that does
+
+`ctx.sleep` and `ctx.waitFor` belong to the body. The closure `ctx.step` is
+handed CAPTURES `ctx`, though, so `ctx.step("napper", () => ctx.sleep("nap",
+2000))` is one line away at every call site, and until `workflow-replay-wait.ts`
+existed the engine ran it — silently, and wrongly in three separate ways. Two of
+them are measured below and both still stand; the third was the key slide, which
+naming the waits closed independently (see "A wait is keyed by NAME").
+
+- **The step body re-ran from the top on every delivery.** The suspend unwinds
+  out of the step, the attempt charge is released (correct — a suspend settles
+  nothing), so the step is never journaled and the next delivery re-runs the
+  closure. A one-step body logged its effect **twice** across two deliveries and
+  reported `completed`. For a step that calls a paid provider that is a duplicate
+  charge, which is how this was found.
+- **And every LATER wait in the run READ the wrong record.** That half is CLOSED,
+  and not by this check — see "A wait is keyed by NAME" above, which carries the
+  transcript. It is listed here because it was one of three reasons for the
+  refusal rather than the whole of it, and because `workflow-replay-wait.ts`'s
+  own doc is still the clearest statement of what positional keys cost.
+
+So both methods now refuse when `currentRun()?.step` is set — which is true for
+the whole of a step's execution, including inside every helper it awaits, since
+`withStepContext` narrows the run context rather than a lexical scope. The
+refusal is a `FatalError` (a redelivery cannot make a body legal) recorded
+through `replayRun`'s `refused`, so a body that catches broadly cannot turn it
+into `completed` — the third verdict on that channel, beside a divergence and an
+abandoned step.
+
+**It cannot be a TYPE**, and it is not worth making RESUMABLE either;
+`workflow-replay-wait.ts`'s module doc argues both (a captured binding is not an
+argument, and TypeScript has no effect system; "work, then wait, then more work"
+is already two steps with the wait between them).
+
+**What the refusal cost, recorded because it is a real loss.** The property
+grammar's `nestedWait` node (`_workflow-resume-program.ts`) generated exactly
+this shape and was the 10-out-of-10 regression for the lease fix ("An attempt is
+a LEASE, and it EXPIRES", below). It is
+gone: it can no longer generate a legal body. The arm it defended — a suspend
+GIVING BACK its charge — is gone too, and needs no replacement: a suspension is
+no longer a THROW, so nothing unwinds through a step's attempt loop and there is
+no charge to hand back (`workflow-replay-suspend.ts`). The half of the lease
+still reachable through `ctx` — a charge NOT given back when an attempt dies —
+is held by `flaky`. Removing the node also lowered two coverage floors in
+`workflow-resume-equivalence.test.ts`, re-measured over 20 runs with the old
+ranges kept beside the new ones.
+
+**And the refusal now guards LIVENESS as well.** A wait parks on a promise that
+never settles and quiescence means "no engine operation in flight", so a wait
+inside a step is a step awaiting something that cannot settle, holding the walk
+open against the check that would suspend it — `replayRun` would never return.
+A/B'd: with the check disabled, all eight cases in `workflow-replay-wait.test.ts`
+stop failing and start timing OUT. That module's own doc carries it.
+
+**That residual is REACHABLE, and the estimate beside it was measured wrong.**
+It read "far past what one dispatcher per deployment produces". One dispatcher
+produces up to FIVE, whenever a single step exceeds 60 seconds: the platform's
+`QUEUE_DELIVERY_TIMEOUT_MS` (60s, `aai-server/workflow-queue-deliver.ts`) closes
+the delivery's HTTP response but does **not** stop the walk, so every redelivery
+adds a CONCURRENT walk of the same run in the same guest — measured at 61.15s
+then 65.23s against a live dev server, i.e. the ceiling plus
+`RETRY_BACKOFF_MS[0..1]`. Each of those walks charges the same step key, so a
+step running longer than roughly 2.2 minutes takes a fourth charge against a
+budget of three and is REFUSED. A slow-but-healthy step is exactly the case the
+lease was supposed to protect.
+
+Worse, the duplicate walks were not merely wasteful: `replayRun` reads the
+journal ONCE per walk, so a walk that starts before an earlier one has journaled
+anything re-executed **every** step. Measured on the transcription template, a
+second walk re-ran `normalizeRecording`, `splitRecording`, four
+`transcribeSegment` calls against the real provider and `mergeTranscript` on a
+run already marked `completed`.
+
+**That half is CLOSED, by `settledSince` in `workflow-replay-step.ts`.** A
+snapshot can only be stale about a key somebody ELSE reached, and `claimAttempt`
+already answers exactly that: `1` means this attempt is the only one
+outstanding, so nothing has been missed. So a miss in the snapshot re-reads the
+journal **only when the charge says another walk touched this key**, and a
+settled entry answers the step instead of running it — which also makes a
+settled step answer from the journal rather than take the `StepAbandonedError`
+the blown budget above would otherwise produce (the two checks are ordered on
+that ground). The happy path pays nothing: a first walk reaching a fresh step
+sees `1` and never re-reads. `workflow-concurrent-delivery.test.ts` measured the
+effect — generated `duplicateSteps` fell from **44-107 to 6-21**, and its floor
+came down with a re-measured range — and
+`workflow-replay-stale-snapshot.test.ts` pins the two interleavings by hand.
+
+What is NOT closed is the race it was never about: two walks reaching a step
+NEITHER has settled still both run it, which is the engine's stated
+at-least-once cost, and the delivery door still starts walks it cannot stop. Both
+want a heartbeat on the RUN so a ceiling cannot abandon a walk that is alive.
+The platform's own half — a slow delivery starving every OTHER tenant's claim —
+is fixed separately in `aai-server/workflow-queue-budget.ts`.
+
+### A run record names the CODE it was started against
+
+`RunRecord.codeVersion` is `AAI_BUNDLE_SHA256`, recorded at `start` and compared
+at each walk, and it exists for one reader: the divergence message. That message
+states two causes — a redeploy mid-flight, or a non-deterministic body — and then
+hands the reader a test to run against their own source, because a journal holds
+what a value WAS and never how it was produced. The version settles half of it:
+an inequality states the redeploy and names both bundles, an equality ELIMINATES
+it. The fork stays in the text either way, being what says what to look for.
+
+**A DIAGNOSTIC, never a gate**, and read from THIS PROCESS's environment rather
+than the agent's — an agent may set any other `AAI_*` key as a secret, so a
+tenant read would let it pin its own version and have the message assert as a
+fact the one cause it had ruled out. Absence therefore means UNKNOWN in both
+directions and may never read as "unchanged"; only a deployed guest has a hash.
+`workflow-code-version.ts` carries the rest, including why an inequality does not
+refuse the run.
+
+### A step body can read its own ATTEMPT
+
+`stepInfo()` on `@alexkroman1/aai/step` answers
+`{ name, key, attempt, maxAttempts, isLastAttempt }` inside a step and
+`undefined` everywhere else. The engine already tracked the number and nothing
+could read it, so the one decision a retry policy cannot make for an author was
+unavailable: degrade rather than fail. **`sdk/step-attempt.ts` carries the
+argument** — the two differences from the DevKit's `getStepMetadata()`, and why
+`maxAttempts` has to travel with the attempt rather than be restated at the body.
+
+What is this package's: `installWorkflowSupport` publishes the reader
+(`createStepInfoReader` in `workflow-report.ts`) into a `Symbol.for` slot like
+`stepReport()`'s, because the answer lives in this package's `AsyncLocalStorage`
+and `/step` rides the browser bundle. It derives `isLastAttempt` with `>=` and
+not `===`, since a burned boot can push the count past the ceiling and that is
+exactly the try a body most wants to degrade on. And the EVAL engine fills the
+slot with a first-and-only attempt rather than leaving it empty — unfilled means
+`undefined`, which a body reads as "no run", so a step that degrades on its last
+attempt would be measured on that branch.
+
+### A step entry records when it STARTED
+
+`StepEntry.startedAt`, so `finishedAt - startedAt` is what the step cost. An
+entry carried `attempts` and `finishedAt` and no start, so the only elapsed time
+derivable from a run's history was the gap between one step's finish and the
+next's — which is the previous step's cost PLUS whatever the body did between
+them, and is nothing at all for the first step of a run or the first after a
+wait. The park-curve section below is the evidence: its production numbers
+(`walkingForSeconds: 285`, "~45 behind it at 12 a minute") came off a log line,
+because the journal could not be asked.
+
+An absolute instant rather than a duration — the difference is derivable and the
+instant is not, and a gap between one entry's `finishedAt` and the next's
+`startedAt` is DELIVERY latency, a different question from step cost and the one
+that tells a slow step from a slow queue. It spans the whole reach, retries and
+backoff included, and excludes time queued behind `StepGate`; the field's own doc
+argues both.
+
+**OPTIONAL, and absence means the row predates the column.** The journal is
+append-only over tables that already hold rows, so a reader owes an absent start
+"unknown" and never zero — which would report a long step as instant. The
+conformance table pins that in both directions, including that a start of `0` is
+KEPT: an arm reading `startedAt ?? undefined` would satisfy the absence case
+while silently dropping a real value.
+
+**No reader surfaces it yet**, and that is worth saying rather than implying: the
+public workflow API carries a run SNAPSHOT and no step history, so this is
+queryable from the database and from nowhere else. A route and a CLI verb over
+`readSteps` are the obvious next move and are not built.
+
+Two things the change found, both about the DDL-parity gate. It read the ONE
+migration that CREATES these tables, so a column added by a later one was
+uncompared — which made it blind to exactly the drift it exists to catch, and
+had already hidden `workflow_runs.reconciled_at` plus two reconcile indexes. It
+reads every migration in filename order now, applies `alter table … add column`
+on both sides, and scopes the parse to the five tables the pairing derives. And
+its column-ORDER assertion had to go: a column added by an `alter` lands last, so
+the two sides diverge in position the moment either adds one. Sets are compared
+instead; every claim that matters is asserted by name.
+
+### A parked delivery asks to come back PROPORTIONATELY
+
+`workflow-queue-dispatch.ts` refuses a delivery whose run is already being
+walked, and `workflow-queue-park.ts` decides what to answer it:
+`clamp(walkingForSeconds / 8, 5, 120)`, reported on the same curve — one park is
+one line and one reschedule, so `reportPark` ANSWERS the delay it printed rather
+than either half computing it twice.
+
+It was a flat 5, argued as "self-limiting by construction" because the first park
+lands ~61s into a walk and a healthy run parks zero times. True, and the
+conclusion was not: after that it is a 5s LOOP, and each turn is a full queue
+round trip doing no work plus one of the replica's
+`WORKFLOW_QUEUE_DELIVER_CONCURRENCY` slots. Production, on a 660 MiB upload:
+`walkingForSeconds: 285` with ~45 behind it at 12 a minute; ~170 for a 15-minute
+one. The curve makes the count logarithmic — **13 to reach 285s, 24 to reach
+900s**.
+
+Three things not to relitigate, each argued at its own constant: the floor stays
+5 for a brief RACE between two deliveries (it binds only under 40s of walk); the
+ceiling is 120s against the four numbers it must stay under
+(`QUEUE_DELIVERY_TIMEOUT_MS`, `RETRY_BACKOFF_MS`'s longest, `STALL_GRACE_MS`,
+`TRANSCRIBE_UPLOAD_TIMEOUT_MS`); and the LEVEL is a pure function of the elapsed
+walk rather than "the first one is different", which needs per-run state and
+hides the falling rate that says nothing new is wrong.
+
+**A park spends no attempt and the platform caps nothing** — `reschedule` writes
+`locked_at` and `available_at` only, and `parkedFor` takes any finite
+non-negative number. So only the first delivery's 60s abort costs one of
+`QUEUE_MAX_ATTEMPTS`, and a walk of any length parks at attempt 1 forever.
+
+**The GUEST's liveness signal is a separate defect with the same cause**, and it
+is the sharper one: `packages/aai-guest/CLAUDE.md` under "Lifecycle is
+guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read as
+an idle guest and a step longer than the idle window never completed. Parking is
+what made that reachable, because before it the redundant walks were the thing
+holding the guest open.
 
 ## What the tiers of test each cover, and why none substitutes
 
@@ -227,10 +603,11 @@ the A/B: with the snapshot arm removed, claims per delivery go
 
 ## An attempt is a LEASE, and it EXPIRES
 
-Moved here from `CLAUDE.md`, which is at its 120,000-character cap and now
-carries three lines and a pointer. What is below is the original account of why
-a charge is a lease rather than a tally, followed by the two things the lease
-grew: a HOLDER, and an expiry.
+Moved here from `CLAUDE.md` when that guide hit its 120,000-character cap; the
+pointer stub it kept for a while came over with the rest of the journal section
+and is gone. What is below is the original account of why a charge is a lease
+rather than a tally, followed by the two things the lease grew: a HOLDER, and an
+expiry.
 
 `claimAttempt` charges an attempt before a step's body runs — a crash therefore
 burns it, which is the whole reason the charge precedes the body — and
@@ -245,7 +622,7 @@ opposite directions — how many times to TRY (the author's `maxAttempts`) and h
 many workers may die holding this step. A property harness
 (`workflow-concurrent-delivery.test.ts`) shrank the defect to a ONE-node body
 under three deliveries: a `ctx.step` whose body sleeps — a shape the engine now
-REFUSES outright, see "A step body may not WAIT" in `CLAUDE.md` — all three
+REFUSES outright, see "A step body may not WAIT" above — all three
 suspending
 inside it having charged one each, so the next reach found the budget spent and
 appended `{status: "failed", error: "step s0 exhausted 3 attempt(s)"}` over a

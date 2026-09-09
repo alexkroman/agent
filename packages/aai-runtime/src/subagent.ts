@@ -63,6 +63,7 @@ import { forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolDispatcher, executeToolCall, type SubagentRunner } from "./tool-executor.ts";
+import type { StepUsage, UsageMeter } from "./usage-meter.ts";
 
 /**
  * Options for {@link createSubagentRunner}.
@@ -184,8 +185,44 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       maxRetries,
       logger,
       ...omitUndefined({ signal: parent.signal }),
+      // The PARENT's meter, off the bag the tool call already carried: a
+      // delegated run spends on the session that delegated, which is the whole
+      // reason it belongs on a session budget at all. `undefined` for a
+      // sessionless parent (`stepDelegate`) — see `usage-meter.ts`.
+      ...omitUndefined({ usage: parent.usage }),
       task: delegateOptions.task,
     });
+  };
+}
+
+/**
+ * What the delegating session's meter is owed by one attempt: a refusal before
+ * the request, and a report per completed step.
+ *
+ * Both INSIDE the retry loop, which is the half a first draft got wrong. A
+ * revision is another full run against the same budget, so a check placed above
+ * the loop bounds the first attempt and nothing after it; and a report per
+ * ATTEMPT rather than per step would hide a run that blew the cap on step two
+ * of six until all six had been paid for.
+ *
+ * A pair rather than two `usage?.` expressions at the call site, because
+ * `runUntilAccepted` is already at the cognitive-complexity cap and two more
+ * conditionals put it over — the branch belongs where it is decided once.
+ */
+function budgetFor(usage: UsageMeter | undefined): {
+  check: () => void;
+  onStepFinish?: ((step: { usage: StepUsage }) => void) | undefined;
+} {
+  if (!usage) return { check: () => undefined };
+  return {
+    check: () => {
+      const spent = usage.exhausted();
+      // Throws rather than returning the last answer unaccepted: there IS no
+      // answer, and a `DelegateResult` reporting zero steps would read as a
+      // subagent that had nothing to say.
+      if (spent !== undefined) throw new Error(spent);
+    },
+    onStepFinish: (step) => usage.record(step.usage),
   };
 }
 
@@ -197,6 +234,8 @@ type GuardedRun = {
   maxRetries: number;
   logger: Logger;
   signal?: AbortSignal | undefined;
+  /** The delegating session's meter — every step of every attempt reports here. */
+  usage?: UsageMeter | undefined;
 };
 
 /**
@@ -238,7 +277,7 @@ async function checkShape(
  * so the loop costs it one comparison.
  */
 async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
-  const { agent, sub, maxRetries, logger } = run;
+  const { agent, sub, maxRetries, logger, usage } = run;
   // The conversation this delegation is, GROWN across revisions rather than
   // restarted: a rejected attempt keeps its own tool results, so the retry does
   // not pay again for the four pages it already read. See `reviseRequest` for
@@ -246,10 +285,14 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
   const messages: ModelMessage[] = [{ role: "user", content: run.task }];
   let revisions = 0;
 
+  const budget = budgetFor(usage);
+
   for (;;) {
+    budget.check();
     const result = await agent.generate({
       messages,
       ...omitUndefined({ abortSignal: run.signal }),
+      ...omitUndefined({ onStepFinish: budget.onStepFinish }),
     });
     const answer: SubagentAnswer = {
       text: result.text,

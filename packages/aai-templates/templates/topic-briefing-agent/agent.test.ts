@@ -5,6 +5,7 @@ import {
   type StubDelegateCall,
   scriptedToolContext,
   stubDelegate,
+  toolOf,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
@@ -88,12 +89,12 @@ describe("the desk itself", () => {
     expect(factChecker.maxSteps).toBeLessThan(MAX_RESEARCH_STEPS);
   });
 
-  test("runs the three NARROW specialists somewhere cheaper, and the researcher on the default", () => {
+  test("runs the three NARROW subagents somewhere cheaper, and the researcher on the default", () => {
     // The other half of the budget split, and the reason `CHEAP_MODEL` is one
-    // constant: three specialists that were each meant to be cheap, one of
+    // constant: three subagents that were each meant to be cheap, one of
     // which quietly is not, is a bill nobody can read.
-    for (const specialist of [factChecker, explainer, counterpoint]) {
-      expect(specialist.llm, specialist.name).toMatchObject({ options: { model: CHEAP_MODEL } });
+    for (const one of [factChecker, explainer, counterpoint]) {
+      expect(one.llm, one.name).toMatchObject({ options: { model: CHEAP_MODEL } });
     }
     // The researcher reads whole pages and stays on the agent's own model.
     expect(researcher.llm).toBeUndefined();
@@ -104,25 +105,25 @@ describe("the desk itself", () => {
     // rather than a paragraph somebody remembered to write: the desk reads the
     // final message and nothing else. A subagent added here without one is the
     // regression this catches.
-    for (const specialist of [researcher, factChecker, explainer, counterpoint]) {
-      expect(specialist.expectedOutput, specialist.name).toBeTruthy();
+    for (const one of [researcher, factChecker, explainer, counterpoint]) {
+      expect(one.expectedOutput, one.name).toBeTruthy();
     }
     expect(researcher.expectedOutput).toMatch(/only this/);
   });
 
-  test("puts on the roster exactly the specialists chosen by what the caller ASKED", () => {
+  test("puts on the roster exactly the subagents chosen by what the caller ASKED", () => {
     // The two tools name their own subagent, so those two must NOT be on the
-    // roster: a specialist reachable both ways gives the model a second, worse
+    // roster: a subagent reachable both ways gives the model a second, worse
     // route to a tool that does real work around the delegation.
     expect(authoredAgent.subagents?.map((one) => one.name)).toEqual(["explainer", "counterpoint"]);
-    for (const specialist of authoredAgent.subagents ?? []) {
+    for (const one of authoredAgent.subagents ?? []) {
       // The only thing the router reads. `agent()` refuses a roster without it;
       // asserted here too because the template is what an author copies.
-      expect(specialist.description, specialist.name).toBeTruthy();
+      expect(one.description, one.name).toBeTruthy();
     }
   });
 
-  test("publishes the roster as one delegate tool listing both specialists", () => {
+  test("publishes the roster as one delegate tool listing both subagents", () => {
     const delegate = deployed.tools[DELEGATE_TOOL_NAME];
     expect(delegate).toBeDefined();
     expect(delegate?.description).toContain("explainer:");
@@ -620,6 +621,17 @@ describe("send_briefing", () => {
 
     await expect(run("send_briefing", {}, deskWithBoard({}))).rejects.toThrow(DESTINATION_ENV);
     expect(posted.calls).toEqual([]);
+  });
+
+  test("declares onError, so a missing webhook is FATAL rather than something to retry", () => {
+    // Without it the runtime hands every throw to the model as this call's
+    // result, and the desk re-calls `send_briefing` against a variable that is
+    // still unset — burning the reply's step budget on a deploy fault. The
+    // handler re-throws, which is how a tool says "stop, this cannot work".
+    const sender = toolOf(deployed, "send_briefing");
+    expect(sender.onError).toBeDefined();
+    const cause = new Error(`Missing required environment variable: ${DESTINATION_ENV}`);
+    expect(() => sender.onError?.(cause, createToolContext())).toThrow(cause);
   });
 
   test("refuses a configured destination that is not Slack, without posting", async () => {

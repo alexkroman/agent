@@ -28,6 +28,12 @@
  * the only thing that tells a live model that "grab the rope" means
  * `game_state_take` — an eval run against the framework default prompt measures
  * an agent nobody deployed.
+ *
+ * The prompt is a RESOLVER (see `agent.ts`), so what a live run puts in front
+ * of the narrator is the file plus the board as it stands on that turn. That is
+ * what the state assertions below are really riding on: the narrator is never
+ * asked to remember an inventory, so a wrong answer is a game bug rather than a
+ * model lapse.
  */
 import agentDef from "virtual:aai/agent";
 import {
@@ -167,7 +173,11 @@ describeEval(agentDef, (test) => {
 
       // And the SECOND turn is the only place the hook's write can be seen: the
       // field nothing assigns is read back off a later turn's state.
-      const later = answerOf(await session.say("What is my score?"), "game_state_get", Status);
+      // "Check the game state", not "What is my score?" — the score is in the
+      // prompt now (see `statusBlock`), so a live narrator answers that one
+      // without a tool call, and this case is about the WRITE surviving the
+      // turn rather than about which question forces a read.
+      const later = answerOf(await session.say("Check the game state."), "game_state_get", Status);
       expect(later.score).toBe(earned.score);
       expect(later.rank).toBe(earned.rank);
     },

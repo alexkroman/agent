@@ -105,6 +105,10 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     emit,
     log,
     history: () => history,
+    // Straight into the same window the transcripts land in, so a tool reads
+    // an earlier tool's result on the next call of the reply — see
+    // `ToolStepDeps.recordToolResult`.
+    recordToolResult: (message: Message) => pushMessages(message),
     relayed: Boolean(opts.onToolResult),
   };
 

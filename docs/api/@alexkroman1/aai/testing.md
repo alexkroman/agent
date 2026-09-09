@@ -30,6 +30,7 @@ function commandedBuiltins(config: {
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -38,6 +39,8 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -50,6 +53,7 @@ function commandedBuiltins(config: {
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -77,6 +81,9 @@ function commandedBuiltins(config: {
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  usageLimits?: {
+     totalTokens?: number;
   };
 }): BuiltinTool[];
 ```
@@ -127,6 +134,10 @@ readonly (
 
 `number`
 
+###### description?
+
+`string`
+
 ###### errorPhrase?
 
 `string`
@@ -157,6 +168,14 @@ readonly (
 ###### llm.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### maxOutputTokens?
+
+`number`
+
+###### maxRetries?
+
+`number`
 
 ###### maxSteps?
 
@@ -193,6 +212,10 @@ readonly (
 ###### requiredEnv?
 
 readonly `string`[]
+
+###### resetToolChoice?
+
+`boolean`
 
 ###### resumeFalseInterruption?
 
@@ -284,6 +307,16 @@ readonly `string`[]
 ###### tts.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### usageLimits?
+
+\{
+  `totalTokens?`: `number`;
+\}
+
+###### usageLimits.totalTokens?
+
+`number`
 
 #### Returns
 
@@ -577,8 +610,8 @@ const agentDef = deployedAgent(authored, {
 Every rule the build applies applies here too, and each is an error naming
 the file: the tool-name grammar, the default-export requirement, no nested
 files, a name declared twice, an empty prompt file, and a
-`system-prompt.md` that exists while `agent.ts` declares a DIFFERENT prompt —
-the "I edited the prompt and nothing changed" failure.
+`system-prompt.md` that exists while `agent.ts` declares a different prompt
+STRING — the "I edited the prompt and nothing changed" failure.
 
 #### Type Parameters
 
@@ -736,6 +769,7 @@ function expectDeployable(def: AgentConfigSource): {
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -744,6 +778,8 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -756,6 +792,7 @@ function expectDeployable(def: AgentConfigSource): {
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -783,6 +820,9 @@ function expectDeployable(def: AgentConfigSource): {
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  usageLimits?: {
+     totalTokens?: number;
   };
 };
 ```
@@ -848,6 +888,7 @@ The agent under test — an `agent()` definition, or the raw
      | "recall"
     | "calculate")[];
   deadAirCoverMs?: number;
+  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -856,6 +897,8 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  maxOutputTokens?: number;
+  maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
      pinnedTools?: Record<string, string>;
@@ -868,6 +911,7 @@ The agent under test — an `agent()` definition, or the raw
   page?: "voice" | "static";
   preemptiveGeneration?: boolean;
   requiredEnv?: readonly string[];
+  resetToolChoice?: boolean;
   resumeFalseInterruption?: boolean;
   s2s?: {
      kind: string;
@@ -896,6 +940,9 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  usageLimits?: {
+     totalTokens?: number;
+  };
 }
 ```
 
@@ -920,6 +967,12 @@ optional builtinTools?: readonly (
 
 ```ts
 optional deadAirCoverMs?: number;
+```
+
+##### description?
+
+```ts
+optional description?: string;
 ```
 
 ##### errorPhrase?
@@ -953,6 +1006,18 @@ optional interruptionMinDurationMs?: number;
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }
+```
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
 ```
 
 ##### maxSteps?
@@ -1005,6 +1070,12 @@ optional preemptiveGeneration?: boolean;
 
 ```ts
 optional requiredEnv?: readonly string[];
+```
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
 ```
 
 ##### resumeFalseInterruption?
@@ -1098,6 +1169,14 @@ optional toolChoice?:
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### usageLimits?
+
+```ts
+{
+  totalTokens?: number;
 }
 ```
 
@@ -2895,9 +2974,10 @@ readonly optional systemPrompt?: string;
 `import prompt from "./system-prompt.md?raw"`.
 
 Omit it for a project with no `system-prompt.md`. Pass it even when
-`agent.ts` imports the file itself and composes it — that case is
-recognised and the def is left exactly as the author built it, so a spec
-never has to know which of the two its own template does.
+`agent.ts` imports the file itself — whether it composes a string out of it
+or closes over it in a `systemPrompt` resolver, the def is left exactly as
+the author built it, so a spec never has to know which of the three shapes
+its own project uses.
 
 ##### tools?
 

@@ -90,9 +90,39 @@ const mcpServers: McpServers | undefined = ARCHIVE ? { [ARCHIVE_KEY]: ARCHIVE } 
 
 export default agent({
   name: "Scout",
+  // The listing line — a registry row, `aai list`, the studio's picker. Never
+  // the model: the researcher rules are `system-prompt.md`'s. It names the
+  // citation because that is what separates Scout from a model guessing.
+  description: "Answers questions by searching the open web and citing what it found",
   greeting:
     "Hey, I'm Scout. I search the web for answers. Try asking me something like, what happened in tech news today, or who won the last World Cup.",
   builtinTools: ["web_search", "visit_webpage"],
+  /**
+   * A ceiling on what one call may spend — the one knob this starter needs and
+   * the other templates do not.
+   *
+   * Scout is the only agent here whose context grows with text it did not
+   * write. Every `visit_webpage` result (capped at `MAX_PAGE_CHARS`, ~2,500
+   * tokens) is appended to the conversation and RE-SENT on every later turn, so
+   * a long call reading a dozen pages spends roughly the square of what it
+   * read. Nothing else bounds that: `maxSteps` bounds one reply, not a call.
+   *
+   * The number is deliberately far above any real research call — a few pages
+   * over a few dozen turns lands an order of magnitude under it — so it is a
+   * runaway guard and not a budget a caller can feel. It is here because this
+   * is a STARTER: it deploys with two builtins and no credential of its own, on
+   * somebody's URL, and the shape of "left running" is exactly what this
+   * catches.
+   *
+   * **What it costs is stated rather than hidden.** Crossing it is fatal: the
+   * session ends with an `error.reported` frame and a browser client releases
+   * the microphone, so the caller hears a dropped call rather than an
+   * explanation. An agent that wants to say something first watches
+   * `usage.updated` through `agent({ events })` and speaks before the cap
+   * arrives — a fair amount of machinery for a starter, which is why this one
+   * takes the blunt version and says so.
+   */
+  usageLimits: { totalTokens: 500_000 },
   // Spread rather than `mcpServers: undefined`: an agent with no archive
   // declares no server and asks a deploy for no credential, which is the
   // shape every field on this call already has.

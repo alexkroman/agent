@@ -17,7 +17,8 @@
  * with no symptom on a machine running one session at a time.
  */
 
-import { buildSystemPrompt } from "@alexkroman1/aai/host-internal";
+import type { AgentInstructions, AgentSessionContext } from "@alexkroman1/aai";
+import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 
 /**
@@ -70,8 +71,17 @@ export interface SessionSystemPrompt {
 export interface SystemPromptResolver {
   /** Today's base prompt. Exposed for the transports that cannot vary it per turn. */
   base(): string;
-  /** A fresh per-session resolver, starting with no suffix. */
-  forSession(): SessionSystemPrompt;
+  /**
+   * A fresh per-session resolver, starting with no suffix.
+   *
+   * The context is what an {@link AgentInstructions} resolver is called with —
+   * this session's id, env and slots. Passed per SESSION rather than held on
+   * the runtime for the reason the suffix is per session: a resolver reading
+   * one call's slots and answering for another is the concurrency bug this
+   * module's header describes, and it has no symptom on a machine running one
+   * session at a time.
+   */
+  forSession(context: AgentSessionContext): SessionSystemPrompt;
 }
 
 /**
@@ -91,6 +101,21 @@ export function createSystemPromptResolver(deps: {
   /** Does this runtime have any tool at all — declared or built-in? */
   hasTools: boolean;
   toolGuidance: readonly string[] | undefined;
+  /**
+   * The agent's `systemPrompt` when it is a RESOLVER rather than a string —
+   * `systemPromptResolver(agent.systemPrompt)`.
+   *
+   * A THIRD part between the base and the suffix, not a replacement for either.
+   * `toAgentConfig` puts nothing on the wire for a resolver, so the base carries
+   * no agent-specific section for one, and this fills that section per request
+   * under the same precedence header a static prompt gets
+   * ({@link agentInstructionsSection}) — which is what makes a resolver and a
+   * string land in the same place rather than merely near each other.
+   *
+   * Deliberately NOT `setSuffix`: that slot belongs to the session's dialogs,
+   * last writer wins, and a session may legitimately have both.
+   */
+  instructions?: AgentInstructions | undefined;
 }): SystemPromptResolver {
   let promptCache: { day: string; text: string } | null = null;
 
@@ -111,11 +136,15 @@ export function createSystemPromptResolver(deps: {
 
   return {
     base,
-    forSession(): SessionSystemPrompt {
+    forSession(context: AgentSessionContext): SessionSystemPrompt {
       let suffix: SystemPromptSuffix | null = null;
       return {
         resolve(): string {
-          const text = base();
+          const dynamic = deps.instructions?.(context) ?? "";
+          const text =
+            dynamic === ""
+              ? base()
+              : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(dynamic)}`;
           const extra = suffix?.() ?? "";
           // The identity return is load-bearing, not a micro-optimisation: with
           // no suffix installed this function IS `systemPromptForToday()`, so

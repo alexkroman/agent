@@ -20,9 +20,9 @@ import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
-import { ModelMessage } from 'ai';
+import type { ModelMessage } from 'ai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import { PrepareStepFunction } from 'ai';
+import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
@@ -31,8 +31,8 @@ import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import type { SlotStore } from '@alexkroman1/aai';
-import { StepResult } from 'ai';
-import { streamText } from 'ai';
+import type { StepResult } from 'ai';
+import type { streamText } from 'ai';
 import { SttError } from '@alexkroman1/aai/host-internal';
 import { SttEvents } from '@alexkroman1/aai/host-internal';
 import { SttOpener } from '@alexkroman1/aai/host-internal';
@@ -279,6 +279,7 @@ export { HostCredentialEnv }
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -759,6 +760,16 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
+
+// @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
 
 // @public
 export type StoredSessionEvent = {

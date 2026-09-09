@@ -46,6 +46,44 @@
  * them is `withMcpTools` on `@alexkroman1/aai-runtime` and belongs to that
  * package's own `tools` capability — this SDK opens no sockets.
  *
+ * **The four FIELD-GROUP interfaces are here for the reason
+ * `PipelineVoiceTuning` already was.** `AgentDef` is declared as an extension of
+ * them — `AgentModelTuning`, `AgentGuardrails`, `AgentObservation` and the voice
+ * tuning — each a set of `AgentDef` fields split out of `types.ts` so one shared
+ * validation rule could be argued once where it applies. That split is an
+ * organization of the declaration, not a second surface: an author writes
+ * `agent({ temperature })` and `agent({ outputGuardrails })` in the same object
+ * literal they write `agent({ name })` in, so a signature change in any of them
+ * is a change to what declaring an agent looks like. `UsageLimits` rides with
+ * `AgentModelTuning` because it is the type of one of its fields and has no
+ * reader anywhere else.
+ *
+ * `AgentGuardrails` is worth one more sentence, because `subagent` also
+ * contracts a guardrail: `GuardrailVerdict` is one vocabulary shared by both and
+ * is contracted THERE, where `SubagentGuardrail` declares it. What is here is
+ * the AGENT-level pair of fields, the same way `subagent`'s own contract note
+ * puts the `AgentDef.subagents` field's signature on this capability rather than
+ * on its own.
+ *
+ * `AgentSystemPrompt` and `AgentInstructions` are the type of `systemPrompt`
+ * after it widened from `string` — the union and the resolver arm. Contracted
+ * here and not on a capability of their own: `systemPrompt` is the field an
+ * `agent()` declaration cannot omit, and a resolver is a way of writing it
+ * rather than a separate thing to write.
+ *
+ * `AgentSessionContext` is the one real choice among these, and it lands here
+ * because of what it is the context OF: the three `agent()` fields that are
+ * callbacks rather than values (`systemPrompt` as a resolver, and the two
+ * guardrail arrays), all three of them contracted above. It is declared to be
+ * the same shape as `SessionEventContext` and to carry the same omissions —
+ * no `send`, no `generate`, no `messages` — and `SessionEventContext` is
+ * already on this contract, so splitting the twins across two capabilities
+ * would let one move without bumping the other, which is the exact drift the
+ * two modules warn each other against. It is NOT `state`'s, though it carries a
+ * `SlotStore`: `state` owns what a slot IS, and a context that hands one to an
+ * author is a field of the agent declaration, the same way `ToolContext.slots`
+ * does not make `ToolContext` part of `state`.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -59,7 +97,14 @@
 
 export {
   type AgentDef,
+  type AgentGuardrail,
+  type AgentGuardrails,
+  type AgentInstructions,
+  type AgentModelTuning,
+  type AgentObservation,
   type AgentParams,
+  type AgentSessionContext,
+  type AgentSystemPrompt,
   type AssemblyAIPipelineOptions,
   agent,
   assemblyAIPipeline,
@@ -85,5 +130,6 @@ export {
   type TelephonyCarrier,
   type TextAgentParams,
   type ToolChoice,
+  type UsageLimits,
   workflowApp,
 } from "../../index.ts";

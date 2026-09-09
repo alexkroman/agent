@@ -10,6 +10,17 @@ import { openSessionDialogs } from "./runtime-dialogs.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import type { Transport } from "./transports/types.ts";
 
+/**
+ * What a per-session author function would be handed. Inert here: nothing in
+ * these specs declares a `systemPrompt` resolver, and `forSession` only passes
+ * this through to one.
+ */
+const TEST_SESSION_CONTEXT = {
+  sessionId: "s-1",
+  env: {},
+  slots: createDetachedSlotStore(),
+};
+
 const SID = "s-dialog";
 
 /**
@@ -97,7 +108,7 @@ function setup(
     toolGuidance: undefined,
   });
   const bound = openSessionDialogs(dialogs, SID, {
-    prompt: prompts.forSession(),
+    prompt: prompts.forSession(TEST_SESSION_CONTEXT),
     slots,
     transport: () => transport,
     logger,

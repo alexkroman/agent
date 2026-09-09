@@ -6,16 +6,16 @@ import { threadText } from "../prompts.ts";
 import { assistantSlot, DRAFTING, openEmail, reviewFlow } from "../shared.ts";
 
 /**
- * Their `MeetingAssistant` → `find_meeting_time`: a specialist reads the
+ * Their `MeetingAssistant` → `find_meeting_time`: a subagent reads the
  * calendar and reports the free slots, and the report comes back as this
  * tool's result — their `ToolMessage` back into `draft_response`. The
- * specialist is a subagent (`../meeting.ts`), so the calendar lookups never
+ * subagent lives in `../meeting.ts`, so the calendar lookups never
  * reach this conversation; what does is one dense sentence.
  *
  * No `send`: the call stays in `drafting`, because knowing the free slots is
  * not yet a proposal. `draft_reply` or `send_calendar_invite` comes next.
  *
- * A report the specialist's guardrail never accepted is handed on anyway, with
+ * A report the subagent's guardrail never accepted is handed on anyway, with
  * `usable: false` and a different `next` — the desk is on a live call and there
  * IS an answer, so a `ToolFailure` would throw away the one thing it learned.
  */

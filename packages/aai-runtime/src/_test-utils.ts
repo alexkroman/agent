@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AgentDef, ToolContext, ToolDef } from "@alexkroman1/aai";
+import type { AgentDef, ToolContext, ToolDef, ToolErrorHandler } from "@alexkroman1/aai";
 import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { type Db, rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
@@ -113,6 +113,28 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
 
 export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
   return { description: "test tool", execute: () => "ok", ...overrides };
+}
+
+/**
+ * An `onError` the TYPE forbids, for the guards that exist because a caller can
+ * write one anyway.
+ *
+ * `ToolErrorHandler` is `(err, ctx) => ToolFailure | string`, so neither shape
+ * `resolveToolError` refuses — a handler that returns NOTHING, and an `async`
+ * one — can be written in a typed spec without widening. Both refusals are
+ * load-bearing and silent if they regress: a returned `undefined` would be
+ * stringified and hand the model the string `"null"` as the tool's answer, and
+ * a returned promise would serialize as `{}`. A guard with no test is a guard
+ * the next refactor deletes.
+ *
+ * ONE widening, in the package's test-helper module, rather than a cast per
+ * assertion in each spec — the typed seam this repo asks for wherever a
+ * suppression concentrates. Two specs reach it (`tool-error-policy.test.ts`
+ * over the policy directly, `tool-executor.test.ts` over the whole call), and a
+ * third malformed shape goes through here too.
+ */
+export function malformedOnError(handler: () => unknown): ToolErrorHandler {
+  return handler as unknown as ToolErrorHandler;
 }
 
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {

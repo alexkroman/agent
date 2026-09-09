@@ -669,6 +669,87 @@ export function stateSummary(state: FrozenGameState) {
   };
 }
 
+/**
+ * The campaign sheet as the NARRATOR is given it, before every reply.
+ *
+ * `agent.ts` appends this to the system prompt through a `systemPrompt`
+ * resolver, so every number the narrator must not invent — the tracks, the
+ * momentum, the chaos factor, the clocks, who is in the scene — is in front of
+ * the model on each request.
+ *
+ * **This is what retired the FLOW rule that opened every turn with a tool
+ * call.** `system-prompt.md` used to say "Call check_state as your FIRST tool
+ * call every turn, before narrating or rolling … NEVER remember or guess stats
+ * from prior turns": an instruction that bought a full model round trip on every
+ * turn of a live voice game when it was obeyed, and a desynced sheet when it was
+ * not. A number the model may not guess belongs in the prompt, not behind a rule
+ * telling it to go and fetch one.
+ *
+ * `check_state` is NOT retired. It answers with the chronicle, the whole NPC
+ * records and the story blueprint as well, and it is the tool for a turn where
+ * the narrator wants the full board or the position restated. What went is the
+ * compulsory read-back.
+ *
+ * Prose rather than {@link stateSummary}'s JSON, because this is read as
+ * instructions rather than as a tool result — and deliberately SHORTER than that
+ * summary: it lands on every request, where a tool result lands once. The
+ * position (`state`/`instruction`) is not here either, since `storyFlow` is
+ * declared in `agent({ dialogs })` and the runtime already puts the active
+ * state's `instruction` in the same prompt.
+ */
+export function liveSheet(game: FrozenGameState): string {
+  if (!game.initialized) {
+    return [
+      "LIVE CAMPAIGN SHEET: no character yet, and no campaign. setup_character is",
+      "the only way in and it fills every field itself — take whatever the player",
+      "gave you, invent the rest, and call it this turn.",
+    ].join("\n");
+  }
+
+  const clocks = game.clocks.map((c) => `${c.name} ${c.filled}/${c.segments} (${c.clockType})`);
+  const cast = game.npcs
+    .filter((n) => n.status !== "deceased")
+    .map((n) => `${n.name} (${n.disposition}, bond ${n.bond})`);
+
+  const lines = [
+    "LIVE CAMPAIGN SHEET (the engine's own record, refreshed before every reply —",
+    "these are ground truth, they are never a turn behind, and you neither guess",
+    "them nor change them by narrating):",
+    `- ${game.playerName || "The player"}, ${game.settingArchetype} — ${game.settingGenre}, ${game.settingTone}`,
+    `- Stats: edge ${game.edge}, heart ${game.heart}, iron ${game.iron}, shadow ${game.shadow}, wits ${game.wits}`,
+    `- Health ${game.health}/${MAX_RESOURCE}, spirit ${game.spirit}/${MAX_RESOURCE}, supply ${game.supply}/${MAX_RESOURCE}`,
+    `- Momentum ${game.momentum} (max ${game.maxMomentum}), chaos factor ${game.chaosFactor}`,
+    `- Scene ${game.sceneCount}, ${game.currentLocation || "location unset"}, ${game.timeOfDay || "time unset"}`,
+    `- Clocks: ${clocks.length > 0 ? clocks.join("; ") : "none"}`,
+    `- NPCs: ${cast.length > 0 ? cast.join("; ") : "none"}`,
+  ];
+
+  if (game.storyBlueprint) {
+    const { currentAct, acts, storyComplete } = game.storyBlueprint;
+    const phase = acts[currentAct - 1]?.phase ?? "unknown";
+    lines.push(
+      `- Act ${currentAct} of ${acts.length} (${phase})${storyComplete ? ", story complete" : ""}`,
+    );
+  }
+
+  // DERIVED, for the reason `stateSummary` derives them: `after` restores the
+  // stored flags only once a mutating body has returned, so a sheet rendered
+  // from the fields would report a just-emptied track as survivable.
+  if (isGameOver(game)) {
+    lines.push("- GAME OVER: nothing can be rolled or updated. Narrate the ending.");
+  } else if (inCrisis(game)) {
+    lines.push("- CRISIS: a track is empty. Every miss now is more dangerous.");
+  }
+  if (game.kidMode) lines.push("- Kid mode is on.");
+  if (game.lastRoll) {
+    lines.push(
+      `- A ${game.lastRoll.result} on ${game.lastRoll.move} is standing — burn_momentum can still upgrade it.`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
 // ── Dice System ──────────────────────────────────────────────────────────────
 export type RollOutcome = "STRONG_HIT" | "WEAK_HIT" | "MISS";
 

@@ -21,6 +21,7 @@ import {
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { DISPATCH_EVENTS } from "./events.ts";
+import { claimsUnitsMoving } from "./guardrails.ts";
 import { callFlow, callSpec, dispatchSlot } from "./shared.ts";
 import incidentAddNote from "./tools/incident_add_note.ts";
 import incidentCreate from "./tools/incident_create.ts";
@@ -469,5 +470,81 @@ describe("a dropped 911 call", () => {
 
     expect(dispatchSlot.get(ctx).incidentCounter).toBe(0);
     expect(Object.keys(dispatchSlot.get(ctx).incidents)).toEqual([]);
+  });
+});
+
+describe("the desk's own output guardrail", () => {
+  /**
+   * The guardrail as the runtime runs it: the list off the DEF, not off the
+   * resolved config.
+   *
+   * `outputGuardrails` is host-only — `toAgentConfig` strips it with `tools`,
+   * `events` and `dialogs`, because a function cannot cross the wire — so
+   * `expectDeployable` has nothing to say about it and the check that it is
+   * wired at all has to be this one. Looked up and CHECKED rather than reached
+   * through `?.[0]`, for the reason `hangUpOn` is: a def that lost the field
+   * would leave every assertion below passing against nothing.
+   */
+  function say(ctx: ToolContext, text: string): true | string {
+    const [guardrail, ...rest] = dispatchAgent.outputGuardrails ?? [];
+    if (guardrail === undefined) throw new Error("the def declares no outputGuardrails");
+    // One rule, deliberately: a second one would be judged here and asserted
+    // nowhere. Adding one is a real edit and should say so by failing.
+    if (rest.length > 0) throw new Error(`the def declares ${rest.length + 1} outputGuardrails`);
+    const verdict = guardrail(text, ctx);
+    // Synchronous by construction here — it reads the board and a regex. An
+    // awaited promise would make the assertions below pass on `{}`.
+    if (typeof verdict === "object") throw new Error("this guardrail must not be async");
+    return verdict;
+  }
+
+  test("blocks 'units are on the way' while nothing is assigned, naming the tool", async () => {
+    const ctx = createToolContext();
+    await createIncidentFor(ctx);
+
+    const verdict = say(ctx, "Copy that. Medic-1 is en route, ETA four minutes.");
+
+    expect(verdict).not.toBe(true);
+    // The verdict is SPOKEN in place of the reply, so it has to be usable to
+    // the dispatcher hearing it — which means naming what to do, not what went
+    // wrong.
+    expect(verdict).toMatch(/resources_dispatch/);
+  });
+
+  test("passes the same sentence once a unit really is assigned", async () => {
+    const ctx = createToolContext();
+    const incidentId = await createIncidentFor(ctx);
+    expectToolOk(await resourcesDispatch.execute({ incidentId, callsigns: ["Medic-1"] }, ctx));
+
+    // The STATE half is the whole point: the same words are a lie on one board
+    // and a report on the other, and only the board can tell them apart.
+    expect(say(ctx, "Copy that. Medic-1 is en route, ETA four minutes.")).toBe(true);
+  });
+
+  test("lets the desk SAY that nothing is rolling", async () => {
+    const ctx = createToolContext();
+    await createIncidentFor(ctx);
+
+    // The false positive that would matter most: on a shift with nothing
+    // assigned, "no units are en route yet" is the truthful sentence and is
+    // exactly the one a keyword filter blocks.
+    expect(say(ctx, "Negative — no units are en route yet.")).toBe(true);
+    expect(say(ctx, "I'll get Engine-7 rolling once you confirm the address.")).toBe(true);
+  });
+
+  test("claimsUnitsMoving is biased toward missing a claim, never toward a false block", () => {
+    // The detector alone, away from the board — the half worth pinning, since
+    // the guardrail around it is two branches.
+    expect(claimsUnitsMoving("Engine-7 is on the way.")).toBe(true);
+    expect(claimsUnitsMoving("Units are responding now.")).toBe(true);
+
+    expect(claimsUnitsMoving("Nothing is rolling yet.")).toBe(false);
+    expect(claimsUnitsMoving("Once Medic-2 is en route I'll update you.")).toBe(false);
+    expect(
+      claimsUnitsMoving("Confirmed, 400 Oak Street. What's the nature of the emergency?"),
+    ).toBe(false);
+
+    // Per SENTENCE, so a hedge in one clause does not excuse the next.
+    expect(claimsUnitsMoving("No one is assigned yet. Ladder-2 is inbound.")).toBe(true);
   });
 });

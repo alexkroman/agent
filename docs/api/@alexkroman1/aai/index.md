@@ -1369,7 +1369,7 @@ function requireEnv(ctx: {
 }, name: string): string;
 ```
 
-Read a variable off [ToolContext.env](#env-1), failing by NAME when it is not set.
+Read a variable off [ToolContext.env](#env-2), failing by NAME when it is not set.
 
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
@@ -2501,7 +2501,7 @@ Fully resolved agent definition.
 
 **This is what `agent()` RETURNS, not what you write.** You write
 [AgentParams](#agentparams) — the same fields with the defaulted ones optional, plus the
-conveniences `agent()` normalizes away (`system`, `llm` as a model-id string,
+three conveniences `agent()` normalizes away (`llm` as a model-id string,
 `voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
 a field MEANS; `AgentParams` is the one for which combinations are legal.
 
@@ -2510,14 +2510,18 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-The pipeline-only voice-UX knobs live on [PipelineVoiceTuning](#pipelinevoicetuning), which
-this extends: they share one rule (pipeline transport or nothing), and
-both `agent()` and the deploy-time config check derive their field lists from
-that interface, so a new one cannot skip either gate.
+Three groups of fields live on interfaces this extends, each because the
+group shares ONE rule that is derived from the declaration rather than
+restated beside it: [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or
+nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
+S2S refuses them), [AgentGuardrails](#agentguardrails) (the only declarations that may
+stop a turn) and [AgentObservation](#agentobservation) (the two that deliberately may
+not). `agent()` and the deploy-time config check both derive their field
+lists from those interfaces, so a new one cannot skip either gate.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning)
+- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation)
 
 #### Properties
 
@@ -2556,6 +2560,27 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`deadAirCoverMs`](#deadaircoverms-1)
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+What this agent IS, in one line, for whoever is reading a LIST of them.
+
+Its audience is never the model — a registry page, an A2A card, the
+studio's agent picker, the CLI's `aai list`. Write it as the job the agent
+does ("Books and reschedules dental appointments"), not as instructions;
+the instructions are [AgentDef.systemPrompt](#systemprompt).
+
+Serializable, unlike most of what an author declares, and that is the whole
+point: `tools`, `events` and `workflows` are host-only because a consumer
+of a stored config could not act on a function, but a description is
+exactly what such a consumer wants and could not get. Every peer SDK puts
+one on the agent (Anthropic's `AgentDefinition.description` is required);
+this SDK had one on [SubagentDef](#subagentdef), [WorkflowDef](#workflowdef) and
+[ToolDef](#tooldef) and none on the agent itself.
 
 ##### dialogs?
 
@@ -2639,6 +2664,10 @@ Before this there was no way for an agent author to observe their own agent
 at all: the framework carried 51 internal `on*` callback options and not one
 of them was reachable from `agent.ts`.
 
+###### Inherited from
+
+[`AgentObservation`](#agentobservation).[`events`](#events-1)
+
 ##### greeting
 
 ```ts
@@ -2665,6 +2694,43 @@ How long the session may go with no inbound audio before it is closed
 ###### Default Value
 
 `300_000` (5 minutes, `DEFAULT_IDLE_TIMEOUT_MS`)
+
+##### inputGuardrails?
+
+```ts
+optional inputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the CALLER said, before the turn is sent to the model.
+
+Pipeline mode only — see this module's header. Run in order on each
+committed user utterance; the first one to return a string wins and the model is never asked. The agent says that string
+instead, the turn is recorded as having happened (so a caller who keeps
+asking is not talking to an agent with amnesia), and the refused utterance
+stays in the conversation exactly as it was said.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  inputGuardrails: [
+    (text) =>
+      /\b\d{3}-\d{2}-\d{4}\b/.test(text)
+        ? "Please don't read out your social security number — I don't need it."
+        : true,
+  ],
+});
+```
+
+It runs on what the transcriber HEARD, which is the only thing this
+runtime has: a caller who says a forbidden thing and is misheard is not
+caught, and one who is misheard INTO saying it is caught wrongly. Write the
+check so both failures are survivable.
+
+###### Inherited from
+
+[`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-1)
 
 ##### interruptionMinDurationMs?
 
@@ -2698,6 +2764,58 @@ stage defaults to the AssemblyAI LLM Gateway. Note this is pure
 serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
 using credentials from the agent's env.
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
+[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
+the talking. Per STEP, not per turn: a reply that calls three tools has
+four generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`maxOutputTokens`](#maxoutputtokens-1)
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a FAILED provider call is retried before the turn is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
+same name.** That one counts how many times a subagent's `guardrail` may
+send an ANSWER back — a re-run of a run that succeeded. This one counts
+transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset). They compose: a subagent revision is one
+more request, and each request still gets its own retries.
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`maxRetries`](#maxretries-1)
 
 ##### maxSteps
 
@@ -2769,6 +2887,45 @@ name: string;
 ```
 
 Display name shown by the default client UI.
+
+##### outputGuardrails?
+
+```ts
+optional outputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the AGENT is about to say, before any of it is spoken.
+
+Pipeline mode only — see this module's header for why S2S and text refuse
+it. Run in order on the reply's full text once the model has finished and
+before a single word reaches the synthesizer; the first one to return a
+string wins and that sentence is spoken in place of the reply. The blocked
+text is never synthesized and never enters the conversation history.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Pharmacy Line",
+  outputGuardrails: [
+    (text) =>
+      /\b\d+\s?(mg|ml|mcg)\b/i.test(text)
+        ? "I can't give dosage information over the phone. Please check with your pharmacist."
+        : true,
+  ],
+});
+```
+
+**It costs the streaming.** A reply that must be judged whole cannot be
+spoken as it arrives, so declaring one trades time-to-first-word for the
+check: the caller hears nothing until the model has finished, with the
+dead-air cover filling the gap exactly as it does during a tool chain.
+That is the price of a block that is real, and it is why this is a field an
+agent opts into rather than a hook every agent pays for.
+
+###### Inherited from
+
+[`AgentGuardrails`](#agentguardrails).[`outputGuardrails`](#outputguardrails-1)
 
 ##### page?
 
@@ -2865,9 +3022,44 @@ Deploys check that every listed name is present in the agent's stored env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
 
-A tool reads them from [ToolContext.env](#env-1); a step has no
+A tool reads them from [ToolContext.env](#env-2); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
 `@alexkroman1/aai/step`, which resolve the same record.
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
+```
+
+Put `toolChoice` back to `"auto"` after the FIRST step of a reply.
+
+###### Default Value
+
+`true`
+
+Only ever observable alongside a `toolChoice` that DEMANDS a call
+(`"required"`, or a named tool). Left on every step, such a policy is
+re-applied to each one — so the model is obliged to call a tool again after
+it already has, and again after that, until the whole `maxSteps` budget is
+spent and `forceFinalAnswer` rescues the turn on the reserved step.
+The turn still answers (it is bounded, not a loop), but it answers after
+`maxSteps` round trips it had no use for, and the caller waits through all
+of them.
+
+What `toolChoice: "required"` almost always means is "start by calling
+something", which is exactly one step. So the reset is ON by default, the
+same default OpenAI's Agents SDK ships (`reset_tool_choice`), and
+`resetToolChoice: false` is how an agent that really does want a tool call
+on every step says so.
+
+**It changes nothing for an agent that sets no `toolChoice`**, or one that
+sets `"auto"` or `"none"`: there is no demand to reset, and the preparer
+contributes no keys at all.
+
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`resetToolChoice`](#resettoolchoice-1)
 
 ##### resumeFalseInterruption?
 
@@ -2997,11 +3189,11 @@ was ignoring the field without a warning.
 optional subagents?: SubagentRoster;
 ```
 
-Specialists the MODEL may hand a task to, published as one `delegate` tool.
+Subagents the MODEL may hand a task to, published as one `delegate` tool.
 
 The other half of `ctx.delegate`: a tool body naming a subagent is the
 AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
-needs a [SubagentDef.description](#description-2) — the only thing the router reads —
+needs a [SubagentDef.description](#description-3) — the only thing the router reads —
 and `agent()` refuses one without it. The one field whose declaration MINTS
 A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
 like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
@@ -3054,13 +3246,40 @@ snapshot from every tool, declare a result type describing it, and mirror it
 into `useState` via `useToolResult`. Measured across generated agents, 58%
 built some version of that by hand.
 
+###### Inherited from
+
+[`AgentObservation`](#agentobservation).[`syncState`](#syncstate-1)
+
 ##### systemPrompt
 
 ```ts
-systemPrompt: string;
+systemPrompt: AgentSystemPrompt;
 ```
 
-System prompt driving the LLM.
+System prompt driving the LLM — the text, or a function that computes it
+per request from [AgentSessionContext](#agentsessioncontext).
+
+A resolver is how a prompt reads the session's own state: which phase the
+dialog is in, whether the caller is authenticated, what is in the cart.
+It is called once per model request (so once per STEP of a tool-calling
+reply), synchronously, and its answer lands exactly where a string's does —
+appended under the agent-specific-instructions header, after the
+framework's voice sections. See `agent-instructions.ts`, which owns the
+rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+const caller = sessionSlot("caller", () => ({ verified: false }));
+
+export default agent({
+  name: "Bank Line",
+  systemPrompt: (ctx) =>
+    caller.get(ctx).verified
+      ? "The caller is verified. You may discuss balances."
+      : "The caller is NOT verified. Verify them before discussing anything.",
+});
+```
 
 ###### Default Value
 
@@ -3103,8 +3322,7 @@ export default agent({ name: "Support", telephony: ["twilio"] });
 optional temperature?: number;
 ```
 
-Sampling temperature for the agent's OWN model calls — the conversational
-loop, in pipeline and text modes.
+Sampling temperature.
 
 Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
@@ -3113,9 +3331,9 @@ existed neither could say so: `ctx.generate` and `subagent()` both took a
 temperature while the main loop — the one that does almost all the talking
 — took no sampling parameter at all.
 
-S2S REJECTS it rather than ignoring it (`assertSamplingScope`): there the
-model runs inside the provider's service and this runtime never sees the
-request.
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`temperature`](#temperature-1)
 
 ##### text?
 
@@ -3205,6 +3423,23 @@ Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
 its voice).
 
+##### usageLimits?
+
+```ts
+optional usageLimits?: UsageLimits;
+```
+
+Bound what one session may spend — see [UsageLimits](#usagelimits-2).
+
+###### Default Value
+
+unset — no cap. Usage is still measured and reported on the
+session event stream (`usage.updated`) whether or not a limit is declared.
+
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-1)
+
 ##### workflows?
 
 ```ts
@@ -3223,6 +3458,355 @@ Host-only, like `tools`, because a definition holds a function. The platform
 therefore never reads this record: a page's `GET /workflows` listing is
 served by the GUEST from its own live agent definition, the same way
 `name`/`greeting` are proxied rather than read from the stored config.
+
+***
+
+### AgentGuardrails
+
+The two guardrail fields on [AgentDef](#agentdef) — see this module's header for
+what each can actually prevent.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### inputGuardrails?
+
+```ts
+optional inputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the CALLER said, before the turn is sent to the model.
+
+Pipeline mode only — see this module's header. Run in order on each
+committed user utterance; the first one to return a string wins and the model is never asked. The agent says that string
+instead, the turn is recorded as having happened (so a caller who keeps
+asking is not talking to an agent with amnesia), and the refused utterance
+stays in the conversation exactly as it was said.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  inputGuardrails: [
+    (text) =>
+      /\b\d{3}-\d{2}-\d{4}\b/.test(text)
+        ? "Please don't read out your social security number — I don't need it."
+        : true,
+  ],
+});
+```
+
+It runs on what the transcriber HEARD, which is the only thing this
+runtime has: a caller who says a forbidden thing and is misheard is not
+caught, and one who is misheard INTO saying it is caught wrongly. Write the
+check so both failures are survivable.
+
+##### outputGuardrails?
+
+```ts
+optional outputGuardrails?: readonly AgentGuardrail[];
+```
+
+Check what the AGENT is about to say, before any of it is spoken.
+
+Pipeline mode only — see this module's header for why S2S and text refuse
+it. Run in order on the reply's full text once the model has finished and
+before a single word reaches the synthesizer; the first one to return a
+string wins and that sentence is spoken in place of the reply. The blocked
+text is never synthesized and never enters the conversation history.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Pharmacy Line",
+  outputGuardrails: [
+    (text) =>
+      /\b\d+\s?(mg|ml|mcg)\b/i.test(text)
+        ? "I can't give dosage information over the phone. Please check with your pharmacist."
+        : true,
+  ],
+});
+```
+
+**It costs the streaming.** A reply that must be judged whole cannot be
+spoken as it arrives, so declaring one trades time-to-first-word for the
+check: the caller hears nothing until the model has finished, with the
+dead-air cover filling the gap exactly as it does during a tool chain.
+That is the price of a block that is real, and it is why this is a field an
+agent opts into rather than a hook every agent pays for.
+
+***
+
+### AgentModelTuning
+
+Sampling and budget knobs for the agent's OWN model calls — the conversational
+loop, in pipeline and text modes. Every field here is refused in S2S mode;
+see this module's header.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
+[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
+the talking. Per STEP, not per turn: a reply that calls three tools has
+four generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a FAILED provider call is retried before the turn is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
+same name.** That one counts how many times a subagent's `guardrail` may
+send an ANSWER back — a re-run of a run that succeeded. This one counts
+transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset). They compose: a subagent revision is one
+more request, and each request still gets its own retries.
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+##### resetToolChoice?
+
+```ts
+optional resetToolChoice?: boolean;
+```
+
+Put `toolChoice` back to `"auto"` after the FIRST step of a reply.
+
+###### Default Value
+
+`true`
+
+Only ever observable alongside a `toolChoice` that DEMANDS a call
+(`"required"`, or a named tool). Left on every step, such a policy is
+re-applied to each one — so the model is obliged to call a tool again after
+it already has, and again after that, until the whole `maxSteps` budget is
+spent and `forceFinalAnswer` rescues the turn on the reserved step.
+The turn still answers (it is bounded, not a loop), but it answers after
+`maxSteps` round trips it had no use for, and the caller waits through all
+of them.
+
+What `toolChoice: "required"` almost always means is "start by calling
+something", which is exactly one step. So the reset is ON by default, the
+same default OpenAI's Agents SDK ships (`reset_tool_choice`), and
+`resetToolChoice: false` is how an agent that really does want a tool call
+on every step says so.
+
+**It changes nothing for an agent that sets no `toolChoice`**, or one that
+sets `"auto"` or `"none"`: there is no demand to reset, and the preparer
+contributes no keys at all.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values, and until this
+existed neither could say so: `ctx.generate` and `subagent()` both took a
+temperature while the main loop — the one that does almost all the talking
+— took no sampling parameter at all.
+
+##### usageLimits?
+
+```ts
+optional usageLimits?: UsageLimits;
+```
+
+Bound what one session may spend — see [UsageLimits](#usagelimits-2).
+
+###### Default Value
+
+unset — no cap. Usage is still measured and reported on the
+session event stream (`usage.updated`) whether or not a limit is declared.
+
+***
+
+### AgentObservation
+
+The observe-only half of an agent declaration — see this module's header.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### events?
+
+```ts
+optional events?: SessionEventHandlers;
+```
+
+Observe the session's own event stream — an audit log, per-turn metrics, or
+"write every call to my own database".
+
+Keyed by event type, with `"*"` matching every event. Typed handlers run
+first, then `"*"`, and both run AFTER the event has been recorded in the
+session's retained stream and sent to the client:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Audited",
+  events: {
+    "tool.called": (e, ctx) => {
+      // A hook gets `ctx.env` and `ctx.slots`, never a database — persist
+      // through a client of your own if you need to.
+      void fetch(`${ctx.env.AUDIT_URL}`, {
+        method: "POST",
+        body: JSON.stringify({ id: e.meta.id, tool: e.toolName }),
+      });
+    },
+    "*": (e) => console.log(e.meta.at, e.type),
+  },
+});
+```
+
+Three properties are load-bearing, and each is a rule rather than a detail:
+
+- **Observe-only.** A handler cannot inject model context, change a reply, or
+  cancel anything. That is what keeps the stream a LOG rather than a second
+  control path, and it is why a handler receives no way to reply.
+- **A throw is NON-FATAL.** It is logged against the event and the session
+  continues — a failing audit hook must not end a phone call. An async
+  handler is not awaited either, for the same reason: the caller is mid-turn.
+- **Delivery is at-least-once, and `meta.id` is the key.** The id is stable
+  across replays, so a handler storing content keys on it; a handler doing a
+  non-idempotent side effect keys on the work's own coordinates instead,
+  because retried work re-emits under fresh ids.
+
+Before this there was no way for an agent author to observe their own agent
+at all: the framework carried 51 internal `on*` callback options and not one
+of them was reachable from `agent.ts`.
+
+##### syncState?
+
+```ts
+optional syncState?: 
+  | StateProjection<unknown>
+  | readonly StateProjection<unknown>[];
+```
+
+Project per-session state to the browser client, so a custom UI can
+render it without the agent hand-rolling a sync channel.
+
+One [SessionSlot.projection](#projection-1) per slot the client should see, or an
+array of them — the `agent_state` frame carries the merge. A slot the agent
+does not project never leaves the server, which is the point: session state
+routinely holds things a browser should not have, so the author decides what
+leaves, and whatever a projection returns is exactly what `useAgentState`
+receives.
+
+Pushed after every tool call, and only when a projection actually changed —
+most turns do not touch state, and this shares a socket with 384 kbps of
+PCM.
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+type Item = { sku: string; qty: number };
+
+const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }));
+
+agent({
+  name: "Cart",
+  // staffPin stays server-side
+  syncState: cartSlot.projection((s) => ({ items: s.items })),
+});
+```
+
+###### Remarks
+
+It took a `(state: S) => unknown` over the whole state bag until the bag was
+removed. A projection now names its own slot, which is what lets the runtime
+render a session that has run no tool yet — the projection carries the
+slot's default — and so what let `AgentDef.state` be deleted rather than
+remembered.
+
+Without any of this, the pattern agents reach for is: return a state
+snapshot from every tool, declare a result type describing it, and mirror it
+into `useState` via `useToolResult`. Measured across generated agents, 58%
+built some version of that by hand.
+
+***
+
+### AgentSessionContext
+
+The session a per-session author function is running for.
+
+#### Properties
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+Environment variables available to this agent (from `.env` under
+`aai dev`, `aai secret` in production) — the same view a tool reads as
+`ctx.env`.
+
+##### sessionId
+
+```ts
+sessionId: string;
+```
+
+The session this call belongs to — the id a stream read is keyed by.
+
+##### slots
+
+```ts
+slots: SlotStore;
+```
+
+This session's slot storage — **reach for [sessionSlot](#sessionslot-1), not this**,
+exactly as in a tool. It is on the context because a slot declared in one
+module has no other way to find the session.
+
+Reading it is the point: a prompt that cannot see the session's state is a
+constant with extra steps, and a guardrail that cannot count strikes can
+only judge one sentence at a time. Writing works too and lands like any
+other slot write — but a resolver runs on every request, so a resolver that
+writes is writing several times a turn.
 
 ***
 
@@ -3735,6 +4319,26 @@ receive(ctx: SlotHolder, event:
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -3944,6 +4548,26 @@ export default agent({
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{
@@ -4495,7 +5119,7 @@ narrow a value it is never handed: the failure check returns before it runs.
 description: string;
 ```
 
-See [ToolDef.description](#description-4) — what the model reads to decide to call it.
+See [ToolDef.description](#description-5) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -4504,6 +5128,35 @@ optional inputSchema?: P;
 ```
 
 See [ToolDef.inputSchema](#inputschema-2).
+
+##### onError?
+
+```ts
+optional onError?: ToolErrorHandler;
+```
+
+See [ToolDef.onError](#onerror-2) — what a THROW out of this call means, and the
+only way to say that a failure is fatal rather than something the model
+should try again. Forwarded to the [ToolDef](#tooldef) this builds, and it
+behaves there exactly as it does on any other tool.
+
+**What it returns goes to the model AS THE RESULT, so it does not carry a
+[DialogToolResult](#dialogtoolresult) envelope and the dialog does not move.** The
+handler runs after the gated call has already unwound, which is past the
+point where `send`/`sendFrom` could have fired — and that is the same
+answer a RETURNED [ToolFailure](#toolfailure) gets for the same reason: a tool that
+failed did not do the thing, so a dialog that advanced anyway would leave
+the conversation a step ahead of reality. The difference to know is the
+SHAPE, not the transition: a model reading this call's result gets the
+handler's failure or string where a success would have carried `state`,
+`done` and `result`, so a handler whose message names where the
+conversation is has to say so itself.
+
+It classifies the gated call as a whole, which is `execute`'s throw in every
+practical case but also covers one out of the transition that follows a
+successful body. A refusal — the model calling this tool from a state
+`when` does not name — is not a throw and never reaches it: that returns a
+[ToolFailure](#toolfailure) the model is meant to recover from.
 
 ##### send?
 
@@ -5865,7 +6518,7 @@ The tool body, handed this session's slot value alongside the usual args.
 description: string;
 ```
 
-See [ToolDef.description](#description-4) — what the model reads to decide to call it.
+See [ToolDef.description](#description-5) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -5874,6 +6527,21 @@ optional inputSchema?: P;
 ```
 
 See [ToolDef.inputSchema](#inputschema-2).
+
+##### onError?
+
+```ts
+optional onError?: ToolErrorHandler;
+```
+
+See [ToolDef.onError](#onerror-2) — what a THROW out of this body means, and the
+only way to say that a failure is fatal rather than something the model
+should try again.
+
+It is forwarded to the [ToolDef](#tooldef) this builds and behaves identically:
+the slot is not involved, because there is nothing left to hand a handler —
+an `updateTool` mutator that threw stored nothing, by that method's own
+contract, so `onError` is classifying a call that changed no state.
 
 ***
 
@@ -6015,7 +6683,7 @@ optional description?: string;
 ```
 
 What this subagent is FOR, in one line, written for whoever is choosing
-between specialists rather than for the subagent itself.
+between subagents rather than for the subagent itself.
 
 Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
 subagent in code, so the choice is already made and there is nothing to
@@ -6023,7 +6691,7 @@ describe it to. It is REQUIRED of a subagent listed in
 `agent({ subagents })`, and that is the whole reason it exists: a roster is
 routed by the model, which reads this and nothing else. `agent()` refuses a
 roster entry without one rather than shipping an agent that picks a
-coworker off a list of bare names.
+subagent off a list of bare names.
 
 Write it as the job, not the mechanism: "Researches a topic on the open web
 and reports what it found" — not "calls web_search".
@@ -6074,7 +6742,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries).
+exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -6451,7 +7119,7 @@ optional description?: string;
 ```
 
 What this subagent is FOR, in one line, written for whoever is choosing
-between specialists rather than for the subagent itself.
+between subagents rather than for the subagent itself.
 
 Ignored by call-site delegation — `ctx.delegate(researcher, …)` names the
 subagent in code, so the choice is already made and there is nothing to
@@ -6459,14 +7127,14 @@ describe it to. It is REQUIRED of a subagent listed in
 `agent({ subagents })`, and that is the whole reason it exists: a roster is
 routed by the model, which reads this and nothing else. `agent()` refuses a
 roster entry without one rather than shipping an agent that picks a
-coworker off a list of bare names.
+subagent off a list of bare names.
 
 Write it as the job, not the mechanism: "Researches a topic on the open web
 and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`description`](#description-2)
+[`SubagentDef`](#subagentdef).[`description`](#description-3)
 
 ##### expectedOutput?
 
@@ -6518,7 +7186,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries).
+exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -6578,7 +7246,7 @@ Cap on generated tokens per step, passed through to the provider.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens)
+[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
@@ -6605,7 +7273,7 @@ not the runtime — that decides what.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries)
+[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-2)
 
 ##### maxSteps?
 
@@ -6717,7 +7385,7 @@ Sampling temperature passed through to the provider.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`temperature`](#temperature-3)
+[`SubagentDef`](#subagentdef).[`temperature`](#temperature-4)
 
 ##### tools?
 
@@ -6737,7 +7405,141 @@ pass — legal, and occasionally what you want.
 
 [`SubagentDef`](#subagentdef).[`tools`](#tools-1)
 
+***
+
+### UsageLimits
+
+The token budget a session may spend before the runtime stops it.
+
+**Host-side accounting only.** The numbers come from what the provider
+reports on each completed step (the AI SDK's `usage`), summed across the
+session, so they exist in pipeline and text mode and NOT in S2S — there the
+provider runs the loop and this runtime sees no token counts at all, which is
+why an S2S agent is refused this field instead of being handed zeroes.
+
+## What counts against it
+
+Every model request the runtime makes for this session:
+
+- the **conversational loop** — every step of every turn;
+- **`ctx.generate`** from a tool body;
+- **`ctx.delegate` / `subagent()`** — every step of the delegated run,
+  including a guardrail's revisions.
+
+That list is the whole budget, and it is stated because the first release of
+this field counted only the first line: a delegating agent spends most of
+what it spends inside `ctx.delegate`, so a cap set on one bounded the cheap
+half of the session while reading as though it bounded the session.
+
+## What does NOT count against it
+
+- **A durable WORKFLOW step.** `ctx.workflows.start(…)` returns a run that
+  outlives this session — it is resumed by the engine's own timers, possibly
+  in another process, and a REPLAYED step reads its journaled result without
+  calling a model at all — so a step's tokens are not part of what a SESSION
+  spent and are not bounded here. An agent whose real cost is in its
+  workflows needs a run-scoped budget, which this is not.
+- **A tool executing behind the platform relay**, whose own model calls are
+  metered by the runtime running it rather than by this one. Built-in tools,
+  which run host-side, do count.
+- **S2S**, which reports nothing and is refused this field outright.
+
+There is no cost limit here on purpose. A price is a per-model, per-region,
+per-contract number this package does not carry and could only guess at, and
+a budget that silently guesses wrong is worse than one stated in the unit the
+provider actually reports.
+
+#### Properties
+
+##### totalTokens?
+
+```ts
+optional totalTokens?: number;
+```
+
+Stop the session once this many total tokens (input + output, every step of
+every turn) have been spent.
+
+Checked BEFORE each model request rather than mid-stream, and before EVERY
+one of the three above — so the request that crosses the line finishes and
+the NEXT one is refused, wherever it was about to be made. A cap enforced
+mid-sentence would cut the agent off in the middle of speech, and the
+caller would hear a dropped call rather than a limit; the overrun is
+therefore one request rather than one turn, which matters for a tool that
+fans out to several subagents at once.
+
+Reaching it ends the session at its next turn with a fatal `error.reported`
+frame — a browser client releases the microphone and hangs up. In between,
+a `ctx.generate` or `ctx.delegate` that asks for more is refused with the
+same sentence, which the calling tool may catch and answer around. An agent
+that wants a softer landing watches `usage.updated` through
+`agent({ events })` and says something before the cap arrives.
+
 ## Type Aliases
+
+### AgentGuardrail
+
+```ts
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => 
+  | GuardrailVerdict
+| Promise<GuardrailVerdict>;
+```
+
+Judge one piece of text — see [AgentDef.inputGuardrails](#inputguardrails) and
+[AgentDef.outputGuardrails](#outputguardrails).
+
+May be async: an input guardrail runs before the model request is assembled
+and an output guardrail runs before anything is synthesized, so both have a
+moment to await a classifier. Both are on the critical path of a live call —
+whatever they spend, the caller waits.
+
+A guardrail that THROWS fails open: the throw is reported on the session's
+error stream and the text is allowed through. A check that cannot decide has
+not decided, and taking a call down because a moderation endpoint timed out
+is the wrong trade for every agent that is not a moderation product. An agent
+that wants the other trade returns a verdict from its own `catch`.
+
+#### Parameters
+
+##### text
+
+`string`
+
+##### ctx
+
+[`AgentSessionContext`](#agentsessioncontext)
+
+#### Returns
+
+  \| [`GuardrailVerdict`](#guardrailverdict)
+  \| `Promise`\<[`GuardrailVerdict`](#guardrailverdict)\>
+
+***
+
+### AgentInstructions
+
+```ts
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+```
+
+Compute the agent's instructions for the request about to be assembled.
+
+Synchronous: the request is being built, and there is no point at which a
+promise could be awaited without putting a round trip in front of every turn.
+Work that needs awaiting belongs in a tool, whose result the next request
+carries.
+
+#### Parameters
+
+##### ctx
+
+[`AgentSessionContext`](#agentsessioncontext)
+
+#### Returns
+
+`string`
+
+***
 
 ### AgentParams
 
@@ -6758,11 +7560,14 @@ fields (`send`, `state`) ship as runtime-working but excess-property errors
 for authors, because neither bundler typechecks user code. Field docs live
 on [AgentDef](#agentdef) and carry through the mapped types.
 
-Four author-facing conveniences widen the derived shape (all normalized
-away by `agent()`, so `AgentDef` stays canonical):
+Three author-facing conveniences widen the derived shape (all normalized
+away by `agent()`, so `AgentDef` stays canonical). It said FOUR, and the
+fourth — `system` as an alias of `systemPrompt` — has never existed:
+`normalizeAgentConveniences` implements only the three below, so
+`agent({ system })` is refused by name at the stray-field check. That
+refusal is the better error, and it is why the alias is not being added to
+make this paragraph true.
 
-- `system` — alias of `systemPrompt`, matching the Vercel AI SDK's field
-  name. Setting both is an error.
 - `llm` also accepts a model-id string: `"creator/model"` routes through
   the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
   AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
@@ -6792,6 +7597,44 @@ keyed on the front door rather than on a session mode: `page: "static"` has
 no session at all, so every field the other three arms exist to arbitrate
 between is inert there. [workflowApp](#workflowapp) is the same arm with the
 discriminant already set.
+
+***
+
+### AgentSystemPrompt
+
+```ts
+type AgentSystemPrompt = string | AgentInstructions;
+```
+
+What `agent({ systemPrompt })` accepts: the text, or a function that answers
+it per request.
+
+A plain string is byte-identical to what shipped before resolvers existed —
+it is not called, not wrapped, and reaches `buildSystemPrompt` as it always
+did.
+
+## With a `system-prompt.md`
+
+Almost every real agent keeps its prose in a file beside `agent.ts`, and a
+resolver composes against that file by IMPORTING it — the same
+`?raw` import the composed-string case takes, closed over by the function:
+
+```ts no-check
+import { agent } from "@alexkroman1/aai";
+import prompt from "./system-prompt.md?raw";
+import { gameSlot, statusBlock } from "./shared.ts";
+
+export default agent({
+  name: "Cavern Adventure",
+  systemPrompt: (ctx) => `${prompt}\n\n${statusBlock(gameSlot.get(ctx))}`,
+});
+```
+
+The generated bundle entry still discovers the file and hands it to
+`withSystemPrompt` (`sdk/system-prompt-file.ts`), which leaves a resolver
+exactly as written — an author who declared a function has taken over
+composing the prompt. That module's header owns the argument, including why
+the file is not passed to the resolver as a second argument.
 
 ***
 
@@ -7649,6 +8492,8 @@ the name the model sees.
 type Message = {
   content: string;
   role: "user" | "assistant" | "tool";
+  toolCallId?: string;
+  toolName?: string;
 };
 ```
 
@@ -7656,6 +8501,19 @@ A single message in the conversation history.
 
 Messages are passed to tool `execute` functions via
 [ToolContext.messages](#messages) to provide conversation context.
+
+**The `"tool"` arm carries what an EARLIER tool answered**, which is the one
+thing a tool could not see before. Its two extra fields say WHICH call the
+result belongs to — a bare string cannot, and a tool reading a sibling's
+output has to know whether it is reading the one it cares about. They are
+optional because `content` is the only field every arm has, and every reader
+that predates them (`m.role === "user"` filters, `{ role, content }`
+projections, the `history.restored` wire frame, which carries user and
+assistant turns only) keeps working untouched.
+
+Read a tool arm by ROLE, never by the presence of a field: a `"tool"` message
+replayed out of a session's own event log by a resume names the tool it
+answers, and one from a transport that never recorded the call may not.
 
 #### Properties
 
@@ -7667,6 +8525,11 @@ content: string;
 
 The text content of the message.
 
+For a `"tool"` message this is the result the tool returned, already
+serialized and capped the same way the client's own `tool.completed` frame
+caps it — so what a tool reads live is what it reads again after a resume,
+which rebuilds this from that frame.
+
 ##### role
 
 ```ts
@@ -7674,6 +8537,29 @@ role: "user" | "assistant" | "tool";
 ```
 
 The role of the message sender.
+
+##### toolCallId?
+
+```ts
+optional toolCallId?: string;
+```
+
+`role: "tool"` only — the id of the call `content` answers.
+
+Pairs with `ToolCallInfo.id` on the client and with `tool.called` /
+`tool.completed` on the event stream, so a tool can tell two calls of the
+same tool in one turn apart.
+
+##### toolName?
+
+```ts
+optional toolName?: string;
+```
+
+`role: "tool"` only — the name of the tool whose result `content` is.
+
+The name the MODEL calls it by (the registry key), so a tool matching on it
+uses the same string it would put in `ctx.messages`' own tool schemas.
 
 ***
 
@@ -8457,10 +9343,10 @@ Judge one attempt — see [SubagentDef.guardrail](#guardrail).
 type SubagentRoster = readonly SubagentDef[];
 ```
 
-The specialists an agent publishes for the MODEL to choose between —
+The subagents an agent publishes for the MODEL to choose between —
 `agent({ subagents })`.
 
-Every entry needs a [SubagentDef.description](#description-2): it is the only thing the
+Every entry needs a [SubagentDef.description](#description-3): it is the only thing the
 router reads, and `agent()` refuses a roster without one rather than shipping
 an agent that picks off a list of bare names.
 
@@ -8638,13 +9524,48 @@ type ToolChoice =
 };
 ```
 
-How the LLM should select tools during a turn. Mirrors the Vercel AI
-SDK's `toolChoice`.
+How the LLM should select tools. Mirrors the Vercel AI SDK's `toolChoice`.
 
-- `"auto"` — The model decides whether to call a tool (default).
-- `"required"` — The model must call at least one tool each step.
-- `"none"` — The model may not call tools this session.
-- `{ type: "tool", toolName }` — The model must call the named tool.
+**It is resolved PER REQUEST, and one value can arrive from four different
+scopes**, which is why none of the arms below can be described as a property
+of "the session". Every LLM request carries whichever of these is set, each
+one overriding the ones above it:
+
+1. **The agent** — `agent({ toolChoice })` is the standing default for every
+   request the agent makes, and what an unset field falls back to.
+2. **The turn** — in text mode a caller may override it for one turn
+   (`stream({ toolChoice })`). A voice session has no such caller.
+3. **The dialog state** — a `dialog()` state may carry `toolChoice`, read
+   deepest-active-state-first, so a state that must not act overrides the
+   two above for exactly as long as the conversation is in it, one step at a
+   time.
+4. **The step** — the runtime forces `"none"` on the reply's LAST step
+   (`forceFinalAnswer`), so a reply that ran out of tool-calling budget still
+   ends in an answer instead of silence. That override wins over all three,
+   including an agent-level `"required"`, which would otherwise demand a tool
+   call on the one step where tools are switched off.
+
+So the same value means "for every reply", "for this turn", "while in this
+state" or "on this one step" depending on where it was written. The arms:
+
+- `"auto"` — the model decides whether to call a tool on this request
+  (the default, and what an unset field resolves to).
+- `"required"` — the model must call at least one tool on this request.
+  **Set at agent level it applies to EVERY step of every reply**, not just
+  the first: each step is its own request, so the model is obliged to call a
+  tool again after each result, and a reply reaches `maxSteps` on every turn
+  before the forced final step lets it answer. That is bounded — the reply
+  still ends with an answer — but it spends the whole budget and the latency
+  that goes with it. Prefer `"auto"` at agent level and reach for
+  `"required"` on a dialog state, where its scope is the state rather than
+  the conversation. (Some SDKs reset the choice to `"auto"` after the first
+  step for this reason; this one does not, so an agent-level `"required"`
+  means what it says on every step.)
+- `"none"` — the model may not call a tool on this request. It is not a
+  session-wide switch, and cannot be one: a later request in the same session
+  is resolved again from whatever scope applies to it.
+- `{ type: "tool", toolName }` — the model must call the named tool on this
+  request.
 
 ***
 
@@ -8967,6 +9888,7 @@ backend configured, naming which.
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description: string;
   inputSchema?: P;
+  onError?: ToolErrorHandler;
   execute: R;
 };
 ```
@@ -9070,6 +9992,108 @@ optional inputSchema?: P;
 Schema for the tool's input, shown to the LLM and used to validate each
 call's arguments before `execute` runs. Named after the Vercel AI SDK's
 `tool({ inputSchema })`.
+
+##### onError?
+
+```ts
+optional onError?: ToolErrorHandler;
+```
+
+What to do when `execute` throws — and, by omission, the SDK's default.
+
+**Without it, every exception becomes an ordinary tool result.** The
+runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+to the model as that call's result, which is the same channel a deliberate
+[toolFailure](#toolfailure-1) uses — so a stale credential, a `TypeError` in the
+author's own code and "no such order" are one thing as far as the model can
+tell, and it will keep calling a permanently broken tool until the reply's
+`maxSteps` budget runs out. That default is unchanged and stays the default:
+for the failures a model really can recover from it is the right answer, and
+every tool written before this field existed depends on it.
+
+**With it, the author classifies.** Return a [ToolFailure](#toolfailure) or a string
+and that is what the model gets — the same outcome as the default, with a
+sentence the author chose. Throw — `throw err` re-raises the original — and
+the failure is FATAL to the call: the runtime logs it, reports it as a
+session error (`code: "tool"`), and the tool call REJECTS instead of
+answering, so nothing hands the model something to retry against.
+
+It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+it: that is already the author saying "expected, let the model recover", and
+routing it through here would make the two channels one again.
+
+###### Example
+
+**Fatal on a missing credential, recoverable on a bad lookup**
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+class MissingKeyError extends Error {}
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+    });
+    if (res.status === 404) return toolFailure(`No order ${id}.`);
+    return await res.json();
+  },
+  // A credential the deploy is missing cannot be fixed by asking the model
+  // to try again; a flaky upstream can.
+  onError: (err) => {
+    if (err instanceof MissingKeyError) throw err;
+    return toolFailure("The orders service is unavailable right now.");
+  },
+});
+```
+
+***
+
+### ToolErrorHandler
+
+```ts
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+```
+
+What a tool does with an exception its `execute` threw — the shape of
+[ToolDef.onError](#onerror-2).
+
+**Returning decides what the MODEL sees; throwing decides that it sees
+nothing.** A returned [ToolFailure](#toolfailure) or `string` is handed to the model
+as that call's result, exactly as if `execute` had returned it — so the model
+can apologise, ask again, or try another route. Throwing (including
+re-throwing `err` unchanged) declares the failure UNRECOVERABLE: the runtime
+reports it and the tool call ends in a rejection rather than a result, so the
+model is never invited to retry a tool that cannot work.
+
+It is called with the same [ToolContext](#toolcontext) `execute` was given, so a
+handler can read `ctx.env` to tell a missing credential from a bad one, or
+`ctx.signal.aborted` to tell a real fault from a cancelled turn.
+
+**Synchronous, deliberately.** It runs after the call's deadline has already
+passed on the timeout path, so there is no budget left to await anything in;
+the runtime refuses a thenable return and treats it as fatal, the same rule
+`slot.updateTool` applies to a mutator body. Do the awaiting inside
+`execute`, where the deadline still applies.
+
+#### Parameters
+
+##### err
+
+`unknown`
+
+##### ctx
+
+[`ToolContext`](#toolcontext)
+
+#### Returns
+
+[`ToolFailure`](#toolfailure) \| `string`
 
 ***
 
@@ -10670,7 +11694,7 @@ const DEFAULT_GUARDRAIL_MAX_RETRIES: 1 = 1;
 ```
 
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back when
-the subagent names no [SubagentDef.maxRetries](#maxretries) of its own.
+the subagent names no [SubagentDef.maxRetries](#maxretries-2) of its own.
 
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -10762,14 +11786,14 @@ const DELEGATE_TOOL_NAME: "delegate" = "delegate";
 
 The name the model calls a roster by.
 
-One tool with a `coworker` argument rather than one tool PER specialist, which
-is the other obvious lowering. Per-specialist tools put the roster in the tool
+One tool with a `subagent` argument rather than one tool PER subagent, which
+is the other obvious lowering. Per-subagent tools put the roster in the tool
 LIST, which reads well — and the list is fixed for the whole session
 (`toolSchemas` is computed once and handed to the transport at session
 creation, the same constraint `sdk/dialog.ts` documents), so a roster that
 varies by state is unreachable either way, and n tools cost n schemas in every
 request where this costs one. The deciding reason is smaller: `delegate` is
-also where a shared instruction about HOW to brief a specialist goes, and n
+also where a shared instruction about HOW to brief a subagent goes, and n
 copies of it is n places for it to drift.
 
 ***

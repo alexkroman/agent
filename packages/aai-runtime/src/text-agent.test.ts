@@ -9,7 +9,7 @@
  * out of the tools it ran.
  */
 
-import { type AgentDef, agent, sessionSlot, tool } from "@alexkroman1/aai";
+import { type AgentDef, agent, type Message, sessionSlot, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -348,6 +348,111 @@ describe("createTextAgent", () => {
     expect(seen).toEqual([
       { role: "user", content: "first" },
       { role: "assistant", content: "second" },
+    ]);
+  });
+
+  test("a tool reads what an earlier tool of the SAME turn answered", async () => {
+    // The `"tool"` arm of `Message`, on the text path. `toolsFor` builds the
+    // turn's view once and each settled call appends to it, so the second call
+    // reads the first's result — where the assistant/`tool` message pair the AI
+    // SDK builds only reaches `turn.messages` on the caller's NEXT turn.
+    const seen: (readonly Message[])[] = [];
+    const peek = tool({
+      description: "Read history",
+      execute: (_args, ctx) => {
+        seen.push(ctx.messages);
+        return `answer-${seen.length}`;
+      },
+    });
+    const chat = createTextAgent({
+      agent: textAgent({ name: "Peeker", text: true }, { peek }),
+      model: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "c1", toolName: "peek", input: "{}" }],
+          [{ type: "tool-call", toolCallId: "c2", toolName: "peek", input: "{}" }],
+          [{ type: "text", text: "ok" }],
+        ],
+      }),
+      logger: silentLogger,
+    });
+
+    await drain(chat.stream({ messages: [{ role: "user", content: "go" }] }));
+
+    expect(seen[0]).toEqual([{ role: "user", content: "go" }]);
+    expect(seen[1]).toEqual([
+      { role: "user", content: "go" },
+      { role: "tool", content: "answer-1", toolName: "peek", toolCallId: "c1" },
+    ]);
+  });
+
+  test("an incoming tool message is projected, one per result part", async () => {
+    // A `ToolModelMessage` carries `tool-result` parts and never a `text` one,
+    // so the text-only projection dropped every one — a caller resuming a
+    // conversation handed its tools a history with every result missing, while
+    // the model reading the same list saw them all.
+    let seen: unknown;
+    const chat = createTextAgent({
+      agent: textAgent(
+        { name: "Peeker", text: true },
+        {
+          peek: tool({
+            description: "Read history",
+            execute: (_args, ctx) => {
+              seen = ctx.messages;
+              return "ok";
+            },
+          }),
+        },
+      ),
+      model: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "c9", toolName: "peek", input: "{}" }],
+          [{ type: "text", text: "ok" }],
+        ],
+      }),
+      logger: silentLogger,
+    });
+
+    await drain(
+      chat.stream({
+        messages: [
+          { role: "user", content: "where is order 4471" },
+          {
+            role: "assistant",
+            content: [
+              { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { id: "4471" } },
+            ],
+          },
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                toolName: "lookup",
+                output: { type: "json", value: { eta: "tue" } },
+              },
+              {
+                type: "tool-result",
+                toolCallId: "c2",
+                toolName: "lookup",
+                output: { type: "error-text", value: "no such order" },
+              },
+            ],
+          },
+          { role: "assistant", content: [{ type: "text", text: "Tuesday." }] },
+        ],
+      }),
+    );
+
+    // The assistant message that is only a `tool-call` contributes nothing —
+    // the call is not information a later tool can act on, and the result that
+    // answers it names the tool anyway.
+    expect(seen).toEqual([
+      { role: "user", content: "where is order 4471" },
+      { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+      { role: "tool", content: "no such order", toolName: "lookup", toolCallId: "c2" },
+      { role: "assistant", content: "Tuesday." },
     ]);
   });
 

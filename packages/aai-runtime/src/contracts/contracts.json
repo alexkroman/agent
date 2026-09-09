@@ -5,8 +5,8 @@
     "dropped": {}
   },
   "eval": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 5,
+    "supported": [1, 2, 3, 4, 5],
     "dropped": {}
   },
   "keys": {
@@ -25,13 +25,13 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 1,
-    "supported": [1],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "server": {
-    "current": 1,
-    "supported": [1],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "session": {
@@ -50,13 +50,13 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "text": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "tools": {

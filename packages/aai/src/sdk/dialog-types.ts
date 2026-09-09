@@ -22,7 +22,7 @@
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SessionEventType } from "./session-events.ts";
 import type { ToolChoice } from "./tool-def.ts";
-import type { ToolContext, ToolDef } from "./types.ts";
+import type { ToolContext, ToolDef, ToolErrorHandler } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
 
 /**
@@ -137,6 +137,31 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
    * narrow a value it is never handed: the failure check returns before it runs.
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+  /**
+   * See {@link ToolDef.onError} — what a THROW out of this call means, and the
+   * only way to say that a failure is fatal rather than something the model
+   * should try again. Forwarded to the {@link ToolDef} this builds, and it
+   * behaves there exactly as it does on any other tool.
+   *
+   * **What it returns goes to the model AS THE RESULT, so it does not carry a
+   * {@link DialogToolResult} envelope and the dialog does not move.** The
+   * handler runs after the gated call has already unwound, which is past the
+   * point where `send`/`sendFrom` could have fired — and that is the same
+   * answer a RETURNED {@link ToolFailure} gets for the same reason: a tool that
+   * failed did not do the thing, so a dialog that advanced anyway would leave
+   * the conversation a step ahead of reality. The difference to know is the
+   * SHAPE, not the transition: a model reading this call's result gets the
+   * handler's failure or string where a success would have carried `state`,
+   * `done` and `result`, so a handler whose message names where the
+   * conversation is has to say so itself.
+   *
+   * It classifies the gated call as a whole, which is `execute`'s throw in every
+   * practical case but also covers one out of the transition that follows a
+   * successful body. A refusal — the model calling this tool from a state
+   * `when` does not name — is not a throw and never reaches it: that returns a
+   * {@link ToolFailure} the model is meant to recover from.
+   */
+  onError?: ToolErrorHandler;
 }
 
 /**

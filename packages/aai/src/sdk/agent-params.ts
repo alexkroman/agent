@@ -38,11 +38,14 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * for authors, because neither bundler typechecks user code. Field docs live
  * on {@link AgentDef} and carry through the mapped types.
  *
- * Four author-facing conveniences widen the derived shape (all normalized
- * away by `agent()`, so `AgentDef` stays canonical):
+ * Three author-facing conveniences widen the derived shape (all normalized
+ * away by `agent()`, so `AgentDef` stays canonical). It said FOUR, and the
+ * fourth — `system` as an alias of `systemPrompt` — has never existed:
+ * `normalizeAgentConveniences` implements only the three below, so
+ * `agent({ system })` is refused by name at the stray-field check. That
+ * refusal is the better error, and it is why the alias is not being added to
+ * make this paragraph true.
  *
- * - `system` — alias of `systemPrompt`, matching the Vercel AI SDK's field
- *   name. Setting both is an error.
  * - `llm` also accepts a model-id string: `"creator/model"` routes through
  *   the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
  *   AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).

@@ -70,9 +70,11 @@ export function withTemplateTools(name: string, def: AgentDef): AgentDef {
  * in a file.
  *
  * A template with no `system-prompt.md` resolves unchanged and runs on
- * `DEFAULT_SYSTEM_PROMPT`, which five deliberately do. A template WITH one gets
- * `withSystemPrompt`'s three rules — so an empty file, or a file the agent
- * ignores while declaring its own prompt, fails here for every template at once.
+ * `DEFAULT_SYSTEM_PROMPT`, which nine deliberately do. A template WITH one gets
+ * `withSystemPrompt`'s four outcomes — so an empty file, or a file the agent
+ * ignores while declaring its own prompt STRING, fails here for every template
+ * at once. A template whose prompt is a RESOLVER is left alone: it composes the
+ * file through its own `?raw` import, which no value comparison can see.
  */
 export function withTemplatePrompt(name: string, def: AgentDef): AgentDef {
   const prompt = promptFiles[`../templates/${name}/system-prompt.md`];

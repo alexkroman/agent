@@ -1,0 +1,167 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Agent-level guardrails, and the one thing that makes an OUTPUT guardrail real
+ * rather than decorative: a hold on the funnel between the model and the
+ * synthesizer.
+ *
+ * `sendTtsText` in `pipeline-transport.ts` is that funnel — every word the
+ * agent says goes through it, the greeting and the recovery phrases included —
+ * which is why a blocking output guardrail is possible in pipeline mode and in
+ * neither other mode (`sdk/agent-guardrails.ts` argues both refusals).
+ *
+ * ## The hold, and what it costs
+ *
+ * Text normally reaches TTS as it streams, which is most of why a voice agent
+ * feels responsive. A guardrail has to judge the reply WHOLE — half a sentence
+ * is not a thing a check can decide about — so a session that declares one
+ * holds every recordable send until the model has finished, then releases the
+ * lot or drops it. That is a real cost, stated in
+ * {@link AgentGuardrails.outputGuardrails}: time-to-first-word becomes
+ * time-to-last-token.
+ *
+ * **Filler is exempt, and that is what keeps the cost bearable.** The dead-air
+ * cover sends with `record: false`; it is a timing artifact rather than
+ * dialogue, nothing judges it, and it is precisely what should be audible while
+ * a reply is being held. So the caller hears "let me check on that" during the
+ * hold, exactly as they do during a tool chain.
+ *
+ * ## What it does not prevent
+ *
+ * A guardrail that runs after the model has finished cannot stop the model
+ * spending the tokens, and it cannot stop a TOOL the reply called from having
+ * run. It stops the words. On a blocked turn the tool steps are dropped from
+ * the model's history along with the blocked text, so a later turn may call
+ * those tools again — the alternative is a history in which the agent silently
+ * knows things it never said.
+ */
+
+import type { AgentGuardrail, AgentSessionContext } from "@alexkroman1/aai";
+import { runAgentGuardrails } from "@alexkroman1/aai/host-internal";
+import type { SendTtsOptions, SendTtsText } from "./types.ts";
+
+/** A held-back send, kept whole so the release is byte-identical. @internal */
+type HeldSend = { readonly text: string; readonly options: SendTtsOptions | undefined };
+
+/**
+ * The funnel, with a hold on it.
+ *
+ * A wrapper around `sendTtsText` rather than a flag inside it, because the
+ * transport hands that one function to five collaborators (the stream handler,
+ * the three turn outcomes, the lifecycle's greeting) and every one of them must
+ * be held by the same latch. Wrapping is what makes "every word goes through
+ * one place" true of the HOLD as well as of the send.
+ *
+ * @internal
+ */
+export interface SpeechGate {
+  /** The `sendTtsText` every collaborator is given. */
+  readonly send: SendTtsText;
+  /** Buffer recordable sends from here until `release` or `discard`. */
+  hold(): void;
+  /** Speak everything held, in order, and stop holding. */
+  release(): void;
+  /** Drop everything held unspoken, and stop holding. */
+  discard(): void;
+}
+
+/**
+ * Wrap a send so a turn can hold it.
+ *
+ * With `enabled: false` — every session that declares no output guardrail —
+ * `hold` is a no-op and `send` is the underlying function, so the shipped path
+ * is unchanged rather than merely equivalent.
+ *
+ * @internal
+ */
+export function createSpeechGate(enabled: boolean, send: SendTtsText): SpeechGate {
+  if (!enabled) {
+    const noop = (): void => undefined;
+    return { send, hold: noop, release: noop, discard: noop };
+  }
+  let held: HeldSend[] | undefined;
+  return {
+    send(text: string, options?: SendTtsOptions): void {
+      // Filler passes straight through: it is not the agent's words, nothing
+      // judges it, and it is what covers the silence the hold creates.
+      if (held === undefined || options?.record === false) {
+        send(text, options);
+        return;
+      }
+      held.push({ text, options });
+    },
+    hold(): void {
+      held = [];
+    },
+    release(): void {
+      const pending = held ?? [];
+      held = undefined;
+      for (const item of pending) send(item.text, item.options);
+    },
+    discard(): void {
+      held = undefined;
+    },
+  };
+}
+
+/** How a turn asks its guardrails about one piece of text. @internal */
+export interface TurnGuardrails {
+  /** Does this session hold speech back? False when it declares no output guardrail. */
+  readonly holdsSpeech: boolean;
+  /** The refusal for what the caller said, or `undefined` to proceed. */
+  checkInput(text: string): Promise<string | undefined>;
+  /** The refusal for what the agent is about to say, or `undefined` to speak it. */
+  checkOutput(text: string): Promise<string | undefined>;
+}
+
+/** What a session's guardrails need from the runtime. @internal */
+export interface TurnGuardrailDeps {
+  inputGuardrails?: readonly AgentGuardrail[] | undefined;
+  outputGuardrails?: readonly AgentGuardrail[] | undefined;
+  /** The session a guardrail is judging for — see {@link AgentSessionContext}. */
+  context: AgentSessionContext;
+  /**
+   * A guardrail THREW.
+   *
+   * Reported rather than swallowed, and non-fatally: the text goes through (a
+   * check that cannot decide has not decided), and the one thing worse than a
+   * guardrail that fails open is one that fails open in silence.
+   */
+  onError: (direction: "input" | "output", err: unknown) => void;
+  /** A guardrail refused. The audit record — see the `guardrail.blocked` event. */
+  onBlocked: (direction: "input" | "output", replacement: string) => void;
+}
+
+/**
+ * Bind a session's guardrails once.
+ *
+ * `holdsSpeech` is read at construction rather than per turn because it decides
+ * how the transport's funnel is built, and a session cannot gain a guardrail
+ * mid-call.
+ *
+ * @internal
+ */
+export function createTurnGuardrails(deps: TurnGuardrailDeps): TurnGuardrails {
+  const check = async (
+    direction: "input" | "output",
+    list: readonly AgentGuardrail[] | undefined,
+    text: string,
+  ): Promise<string | undefined> => {
+    const refusal = await runAgentGuardrails(list, text, deps.context, (err) =>
+      deps.onError(direction, err),
+    );
+    if (refusal !== undefined) deps.onBlocked(direction, refusal);
+    return refusal;
+  };
+  return {
+    holdsSpeech: (deps.outputGuardrails?.length ?? 0) > 0,
+    checkInput: (text) => check("input", deps.inputGuardrails, text),
+    checkOutput: (text) => check("output", deps.outputGuardrails, text),
+  };
+}
+
+/** A session with no guardrails at all — the overwhelming majority. @internal */
+export const NO_GUARDRAILS: TurnGuardrails = {
+  holdsSpeech: false,
+  checkInput: () => Promise.resolve(undefined),
+  checkOutput: () => Promise.resolve(undefined),
+};

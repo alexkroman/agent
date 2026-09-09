@@ -60,6 +60,15 @@ describe("attachSessionStream", () => {
     expect(core.restoreHistory).toHaveBeenCalledWith(
       [
         { role: "user", content: "where is order 4471" },
+        // The result a later tool reads through `ctx.messages` — the same
+        // history a live session gives it. Filtered off before the restore
+        // reaches the CLIENT, which renders the tool row from the join below.
+        {
+          role: "tool",
+          content: '{"eta":"tue"}',
+          toolName: "lookup_order",
+          toolCallId: "c1",
+        },
         { role: "assistant", content: "Tuesday." },
       ],
       [

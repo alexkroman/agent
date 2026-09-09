@@ -1,6 +1,11 @@
 {
   "@alexkroman1/aai": [
     "ASSEMBLYAI_TTS_VOICES",
+    "AgentGuardrails",
+    "AgentInstructions",
+    "AgentModelTuning",
+    "AgentObservation",
+    "AgentSystemPrompt",
     "AssemblyAIGatewayModel",
     "AssemblyAIS2sOptions",
     "AssemblyAITtsVoice",
@@ -22,6 +27,7 @@
     "StepSchemaOptions",
     "SttProvider",
     "TtsProvider",
+    "UsageLimits",
     "WaitForOptions",
     "WaitForSchemaOptions",
     "errorDetail",
@@ -47,6 +53,7 @@
     "STUB_LLM_API_KEY_ENV",
     "STUB_SPEECH_API_KEY_ENV",
     "StepFetch",
+    "StepUsage",
     "StubLlm",
     "StubScript",
     "StubSpeechProviders",

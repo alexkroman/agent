@@ -28,6 +28,30 @@ export type ScriptedPart =
   | { type: "error"; error: unknown };
 
 /**
+ * Usage as the CURRENT provider spec declares it — `{ inputTokens: { total } }`,
+ * not the flat `{ inputTokens: number }` these fakes reported for as long as
+ * nothing read it.
+ *
+ * That flat shape is the v2 spelling, and `LanguageModelV3Usage` nests both
+ * halves. The SDK reads `usage.inputTokens.total`, so a flat number resolved
+ * `undefined` at every reader and every fake in this file reported NO TOKENS —
+ * silently, because the only thing downstream of it was a meter whose specs
+ * asserted `steps > 0`. It is the same fidelity bug the `finishReason` pair
+ * above carries, one field over: a fake that cannot express a token count is
+ * one no budget test can be written against, which is exactly the hole
+ * `ctx.generate` and `ctx.delegate` shipped through.
+ */
+type FakeUsage = {
+  inputTokens: { total: number };
+  outputTokens: { total: number };
+};
+
+/** The nested pair, from the two numbers a script wants to state. */
+function fakeUsage(inputTokens: number, outputTokens: number): FakeUsage {
+  return { inputTokens: { total: inputTokens }, outputTokens: { total: outputTokens } };
+}
+
+/**
  * Shape of the single stream part yielded by an LLM provider's `doStream()`.
  * This is a loose local definition — the real type lives in `@ai-sdk/provider`
  * as `LanguageModelV3StreamPart`, but we don't want a direct dependency on
@@ -44,7 +68,7 @@ type StreamPart =
   | { type: "error"; error: unknown }
   | {
       type: "finish";
-      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      usage: FakeUsage;
       /**
        * The `{ unified, raw }` PAIR the v3 provider spec declares
        * (`LanguageModelV3FinishReason`), never the bare v2 string — see
@@ -116,7 +140,7 @@ async function streamScript(
     else if (script.some((p) => p.type === "tool-call")) finishReason = "tool-calls";
     controller.enqueue({
       type: "finish",
-      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      usage: fakeUsage(0, 0),
       // `{ unified, raw }`, not the bare string — the SAME fidelity bug
       // `doGenerate` below already carries a note about, on the OTHER entry
       // point, and the half a `string` type let through. `streamText` reads
@@ -200,7 +224,9 @@ export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): Fak
           unified: "text" in turn ? ("stop" as const) : ("tool-calls" as const),
           raw: undefined,
         },
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        // Two tokens a call, and they really arrive now: a spec over a token
+        // budget needs a fake that spends.
+        usage: fakeUsage(1, 1),
         warnings: [],
       };
     },
@@ -259,7 +285,7 @@ export function createFakeLanguageModel(
     async doGenerate(opts: Record<string, unknown> & { abortSignal?: AbortSignal }): Promise<{
       content: GeneratedContent[];
       finishReason: { unified: string; raw: string };
-      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      usage: FakeUsage;
       warnings: never[];
     }> {
       calls.push(opts);
@@ -292,7 +318,7 @@ export function createFakeLanguageModel(
         // calls, so this was the difference between a scripted run covering them
         // and not.
         finishReason: { unified: finishReason, raw: finishReason },
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        usage: fakeUsage(0, 0),
         warnings: [],
       };
     },

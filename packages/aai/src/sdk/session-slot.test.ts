@@ -422,6 +422,22 @@ describe("sessionSlot", () => {
       expect(await ping.execute({}, ctx)).toBe("sent");
       expect(ctx.sent).toEqual([{ event: "ping", data: { ok: true } }]);
     });
+
+    test("forwards onError, so a slot-backed tool can call a failure fatal", () => {
+      // A stateful agent's tools are the ones written with `slot.tool`, so a
+      // classification the builder dropped would leave `ToolDef.onError`
+      // unreachable from most real agents. It rides the same `...rest` spread
+      // `description` does — the assertion is that nothing eats it.
+      const boom = new Error("MISSING_WEBHOOK_URL");
+      const send = cartSlot.tool({
+        description: "Send",
+        execute: () => "ok",
+        onError: (err) => {
+          throw err;
+        },
+      });
+      expect(() => send.onError?.(boom, createToolContext())).toThrow(boom);
+    });
   });
 
   describe("updateTool", () => {

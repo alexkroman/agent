@@ -26,6 +26,7 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { generateText, jsonSchema, type LanguageModel, Output } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
+import type { StepUsage } from "./usage-meter.ts";
 
 /**
  * The host-side `ctx.generate` implementation — takes `GenerateOptions` and
@@ -41,7 +42,24 @@ import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
  */
 export type HostGenerateFn = (
   options: GenerateOptions,
-  callOptions?: { signal?: AbortSignal | undefined },
+  callOptions?: {
+    signal?: AbortSignal | undefined;
+    /**
+     * Fold this call's reported usage into the issuing session's meter.
+     *
+     * A `ctx.generate` from a tool body is a real model request on the
+     * session's bill, and until this existed it was invisible to both
+     * `usage.updated` and `usageLimits` — a planner that reasons in a tool
+     * spent most of what it spent here. Passed per CALL rather than built into
+     * the function because the meter is per SESSION and this function is per
+     * runtime; the tool executor is what knows which session is asking.
+     *
+     * Called once per completed step (there is one, unless a future option
+     * makes this a loop), with what the provider reported — see
+     * `usage-meter.ts`.
+     */
+    onUsage?: ((usage: StepUsage) => void) | undefined;
+  },
 ) => Promise<GenerateResult>;
 
 /**
@@ -226,9 +244,16 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
 
   return async (options, callOptions): Promise<GenerateResult> => {
     const model = resolveModel(options.llm ? normalizeLlm(options.llm) : opts.llm);
+    const onUsage = callOptions?.onUsage;
     const common = {
       model,
       prompt: options.prompt,
+      // The SAME hook the conversational loop reports through, so a tool's
+      // generation and a turn's step arrive at the meter as the same kind of
+      // fact — the provider's own numbers for one completed request.
+      ...omitUndefined({
+        onStepFinish: onUsage && ((step: { usage: StepUsage }) => onUsage(step.usage)),
+      }),
       ...omitUndefined({
         system: options.system,
         temperature: options.temperature,

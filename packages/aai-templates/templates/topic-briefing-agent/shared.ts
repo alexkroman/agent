@@ -27,9 +27,9 @@
  *   a roster can express.
  * - `explainer` and `counterpoint` are on the ROSTER (`agent({ subagents })`),
  *   because choosing between them IS reading what the caller asked: "what does
- *   curtailment mean" and "who says otherwise" want different specialists and
+ *   curtailment mean" and "who says otherwise" want different subagents and
  *   nothing else about them differs. They reach the model as one `delegate`
- *   tool whose `coworker` argument is the two names, described by their own
+ *   tool whose `subagent` argument is the two names, described by their own
  *   {@link SubagentDef.description}s.
  *
  * The rule that follows: **name a subagent in code when the tool IS the choice;
@@ -56,18 +56,18 @@ import { type AssemblyAIGatewayModel, assemblyAILlm } from "@alexkroman1/aai/llm
 import { z } from "zod";
 
 /**
- * The model the three NARROW specialists share.
+ * The model the three NARROW subagents share.
  *
  * Named once because it is a fact about the DESK — checking one sentence,
  * defining one word and finding one objection are not the job `researcher`
  * does, so all three run somewhere cheaper — and each subagent still declares
- * its own `llm`, because which model a specialist runs on is part of what
- * declaring a specialist means.
+ * its own `llm`, because which model a subagent runs on is part of what
+ * declaring a subagent means.
  *
  * Annotated as {@link AssemblyAIGatewayModel} rather than left as three string
  * literals: `AssemblyAILlmOptions.model` widens to `string` so the gateway
  * accepts a name it has never heard of, and a typo in one of three copies is a
- * refusal from ONE specialist while the other two answer — the hardest shape of
+ * refusal from ONE subagent while the other two answer — the hardest shape of
  * failure to notice on a live call. Here it is a compile error.
  */
 export const CHEAP_MODEL: AssemblyAIGatewayModel = "gemini-2.5-flash-lite";
@@ -171,7 +171,7 @@ export const factChecker: TypedSubagentDef<Verdict> = subagent({
 });
 
 /**
- * The ROSTER's first specialist: what a word means.
+ * The ROSTER's first subagent: what a word means.
  *
  * No tools at all, which is legal and is the point — a definition is a
  * reasoning pass, and giving this one a search would let it wander off into
@@ -203,7 +203,7 @@ export const explainer = subagent({
  * Searches, like the fact-checker, and is told to do a different job with the
  * results — which is exactly the case a roster is for. Nothing about
  * `counterpoint` differs from `explainer` except what the caller wanted, so a
- * tool file per specialist would be two bodies differing in one identifier.
+ * tool file per subagent would be two bodies differing in one identifier.
  */
 export const counterpoint = subagent({
   name: "counterpoint",
@@ -223,13 +223,13 @@ export const counterpoint = subagent({
 });
 
 /**
- * The roster `agent({ subagents })` publishes — the specialists the MODEL picks
+ * The roster `agent({ subagents })` publishes — the subagents the MODEL picks
  * between.
  *
  * Declared here rather than inline in `agent.ts` so that membership sits beside
  * the definitions, which is where the question "should this one be routable?"
  * gets answered. `researcher` and `factChecker` are deliberately absent: each is
- * reached by a tool that does real work around the delegation, and a specialist
+ * reached by a tool that does real work around the delegation, and a subagent
  * reachable both ways gives the model a second, worse route to it.
  */
 export const roster: SubagentRoster = [explainer, counterpoint];

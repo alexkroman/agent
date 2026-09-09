@@ -2,7 +2,7 @@
 /**
  * Unit tests for `agent({ subagents })` — that a declared roster becomes an
  * ordinary tool the model routes with, that the routing information really
- * reaches the model (the enum AND each specialist's description), and the three
+ * reaches the model (the enum AND each subagent's description), and the three
  * refusals, each of which stands in for a roster that would route badly with
  * nothing reporting it.
  */
@@ -60,31 +60,31 @@ describe("agent({ subagents })", () => {
     expect(agent({ name: "Plain" }).tools).toEqual({});
   });
 
-  it("tells the model what each specialist is FOR, not just its name", () => {
+  it("tells the model what each subagent is FOR, not just its name", () => {
     expect(delegateTool().description).toContain("- billing: Answers billing, invoice and refund");
     expect(delegateTool().description).toContain(
       "- tech: Diagnoses connection and hardware faults",
     );
   });
 
-  it("makes the coworker argument an enum over the roster", () => {
+  it("makes the subagent argument an enum over the roster", () => {
     const schema = toToolJsonSchema(delegateTool().inputSchema);
-    const coworker = (schema.properties as Record<string, { enum?: string[] }>).coworker;
-    expect(coworker?.enum).toEqual(["billing", "tech"]);
-    expect(schema.required).toEqual(["coworker", "task"]);
+    const chosen = (schema.properties as Record<string, { enum?: string[] }>).subagent;
+    expect(chosen?.enum).toEqual(["billing", "tech"]);
+    expect(schema.required).toEqual(["subagent", "task"]);
   });
 
-  it("routes the task to the specialist the model named", async () => {
+  it("routes the task to the subagent the model named", async () => {
     const model = stubDelegate({ billing: "Refunded on the 3rd.", tech: "Reboot the modem." });
     const ctx = createToolContext({ delegate: model.delegate });
 
     const result = await delegateTool().execute(
-      { coworker: "billing", task: "Was invoice 41 refunded?", context: "Account 900." },
+      { subagent: "billing", task: "Was invoice 41 refunded?", context: "Account 900." },
       ctx,
     );
 
-    expect(result).toEqual({ coworker: "billing", answer: "Refunded on the 3rd.", lookups: 0 });
-    // The whole brief goes to the specialist, which has heard none of the call.
+    expect(result).toEqual({ subagent: "billing", answer: "Refunded on the 3rd.", lookups: 0 });
+    // The whole brief goes to the subagent, which has heard none of the call.
     expect(model.calls).toHaveLength(1);
     expect(model.calls[0]?.subagent.name).toBe("billing");
     expect(model.calls[0]?.task).toBe("Was invoice 41 refunded?");
@@ -97,20 +97,20 @@ describe("agent({ subagents })", () => {
     });
 
     const result = await delegateTool().execute(
-      { coworker: "tech", task: "No sync light." },
+      { subagent: "tech", task: "No sync light." },
       createToolContext({ delegate: model.delegate }),
     );
 
     expect(result).toMatchObject({ lookups: 1 });
   });
 
-  it("surfaces an answer the specialist's own guardrail never accepted", async () => {
+  it("surfaces an answer the subagent's own guardrail never accepted", async () => {
     const model = stubDelegate({
       tech: { text: "Try turning it off.", complaint: "No diagnostic step was run." },
     });
 
     const result = await delegateTool().execute(
-      { coworker: "tech", task: "No sync light." },
+      { subagent: "tech", task: "No sync light." },
       createToolContext({ delegate: model.delegate }),
     );
 
@@ -121,19 +121,19 @@ describe("agent({ subagents })", () => {
     });
   });
 
-  it("refuses a coworker the roster does not hold, naming the ones it does", async () => {
+  it("refuses a subagent the roster does not hold, naming the ones it does", async () => {
     const model = stubDelegate({ billing: "x" });
 
     // The enum makes this unreachable through a well-behaved provider; a
     // repaired or salvaged tool call is not one.
     const result = await delegateTool().execute(
-      { coworker: "shipping", task: "Where is it?" },
+      { subagent: "shipping", task: "Where is it?" },
       createToolContext({ delegate: model.delegate }),
     );
 
     expect(isToolFailure(result)).toBe(true);
     expect((result as { error: string }).error).toBe(
-      'There is no specialist called "shipping". Available: billing, tech.',
+      'There is no subagent called "shipping". Available: billing, tech.',
     );
     expect(model.calls).toEqual([]);
   });
@@ -147,7 +147,7 @@ describe("agent({ subagents }) refusals", () => {
     );
   });
 
-  it("refuses two specialists with one name", () => {
+  it("refuses two subagents with one name", () => {
     expect(() => agent({ name: "Desk", subagents: [billing, { ...billing }] })).toThrow(
       /Two subagents on this agent's roster are called "billing"/,
     );

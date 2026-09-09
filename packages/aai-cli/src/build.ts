@@ -15,6 +15,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
@@ -122,7 +123,15 @@ const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_P
  * have imported the file and composed it, which is neither "the file" nor
  * "agent.ts" alone.
  */
-async function systemPromptSource(cwd: string, resolved: string): Promise<string> {
+async function systemPromptSource(
+  cwd: string,
+  resolved: AgentDef["systemPrompt"],
+): Promise<string> {
+  // A RESOLVER has no source to name and no file it could be composing: it is
+  // computed per request from the session. Reported as itself rather than
+  // guessed at — this line exists to surface a swap, and "agent.ts" would read
+  // as a static prompt that happens to live there.
+  if (typeof resolved !== "string") return "agent.ts (a per-request resolver)";
   if (resolved === DEFAULT_SYSTEM_PROMPT) return FRAMEWORK_DEFAULT_PROMPT_SOURCE;
   const file = await fs
     .readFile(path.join(cwd, SYSTEM_PROMPT_FILE), "utf-8")

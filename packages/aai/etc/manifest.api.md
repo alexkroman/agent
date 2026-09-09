@@ -15,11 +15,18 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 export const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
     temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -88,7 +95,9 @@ export const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+    systemPrompt?: AgentSystemPrompt;
+} & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
@@ -101,10 +110,10 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
     builtinTools?: readonly BuiltinTool[];
+    description?: string;
     dialogs?: readonly AnyDialog[];
-    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -119,16 +128,51 @@ interface AgentDef extends PipelineVoiceTuning {
     stt?: SttProvider;
     sttPrompt?: string;
     subagents?: SubagentRoster;
-    syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: AgentSystemPrompt;
     telephony?: TelephonyAccess;
-    temperature?: number;
     text?: true;
     toolChoice?: ToolChoice;
     tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
+
+// @public
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface AgentGuardrails {
+    inputGuardrails?: readonly AgentGuardrail[];
+    outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+interface AgentModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    resetToolChoice?: boolean;
+    temperature?: number;
+    usageLimits?: UsageLimits;
+}
+
+// @public
+interface AgentObservation {
+    events?: SessionEventHandlers;
+    syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+type AgentSystemPrompt = string | AgentInstructions;
 
 // @public (undocumented)
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[];
@@ -215,6 +259,7 @@ interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
+    onError?: ToolErrorHandler;
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
@@ -273,7 +318,7 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -303,6 +348,8 @@ type McpServers = Readonly<Record<string, McpServerConfig>>;
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -516,6 +563,27 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     state: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -703,7 +771,11 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
 type ToolFailure = {
@@ -752,6 +824,11 @@ interface TypedDelegateResult<T> extends DelegateResult {
 interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+interface UsageLimits {
+    totalTokens?: number;
 }
 
 // @public

@@ -434,7 +434,10 @@ export function dialog(
       return {
         // Spread rather than restating `inputSchema`, for the reason
         // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
-        // its optionality against a still-generic `P`.
+        // its optionality against a still-generic `P`. `onError` rides it too,
+        // which is what makes a gated tool classifiable like any other — see
+        // `DialogToolDef.onError` for what a handled throw does NOT do (carry
+        // the envelope, move the dialog).
         ...rest,
         // ASYNC, and it has to be: a voice tool routinely awaits a model call or
         // an HTTP request, and the failure check and the transition both read

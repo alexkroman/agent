@@ -1,0 +1,22 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "subagent",
+  "epoch": 2,
+  "sha256": "de6b4b1c1c884b0be84ae1f129100cc4dd529f9d095e41821d9dead80db990dc",
+  "exports": [
+    "DEFAULT_GUARDRAIL_MAX_RETRIES",
+    "DELEGATE_TOOL_NAME",
+    "DelegateFn",
+    "DelegateOptions",
+    "DelegateResult",
+    "GuardrailVerdict",
+    "SubagentAnswer",
+    "SubagentDef",
+    "SubagentGuardrail",
+    "SubagentRoster",
+    "SubagentToolCall",
+    "TypedDelegateResult",
+    "TypedSubagentDef",
+    "subagent"
+  ]
+}

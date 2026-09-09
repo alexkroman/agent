@@ -92,3 +92,16 @@ describe("pipeline defaults", () => {
     expect(DEFAULT_INTERRUPTION_MIN_DURATION_MS).toBeLessThanOrEqual(1000);
   });
 });
+
+describe("resetToolChoice defaults ON", () => {
+  test("unset resolves to true — the same default OpenAI's Agents SDK ships", () => {
+    // Opt-OUT because the behaviour it removes (a `"required"` re-applied to
+    // every step, burning the whole `maxSteps` budget) is one almost nobody
+    // wants and nothing reports.
+    expect(resolveBare().resetToolChoice).toBe(true);
+  });
+
+  test("`false` survives — the opt-out has to be reachable", () => {
+    expect(resolveBare({ resetToolChoice: false }).resetToolChoice).toBe(false);
+  });
+});

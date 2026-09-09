@@ -5,6 +5,7 @@ import {
   type ToolFailure,
 } from "@alexkroman1/aai";
 import {
+  createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
   toolInputIssues,
@@ -295,5 +296,58 @@ describe("fda.ts helpers", () => {
     expect(excerpt.startsWith("…")).toBe(true);
     expect(excerpt.endsWith("…")).toBe(true);
     expect(excerptAround("warfarin", "warfarin")).toBe("warfarin");
+  });
+});
+
+/**
+ * The output guardrail, driven the way the runtime drives it.
+ *
+ * It is a plain function of the reply text, so a spec can run it with no model,
+ * no session and no network — which is most of the reason to write this rule as
+ * a declaration rather than as another line in `system-prompt.md`. A prompt rule
+ * can only be tested by asking a model and hoping; this one has an answer.
+ *
+ * `createToolContext()` stands in for the `AgentSessionContext` the runtime
+ * passes second. This check reads only the text, but a guardrail that counted
+ * strikes in `ctx.slots` would be driven exactly the same way.
+ *
+ * Asserted on the DEF and not on `expectDeployable`'s config: a guardrail is a
+ * function, so nothing about it goes on the wire.
+ */
+describe("the dose guardrail", () => {
+  const judge = async (text: string) => {
+    const [check] = agentDef.outputGuardrails ?? [];
+    // Not a fallback to `true`: a spec whose subject is that a check EXISTS has
+    // to fail when it has gone, rather than pass by default.
+    if (!check) throw new Error("Dr. Sage declares no output guardrail.");
+    return await check(text, createToolContext());
+  };
+
+  test("a reply carrying a dose is never spoken — the caller hears the refusal instead", async () => {
+    // A string verdict IS what is said, in place of the reply; there is no
+    // rewrite and no second turn. So the claim is about the sentence a caller
+    // hears, not about a flag.
+    expect(await judge("Take 200 mg of ibuprofen every six hours.")).toContain("pharmacist");
+  });
+
+  test("an answer with no amount in it passes through untouched", async () => {
+    expect(await judge("Ibuprofen can upset your stomach — take it with food.")).toBe(true);
+  });
+
+  test("a label QUOTE is refused too, which is the over-block this agent accepts", async () => {
+    // `medication_lookup` hands back label text verbatim and label text is full
+    // of "200 mg tablets", so this is not a corner case — it is the common one.
+    // Over-blocking is the safe direction here: the caller is told to ask a
+    // pharmacist, which is the answer the brief wanted anyway.
+    expect(await judge("The label says it comes in 200 mg tablets.")).toContain("pharmacist");
+  });
+
+  test("every unit an openFDA label writes doses in is covered", async () => {
+    // The pattern is not a dose parser and does not try to be. What it owes is
+    // the units that actually appear on a label — a gap here is a dose spoken
+    // out loud, which is the one thing this agent must not do.
+    const doses = ["500mg", "1.5 mL", "50 mcg", "2 g", "400 IU", "10 units"];
+    const verdicts = await Promise.all(doses.map((dose) => judge(`Take ${dose}.`)));
+    expect(verdicts.map((verdict) => verdict === true)).toEqual(doses.map(() => false));
   });
 });

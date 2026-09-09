@@ -147,6 +147,8 @@ export const audit: WorkflowDef<typeof auditInput, CallAudit> = workflow({
 
 export default workflowApp({
   name: "Call Audit",
+  description:
+    "Turns a recorded call into a written and spoken audit — headline, risks and follow-up actions",
   workflows: { audit },
   // Checked at deploy time, so a missing key is a warning naming it rather than a run
   // that fails on its third step. A workflow app declares no providers, so this is the

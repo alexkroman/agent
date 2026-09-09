@@ -17,7 +17,17 @@ import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
-import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
+import type {
+  AgentDef,
+  AgentGuardrail,
+  AgentInstructions,
+  AgentSessionContext,
+  GuardrailVerdict,
+  InferToolInput,
+  InferToolOutput,
+  ToolContext,
+  ToolDef,
+} from "./types.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -562,4 +572,99 @@ test("telephony is declarable on a voice agent and refused where there is no cal
   expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().not.toExtend<AgentParams>();
   // A text agent has no audio path, so a phone call has nothing to reach.
   expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
+});
+
+/**
+ * The five model-tuning knobs, both guardrails and the `description` are on
+ * every SESSION arm and on none of the workflow app.
+ *
+ * They are refused at CONFIG time rather than by the type on the s2s and text
+ * arms — the same treatment `temperature` has always had, and for the reason
+ * `StaticAgentParamsCore` records: a message on one arm of this union is a
+ * message in every diagnostic tsc prints, including a plain voice agent's
+ * one-character mistake. What the TYPE settles is that they are declarable at
+ * all, and that a workflow app (which runs no model and speaks nothing) cannot.
+ */
+test("the model-tuning knobs and the guardrails are session-arm fields", () => {
+  expectTypeOf<{
+    name: string;
+    description: string;
+    temperature: number;
+    maxOutputTokens: number;
+    maxRetries: number;
+    resetToolChoice: boolean;
+    usageLimits: { totalTokens: number };
+  }>().toExtend<AgentParams>();
+
+  expectTypeOf<{
+    name: string;
+    inputGuardrails: readonly AgentGuardrail[];
+    outputGuardrails: readonly AgentGuardrail[];
+  }>().toExtend<AgentParams>();
+
+  // A text agent declares them too — none of these is voice-specific, and the
+  // one rule they share is about who assembles the request.
+  expectTypeOf<{ name: string; text: true; maxOutputTokens: number }>().toExtend<AgentParams>();
+
+  // A workflow app runs no model and opens no session, so all seven are the
+  // same silent no-op the rest of `WorkflowAppOnlyField` is.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: NonNullable<AgentDef["workflows"]>;
+    maxOutputTokens: number;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: NonNullable<AgentDef["workflows"]>;
+    outputGuardrails: readonly AgentGuardrail[];
+  }>().not.toExtend<AgentParams>();
+
+  // `description` is deliberately NOT refused there: a listing wants one
+  // whatever the front door is.
+  expectTypeOf<{
+    name: string;
+    page: "static";
+    workflows: NonNullable<AgentDef["workflows"]>;
+    description: string;
+  }>().toExtend<AgentParams>();
+});
+
+/**
+ * `systemPrompt` takes a RESOLVER as well as a string, and the resolver is
+ * handed the session rather than nothing.
+ *
+ * A nullary thunk was already supported inside the runtime and could vary the
+ * prompt by wall clock and by nothing else — so it could not read a slot, which
+ * is most of the reason to want one.
+ */
+test("systemPrompt accepts a per-request resolver", () => {
+  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    systemPrompt: (ctx: AgentSessionContext) => string;
+  }>().toExtend<AgentParams>();
+
+  // What the resolver is handed, and what it owes back.
+  expectTypeOf<AgentInstructions>().parameter(0).toEqualTypeOf<AgentSessionContext>();
+  expectTypeOf<AgentInstructions>().returns.toBeString();
+
+  // An ASYNC resolver is refused: the request is being assembled, and there is
+  // nowhere to await that does not put a round trip in front of every turn.
+  expectTypeOf<{
+    name: string;
+    systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
+  }>().not.toExtend<AgentParams>();
+});
+
+/** A guardrail's verdict vocabulary is the subagent's, deliberately. */
+test("an agent guardrail answers a GuardrailVerdict", () => {
+  expectTypeOf<(text: string, ctx: AgentSessionContext) => true>().toExtend<AgentGuardrail>();
+  expectTypeOf<(text: string, ctx: AgentSessionContext) => string>().toExtend<AgentGuardrail>();
+  expectTypeOf<
+    (text: string, ctx: AgentSessionContext) => Promise<GuardrailVerdict>
+  >().toExtend<AgentGuardrail>();
+  // A verdict that is neither an acceptance nor a reason is not a verdict.
+  expectTypeOf<(text: string, ctx: AgentSessionContext) => false>().not.toExtend<AgentGuardrail>();
 });

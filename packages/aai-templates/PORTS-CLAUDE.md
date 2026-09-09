@@ -148,7 +148,7 @@ them apart. Four things are decisions:
   `draft_reply` reads the rewritten tone prompt.
 - **`find_meeting_time` is a ReAct agent over one calendar tool, so it is a
   `subagent`**, and its tool lives in `meeting.ts` rather than `tools/`: the
-  executive's own model cannot read the calendar except through the specialist,
+  executive's own model cannot read the calendar except through the subagent,
   which is their node's isolation kept by construction.
 - **`NewEmailDraft` is in their tool list and routed by nothing** — `take_action`
   sends it to `bad_tool_name`. `new_email` here is the arm their prompt

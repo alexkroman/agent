@@ -79,6 +79,10 @@ import { recap } from "./shared.ts";
 
 export default agent({
   name: "Recap Desk",
+  // The desk's job, for a registry page or the studio's picker. Not the same
+  // sentence as `recap`'s own `description` in `shared.ts`: that one describes a
+  // RUN and is read by whoever is choosing a workflow to start.
+  description: "Transcribes meeting recordings and reads the write-up back when it lands",
   greeting: "Recap desk. Want me to write up a recording?",
   systemPrompt: [
     "You take recordings over the phone, hand them to a transcription run, and read back recaps.",

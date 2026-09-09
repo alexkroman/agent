@@ -26,7 +26,7 @@ import { roster } from "./shared.ts";
  * is for the case where the choice is the caller's — "what does curtailment
  * mean" wants the explainer and "who says otherwise" wants the counterpoint,
  * and nothing but the question tells them apart. It reaches the model as one
- * `delegate` tool listing both, so a third specialist is a line here rather
+ * `delegate` tool listing both, so a third subagent is a line here rather
  * than a fourth file in `tools/` whose body is one `ctx.delegate` call.
  *
  * Compare `web-research-agent`, which gives the search builtins to the agent
@@ -35,6 +35,9 @@ import { roster } from "./shared.ts";
  */
 export default agent({
   name: "Briefing Desk",
+  // The listing line — a registry row, the studio's picker. "At once" is the
+  // part worth a reader's attention: it is what the subagents below buy.
+  description: "Researches a subject from several angles at once and reads back what was found",
   greeting:
     "Briefing desk. Tell me a subject and I'll put a few researchers on it — " +
     "try something like, what's going on with home battery prices.",

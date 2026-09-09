@@ -5,6 +5,7 @@
 // pipeline-turn-persistence.test.ts; lifecycle/config/error specs in
 // pipeline-transport.test.ts.
 
+import type { Message } from "@alexkroman1/aai";
 import { DEAD_AIR_OPENING_PHRASE } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
@@ -463,5 +464,185 @@ describe("PipelineTransport — the system prompt is read per turn", () => {
     });
     expect(systemOf(llmCalls(opts).calls[0] ?? {})).toBe("Be terse.");
     await t.stop();
+  });
+});
+
+describe("PipelineTransport — a tool reads what an earlier tool answered", () => {
+  /** A recorded `doStream` call's prompt messages. */
+  function messagesOf(call: { prompt?: unknown }): unknown[] {
+    const prompt = call.prompt;
+    if (!Array.isArray(prompt)) throw new Error("no prompt array on the recorded call");
+    return prompt;
+  }
+
+  test("the SECOND tool call of a turn sees the first call's result in ctx.messages", async () => {
+    // The capability `Message`'s `"tool"` arm exists for, and the one nothing
+    // produced: a tool chain's later steps could see the user's words and the
+    // agent's, and not one thing any tool had returned. The step's own
+    // assistant/`tool` message pair only reaches the LLM view when the step
+    // ENDS, so waiting for it means the next call in the same reply still reads
+    // a history with a hole in it.
+    const seen: (readonly Message[])[] = [];
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [{ type: "tool-call", toolCallId: "tc-2", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "Tuesday." }],
+        ],
+      }),
+      executeTool: async (_name, _args, _sid, messages) => {
+        seen.push(messages ?? []);
+        return `{"eta":"tue","call":${seen.length}}`;
+      },
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("where is my order");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+    });
+
+    expect(seen).toHaveLength(2);
+    // The first call has only the caller's turn — a tool never reads its own
+    // result back.
+    expect(seen[0]).toEqual([{ role: "user", content: "where is my order" }]);
+    expect(seen[1]).toEqual([
+      { role: "user", content: "where is my order" },
+      {
+        role: "tool",
+        content: '{"eta":"tue","call":1}',
+        toolName: "lookup",
+        toolCallId: "tc-1",
+      },
+    ]);
+    await t.stop();
+  });
+
+  test("the result survives into the NEXT turn, and never reaches the model twice", async () => {
+    // The LLM view already carries the step's own `tool` message; a second copy
+    // seeded from the conversation view would be an orphan result — the shape
+    // both providers reject outright (`capLlm`).
+    const seen: (readonly Message[])[] = [];
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "Tuesday." }],
+          [{ type: "tool-call", toolCallId: "tc-2", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "Still Tuesday." }],
+        ],
+      }),
+      executeTool: async (_name, _args, _sid, messages) => {
+        seen.push(messages ?? []);
+        return "eta=tue";
+      },
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("where is my order");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(1);
+    });
+    stt.last()?.fireFinal("are you sure");
+    await vi.waitFor(() => {
+      expect(seen).toHaveLength(2);
+    });
+
+    expect(seen[1]).toEqual([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: "eta=tue", toolName: "lookup", toolCallId: "tc-1" },
+      { role: "assistant", content: "Tuesday." },
+      { role: "user", content: "are you sure" },
+    ]);
+    await t.stop();
+  });
+
+  test("a resumed conversation gives a tool the same history a live one does", async () => {
+    // `seedHistory` is what a reconnect hands the transport, rebuilt from the
+    // session's own event log (`session-event-history.ts`). Its `tool` messages
+    // reach `ctx.messages` and NOT the LLM view.
+    const seen: (readonly Message[])[] = [];
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "tc-9", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "Still Tuesday." }],
+        ],
+      }),
+      executeTool: async (_name, _args, _sid, messages) => {
+        seen.push(messages ?? []);
+        return "eta=tue";
+      },
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.seedHistory?.([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: "eta=tue", toolName: "lookup", toolCallId: "tc-1" },
+      { role: "assistant", content: "Tuesday." },
+    ]);
+    stt.last()?.fireFinal("are you sure");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+    });
+
+    expect(seen[0]).toEqual([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: "eta=tue", toolName: "lookup", toolCallId: "tc-1" },
+      { role: "assistant", content: "Tuesday." },
+      { role: "user", content: "are you sure" },
+    ]);
+    // And the model's own context is untouched by it. A seeded result has no
+    // assistant `tool-call` message to answer, so it may not enter the LLM view
+    // as a `tool` message (both providers reject an orphan outright) NOR be
+    // mapped to an assistant one, which would tell the model it had SAID the
+    // tool's serialized output. The check is on the CONTENT for that second
+    // reason: a role check alone passes for the mapping that is wrong.
+    expect(JSON.stringify(messagesOf(llmCalls(opts).calls[0] ?? {}))).not.toContain("eta=tue");
+    await t.stop();
+  });
+});
+
+describe("PipelineTransport — the model-tuning knobs reach the request", () => {
+  /** Run one turn and hand back what the provider was called with. */
+  async function oneTurn(
+    overrides: Parameters<typeof makeOpts>[0],
+  ): Promise<Record<string, unknown>> {
+    const { opts, stt } = makeOpts(overrides);
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("hello");
+    // A poll rather than an assertion: this helper runs outside a `test()`
+    // body, where Biome refuses `expect`.
+    await vi.waitFor(() => {
+      if (llmCalls(opts).calls.length === 0) throw new Error("no LLM call yet");
+    });
+    const call = llmCalls(opts).calls[0] ?? {};
+    await t.stop();
+    return call;
+  }
+
+  test("maxOutputTokens reaches the provider call", async () => {
+    expect(await oneTurn({ maxOutputTokens: 256 })).toMatchObject({ maxOutputTokens: 256 });
+  });
+
+  test("unset, the provider is asked for no cap at all", async () => {
+    // Forwarded by PRESENCE, like `temperature`: `streamText` normalizes an
+    // absent key to `undefined` on the way to the provider, and an agent that
+    // set nothing must not end up sending a number somebody guessed.
+    expect(await oneTurn({})).toMatchObject({ maxOutputTokens: undefined });
+  });
+
+  test("maxRetries is accepted at this layer", async () => {
+    // It is the AI SDK's own retry WRAPPER rather than a provider parameter, so
+    // it is not visible in the recorded call — what this pins is that passing
+    // it does not break the request. Its scope rule is covered where it can be:
+    // `config-rules-scope.test.ts` refuses it in s2s and keeps `0` from being
+    // swallowed by a default.
+    expect(await oneTurn({ maxRetries: 0 })).toMatchObject({ maxOutputTokens: undefined });
   });
 });

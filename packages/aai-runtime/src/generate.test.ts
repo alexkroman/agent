@@ -46,7 +46,10 @@ function fakeOneShotModel(reply: (opts: { prompt: unknown }) => string): Languag
       return {
         content: [{ type: "text", text: reply(opts as { prompt: unknown }) }],
         finishReason: { unified: "stop" as const, raw: undefined },
-        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        // The NESTED pair the current provider spec declares — a flat
+        // `{ inputTokens: 1 }` is the v2 spelling and reads as no tokens at
+        // all, which is what let a usage-reporting bug hide (see `_fake-llm.ts`).
+        usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 } },
         warnings: [],
       };
     },

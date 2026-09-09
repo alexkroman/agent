@@ -87,6 +87,11 @@ export const digest = workflow({
 
 export default workflowApp({
   name: "Link Digest",
+  // TWO descriptions, two readers, and they are deliberately not one sentence.
+  // This one says what the APP is, for a registry page or the studio's picker.
+  // The one on `digest` above says what a RUN does and is served as JSON Schema
+  // on `GET /workflows`, which is what lets a page render a form for it.
+  description: "Turns a pasted link into a headline and three points",
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { digest },
   // Checked at deploy time. A workflow app declares no providers, so this is the

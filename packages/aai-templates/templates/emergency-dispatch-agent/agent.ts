@@ -1,9 +1,11 @@
 import { agent } from "@alexkroman1/aai";
 import { DISPATCH_EVENTS } from "./events.ts";
+import { DISPATCH_GUARDRAILS } from "./guardrails.ts";
 import { callFlow, dashboardProjection } from "./shared.ts";
 
 export default agent({
   name: "Dispatch Command Center",
+  description: "Runs a 911 dispatch shift: logs incidents, triages them, and assigns units",
 
   /**
    * Declaring the flow is what makes its instructions reach a turn that calls
@@ -41,6 +43,19 @@ export default agent({
    * moves nothing — the shift outlives the caller. See `events.ts`.
    */
   events: DISPATCH_EVENTS,
+
+  /**
+   * The desk's own last check on itself, and the third of the three things
+   * `agent()` can declare about a turn — the gates decide which tools are
+   * LEGAL, `events` OBSERVES what happens, and this is the only one that can
+   * stop the desk speaking.
+   *
+   * One rule, and it is the one the tool gates structurally cannot hold: never
+   * say help is coming before a unit has been assigned. See `guardrails.ts`,
+   * which also carries what the hold costs and why a desk that talks in radio
+   * traffic can afford it.
+   */
+  outputGuardrails: DISPATCH_GUARDRAILS,
 
   // The system prompt instructs the model to use web_search and run_code, so
   // they must be enabled here — the default builtin set does not include them.

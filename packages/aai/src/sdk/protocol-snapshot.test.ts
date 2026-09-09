@@ -59,6 +59,14 @@ describe("server→client event wire format", () => {
     { type: "custom.emitted", event: "game_state", data: { hp: 10 } },
     { type: "state.updated", state: { items: [] } },
     {
+      type: "usage.updated",
+      inputTokens: 1200,
+      outputTokens: 340,
+      totalTokens: 1540,
+      steps: 3,
+    },
+    { type: "guardrail.blocked", direction: "output", replacement: "I can't help with that." },
+    {
       type: "history.restored",
       messages: [
         { role: "user", content: "two large pepperoni" },

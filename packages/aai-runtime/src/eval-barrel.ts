@@ -225,3 +225,7 @@ export {
 // own options.
 export type { HostGenerateFn } from "./generate.ts";
 export type { LogContext, LogFn, Logger, LogLevel } from "./runtime-config.ts";
+// `HostGenerateFn`'s `onUsage` takes one, so a case holding that callback in a
+// variable has to be able to write its parameter type — the same rule the
+// comment above states for `generate` and `logger` themselves.
+export type { StepUsage } from "./usage-meter.ts";

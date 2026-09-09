@@ -281,7 +281,7 @@ describeEval(agentDef, (test) => {
         const at = names.indexOf(later);
         if (at >= 0) expect(at).toBeGreaterThan(checked);
       }
-      // And the specialist's report is what came back — not a calendar dump.
+      // And the subagent's report is what came back — not a calendar dump.
       const report = calls.find((call) => call.name === "meeting_assistant");
       expect(report?.result).toMatch(/availability/);
       expect(latest(session)?.sent).toEqual([]);

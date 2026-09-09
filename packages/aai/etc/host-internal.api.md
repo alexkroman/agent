@@ -17,11 +17,18 @@ type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     maxSteps: z.ZodOptional<z.ZodNumber>;
     temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -93,6 +100,22 @@ const AgentConfigSchema: z.ZodObject<{
 export type AgentEnv = Record<string, string> & {
     readonly [hostCredentialsMarker]?: never;
 };
+
+// @public
+type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @internal
+export function agentInstructionsSection(instructions: string): string;
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
 
 // @public
 export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
@@ -712,6 +735,8 @@ export const MAX_WS_PAYLOAD_BYTES: number;
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -912,6 +937,9 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
+// @internal
+export function runAgentGuardrails(guardrails: readonly AgentGuardrail[] | undefined, text: string, ctx: AgentSessionContext, onError: (err: unknown) => void): Promise<string | undefined>;
+
 // @public
 export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
 
@@ -1032,6 +1060,9 @@ type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
+
+// @internal
+export function staticSystemPrompt(prompt: unknown): string | undefined;
 
 // @internal
 export const STEP_FETCH_CONNECTIONS = 64;
@@ -1204,6 +1235,9 @@ interface SubagentToolCall {
 }
 
 // @internal
+export function systemPromptResolver(prompt: unknown): AgentInstructions | undefined;
+
+// @internal
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
@@ -1226,10 +1260,19 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
 };
 
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;

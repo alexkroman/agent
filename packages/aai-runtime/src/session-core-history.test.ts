@@ -37,6 +37,64 @@ describe("createSessionCore — history", () => {
     ]);
   });
 
+  test("a tool reads what an earlier tool of the reply answered", async () => {
+    // The S2S arm of the `"tool"` arm. The service runs the loop, so the host
+    // sees each call as a `tool.called` report and each result at the moment it
+    // settles — which is where the conversation gains it.
+    const executeTool = vi.fn<ExecuteTool>(async () => '{"eta":"tue"}');
+    const { core } = makeCore({ executeTool });
+    await core.start();
+
+    core.report({ type: "user-transcript.committed", text: "where is my order" });
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(1));
+    core.report({ type: "tool.called", toolCallId: "c2", toolName: "lookup", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(2));
+
+    expect(executeTool.mock.calls[0]?.[3]).toEqual([
+      { role: "user", content: "where is my order" },
+    ]);
+    expect(executeTool.mock.calls[1]?.[3]).toEqual([
+      { role: "user", content: "where is my order" },
+      { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+    ]);
+  });
+
+  test("the tool arm is kept OFF the client's restored transcript", async () => {
+    // `history.restored` renders dialogue and carries the tool calls separately,
+    // anchored by index into these messages — so a result appearing here would
+    // both render as a bare bubble and slide every anchor.
+    const { core, sink } = makeCore();
+    await core.start();
+
+    core.restoreHistory(
+      [
+        { role: "user", content: "where is my order" },
+        { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+        { role: "assistant", content: "Tuesday." },
+      ],
+      [
+        {
+          callId: "c1",
+          name: "lookup",
+          args: {},
+          status: "done",
+          result: '{"eta":"tue"}',
+          afterMessageIndex: 0,
+        },
+      ],
+    );
+
+    const sent = sink.events.filter((e: SessionEvent) => e.type === "history.restored");
+    expect(sent[0]).toMatchObject({
+      messages: [
+        { role: "user", content: "where is my order" },
+        { role: "assistant", content: "Tuesday." },
+      ],
+    });
+  });
+
   test("restoreHistory SENDS the conversation to the client", async () => {
     // The half that was missing. Everything else `restoreHistory` does restores
     // the conversation for the MODEL — and the browser, which had stopped

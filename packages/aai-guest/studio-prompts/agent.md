@@ -186,7 +186,7 @@ placeholders or guess missing parameters.
   images, sr-only labels on icon-only buttons.
 - **Never invent an SDK subpath.** These are the only importable ones, and a
   wrong guess is a build error, not a fallback:
-  @alexkroman1/aai, @alexkroman1/aai/channels, @alexkroman1/aai/ffmpeg, @alexkroman1/aai/host-internal, @alexkroman1/aai/html, @alexkroman1/aai/internal, @alexkroman1/aai/llm, @alexkroman1/aai/manifest, @alexkroman1/aai/protocol, @alexkroman1/aai/s2s, @alexkroman1/aai/slugify, @alexkroman1/aai/step, @alexkroman1/aai/step-errors, @alexkroman1/aai/step-files, @alexkroman1/aai/stt, @alexkroman1/aai/testing, @alexkroman1/aai/testing/vite, @alexkroman1/aai/testing/vitest, @alexkroman1/aai/tools, @alexkroman1/aai/tts, @alexkroman1/aai/utils, @alexkroman1/aai/workflow-api, @alexkroman1/aai/workspace-files
+  @alexkroman1/aai, @alexkroman1/aai/channels, @alexkroman1/aai/coding-tools, @alexkroman1/aai/ffmpeg, @alexkroman1/aai/host-internal, @alexkroman1/aai/html, @alexkroman1/aai/internal, @alexkroman1/aai/llm, @alexkroman1/aai/manifest, @alexkroman1/aai/protocol, @alexkroman1/aai/s2s, @alexkroman1/aai/slugify, @alexkroman1/aai/step, @alexkroman1/aai/step-errors, @alexkroman1/aai/step-files, @alexkroman1/aai/stt, @alexkroman1/aai/testing, @alexkroman1/aai/testing/vite, @alexkroman1/aai/testing/vitest, @alexkroman1/aai/tools, @alexkroman1/aai/tts, @alexkroman1/aai/utils, @alexkroman1/aai/workflow-api, @alexkroman1/aai/workspace-files
 
 ## Voice Agents and Workflow Apps
 

@@ -145,6 +145,34 @@ getting the old rule wrong.
 helpers reading them), the eighteen narrowed `*Provider` aliases (gone), and
 `ProviderDescriptor` (the root alone).
 
+## Four groups of `AgentDef` fields, four modules, one rule each
+
+`sdk/types.ts` sits at the source-length cap, so a group of fields that shares
+ONE rule is declared on its own interface and `AgentDef` extends it. That is not
+tidying: each rule is DERIVED from the declaration, so a field added to the
+group cannot skip the gate.
+
+| Interface | Module | The rule |
+| --- | --- | --- |
+| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing |
+| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
+| `AgentGuardrails` | `agent-guardrails.ts` | the only declarations that may STOP a turn |
+| `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
+
+`assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
+total over `AgentModelTuning`, so a sixth knob that skips the table fails to
+compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
+is inert unless `toolChoice` demands a call.
+
+**A guardrail is pipeline-only, and the two refusals are different claims** —
+s2s has already spoken the sentence, text mode hands its caller the model stream
+and owns no funnel. `assertGuardrailScope` refuses both by name;
+`agent-guardrails.ts` carries what the pipeline one does and does not prevent.
+
+**`systemPrompt` takes a RESOLVER**, `(ctx: AgentSessionContext) => string`,
+called per model request and landing under the same precedence header a string
+does — `agent-instructions.ts` owns the rest.
+
 ## Session modes
 
 Each agent runs in one of three session modes, selected by `toAgentConfig()`
@@ -624,6 +652,35 @@ also works. `GenerateFn` is generic, so a Standard Schema call returns a
 typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
+
+## `ctx.messages` has a THIRD arm, and it used to be dead
+
+`Message.role` has always been `"user" | "assistant" | "tool"`, and nothing in
+the repo ever produced a `"tool"`: the pipeline's tool-facing view held
+transcripts only, the text agent's projection kept `text` parts (a
+`ToolModelMessage` carries `tool-result` parts and never one), and the resume
+walk answered `user`/`assistant`. So a tool could see every word of the call and
+not one thing any tool had returned — including the tool that ran two steps
+earlier in the same reply. Every peer SDK exposes this.
+
+It is real now, in all three modes and on resume. A settled call contributes
+`{ role: "tool", content, toolName?, toolCallId? }` — `content` is the result
+the tool returned, capped exactly as the client's `tool.completed` frame caps it
+so live and resumed histories are the same history. Read the arm by ROLE: the
+two id fields are optional, and a result whose `tool.called` fell off the front
+of the log has no name to give.
+
+**It does not reach the MODEL, and that is deliberate.** In an LLM message list
+a `tool` message is one half of a pair the assistant's `tool-call` message
+completes, and both providers reject an orphan; the model already has the whole
+pair from the step that produced it. `ctx.messages` is a tool's view, not the
+model's.
+
+`aai-runtime`'s `_tool-result-message.ts` is the one statement of the shape, and
+the four producers that share it (`to-vercel-tools.ts`, `text-agent.ts`,
+`session-tool-steps.ts`, `session-event-history.ts`) each carry why they are
+where they are. Filters by role (`m.role === "user"`) are unaffected, which is
+what made this additive.
 
 ## `ctx.delegate` (subagents)
 

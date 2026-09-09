@@ -415,14 +415,28 @@ export function buildSystemPrompt(
     sections.push(`Built-in tool usage:\n${options.toolGuidance.join("\n")}`);
   }
 
-  if (custom !== undefined) {
-    sections.push(
-      "Agent-specific instructions (these override the defaults above " +
-        `where they conflict):\n${custom}`,
-    );
-  }
+  if (custom !== undefined) sections.push(agentInstructionsSection(custom));
 
   return sections.join("\n\n");
+}
+
+/**
+ * The author's own instructions under the precedence header the assembled
+ * prompt gives them.
+ *
+ * Exported because a RESOLVER's output has to land in the same place a static
+ * `systemPrompt`'s does, and the runtime composes that one per request rather
+ * than through {@link buildSystemPrompt} (whose expensive half is cached per
+ * calendar day). Two copies of this sentence is how a dynamic prompt would come
+ * to carry a different precedence claim from a fixed one.
+ *
+ * @internal
+ */
+export function agentInstructionsSection(instructions: string): string {
+  return (
+    "Agent-specific instructions (these override the defaults above " +
+    `where they conflict):\n${instructions}`
+  );
 }
 
 /**

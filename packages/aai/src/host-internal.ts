@@ -53,6 +53,20 @@ export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";
 export { AGENT_CSP } from "./sdk/agent-csp.ts";
+/**
+ * The guardrail runner — one implementation of "first refusal wins, a throw
+ * fails open" for every caller, rather than a loop each transport writes for
+ * itself. Host support rather than authoring API: an `agent.ts` DECLARES
+ * guardrails and never runs them.
+ */
+export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
+/**
+ * The two narrowings of `AgentDef.systemPrompt` — see `agent-instructions.ts`.
+ * Host support: a config layer or a runtime has to tell a resolver from a
+ * string before it can do anything with either, and getting that wrong puts a
+ * function's source text into the model's instructions.
+ */
+export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
 export { assertProviderTriple } from "./sdk/config-rules.ts";
 export {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
@@ -257,7 +271,7 @@ export {
   STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
   type StepWebhookMinter,
 } from "./sdk/step-webhook.ts";
-export { buildSystemPrompt } from "./sdk/system-prompt.ts";
+export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt.ts";
 export {
   MAX_UPLOAD_BYTES_ENV,
   MAX_WORKFLOW_UPLOAD_BYTES,

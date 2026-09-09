@@ -137,8 +137,11 @@ type ExecuteToolCallOptions = {
     messages?: readonly Message[] | undefined;
     generate?: HostGenerateFn | undefined;
     subagents?: SubagentRunner | undefined;
+    usage?: UsageMeter | undefined;
     logger?: Logger | undefined;
-    onUncaught?: ((message: string) => void) | undefined;
+    onUncaught?: ((message: string, info: {
+        readonly fatal: boolean;
+    }) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
@@ -185,6 +188,7 @@ type HookRecord = {
 // @public
 type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @internal
@@ -565,6 +569,16 @@ type StepEntry = {
 };
 
 // @public
+interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
+
+// @public
 type StoredSessionEvent = {
     index: number;
     json: string;
@@ -626,6 +640,21 @@ type UploadStore = UploadReader & {
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
     recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
+
+// @internal
+export interface UsageMeter {
+    exhausted(): string | undefined;
+    record(usage: StepUsage | undefined): void;
+    snapshot(): UsageSnapshot;
+}
+
+// @internal
+export interface UsageSnapshot {
+    inputTokens: number;
+    outputTokens: number;
+    steps: number;
+    totalTokens: number;
+}
 
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;

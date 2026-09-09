@@ -49,7 +49,6 @@
  */
 
 import { z } from "zod";
-
 import {
   DEFAULT_MAX_HISTORY,
   MAX_AUDIO_SAMPLE_RATE,
@@ -58,44 +57,29 @@ import {
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
+import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
+import {
+  GuardrailBlockedEventSchema,
+  UsageUpdatedEventSchema,
+} from "./protocol-events-accounting.ts";
 
 /**
- * The prefix every session-event id carries, so an id names its own kind.
+ * The event ENVELOPE — `EVENT_ID_PREFIX`, `SessionEventMetaSchema` and
+ * `SessionEventMeta` — moved to `protocol-event-meta.ts` when this file reached
+ * the source-length cap, and re-exported here so no import moved.
  *
- * `evt_` then a ULID — see {@link SessionEventMeta} and its `id` field for what
- * the id is and is not good for. The link names the TYPE rather than the field
- * because the type is `z.infer`red, so TypeDoc documents it as an anonymous
- * object and has no anchor to point a member link at.
+ * A module of its own is what breaks a cycle rather than merely shortening a
+ * file: an event schema declared anywhere ELSE needs the envelope, and while
+ * the envelope lived here that meant importing this module back — which for
+ * eagerly-evaluated zod schemas is not a type-only cycle. `SessionEventSchema`
+ * is the one place the members are assembled; the envelope is upstream of all
+ * of them.
  */
-export const EVENT_ID_PREFIX = "evt_";
-
-/** Zod schema for {@link SessionEventMeta}. */
-export const SessionEventMetaSchema = z.object({
-  /**
-   * This event's identity, for the whole of its life: `evt_` + a ULID, minted
-   * once when the event is written and stored with it.
-   *
-   * **It is the key for ingesting a stream idempotently, and it is not a
-   * cursor.** Three limits come with it, each inherited deliberately rather
-   * than rediscovered:
-   *
-   * - Ids are TIME-ordered, not totally ordered — a session resumed onto a
-   *   replacement process mints from a different clock — so `id > $cursor`
-   *   drops events. {@link SessionEventEnvelope.index} is the only
-   *   authoritative cursor.
-   * - It deduplicates DELIVERY, never EXECUTION: retried work re-emits under
-   *   fresh ids, so a hook with a non-idempotent side effect keys on the work's
-   *   own coordinates (the session, the reply) instead.
-   * - It identifies an EVENT, not an intent: one failure legitimately produces
-   *   several events, so deduplicating by content would drop real data.
-   */
-  id: z.string().startsWith(EVENT_ID_PREFIX),
-  /** When the event was stamped — epoch milliseconds, the writer's clock. */
-  at: z.number().int().nonnegative(),
-});
-
-/** The envelope every session event carries. */
-export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
+export {
+  EVENT_ID_PREFIX,
+  type SessionEventMeta,
+  SessionEventMetaSchema,
+} from "./protocol-event-meta.ts";
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 
@@ -394,6 +378,13 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     meta: SessionEventMetaSchema,
     state: z.unknown(),
   }),
+  // The two events about what a session SPENDS and what it REFUSES. Their
+  // schemas live in `protocol-events-accounting.ts` — named here rather than
+  // written out because this file is at the source-length cap and those two
+  // carry more argument than schema. Referenced as identifiers so the union
+  // stays a literal tuple, which is what `z.discriminatedUnion` narrows over.
+  UsageUpdatedEventSchema,
+  GuardrailBlockedEventSchema,
   /**
    * The conversation this session already had, sent when a RESUME restores one.
    *

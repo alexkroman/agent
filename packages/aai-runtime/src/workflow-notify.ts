@@ -46,7 +46,11 @@
 
 import { capToolResult } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import type {
+  StartOptions,
+  WorkflowClient,
+  WorkflowRunSnapshot,
+} from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import { isRunWatchClosed, type RunWatch, watchRun } from "./workflow-run-reads.ts";
@@ -259,4 +263,46 @@ export function instructionFor(request: WatchRequest, run: WorkflowRunSnapshot):
     `The "${name}" work you started was cancelled before it finished. ` +
     "Mention it briefly and ask whether they want it started again."
   );
+}
+
+/**
+ * `ctx.workflows` for ONE session: the runtime's client, with `notify` wired.
+ *
+ * The client itself is per-RUNTIME and rightly so — a run outlives the session
+ * that started it, so nothing about reading one is session-scoped. What IS
+ * session-scoped is who gets told: `notify` means "tell the caller on THIS
+ * call", so the session id has to be captured where it is known, which is here
+ * and nowhere deeper.
+ *
+ * Returns the client UNCHANGED when there is no notifier or no session id, so
+ * the wrapper costs nothing for the agents that never use it.
+ *
+ * Lives here rather than in `runtime-tools.ts`, which is where it was written
+ * and where it is still the only caller: it is the SESSION-scoped half of the
+ * notifier this module owns, and that file is at the source-length cap.
+ *
+ * @internal
+ */
+export function withNotify(
+  workflows: WorkflowClient | undefined,
+  notifier: RunNotifier | undefined,
+  sessionId: string | undefined,
+): WorkflowClient | undefined {
+  if (!(workflows && notifier && sessionId)) return workflows;
+  // The overload is preserved by delegating with the arguments as given —
+  // `start` takes a definition or a name, and the watcher needs neither: the
+  // run it polls reports its own declared name.
+  const start = (async (workflow: never, input: never, options?: StartOptions): Promise<string> => {
+    const runId = await workflows.start(workflow, input, options);
+    if (options?.notify !== undefined && options.notify !== false) {
+      notifier.watch({
+        sessionId,
+        runId,
+        // `true` takes the default instruction; a string replaces it.
+        ...(typeof options.notify === "string" ? { instruction: options.notify } : {}),
+      });
+    }
+    return runId;
+  }) as WorkflowClient["start"];
+  return { ...workflows, start };
 }

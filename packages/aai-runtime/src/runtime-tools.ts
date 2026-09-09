@@ -19,7 +19,7 @@ import {
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -33,7 +33,8 @@ import {
   executeToolCall,
   type SubagentRunner,
 } from "./tool-executor.ts";
-import type { RunNotifier } from "./workflow-notify.ts";
+import type { UsageMeter } from "./usage-meter.ts";
+import { type RunNotifier, withNotify } from "./workflow-notify.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the
@@ -161,48 +162,20 @@ type ToolSetupDeps = {
    */
   emitters: OwnedMap<string, SessionEmitter>;
   /**
+   * Live token METER per session, resolved the same way and for the same reason
+   * as `emitters` above: `ctx.generate` and `ctx.delegate` spend on the session
+   * that called them, and the meter belongs to a session while this dispatcher
+   * belongs to the runtime. A tool call that finds no entry is uncounted rather
+   * than refused — see `usage-meter.ts`.
+   */
+  meters: OwnedMap<string, UsageMeter>;
+  /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
    * grace window by `session-state-sweeps.ts`.
    */
   stateStore: SessionStateStore;
 };
-
-/**
- * `ctx.workflows` for ONE session: the runtime's client, with `notify` wired.
- *
- * The client itself is per-RUNTIME and rightly so — a run outlives the session
- * that started it, so nothing about reading one is session-scoped. What IS
- * session-scoped is who gets told: `notify` means "tell the caller on THIS
- * call", so the session id has to be captured where it is known, which is here
- * and nowhere deeper.
- *
- * Returns the client UNCHANGED when there is no notifier or no session id, so
- * the wrapper costs nothing for the agents that never use it.
- */
-function withNotify(
-  workflows: WorkflowClient | undefined,
-  notifier: RunNotifier | undefined,
-  sessionId: string | undefined,
-): WorkflowClient | undefined {
-  if (!(workflows && notifier && sessionId)) return workflows;
-  // The overload is preserved by delegating with the arguments as given —
-  // `start` takes a definition or a name, and the watcher needs neither: the
-  // run it polls reports its own declared name.
-  const start = (async (workflow: never, input: never, options?: StartOptions): Promise<string> => {
-    const runId = await workflows.start(workflow, input, options);
-    if (options?.notify !== undefined && options.notify !== false) {
-      notifier.watch({
-        sessionId,
-        runId,
-        // `true` takes the default instruction; a string replaces it.
-        ...(typeof options.notify === "string" ? { instruction: options.notify } : {}),
-      });
-    }
-    return runId;
-  }) as WorkflowClient["start"];
-  return { ...workflows, start };
-}
 
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
@@ -278,6 +251,7 @@ function setupSandboxTools(
         messages,
         generate,
         subagents,
+        usage: deps.meters.get(sessionId ?? ""),
         logger,
         signal: callOptions?.signal,
         timeoutMs: options.toolTimeoutMs,
@@ -298,7 +272,7 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, options, env, workflows, notifier, logger, emitters, stateStore } = deps;
+  const { agent, options, env, workflows, notifier, logger, emitters, meters, stateStore } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -401,9 +375,12 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         messages,
         generate,
         subagents,
+        // Resolved when the call STARTS rather than captured at setup: the
+        // meter belongs to the session, and a resume mints a new one.
+        usage: meters.get(sid),
         logger,
-        // Non-fatal: the turn continues and the model still gets the failure.
-        // The frame exists so a throw is VISIBLE — see `onUncaught`.
+        // The frame exists so a throw is VISIBLE — see `onUncaught`. `fatal`
+        // there means the SESSION is over, which neither of its two arms is.
         onUncaught: (message) =>
           liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
         timeoutMs: options.toolTimeoutMs,

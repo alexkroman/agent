@@ -73,6 +73,8 @@ describe("createTextAgent event stream", () => {
 
     expect(types(events)).toEqual([
       "user-transcript.committed",
+      // One per completed step — the conversation's running token total.
+      "usage.updated",
       "agent-transcript.committed",
       "reply.completed",
     ]);
@@ -337,6 +339,9 @@ describe("createTextAgent event stream", () => {
         "user-transcript.committed",
         "tool.called",
         "tool.completed",
+        // One per completed step, carrying the conversation's running total —
+        // see `usage-meter.ts`.
+        "usage.updated",
         "agent-transcript.committed",
         "reply.completed",
       ]),
@@ -361,7 +366,11 @@ describe("createTextAgent event stream", () => {
       })
       .consumeStream();
 
-    expect(types(events)).toEqual(["agent-transcript.committed", "reply.completed"]);
+    expect(types(events)).toEqual([
+      "usage.updated",
+      "agent-transcript.committed",
+      "reply.completed",
+    ]);
   });
 
   test("an image-only user message commits no user turn", async () => {

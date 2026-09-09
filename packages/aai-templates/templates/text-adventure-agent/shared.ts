@@ -147,6 +147,43 @@ export function statusLine(game: FrozenGameState): StatusLine {
 }
 
 /**
+ * The board as the NARRATOR is given it, before every reply.
+ *
+ * `agent.ts` appends this to the system prompt through a `systemPrompt`
+ * resolver, so the four facts of the status line plus the inventory are in
+ * front of the model on every request — never remembered, never guessed, and
+ * never a turn behind.
+ *
+ * **This is what retired a whole section of `system-prompt.md`.** The prompt
+ * used to spend six lines insisting that ANY question about what the player is
+ * carrying, where they are or what they have scored be answered by calling
+ * `game_state_get` FIRST and never from memory — advice, enforced by nothing,
+ * costing a model round trip on the turns the narrator remembered and a drifting
+ * world on the turns it did not. State the model must not invent belongs in the
+ * prompt, not in a rule telling it to go and look.
+ *
+ * Prose rather than the JSON `game_state_get` answers with, because this is
+ * read as instructions rather than as a tool result — and built from
+ * {@link statusLine}, so the narrator, the CRT's top bar and the read tool
+ * cannot disagree about the four numbers. `game_state_get` stays for the rest of
+ * the board (the flags and the recent commands) and for the turn the narrator
+ * wants everything at once.
+ */
+export function statusBlock(game: FrozenGameState): string {
+  const { currentRoom, score, rank, moves } = statusLine(game);
+  const carrying = game.inventory.length > 0 ? game.inventory.join(", ") : "nothing";
+  return [
+    "CURRENT GAME STATE (the game's own record, refreshed before every reply —",
+    "it is ground truth and it is never out of date, so answer from it rather",
+    "than from memory, and never contradict it):",
+    `- Location: ${currentRoom}`,
+    `- Score: ${score} (${rank})`,
+    `- Turns taken: ${moves}`,
+    `- Carrying: ${carrying}`,
+  ].join("\n");
+}
+
+/**
  * The projection BOTH ends use: `syncState` on the agent, `useAgentState` in
  * the client.
  *

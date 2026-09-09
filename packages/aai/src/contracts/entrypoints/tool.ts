@@ -8,6 +8,14 @@
  * one out of a chain of lookups. All four are here rather than on `utils`
  * because the `T | ToolFailure` union IS what writing a tool is.
  *
+ * `ToolErrorHandler` is the fifth member of that group and belongs to the same
+ * union from the other side: it is what `ToolDef.onError` takes, so it is how an
+ * author says which THROWS are recoverable — turning one into the same
+ * `ToolFailure` a returned refusal would have been. It is contracted here rather
+ * than on `dialog`, though `DialogToolDef.onError` takes it too: the type is
+ * declared beside `ToolDef` and a dialog tool is a tool with a position, so one
+ * capability owns the handler and `dialog` owns the def that also accepts one.
+ *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
  * for this capability alone, hash it, and hold it to a committed epoch. See
@@ -26,6 +34,7 @@ export {
   requireEnv,
   type ToolContext,
   type ToolDef,
+  type ToolErrorHandler,
   type ToolFailure,
   type ToolInputSchema,
   tool,

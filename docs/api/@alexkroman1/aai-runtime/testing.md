@@ -348,7 +348,7 @@ cross-copy `instanceof` is false for an error the other copy constructed.
 
 ### TextAgentOptions
 
-Session-fixed configuration for [createTextAgent](https://github.com/alexkroman/agent/tree/main/packages/aai-runtime#readme).
+Session-fixed configuration for `createTextAgent`.
 
 #### Properties
 
@@ -603,6 +603,26 @@ optional onEvent?: (event:
   type: "state.updated";
 }
   | {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+}
+  | {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -790,6 +810,26 @@ per turn — which is what `runTextAgent` does.
   \};
   `state`: `unknown`;
   `type`: `"state.updated"`;
+\}
+  \| \{
+  `inputTokens`: `number`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `outputTokens`: `number`;
+  `steps`: `number`;
+  `totalTokens`: `number`;
+  `type`: `"usage.updated"`;
+\}
+  \| \{
+  `direction`: `"output"` \| `"input"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `replacement`: `string`;
+  `type`: `"guardrail.blocked"`;
 \}
   \| \{
   `messages`: \{

@@ -25,7 +25,9 @@ import {
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
+import type { UsageMeter } from "../usage-meter.ts";
 import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";
+import type { TurnGuardrails } from "./pipeline-guardrails.ts";
 import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /**
@@ -151,8 +153,32 @@ export interface PipelineTransportOptions {
    * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
    */
   temperature?: number | undefined;
+  /** Cap on generated tokens per STEP. Omitted when unset (provider default). */
+  maxOutputTokens?: number | undefined;
+  /**
+   * How many times a FAILED provider call is retried — the AI SDK's own
+   * `maxRetries`. Omitted when unset, which leaves the vendor default (2).
+   */
+  maxRetries?: number | undefined;
   /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
   toolChoice?: ToolChoice | undefined;
+  /**
+   * Put `toolChoice` back to `"auto"` after the first step of a reply — see
+   * {@link AgentModelTuning.resetToolChoice}. Defaults to `true`, and is inert
+   * unless `toolChoice` demands a call.
+   */
+  resetToolChoice?: boolean | undefined;
+  /**
+   * This session's guardrails, already bound to their context — see
+   * `pipeline-guardrails.ts`. Absent for every agent that declares none, which
+   * is what keeps the speech funnel unwrapped on the shipped path.
+   */
+  guardrails?: TurnGuardrails | undefined;
+  /**
+   * This session's token meter — see `usage-meter.ts`. Absent when the host
+   * built none, in which case nothing is counted and no budget is enforced.
+   */
+  usage?: UsageMeter | undefined;
   /** Logger. Defaults to consoleLogger. */
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
@@ -207,6 +233,7 @@ export interface ResolvedPipelineOptions {
   sttSampleRate: number;
   ttsSampleRate: number;
   maxSteps: number;
+  resetToolChoice: boolean;
   minBargeInWords: number;
   interruptionMinDurationMs: number;
   deadAirCoverMs: number;
@@ -221,25 +248,47 @@ export interface ResolvedPipelineOptions {
   executeTool: ExecuteTool;
 }
 
+/**
+ * `value ?? fallback`, named.
+ *
+ * Written out, twenty `??` operators in one expression trip Biome's cognitive
+ * complexity ceiling — which is a fair reading of a function that is one long
+ * defaulting table, and a bad reason to split the table in two: the whole point
+ * of this function is that every default is visible in one place. The helper
+ * keeps that property and costs one word per row.
+ */
+function or<T>(value: T | undefined, fallback: T): T {
+  return value ?? fallback;
+}
+
 /** Apply the documented default for every defaultable option. */
 export function resolvePipelineOptions(options: PipelineTransportOptions): ResolvedPipelineOptions {
   return {
-    log: options.logger ?? consoleLogger,
-    sttSampleRate: options.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE,
-    ttsSampleRate: options.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE,
-    maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
-    minBargeInWords: options.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
-    interruptionMinDurationMs:
-      options.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-    deadAirCoverMs: options.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS,
-    heardLagMs: options.heardLagMs ?? HEARD_AUDIO_LAG_MS,
-    errorPhrase: options.errorPhrase ?? DEFAULT_ERROR_PHRASE,
-    startFailurePhrase: options.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
-    resumeFalseInterruption: options.resumeFalseInterruption ?? true,
-    preemptiveGeneration: options.preemptiveGeneration ?? false,
-    speechIdleTimeoutMs: options.speechIdleTimeoutMs ?? DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
-    toolChoice: options.toolChoice ?? DEFAULT_TOOL_CHOICE,
-    toolSchemas: options.toolSchemas ?? [],
+    log: or(options.logger, consoleLogger),
+    sttSampleRate: or(options.sttSampleRate, DEFAULT_STT_SAMPLE_RATE),
+    ttsSampleRate: or(options.ttsSampleRate, DEFAULT_TTS_SAMPLE_RATE),
+    maxSteps: or(options.maxSteps, DEFAULT_MAX_STEPS),
+    // Opt-OUT, like OpenAI's `reset_tool_choice`: the failure it prevents (a
+    // `toolChoice: "required"` re-applied on every step, burning the whole
+    // `maxSteps` budget before `forceFinalAnswer` rescues the turn) is silent
+    // and costs the caller a wait, and the behaviour it removes is one almost
+    // nobody wants. Inert for the `"auto"` default, so this changes nothing for
+    // an agent that never set `toolChoice`.
+    resetToolChoice: or(options.resetToolChoice, true),
+    minBargeInWords: or(options.minBargeInWords, DEFAULT_MIN_BARGE_IN_WORDS),
+    interruptionMinDurationMs: or(
+      options.interruptionMinDurationMs,
+      DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+    ),
+    deadAirCoverMs: or(options.deadAirCoverMs, DEFAULT_DEAD_AIR_COVER_MS),
+    heardLagMs: or(options.heardLagMs, HEARD_AUDIO_LAG_MS),
+    errorPhrase: or(options.errorPhrase, DEFAULT_ERROR_PHRASE),
+    startFailurePhrase: or(options.startFailurePhrase, DEFAULT_START_FAILURE_PHRASE),
+    resumeFalseInterruption: or(options.resumeFalseInterruption, true),
+    preemptiveGeneration: or(options.preemptiveGeneration, false),
+    speechIdleTimeoutMs: or(options.speechIdleTimeoutMs, DEFAULT_SPEECH_IDLE_TIMEOUT_MS),
+    toolChoice: or(options.toolChoice, DEFAULT_TOOL_CHOICE),
+    toolSchemas: or(options.toolSchemas, []),
     executeTool: options.executeTool,
   };
 }

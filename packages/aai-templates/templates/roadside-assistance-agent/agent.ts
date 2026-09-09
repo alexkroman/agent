@@ -40,6 +40,10 @@ const PHONE_LINE: TelephonyAccess = ["twilio", "telnyx"];
  */
 export default agent({
   name: "Roadside Assist",
+  // What this line does, for whoever is picking an agent out of a list. Written
+  // in the order the call goes in, because that order is the template — see
+  // `call.ts`.
+  description: "Verifies roadside coverage, reads the service fee and dispatches a tow truck",
 
   // No provider spread: pipeline mode is the default and every stage is filled
   // from the all-AssemblyAI pipeline at parse time.

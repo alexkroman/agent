@@ -117,6 +117,8 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+    toolName?: string;
+    toolCallId?: string;
 };
 
 // @public
@@ -253,6 +255,15 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
 };
 
 // @public

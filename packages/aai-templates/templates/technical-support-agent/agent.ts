@@ -18,6 +18,10 @@ import { PRODUCT, supportProjection } from "./shared.ts";
  */
 export default agent({
   name: `${PRODUCT} Support`,
+  // For a reader of a LIST of agents, not for the model. It says what the line
+  // does with a question it cannot answer, because that is the half a caller
+  // reading a directory wants to know.
+  description: `Answers ${PRODUCT} support questions from a graded knowledge base, and logs a ticket when it cannot`,
   // The trace exists before the first tool call, so a resumed connection has
   // something to project.
   // The projection is also the privacy boundary: a logged ticket carries the

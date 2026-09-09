@@ -9,6 +9,8 @@
  * re-exports the four public names so an author's import is unchanged.
  */
 
+import type { AgentGuardrails } from "./agent-guardrails.ts";
+import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type {
   FrontDoorField,
   PipelineOnlyField,
@@ -35,6 +37,14 @@ import type { AgentDef } from "./types.ts";
 export type WorkflowAppOnlyField =
   | ProviderField
   | PipelineOnlyField
+  // Every knob on a model request and both guardrails: a workflow app makes no
+  // model request and speaks nothing, so all seven are the same silent no-op
+  // the rest of this list is. Derived from the interfaces rather than listed,
+  // like the two lines above — a knob added to either is rejected here for
+  // free. (`description` is deliberately NOT here: a listing wants one whatever
+  // the front door is.)
+  | keyof AgentModelTuning
+  | keyof AgentGuardrails
   | "system"
   | "systemPrompt"
   | "sttPrompt"
@@ -50,7 +60,7 @@ export type WorkflowAppOnlyField =
   // `tools?: InlineToolsMisuse` from `SharedAgentParams`, which is true of
   // every arm (a tool is a FILE) and leads with the remedy.
   | "builtinTools"
-  // A roster's whole effect is a tool the MODEL chooses a specialist with, and
+  // A roster's whole effect is a tool the MODEL chooses a subagent with, and
   // a workflow app runs no model — so it is the same silent no-op the rest of
   // this list is, with the extra cost that `agent()` would mint a tool nothing
   // could ever call. A workflow app that wants a subagent delegates from a

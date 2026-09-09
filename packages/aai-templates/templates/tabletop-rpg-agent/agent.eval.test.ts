@@ -32,6 +32,12 @@ import agentDef from "virtual:aai/agent";
  * thing that tells a live model to set the whole game up in ONE call, and an
  * eval run against the framework default prompt would measure an agent nobody
  * deployed.
+ *
+ * It is also a RESOLVER (see `agent.ts`), so a live run is given the rules file
+ * plus the campaign sheet as it stands on that turn. Every `check_state` below
+ * is asked for by name ("Check the state…") for that reason: the tracks reach
+ * the narrator without one now, so a case that relied on a question forcing the
+ * call would be measuring the old prompt.
  */
 import type { InferToolInput } from "@alexkroman1/aai";
 import { dialogResultSchema } from "@alexkroman1/aai/testing";

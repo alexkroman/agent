@@ -29,7 +29,15 @@
 // signature change to either moved no epoch. `HostGenerateFn` is
 // `EvalSessionOptions.generate`; `EvalWorkflowEngineOptions` is what
 // `EvalWorkflowsOptions` indexes for `speech` and `stepFetch`.
-export type { EvalWorkflowEngineOptions, HostGenerateFn, StepFetch } from "../../eval-barrel.ts";
+export type {
+  EvalWorkflowEngineOptions,
+  HostGenerateFn,
+  StepFetch,
+  // The parameter of `HostGenerateFn`'s `onUsage`, so it travels with it: an
+  // eval supplying a `generate` double writes this type or cannot type the
+  // callback at all.
+  StepUsage,
+} from "../../eval-barrel.ts";
 export {
   completedOutput,
   createStubSttOpener,

@@ -234,6 +234,7 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void;
 // @public
 export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
+    onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
 // @public
@@ -290,6 +291,16 @@ export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSch
 export function statesIn(events: readonly SessionEvent[]): readonly unknown[];
 
 export { StepFetch }
+
+// @public
+export interface StepUsage {
+    // (undocumented)
+    inputTokens?: number | undefined;
+    // (undocumented)
+    outputTokens?: number | undefined;
+    // (undocumented)
+    totalTokens?: number | undefined;
+}
 
 // @public
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
