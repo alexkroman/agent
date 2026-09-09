@@ -127,6 +127,7 @@ const MARKDOWN_FILES = [
   "docs/src/content/docs/build/state.md",
   "docs/src/content/docs/build/testing.md",
   "docs/src/content/docs/build/tools.md",
+  "docs/src/content/docs/build/workflow-evals.md",
   "docs/src/content/docs/deploy/anywhere.md",
   "docs/src/content/docs/deploy/local.md",
   "docs/src/content/docs/deploy/phone.md",

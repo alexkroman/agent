@@ -3,17 +3,19 @@ title: Evals
 description: A test settles what your code does. An eval drives a real session and settles what the agent did.
 ---
 
-`aai test` settles what your code does. What it cannot settle is whether the
-*model* reached for the right tool, with the arguments the caller actually
-said, and answered with what came back. That is what an eval is for:
+A [test](/agent/build/testing/) settles what your code does. An eval settles
+what the agent did: whether the *model* reached for the right tool, with the
+arguments the caller actually said, and answered with what came back.
 
 ```sh
 aai eval          # agent.eval.test.ts
 ```
 
-An eval is an ordinary vitest file. Everything in it is real — your prompt,
-your tools, the session's own event stream — except the microphone and the
-speaker.
+An eval is an ordinary vitest file. Everything in it is real — your prompt, your
+tools, the session's own event stream — except the microphone and the speaker.
+
+A [background job](/agent/more/background-jobs/) has no session, so it is
+covered separately, in [Workflow evals](/agent/build/workflow-evals/).
 
 ## Your first eval
 
@@ -47,8 +49,8 @@ describeEval(agentDef, (test) => {
 `describeEval` opens a session for the case and closes it afterwards, so the
 body is its assertions and nothing else.
 
-Import the agent from `virtual:aai/agent`, not from `./agent.ts`: that is the
-agent as `aai build` lowers it, with `tools/` discovered and
+**Import the agent from `virtual:aai/agent`, not from `./agent.ts`.** That is
+the agent as `aai build` lowers it, with `tools/` discovered and
 `system-prompt.md` applied. An eval that imported the authored file would be
 asking the model to reach for tools the agent does not have.
 
@@ -63,23 +65,32 @@ asking the model to reach for tools the agent does not have.
 | `turn.errors` | The `error.reported` events this turn carried |
 
 The session answers the same questions over the whole conversation:
-`session.events()`, `session.toolCalls()`, and `session.said()` — which
-includes the greeting, since the agent's opening line is a real turn. There is
-also `session.id`, which is what a tool reads as `ctx.sessionId`.
+`session.events()`, `session.toolCalls()`, and `session.said()` — which includes
+the greeting, since the agent's opening line is a real turn. `session.id` is
+what a tool reads as `ctx.sessionId`.
 
-Prefer the turn. A claim about one reply should not be able to pass because of
-a different one.
+**Prefer the turn.** A claim about one reply should not be able to pass because
+of a different one.
 
 ## Live model, or scripted
 
-`describeEval` picks the model for you, and says which it picked on every run.
+`describeEval` picks the model for you, and prints which it picked on every run.
 
-- **With a provider key, a LIVE model.** It spends tokens, takes a few seconds
-  a case, and is a noisy instrument. One failure is a question, not a verdict.
-- **Without one, a SCRIPTED model** answering each case's `stubReply`. The
-  agent still boots, `tools/` still resolves, a tool a script names really
-  runs. So a scripted run proves the wiring, and proves nothing about what the
-  agent chose.
+| | Live | Scripted |
+| --- | --- | --- |
+| **You get it when** | a provider key is in the environment | there is no key |
+| **Replies come from** | the real model | the case's `stubReply` |
+| **A case costs** | tokens, and a few seconds | nothing |
+| **A green run proves** | the agent chose the right tool and said the right thing, this once | the agent boots, `tools/` resolves, and a tool the script names really runs |
+
+A scripted run is a wiring check. The agent is real, so a green one proves it
+still starts and still has its tools — and it says nothing about what the agent
+*chose*, because you wrote the choice.
+
+A live run does speak to the choice, but it is a noisy instrument. One failure
+is a question, not a verdict.
+
+### Writing a stubReply
 
 A bare string is a line the agent says. An array is a sequence — one entry per
 model call, `{ tool, args }` for a call, the last line repeating:
@@ -112,35 +123,36 @@ describeEval(agentDef, (test) => {
 });
 ```
 
-Choose a `stubReply` the case's own assertions still hold against: the point
-of a scripted run is that the case really executes, and a stub the case then
-fails against measures nothing.
+Choose a `stubReply` the case's own assertions still hold against. The point of
+a scripted run is that the case really executes, and a stub the case then fails
+against measures nothing.
 
-Two markers decide which runs are honest in which mode:
+### Cases that only make sense in one mode
 
-- `{ live: true }` — skipped when scripted. For a claim no script can satisfy:
-  a tool the model has to choose for itself, a refusal, a judgement.
-- `{ scripted: true }` — skipped when live. For a path a competent model will
-  not take, which is usually how you watch a guard refuse: something has to
-  call the gated tool before you can see it say no.
+| Marker | Skipped when | Reach for it when |
+| --- | --- | --- |
+| `{ live: true }` | scripted | no script can satisfy the claim: a tool the model has to choose for itself, a refusal, a judgement |
+| `{ scripted: true }` | live | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
 
-A suite where every case ends up skipped fails rather than reporting green —
-so keep at least one case the other mode can run. A scripted run is what
-proves `agent.ts` still boots and its tools still resolve, and it is the one
-check a pipeline with no key can make for free.
+:::note[Keep one case each mode can run]
+A suite where every case ends up skipped fails rather than reporting green. The
+scripted half is what proves `agent.ts` still boots and its tools still resolve,
+and it is the one check a pipeline with no key can make for free.
+:::
 
-Two environment variables override the choice. `AAI_EVAL_STUB=1` forces the
-scripted model — which is what a pipeline wants, so it cannot start spending
-tokens the day a key reaches its environment. `AAI_REQUIRE_EVAL=1` is the
-opposite instruction: a missing credential becomes a failure instead of a
-quiet downgrade to a wiring check.
+### Forcing a mode
+
+- `AAI_EVAL_STUB=1` forces the scripted model. That is what a pipeline wants, so
+  it cannot start spending tokens the day a key reaches its environment.
+- `AAI_REQUIRE_EVAL=1` is the opposite instruction: a missing credential becomes
+  a failure instead of a quiet downgrade to a wiring check.
 
 ## Reading what happened
 
-`@alexkroman1/aai-runtime/eval` publishes the readers, and the reason to use
-them over a hand-written `find` is that **they throw when they have nothing to
-read**, naming what actually happened. A `find` that misses answers
-`undefined`, and a case asserting against `undefined` passes quietly.
+`@alexkroman1/aai-runtime/eval` publishes the readers. Use them over a
+hand-written `find`, because **they throw when they have nothing to read**, and
+name what actually happened. A `find` that misses answers `undefined`, and a
+case asserting against `undefined` passes quietly.
 
 ```ts
 import { errorsIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
@@ -226,66 +238,26 @@ describeEval(agentDef, (test) => {
 });
 ```
 
-**Assert about the turn a thing happened in, never about turn number two.**
-How many turns an agent takes to get somewhere is the model's business and it
-varies between runs, so a case pinned to an index is a flake with a
-misleading name. `turnCalling` finds the turn; `toolCallsInTurns` flattens
-them all.
-
-## Workflows
-
-A [background job](/agent/more/background-jobs/) has no session, so it gets
-its own suite. There is no `stubReply` — a workflow's steps reach a model, a
-transcription endpoint, a stranger's web server, and each of those already has
-a published fake — so a case installs what it needs and branches on `mode`:
-
-```ts
-import {
-  installStubTranscribe,
-  installStubUploads,
-} from "@alexkroman1/aai/testing/vitest";
-import { completedOutput } from "@alexkroman1/aai-runtime/eval";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
-import agentDef from "virtual:aai/agent";
-import { expect } from "vitest";
-import { z } from "zod";
-
-describeWorkflowEval(agentDef, (test) => {
-  test("transcribes the recording it was given", async ({ app, mode }) => {
-    installStubUploads({ upl_1: { bytes: new Uint8Array(64), name: "standup.wav" } });
-    if (mode === "stub") installStubTranscribe({ text: "hello there" });
-
-    const run = await app.run("transcribe", { recording: "upl_1" });
-
-    expect(run.status).toBe("completed");
-    const output = z.object({ text: z.string() }).parse(completedOutput(run));
-    expect(output.text).toMatch(/hello/i);
-  });
-});
-```
-
-Pass the exported workflow instead of its name and the input and output are
-typed. `app.settle(runId)` reads a run something else started — a voice tool
-that hands off to one — and `app.settleAll()` waits for every run the case
-began, which a case that installed a fake owes before it ends.
-
-**The engine an eval runs a body on is not durable**: no journal, no replay,
-no per-step retry. A green run here says the body does the work. It says
-nothing about resuming after step 27.
+**Assert about the turn a thing happened in, never about turn number two.** How
+many turns an agent takes to get somewhere is the model's business, and it
+varies between runs. A case pinned to an index is a flake with a misleading
+name. `turnCalling` finds the turn; `toolCallsInTurns` flattens them all.
 
 ## What an eval cannot see
 
-Everything below the audio boundary — when the agent decides you stopped
+**Anything below the audio boundary**: when the agent decides you stopped
 talking, what happens when you interrupt it, two sentences merging into one
 turn. Those are properties of the microphone and the speaker the harness
-replaced, so no assertion written here can say anything about one. `aai dev`
-and your own voice are what check that.
+replaced, so no assertion written here can say anything about one. `aai dev` and
+your own voice are what check that.
 
-And one run is not a verdict. A model is probabilistic: the same code, on the
-same cases, does not always score the same. Re-run before believing either
+**And one run is not a verdict.** A model is probabilistic, so the same code, on
+the same cases, does not always score the same. Re-run before believing either
 answer, and prefer a harder case to a weaker assertion.
 
 ## Next
 
+- [Workflow evals](/agent/build/workflow-evals/) — the same job for a background
+  job
 - [Run it locally](/agent/deploy/local/) — `aai dev`, and the half no eval reaches
 - [Publish](/agent/deploy/publish/) — ship it, and where your secrets go

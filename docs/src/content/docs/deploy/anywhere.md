@@ -4,8 +4,8 @@ description: One flag builds for Vercel, Deno Deploy, Modal, or plain Node.
 ---
 
 [`aai publish`](/agent/deploy/publish/) ships to the managed platform. When
-you'd rather own the hosting, `aai build --target <host>` emits a deployment
-for one of four, and prints the exact sequence to deploy it:
+you'd rather own the hosting, `aai build --target <host>` emits a deployment for
+one of four hosts, and prints the exact sequence to deploy it:
 
 ```sh
 aai build --target vercel
@@ -23,18 +23,18 @@ aai build --target node     # the default
 
 ## The flag is usually optional
 
-`aai build` detects the host it is running on. A Vercel build sets `VERCEL`,
-and Deno Deploy's git integration sets `DENO_DEPLOYMENT_ID` — so pointing
-either platform at your repository needs no configuration and no flag.
+`aai build` detects the host it is running on. A Vercel build sets `VERCEL`, and
+Deno Deploy's git integration sets `DENO_DEPLOYMENT_ID` — so pointing either
+platform at your repository needs no configuration and no flag.
 
 The flag is for the other direction: building on **your** machine and uploading
-the result. That is the whole story for Modal, which runs no build of its own,
-so `--target modal` is the only way to reach it.
+the result. Modal runs no build of its own, so `--target modal` is the only way
+to reach it.
 
 ## It prints the sequence, not one command
 
-For every target but `node`, the build ends by printing the ordered steps —
-with what it knows already filled in:
+For every target but `node`, the build ends by printing the ordered steps, with
+what it knows already filled in:
 
 ```text
 Deploy it with:
@@ -56,9 +56,9 @@ Two things worth noticing:
 `<ORG>`, `<APP>` and `<value>` stay as placeholders: they are account state and
 secrets, and the build knows neither.
 
-`aai build --target <host> --json` returns the same steps as data, including
-the build step the printed version omits — a CI job scripting a fresh checkout
-needs it.
+`aai build --target <host> --json` returns the same steps as data, including the
+build step the printed version omits — a CI job scripting a fresh checkout needs
+it.
 
 ## Trying one locally
 
@@ -74,8 +74,8 @@ modal serve .aai/modal/app.py          # modal
 
 Whichever host you pick, list what your tools read in `requiredEnv` — see
 [Publish](/agent/deploy/publish/). The build warns by name about anything the
-deployment will be missing, and expands the printed secret step once per name,
-so a key you declared is a line you can run rather than one you have to write.
+deployment will be missing, and expands the printed secret step once per name.
+A key you declared is a line you can run rather than one you have to write.
 
 Three things count as declared, and the build reads all three:
 
@@ -83,10 +83,11 @@ Three things count as declared, and the build reads all three:
 - everything in `requiredEnv`
 - everything named in `.env.example`
 
-`.env.example` is the one dotenv file that **ships** with the deployment — it
-is what declares which variables become `ctx.env`, and it is the place to name
-a variable nothing else can see: one a tool reads straight off `process.env`,
-or a host setting like `PORT`.
+`.env.example` is the one dotenv file that **ships** with the deployment. It is
+what declares which variables become `ctx.env`, and it is the place to name a
+variable nothing else can see: one a tool reads straight off `process.env`, or a
+host setting like `PORT`.
 
-Your `.env` is never uploaded to the host. The secret step in the printed
-sequence is how the values get there.
+:::caution[Your `.env` is never uploaded to the host]
+The secret step in the printed sequence is how the values get there.
+:::

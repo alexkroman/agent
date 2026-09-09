@@ -62,13 +62,13 @@ export default cartSlot.updateTool({
 ## Four rules
 
 - **`tool` reads, `updateTool` writes.** A read is readonly all the way down,
-  so `cart.items.push(item)` in a `tool` is a compile error at every depth —
-  and a `TypeError` at run time for a caller with no types — instead of a write
-  that silently goes nowhere.
+  so `cart.items.push(item)` inside a `tool` is a compile error at every depth,
+  not a write that silently goes nowhere. A caller with no types gets a
+  `TypeError` at run time instead.
 - **An `updateTool` body cannot `await`.** Whatever it leaves on the draft is
   stored the moment it returns, and that is what keeps two concurrent tools
-  from overwriting each other. To fetch something first, use a plain `tool()`
-  — its `execute` gets `ctx` as a second argument — and call
+  from overwriting each other. To fetch something first, use a plain `tool()`:
+  its `execute` gets `ctx` as a second argument, so it can call
   `slot.update(ctx, …)` once the data is in hand.
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans, null. A
   `Map`, `Set`, `Date`, or class instance is refused with the field named,

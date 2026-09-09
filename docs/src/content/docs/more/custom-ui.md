@@ -26,13 +26,16 @@ function CartPanel() {
 mountClient({ sidebar: CartPanel });
 ```
 
-`useAgentState` reads whatever the agent projects with `syncState` — declare
-one first, or there is nothing to receive. When the slot declares a `view`, pass
-`cartSlot.projected` instead of a fallback: it is the same object the agent
-pushes with, so there is no empty frame to write and no type to restate. See
+`aai dev` builds it, and `aai publish` ships it, with no extra step.
+
+`useAgentState` reads whatever the agent projects with `syncState`. Declare a
+slot first, or there is nothing to receive — see
 [Remembering things](/agent/build/state/).
 
-`aai dev` builds it, and `aai publish` ships it, with no extra step.
+:::tip[Pass `slot.projected` instead of a fallback]
+When the slot declares a `view`, `cartSlot.projected` is the same object the
+agent pushes with. There is no empty frame to write and no type to restate.
+:::
 
 ## The hooks
 
@@ -48,11 +51,16 @@ For a non-React client, `createBrowserSession({ platformUrl })` is the same
 session as a plain store. Components, styling, and the full hook surface are in
 the [SDK reference](/agent/reference/) under `@alexkroman1/aai-ui`.
 
+## A page for a background job
+
 Building a page for a [background job](/agent/more/background-jobs/) rather than
-a conversation? That calls `mountPage()` instead of `mountClient()` — and its
-`component` is optional the same way, so `mountPage({ name: "Digest" })` gets you
-a form built from each workflow's own input schema, the run's progress, and its
-result. Pass a `component` when you want to lay the result out yourself; the
-pieces the default is made of (`useWorkflows`, `<WorkflowFields>`,
-`useWorkflowSubmit`, `<WorkflowProgress>`, `<WorkflowRunError>`) are all
-exported, so replacing the shell is not starting over.
+a conversation? That calls `mountPage()` instead of `mountClient()`.
+
+Its `component` is optional the same way. `mountPage({ name: "Digest" })` gets
+you a form built from each workflow's own input schema, the run's progress, and
+its result.
+
+Pass a `component` when you want to lay the result out yourself. The pieces the
+default is made of — `useWorkflows`, `<WorkflowFields>`, `useWorkflowSubmit`,
+`<WorkflowProgress>`, `<WorkflowRunError>` — are all exported, so replacing the
+shell is not starting over.
