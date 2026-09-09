@@ -8,9 +8,20 @@ import {
   _resetShippedStudioPromptCache,
   STUDIO_PROMPT_KINDS,
   shippedStudioPrompt,
+  studioPromptKind,
   studioStarter,
   studioStarters,
 } from "./_studio-eval-prompt.ts";
+
+/**
+ * A directory with no committed copy in it — this source directory.
+ *
+ * The not-on-disk branches are reached by pointing the readers HERE rather than
+ * by casting an invalid kind past the type (`"nope" as never`, which
+ * `check:hatches` counts) or by writing a temp file (a unit test may read the
+ * filesystem, never write it).
+ */
+const NO_COPIES_HERE = new URL("./", import.meta.url);
 
 describe("shippedStudioPrompt", () => {
   test.each(STUDIO_PROMPT_KINDS)("loads the committed copy for %s", (kind) => {
@@ -42,11 +53,19 @@ describe("shippedStudioPrompt", () => {
 
   test("says what to run when the copy is missing, and does not fall back", () => {
     _resetShippedStudioPromptCache();
-    expect(() => shippedStudioPrompt("nope" as never)).toThrow(/sync-studio-prompt\.mjs/);
+    expect(() => shippedStudioPrompt("agent", NO_COPIES_HERE)).toThrow(/sync-studio-prompt\.mjs/);
     // The half that matters more than the message: it THREW. A fallback to the
     // harness prompt here would let a case report green while measuring a
     // string the studio never sends.
-    expect(() => shippedStudioPrompt("nope" as never)).toThrow(/SHIPPED/);
+    expect(() => shippedStudioPrompt("agent", NO_COPIES_HERE)).toThrow(/SHIPPED/);
+  });
+
+  test("a lookaside read is not memoized as the real prompt", () => {
+    // The failure the `memoize` flag exists against: a spec that pointed at an
+    // empty directory must not be able to poison the cache the harness reads.
+    _resetShippedStudioPromptCache();
+    expect(() => shippedStudioPrompt("agent", NO_COPIES_HERE)).toThrow();
+    expect(shippedStudioPrompt("agent").length).toBeGreaterThan(50_000);
   });
 
   test("memoizes — a case may ask repeatedly and these files are ~150KB", () => {
@@ -65,10 +84,25 @@ describe("studioStarters", () => {
     }
   });
 
-  test("the banner key is not mistaken for a catalog", () => {
-    // `_generated` is a string, and a loose `Object.entries` over the file would
-    // hand a case a starter list of characters. It reads as "kind not found".
-    expect(() => studioStarters("_generated" as never)).toThrow(/sync-studio-prompt/);
+  test("reports a catalog it cannot find rather than an empty one", () => {
+    expect(() => studioStarters("agent", new URL("./nope.json", NO_COPIES_HERE))).toThrow();
+  });
+});
+
+describe("studioPromptKind", () => {
+  test.each(STUDIO_PROMPT_KINDS)("accepts %s", (kind) => {
+    expect(studioPromptKind(kind)).toBe(kind);
+  });
+
+  test("rejects the banner key, which is the one that could pass unnoticed", () => {
+    // `_generated` is a real KEY in starters.json and its value is a string, so
+    // a kind that was never validated would index it and hand a case a
+    // "catalog" of characters — one starter per letter, each with no prompt.
+    expect(() => studioPromptKind("_generated")).toThrow(/not a studio project kind/);
+  });
+
+  test("names the kinds there are, so a typo is self-correcting", () => {
+    expect(() => studioPromptKind("Agent")).toThrow(/agent, workflow/);
   });
 });
 

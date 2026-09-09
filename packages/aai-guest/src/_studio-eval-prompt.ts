@@ -67,6 +67,46 @@ export type StudioPromptKind = (typeof STUDIO_PROMPT_KINDS)[number];
 const PROMPTS_DIR = new URL("../studio-prompts/", import.meta.url);
 
 /**
+ * Narrow a string to a kind, or throw naming the kinds there are.
+ *
+ * The boundary this module actually has: the committed `starters.json` is a
+ * JSON object whose keys are plain strings — its generated banner is one of
+ * them (`_generated`) — so "is this a kind" is a real runtime question here and
+ * not merely a type-system one.
+ *
+ * It is also what lets this module's spec exercise the rejection with an
+ * ordinary string. The first version had no validator and the tests reached the
+ * guards by casting (`"nope" as never`), which `check:hatches` counts and whose
+ * message is the right one: fix the underlying type error rather than silencing
+ * it. A cast to reach a branch is a sign the branch has no honest entrance —
+ * the entrance is here.
+ */
+export function studioPromptKind(value: string): StudioPromptKind {
+  if (!isStudioPromptKind(value)) {
+    throw new Error(
+      `"${value}" is not a studio project kind. The kinds are: ` +
+        `${STUDIO_PROMPT_KINDS.join(", ")}. They are enumerated from PROJECT_KINDS in ` +
+        "aai-studio-server by `node scripts/sync-studio-prompt.mjs`.",
+    );
+  }
+  return value;
+}
+
+/**
+ * The membership test, as a PREDICATE rather than a cast.
+ *
+ * `Array.prototype.includes` cannot narrow a `string` to the union on its own,
+ * and the two ways to finish the job are a `as StudioPromptKind` — which is the
+ * silencing this module's own doc argues against, one ratchet away from the
+ * casts it replaced — and this. A predicate states the same thing as a
+ * signature, so a reader sees where the narrowing is claimed.
+ */
+function isStudioPromptKind(value: string): value is StudioPromptKind {
+  const kinds: readonly string[] = STUDIO_PROMPT_KINDS;
+  return kinds.includes(value);
+}
+
+/**
  * The generated banner, which is NOT part of the prompt.
  *
  * Stripped by locating the comment's end rather than by counting lines, and only
@@ -85,11 +125,22 @@ const cache = new Map<StudioPromptKind, string>();
  * appends `toolchainPromptSection()` itself, inside `initStudioSession`, in an
  * eval exactly as in production. Appending it here would double it.
  */
-export function shippedStudioPrompt(kind: StudioPromptKind): string {
-  const cached = cache.get(kind);
+export function shippedStudioPrompt(
+  kind: StudioPromptKind,
+  /**
+   * Where to look. Defaults to the committed copies; a spec passes a directory
+   * that HAS no copy, which is how the not-on-disk branch is reached without a
+   * cast and without writing a file (a unit test may read, never write).
+   * `loadScaffoldGuide(guidePath = scaffoldGuidePath())` in aai-studio-server
+   * is the same shape for the same reason.
+   */
+  promptsDir: URL = PROMPTS_DIR,
+): string {
+  const memoize = promptsDir.href === PROMPTS_DIR.href;
+  const cached = memoize ? cache.get(kind) : undefined;
   if (cached !== undefined) return cached;
 
-  const file = new URL(`${kind}.md`, PROMPTS_DIR);
+  const file = new URL(`${kind}.md`, promptsDir);
   let raw: string;
   try {
     raw = readFileSync(file, "utf-8");
@@ -112,7 +163,7 @@ export function shippedStudioPrompt(kind: StudioPromptKind): string {
         "run `node scripts/sync-studio-prompt.mjs`.",
     );
   }
-  cache.set(kind, prompt);
+  if (memoize) cache.set(kind, prompt);
   return prompt;
 }
 
@@ -142,16 +193,29 @@ let starterCache: StarterFile | undefined;
  * would let the eval keep grading a prompt the product stopped offering — and
  * pass while doing it.
  */
-export function studioStarters(kind: StudioPromptKind): readonly StudioStarter[] {
-  starterCache ??= JSON.parse(readFileSync(STARTERS_FILE, "utf-8")) as StarterFile;
-  const list = starterCache[kind];
+export function studioStarters(
+  kind: StudioPromptKind,
+  /** Where to read the catalog. See {@link shippedStudioPrompt}'s `promptsDir`. */
+  file: URL = STARTERS_FILE,
+): readonly StudioStarter[] {
+  const read = (): StarterFile => JSON.parse(readFileSync(file, "utf-8")) as StarterFile;
+  let parsed: StarterFile;
+  if (file.href === STARTERS_FILE.href) {
+    starterCache ??= read();
+    parsed = starterCache;
+  } else {
+    // A lookaside read is never memoized: a spec pointing at another file must
+    // not be able to poison the catalog the harness reads.
+    parsed = read();
+  }
+  const list = parsed[kind];
   // `Array.isArray`, not a truthiness or `.length` check: the file's banner is
   // the STRING key `_generated`, and a string has a `length` — so a loose guard
   // hands a caller a "catalog" that is a run of characters, one starter per
   // letter, each with an undefined prompt. Caught by this module's own spec.
   if (!Array.isArray(list) || list.length === 0) {
     throw new Error(
-      `no starters for kind "${kind}" in ${fileURLToPath(STARTERS_FILE)} — run ` +
+      `no starters for kind "${kind}" in ${fileURLToPath(file)} — run ` +
         "`node scripts/sync-studio-prompt.mjs` and commit the result.",
     );
   }
