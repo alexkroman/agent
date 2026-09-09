@@ -45,3 +45,6 @@ Two things to know:
 
 A real environment variable beats `.env`, so `docker run -e MY_API_KEY=…`
 needs no `.env` in the image.
+
+For Vercel, Deno Deploy, or Modal rather than a container, see
+[Deploy anywhere](/agent/deploy/anywhere/).

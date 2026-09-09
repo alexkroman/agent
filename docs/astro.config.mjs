@@ -82,6 +82,7 @@ export default defineConfig({
             { label: "Run it locally", link: "/deploy/local/" },
             { label: "Publish", link: "/deploy/publish/" },
             { label: "Phone calls", link: "/deploy/phone/" },
+            { label: "Deploy anywhere", link: "/deploy/anywhere/" },
           ],
         },
         {

@@ -55,3 +55,7 @@ aai delete     # remove it
 
 `aai pull <project>` materializes a published project locally so it runs under
 `aai dev` again.
+
+Not using the managed platform? `aai build --target vercel|deno|modal|node`
+emits a deployment for your own host and prints the commands to ship it — see
+[Deploy anywhere](/agent/deploy/anywhere/).

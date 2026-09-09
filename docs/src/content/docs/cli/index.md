@@ -19,7 +19,7 @@ as `npm run <name>`, which use the project's own copy of the CLI.
 | `aai dev` | Start a local development server. `--port`, `--watch`. |
 | `aai test` | Run `agent.test.ts`. `--all` runs every spec in the project. |
 | `aai eval` | Run behaviour evals against a live model. |
-| `aai build` | Bundle without deploying. `--skip-tests`, `--skip-typecheck`. |
+| `aai build` | Bundle without deploying. `--target node\|vercel\|deno\|modal`, `--skip-tests`, `--skip-typecheck`. |
 | `aai start` | Serve the built agent. `--port`, `--host`. |
 
 ## Shipping

@@ -37,9 +37,12 @@ The runnable version is
 ## The simpler option first
 
 If you just want the agent on a port, `npm start` in a scaffolded project
-already does that — see [Run it locally](/agent/deploy/local/). Reach for
-`createAgentServer()` when you need to own the boot: your own routes, your own
-auth, your own process.
+already does that — see [Run it locally](/agent/deploy/local/). If you want it
+on Vercel, Deno Deploy, or Modal, `aai build --target <host>` emits the
+deployment and prints the commands — see
+[Deploy anywhere](/agent/deploy/anywhere/). Reach for `createAgentServer()`
+when you need to own the boot: your own routes, your own auth, your own
+process.
 
 `createProjectServer` from `@alexkroman1/aai-cli/start` sits between the two.
 It builds the server and binds nothing, so you decide how it is served.
