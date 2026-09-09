@@ -106,7 +106,7 @@ conversation:
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-const cart = sessionSlot("cart", () => ({ items: [] as string[] }));
+const cart = sessionSlot("cart", (): { items: string[] } => ({ items: [] }));
 
 export default agent({
   name: "Intake",

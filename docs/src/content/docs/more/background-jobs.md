@@ -20,12 +20,16 @@ import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 
 type Segment = { index: number };
+declare function planSegments(recording: string): Promise<Segment[]>;
+declare function transcribeSegment(segment: Segment): Promise<{ text: string }>;
 
 export async function transcribeFlow(
   input: { recording: string },
   ctx: WorkflowContext,
 ) {
   const { recording } = input;
+  // A step is where the whole Node runtime is available: fetch, a model
+  // call, a database. Not in the body.
   const segments = await ctx.step("plan", () => planSegments(recording));
 
   // Four at a time, each its own step: a dropped connection costs one
@@ -36,16 +40,6 @@ export async function transcribeFlow(
   );
 
   return { text: parts.map((part) => part.text).join(" ") };
-}
-
-async function planSegments(recording: string): Promise<Segment[]> {
-  // The whole Node runtime is available in a step: fetch, a model call, a
-  // database. Not in the body.
-  return [{ index: 0 }, { index: 1 }];
-}
-
-async function transcribeSegment(segment: Segment): Promise<{ text: string }> {
-  return { text: `part ${segment.index}` };
 }
 ```
 
