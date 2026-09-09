@@ -1,58 +1,29 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The studio workspace's filesystem primitives — walking, snapshotting, and
- * materializing the session's scratch tree. Split from studio-tools.ts,
- * which defines the coding agent's tool set over these; the harness and the
- * chat surface use them directly (session init, mid-turn checkpoints, the
- * end-of-turn sync).
+ * The studio workspace's filesystem primitives — snapshotting and materializing
+ * the session's scratch tree. Split from `studio-tools.ts`, which defines the
+ * studio's extra tools over these; the harness and the chat surface use them
+ * directly (session init, mid-turn checkpoints, the end-of-turn sync).
+ *
+ * The path primitives underneath — `resolveInside` (the containment refusal)
+ * and `writeFileWithParents` — are the SDK's now
+ * (`@alexkroman1/aai/workspace-files`), where the coding-agent tool set that
+ * shares them lives. They are re-exported here so this module stays the one
+ * import path for "how this package touches a workspace".
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   isLockfile,
+  resolveInside,
   snapshotWorkspaceFiles,
   type WorkspaceSnapshot,
   walkWorkspaceFiles,
+  writeFileWithParents,
 } from "@alexkroman1/aai/workspace-files";
-import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 
-/**
- * Resolve a workspace-relative path, refusing escapes from the root.
- *
- * The containment test is {@link isPathInside}, not a fourth copy of the line.
- * It was open-coded here byte for byte — as it was in `aai-cli/studio.ts` — even
- * though `aai-runtime` exports it from `/internal` with a comment saying it is
- * shared BECAUSE the guest harness needs it. The copies were only correct for an
- * absolute, normalized, trailing-slash-free root, which nothing stated: this
- * function threw "Path escapes the workspace" for `resolveInside("/a/b/",
- * "c.ts")`. Only the ERROR SENTENCE is this module's — the callers' surfaces
- * differ (a coding-agent tool result here, a CLI failure there), which is
- * exactly why the predicate is shared and the message is not.
- */
-export function resolveInside(dir: string, rel: string): string {
-  const abs = path.resolve(dir, rel);
-  if (!isPathInside(dir, abs)) {
-    throw new Error(`Path escapes the workspace: ${rel}`);
-  }
-  return abs;
-}
-
-/**
- * Write one file at an already-resolved absolute path, creating its parent
- * directories.
- *
- * Every write into a workspace goes through the same two calls — `mkdir -p` the
- * parent, then write utf-8 — and it was open-coded at four sites (this module's
- * own materialize, `write_file`, `download_to_workspace`, and the template
- * copy). The path is passed RESOLVED rather than relative on purpose: each
- * caller refuses an escape with {@link resolveInside} at the point where its own
- * error shape is right, and this must not become a second place that decides.
- */
-export async function writeFileWithParents(abs: string, content: string): Promise<void> {
-  await mkdir(path.dirname(abs), { recursive: true });
-  await writeFile(abs, content, "utf-8");
-}
+export { resolveInside, writeFileWithParents } from "@alexkroman1/aai/workspace-files";
 
 /**
  * Parse the workspace's own `package.json`, or null when it is missing or is

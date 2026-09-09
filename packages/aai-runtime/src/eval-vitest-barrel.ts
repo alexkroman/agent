@@ -23,6 +23,15 @@ export {
   resolveEvalMode,
   resolveWorkflowEvalMode,
 } from "./eval/describe.ts";
+// The TEXT-agent suite. Its own function rather than a flag on `describeEval`
+// for the reason there are two harnesses at all: `createRuntime` refuses
+// `text: true` by name, so there is no session to open — see the module doc.
+export {
+  type DescribeTextEvalOptions,
+  describeTextEval,
+  type EvalTextTest,
+  type EvalTextTestContext,
+} from "./eval/describe-text.ts";
 // The workflow-app suite. Its own function rather than a flag on `describeEval`
 // because the two gate on different credentials and hand a case different
 // things — see the module doc.

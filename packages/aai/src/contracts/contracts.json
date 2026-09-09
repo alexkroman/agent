@@ -19,6 +19,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "coding": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "defaults": {
     "current": 1,
     "supported": [1],

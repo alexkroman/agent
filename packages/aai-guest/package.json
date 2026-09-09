@@ -30,9 +30,7 @@
     "@tailwindcss/vite": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "ai": "catalog:",
-    "diff": "^9.0.0",
     "p-timeout": "catalog:",
-    "picomatch": "^4.0.7",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",
@@ -44,7 +42,6 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/picomatch": "^4.0.2",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/ws": "catalog:",

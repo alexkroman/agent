@@ -167,6 +167,7 @@ export {
 export {
   type EvalTextAgent,
   type EvalTextAgentOptions,
+  evalTextCredentials,
   openEvalTextAgent,
 } from "./eval/text-agent.ts";
 // Reading a CALL rather than one reply. Public because the claim they make is

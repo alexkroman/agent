@@ -1,4 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
+/**
+ * The studio's own half of the coding agent's tool set.
+ *
+ * The nine workspace tools are the SDK's (`@alexkroman1/aai/coding-tools`) and
+ * are covered there, over a bare directory. What is asserted here is what this
+ * host adds to them and could get wrong on its own: the syntax gate and the
+ * post-write diagnostics reaching a write result, `bash` running with the
+ * scrubbed child env rather than this process's, `test_agent`, and the label
+ * map tracking the agent's real tool set.
+ *
+ * Every call goes through `runTool` — the SDK's executor — because several of
+ * these claims are about the SHAPE a failure comes back in, which reaching past
+ * it to `execute` would not exercise.
+ */
 
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -46,32 +60,6 @@ describe("guest workspace tools", () => {
       content: "x",
     });
     expect(JSON.parse(write)).toMatchObject({ error: expect.stringContaining("escapes") });
-  });
-
-  test("read_file windows large files with numbered lines", async () => {
-    const big = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join("\n");
-    const { tools } = await makeTools({ "big.txt": big });
-    const out = String(
-      await runTool(tools, "read_file", { path: "big.txt", offset: 10, limit: 3 }),
-    );
-    expect(out).toContain("00010| line 10");
-    expect(out).toContain("00012| line 12");
-    expect(out).not.toContain("line 13");
-    expect(out).toContain("offset: 13");
-  });
-
-  test("glob matches by pattern, newest first, and reports no matches", async () => {
-    const { tools } = await makeTools({
-      "agent.ts": "a",
-      "client.tsx": "c",
-      "lib/util.ts": "u",
-      "notes.md": "n",
-    });
-    const out = String(await runTool(tools, "glob", { pattern: "**/*.ts" }));
-    expect(out).toContain("agent.ts");
-    expect(out).toContain("lib/util.ts");
-    expect(out).not.toContain("notes.md");
-    expect(String(await runTool(tools, "glob", { pattern: "*.py" }))).toBe("No files found");
   });
 
   test("bash runs in the workspace with the guest token scrubbed", async () => {
@@ -189,60 +177,6 @@ describe("guest workspace tools", () => {
     // (the checkpointer never fires for it).
     expect(MUTATING_TOOLS.size).toBeGreaterThan(0);
     for (const name of MUTATING_TOOLS) expect(names).toContain(name);
-  });
-
-  test("delete_file removes the file and names a missing one", async () => {
-    const { tools, dir } = await makeTools({ "old.ts": "x" });
-    expect(String(await runTool(tools, "delete_file", { path: "old.ts" }))).toBe("Deleted old.ts");
-    await expect(readFile(path.join(dir, "old.ts"))).rejects.toThrow();
-    expect(String(await runTool(tools, "delete_file", { path: "old.ts" }))).toBe(
-      "Error: no such file: old.ts",
-    );
-  });
-
-  // `stat` admits a directory and `rm` without `recursive` rejects one, so the
-  // raw `ERR_FS_EISDIR` escaped `runTool`'s shaping as the only Node error in a
-  // tool set where every other failure is prose the model can act on.
-  test("delete_file refuses a directory in prose, not with a raw fs error", async () => {
-    const { tools, dir } = await makeTools({ "pages/home.ts": "x" });
-    const out = String(await runTool(tools, "delete_file", { path: "pages" }));
-    expect(out).toContain("is a directory");
-    expect(out).not.toContain("EISDIR");
-    // Refusing means refusing: the tree is still there.
-    expect(await readFile(path.join(dir, "pages/home.ts"), "utf-8")).toBe("x");
-  });
-
-  test("todo_write renders marks and the remaining count", async () => {
-    const { tools } = await makeTools({});
-    const out = String(
-      await runTool(tools, "todo_write", {
-        todos: [
-          { content: "scaffold the agent", status: "completed" },
-          { content: "wire the tool", status: "in_progress" },
-          { content: "test it", status: "pending" },
-          { content: "gold-plate it", status: "cancelled" },
-        ],
-      }),
-    );
-    expect(out).toContain("[x] scaffold the agent");
-    expect(out).toContain("[>] wire the tool");
-    expect(out).toContain("[ ] test it");
-    expect(out).toContain("[-] gold-plate it");
-    expect(out).toContain("2 remaining");
-    expect(String(await runTool(tools, "todo_write", { todos: [] }))).toBe("(empty todo list)");
-  });
-
-  test("grep searches only what the glob selects and reports bad patterns", async () => {
-    const { tools } = await makeTools({
-      "agent.ts": "const needle = 1;\n",
-      "notes.md": "needle in prose\n",
-    });
-    const scoped = String(await runTool(tools, "grep", { pattern: "needle", glob: "*.ts" }));
-    expect(scoped).toContain("agent.ts");
-    expect(scoped).not.toContain("notes.md");
-    // A broken regex must come back as an error string the agent can fix.
-    const bad = String(await runTool(tools, "grep", { pattern: "([" }));
-    expect(bad).toContain("Error:");
   });
 
   test("test_agent surfaces a build failure as-is and stops there", async () => {

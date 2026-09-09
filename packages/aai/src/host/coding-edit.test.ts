@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { applyEdit, StudioEditError } from "./studio-edit.ts";
+import { applyEdit, CodingEditError } from "./coding-edit.ts";
 
 const FILE = `import { agent } from "@alexkroman1/aai";
 
@@ -57,7 +57,7 @@ describe("applyEdit", () => {
 
   test("replaceAll still refuses a missing match", () => {
     expect(() => applyEdit("f.ts", FILE, "absent", "x", { replaceAll: true })).toThrow(
-      StudioEditError,
+      CodingEditError,
     );
   });
 
@@ -66,7 +66,7 @@ describe("applyEdit", () => {
   });
 
   test("refuses a missing match instead of guessing", () => {
-    expect(() => applyEdit("agent.ts", FILE, "not in the file", "x")).toThrow(StudioEditError);
+    expect(() => applyEdit("agent.ts", FILE, "not in the file", "x")).toThrow(CodingEditError);
     expect(() => applyEdit("agent.ts", FILE, "not in the file", "x")).toThrow(
       /must match the file/,
     );

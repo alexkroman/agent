@@ -277,8 +277,15 @@ export function resolveWorkflowEvalMode(
   return modeFrom(evalWorkflowCredentials(agent, hostEnv), hostEnv);
 }
 
-/** The mode decision itself, shared by both gates above. */
-function modeFrom(
+/**
+ * The mode decision itself, shared by the gates above — and by
+ * `describe-text.ts`, which asks the same question of a different credential
+ * verdict. Exported for that, not on the barrel: `AAI_EVAL_STUB` and
+ * `AAI_REQUIRE_EVAL` have to mean one thing across every eval suite, and a
+ * second copy of this three-branch decision is how one of them comes to be
+ * honoured by two of three doors.
+ */
+export function modeFrom(
   creds: EvalCredentials,
   hostEnv: Record<string, string | undefined>,
 ): { mode: EvalMode; reason: string } {

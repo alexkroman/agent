@@ -242,6 +242,9 @@ importers:
       bogon:
         specifier: ^1.3.0
         version: 1.3.0
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
       eventsource-parser:
         specifier: 'catalog:'
         version: 4.1.0
@@ -257,6 +260,9 @@ importers:
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
       undici:
         specifier: ^8.10.1
         version: 8.10.1
@@ -270,6 +276,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
+      '@types/picomatch':
+        specifier: ^4.0.2
+        version: 4.0.3
       fast-check:
         specifier: 'catalog:'
         version: 4.9.0
@@ -413,15 +422,9 @@ importers:
       ai:
         specifier: 'catalog:'
         version: 7.0.90(zod@4.5.4)
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
-      picomatch:
-        specifier: ^4.0.7
-        version: 4.0.7
       react:
         specifier: 'catalog:'
         version: 19.2.8
@@ -450,9 +453,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
-      '@types/picomatch':
-        specifier: ^4.0.2
-        version: 4.0.3
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.18

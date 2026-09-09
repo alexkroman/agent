@@ -1319,18 +1319,21 @@ non-vacuity guard is worth copying: the first version derived "which templates
 have a file" from the SAME glob it was checking, so breaking the pattern changed
 nothing — verified by A/B. It reads the filesystem instead.
 
-**There is deliberately no TEXT-mode template, and the allowlist records
-it.** A template is a starter the platform DEPLOYS — `templates.test.ts` loads
-each `agent.ts` and validates the config a voice session is built from, and the
-studio's `use_template` copies one into a workspace that gets deployed next.
-`agent({ text: true })` has no session to deploy (`createRuntime` refuses it by
-name), so a text template would be a starter nothing downstream can run.
-`TextAgentParams` therefore sits in `template-api-allowlist.json` beside
-`PipelineAgentParams` and `S2sAgentParams`, which are unexercised for a
-narrower reason — they are the union arms `agent()` derives from, and an author
-never names one. `createTextAgent`'s worked example is the studio's own coding
-agent (`packages/aai-guest/CLAUDE.md`), which is a better one than a template
-could be: it is a real agent doing real work, on the same SDK it builds with.
+**One template is TEXT-mode, and it ships its own front door.**
+`coding-agent` declares `text: true`, so `createRuntime` refuses it by name and
+there is no session for `aai dev` to serve — which is why it is the one template
+carrying a `chat.ts`: `createTextAgent` plus `withToolsDir`, a `readline` loop,
+and the conversation as a `ModelMessage[]` the file keeps. This guide used to
+say a text template was impossible for that reason, and the reason was right
+about DEPLOYMENT and wrong about the template: a starter is a worked example
+first, and the mode's whole point is work measured in files rather than in
+seconds of silence. Its nine tools are `createCodingTools`
+(`@alexkroman1/aai/coding-tools`) over `WORKSPACE_DIR`, one registry in
+`shared.ts` re-exported a file at a time from `tools/` — nine factory calls
+would be nine chances to point one somewhere else. `TextAgentParams` stays in
+`template-api-allowlist.json` beside `PipelineAgentParams` and
+`S2sAgentParams`: they are the union arms `agent()` derives from, and an author
+names none of them.
 
 ## What `tsconfig.json` includes is what gets type-checked
 

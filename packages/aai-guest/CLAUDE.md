@@ -39,8 +39,11 @@ delivers):
   proxy), `studio-session-init.ts` (the HTTP install route + the guest's own
   (scope, project) identity pin), `studio-http.ts` (shared CORS + bounded
   body read for both `/studio/*` surfaces),
-  `studio-agent.ts`/`studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
-  (the in-guest coding agent), `studio-build.ts` (in-guest workspace
+  `studio-agent.ts`/`studio-chat.ts`/`studio-tools.ts`
+  (the in-guest coding agent — its nine WORKSPACE tools are the SDK's
+  now, `@alexkroman1/aai/coding-tools`, and what is left here is the three
+  seams the studio fills and `test_agent`; see "The coding agent is an
+  ordinary `agent()`" below), `studio-build.ts` (in-guest workspace
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
   the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (constants —
   import-free except the workspace caps, re-exported from
@@ -160,6 +163,31 @@ only ever keeps more verbatim.
 `createStudioAgent`'s real tool surface, not a hand-merged copy of it — the
 merge they used to be compared against was a second place the tool set was
 written down.
+
+**The nine WORKSPACE tools are the SDK's, and only the studio-shaped parts
+stayed.** `createCodingTools` (`@alexkroman1/aai/coding-tools`) is
+`read_file`/`write_file`/`edit_file`/`delete_file`/`list_files`/`glob`/`grep`/
+`bash`/`todo_write` over one directory; `studio-edit.ts` and `studio-grep.ts`
+moved with them (`coding-edit.ts`, `coding-grep.ts`), as did the capped
+child-process runner, which this package's `studio-spawn.ts` re-exports so npm,
+Publish and the workspace test run keep one import path. Nothing about a file
+tool was ever studio-shaped. What IS studio-shaped is the three seams the
+factory takes, and each is a rule this package argues elsewhere in this guide:
+`validate` is the write-time syntax gate (`studio-syntax.ts`), `afterWrite` is
+the post-write type check (`studio-write-diagnostics.ts`), and `env` is
+`workspaceChildEnv()` — the SDK's default is the process's own environment,
+which is right for a CLI on a laptop and wrong for a guest holding a
+control-channel bearer. `test_agent` stays here whole: it is the one tool that
+knows the workspace is an aai agent.
+
+**The DESCRIPTIONS split the same way.** `CODING_TOOL_DESCRIPTIONS` is the
+SDK's, `STUDIO_CODING_TOOL_DESCRIPTIONS` overrides the three whose prose is
+about THIS host (a write is type-checked, dependencies have their own tools, a
+workspace syncs back), and `STUDIO_TOOL_DESCRIPTIONS` describes the tools only
+the studio has. `studio-tool-descriptions.test.ts` asserts the three maps
+together cover the agent's real tool set exactly, and that an override names a
+tool the SDK actually describes — an override of nothing is prose the model
+never reads.
 
 **The post-write checker is built ONCE, in `createStudioAgent`, and handed to
 both write-shaped tool families** (`createStudioTools`, `createTemplateTools`)

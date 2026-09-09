@@ -1,89 +1,31 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * One child-process runner for every guest spawn site — builds, Publish,
- * `bash`, npm, and the workspace test run. Five hand-rolled copies of
- * "spawn → cap each stream to a kept tail → settle on close" had already
- * drifted on signal and cap semantics; the policy differences that remain
- * (reject vs annotate on a kill, combined vs separate streams) are the
- * caller's, decided on the result this returns.
+ * The guest's own child-process policy, over the SDK's runner.
  *
- * stdin is always `ignore`: none of these children read it, and an open
- * pipe the parent never writes lets a child like a bare `cat` block until
- * the timeout instead of seeing EOF.
+ * `runCapped` — spawn, cap each stream to a kept tail, settle on close — is
+ * `@alexkroman1/aai/host-internal`'s now, because the coding agent's `bash` is
+ * built on it and that tool set moved to the SDK. What is LEFT here is the part
+ * that is a policy of THIS package rather than a mechanism: npm's standing
+ * flags, and the two child environments (one for children running
+ * workspace-authored code, one for our own CLI).
+ *
+ * The three runner names are re-exported rather than imported at each call
+ * site, so `studio-publish.ts`, `studio-test.ts` and the specs that mock this
+ * module keep one import path for "how this package spawns things".
  */
 
-import { spawn } from "node:child_process";
-import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
+import { runCapped, type SpawnCappedResult } from "@alexkroman1/aai/host-internal";
+import { safeJsonParse } from "@alexkroman1/aai/utils";
+
+export {
+  keepTail,
+  outputWithKillNote,
+  runCapped,
+  type SpawnCappedResult,
+} from "@alexkroman1/aai/host-internal";
 
 /** Output tail kept per stream from a CLI child (build / deploy envelopes). */
 export const CLI_OUTPUT_CAP = 32_000;
-
-export type SpawnCappedResult = {
-  exitCode: number | null;
-  /** Set when the child was killed — usually the wall-clock timeout. */
-  signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-};
-
-/** Keep the tail of `text`, marking the elision — errors print last. */
-export const keepTail = (text: string, cap: number): string =>
-  text.length > cap ? `…${text.slice(-cap)}` : text;
-
-/**
- * Run one child process, capturing capped output tails. Rejects only when
- * the process could not be spawned; a killed child resolves with `signal`
- * set so the caller picks the failure shape its output contract needs.
- * With `combineStreams`, stderr interleaves into `stdout` in arrival order
- * (the shell-tool shape) and `stderr` comes back empty.
- */
-export function runCapped(
-  cmd: string,
-  args: string[],
-  opts: {
-    cwd: string;
-    /** Child env; defaults to this process's. */
-    env?: NodeJS.ProcessEnv;
-    timeoutMs: number;
-    /** Tail kept per captured stream. */
-    cap: number;
-    combineStreams?: boolean;
-  },
-): Promise<SpawnCappedResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
-      cwd: opts.cwd,
-      ...omitUndefined({ env: opts.env }),
-      timeout: opts.timeoutMs,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = keepTail(stdout + chunk.toString(), opts.cap);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      if (opts.combineStreams) stdout = keepTail(stdout + chunk.toString(), opts.cap);
-      else stderr = keepTail(stderr + chunk.toString(), opts.cap);
-    });
-    child.on("error", reject);
-    child.on("close", (exitCode, signal) => {
-      resolve({ exitCode, signal, stdout, stderr });
-    });
-  });
-}
-
-/**
- * The child's stdout with a KILL annotated onto it — the shape every surface
- * that returns one string to the model shares (`bash`, the npm tools, the
- * workspace test run). `runCapped` leaves the policy to the caller and reports
- * `signal`; what was copied three times was this sentence, not the decision.
- */
-export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string {
-  return result.signal
-    ? `${result.stdout}\n[killed by ${result.signal} after ${timeoutMs}ms]`
-    : result.stdout;
-}
 
 /** Wall-clock limit for one npm invocation. */
 export const NPM_TIMEOUT_MS = 110_000;

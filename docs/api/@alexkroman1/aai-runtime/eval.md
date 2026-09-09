@@ -1140,6 +1140,41 @@ change — a gate whose meaning moves under it is not a gate.
 
 ***
 
+### evalTextCredentials()
+
+```ts
+function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
+```
+
+Can this machine run a TEXT agent's eval live, and if not, which key is
+missing?
+
+The sibling of `evalCredentials`, and separate because that one OVER-ASKS
+here: it answers about a voice agent, so an agent with no complete pipeline
+gets the default AssemblyAI STT key added — and a text agent declaring
+`anthropicLlm()` was reported as needing `ASSEMBLYAI_API_KEY` it will never
+read, which skips a suite the machine could have run live.
+
+A text agent resolves exactly one provider credential, its LLM's — and when
+it declares no `llm` at all, `createTextAgent` defaults the same descriptor
+this does, so the question is asked about the model the run would use.
+
+#### Parameters
+
+##### agent
+
+[`AgentDef`](../aai/index.md#agentdef)
+
+##### hostEnv?
+
+`Record`\<`string`, `string` \| `undefined`\>
+
+#### Returns
+
+[`EvalCredentials`](#evalcredentials)
+
+***
+
 ### evalWorkflowCredentials()
 
 ```ts

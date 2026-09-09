@@ -7,7 +7,7 @@
 // coding agent from both ends and never in the middle:
 //
 //   studio-agent.test.ts             what the DEFINITION declares
-//   studio-tools.test.ts             each TOOL, one at a time, through `runTool`
+//   studio-tools.test.ts             the studio-shaped half of the tool set
 //   studio-chat.scenario.test.ts     the HTTP SURFACE, over a real port and disk
 //   studio-agent.eval.test.ts        a LIVE model over a real workspace
 //

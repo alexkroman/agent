@@ -57,6 +57,58 @@ describeEval(agentDef, (test) => {
 
 ***
 
+### describeTextEval()
+
+```ts
+function describeTextEval(
+   agent: AgentDef, 
+   define: (test: EvalTextTest) => void, 
+   options?: DescribeTextEvalOptions
+): void;
+```
+
+Declare an eval suite for a TEXT agent.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { toolNames } from "@alexkroman1/aai-runtime/eval";
+import { describeTextEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { expect } from "vitest";
+
+const agentDef = agent({ name: "Coder", text: true });
+
+describeTextEval(agentDef, (test) => {
+  test(
+    "reads a file before it edits one",
+    async ({ agent: coder }) => {
+      const turn = await coder.send("rename `total` to `sum` in cart.ts");
+      expect(toolNames(turn.toolCalls)).toContain("read_file");
+    },
+    { stubReply: [{ tool: "read_file", args: { path: "cart.ts" } }, "Renamed it."] },
+  );
+});
+```
+
+#### Parameters
+
+##### agent
+
+[`AgentDef`](../../aai/index.md#agentdef)
+
+##### define
+
+(`test`: [`EvalTextTest`](#evaltexttest)) => `void`
+
+##### options?
+
+[`DescribeTextEvalOptions`](#describetextevaloptions)
+
+#### Returns
+
+`void`
+
+***
+
 ### describeWorkflowEval()
 
 ```ts
@@ -246,6 +298,16 @@ because the engine publishes nothing when nobody passed one.
 ```ts
 readonly optional workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 ```
+
+***
+
+### DescribeTextEvalOptions
+
+```ts
+type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+```
+
+What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ***
 
@@ -470,6 +532,65 @@ started with `workflows.settle(runId)`.
 
 The engine under it is NOT durable — see `eval/workflow-engine.ts` before
 writing a claim about a run.
+
+***
+
+### EvalTextTest
+
+```ts
+type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+```
+
+Declare one text eval case. The conversation is opened and closed for it.
+
+#### Parameters
+
+##### name
+
+`string`
+
+##### body
+
+(`ctx`: [`EvalTextTestContext`](#evaltexttestcontext)) => `Promise`\<`void`\>
+
+##### options?
+
+[`EvalCaseOptions`](#evalcaseoptions)
+
+#### Returns
+
+`void`
+
+***
+
+### EvalTextTestContext
+
+```ts
+type EvalTextTestContext = {
+  agent: EvalTextAgent;
+  mode: EvalMode;
+};
+```
+
+What a text case body is handed: its own conversation, and the mode.
+
+#### Properties
+
+##### agent
+
+```ts
+readonly agent: EvalTextAgent;
+```
+
+Opened for this case, released after it.
+
+##### mode
+
+```ts
+readonly mode: EvalMode;
+```
+
+Which model this run got. A case may branch on it, and most should not.
 
 ***
 

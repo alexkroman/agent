@@ -22,7 +22,7 @@ framework — `runTextAgent` + `scriptedTextModel`
 | | what it drives |
 | --- | --- |
 | `studio-agent.test.ts` | what the DEFINITION declares |
-| `studio-tools.test.ts` | each TOOL, one at a time, through `runTool` |
+| `studio-tools.test.ts` | the studio's own half of the tool set through `runTool` — the syntax gate, the post-write diagnostics, the scrubbed `bash` env, `test_agent`. The nine workspace tools are the SDK's and are covered there (`coding-tools.test.ts`) |
 | `studio-chat.scenario.test.ts` | the HTTP SURFACE, over a real port and real disk |
 | **`studio-agent-turns.test.ts`** | **one TURN of `createTextAgent` over the real definition** |
 | `studio-agent.eval.test.ts` | a LIVE model over a real workspace |

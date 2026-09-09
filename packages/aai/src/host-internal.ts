@@ -26,6 +26,32 @@ export {
   SANDBOX_ONLY_BUILTINS,
   type ToolDefRecord,
 } from "./host/builtin-tools.ts";
+// The machinery UNDER `@alexkroman1/aai/coding-tools`: the edit matcher, the
+// workspace grep, and the capped child-process runner. Here rather than on that
+// subpath because they are what a platform package builds its OWN tools on —
+// the studio's coding agent wraps every one of them — while the published
+// surface is the tool set a model calls. They carry no semver promise, and an
+// `agent.ts` names none of them.
+export {
+  applyEdit,
+  CodingEditError,
+  clearEditMisses,
+  type EditResult,
+  rewriteHint,
+} from "./host/coding-edit.ts";
+export {
+  CodingGrepError,
+  type GrepOptions,
+  globMatcher,
+  grepWorkspace,
+} from "./host/coding-grep.ts";
+export {
+  keepTail,
+  outputWithKillNote,
+  type RunCappedOptions,
+  runCapped,
+  type SpawnCappedResult,
+} from "./host/coding-spawn.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";

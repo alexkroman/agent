@@ -1,25 +1,26 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Content search across a studio workspace.
+ * Content search across a workspace's files.
  *
  * Modelled on edge-pi's grep tool (MIT,
  * https://github.com/marcusschiesser/edge-pi) — same shape of input and the
  * same `path:line: text` output — but implemented directly rather than by
- * shelling out to `rg`. A workspace is at most `MAX_STUDIO_FILES` strings
- * already in memory, and the studio has no shell to shell out to.
+ * shelling out to `rg`: a workspace is at most
+ * `MAX_WORKSPACE_FILES` strings already in memory, and a sandbox that has no
+ * `rg` on its PATH must still be able to search.
  *
  * Without this the agent's only way to find something is to read whole files,
  * which on a multi-file workspace burns context to answer "where is this
  * defined".
  *
- * Runs INSIDE the guest sandbox (the coding agent's own container), so a
- * catastrophic model-supplied regex costs this tenant's sandbox CPU — never
- * another user's turn. The per-tool deadline in studio-tools.ts bounds it.
+ * A catastrophic model-supplied regex costs the CPU of whatever process runs
+ * the tool — which is the agent's own sandbox, and is why the per-call tool
+ * deadline is what bounds this rather than a pattern analysis nobody can write.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import picomatch from "picomatch";
-import { MAX_STUDIO_FILES } from "./limits.ts";
+import { errorMessage } from "../sdk/utils.ts";
+import { MAX_WORKSPACE_FILES } from "./workspace-files.ts";
 
 /** Matches returned before the result is capped. */
 const DEFAULT_LIMIT = 100;
@@ -29,7 +30,7 @@ const MAX_LINE_LENGTH = 200;
  * Lines longer than this are not matched against at all — a perf guard so a
  * minified or data line doesn't dominate the scan budget. (It is NOT the
  * backtracking bound: catastrophic patterns explode at tens of characters;
- * the per-tool deadline in studio-tools.ts is what bounds those.)
+ * the per-call tool deadline is what bounds those.)
  */
 const MAX_SEARCHABLE_LINE = 10_000;
 
@@ -42,7 +43,7 @@ export type GrepOptions = {
 };
 
 /** Thrown for an input the caller can fix (a bad regex); surfaced to the agent. */
-export class StudioGrepError extends Error {}
+export class CodingGrepError extends Error {}
 
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -55,7 +56,7 @@ export function globMatcher(glob: string): (path: string) => boolean {
   try {
     return picomatch(glob, { dot: true });
   } catch (err) {
-    throw new StudioGrepError(`Invalid glob ${JSON.stringify(glob)}: ${errorMessage(err)}`, {
+    throw new CodingGrepError(`Invalid glob ${JSON.stringify(glob)}: ${errorMessage(err)}`, {
       cause: err,
     });
   }
@@ -66,7 +67,7 @@ function buildMatcher(pattern: string, opts: GrepOptions): RegExp {
   try {
     return new RegExp(source, opts.ignoreCase ? "i" : "");
   } catch (err) {
-    throw new StudioGrepError(
+    throw new CodingGrepError(
       `Invalid regex ${JSON.stringify(pattern)}: ${errorMessage(err)}. ` +
         "Pass literal: true to search for it as plain text.",
       { cause: err },
@@ -112,7 +113,7 @@ function grepFile(
 /**
  * Search `files` for `pattern`, in grep's output shape.
  *
- * @throws {StudioGrepError} when the pattern is empty or not a valid regex
+ * @throws {CodingGrepError} when the pattern is empty or not a valid regex
  * or glob.
  */
 export function grepWorkspace(
@@ -120,10 +121,10 @@ export function grepWorkspace(
   pattern: string,
   opts: GrepOptions = {},
 ): string {
-  if (pattern.length === 0) throw new StudioGrepError("pattern must not be empty");
+  if (pattern.length === 0) throw new CodingGrepError("pattern must not be empty");
   const matcher = buildMatcher(pattern, opts);
   const pathFilter = opts.glob ? globMatcher(opts.glob) : null;
-  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_STUDIO_FILES * 100));
+  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_WORKSPACE_FILES * 100));
   const context = Math.max(0, opts.context ?? 0);
 
   const out: string[] = [];

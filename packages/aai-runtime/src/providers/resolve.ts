@@ -52,6 +52,7 @@ import type {
 import type { LanguageModel } from "ai";
 import type { LlmRegistryEntry } from "./_llm-registry.ts";
 import { LLM_REGISTRY } from "./_llm-registry.ts";
+import { descriptorEnvVar, envVarOf } from "./_provider-env-var.ts";
 import { options, requireApiKey } from "./_utils.ts";
 
 /**
@@ -228,46 +229,6 @@ export type ResolvedOpener<Opener> = {
    *  caller has to re-derive it from a descriptor it no longer holds. */
   readonly envVar: string;
 };
-
-/**
- * A descriptor's own credential env var, overriding the registry default.
- *
- * The registry maps ONE env var per provider kind, which is right until two
- * stages of the same vendor need different accounts. AssemblyAI's three
- * `*_API_KEY_ENV` constants are distinct names for the same string
- * (`ASSEMBLYAI_API_KEY`), so without this there is no way to run STT against a
- * staging cluster while the LLM gateway and TTS stay on production — and the
- * keys are strictly environment-scoped, measured: a production key is rejected
- * by the sandbox STT cluster (1008) and a staging key is rejected by production
- * STT and TTS. A mixed deployment therefore needs two credentials live at once.
- *
- * It names a VARIABLE, never a key, so the descriptor stays secret-free and
- * safe to serialize — the same property that keeps API keys out of deployed
- * configs. A non-string or empty value falls through to the registry default
- * rather than resolving to `""`.
- */
-function descriptorEnvVar(descriptor: object | undefined): string | undefined {
-  // `bag`, not `options` — that name is an imported helper used throughout the
-  // registries below, and shadowing it here reads as a call site of it.
-  const bag = (descriptor as { options?: unknown } | undefined)?.options;
-  const value = (bag as Record<string, unknown> | undefined)?.apiKeyEnv;
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-/**
- * Which variable a descriptor's credential really lives in: its own
- * `apiKeyEnv` if it named one, otherwise the registry default.
- *
- * Spelled ONCE because it was spelled five times, and the fifth was written
- * only after the omission had shipped — `requiredProviderEnvVars` demanded
- * `ASSEMBLYAI_API_KEY` while the session resolved `ASSEMBLYAI_STAGING_KEY`, so
- * the preflight never reported the key it would actually read as absent. That
- * is the silently-wrong-key failure {@link S2S_REGISTRY}'s own doc says these
- * registries exist to prevent, and a sixth reader is a sixth chance at it.
- */
-function envVarOf(entry: { envVar: string }, descriptor: object | undefined): string {
-  return descriptorEnvVar(descriptor) ?? entry.envVar;
-}
 
 /** Resolve an {@link SttProvider} descriptor into a host-side opener + env var. */
 export function resolveStt(descriptor: SttProvider): ResolvedOpener<SttOpener> {

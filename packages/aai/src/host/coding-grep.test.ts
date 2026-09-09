@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { CodingGrepError, grepWorkspace } from "./coding-grep.ts";
 
 const FILES = {
   "agent.ts":
@@ -35,7 +35,7 @@ describe("grepWorkspace", () => {
   });
 
   test("an invalid regex is an actionable error, not a crash", () => {
-    expect(() => grepWorkspace(FILES, "[unclosed")).toThrow(StudioGrepError);
+    expect(() => grepWorkspace(FILES, "[unclosed")).toThrow(CodingGrepError);
     expect(() => grepWorkspace(FILES, "[unclosed")).toThrow(/literal: true/);
   });
 
@@ -90,7 +90,7 @@ describe("grepWorkspace", () => {
 
   test("a glob picomatch refuses is an actionable error, not a crash", () => {
     expect(() => grepWorkspace(FILES, "rollDice", { glob: "a".repeat(70_000) })).toThrow(
-      StudioGrepError,
+      CodingGrepError,
     );
   });
 

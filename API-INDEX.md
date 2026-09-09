@@ -56,6 +56,8 @@ each is for.
 | `AudioResultCaptions` | `@alexkroman1/aai-ui` |
 | `AudioResultProps` | `@alexkroman1/aai-ui` |
 | `AutoScroll` | `@alexkroman1/aai-ui` |
+| `BASH_TIMEOUT_MAX_MS` | `@alexkroman1/aai/coding-tools` |
+| `BASH_TIMEOUT_MS` | `@alexkroman1/aai/coding-tools` |
 | `BrowserSession` | `@alexkroman1/aai-ui` |
 | `BuildClientOptions` | `@alexkroman1/aai-cli/client-bundler` |
 | `BuildWorkerOptions` | `@alexkroman1/aai-cli/worker-bundler` |
@@ -72,6 +74,7 @@ each is for.
 | `CLIENT_ARTIFACT_REL` | `@alexkroman1/aai-cli/start` |
 | `CLIENT_CONFIG_METHODS` | `@alexkroman1/aai/protocol` |
 | `CLIENT_CONFIG_PATH` | `@alexkroman1/aai/protocol` |
+| `CODING_TOOL_DESCRIPTIONS` | `@alexkroman1/aai/coding-tools` |
 | `CallOptions` | `@alexkroman1/aai/tools` |
 | `CarrierCodec` | `@alexkroman1/aai-runtime` |
 | `CarrierInbound` | `@alexkroman1/aai-runtime` |
@@ -94,6 +97,8 @@ each is for.
 | `ClientSink` | `@alexkroman1/aai/protocol` |
 | `ClientTheme` | `@alexkroman1/aai-ui` |
 | `CloseableDb` | `@alexkroman1/aai-runtime` |
+| `CodingToolName` | `@alexkroman1/aai/coding-tools` |
+| `CodingToolsOptions` | `@alexkroman1/aai/coding-tools` |
 | `ConsoleShell` | `@alexkroman1/aai-ui` |
 | `ConsoleShellProps` | `@alexkroman1/aai-ui` |
 | `Controls` | `@alexkroman1/aai-ui` |
@@ -124,6 +129,7 @@ each is for.
 | `DelegateOptions` | `@alexkroman1/aai` |
 | `DelegateResult` | `@alexkroman1/aai` |
 | `DescribeEvalOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `DescribeTextEvalOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `DeterminismKind` | `@alexkroman1/aai-runtime/testing` |
 | `Dialog` | `@alexkroman1/aai` |
 | `DialogBargeIn` | `@alexkroman1/aai` |
@@ -152,6 +158,8 @@ each is for.
 | `EvalTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
 | `EvalTextAgentOptions` | `@alexkroman1/aai-runtime/eval` |
+| `EvalTextTest` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `EvalTextTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalToolCall` | `@alexkroman1/aai-runtime/eval` |
 | `EvalTurn` | `@alexkroman1/aai-runtime/eval` |
 | `EvalWorkflowCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -182,6 +190,7 @@ each is for.
 | `Form` | `@alexkroman1/aai-ui` |
 | `FormProps` | `@alexkroman1/aai-ui` |
 | `FormValues` | `@alexkroman1/aai-ui` |
+| `GLOB_LIMIT` | `@alexkroman1/aai/coding-tools` |
 | `GatewayLlmOptions` | `@alexkroman1/aai/llm` |
 | `GenerateFn` | `@alexkroman1/aai` |
 | `GenerateObjectResult` | `@alexkroman1/aai` |
@@ -285,6 +294,7 @@ each is for.
 | `ProviderDescriptor` | `@alexkroman1/aai` |
 | `ProviderDescriptorSchema` | `@alexkroman1/aai/manifest` |
 | `ProviderEnv` | `@alexkroman1/aai-runtime` |
+| `READ_LIMIT` | `@alexkroman1/aai/coding-tools` |
 | `RIME_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
 | `RandomSource` | `@alexkroman1/aai` |
 | `ReadUploadOptions` | `@alexkroman1/aai/step` |
@@ -646,6 +656,7 @@ each is for.
 | `createAgentClient` | `@alexkroman1/aai/workflow-api` |
 | `createAgentServer` | `@alexkroman1/aai-runtime` |
 | `createBrowserSession` | `@alexkroman1/aai-ui` |
+| `createCodingTools` | `@alexkroman1/aai/coding-tools` |
 | `createHostServer` | `@alexkroman1/aai-runtime` |
 | `createHttpUploadBackend` | `@alexkroman1/aai-runtime` |
 | `createKeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
@@ -680,6 +691,7 @@ each is for.
 | `deployedAgent` | `@alexkroman1/aai/testing` |
 | `describeEval` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `describeMedia` | `@alexkroman1/aai/ffmpeg` |
+| `describeTextEval` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `describeToolCalls` | `@alexkroman1/aai-runtime/eval` |
 | `describeTurn` | `@alexkroman1/aai-runtime/eval` |
 | `describeWorkflowEval` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -695,6 +707,7 @@ each is for.
 | `errorsIn` | `@alexkroman1/aai-runtime/eval` |
 | `escapeSlackMrkdwn` | `@alexkroman1/aai/channels` |
 | `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
+| `evalTextCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `executeStart` | `@alexkroman1/aai-cli/start` |
 | `expectCalled` | `@alexkroman1/aai-runtime/eval` |
@@ -733,6 +746,7 @@ each is for.
 | `isIsoDate` | `@alexkroman1/aai` |
 | `isLocalOnlyFile` | `@alexkroman1/aai/workspace-files` |
 | `isLockfile` | `@alexkroman1/aai/workspace-files` |
+| `isPathInside` | `@alexkroman1/aai/workspace-files` |
 | `isRecord` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `isSlackWebhookUrl` | `@alexkroman1/aai/channels` |
 | `isSlackWorkflowTriggerUrl` | `@alexkroman1/aai/channels` |
@@ -791,6 +805,7 @@ each is for.
 | `requireStepEnv` | `@alexkroman1/aai/step` |
 | `requiredProviderEnvVars` | `@alexkroman1/aai-runtime` |
 | `resolveEvalMode` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `resolveInside` | `@alexkroman1/aai/workspace-files` |
 | `resolveKeyStore` | `@alexkroman1/aai-runtime` |
 | `resolveLlm` | `@alexkroman1/aai-runtime` |
 | `resolveOne` | `@alexkroman1/aai` |
@@ -932,6 +947,7 @@ each is for.
 | `workflow` | `@alexkroman1/aai` |
 | `workflowApp` | `@alexkroman1/aai` |
 | `writeConfigHome` | `@alexkroman1/aai-cli/project-config` |
+| `writeFileWithParents` | `@alexkroman1/aai/workspace-files` |
 | `writeUploadFromFile` | `@alexkroman1/aai/step-files` |
 | `xAILlm` | `@alexkroman1/aai/llm` |
 
@@ -968,6 +984,8 @@ trace or a type error can be traced back to something.
 | `ClientEventDecision` | `@alexkroman1/aai/internal` |
 | `ClientEventDrop` | `@alexkroman1/aai/internal` |
 | `CoalescingRunner` | `@alexkroman1/aai/internal` |
+| `CodingEditError` | `@alexkroman1/aai/host-internal` |
+| `CodingGrepError` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_COVER_MAX_MS` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_COVER_PHRASES` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_OPENING_PHRASE` | `@alexkroman1/aai/host-internal` |
@@ -1006,6 +1024,7 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
 | `ELEVENLABS_KIND` | `@alexkroman1/aai/host-internal` |
 | `EMPTY_PARAMS` | `@alexkroman1/aai/host-internal` |
+| `EditResult` | `@alexkroman1/aai/host-internal` |
 | `Epoch` | `@alexkroman1/aai/internal` |
 | `GATEWAY_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `GATEWAY_KIND` | `@alexkroman1/aai/host-internal` |
@@ -1014,6 +1033,7 @@ trace or a type error can be traced back to something.
 | `GROQ_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `GROQ_KIND` | `@alexkroman1/aai/host-internal` |
 | `GatewayModelInfo` | `@alexkroman1/aai/host-internal` |
+| `GrepOptions` | `@alexkroman1/aai/host-internal` |
 | `HEARD_AUDIO_LAG_MS` | `@alexkroman1/aai/internal` |
 | `InvariantDetail` | `@alexkroman1/aai/internal` |
 | `InvariantViolation` | `@alexkroman1/aai/internal` |
@@ -1082,6 +1102,7 @@ trace or a type error can be traced back to something.
 | `RIME_KIND` | `@alexkroman1/aai/host-internal` |
 | `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
 | `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
+| `RunCappedOptions` | `@alexkroman1/aai/host-internal` |
 | `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
 | `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |
 | `SERVER_ROUTES` | `@alexkroman1/aai-runtime/internal` |
@@ -1108,6 +1129,7 @@ trace or a type error can be traced back to something.
 | `SessionStateConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
 | `SessionUrlChips` | `@alexkroman1/aai-ui/internal` |
 | `SleepTimerOptions` | `@alexkroman1/aai/internal` |
+| `SpawnCappedResult` | `@alexkroman1/aai/host-internal` |
 | `SpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
 | `StandardSchemaIssue` | `@alexkroman1/aai/host-internal` |
 | `StandardSchemaV1` | `@alexkroman1/aai/host-internal` |
@@ -1150,6 +1172,7 @@ trace or a type error can be traced back to something.
 | `XAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `XAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
+| `applyEdit` | `@alexkroman1/aai/host-internal` |
 | `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
 | `asDispatcher` | `@alexkroman1/aai/host-internal` |
 | `assemblyAITtsLanguageCodes` | `@alexkroman1/aai/host-internal` |
@@ -1159,6 +1182,7 @@ trace or a type error can be traced back to something.
 | `buildSystemPrompt` | `@alexkroman1/aai/host-internal` |
 | `capToolResult` | `@alexkroman1/aai/internal` |
 | `clampWorkflowWait` | `@alexkroman1/aai/internal` |
+| `clearEditMisses` | `@alexkroman1/aai/host-internal` |
 | `clientEventDropMessage` | `@alexkroman1/aai/internal` |
 | `consoleLogger` | `@alexkroman1/aai-runtime/internal` |
 | `createCoalescingRunner` | `@alexkroman1/aai/internal` |
@@ -1184,13 +1208,15 @@ trace or a type error can be traced back to something.
 | `formatSchemaIssues` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
 | `freezeStorable` | `@alexkroman1/aai/host-internal` |
 | `gatewayModelIds` | `@alexkroman1/aai/host-internal` |
+| `globMatcher` | `@alexkroman1/aai/host-internal` |
+| `grepWorkspace` | `@alexkroman1/aai/host-internal` |
 | `handleWorkflowRequest` | `@alexkroman1/aai-runtime/internal` |
 | `invariant` | `@alexkroman1/aai/internal` |
 | `isConvertibleSchema` | `@alexkroman1/aai/host-internal` |
 | `isInvariantViolation` | `@alexkroman1/aai/internal` |
-| `isPathInside` | `@alexkroman1/aai-runtime/internal` |
 | `isTextAssetPath` | `@alexkroman1/aai/internal` |
 | `jitteredBackoff` | `@alexkroman1/aai/internal` |
+| `keepTail` | `@alexkroman1/aai/host-internal` |
 | `linkConfirmationCode` | `@alexkroman1/aai/internal` |
 | `loadClientConfig` | `@alexkroman1/aai-ui/internal` |
 | `loadJournalConformance` | `@alexkroman1/aai-runtime/internal` |
@@ -1198,6 +1224,7 @@ trace or a type error can be traced back to something.
 | `mapStream` | `@alexkroman1/aai/host-internal` |
 | `normalizeLlm` | `@alexkroman1/aai/host-internal` |
 | `normalizeSpeechText` | `@alexkroman1/aai/internal` |
+| `outputWithKillNote` | `@alexkroman1/aai/host-internal` |
 | `parseBearer` | `@alexkroman1/aai-runtime/internal` |
 | `parsePlatformFrame` | `@alexkroman1/aai-runtime/internal` |
 | `parseTraceparent` | `@alexkroman1/aai-runtime/internal` |
@@ -1226,6 +1253,8 @@ trace or a type error can be traced back to something.
 | `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
+| `rewriteHint` | `@alexkroman1/aai/host-internal` |
+| `runCapped` | `@alexkroman1/aai/host-internal` |
 | `safeFetch` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `serializeToolFailure` | `@alexkroman1/aai/host-internal` |
 | `sessionStateDdl` | `@alexkroman1/aai-runtime/internal` |
