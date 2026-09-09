@@ -776,11 +776,6 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public
-export function applyEdit(path: string, content: string, oldText: string, newText: string, opts?: {
-    replaceAll?: boolean | undefined;
-}): EditResult;
-
 // @internal
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
@@ -1119,17 +1114,6 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export function clearEditMisses(rel: string): void;
-
-// @public
-export class CodingEditError extends Error {
-}
-
-// @public
-export class CodingGrepError extends Error {
-}
-
-// @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal
@@ -1222,13 +1206,6 @@ interface DelegateResult extends SubagentAnswer {
     complaint?: string;
     revisions: number;
 }
-
-// @public (undocumented)
-export type EditResult = {
-    content: string;
-    diff: string;
-    replacements: number;
-};
 
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
@@ -1326,25 +1303,10 @@ type GenerateResult = {
 };
 
 // @public
-export function globMatcher(glob: string): (path: string) => boolean;
-
-// @public
 export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
 
 // @public (undocumented)
 export const GOOGLE_KIND: "google";
-
-// @public
-export type GrepOptions = {
-    glob?: string | undefined;
-    ignoreCase?: boolean | undefined;
-    literal?: boolean | undefined;
-    context?: number | undefined;
-    limit?: number | undefined;
-};
-
-// @public
-export function grepWorkspace(files: Record<string, string>, pattern: string, opts?: GrepOptions): string;
 
 // @public
 export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
@@ -1368,9 +1330,6 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 
 // @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
-
-// @public
-export const keepTail: (text: string, cap: number) => string;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -1599,9 +1558,6 @@ export function resolveSonioxSttSettings(options: SonioxSttOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
-export function rewriteHint(rel: string): string;
-
-// @public
 export const RIME_API_KEY_ENV = "RIME_API_KEY";
 
 // @public
@@ -1627,7 +1583,7 @@ export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed run
 export function runCapped(cmd: string, args: string[], opts: RunCappedOptions): Promise<SpawnCappedResult>;
 
 // @public
-export type RunCappedOptions = {
+type RunCappedOptions = {
     cwd: string;
     env?: NodeJS.ProcessEnv;
     timeoutMs: number;

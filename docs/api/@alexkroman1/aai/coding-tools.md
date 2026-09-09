@@ -14,10 +14,13 @@ wildcard form re-exports whatever arrives, and needs a `noReExportAll`
 suppression the escape-hatch ratchet only lets move down.
 
 What is deliberately NOT here is the machinery UNDER the tools — the edit
-matcher, the grep, the capped child-process runner. They are on
-`@alexkroman1/aai/host-internal` for the platform packages that build their
-own tools on them: this subpath's promise is the tool SET a host installs and
-a model calls, and every name on it is one an agent author writes.
+matcher, the workspace grep, the capped child-process runner. This subpath's
+promise is the tool SET a host installs and a model calls, and every name on
+it is one an agent author writes. Of the three, only the RUNNER is published
+at all (`@alexkroman1/aai/host-internal`, no semver promise), and only
+because the guest harness spawns npm and the CLI bundler through it; the
+other two have no consumer outside `coding-tools.ts` and publishing them
+would be a surface with no reader.
 
 ## Functions
 

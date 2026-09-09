@@ -9,16 +9,15 @@
  * flags, and the two child environments (one for children running
  * workspace-authored code, one for our own CLI).
  *
- * The three runner names are re-exported rather than imported at each call
- * site, so `studio-publish.ts`, `studio-test.ts` and the specs that mock this
- * module keep one import path for "how this package spawns things".
+ * The runner is re-exported rather than imported at each call site, so
+ * `studio-publish.ts`, `studio-test.ts` and the specs that mock this module
+ * keep one import path for "how this package spawns things".
  */
 
 import { runCapped, type SpawnCappedResult } from "@alexkroman1/aai/host-internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 
 export {
-  keepTail,
   outputWithKillNote,
   runCapped,
   type SpawnCappedResult,

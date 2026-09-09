@@ -26,29 +26,19 @@ export {
   SANDBOX_ONLY_BUILTINS,
   type ToolDefRecord,
 } from "./host/builtin-tools.ts";
-// The machinery UNDER `@alexkroman1/aai/coding-tools`: the edit matcher, the
-// workspace grep, and the capped child-process runner. Here rather than on that
-// subpath because they are what a platform package builds its OWN tools on —
-// the studio's coding agent wraps every one of them — while the published
-// surface is the tool set a model calls. They carry no semver promise, and an
-// `agent.ts` names none of them.
+// The capped child-process runner under `@alexkroman1/aai/coding-tools`. Here
+// rather than on that subpath because its reader is the FRAMEWORK: the guest
+// harness spawns npm, the CLI bundler and the workspace test run through it,
+// and each of those decides for itself whether a killed child is a failure or
+// an annotated line. It carries no semver promise, and an `agent.ts` names none
+// of it.
+//
+// The edit matcher and the workspace grep are deliberately NOT here. They are
+// what `createCodingTools` is built from, nothing outside that module imports
+// them, and a name published in anticipation of a consumer is a surface with no
+// reader — the rule `@alexkroman1/aai-runtime/internal` states for itself.
 export {
-  applyEdit,
-  CodingEditError,
-  clearEditMisses,
-  type EditResult,
-  rewriteHint,
-} from "./host/coding-edit.ts";
-export {
-  CodingGrepError,
-  type GrepOptions,
-  globMatcher,
-  grepWorkspace,
-} from "./host/coding-grep.ts";
-export {
-  keepTail,
   outputWithKillNote,
-  type RunCappedOptions,
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";

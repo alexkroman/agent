@@ -984,8 +984,6 @@ trace or a type error can be traced back to something.
 | `ClientEventDecision` | `@alexkroman1/aai/internal` |
 | `ClientEventDrop` | `@alexkroman1/aai/internal` |
 | `CoalescingRunner` | `@alexkroman1/aai/internal` |
-| `CodingEditError` | `@alexkroman1/aai/host-internal` |
-| `CodingGrepError` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_COVER_MAX_MS` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_COVER_PHRASES` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_OPENING_PHRASE` | `@alexkroman1/aai/host-internal` |
@@ -1024,7 +1022,6 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
 | `ELEVENLABS_KIND` | `@alexkroman1/aai/host-internal` |
 | `EMPTY_PARAMS` | `@alexkroman1/aai/host-internal` |
-| `EditResult` | `@alexkroman1/aai/host-internal` |
 | `Epoch` | `@alexkroman1/aai/internal` |
 | `GATEWAY_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `GATEWAY_KIND` | `@alexkroman1/aai/host-internal` |
@@ -1033,7 +1030,6 @@ trace or a type error can be traced back to something.
 | `GROQ_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `GROQ_KIND` | `@alexkroman1/aai/host-internal` |
 | `GatewayModelInfo` | `@alexkroman1/aai/host-internal` |
-| `GrepOptions` | `@alexkroman1/aai/host-internal` |
 | `HEARD_AUDIO_LAG_MS` | `@alexkroman1/aai/internal` |
 | `InvariantDetail` | `@alexkroman1/aai/internal` |
 | `InvariantViolation` | `@alexkroman1/aai/internal` |
@@ -1102,7 +1098,6 @@ trace or a type error can be traced back to something.
 | `RIME_KIND` | `@alexkroman1/aai/host-internal` |
 | `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
 | `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
-| `RunCappedOptions` | `@alexkroman1/aai/host-internal` |
 | `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
 | `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |
 | `SERVER_ROUTES` | `@alexkroman1/aai-runtime/internal` |
@@ -1172,7 +1167,6 @@ trace or a type error can be traced back to something.
 | `XAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `XAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
-| `applyEdit` | `@alexkroman1/aai/host-internal` |
 | `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
 | `asDispatcher` | `@alexkroman1/aai/host-internal` |
 | `assemblyAITtsLanguageCodes` | `@alexkroman1/aai/host-internal` |
@@ -1182,7 +1176,6 @@ trace or a type error can be traced back to something.
 | `buildSystemPrompt` | `@alexkroman1/aai/host-internal` |
 | `capToolResult` | `@alexkroman1/aai/internal` |
 | `clampWorkflowWait` | `@alexkroman1/aai/internal` |
-| `clearEditMisses` | `@alexkroman1/aai/host-internal` |
 | `clientEventDropMessage` | `@alexkroman1/aai/internal` |
 | `consoleLogger` | `@alexkroman1/aai-runtime/internal` |
 | `createCoalescingRunner` | `@alexkroman1/aai/internal` |
@@ -1208,15 +1201,12 @@ trace or a type error can be traced back to something.
 | `formatSchemaIssues` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
 | `freezeStorable` | `@alexkroman1/aai/host-internal` |
 | `gatewayModelIds` | `@alexkroman1/aai/host-internal` |
-| `globMatcher` | `@alexkroman1/aai/host-internal` |
-| `grepWorkspace` | `@alexkroman1/aai/host-internal` |
 | `handleWorkflowRequest` | `@alexkroman1/aai-runtime/internal` |
 | `invariant` | `@alexkroman1/aai/internal` |
 | `isConvertibleSchema` | `@alexkroman1/aai/host-internal` |
 | `isInvariantViolation` | `@alexkroman1/aai/internal` |
 | `isTextAssetPath` | `@alexkroman1/aai/internal` |
 | `jitteredBackoff` | `@alexkroman1/aai/internal` |
-| `keepTail` | `@alexkroman1/aai/host-internal` |
 | `linkConfirmationCode` | `@alexkroman1/aai/internal` |
 | `loadClientConfig` | `@alexkroman1/aai-ui/internal` |
 | `loadJournalConformance` | `@alexkroman1/aai-runtime/internal` |
@@ -1253,7 +1243,6 @@ trace or a type error can be traced back to something.
 | `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
-| `rewriteHint` | `@alexkroman1/aai/host-internal` |
 | `runCapped` | `@alexkroman1/aai/host-internal` |
 | `safeFetch` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `serializeToolFailure` | `@alexkroman1/aai/host-internal` |
