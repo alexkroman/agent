@@ -1,13 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The mode decision, and one real suite registered through `describeEval`.
+ * One real suite registered through `describeEval`, plus the pieces around it.
  *
- * The decision is the part with a WRONG answer available — silently downgrading
- * a pipeline that asked to measure, or silently spending tokens in one that did
- * not — so it is asserted directly. The suite at the bottom is the other half:
- * `describeEval` is what a template ships, and a spec of the mode alone would
- * leave the per-case session, the stub install and the `{ live: true }` skip
- * covered only by another package's run.
+ * `describeEval` is what a template ships, so the per-case session, the stub
+ * install and the `{ live: true }` skip are exercised here rather than left to
+ * another package's run. The MODE decision it opens with moved out with its
+ * module — `eval-mode.test.ts`.
  *
  * **It is FORCED into stub mode** (`vi.stubEnv` at module scope, which is when
  * `describeEval` reads the environment). Without that, this file would drive a
@@ -23,67 +21,9 @@ import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind } from "../providers/resolve.ts";
 import { announceEvalCoverage, announceEvalMode, emptySuiteReason } from "./_announce.ts";
-import { describeEval, resolveEvalMode } from "./describe.ts";
+import { describeEval } from "./describe.ts";
 import { toolResultIn } from "./events.ts";
 import { installStubLlm, STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
-
-const def = agent({ name: "Mode" });
-
-describe("resolveEvalMode", () => {
-  test("goes live when the agent's credential is there", () => {
-    expect(resolveEvalMode(def, { ASSEMBLYAI_API_KEY: "k" })).toEqual({
-      mode: "live",
-      reason: "a provider credential is set",
-    });
-  });
-
-  test("falls back to the scripted model with no credential, and says which is missing", () => {
-    const { mode, reason } = resolveEvalMode(def, {});
-    expect(mode).toBe("stub");
-    expect(reason).toContain("ASSEMBLYAI_API_KEY");
-  });
-
-  test("AAI_EVAL_STUB wins over a credential, so a pipeline cannot start spending", () => {
-    expect(resolveEvalMode(def, { ASSEMBLYAI_API_KEY: "k", AAI_EVAL_STUB: "1" })).toEqual({
-      mode: "stub",
-      reason: "AAI_EVAL_STUB is set",
-    });
-  });
-
-  test("AAI_REQUIRE_EVAL turns a missing credential into a failure, not a downgrade", () => {
-    expect(() => resolveEvalMode(def, { AAI_REQUIRE_EVAL: "1" })).toThrow(/ASSEMBLYAI_API_KEY/);
-  });
-
-  test("an llm OVERRIDE decides the credential question with it", () => {
-    // The agent wants Anthropic; the case overrides the model with one this
-    // machine has a key for. Reading the mode off the agent alone announced
-    // SCRIPTED while holding the key the run would really have used.
-    const anthropicAgent = agent({ name: "Override", llm: { kind: "anthropic", options: {} } });
-    const env = { ASSEMBLYAI_API_KEY: "k" };
-    expect(resolveEvalMode(anthropicAgent, env).mode).toBe("stub");
-    expect(
-      resolveEvalMode(anthropicAgent, env, { llm: { kind: "assemblyai", options: {} } }).mode,
-    ).toBe("live");
-  });
-
-  test("an override the machine has no key for still reports stub, naming it", () => {
-    const { mode, reason } = resolveEvalMode(
-      agent({ name: "Override" }),
-      {},
-      {
-        llm: { kind: "anthropic", options: {} },
-      },
-    );
-    expect(mode).toBe("stub");
-    expect(reason).toContain("ANTHROPIC_API_KEY");
-  });
-
-  test("AAI_REQUIRE_EVAL is satisfied by a credential", () => {
-    expect(resolveEvalMode(def, { AAI_REQUIRE_EVAL: "1", ASSEMBLYAI_API_KEY: "k" }).mode).toBe(
-      "live",
-    );
-  });
-});
 
 describe("installStubLlm", () => {
   test("registers a kind that resolves like a provider, with its own credential", () => {

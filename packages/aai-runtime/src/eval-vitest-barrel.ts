@@ -20,8 +20,6 @@ export {
   type EvalMode,
   type EvalTest,
   type EvalTestContext,
-  resolveEvalMode,
-  resolveWorkflowEvalMode,
 } from "./eval/describe.ts";
 // The TEXT-agent suite. Its own function rather than a flag on `describeEval`
 // for the reason there are two harnesses at all: `createRuntime` refuses
@@ -41,3 +39,7 @@ export {
   type EvalWorkflowTest,
   type EvalWorkflowTestContext,
 } from "./eval/describe-workflows.ts";
+// WHICH MODEL a suite runs against — the decision every one of the three
+// `describe*Eval` doors below makes before registering a case, published so a
+// harness that is not vitest can ask the same question. See its module doc.
+export { resolveEvalMode, resolveWorkflowEvalMode } from "./eval/eval-mode.ts";

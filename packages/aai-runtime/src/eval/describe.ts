@@ -28,7 +28,6 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, test } from "vitest";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
@@ -41,20 +40,10 @@ import {
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
-import {
-  type EvalCredentials,
-  type EvalSession,
-  type EvalSessionOptions,
-  evalCredentials,
-  openEvalSession,
-} from "./session.ts";
+import { resolveEvalMode } from "./eval-mode.ts";
+import { type EvalSession, type EvalSessionOptions, openEvalSession } from "./session.ts";
 import { installStubLlm, type StubScript } from "./stub-llm.ts";
-import {
-  type EvalWorkflows,
-  type EvalWorkflowsOptions,
-  evalWorkflowCredentials,
-  openEvalWorkflows,
-} from "./workflows.ts";
+import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
 /** What a case gets to say about how it should be run. */
 export type EvalCaseOptions = {
@@ -222,85 +211,6 @@ export type EvalTest = (
 
 /** What a stub-mode model says when a case scripts nothing. */
 const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
-
-const truthy = (value: string | undefined): boolean =>
-  value !== undefined && /^(1|true|yes|on)$/i.test(value.trim());
-
-/**
- * Live if this machine can be, stub if it cannot — unless a caller has said
- * which it wants.
- *
- * `AAI_REQUIRE_EVAL` is for a pipeline that means to MEASURE: with it set, a
- * missing credential is a failure instead of a quiet downgrade to a wiring
- * check. `AAI_EVAL_STUB` is the opposite instruction, and CI wants it —
- * a required check must not start spending tokens the day a key reaches its
- * environment, and must not become a flaky gate on a live model's behaviour.
- */
-export function resolveEvalMode(
-  agent: AgentDef,
-  hostEnv: Record<string, string | undefined> = process.env,
-  /**
-   * What the CASE overrides, which decides the credential question with it.
-   *
-   * Without this the mode was read off the AGENT alone, so
-   * `describeEval(def, define, { llm: assemblyAILlm() })` on an agent declaring
-   * `anthropic()` announced "SCRIPTED — ANTHROPIC_API_KEY is not set" while
-   * holding the key the run would actually have used. Measured on
-   * `custom-pipeline-agent`: the override was honoured by the session and ignored by
-   * the gate, so a case could not be run live at all.
-   */
-  overrides?: { readonly llm?: LlmProvider },
-): { mode: EvalMode; reason: string } {
-  // The override replaces the LLM and nothing else, so the credential question
-  // is asked about an agent carrying it. `omitUndefined` keeps the field ABSENT
-  // rather than present-and-undefined, which `exactOptionalPropertyTypes` makes
-  // a different type.
-  const effective: AgentDef = { ...agent, ...omitUndefined({ llm: overrides?.llm }) };
-  return modeFrom(evalCredentials(effective, hostEnv), hostEnv);
-}
-
-/**
- * {@link resolveEvalMode} for a WORKFLOW app, whose credentials are a different
- * question.
- *
- * Split rather than folded in because the two gates read different fields and the
- * wrong one is silent: a `page: "static"` agent needs no provider credential, so
- * `evalCredentials` reports every workflow app ready and a keyless run goes LIVE
- * — then every case fails on a 401 three layers down. `evalWorkflowCredentials`
- * reads `requiredEnv`, which is the only thing a workflow app declares its
- * credentials in.
- */
-export function resolveWorkflowEvalMode(
-  agent: AgentDef,
-  hostEnv: Record<string, string | undefined> = process.env,
-): { mode: EvalMode; reason: string } {
-  return modeFrom(evalWorkflowCredentials(agent, hostEnv), hostEnv);
-}
-
-/**
- * The mode decision itself, shared by the gates above — and by
- * `describe-text.ts`, which asks the same question of a different credential
- * verdict. Exported for that, not on the barrel: `AAI_EVAL_STUB` and
- * `AAI_REQUIRE_EVAL` have to mean one thing across every eval suite, and a
- * second copy of this three-branch decision is how one of them comes to be
- * honoured by two of three doors.
- */
-export function modeFrom(
-  creds: EvalCredentials,
-  hostEnv: Record<string, string | undefined>,
-): { mode: EvalMode; reason: string } {
-  if (truthy(hostEnv.AAI_EVAL_STUB)) {
-    return { mode: "stub", reason: "AAI_EVAL_STUB is set" };
-  }
-  if (creds.ready) return { mode: "live", reason: "a provider credential is set" };
-  if (truthy(hostEnv.AAI_REQUIRE_EVAL)) {
-    throw new Error(
-      `AAI_REQUIRE_EVAL is set but this eval cannot run live: ${creds.reason}. ` +
-        "Unset it to fall back to the scripted model, or supply the credential.",
-    );
-  }
-  return { mode: "stub", reason: creds.reason ?? "no provider credential" };
-}
 
 /**
  * Declare an eval suite for `agent`.

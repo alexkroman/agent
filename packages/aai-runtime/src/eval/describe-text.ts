@@ -42,7 +42,8 @@ import {
   type EvalMode,
   registerEmptySuiteFailure,
 } from "./_announce.ts";
-import { type EvalCaseOptions, modeFrom } from "./describe.ts";
+import type { EvalCaseOptions } from "./describe.ts";
+import { modeFrom } from "./eval-mode.ts";
 import { installStubLlm } from "./stub-llm.ts";
 import {
   type EvalTextAgent,
