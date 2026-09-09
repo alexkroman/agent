@@ -276,7 +276,20 @@
       "entry": [
         "**/*.test.ts"
       ],
-      "includeEntryExports": true
+      "includeEntryExports": true,
+      // Declared so it stays resolvable to the service BUNDLE, not because
+      // anything here imports it — the same shape as `aai-guest`'s list above.
+      // `aai-server` is compiled into this package's entry and imports `modal`;
+      // it is `external` in tsdown.config.ts because it and its tree
+      // (protobufjs, @grpc/*, cbor-x -> cbor-extract -> node-gyp-build) resolve
+      // files relative to their own package, which an inlined copy cannot do.
+      // An external specifier is resolved at runtime from `dist/`, where pnpm
+      // offers only what this manifest names — so dropping this entry does not
+      // make the import unused, it makes the bundle unbootable.
+      // `bundled-deps.test.ts` fails if the dependency goes away.
+      "ignoreDependencies": [
+        "modal"
+      ]
     }
   }
 }

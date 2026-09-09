@@ -35,6 +35,7 @@
     "aai-studio-client": "workspace:*",
     "hono": "catalog:",
     "mime-types": "catalog:",
+    "modal": "^0.10.0",
     "p-timeout": "catalog:",
     "zod": "catalog:"
   },

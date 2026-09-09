@@ -1549,6 +1549,19 @@ one route on first hit. And nothing types the resolution itself away — a
 `bundled-deps.test.ts` holds every workspace package aai-server's SHIPPED
 source imports to this manifest, for the next value that is not injectable.
 
+**The npm half is a BASELINE, because that next value is not injectable.**
+Compiling aai-server in swallows its dependencies too — 52 of them, named
+nowhere. `modal` and `microsandbox` are `external` in tsdown.config.ts because
+they resolve files relative to their own package (modal's tree carries
+`protobufjs`, `@grpc/*`, and `cbor-x` → `cbor-extract` → the native-addon
+lookup; microsandbox finds its addon from `import.meta.url`, reached by a live
+`await import()` in shipped code). Naming modal rather than its five hazards
+takes 26 of the 52 out at one declaration. `check:bundled-deps` baselines the 25
+that remain — pure JS, where inlining is free — so a 26th is a decision rather
+than a discovery in production; and `bundled-deps.test.ts` holds the config to
+`deps.alwaysBundle`, since `onlyBundle` externalizes aai-server ITSELF and every
+specifier check there passes through it.
+
 **The shared core is the `exports` map, and nothing else.** It is an
 explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
 machinery, schemas, app composition, the routes the studio reuses), and

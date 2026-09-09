@@ -132,6 +132,35 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   for the reason every counting gate here carries them. Its header has the
   argument and the three failures the flat layout cost.
 
+- **`pnpm check:bundled-deps`** (`scripts/check-bundled-deps.mjs`) — every npm
+  package INLINED into `packages/aai-studio-server/dist/index.mjs`, against
+  `scripts/bundled-deps-baseline.json`. Only ever lowered. Same mechanism as
+  `check:optional-peers` below, from the other end: that one asks what an
+  inlined dynamic import does to a CONSUMER's build, this asks what inlining
+  does to the package itself. Compiling `aai-server` into the service entry
+  swallows its dependencies too — 52 of them, named nowhere — and a swallowed
+  module does not run from where its source lives, so anything in it that
+  resolves by module location breaks while the build, tsc and the whole suite
+  stay green. `@alexkroman1/aai-ui` was one: `defaultClientDir()` finds the
+  browser client by self-referencing its own `package.json`, legal only from
+  inside that package, and every deployed agent page answered 500 for a UI that
+  was installed. That one was fixed by injection
+  (`createDefaultClientHandlers`); the next cannot be, since nobody injects into
+  `node-gyp-build-optional-packages` — so `modal` and `microsandbox` are
+  `external` (the first takes 26 of the 52 with it, being their tree) and the
+  25 that remain are pure JS where inlining is free.
+
+  It RUNS the studio build and reads tsdown's own `Detected dependencies in
+  bundle` hint rather than re-deriving the set from the lockfile: rolldown
+  inlines what is imported, not what is declared, and a gate whose set
+  disagrees with the real bundle is worse than none. An ABSENT hint is a hard
+  failure — `deps.onlyBundle` suppresses it while ALSO externalizing
+  `aai-server` itself, which is the cold-start regression that config's comment
+  exists to prevent, and an unparsed hint and a bundle that swallows nothing
+  look identical from here. `bundled-deps.test.ts` holds the config to
+  `alwaysBundle` from the authoring side, because the specifier checks beside it
+  pass either way.
+
 - **`pnpm check:optional-peers`** (`scripts/check-optional-peers.mjs`) — no
   module a PUBLISHED entry can reach may statically import an OPTIONAL PEER.
   A consumer bundles these packages with `ssr: { noExternal: true }` and

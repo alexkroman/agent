@@ -242,6 +242,12 @@ const GATES = [
     why: "Beside api-report because it reads the same reports: that gate asks whether a signature MOVED, this asks whether the types in it can be NAMED. `includeForgottenExports` records a type a published signature references and no subpath exports, and recording is not refusing — so the surface a consumer must satisfy and the surface a consumer can import had drifted apart with nothing measuring the gap.",
   },
   {
+    script: "check:bundled-deps",
+    phase: "after-build",
+    fatal: false,
+    why: "The other side of check:optional-peers, and the same mechanism: bundling INLINES a dependency, so a module that resolves anything by its own location breaks while the build, tsc and the suite all stay green. aai-studio-server's entry compiles aai-server in, which swallowed 52 npm packages that nothing in the repo named — `@alexkroman1/aai-ui` among them, so every deployed agent page answered 500 for a default client UI that was installed. It RUNS the studio build and reads tsdown's own hint rather than re-deriving the set from manifests, because rolldown inlines what is imported and a lockfile walk over-approximates; an absent hint is a hard failure, since an unparsed one and a bundle that swallows nothing look identical from here.",
+  },
+  {
     script: "check:api-contracts",
     phase: "after-build",
     fatal: true,

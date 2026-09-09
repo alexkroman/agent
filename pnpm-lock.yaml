@@ -783,6 +783,9 @@ importers:
       mime-types:
         specifier: 'catalog:'
         version: 3.0.2
+      modal:
+        specifier: ^0.10.0
+        version: 0.10.0
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
