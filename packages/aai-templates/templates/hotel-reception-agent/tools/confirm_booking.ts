@@ -4,7 +4,8 @@ import { bookingStatus, changedFields, nextStep } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
 import { bookRoom, updateBooking } from "../hotel.ts";
 import { speakCode, speakUsd } from "../records.ts";
-import { bookingByCode, callerTurns, hotelSlot, note } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { bookingByCode, callerTurns, note } from "../shared.ts";
 
 /**
  * Finalize the booking — their `confirm_booking` and `confirm_changes`, one

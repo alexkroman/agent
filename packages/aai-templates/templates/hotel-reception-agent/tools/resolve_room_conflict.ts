@@ -1,7 +1,8 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { resolveRoomConflict } from "../hotel.ts";
 import { spokenDate } from "../records.ts";
-import { hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { requireVerified } from "../shared.ts";
 
 /**
  * Fix a double-booked room on the verified booking — their

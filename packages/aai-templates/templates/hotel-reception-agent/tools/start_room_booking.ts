@@ -3,7 +3,8 @@ import { z } from "zod";
 import { bookingStatus, draftForNewBooking } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
 import { speakCode } from "../records.ts";
-import { callerTurns, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { callerTurns } from "../shared.ts";
 
 /**
  * Open the room-booking flow — their `start_room_booking`, which `await`ed a

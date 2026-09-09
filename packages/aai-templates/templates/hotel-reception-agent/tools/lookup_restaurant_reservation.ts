@@ -2,7 +2,7 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { spokenDate, spokenTime } from "../records.ts";
 import { findReservation } from "../restaurant.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /** Their `lookup_restaurant_reservation`: restaurants verify with last name + RES code. */
 export default hotelSlot.tool({

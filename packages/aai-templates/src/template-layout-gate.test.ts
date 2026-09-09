@@ -86,15 +86,26 @@ const DECLARES_WORKFLOW = /\bworkflow\s*\(\s*\{/;
 const DECLARES_SLOT = /\bsessionSlot\s*\(/;
 
 /**
- * The one template whose slot is not in `shared.ts`, and why.
+ * The templates whose slot is not in `shared.ts`, and why.
  *
- * A DENY-list of one, so a second template defaults into being checked. Deleting
- * the entry is how this narrows; adding one asks for the same argument again.
+ * A DENY-list, so a new template defaults into being checked. Deleting an entry
+ * is how this narrows; adding one asks for the same argument again.
+ *
+ * Both entries are the SAME failure, and it is a measured one rather than a
+ * stylistic preference: a slot holds its factory as a live reference, so nothing
+ * tree-shakes it, and `shared.ts` is the module `client.tsx` imports for its
+ * view. Put a seeded factory there and the seed ships to the browser. Verified
+ * on the built client bundle before hotel-reception-agent was split: all 43 of
+ * `seed.ts`'s guest phone numbers were present in it.
  */
 const SLOT_ELSEWHERE: Readonly<Record<string, string>> = {
   "retail-orders-agent":
     "its slot is in store.ts, which imports a 107 KB seed.json — shared.ts holds " +
     "the view and is imported by client.tsx, so the seed must not reach it",
+  "hotel-reception-agent":
+    "its slot is in session.ts, whose factory reaches an 18.5 KB seed.ts on top " +
+    "of records.ts — shared.ts holds the view and is imported by client.tsx, so " +
+    "the seed must not reach it",
 };
 
 /** Floors, set under the measured actuals: 28 templates, 6 apps, 15 stateful. */
@@ -250,8 +261,9 @@ describe.each(STATEFUL)("%s (stateful)", (name: string) => {
       inShared,
       `${name} declares a sessionSlot outside shared.ts. Every stateful template keeps ` +
         "the slot, the view and the projection in one module both ends import — see " +
-        "`useAgentState(projection)`. If an expensive import forces it elsewhere (the " +
-        "one case: retail-orders-agent's seed), add it to SLOT_ELSEWHERE with that reason.",
+        "`useAgentState(projection)`. If a SEEDED factory forces it elsewhere (the two " +
+        "cases: retail-orders-agent and hotel-reception-agent, whose factories reach a " +
+        "seed the browser must not take), add it to SLOT_ELSEWHERE with that reason.",
     ).toBe(true);
   });
 });

@@ -2,14 +2,15 @@ import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./desk.ts";
 import { DESK_EVENTS } from "./events.ts";
 import { PRICING, spokenDate, TODAY, usd } from "./records.ts";
-import { deskProjection } from "./shared.ts";
+import { deskProjection } from "./session.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * A boutique hotel's front desk, on the phone — LiveKit Agents'
  * `hotel_receptionist` example as a voice agent. `shared.ts` carries the
- * attribution and the their-name → our-name table; `desk.ts` is the booking
- * flow and the reason this template needs `dialogs`.
+ * attribution and the their-name → our-name table; `session.ts` holds the slot
+ * and the seeded factory, kept out of the browser's reach; `desk.ts` is the
+ * booking flow and the reason this template needs `dialogs`.
  *
  * Forty-one tools, and the interesting property is how few of them the model
  * can call WRONG: every booking tool refuses until `verify_booking` has filled

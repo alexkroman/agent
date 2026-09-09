@@ -2,7 +2,8 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { isoDate, speakCode } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** Their `request_flight_reconfirmation`: the concierge calls the carrier and rings the room. */
 export default hotelSlot.updateTool({

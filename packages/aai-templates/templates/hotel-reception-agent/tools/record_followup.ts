@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { digitsOf, FOLLOWUP_KINDS, speakCode } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /**
  * Capture something for a human to follow up on — their `record_followup`, the

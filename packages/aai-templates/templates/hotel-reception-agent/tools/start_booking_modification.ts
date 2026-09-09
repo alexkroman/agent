@@ -4,7 +4,8 @@ import { draftForModification } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
 import { requireFloorPlanRoom } from "../hotel.ts";
 import { speakUsd, spokenDate, TODAY } from "../records.ts";
-import { hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { requireVerified } from "../shared.ts";
 
 /**
  * Open the modification flow on the verified booking — their

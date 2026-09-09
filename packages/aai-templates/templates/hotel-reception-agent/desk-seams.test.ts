@@ -37,7 +37,8 @@ import {
   resolveRoomConflict,
 } from "./hotel.ts";
 import { PRICING, type Ticket } from "./records.ts";
-import { hotelSlot, requireVerified } from "./shared.ts";
+import { hotelSlot } from "./session.ts";
+import { requireVerified } from "./shared.ts";
 import type recordCard from "./tools/record_card.ts";
 
 const run = toolRunner(agentDef);

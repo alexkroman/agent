@@ -1,7 +1,8 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { cancelBooking } from "../hotel.ts";
 import { daysBetween, PRICING, speakUsd, TODAY } from "../records.ts";
-import { callerTurns, hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { callerTurns, requireVerified } from "../shared.ts";
 
 /**
  * Cancel the verified booking and say what comes back — their

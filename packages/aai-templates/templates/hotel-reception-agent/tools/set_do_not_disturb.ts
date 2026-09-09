@@ -2,7 +2,8 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { requireRoom } from "../hotel.ts";
 import { speakCode } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** Their `set_do_not_disturb`: a standing hold on a room's calls and messages. */
 export default hotelSlot.updateTool({

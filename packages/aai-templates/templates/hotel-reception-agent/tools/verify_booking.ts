@@ -1,7 +1,8 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digitsOf, normalizeCode, speakCode, spokenDate } from "../records.ts";
-import { hotelSlot, note } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { note } from "../shared.ts";
 
 /** Failed lookups before a human takes over — their `_attempts >= 3`. */
 export const MAX_VERIFY_ATTEMPTS = 3;

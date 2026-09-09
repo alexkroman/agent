@@ -4,7 +4,7 @@ import { bookingStatus, nextStep, requote } from "../booking.ts";
 import { AFTER_STAY, deskFlow } from "../desk.ts";
 import { describeRoomOptions, listRoomOptions } from "../hotel.ts";
 import { daysBetween, describeExtras, ROOM_TYPES, ROOM_VIEWS, speakUsd } from "../records.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Record the room type (and view) the caller picked from the options `set_stay`

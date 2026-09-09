@@ -15,7 +15,7 @@ import {
 } from "@alexkroman1/aai/testing";
 import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-
+import { retrieve } from "./knowledge.ts";
 import { MAX_ATTEMPTS, runCorrectiveRag } from "./procedure.ts";
 import {
   ANSWER_SYSTEM,
@@ -24,7 +24,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { ASKED_CAP, retrieve, supportProjection, supportSlot, supportView } from "./shared.ts";
+import { ASKED_CAP, supportProjection, supportSlot, supportView } from "./shared.ts";
 /** TYPE-only, so nothing here re-registers a tool module: the defs under test
  *  still come from `agentDef`, which is what a deploy resolves. */
 import type AnswerQuestion from "./tools/answer_question.ts";
@@ -169,7 +169,7 @@ function phases(calls: string[]): string[] {
 
 // ─── 1. The retriever ────────────────────────────────────────────────────────
 
-describe("retrieval (shared.ts)", () => {
+describe("retrieval (knowledge.ts)", () => {
   test("ranks the document a caller's words actually point at", () => {
     expect(retrieve("my broadband light is red")[0]?.doc.id).toBe("D1");
     expect(retrieve("nobody was home for the engineer")[0]?.doc.id).toBe("D6");

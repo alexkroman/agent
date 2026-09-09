@@ -1,7 +1,8 @@
 import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { isoDate, MAX_PARTY_SIZE, speakCode, spokenDate } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /** Their `add_to_waitlist`: for dates the hotel is sold out on. Holds nothing. */
 export default hotelSlot.updateTool({

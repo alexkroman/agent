@@ -1,6 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { addTicket, hotelSlot, requireVerified } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket, requireVerified } from "../shared.ts";
 
 /**
  * Re-send a document to the email ON FILE — their `resend_confirmation` over

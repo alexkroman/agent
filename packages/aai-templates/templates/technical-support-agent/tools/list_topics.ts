@@ -1,5 +1,6 @@
 import { tool } from "@alexkroman1/aai";
-import { DOCS, PRODUCT, TOPICS } from "../shared.ts";
+import { DOCS, TOPICS } from "../knowledge.ts";
+import { PRODUCT } from "../shared.ts";
 
 /**
  * What the knowledge base covers.

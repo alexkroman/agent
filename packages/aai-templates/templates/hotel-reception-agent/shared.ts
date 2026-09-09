@@ -13,7 +13,7 @@
  *
  * | hotel_receptionist | here |
  * | --- | --- |
- * | `HotelDB` over apsw/SQLite, seeded by `fake_data/seed.py` | {@link HotelState}, one `sessionSlot` seeded from `seed.ts` per session |
+ * | `HotelDB` over apsw/SQLite, seeded by `fake_data/seed.py` | {@link HotelState}, one `sessionSlot` (in `session.ts`) seeded from `seed.ts` per session |
  * | `Userdata` (verified booking, turn counters, transferred_to) | the same fields on {@link HotelState} |
  * | `VerifyBookingTask` (last name + code, or + card last four; three strikes) | `tools/verify_booking.ts` + {@link requireVerified}, checked by every booking tool |
  * | `BookRoomTask` + `ModifyBookingTask` (one `AgentTask` each, `_step()` derived from captured values) | ONE `booking` dialog in `desk.ts`, `nextStep` in `booking.ts`, a `mode` on the draft |
@@ -28,7 +28,7 @@
  * | `record_followup`, `take_guest_message`, `dispatch_emergency`, … (write-only tables) | {@link Ticket}s on the slot, rendered by `client.tsx` |
  * | a caller who rings off mid-booking (their `abandoned_booking` followup) | `events.ts`, on `agent({ events })` — the one write no tool can make |
  * | `HOTEL_TODAY=2026-06-08` (the simulation pin) | {@link TODAY}, fixed |
- * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskProjection`, the slot pushed by `syncState` |
+ * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskView`, pushed by `syncState` via `session.ts`'s `deskProjection` |
  *
  * **The LLM never owns a money value**, which is their README's first
  * sentence and this port's too: every total comes out of {@link computeInvoice},
@@ -52,7 +52,7 @@
  */
 
 import type { DeepReadonly, Message, ToolFailure } from "@alexkroman1/aai";
-import { sessionSlot, toolFailure } from "@alexkroman1/aai";
+import { toolFailure } from "@alexkroman1/aai";
 import {
   type Dispute,
   type GuestHistory,
@@ -73,7 +73,6 @@ import {
   type TransferDestination,
   usd,
 } from "./records.ts";
-import { seedHotel } from "./seed.ts";
 
 // ─── The booking draft ───────────────────────────────────────────────────────
 
@@ -161,10 +160,24 @@ export interface HotelState {
   log: string[];
 }
 
-/** A pristine hotel per session, seeded around {@link TODAY}. */
-export function createHotelState(): HotelState {
+/**
+ * The hotel's shape with nothing in it — no seed.
+ *
+ * `session.ts`'s {@link createHotelState} builds the real seeded state on top
+ * of this, so the shape is declared once. It lives HERE, apart from that,
+ * because `client.tsx` needs a `HotelState` for its pre-first-call fallback and
+ * must not import `session.ts`: that module pulls `seed.ts`, which would then
+ * land in the browser bundle.
+ */
+export function emptyHotelState(): HotelState {
   return {
-    ...seedHotel(TODAY),
+    rooms: [],
+    tables: [],
+    bookings: [],
+    reservations: [],
+    invoices: [],
+    disputes: [],
+    guestHistory: [],
     tickets: [],
     verifiedCode: null,
     verifyAttempts: 0,
@@ -175,17 +188,6 @@ export function createHotelState(): HotelState {
     log: [],
   };
 }
-
-/**
- * The session's hotel, as one typed slot.
- *
- * No `after` hook: nothing stored here is derived from anything else stored
- * here. An invoice is written beside its booking by the one function that
- * prices a stay, and a refund decrements the invoice where the dispute is filed.
- * The call log is the one append-only list, and its bound is declared on the
- * slot so it holds whatever path writes it.
- */
-export const hotelSlot = sessionSlot("hotel", createHotelState, { caps: { log: 40 } });
 
 /** The hotel as a READ hands it out: deep-frozen, and typed to say so. */
 export type FrozenHotelState = DeepReadonly<HotelState>;
@@ -349,6 +351,3 @@ function bookingCounts(state: FrozenHotelState): { inHouse: number; arrivingToda
   }
   return { inHouse, arrivingToday };
 }
-
-/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
-export const deskProjection = hotelSlot.projection(deskView);

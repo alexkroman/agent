@@ -2,7 +2,8 @@ import { toolFailure } from "@alexkroman1/aai";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { digitsOf, speakCode, TODAY } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /**
  * Take a message for someone who may be a guest — their `take_guest_message`.

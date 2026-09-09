@@ -2,7 +2,7 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { reinstateBooking } from "../hotel.ts";
 import { normalizeCode, speakCode, speakUsd, spokenDate, TODAY } from "../records.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Bring back a cancelled booking — their `reinstate_booking`, the one flow that

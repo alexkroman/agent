@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bookingStatus, nextStep } from "../booking.ts";
 import { AFTER_EXTRAS, deskFlow } from "../desk.ts";
 import { digitsOf } from "../records.ts";
-import { hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
 
 /**
  * Record the guest's name, email and phone — their three `beta.workflows`

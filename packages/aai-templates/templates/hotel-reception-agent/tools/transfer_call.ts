@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRANSFER_DESTINATIONS } from "../records.ts";
-import { addTicket, hotelSlot } from "../shared.ts";
+import { hotelSlot } from "../session.ts";
+import { addTicket } from "../shared.ts";
 
 /**
  * Transfer the caller to a DEPARTMENT — their `transfer_call`, a stub that
