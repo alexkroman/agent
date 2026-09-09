@@ -26,7 +26,8 @@
  *   once. "Every write is followed by a check" is per-occurrence and is what an
  *   author means; {@link ToolAssertions.eachToolFollowedBy} is that.
  *
- * `aai-evals/src/studio-target.ts` is the measured evidence for both. It grades
+ * `aai-studio-server/src/studio-eval-target.ts` is the measured evidence for
+ * both. It grades
  * the studio's coding agent over real HTTP and carries, by hand, a
  * `VERIFYING_TOOLS` set, a `redChecks` list, a `testAgentRuns` tally and a
  * `redExcerpts` collection — which is these two assertions written as a fold
@@ -111,7 +112,7 @@ export type ToolResultOptions = CountBounds & {
    * A SET of names rather than one, because a verification is a property of the
    * output and not of which tool ran it: an agent whose cheaper check catches
    * the error first would otherwise score zero reds while having written
-   * exactly the same wrong code — the argument `studio-target.ts`'s own
+   * exactly the same wrong code — the argument `studio-eval-target.ts`'s own
    * `VERIFYING_TOOLS` carries. Absent, every tool's result counts.
    */
   readonly tools?: readonly string[];

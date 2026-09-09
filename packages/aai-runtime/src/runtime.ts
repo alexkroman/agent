@@ -244,8 +244,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     logger,
   });
 
-  // The system prompt, in two halves — the day-cached base and a per-turn
-  // suffix. Both, and the reason the expensive half stays cached, are in
+  // The system prompt, in three parts — the day-cached base, the agent's own
+  // instructions when `systemPrompt` is a resolver, and a per-turn suffix. All
+  // three, and the reason the expensive part stays cached, are in
   // `runtime-system-prompt.ts`.
   const systemPrompts = createSystemPromptResolver({
     agentConfig,

@@ -85,6 +85,11 @@ import type { AgentDef } from "./types.ts";
  * who wrote a function has taken over composing the prompt, and the file
  * reaches it through the closure shown in this module's header.
  *
+ * Outcome 1 cannot rescue a resolver either, and for a reason worth stating: a
+ * function is never the framework default, so outcome 1's `===` can only ever
+ * match a string. Every resolver reaches outcome 2, which is why that arm has
+ * to be a decision rather than a fallthrough.
+ *
  * Generic in the def so a caller gets back the type it passed in —
  * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with the tools
  * lowering beside it, which is generic for the same reason, and a widened

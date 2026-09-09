@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Specs for the two halves of a session's system prompt: the base cached per
-// calendar day, and the per-turn suffix the `dialog()` integration will install.
+// Specs for the three parts of a session's system prompt: the base cached per
+// calendar day, the agent's own instructions when `systemPrompt` is a RESOLVER,
+// and the per-turn suffix the `dialog()` integration will install.
 
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -153,6 +154,15 @@ describe("a systemPrompt RESOLVER", () => {
     phase = "payment";
     expect(session.resolve()).toContain("phase: payment");
     expect(seen).toEqual(["s-1", "s-1"]);
+  });
+
+  test("a NULLARY resolver still works — it simply ignores the context", () => {
+    // The compatibility claim the ctx-taking signature rests on: `() => string`
+    // is assignable to `(ctx) => string`, so every prompt thunk written against
+    // the older nullary shape keeps resolving per request, unchanged.
+    const nullary = (): string => "Written without a context.";
+    const session = withResolver(nullary).forSession(TEST_SESSION_CONTEXT);
+    expect(session.resolve()).toContain("Written without a context.");
   });
 
   test("an empty answer changes the prompt by not one byte", () => {

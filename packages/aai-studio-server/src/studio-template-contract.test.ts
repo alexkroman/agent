@@ -24,7 +24,7 @@ import {
   spawnCommand,
   TEMPLATES_DIR,
   templateNamed,
-} from "./template-contract.ts";
+} from "./studio-template-contract.ts";
 
 const scratches: string[] = [];
 afterEach(async () => {

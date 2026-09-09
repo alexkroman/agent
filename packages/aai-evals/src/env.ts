@@ -11,13 +11,23 @@
  * an eval file — so a blank one yielded `NaN` and every step-cap check failed.
  * The function warning about the drift is the one that got drifted around.
  *
- * Its own module rather than an export of `runner.ts`, because `_gate.ts` is the
+ * Its own module rather than an export of `runner.ts`, because `gate.ts` is the
  * other caller and it cannot be the home: that module resolves a key, imports
  * `vitest` and ANNOUNCES at import time, all of which `runner.ts` must not pull
- * in. That side effect is also why a NAMED setting a unit-tested module needs
- * lands here rather than beside `evalOrigin` — see {@link evalStepCapHint}. The
- * POLICY stays in `_gate.ts`: which precondition a tier has, what a missing one
- * means, and when a skip becomes a failure.
+ * in. The POLICY stays in `gate.ts`: which precondition a tier has, what a
+ * missing one means, and when a skip becomes a failure.
+ *
+ * These three readers are FRAMEWORK-GENERAL, which is what puts them on a
+ * subpath export (`aai-evals/env`) rather than keeping them package-private.
+ * The settings that named a particular TARGET — `evalOrigin`, `evalContracts`
+ * and `evalStepCapHint`, every one of them about the studio — moved out with
+ * the target they configure, to
+ * `packages/aai-studio-server/src/studio-eval-env.ts`, and read the environment
+ * through these same three functions from there. The reason the step-cap hint
+ * lived beside them rather than beside `evalOrigin` survives the move unchanged
+ * and is restated at its new declaration: importing `gate.ts` resolves a key
+ * and announces at import time, so a unit-tested module may not take a setting
+ * from there.
  *
  * @module
  */
@@ -67,22 +77,4 @@ export function envInt(
     throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
   }
   return n;
-}
-
-/**
- * Roughly the studio's `MAX_CHAT_STEPS`; only used to flag a long run.
- *
- * Here rather than beside `evalOrigin` in `_gate.ts`, which is where the tier's
- * other configuration lives, and the reason is mechanical: importing that module
- * RESOLVES a key and announces — or, under `AAI_REQUIRE_EVAL`, THROWS — at
- * import time. `starter-grade.ts` reads this and is unit-tested, so a settings
- * import that drags the gate in fails the whole unit file on any machine with
- * `AAI_REQUIRE_EVAL` set and no key. Verified before moving it: it did.
- *
- * It was `Number(process.env.AAI_STEP_CAP_HINT ?? 80)` in an eval file, which
- * turns a blank value into `NaN` — and every `<` against a `NaN` bound answers
- * false, i.e. the step-cap check fails and reads as the agent having run away.
- */
-export function evalStepCapHint(env: Record<string, string | undefined> = process.env): number {
-  return envInt(env, "AAI_STEP_CAP_HINT", 80);
 }

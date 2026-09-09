@@ -1,17 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The system prompt a session sends, in two halves.
+ * The system prompt a session sends, in three parts.
  *
  * - The **base** is `buildSystemPrompt(agentConfig, …)` — fixed for the
  *   runtime's lifetime except for the date it stamps, and cached per calendar
  *   day for exactly that reason (see {@link createSystemPromptResolver}).
+ * - The agent's own **instructions**, when `systemPrompt` is a RESOLVER rather
+ *   than a string: asked once per model request and folded in under the same
+ *   precedence header a static prompt gets. Nothing of it is on the wire — the
+ *   config carries only the static half — so it cannot live in the base.
  * - The **suffix** is per TURN, resolved fresh every time a request is
  *   assembled, and empty on every session that ships today.
  *
  * It is its own module rather than two closures in `runtime.ts` because that
- * file is 5 lines under the 500-line cap and because the two halves want
- * different lifetimes: the base belongs to the RUNTIME (one agent, many
- * sessions), the suffix to one SESSION. Written as one `let` beside the other
+ * file is 5 lines under the 500-line cap and because the parts want different
+ * lifetimes: the base belongs to the RUNTIME (one agent, many sessions), the
+ * instructions resolver and the suffix to one SESSION. Written as one `let` beside the other
  * they read as the same scope, and a suffix accidentally hoisted to runtime
  * scope is one call's dialog phase leaking into every concurrent call — a bug
  * with no symptom on a machine running one session at a time.
@@ -121,6 +125,11 @@ export function createSystemPromptResolver(deps: {
 
   function base(): string {
     const day = new Date().toDateString();
+    // Keyed on the DAY alone, and that stays right with a resolver in play: the
+    // base is built from the serialized config, which carries only the STATIC
+    // half of `systemPrompt` — a resolver never reaches it (`toAgentConfig`
+    // drops one) and is asked per request in `forSession` instead. So nothing
+    // an author can vary is baked in here.
     if (promptCache?.day !== day) {
       promptCache = {
         day,

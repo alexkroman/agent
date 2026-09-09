@@ -9,6 +9,7 @@ import {
   toAgentConfig,
 } from "./_internal-types.ts";
 import { rawConfig } from "./_test-utils.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import type { AgentDef, ToolDef } from "./types.ts";
 
 // The single subtraction the config-mapping design rests on: every AgentDef
@@ -156,6 +157,38 @@ describe("toAgentConfig", () => {
     // presence explicitly — the config crosses a structured-clone/JSON
     // boundary where phantom keys are visible.
     expect(Object.keys(config).sort()).toEqual(["greeting", "mode", "name", "s2s", "systemPrompt"]);
+  });
+
+  test("a systemPrompt RESOLVER is DROPPED — the wire carries the schema default", () => {
+    // This test used to assert the opposite: that a nullary thunk was
+    // SNAPSHOTTED here and the config carried the string it answered with. That
+    // was right for a thunk and is wrong for the resolver `systemPrompt` now
+    // takes, which is handed the live session (`AgentInstructions`) — there is
+    // no session at serialization time, so there is nothing honest to snapshot
+    // and a value taken here would be one turn's answer frozen for the life of
+    // the deployment. Not a regression: what resolves per request is the LIVE
+    // definition, in the runtime (`runtime-system-prompt.ts`), which folds the
+    // resolver's answer in under the same precedence header a string lands
+    // under. The config is the SERIALIZABLE shape, so the key is dropped and
+    // `AgentConfigSchema` supplies `DEFAULT_SYSTEM_PROMPT` for it.
+    const config = toAgentConfig({ ...base, systemPrompt: () => "computed" });
+    expect(config.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
+    expect(typeof config.systemPrompt).toBe("string");
+  });
+
+  test("the resolver is never CALLED on the way to a config", () => {
+    // The other half, and the one that would fail silently: calling it here
+    // would ask an author's function to answer with no session anywhere, which
+    // is exactly what a resolver reading a slot cannot do.
+    let calls = 0;
+    toAgentConfig({
+      ...base,
+      systemPrompt: () => {
+        calls += 1;
+        return "computed";
+      },
+    });
+    expect(calls).toBe(0);
   });
 
   test("injects the default AssemblyAI pipeline when no providers are declared", () => {

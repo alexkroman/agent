@@ -23,6 +23,7 @@ import type {
   AgentGuardrail,
   AgentInstructions,
   AgentSessionContext,
+  AgentSystemPrompt,
   GuardrailVerdict,
   InferToolInput,
   InferToolOutput,
@@ -633,26 +634,31 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
 });
 
 /**
- * `systemPrompt` takes a RESOLVER as well as a string, and the resolver is
- * handed the session rather than nothing.
- *
- * A nullary thunk was already supported inside the runtime and could vary the
- * prompt by wall clock and by nothing else — so it could not read a slot, which
- * is most of the reason to want one.
+ * `systemPrompt` takes a RESOLVER as well as a string, in every mode, and it is
+ * handed the session rather than nothing — a nullary thunk could vary the
+ * prompt by wall clock alone, so it could not read a slot, which is most of the
+ * reason to want one. One is still assignable (pinned below), so a builder
+ * written against that older shape keeps compiling. The widening is in turn
+ * only useful if `agent()` hands the FUNCTION back: narrowed to `string` on the
+ * way out it compiles everywhere and freezes every dynamic prompt at its first
+ * answer, reported nowhere. The MODE arms are named one by one because
+ * `AgentParams` is a union and a field re-declared on one arm is a field the
+ * others may not carry — how `sttPrompt` above came to be refused in S2S mode.
  */
 test("systemPrompt accepts a per-request resolver", () => {
-  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
-  expectTypeOf<{
-    name: string;
-    systemPrompt: (ctx: AgentSessionContext) => string;
-  }>().toExtend<AgentParams>();
-
-  // What the resolver is handed, and what it owes back.
+  type Resolve = (ctx: AgentSessionContext) => string;
+  expectTypeOf(
+    agent({ name: "T", systemPrompt: (ctx: AgentSessionContext) => ctx.sessionId }).systemPrompt,
+  ).toEqualTypeOf<AgentSystemPrompt>();
+  expectTypeOf<() => string>().toExtend<AgentInstructions>();
   expectTypeOf<AgentInstructions>().parameter(0).toEqualTypeOf<AgentSessionContext>();
   expectTypeOf<AgentInstructions>().returns.toBeString();
-
-  // An ASYNC resolver is refused: the request is being assembled, and there is
-  // nowhere to await that does not put a round trip in front of every turn.
+  expectTypeOf<{ name: string; systemPrompt: string }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; systemPrompt: Resolve }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; s2s: S2sProvider; systemPrompt: Resolve }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; text: true; systemPrompt: Resolve }>().toExtend<AgentParams>();
+  // An ASYNC resolver is refused: there is nowhere to await while a request is
+  // being assembled that does not put a round trip in front of every turn.
   expectTypeOf<{
     name: string;
     systemPrompt: (ctx: AgentSessionContext) => Promise<string>;

@@ -49,6 +49,26 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
+### The agent's system prompt is RESOLVED here, per turn
+
+`AgentDef.systemPrompt` is `string | ((ctx: AgentSessionContext) => string)`
+(`AgentSystemPrompt`, `sdk/agent-instructions.ts`), so `stream()` splits it with
+`staticSystemPrompt` / `systemPromptResolver` and calls a resolver with this
+agent's session context when it assembles the request. This path had been
+reading the field BARE, which was correct while the field was a string and
+became a silent defect the moment it was not: `streamText` takes whatever
+`system` is and stringifies a function, so the model would have been instructed
+with `text-agent.ts`'s own source, fluently and with nothing failing.
+
+**Once per TURN here, not once per step.** This door assembles one request and
+lets the AI SDK step it, where a voice session re-resolves at each
+`startLlmStream`. A resolver that moves between two steps of the same reply
+therefore does not move here.
+
+A turn's own `TextTurnOptions.systemPrompt` stays a plain `string` and still
+wins. It is written for one turn, so there is nothing left for a resolver to
+answer later — and a caller that wants one calls the function itself.
+
 ### A text agent's turns are the SAME event stream, narrowed
 
 `createTextAgent({ onEvent })` reports a turn as `SessionEvent`s — the union a
@@ -66,8 +86,8 @@ before touching either:
   mean a second set of readers and a second set of assertions above them, and
   the one thing worse than an ungradeable agent is two vocabularies that
   disagree about what a tool call is. The measured cost of having neither is
-  `aai-evals/src/studio-target.ts`, which grades an `agent({ text: true })`
-  definition with five REGEXES over tool-output text.
+  `aai-studio-server/src/studio-eval-target.ts`, which grades an
+  `agent({ text: true })` definition with five REGEXES over tool-output text.
 - **`session.configured` is refused for want of an honest field**, and it is the
   only member refused on those grounds: it requires `audioFormat`, `sampleRate`
   and `ttsSampleRate`, `0` fails the schema, and any real number is a lie a

@@ -6,6 +6,23 @@
   "engines": {
     "node": ">=24"
   },
+  "exports": {
+    "./env": {
+      "@dev/source": "./src/env.ts"
+    },
+    "./gate": {
+      "@dev/source": "./src/gate.ts"
+    },
+    "./register": {
+      "@dev/source": "./src/register.ts"
+    },
+    "./report": {
+      "@dev/source": "./src/report.ts"
+    },
+    "./runner": {
+      "@dev/source": "./src/runner.ts"
+    }
+  },
   "scripts": {
     "check:eval": "pnpm run test:eval",
     "lint": "biome check .",
@@ -16,15 +33,11 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "ai": "catalog:",
-    "eventsource-parser": "catalog:",
-    "undici": "^8.10.1"
+    "@alexkroman1/aai-runtime": "workspace:*",
+    "vitest": "catalog:"
   },
   "devDependencies": {
-    "@alexkroman1/aai-runtime": "workspace:*",
-    "aai-studio-client": "workspace:*",
     "typescript": "catalog:",
-    "vitest": "catalog:",
     "zod": "catalog:"
   }
 }

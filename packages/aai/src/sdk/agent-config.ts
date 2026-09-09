@@ -304,8 +304,11 @@ export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
   /**
    * Wider than the config's own `string`, because `AgentDef.systemPrompt`
    * may be a RESOLVER — a function this layer cannot serialize and must not
-   * hand onward. `toAgentConfig` drops it (see `staticSystemPrompt`); the
-   * runtime holds the agent's own module and asks the function per request.
+   * hand onward. Widened here rather than on {@link AgentConfig} so `AgentDef`
+   * stays assignable to this by construction, which is what every
+   * `toAgentConfig(agent)` call site relies on. `toAgentConfig` drops it (see
+   * `staticSystemPrompt`); the runtime holds the agent's own module and asks
+   * the function per request.
    */
   systemPrompt?: AgentSystemPrompt;
 } & {

@@ -2,10 +2,11 @@
 /**
  * The studio target's stream reading, driven with canned SSE.
  *
- * `readTurn` is the only seam in `studio-target.ts` a unit test can reach — the
- * rest needs a live studio, a real sandbox and a model, which is why that module
- * sits outside this package's coverage floors. It is also the half where a break
- * is SILENT: every grading check in `starter.eval.test.ts` reads a field of
+ * `readTurn` is the only seam in `studio-eval-target.ts` a unit test can reach —
+ * the rest needs a live studio, a real sandbox and a model, which is why that
+ * module is named in this package's coverage `exclude`. It is also the half
+ * where a break
+ * is SILENT: every grading check in `studio-starter.eval.test.ts` reads a field of
  * `StudioTurn`, so a part-shape the AI SDK renamed folds to an empty turn, and an
  * empty turn grades as a coding agent that did nothing rather than as a broken
  * harness. Nothing else in the repo would say otherwise.
@@ -14,7 +15,7 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { readTurn } from "./studio-target.ts";
+import { readTurn } from "./studio-eval-target.ts";
 
 /** One `data:` frame per argument, as the guest's chat endpoint writes them. */
 function sse(...frames: unknown[]): string {

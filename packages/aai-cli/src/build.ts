@@ -117,7 +117,7 @@ const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_P
  * is what an agent with no file legitimately looks like. So this is a report
  * rather than a check.
  *
- * Decided by comparing VALUES against the built agent's resolved prompt, which
+ * Decided by comparing VALUES against the built agent's declared prompt, which
  * is the same method `withSystemPrompt` uses and for the same reason — the
  * alternative asks the bundler's module graph a question, and the author may
  * have imported the file and composed it, which is neither "the file" nor
@@ -125,20 +125,21 @@ const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_P
  */
 async function systemPromptSource(
   cwd: string,
-  resolved: AgentDef["systemPrompt"],
+  declared: AgentDef["systemPrompt"],
 ): Promise<string> {
   // A RESOLVER has no source to name and no file it could be composing: it is
-  // computed per request from the session. Reported as itself rather than
-  // guessed at — this line exists to surface a swap, and "agent.ts" would read
-  // as a static prompt that happens to live there.
-  if (typeof resolved !== "string") return "agent.ts (a per-request resolver)";
-  if (resolved === DEFAULT_SYSTEM_PROMPT) return FRAMEWORK_DEFAULT_PROMPT_SOURCE;
+  // computed per request from the session, and there is no session here to ask
+  // it with. Reported as itself rather than guessed at — this line exists to
+  // surface a swap, and "agent.ts" would read as a static prompt that happens
+  // to live there.
+  if (typeof declared !== "string") return "agent.ts (a per-request resolver)";
+  if (declared === DEFAULT_SYSTEM_PROMPT) return FRAMEWORK_DEFAULT_PROMPT_SOURCE;
   const file = await fs
     .readFile(path.join(cwd, SYSTEM_PROMPT_FILE), "utf-8")
     .catch(() => undefined);
   const trimmed = file?.trim();
-  if (trimmed === undefined || trimmed === "" || !resolved.includes(trimmed)) return "agent.ts";
-  return resolved.trim() === trimmed
+  if (trimmed === undefined || trimmed === "" || !declared.includes(trimmed)) return "agent.ts";
+  return declared.trim() === trimmed
     ? SYSTEM_PROMPT_FILE
     : `agent.ts (composing ${SYSTEM_PROMPT_FILE})`;
 }
@@ -268,6 +269,10 @@ export async function executeBuild(opts: {
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
   // surface would stay invisible in whichever mode the reader happened to use.
+  // Passed UNRESOLVED, because `systemPrompt` may be a RESOLVER: there is no
+  // session at build time to call one with, so `systemPromptSource` reports it
+  // as a resolver rather than inventing a value — the same thing
+  // `withSystemPrompt` and `toAgentConfig` do with one.
   const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt);
   log.info(`System prompt: ${systemPrompt}`);
   log.success("Build complete");

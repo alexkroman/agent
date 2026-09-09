@@ -25,7 +25,7 @@
  *
  * ## The duplication, on purpose
  *
- * `packages/aai-evals/src/_env.ts` is the sibling of this file and says the same
+ * `packages/aai-evals/src/env.ts` is the sibling of this file and says the same
  * things about blank-counts-as-unset. It is not imported here and cannot be:
  * `aai-runtime` may import only `aai`, and `aai-evals` sits ABOVE this package
  * rather than beside it. Converging them means publishing this policy on the

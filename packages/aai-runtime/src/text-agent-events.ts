@@ -12,7 +12,7 @@
  * scrape out of it.
  *
  * Be precise about what that cost, because the obvious answer is wrong and this
- * doc gave it for one commit. `packages/aai-evals/src/studio-target.ts` grades
+ * doc gave it for one commit. `packages/aai-studio-server/src/studio-eval-target.ts` grades
  * the studio's coding agent — an ordinary `agent({ text: true })` definition —
  * with five regexes over tool output, and **those five survive this module**:
  * they classify a tool result's TEXT, and an event carries that same string

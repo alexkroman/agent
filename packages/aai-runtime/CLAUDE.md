@@ -1252,8 +1252,17 @@ frozen string on a session that had a resolver — silent, because the model
 answers fluently under instructions that moved on rather than failing.
 
 **A plain string is byte-identical to what shipped.** It resolves to itself, at
-the same place the frozen value used to be read, which is what made this
-landable before anything supplies a thunk.
+the same place the frozen value used to be read.
+
+**This is NOT the type an author writes**, and the distinction is worth holding
+onto because the two nearly collided. `agent({ systemPrompt })` takes
+`AgentSystemPrompt` — `string | ((ctx: AgentSessionContext) => string)`,
+declared in the SDK's `sdk/agent-instructions.ts` — and a resolver of that kind
+needs the SESSION, which a transport does not have and should not be handed.
+The runtime asks it one layer up, in `runtime-system-prompt.ts`, where the
+session context lives; what reaches a transport is the assembled prompt or a
+nullary thunk over `SessionSystemPrompt.resolve()`. Two names, because they are
+two things: an authoring field and a transport seam.
 
 Who resolves, and when:
 

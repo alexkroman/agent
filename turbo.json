@@ -435,8 +435,19 @@
     // nothing reads. If this ever becomes cacheable, a package-relative
     // `$TURBO_DEFAULT$` is now enough: the starter corpus used to live OUTSIDE
     // the package (`scripts/starter-eval/expectations.mjs`, hashed by a
-    // per-package `inputs` override) and is `packages/aai-evals/
-    // starter-expectations.ts` today.
+    // per-package `inputs` override) and is
+    // `packages/aai-studio-server/src/studio-starter-expectations.ts` today.
+    //
+    // FOUR packages declare this task: aai-templates (the 28 template evals, and
+    // the only one CI and `pnpm check` run, in scripted-model mode),
+    // aai-evals (the level-1 behaviour cases), aai-guest (the coding agent's
+    // in-process eval) and aai-studio-server (the studio STARTER eval, which
+    // moved there with the target it drives). Every variable below is read by at
+    // least one of them and declared here rather than in `globalPassThroughEnv`
+    // because it selects what the task DOES — `AAI_EVAL_ORIGIN`,
+    // `AAI_EVAL_CONTRACTS` and `AAI_STEP_CAP_HINT` are aai-studio-server's,
+    // through its `studio-eval-env.ts`, and a task-level declaration covers
+    // every package that declares the task rather than any one of them.
     "check:eval": {
       "cache": false,
       "dependsOn": [

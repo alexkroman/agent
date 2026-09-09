@@ -163,6 +163,14 @@ export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
  * The system prompt a transport sends: the TEXT, or a thunk that answers it at
  * the moment a request is assembled.
  *
+ * **Runtime-internal, and NOT the type an author writes.** `agent({
+ * systemPrompt })` takes `AgentSystemPrompt` — a string or a resolver handed
+ * the SESSION (`sdk/agent-instructions.ts`) — and the runtime asks that
+ * resolver in `runtime-system-prompt.ts`, where the session context lives. What
+ * reaches a transport is one layer down: the assembled prompt, or a nullary
+ * thunk over `SessionSystemPrompt.resolve()` that re-reads it. A transport has
+ * no session context to pass and needs none.
+ *
  * The same shape as {@link SkipGreetingOption} below, and deliberately not a
  * second `resolveSystemPrompt?: () => string` field beside the string. Two
  * fields means every read site has to remember which one wins, and a site that
@@ -173,14 +181,7 @@ export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
  * has to resolve it.
  *
  * **A plain string is byte-identical to what shipped**: it resolves to itself,
- * once, at the same place the frozen value used to be read. That is what makes
- * the seam safe to land before anything supplies a thunk.
- *
- * The thunk exists for a prompt that depends on WHERE THE CALL IS — the phase a
- * `dialog()` machine is in. A session-scoped string cannot carry that: the
- * model learns about a phase only through a tool result, so on a turn where no
- * tool is called the dialog is invisible, and that is exactly the turn where
- * the agent asks the question the phase had already moved past.
+ * once, at the same place the frozen value used to be read.
  *
  * @internal
  */
