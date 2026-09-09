@@ -119,11 +119,11 @@ const ctx = createToolContext({ generate: "A short summary." });
 // `ctx.desk` is the same thing for `ctx.delegate`.
 ```
 
-:::caution[`{ text: "…" }` on its own is a compile error]
-A record with no `object` key is read as the third row of that table — a route
-table keyed by system prompt — so `{ text: "…" }` means "one route named
-`text`", which is a system prompt no tool carries. Pass the bare string for a
-text answer, or `{ text, object }` when the tool reads both.
+:::caution[Don't wrap a text answer in `{ text: "…" }`]
+It does not compile, but the compiler's advice is misleading: it reports that
+`object` is missing and invites you to add one. Adding `object` is the wrong
+fix if all you wanted was text. Pass the bare string instead, and reach for
+`{ text, object }` only when the tool really reads both.
 :::
 
 `scriptedToolContext({ generate, delegate })` is the same call under a name that
