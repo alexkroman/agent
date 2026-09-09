@@ -22,11 +22,13 @@ export async function transcribeFlow(
   input: { recording: string },
   ctx: WorkflowContext,
 ) {
-  const segments = await ctx.step("plan", () => planSegments(input.recording));
+  const { recording } = input;
+  const segments = await ctx.step("plan", () => planSegments(recording));
 
-  // Four at a time, each its own step: a dropped connection costs one segment.
-  const parts = await mapConcurrent(segments, 4, (segment) =>
-    ctx.step(`segment-${segment.index}`, () => transcribeSegment(segment)),
+  // Four at a time, each its own step: a dropped
+  // connection costs one segment, not the run.
+  const parts = await mapConcurrent(segments, 4, (seg) =>
+    ctx.step(`segment-${seg.index}`, () => transcribeSegment(seg)),
   );
 
   return { text: parts.map((part) => part.text).join(" ") };

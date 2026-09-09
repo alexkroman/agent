@@ -39,6 +39,21 @@
 }
 
 /*
+ * Code sizing.
+ *
+ * Most of these pages are made of seventy-odd-column TypeScript, and at the
+ * inherited size 20 blocks across the 16 pages clipped and grew a horizontal
+ * scrollbar. Sizing the code down fits them in the prose column; widening the
+ * column instead would fix the code by making every paragraph too long to
+ * read, and letting the block break out of the column ran it under the
+ * sidebar divider and the table-of-contents rail.
+ */
+.sl-markdown-content :is(pre) code {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+/*
  * The splash page's hero. With no hero image the two-column layout collapses
  * to one, and its reserved height became ~130px of nothing between the call to
  * action and the first section — which reads as a page that has ended.
