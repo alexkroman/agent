@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { BUNDLE_FETCH_TIMEOUT_MS } from "aai-guest-core/limits";
+import { useTempDirs } from "aai-guest-core/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useTempDirs } from "../_test-utils.ts";
-import { BUNDLE_FETCH_TIMEOUT_MS } from "../limits.ts";
 import { createIdleController, readAgentBoot } from "./agent-mode.ts";
 import { createWorkflowActivity, type WorkflowActivity } from "./manage.ts";
 

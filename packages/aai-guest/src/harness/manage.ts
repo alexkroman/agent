@@ -26,9 +26,9 @@ import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { handleWorkflowRequest } from "@alexkroman1/aai-runtime/internal";
-import { GUEST_CONTRACT_VERSION } from "../limits.ts";
-import { verifyBearer } from "./auth.ts";
-import { writeJson } from "./http.ts";
+import { verifyBearer } from "aai-guest-core/auth";
+import { writeJson } from "aai-guest-core/http";
+import { GUEST_CONTRACT_VERSION } from "aai-guest-core/limits";
 import { guestLogBuffer, parseLogQuery } from "./logs.ts";
 import { gateDirectWorkflowDial } from "./workflow-gate.ts";
 

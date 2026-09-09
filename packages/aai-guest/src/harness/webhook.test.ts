@@ -18,8 +18,8 @@ import {
   publishWorkflowWebhookUrl,
   WORKFLOW_CALLBACK_ROUTES,
 } from "@alexkroman1/aai-runtime/internal";
+import { emptyHarnessState, loadBundle } from "aai-guest-core/bundle";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { emptyHarnessState, loadBundle } from "./bundle.ts";
 
 // The minimal loadable bundle: the harness refuses one that ships no runtime
 // factory, and none of these tests needs a real runtime.

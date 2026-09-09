@@ -72,33 +72,32 @@ import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createRuntimeServer } from "@alexkroman1/aai-runtime";
 import { startTracingDetached } from "@alexkroman1/aai-runtime/tracing";
-import { type WebSocket, WebSocketServer } from "ws";
-import { z } from "zod";
-import { mainAgent } from "./harness/agent-mode.ts";
-import { verifyBearer } from "./harness/auth.ts";
-import { emptyHarnessState, type HarnessState, lazyRuntime } from "./harness/bundle.ts";
-import { installCrashGuards } from "./harness/crash-guards.ts";
-import { installLeakWatch } from "./harness/leak-watch.ts";
-import { captureGuestOutput } from "./harness/logs.ts";
-import { resolveGuestPort } from "./harness/port.ts";
+import { verifyBearer } from "aai-guest-core/auth";
+import { emptyHarnessState, type HarnessState, lazyRuntime } from "aai-guest-core/bundle";
+import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "aai-guest-core/limits";
 import {
   handleHostResponse,
   rejectAllPendingHostRequests,
   sendError,
   sendResponse,
   setHostSend,
-} from "./harness/rpc.ts";
+} from "aai-guest-core/rpc";
+import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "aai-guest-core/types";
+import { withBuildDir } from "aai-guest-studio/build";
+import { studioBundleAccess } from "aai-guest-studio/bundle-access";
+import { handleStudioRequest } from "aai-guest-studio/chat";
+import { deployWorkspaceDir } from "aai-guest-studio/publish";
+import { initStudioSession } from "aai-guest-studio/session";
+import { handleSessionInitRequest, SessionInitParamsSchema } from "aai-guest-studio/session-init";
+import { materializeWorkspace } from "aai-guest-studio/workspace-fs";
+import { type WebSocket, WebSocketServer } from "ws";
+import { z } from "zod";
+import { mainAgent } from "./harness/agent-mode.ts";
+import { installCrashGuards } from "./harness/crash-guards.ts";
+import { installLeakWatch } from "./harness/leak-watch.ts";
+import { captureGuestOutput } from "./harness/logs.ts";
+import { resolveGuestPort } from "./harness/port.ts";
 import { guestSdkVersion } from "./harness/sdk-version.ts";
-import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness/types.ts";
-
-import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
-import { withBuildDir } from "./studio/build.ts";
-import { studioBundleAccess } from "./studio/bundle-access.ts";
-import { handleStudioRequest } from "./studio/chat.ts";
-import { deployWorkspaceDir } from "./studio/publish.ts";
-import { initStudioSession } from "./studio/session.ts";
-import { handleSessionInitRequest, SessionInitParamsSchema } from "./studio/session-init.ts";
-import { materializeWorkspace } from "./studio/workspace-fs.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 

@@ -12,8 +12,8 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { useTempDir } from "aai-guest-core/test-utils";
 import { describe, expect, test } from "vitest";
-import { useTempDir } from "../_test-utils.ts";
 import { guestSdkVersion } from "./sdk-version.ts";
 
 /** Write a `node_modules/@alexkroman1/aai/package.json` under `root`. */

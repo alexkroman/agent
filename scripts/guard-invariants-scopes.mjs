@@ -251,13 +251,26 @@ export const GUEST_SURFACE_PATHSPECS = [
   // with `git ls-files`. That is the same trap `check-file-length`'s
   // `scripts/**/*.mjs` fell into; the corpus floor below is what turns a
   // future recurrence into a failure instead of a checkmark.
+  // All THREE guest packages: the guest was one, and `aai-guest-core` +
+  // `aai-guest-studio` were split out of it. The floor below is what caught
+  // that — the corpus fell to 18 against a minimum of 20 the moment the
+  // studio's 60 files left, which is a scan quietly reading less of the tree
+  // rather than a rule that stopped applying.
   "packages/aai-guest/src/*.ts",
   "packages/aai-guest/src/**/*.ts",
+  "packages/aai-guest-core/src/*.ts",
+  "packages/aai-guest-core/src/**/*.ts",
+  "packages/aai-guest-studio/src/*.ts",
+  "packages/aai-guest-studio/src/**/*.ts",
   ":!packages/aai-guest/dist/**",
   // Both spellings again: the suites sit directly in `src/`, which
   // `src/**/*.test.ts` does not match on its own.
   ":!packages/aai-guest/src/*.test.ts",
   ":!packages/aai-guest/src/**/*.test.ts",
+  ":!packages/aai-guest-core/src/*.test.ts",
+  ":!packages/aai-guest-core/src/**/*.test.ts",
+  ":!packages/aai-guest-studio/src/*.test.ts",
+  ":!packages/aai-guest-studio/src/**/*.test.ts",
   ...RUNTIME_ROUTE_SOURCES,
   "packages/aai/src/sdk/workflow-api-client.ts",
 ];

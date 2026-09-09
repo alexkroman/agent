@@ -212,6 +212,38 @@
       // entries became redundant patterns knip reports as configuration hints.
       "ignoreDependencies": [
         "@alexkroman1/aai-ui",
+        "@tailwindcss/vite",
+        "@types/react",
+        "@types/react-dom",
+        "@vitejs/plugin-react",
+        "react",
+        "react-dom",
+        "tailwindcss",
+        "xstate"
+      ]
+    },
+    "packages/aai-guest-core": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true
+    },
+    "packages/aai-guest-studio": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true,
+      // Declared so a STUDIO WORKSPACE can resolve them, not because this
+      // package imports them: they are the third-party half of
+      // `WORKSPACE_DEPENDENCIES` (`project-shape.ts`), and `build.ts`'s
+      // `toolchainModules()` hands the workspace this package's own
+      // `node_modules` to resolve against. Removing them on knip's word was
+      // tried and broke two `build.test.ts` cases that assert
+      // `@alexkroman1/aai-ui/dist/**` really resolves — a RESOLUTION is
+      // invisible to a static import graph, which is the whole reason this
+      // list has to be written down.
+      "ignoreDependencies": [
+        "@alexkroman1/aai-ui",
         "@types/react",
         "@types/react-dom",
         "react",

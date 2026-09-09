@@ -17,8 +17,8 @@
 import type http from "node:http";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { WORKFLOW_QUEUE_PATH } from "@alexkroman1/aai-runtime/internal";
+import { GUEST_CONTRACT_VERSION } from "aai-guest-core/limits";
 import { describe, expect, test, vi } from "vitest";
-import { GUEST_CONTRACT_VERSION } from "../limits.ts";
 import {
   createAgentRequestHandler,
   createManageHandler,

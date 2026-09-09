@@ -176,7 +176,18 @@ const BOUNDARY_OWNERS: Record<
     pkg: "@alexkroman1/aai-cli",
     allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui"],
   },
-  "guest-package-boundary": { pkg: "aai-guest", allows: ["@alexkroman1/aai-runtime"] },
+  // The guest trio's shape is forced, not chosen: the entry dispatches studio
+  // mode while studio reaches back for the shared five, so two packages could
+  // only express it as a cycle. `aai-guest` sits on top of both halves.
+  "guest-package-boundary": {
+    pkg: "aai-guest",
+    allows: ["@alexkroman1/aai-runtime", "aai-guest-core", "aai-guest-studio"],
+  },
+  "guest-core-package-boundary": { pkg: "aai-guest-core", allows: ["@alexkroman1/aai-runtime"] },
+  "guest-studio-package-boundary": {
+    pkg: "aai-guest-studio",
+    allows: ["@alexkroman1/aai-runtime", "aai-guest-core"],
+  },
   "server-package-boundary": {
     pkg: "aai-server",
     allows: ["@alexkroman1/aai-runtime", "@alexkroman1/aai-ui"],

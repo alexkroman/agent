@@ -29,8 +29,8 @@
 
 import type http from "node:http";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
-import { constantTimeEquals } from "./auth.ts";
-import { writeJson } from "./http.ts";
+import { constantTimeEquals } from "aai-guest-core/auth";
+import { writeJson } from "aai-guest-core/http";
 
 /**
  * Header the platform injects to prove a `/workflows/*` request came through it.
