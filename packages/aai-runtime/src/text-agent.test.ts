@@ -435,6 +435,30 @@ describe("createTextAgent", () => {
     expect(out).toBe("start");
   });
 
+  test("a systemPrompt THUNK is resolved per turn, never handed to the model", async () => {
+    // The failure it replaces is silent: `streamText` takes whatever `system`
+    // is, so an unresolved function reaches the provider as its own SOURCE
+    // TEXT and the model answers fluently under instructions nobody wrote.
+    const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    let phase = "intake";
+    const chat = createTextAgent({
+      agent: textAgent({ name: "Helper", text: true, systemPrompt: () => `Phase: ${phase}.` }),
+      model,
+      logger: silentLogger,
+    });
+    await drain(chat.stream({ messages: [{ role: "user", content: "hi" }] }));
+    phase = "wrap-up";
+    await drain(chat.stream({ messages: [{ role: "user", content: "and?" }] }));
+    const systemOf = (index: number): unknown => {
+      const prompt = model.calls[index]?.prompt as { role: string; content: unknown }[] | undefined;
+      return prompt?.[0];
+    };
+    expect(systemOf(0)).toMatchObject({ role: "system", content: "Phase: intake." });
+    // Per TURN, not per agent: the second call sees where the conversation got
+    // to, which is the whole reason the field takes a function.
+    expect(systemOf(1)).toMatchObject({ role: "system", content: "Phase: wrap-up." });
+  });
+
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({

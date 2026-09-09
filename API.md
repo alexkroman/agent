@@ -2224,7 +2224,7 @@ export interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: SystemPromptOption;
     telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
@@ -3194,6 +3194,9 @@ export interface SubagentToolCall {
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
 
 // @public
+export type SystemPromptOption = string | (() => string);
+
+// @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
@@ -3687,6 +3690,9 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
+export function resolveSystemPrompt(prompt: SystemPromptOption): string;
+
+// @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
@@ -3755,6 +3761,9 @@ type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
+
+// @public
+type SystemPromptOption = string | (() => string);
 
 // @public
 export const TELEPHONY_CARRIERS: readonly ["twilio", "telnyx"];
@@ -4087,7 +4096,9 @@ export const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+    systemPrompt?: SystemPromptOption;
+} & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
@@ -4119,7 +4130,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: SystemPromptOption;
     telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
@@ -4666,6 +4677,9 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type SystemPromptOption = string | (() => string);
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -6383,7 +6397,9 @@ const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+    systemPrompt?: SystemPromptOption;
+} & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
@@ -6407,7 +6423,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: SystemPromptOption;
     telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
@@ -7294,6 +7310,9 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type SystemPromptOption = string | (() => string);
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];

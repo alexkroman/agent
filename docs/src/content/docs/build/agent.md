@@ -96,6 +96,30 @@ When part of the prompt is computed — a menu, a catalogue — build that strin
 and pass it as `systemPrompt`. It is still only your own rules. Today's date is
 already in every prompt, so it is not one of the reasons.
 
+## A prompt that changes during the call
+
+Pass a function instead of a string and it is called as each turn is assembled,
+so what the agent is told can move with the conversation:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+declare const currentPhase: () => string;
+
+export default agent({
+  name: "Intake",
+  systemPrompt: () => `Take the caller's details.\n\nPhase: ${currentPhase()}`,
+});
+```
+
+Everything above still applies: what it returns is added to the framework's own
+rules, not swapped in for them. Two things it owes — it must return a string,
+and it must be safe to call at build time, because `aai build` asks it once for
+the config it ships.
+
+Most agents want a string. Reach for this when the model has to know something
+mid-call that no tool result tells it.
+
 ## Writing for a voice
 
 A prompt that reads well on a screen often sounds terrible out loud. Two rules

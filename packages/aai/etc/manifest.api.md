@@ -88,7 +88,9 @@ export const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+    systemPrompt?: SystemPromptOption;
+} & {
     [K in HostOnlyAgentField]?: unknown;
 };
 
@@ -120,7 +122,7 @@ interface AgentDef extends PipelineVoiceTuning {
     sttPrompt?: string;
     subagents?: SubagentRoster;
     syncState?: StateProjection | readonly StateProjection[];
-    systemPrompt: string;
+    systemPrompt: SystemPromptOption;
     telephony?: TelephonyAccess;
     temperature?: number;
     text?: true;
@@ -667,6 +669,9 @@ interface SubagentToolCall {
     input: unknown;
     name: string;
 }
+
+// @public
+type SystemPromptOption = string | (() => string);
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];

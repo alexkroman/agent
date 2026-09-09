@@ -45,6 +45,37 @@ describe("withSystemPrompt", () => {
     expect(withSystemPrompt(authored, FILE).systemPrompt).toBe(composed);
   });
 
+  test("a THUNK composing the file is left alone — and stays a thunk", () => {
+    // The dynamic form of the case above: the recipe the outcome-3 message
+    // teaches, wrapped so the prompt can carry something per turn. Lowering the
+    // file onto it would freeze exactly what the author made move.
+    let turn = 0;
+    const authored = agent({ name: "T", systemPrompt: () => `${FILE}\nTURN: ${++turn}` });
+    const lowered = withSystemPrompt(authored, FILE);
+    expect(lowered).toBe(authored);
+    expect(typeof lowered.systemPrompt).toBe("function");
+  });
+
+  test("the thunk is called ONCE, for the comparison, and its answer discarded", () => {
+    let calls = 0;
+    const authored = agent({
+      name: "T",
+      systemPrompt: () => {
+        calls += 1;
+        return FILE;
+      },
+    });
+    withSystemPrompt(authored, FILE);
+    expect(calls).toBe(1);
+  });
+
+  test("a thunk that never reads the file throws like any other unread file", () => {
+    // Outcome 1 cannot rescue it: a function is never the framework default, so
+    // an agent declaring one owns its prompt and an ignored file is a mistake.
+    const authored = agent({ name: "T", systemPrompt: () => "Inline, and not the file." });
+    expect(() => withSystemPrompt(authored, FILE)).toThrow(/nothing reads it/);
+  });
+
   test("a file nothing reads throws, naming what to do about it", () => {
     const authored = agent({ name: "T", systemPrompt: "Inline, and not the file." });
     expect(() => withSystemPrompt(authored, FILE)).toThrow(/nothing reads it/);

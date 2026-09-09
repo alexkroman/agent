@@ -15,6 +15,7 @@ import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEventHandlers } from "./session-events.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { SubagentRoster } from "./subagent-roster.ts";
+import type { SystemPromptOption } from "./system-prompt-option.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolDef`.
@@ -106,13 +107,16 @@ export interface AgentDef extends PipelineVoiceTuning {
   /** Display name shown by the default client UI. */
   name: string;
   /**
-   * System prompt driving the LLM.
+   * System prompt driving the LLM — the text, or a thunk resolved on every
+   * turn. A string behaves exactly as it always has; a function is for a prompt
+   * not knowable until the turn is assembled, and what it owes in exchange is
+   * on {@link SystemPromptOption}.
    *
    * @defaultValue {@link DEFAULT_SYSTEM_PROMPT} — the framework's own voice-agent
    * prompt. It is assembled from parts, so it is the one default here whose
    * VALUE cannot usefully be inlined; read the constant.
    */
-  systemPrompt: string;
+  systemPrompt: SystemPromptOption;
   /**
    * Sentence spoken when a session starts. Set `""` to start silent.
    * @defaultValue `"Hey there! I'm an AI voice assistant. What can I help you

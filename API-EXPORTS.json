@@ -328,6 +328,7 @@
     "SubagentGuardrail",
     "SubagentRoster",
     "SubagentToolCall",
+    "SystemPromptOption",
     "TelephonyAccess",
     "TelephonyCarrier",
     "TextAgentParams",
@@ -466,6 +467,7 @@
     "rejectingWorkflows",
     "requestPath",
     "requestQuery",
+    "resolveSystemPrompt",
     "sleep",
     "toArgsRecord"
   ],

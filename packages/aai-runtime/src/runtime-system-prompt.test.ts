@@ -42,6 +42,67 @@ describe("the base is cached per calendar day", () => {
   });
 });
 
+describe("an agent whose own systemPrompt is a thunk", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-14T09:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A resolver over a LIVE thunk, the way `createRuntime` builds one. */
+  function thunkResolver(
+    systemPrompt: () => string,
+  ): ReturnType<typeof createSystemPromptResolver> {
+    return createSystemPromptResolver({
+      // What the config carries is the SNAPSHOT `toAgentConfig` took; the live
+      // definition is passed beside it, and is what must win.
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt }),
+      systemPrompt,
+      hasTools: false,
+      toolGuidance: undefined,
+    });
+  }
+
+  test("the base moves when the thunk does, on the same calendar day", () => {
+    // The failure this exists for: a base keyed on the day alone resolves the
+    // author's function once at boot and serves that answer for the life of the
+    // process — a dynamic prompt silently frozen at its first value.
+    let phase = "intake";
+    const prompts = thunkResolver(() => `Phase: ${phase}.`);
+    expect(prompts.base()).toContain("Phase: intake.");
+    phase = "wrap-up";
+    expect(prompts.base()).toContain("Phase: wrap-up.");
+  });
+
+  test("an unchanged answer is the SAME string — the assembled prompt is not rebuilt", () => {
+    // Identity, so the date stamp (the expensive half) stays off the per-turn
+    // path for the common case of a thunk that answers the same thing twice.
+    const prompts = thunkResolver(() => "Be brief.");
+    expect(prompts.base()).toBe(prompts.base());
+  });
+
+  test("a session resolves through the same live thunk", () => {
+    let phase = "intake";
+    const session = thunkResolver(() => `Phase: ${phase}.`).forSession();
+    expect(session.resolve()).toContain("Phase: intake.");
+    phase = "wrap-up";
+    expect(session.resolve()).toContain("Phase: wrap-up.");
+  });
+
+  test("with no live prompt passed, the config's snapshot is what answers", () => {
+    // The default arm: every caller that does not hold a definition (the specs
+    // above, a config off the wire) still gets a working resolver.
+    const prompts = createSystemPromptResolver({
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: () => "Snapshot." }),
+      hasTools: false,
+      toolGuidance: undefined,
+    });
+    expect(prompts.base()).toContain("Snapshot.");
+  });
+});
+
 describe("a session's prompt", () => {
   test("with no suffix installed it IS the base, byte for byte", () => {
     // The property that makes this seam safe to land before anything consumes

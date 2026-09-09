@@ -282,6 +282,13 @@ export * from "./sdk/subagent.ts";
 // other way of choosing one; see that file's "Two ways to choose a subagent".
 export { DELEGATE_TOOL_NAME, type SubagentRoster } from "./sdk/subagent-roster.ts";
 /**
+ * What `agent({ systemPrompt })` may be: the text, or a thunk the runtime
+ * resolves per turn. On the root because it is the TYPE of an authoring field —
+ * an author naming it is annotating a helper that builds a prompt. Its reader,
+ * `resolveSystemPrompt`, is framework machinery and stays on `./internal`.
+ */
+export type { SystemPromptOption } from "./sdk/system-prompt-option.ts";
+/**
  * The `T | ToolFailure` union's control flow, beside the guard and the
  * constructor it belongs with: a tool body writes all three. Its own statement
  * because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it

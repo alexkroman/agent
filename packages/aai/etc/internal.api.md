@@ -280,6 +280,9 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
+export function resolveSystemPrompt(prompt: SystemPromptOption): string;
+
+// @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
@@ -348,6 +351,9 @@ type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
+
+// @public
+type SystemPromptOption = string | (() => string);
 
 // @public
 export const TELEPHONY_CARRIERS: readonly ["twilio", "telnyx"];

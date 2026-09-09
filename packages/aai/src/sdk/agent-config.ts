@@ -28,6 +28,7 @@ import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+import { resolveSystemPrompt, type SystemPromptOption } from "./system-prompt-option.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
@@ -281,7 +282,16 @@ export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
  * spread call sites (`{...agent, stt: maybeUndefined}`) legal under
  * `exactOptionalPropertyTypes`.
  */
-export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+  /**
+   * A string on the wire, but an `AgentDef` may declare a THUNK — see
+   * {@link SystemPromptOption}. Widened here rather than on {@link AgentConfig}
+   * so `AgentDef` stays assignable to this by construction, which is what every
+   * `toAgentConfig(agent)` call site relies on; {@link toAgentConfig} resolves
+   * it once and the config carries the string.
+   */
+  systemPrompt?: SystemPromptOption;
+} & {
   [K in HostOnlyAgentField]?: unknown;
 };
 
@@ -299,7 +309,17 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // Author conveniences (`system`, string `llm`) normalize here too, so a
   // raw `export default {...}` that skipped `agent()` behaves the same.
   const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
+  // The config is the SERIALIZABLE shape and a function cannot cross a wire, so
+  // a `systemPrompt` THUNK is resolved here, once — the config carries the
+  // snapshot it answered with. It is not how a session gets its prompt: the
+  // runtime holds the live definition and re-resolves it per turn, so this
+  // value is what a config REPORTS. `SystemPromptOption` owns the rest,
+  // including the obligation this places on a thunk (callable at build time,
+  // with no session anywhere).
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
+  if (typeof src.systemPrompt === "function") {
+    src.systemPrompt = resolveSystemPrompt(src.systemPrompt);
+  }
   // BEFORE the cross-field rules, so a misspelled field is reported as itself
   // rather than as whatever rule notices its absence three checks later.
   assertNoStrayFields(src, KNOWN_AGENT_FIELDS);

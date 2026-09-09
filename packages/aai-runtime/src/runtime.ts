@@ -239,10 +239,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   });
 
   // The system prompt, in two halves — the day-cached base and a per-turn
-  // suffix. Both, and the reason the expensive half stays cached, are in
-  // `runtime-system-prompt.ts`.
+  // suffix. Both, the cache, and why the LIVE definition's prompt is passed
+  // beside the config's snapshot of it, are in `runtime-system-prompt.ts`.
   const systemPrompts = createSystemPromptResolver({
     agentConfig,
+    systemPrompt: agent.systemPrompt,
     hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
     toolGuidance,
   });
