@@ -1,4 +1,4 @@
-# aai
+# AssemblyAI Agent SDK
 
 Voice agent development kit for TypeScript. An agent is a directory of files —
 talk to it in your browser, put it on a phone number, and ship it with one
@@ -13,6 +13,9 @@ Documentation: **<https://alexkroman.github.io/agent/>**
 ```sh
 npm i -g @alexkroman1/aai-cli
 ```
+
+The command it installs is `aai`, and every package in the SDK is published
+under the `@alexkroman1/aai*` names.
 
 Requires Node.js 24+ and an `ASSEMBLYAI_API_KEY` — one key covers
 speech-to-text, the model, and text-to-speech.

@@ -204,7 +204,7 @@ export default defineConfig({
         // would have shipped one silently.
         starlightLinksValidator(),
       ],
-      title: "aai",
+      title: "AssemblyAI Agent SDK",
       description:
         "A voice agent is a directory of TypeScript files. Talk to it in your browser, put it on a phone number, ship it with one command.",
       social: [{ icon: "github", label: "GitHub", href: "https://github.com/alexkroman/agent" }],

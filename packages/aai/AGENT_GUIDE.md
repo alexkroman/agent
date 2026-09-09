@@ -10,9 +10,9 @@
   path as the project's CLAUDE.md rather than a snapshot that goes stale on
   the next `pnpm update`. See packages/aai/skills/aai/SKILL.md.
 -->
-# aai Voice Agent
+# AssemblyAI Agent SDK
 
-You are helping build a voice agent using the **aai** framework.
+You are helping build a voice agent with the **AssemblyAI Agent SDK**.
 
 ## Workflow
 
@@ -2499,7 +2499,7 @@ Patterns by agent type:
 
 ## Gotchas
 
-Common mistakes when working in aai projects:
+Common mistakes when working in agent projects:
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.

@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: The aai subcommands you will use, and what each is for.
+description: The `aai` subcommands you will use, and what each is for.
 ---
 
 `aai` is the command line for a voice agent project. It scaffolds one, runs it

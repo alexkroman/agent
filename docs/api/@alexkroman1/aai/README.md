@@ -1,6 +1,6 @@
 # @alexkroman1/aai
 
-The aai voice-agent SDK: everything an `agent.ts` file imports. The
+The AssemblyAI Agent SDK: everything an `agent.ts` file imports. The
 self-hostable runtime the CLI and the managed platform run is
 `@alexkroman1/aai-runtime`.
 

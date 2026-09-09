@@ -1,13 +1,14 @@
 ---
 name: aai
-description: Build voice agents with the aai SDK. Use when creating, editing, or debugging an aai agent — agent.ts, tools, session state, STT/TTS/LLM/S2S providers, the browser client, or the aai CLI.
+description: Build voice agents with the AssemblyAI Agent SDK. Use when creating, editing, or debugging an agent — agent.ts, tools, session state, STT/TTS/LLM/S2S providers, the browser client, or the `aai` CLI.
 ---
 
-# aai
+# AssemblyAI Agent SDK
 
-aai is a voice-agent development kit. An agent is a directory containing
-`agent.ts`; the `aai` CLI bundles it and deploys it to the managed platform, or
-`npm start` (`aai build` then `aai start`) runs it standalone.
+The AssemblyAI Agent SDK is a voice-agent development kit. An agent is a
+directory containing `agent.ts`; the `aai` CLI bundles it and deploys it to the
+managed platform, or `npm start` (`aai build` then `aai start`) runs it
+standalone.
 
 ## Source of truth
 
@@ -20,7 +21,7 @@ node_modules/@alexkroman1/aai/AGENT_GUIDE.md
 
 That file is version-matched by construction: it lives in the same tarball as
 the `@alexkroman1/aai` the project resolved, so it cannot describe a different
-release than the one being imported. Read it before writing any aai code.
+release than the one being imported. Read it before writing any agent code.
 
 That path is also what the project's own `CLAUDE.md` points at: `aai init`
 writes a short pointer there rather than a copy of the guide, precisely because
