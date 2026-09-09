@@ -430,9 +430,9 @@ the JSON, found only by a real server.
 
 ## The FOURTH arm is the platform's own SQL, and it lives in `aai-server`
 
-`workflow/journal/conformance.ts` declares ONE case list and `JOURNAL_BACKENDS` registers
-the backends. Three arms run it from this package; the fourth cannot, and it is
-the one that finds platform bugs:
+`workflow/journal/conformance.ts` declares ONE case list and `JOURNAL_BACKENDS`
+registers the backends. Three arms run it from this package; the fourth cannot,
+and it is the one that finds platform bugs:
 
 | Arm | Tier | What it can see |
 | --- | --- | --- |
