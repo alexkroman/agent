@@ -47,7 +47,7 @@ export default defineConfig({
         "src/main.tsx",
         "src/app.tsx",
         "src/project-view.tsx",
-        "src/gates.tsx",
+        "src/components/gates.tsx",
         "src/chat.tsx",
         "src/code-view.tsx",
         "src/preview.tsx",
