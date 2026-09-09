@@ -174,7 +174,7 @@ Eleven workspace packages under `packages/`:
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 | `packages/aai-gates/` | `aai-gates` | The repo's meta-gate suite (private): the specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts. Imports no workspace package |
-| `packages/aai-evals/` | `aai-evals` | Behaviour eval tier (private): the runner, its assertion vocabulary over the session event stream, and its targets |
+| `packages/aai-evals/` | `aai-evals` | Behaviour eval LIBRARY (private): the recording runner, the spread report and the assertion vocabulary over the session event stream. Importable — five subpath exports; it holds no targets of its own beyond its level-1 behaviour eval |
 
 **Dependency flow:** every other package depends on `@alexkroman1/aai` (via
 `workspace:*`), and `aai-runtime` sits one layer above it — the CLI, the guest,
@@ -193,12 +193,24 @@ and the writers for those two files belong to the CLI. Do not widen it —
 nothing else may import from the CLI, and the CLI must never import from the
 server or the guest.
 
-Two edges sit outside that spine. `aai-studio-server` → `aai-server` is the
-repo's LARGEST: 158 import sites across all 36 of that package's subpath
-exports, and not one bare `aai-server` specifier — which is why a boundary rule
-naming the bare name matched nothing for as long as it existed (konsistent's
-matcher is exact unless the pattern ends `/*`). And `aai-evals` →
-`aai-studio-client/starters`, its only workspace edge beyond the SDK.
+Three edges sit outside that spine, and all three belong to
+`aai-studio-server`. `aai-studio-server` → `aai-server` is the repo's LARGEST:
+158 import sites across all 36 of that package's subpath exports, and not one
+bare `aai-server` specifier — which is why a boundary rule naming the bare name
+matched nothing for as long as it existed (konsistent's matcher is exact unless
+the pattern ends `/*`). Then `aai-studio-server` → `aai-studio-client/starters`,
+the starter list the studio itself ships, so the starter eval grades the same
+set the product offers rather than a copy that drifts. And
+`aai-studio-server` → `aai-evals`, which is a DEV edge onto a library: the eval
+tier's runner, recorder and spread report, imported through that package's
+subpath exports.
+
+**Both of the last two used to be `aai-evals`'s**, and moving them is what made
+that package a library rather than a tier with its own targets. Watch the
+direction: `aai-evals` may import the SDK and `@alexkroman1/aai-runtime/eval`
+and nothing else, so a studio target that lands back in it is reaching past the
+published surface — which is how an eval starts passing for the wrong reason,
+and what `evals-package-boundary` is a total deny for.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -224,7 +236,7 @@ rather than here:
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
-| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25 and `aai-guest` one |
+| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels, and what being a LIBRARY excludes. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and `aai-studio-server` the starter eval |
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
 `aai-docs` workspace — the narrative documentation SITE (Astro + Starlight
