@@ -92,6 +92,91 @@ import { withPreservedNodeEnv } from "./_vite-env.ts";
  */
 export const JSDOC_FREE_COMMENTS = { legal: true, annotation: true, jsdoc: false } as const;
 
+/**
+ * The `node:` builtins an emitted deployment may import.
+ *
+ * ## Why an ALLOWLIST rather than a note in a guide
+ *
+ * `ssr.noExternal` bundles everything except these, so whatever survives the
+ * pass is a hard dependency on the runtime the host chose — and the emitted
+ * directory is a container payload whose runtime is the operator's choice, not
+ * ours (`_target-entry.ts` carries that argument). Every name here is
+ * implemented by `node`, `deno` and `bun` alike, so the deployment behaves the
+ * same under all three.
+ *
+ * What it is written for is the class the boot arms in
+ * `_target-runtimes.scenario.test.ts` cannot see. A dependency bump that drags
+ * `node:vm`, `node:cluster` or `node:v8` into the graph reaches a runtime that
+ * half-implements it not at boot but at the first CALL — which is a live
+ * session, days after the deploy, with nothing in CI to have caught it. This
+ * suite reads the bundle instead, so it fails on the build that introduced it.
+ * (`node:vm` is a real risk rather than a hypothetical: `aai-runtime`'s
+ * `eval/vm-run-code.ts` uses it, and it stays out of the deployment only
+ * because nothing in the boot graph reaches that subpath.)
+ *
+ * ADDING a name is a claim about three runtimes, so check all three rather
+ * than the one you are on — `node:worker_threads` is here because Bun and Deno
+ * both ship it, `node:cluster` is not because Bun does not.
+ */
+export const PORTABLE_NODE_BUILTINS: readonly string[] = [
+  "diagnostics_channel",
+  "dns/promises",
+  "util/types",
+  "assert",
+  "async_hooks",
+  "buffer",
+  "child_process",
+  "console",
+  "crypto",
+  "dns",
+  "events",
+  "fs",
+  "fs/promises",
+  "http",
+  "http2",
+  "https",
+  "module",
+  "net",
+  "os",
+  "path",
+  "perf_hooks",
+  "process",
+  "querystring",
+  "readline",
+  "stream",
+  "stream/promises",
+  "stream/web",
+  "string_decoder",
+  "timers",
+  "timers/promises",
+  "tls",
+  "tty",
+  "url",
+  "util",
+  "worker_threads",
+  "zlib",
+];
+
+/**
+ * Builtins the bundle NAMES but never requires — each behind a runtime feature
+ * test, and each therefore free to be absent.
+ *
+ * A second list rather than more entries in the first, because the two carry
+ * different claims and collapsing them would state the wrong one. A name above
+ * is portable: all three runtimes implement it, so the code that imports it
+ * runs everywhere. A name here is not — `node:sqlite` is Node-only, Deno does
+ * not ship it — and what makes it harmless is the GUARD, not the support.
+ *
+ * `sqlite` is undici's, twice over: `detectRuntimeFeatureByNodeModule` loads it
+ * inside a `try` that tolerates `ERR_UNKNOWN_BUILTIN_MODULE`, and
+ * `SqliteCacheStore` requires it lazily in a constructor nothing here calls.
+ *
+ * The spec pins the guard rather than trusting this comment: a name here must
+ * never appear as a STATIC import in the bundle, which is what would make it a
+ * load-time dependency again.
+ */
+export const FEATURE_DETECTED_NODE_BUILTINS: readonly string[] = ["sqlite"];
+
 /** Bundle `source` as if it were a module in `cwd`, and answer the code. */
 export async function bundleTargetEntry(
   cwd: string,

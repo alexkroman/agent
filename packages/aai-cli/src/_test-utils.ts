@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { vi } from "vitest";
+import { describe, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
@@ -187,4 +188,121 @@ export async function linkProjectNodeModules(dir: string): Promise<void> {
       "dir",
     );
   }
+}
+
+/**
+ * A binary this suite needs, and how a machine without it is told.
+ *
+ * @see describeWithBinary
+ */
+export interface BinaryGate {
+  /** The binary, resolved on PATH. */
+  readonly bin: string;
+  /** The variable that turns a SKIP into a hard failure — declared in `turbo.json`. */
+  readonly requireEnv: string;
+  /** How to install it, printed with the skip. */
+  readonly howTo: string;
+  /** Args that make it print its version. Defaults to `--version`. */
+  readonly versionArgs?: readonly string[];
+  /**
+   * The oldest version whose behaviour the suite asserts, as `x.y.z`.
+   *
+   * A binary that ANSWERS but is older is not the same case as one that is
+   * absent, and conflating them is how a floor gets discovered twice: the arms
+   * would fail on whatever the old version does differently, three assertions
+   * deep, rather than saying the version is below the floor. So it is treated
+   * like an absent binary — announced, skipped, and turned into a hard failure
+   * by {@link BinaryGate.requireEnv} — with the floor named either way.
+   */
+  readonly minVersion?: string;
+}
+
+/** The first `x.y.z` in `--version` output, as numbers. */
+function parseVersion(printed: string): number[] | undefined {
+  const found = /(\d+)\.(\d+)\.(\d+)/.exec(printed);
+  return found === null ? undefined : [Number(found[1]), Number(found[2]), Number(found[3])];
+}
+
+/** `a` is at least `b`, comparing numerically per component. */
+function atLeast(a: readonly number[], b: readonly number[]): boolean {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left > right;
+  }
+  return true;
+}
+
+/**
+ * Whether {@link BinaryGate.bin} answers on PATH.
+ *
+ * `spawnSync` rather than an `await`, and callers must call it at MODULE scope:
+ * a probe awaited in a test BODY can only produce a pass or a fail, never a
+ * skip, so the gate has to be decided at COLLECTION time to be a gate at all.
+ */
+export function hasBinary(gate: BinaryGate): boolean {
+  return binaryState(gate).kind === "ok";
+}
+
+/** What is on PATH: nothing, something too old, or a usable binary. */
+export type BinaryState =
+  | { kind: "ok"; version?: string }
+  | { kind: "absent" }
+  | { kind: "old"; version: string };
+
+export function binaryState(gate: BinaryGate): BinaryState {
+  const args = [...(gate.versionArgs ?? ["--version"])];
+  const probe = spawnSync(gate.bin, args, { encoding: "utf-8" });
+  if (probe.status !== 0) return { kind: "absent" };
+  const printed = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim();
+  if (gate.minVersion === undefined) return { kind: "ok" };
+  const found = parseVersion(printed);
+  const floor = parseVersion(gate.minVersion);
+  // An unparsable version passes: a custom build printing something we cannot
+  // read is a machine the developer chose, and refusing it would be this
+  // helper deciding a version question it has no answer to.
+  if (found === undefined || floor === undefined) return { kind: "ok", version: printed };
+  return atLeast(found, floor)
+    ? { kind: "ok", version: found.join(".") }
+    : { kind: "old", version: found.join(".") };
+}
+
+// Biome's `noSkippedTests` flags the `describe.skip(…)` CALL form, so the gated
+// suite below references it instead — exactly as `aai/host/ffmpeg.scenario.test.ts`
+// and `_pg-test-utils.ts` do.
+const skipSuite = describe.skip;
+
+/**
+ * A suite that needs a real binary — and whose skip ANNOUNCES itself.
+ *
+ * The generalisation of `describeWithDeno`, which generalised
+ * `describeWithFfmpeg`, which followed `describeWithPg`. It is one helper
+ * because the shape is one shape and the failure it prevents is one failure:
+ * the Deno arm shipped as an `expect.soft(true, "deno not on PATH …")` inside
+ * a test body — a skip spelled as a PASS — and since nothing in CI installed
+ * Deno, the only case proving `aai build --target deno` emits a directory that
+ * BOOTS reported green on every leg while checking nothing. That is the shape
+ * AGENTS.md names a gate reporting success over a comparison it could not make.
+ *
+ * So: skip LOUDLY, and let {@link BinaryGate.requireEnv} — which CI sets only
+ * once the binary really answered — turn the skip into a hard failure, so a
+ * broken setup step cannot read as a green run either. The variable has to be
+ * declared in that task's `env` in `turbo.json` or turbo's strict env mode
+ * strips it before the task starts and the enforcement silently does nothing.
+ */
+export function describeWithBinary(gate: BinaryGate, name: string, body: () => void): void {
+  const state = binaryState(gate);
+  if (state.kind === "ok") {
+    describe(name, body);
+    return;
+  }
+  const why =
+    state.kind === "old"
+      ? `${gate.bin} ${state.version} is older than the ${String(gate.minVersion)} this suite asserts`
+      : `no ${gate.bin} was found`;
+  if ((process.env[gate.requireEnv] ?? "") !== "") {
+    throw new Error(`${gate.requireEnv} is set but ${why}.\n${gate.howTo}`);
+  }
+  console.warn(`\n[skipped: ${why}] ${name}\n${gate.howTo}\n`);
+  skipSuite(name, body);
 }

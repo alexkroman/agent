@@ -315,13 +315,22 @@
         // undeclared variable, so "a skip here is a failure" would be inert —
         // and this suite skips SILENTLY useful only if nobody relies on it.
         "AAI_REQUIRE_FFMPEG",
-        // Deno for `aai-cli/_deno-output.scenario.test.ts`, the only thing that
-        // proves an `aai build --target deno` directory boots under a real Deno.
-        // Declared for the same reason as the three above — strict env mode
-        // strips an undeclared variable before the task starts, so "a skip here
-        // is a failure" would be silently inert, which is precisely the state
-        // that suite shipped in.
+        // Deno for `aai-cli/_deno-output.scenario.test.ts` (the only thing that
+        // reads the emitted module GRAPH, which booting cannot) and for the
+        // `deno` arms of `aai-cli/_target-runtimes.scenario.test.ts`, which are
+        // what prove an emitted deployment boots, serves and accepts a session
+        // under a real Deno. Declared for the same reason as the three above —
+        // strict env mode strips an undeclared variable before the task starts,
+        // so "a skip here is a failure" would be silently inert, which is
+        // precisely the state that suite shipped in.
         "AAI_REQUIRE_DENO",
+        // Bun for the `bun` arms of the same suite. Third runtime, same rule:
+        // the emitted directory is a container payload and which runtime runs
+        // it is the operator's choice, so a skipped arm is one of the three
+        // runtimes silently unmeasured. This one earns its keep already — it is
+        // what found that the bundled `ws` never completes an upgrade under Bun
+        // (see that file's header), which nothing else here could see.
+        "AAI_REQUIRE_BUN",
         // python3 + the `modal` client for
         // `aai-cli/_modal-output.scenario.test.ts`. The generated `app.py` is
         // the one artifact in this repo that no other gate reads — tsc cannot

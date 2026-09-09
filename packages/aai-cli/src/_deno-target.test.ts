@@ -37,10 +37,15 @@ describe("the emitted Deno entry", () => {
     expect(code).not.toContain("process.cwd()");
   });
 
-  test("reaches Deno's env through globalThis", () => {
-    // This file is bundled by a Node-side build and read by Node tooling —
-    // this spec included — where a bare `Deno` is a ReferenceError.
+  test("reaches Deno's env through globalThis, and Node's as well", () => {
+    // The optional chain is load-bearing twice. This file is bundled by a
+    // Node-side build and read by Node tooling — this spec included — where a
+    // bare `Deno` is a ReferenceError; and under `node` or `bun` it is what
+    // falls through to `process.env` rather than throwing. Without that
+    // fallback the emitted directory bound its default port under every
+    // runtime but Deno's, whatever the host had set.
     expect(code).toContain("globalThis.Deno?.env");
+    expect(code).toContain("process.env.PORT");
   });
 
   test("DRAINS on a signal, exactly as the Modal entry does", () => {
