@@ -164,6 +164,14 @@ describe("agent()", () => {
     expect(def.tools).toEqual({});
   });
 
+  test("a systemPrompt thunk is kept AS A FUNCTION on the def", () => {
+    // The one thing `agent()` must not do with it: resolving here would make
+    // every dynamic prompt a snapshot of its first answer, and nothing
+    // downstream could tell that from a string the author wrote.
+    const systemPrompt = (): string => "computed";
+    expect(agent({ name: "Dynamic", systemPrompt }).systemPrompt).toBe(systemPrompt);
+  });
+
   test("preserves explicit values", () => {
     const def = agent({
       name: "Custom",

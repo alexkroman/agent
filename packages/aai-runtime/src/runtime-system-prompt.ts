@@ -4,7 +4,11 @@
  *
  * - The **base** is `buildSystemPrompt(agentConfig, …)` — fixed for the
  *   runtime's lifetime except for the date it stamps, and cached per calendar
- *   day for exactly that reason (see {@link createSystemPromptResolver}).
+ *   day for exactly that reason (see {@link createSystemPromptResolver}). The
+ *   one other thing that can move it is an agent whose own `systemPrompt` is a
+ *   THUNK, which the cache keys on as well as the day: a base that ignored it
+ *   would resolve the author's function once at boot and serve that answer for
+ *   the life of the process, which is the whole thing a thunk is not.
  * - The **suffix** is per TURN, resolved fresh every time a request is
  *   assembled, and empty on every session that ships today.
  *
@@ -17,7 +21,9 @@
  * with no symptom on a machine running one session at a time.
  */
 
+import type { SystemPromptOption } from "@alexkroman1/aai";
 import { buildSystemPrompt } from "@alexkroman1/aai/host-internal";
+import { resolveSystemPrompt } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 
 /**
@@ -88,22 +94,39 @@ export interface SystemPromptResolver {
  */
 export function createSystemPromptResolver(deps: {
   agentConfig: AgentConfig;
+  /**
+   * The agent's own `systemPrompt` — a string, or the THUNK an `agent.ts` may
+   * declare (`SystemPromptOption`). Defaults to the config's, which is the
+   * snapshot `toAgentConfig` took of exactly this value: passing the live
+   * definition is what makes a thunk answer per turn rather than once at boot.
+   */
+  systemPrompt?: SystemPromptOption;
   /** Does this runtime have any tool at all — declared or built-in? */
   hasTools: boolean;
   toolGuidance: readonly string[] | undefined;
 }): SystemPromptResolver {
-  let promptCache: { day: string; text: string } | null = null;
+  let promptCache: { day: string; authored: string; text: string } | null = null;
 
   function base(): string {
     const day = new Date().toDateString();
-    if (promptCache?.day !== day) {
+    // The AUTHOR's prompt as it stands right now. A string resolves to itself,
+    // so the comparison below is `===` on the same reference and this stays the
+    // once-a-day build it was; a thunk is called per turn, and the assembled
+    // prompt is rebuilt only when what it answers has actually moved — which is
+    // what keeps the date stamp (the expensive half) off the per-turn path.
+    const authored = resolveSystemPrompt(deps.systemPrompt ?? deps.agentConfig.systemPrompt);
+    if (promptCache?.day !== day || promptCache.authored !== authored) {
       promptCache = {
         day,
-        text: buildSystemPrompt(deps.agentConfig, {
-          hasTools: deps.hasTools,
-          voice: true,
-          toolGuidance: deps.toolGuidance,
-        }),
+        authored,
+        text: buildSystemPrompt(
+          { ...deps.agentConfig, systemPrompt: authored },
+          {
+            hasTools: deps.hasTools,
+            voice: true,
+            toolGuidance: deps.toolGuidance,
+          },
+        ),
       };
     }
     return promptCache.text;

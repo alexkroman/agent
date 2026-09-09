@@ -32,7 +32,10 @@
  *   change with a client on the other end of it, not a callback cleanup.
  */
 
-import type { Message } from "@alexkroman1/aai";
+// `SystemPromptOption` is imported as well as re-exported below: a re-export
+// does not bring the name into this module's scope, and
+// `TransportSessionConfig.systemPrompt` needs it.
+import type { Message, SystemPromptOption } from "@alexkroman1/aai";
 import type { SessionErrorCode, SessionEventBody } from "@alexkroman1/aai/protocol";
 
 /**
@@ -161,44 +164,28 @@ export type SendTtsText = (text: string, options?: SendTtsOptions) => void;
 
 /**
  * The system prompt a transport sends: the TEXT, or a thunk that answers it at
- * the moment a request is assembled.
+ * the moment a request is assembled — and the one way to read it.
  *
- * The same shape as {@link SkipGreetingOption} below, and deliberately not a
- * second `resolveSystemPrompt?: () => string` field beside the string. Two
- * fields means every read site has to remember which one wins, and a site that
- * forgot would send the frozen string on a session that had a resolver — which
- * is silent, because the model answers fluently under the wrong instructions
- * rather than failing. One field has no precedence to forget, and the type
- * makes a bare `sessionConfig.systemPrompt` a compile error at every site that
- * has to resolve it.
+ * **Both are the SDK's now**, re-exported here because every transport imports
+ * them from this module and because the type is the same one an author writes:
+ * `agent({ systemPrompt })` takes `string | (() => string)`, so the seam a
+ * transport reads through and the field an `agent.ts` declares are one type
+ * with one resolver rather than two that agree by inspection.
+ * `sdk/system-prompt-option.ts` carries the argument, including what a thunk
+ * owes and why a forgotten call is silent rather than a failure.
  *
- * **A plain string is byte-identical to what shipped**: it resolves to itself,
- * once, at the same place the frozen value used to be read. That is what makes
- * the seam safe to land before anything supplies a thunk.
- *
- * The thunk exists for a prompt that depends on WHERE THE CALL IS — the phase a
- * `dialog()` machine is in. A session-scoped string cannot carry that: the
- * model learns about a phase only through a tool result, so on a turn where no
- * tool is called the dialog is invisible, and that is exactly the turn where
- * the agent asks the question the phase had already moved past.
+ * The shape is the same as {@link SkipGreetingOption} below, and deliberately
+ * not a second `resolveSystemPrompt?: () => string` field beside the string:
+ * two fields means every read site has to remember which one wins, and a site
+ * that forgot would send the frozen string on a session that had a resolver.
+ * One field has no precedence to forget, and the union makes a bare
+ * `sessionConfig.systemPrompt` a compile error at every site that has to
+ * resolve it.
  *
  * @internal
  */
-export type SystemPromptOption = string | (() => string);
-
-/**
- * Resolve a {@link SystemPromptOption} at the moment a request is assembled.
- *
- * One spelling, for the reason {@link shouldSkipGreeting} is one: a read site
- * that forgot the call would hand a FUNCTION to a provider that wants a string,
- * and neither the AI SDK nor OpenAI Realtime rejects that — it stringifies, so
- * the agent's instructions become this module's source text.
- *
- * @internal
- */
-export function resolveSystemPrompt(prompt: SystemPromptOption): string {
-  return typeof prompt === "function" ? prompt() : prompt;
-}
+export type { SystemPromptOption } from "@alexkroman1/aai";
+export { resolveSystemPrompt } from "@alexkroman1/aai/internal";
 
 /**
  * Minimal config a transport may receive at construction time.

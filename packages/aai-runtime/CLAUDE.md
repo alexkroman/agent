@@ -1549,16 +1549,17 @@ reverting the gate.
 ## The system prompt is resolved PER TURN, and one transport cannot
 
 `TransportSessionConfig.systemPrompt` is a `SystemPromptOption` — `string | (()
-=> string)` — with one reader, `resolveSystemPrompt` (`transports/types.ts`).
-The same shape as `SkipGreetingOption` beside it, and for the same reason: a
-second `resolveSystemPrompt?: () => string` field next to the string would give
-every read site a precedence to remember, and a site that forgot would send the
-frozen string on a session that had a resolver — silent, because the model
-answers fluently under instructions that moved on rather than failing.
+=> string)` — with one reader, `resolveSystemPrompt`. **Both are the SDK's**
+(`sdk/system-prompt-option.ts`), re-exported here, because
+`agent({ systemPrompt })` takes the same union: a thunk may be an AUTHOR's and
+not only the dialog bridge's. A plain string resolves to itself, so nothing
+that shipped moved by a byte.
 
-**A plain string is byte-identical to what shipped.** It resolves to itself, at
-the same place the frozen value used to be read, which is what made this
-landable before anything supplies a thunk.
+One field rather than a second `resolveSystemPrompt?: () => string`, for
+`SkipGreetingOption`'s reason: two give every read site a precedence to
+remember, and a site that forgot would send the frozen string on a session that
+had a resolver — silent, because the model answers fluently under instructions
+that moved on rather than failing.
 
 Who resolves, and when:
 

@@ -481,7 +481,9 @@ config that flows CLI → server → runtime unchanged.
 ### AgentConfigSource
 
 ```ts
-type AgentConfigSource = Omit<AgentConfig, "mode"> & { [K in HostOnlyAgentField]?: unknown };
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+  systemPrompt?: SystemPromptOption;
+} & { [K in HostOnlyAgentField]?: unknown };
 ```
 
 What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
@@ -490,6 +492,20 @@ fields the deny-list strips. `AgentDef` is assignable to this by
 construction; the explicit `| undefined` on the host-only members keeps
 spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 `exactOptionalPropertyTypes`.
+
+#### Type Declaration
+
+##### systemPrompt?
+
+```ts
+optional systemPrompt?: SystemPromptOption;
+```
+
+A string on the wire, but an `AgentDef` may declare a THUNK — see
+[SystemPromptOption](index.md#systempromptoption). Widened here rather than on [AgentConfig](#agentconfig)
+so `AgentDef` stays assignable to this by construction, which is what every
+`toAgentConfig(agent)` call site relies on; [toAgentConfig](#toagentconfig) resolves
+it once and the config carries the string.
 
 ***
 

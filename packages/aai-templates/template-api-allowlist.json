@@ -21,6 +21,7 @@
     "StaticAgentParams",
     "StepSchemaOptions",
     "SttProvider",
+    "SystemPromptOption",
     "TtsProvider",
     "WaitForOptions",
     "WaitForSchemaOptions",

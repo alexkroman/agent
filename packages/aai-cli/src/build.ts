@@ -16,6 +16,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+import { resolveSystemPrompt } from "@alexkroman1/aai/internal";
 import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import {
@@ -259,7 +260,11 @@ export async function executeBuild(opts: {
   // Reported in BOTH modes, deliberately: `log` is silenced under --json, and a
   // field on the result is invisible on a TTY, so the swap this exists to
   // surface would stay invisible in whichever mode the reader happened to use.
-  const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt);
+  // Resolved, because `systemPrompt` may be a THUNK: the report is a comparison
+  // of VALUES, so a prompt built at turn time is asked for one here — the same
+  // thing `withSystemPrompt` and `toAgentConfig` do with it, and the reason a
+  // thunk must be callable at build time (`SystemPromptOption`).
+  const systemPrompt = await systemPromptSource(cwd, resolveSystemPrompt(agentDef.systemPrompt));
   log.info(`System prompt: ${systemPrompt}`);
   log.success("Build complete");
 

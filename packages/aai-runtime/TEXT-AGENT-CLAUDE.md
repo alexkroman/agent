@@ -49,6 +49,21 @@ Four decisions worth not relitigating:
   there is no text seam to drive, and silently running it as a pipeline agent
   would evaluate a configuration nobody deployed.
 
+### The agent's system prompt is RESOLVED here, per turn
+
+`AgentDef.systemPrompt` is `string | (() => string)` (`SystemPromptOption` in
+the SDK), so `stream()` passes it through `resolveSystemPrompt` when it
+assembles the request — the same reader the three transports use, and for the
+same reason. This path had been reading the field BARE, which was correct while
+the field was a string and became a silent defect the moment it was not:
+`streamText` takes whatever `system` is and stringifies a function, so the model
+would have been instructed with `text-agent.ts`'s own source, fluently and with
+nothing failing.
+
+A turn's own `TextTurnOptions.systemPrompt` stays a plain `string` and still
+wins. It is written for one turn, so there is nothing left for a thunk to answer
+later — and a caller that wants one calls the function itself.
+
 ### A text agent's turns are the SAME event stream, narrowed
 
 `createTextAgent({ onEvent })` reports a turn as `SessionEvent`s — the union a

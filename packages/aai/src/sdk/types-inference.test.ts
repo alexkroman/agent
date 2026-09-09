@@ -2,6 +2,7 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { sessionSlot } from "./session-slot.ts";
+import type { SystemPromptOption } from "./system-prompt-option.ts";
 import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
 
 const baseAgent = {
@@ -106,7 +107,8 @@ describe("AgentDef type inference", () => {
 
   test("required fields are present", () => {
     const agent: AgentDef = { ...baseAgent, name: "defaults", tools: {} };
-    expectTypeOf(agent.systemPrompt).toBeString();
+    // A string OR the thunk resolved per turn — see `system-prompt-option.ts`.
+    expectTypeOf(agent.systemPrompt).toEqualTypeOf<SystemPromptOption>();
     expectTypeOf(agent.greeting).toBeString();
     expectTypeOf(agent.tools).toBeObject();
   });

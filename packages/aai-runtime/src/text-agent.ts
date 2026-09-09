@@ -58,7 +58,7 @@ import type { AgentDef, Message, ToolChoice } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
-import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
+import { DEFAULT_MAX_STEPS, resolveSystemPrompt } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
@@ -392,7 +392,12 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
       return streamText({
         model,
         // `system` is the AI SDK's key; `systemPrompt` is ours, at both levels.
-        system: turn.systemPrompt ?? agent.systemPrompt,
+        // The agent's is RESOLVED here, per turn, because it may be a thunk
+        // (`SystemPromptOption`) — and `streamText` would take the function,
+        // stringify it, and instruct the model with this module's source. The
+        // turn's own override is already a string: it is written for one turn,
+        // so there is nothing left for a thunk to answer later.
+        system: turn.systemPrompt ?? resolveSystemPrompt(agent.systemPrompt),
         messages: turn.messages,
         tools: turnTools,
         toolChoice: turn.toolChoice ?? agent.toolChoice ?? "auto",
