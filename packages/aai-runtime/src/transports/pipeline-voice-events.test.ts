@@ -76,6 +76,14 @@ describe("PipelineTransport", () => {
     test("a sub-threshold partial over agent speech does NOT fire onSpeechStarted", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script: inFlightReplyScript(), delayMs: 20 }),
+        // PINNED, because the shipped default is 1 and this spec is about what
+        // happens BELOW the threshold — at the default there is no such thing
+        // as a sub-threshold single word, so the spec would be asserting the
+        // gate's behaviour on an input it no longer rejects. The default moved
+        // for a measured reason (the caller's one-word give-up probe runs
+        // 2.4-2.6 per call and the agent could not yield to it); the gate
+        // itself still has to work for anyone who sets 2.
+        minBargeInWords: 2,
       });
       const t = createPipelineTransport(opts);
       await t.start();

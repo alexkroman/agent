@@ -241,15 +241,15 @@ export const MAX_JSON_BYTES = 1_000_000;
 /** Sliding window of conversation messages retained per session. */
 export const DEFAULT_MAX_HISTORY = 200;
 /**
- * Minimum number of words in an interim STT transcript before a barge-in
- * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
- * word — a backchannel ("mm-hmm", "yeah"), a cough transcribed as one token,
- * or the leading fragment of the user's own turn — does NOT cut the agent off
- * mid-sentence. Sub-threshold utterances are not lost: they are still
- * transcribed and answered once the current reply finishes (see onSttFinal).
- * Set to 1 to restore interrupt-on-any-word.
+ * The barge-in gates live in `barge-in-constants.ts` — moved when this file
+ * reached the source-length cap, and re-exported here so no import moved. See
+ * that module for why the two are separate decisions rather than one dial.
  */
-export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
+export {
+  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
+} from "./barge-in-constants.ts";
+
 /**
  * Spoken when the session cannot start at all — a provider failed to open, so
  * there is no conversation to have (pipeline mode).
@@ -279,7 +279,6 @@ my connection and cannot hear you. Please hang up and call back.`;
  * transcripts, and every one of them used to abandon a reply mid-word. Callers
  * heard the agent give up on its own sentences.
  */
-export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 /**
  * Spoken when a pipeline turn's LLM stream fails, so a provider outage is a

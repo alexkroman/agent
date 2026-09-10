@@ -3628,7 +3628,7 @@ export const DEFAULT_GREETING = "Hey there! I'm an AI voice assistant. What can 
 // @public
 export const DEFAULT_IDLE_TIMEOUT_MS = 300000;
 
-// @public
+// @public (undocumented)
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 // @public
@@ -3641,7 +3641,7 @@ export const DEFAULT_MAX_STEPS = 10;
 export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 
 // @public
-export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
+export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
 
 // @public
 export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
@@ -4025,7 +4025,7 @@ export interface AnthropicLlmOptions extends ModelOptions {
 }
 
 // @public
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 // @public
 export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";

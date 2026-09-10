@@ -203,6 +203,8 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // opening filler and then skipped straight to the second cover phrase.
   let coverCount = 0;
   let coverPhraseCount = 0;
+  /** The window armed for the cover currently pending — see `armCover`. */
+  let armedCoverMs = 0;
 
   /**
    * Send text to the caller.
@@ -273,6 +275,25 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     // own ~1.3s of audio, under a second of silence between two fillers, which
     // reads as chatter at the very start of the wait.
     coverCount += 1;
+    // LOGGED, because until it was, nothing anywhere could confirm a filler
+    // played. The phrases are emitted `record: false`, so they never reach
+    // `onDelta`, never enter history, and never appear in a client's committed
+    // transcript — which meant a harness trajectory (tau2's included) could
+    // show a covered gap and an uncovered one identically. A `deadAirCoverMs`
+    // experiment was run on 2026-09-09 and could not be evaluated for exactly
+    // this reason: the response rate did not move and there was no way to tell
+    // whether cover had fired late or not at all. One line at info closes that.
+    //
+    // `waitedMs` is the value that was actually armed for this filler, not the
+    // configured `coverMs` — the window doubles per filler — so a reader can
+    // see the backoff rather than infer it.
+    log.info("Pipeline dead-air cover", {
+      sid,
+      phrase,
+      opening,
+      coverCount,
+      waitedMs: armedCoverMs,
+    });
     emitText(phrase, false);
     pendingSeparator = true;
     ttsBoundary();
@@ -292,7 +313,11 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    */
   function armCover(): void {
     if (coverMs <= 0 || signal?.aborted) return;
-    deadAir.arm(Math.min(coverMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs)));
+    // Remembered rather than recomputed at the log site: `coverCount` has
+    // already been incremented by then, so a recomputation would report the
+    // NEXT window as the one that elapsed.
+    armedCoverMs = Math.min(coverMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs));
+    deadAir.arm(armedCoverMs);
   }
 
   // Kill the armed cover the moment the turn aborts rather than at dispose(),

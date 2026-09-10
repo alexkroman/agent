@@ -245,6 +245,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsError: (err) => lifecycle.onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         if (!turns.audioGateOpen()) return;
+        // The text->audio term, measured rather than inferred. It had only
+        // ever been a subtraction (endpointing + `firstPartMs` against L_R at
+        // the caller's ear), which put it at 0.7-1.8s; measured directly it is
+        // ~66ms, so synthesis is not where a voice turn's latency lives.
+        if (ttsTextAtMs !== undefined) {
+          log.info("TTS first audio", { sid: opts.sid, afterTextMs: Date.now() - ttsTextAtMs });
+          ttsTextAtMs = undefined;
+        }
         turns.markSpoke();
         heard.onAudio(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
@@ -311,8 +319,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * tool chain speaks filler long before the answer exists. `publishTranscript:
    * false` skips it for the greeting/start-failure lines, which publish their own
    * final. The tail advances either way: it feeds the tail-resume estimate. */
+  /**
+   * When this turn's FIRST text went to TTS, for the `TTS first audio`
+   * measurement above. Cleared as soon as that turn's audio arrives, so a reply
+   * streamed as several sentences is timed from its first one rather than its
+   * latest.
+   */
+  let ttsTextAtMs: number | undefined;
+
   function sendTtsTextNow(text: string, opts?: SendTtsOptions): void {
     turns.openAudioGate();
+    ttsTextAtMs ??= Date.now();
     // ASCII-fold typographic quotes for the engine; length-preserving, so the
     // heard cursor below still indexes the same positions (normalizeSpeechText).
     providers.tts?.sendText(normalizeSpeechText(text));

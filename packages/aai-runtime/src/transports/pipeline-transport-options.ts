@@ -132,9 +132,31 @@ export interface PipelineTransportOptions {
    * text or a tool call is simply not knowable at adoption time; that is the
    * shape of the feature, not a defect in the gate.
    *
-   * Turning it back on wants a case where the arithmetic differs: a
-   * text-heavy agent (the 36% poison rate is a tool-calling agent's number),
-   * or a longer head start from later endpointing. Also inert unless
+   * **The owed tau2-bench run happened on 2026-09-09, and it says NO — with a
+   * worse number than the one that turned this off.** Same tasks and seed
+   * (retail 0-3, seed 42), the default all-AssemblyAI pipeline, ON against a
+   * paired OFF arm:
+   *
+   * - **6 speculations started, 5 adopted, 5 POISONED** — a 100% post-adoption
+   *   poison rate, against the 36% measured before. Every adoption reached a
+   *   tool call, was discarded whole, and reissued the request.
+   * - Response latency moved 4.18s -> 4.11s: **70ms**, inside the noise of a
+   *   4-call sample.
+   * - Reward 0.25 -> 0.00.
+   *
+   * The theory it was flipped on was sound and still is: time to first token is
+   * p50 701ms on this pipeline while the STT endpointing window is 1600ms, so a
+   * mechanism that starts the reply inside that window is attacking the largest
+   * term rather than the model's. What defeats it is upstream of latency — this
+   * is a tool-calling agent, every speculation that reaches a tool call is
+   * discarded by construction, and on retail nearly every turn reaches one. The
+   * head start is real and then thrown away.
+   *
+   * So the case for turning it on is narrower than "a longer head start": it
+   * needs a longer head start AND turns that do not call tools. A text-heavy
+   * agent, not this one. Do not re-flip this on endpointing evidence alone.
+   *
+   * Also inert unless
    * `toolChoice` is `"auto"` or `"none"` — a pinned or required tool ends every
    * speculation at the tool boundary, so it would be pure cost.
    */

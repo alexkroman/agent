@@ -51,18 +51,26 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * `TOOLS_REQUIRE_NO_REASONING` is keyed by model id: a default inside
  * that set makes the bare `assemblyAILlm()` carry an implicit
  * `reasoningEffort: "none"`, and one outside it carry none at all.
- * `qwen3-next-80b-a3b` is OUTSIDE the set — it accepts a tool-carrying request
- * at any effort, including its own server-side default — so a bare
+ *
+ * `gpt-5.6-luna` is INSIDE the set, so that fill is load-bearing again — and
+ * it is the whole reason this id is safe to default to. Verified against the
+ * live gateway on 2026-09-09 with a streaming, tool-carrying request:
+ * `reasoning_effort: "none"` answers **200**, and omitting the parameter
+ * answers **500** (`{"message":"something went wrong","code":500}`). So a bare
  * `assemblyAILlm()`, every unset pipeline stage, and the `llm: "<id>"` string
- * shorthand now send no `reasoning_effort` at all. Move the default back to a
- * `gpt-5.6` id and that fill becomes load-bearing again: without it the
- * descriptor 500s on every tool-calling turn.
+ * shorthand all now depend on the fill to work at all. Do not remove
+ * `gpt-5.6-luna` from that set without moving this default off it in the same
+ * change; the failure is a 500 on every tool-calling turn, which on a voice
+ * line is a call that connects and then cannot answer anything.
+ *
+ * It replaced `qwen3-next-80b-a3b`, which sat OUTSIDE the set (it accepts a
+ * tool-carrying request at any effort, including its own server-side default).
  *
  * Only the raw factory is affected either way: `assemblyAIPipeline()` passes
  * `"none"` explicitly, for latency rather than for that constraint, so the
  * pipeline behaves identically whichever side of the set the default sits on.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including

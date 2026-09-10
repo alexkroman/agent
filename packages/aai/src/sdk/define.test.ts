@@ -126,16 +126,25 @@ describe("agent()", () => {
     const { llm } = assemblyAIPipeline();
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
-    // alongside the effort because the two are coupled: the current default
-    // (`qwen3-next-80b-a3b`) is OUTSIDE TOOLS_REQUIRE_NO_REASONING, so the
-    // factory fills in nothing and the preset's explicit `"none"` is the only
-    // thing standing between the default pipeline and per-turn thinking
-    // latency (measured 1786ms p50 time-to-first-token on gpt-5.5's
-    // server-side default against 999ms with reasoning off). Under a
-    // `gpt-5.6` id the factory would fill the same value and the argument
-    // would merely agree with it — an id property, not a pipeline one. This
-    // pair is what makes a change to either fail loudly.
-    expect(llm.options.model).toBe("qwen3-next-80b-a3b");
+    // alongside the effort because the two are coupled — and the direction of
+    // the coupling flipped when the default moved to `gpt-5.6-luna`, which is
+    // INSIDE TOOLS_REQUIRE_NO_REASONING. The factory now fills `"none"` on its
+    // own, so the preset's explicit argument merely agrees with it: an id
+    // property rather than a pipeline one, exactly as the previous version of
+    // this comment predicted it would become.
+    //
+    // The preset keeps the explicit `"none"` anyway, because what it defends
+    // against is the default moving back OFF the set — as it was at
+    // `qwen3-next-80b-a3b`, where the factory filled nothing and this argument
+    // was the only thing standing between the default pipeline and per-turn
+    // thinking latency (measured 1786ms p50 time-to-first-token on gpt-5.5's
+    // server-side default against 999ms with reasoning off).
+    //
+    // For THIS id the stakes are higher than latency: the gateway answers 500
+    // to a tool-carrying request on it unless the effort is off, so the pair
+    // below is what stands between the default pipeline and a call that
+    // connects and cannot answer.
+    expect(llm.options.model).toBe("gpt-5.6-luna");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the
