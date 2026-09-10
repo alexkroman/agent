@@ -574,18 +574,56 @@ long after the turn, or the whole session, is over. Both guards were added
 after the fuzz harnesses (`aai-ui/fuzz-*.test.ts`) caught the two failures:
 
 - **The turn epoch lives on `ConnState.turn`, not in the message handlers**,
-  and `cleanupAudio()` bumps it alongside every committed user turn /
-  barge-in / reset. Teardown is a turn boundary: hanging up mid-reply,
+  and the audio path's `endTurn` effect bumps it alongside every committed user
+  turn / barge-in / reset. Teardown is a turn boundary: hanging up mid-reply,
   a fatal error, or a reconnect closes the context, the pending
-  `settleWhenAudioDrained` continuation resolves a second later, and without
+  `settleWhenDrained` continuation resolves a second later, and without
   the bump it wrote `state: "listening"` over the session's own
   "disconnected"/"error" — a dead session claiming a live mic in the header.
+  It is the entry action of `down` rather than a line in a `cleanupAudio()`,
+  so it runs on the bring-up that failed before there was anything to close.
 - **The worklet's `stop` carries the turn id its `done` named**
   (`playback-processor.ts` echoes it; `audio.ts` only settles the wait whose
   id matches). Dropping `reason: "interrupt"` stops is not enough: a REAL
   drain-stop already in flight when a barge-in flushes is a legitimate stop
   for a turn the host has moved past, and settling on it reported the next
   reply finished while it was still speaking.
+
+### The audio path is a statechart too (`session-core-audio-state.ts`)
+
+**Three positions — `down`, `starting`, `up` — replaced a latch, an epoch and
+two buffers on `ConnState`.** The bring-up is an `invoke`, so a hang-up,
+reconnect or fatal frame STOPS it rather than letting it settle into a
+connection that is over, and four things went with that:
+
+- `audioSetupInFlight` was a dedup, and dedup is a state. It also carried an
+  ownership problem a boolean cannot express — "only the init that still owns
+  the flag may clear it" — which `starting` does not have, there being no flag
+  to hand back.
+- `conn.generation` existed for this module and nothing else: four `bump()`
+  sites and four `isCurrent(gen)` reads, every bump sitting immediately after a
+  `cleanupAudio()` that had just cleared the latch. Two mechanisms for one
+  question, the second layered on because the first could not stop the work it
+  guarded.
+- **A counter cannot tell two bring-ups in ONE generation apart, and a repeated
+  `config` frame makes two.** The outgoing `VoiceIO`'s `onError` still passed
+  `isCurrent(gen)`, so it could tear down the replacement that had just taken
+  its slot. `PROGRESS`/`IO_FAILED` carry the instance that fired them now.
+- `preInitAudio`/`preInitDone` are context of `down`/`starting`, cleared by
+  entering `down` rather than by three call sites remembering to.
+
+**What cancellation does NOT do is close a microphone the browser has already
+granted.** Stopping the actor only hides its resolution, so `bringUp` checks
+its own `signal` after `open` settles and releases what it built. That is the
+one "is this still wanted?" test left, and it lives in the producer — which
+owns the value nobody adopted — rather than at the four consumer sites that
+used to re-ask. Do not put another one back on `ConnState`.
+
+The other half is `session-core-audio-effects.ts` (every frame and snapshot
+write the machine decides on) over `session-core-audio-setup.ts`
+(`loadAudioModules`, `openAudioPath`). The machine itself touches no socket and
+no snapshot, which is what lets `session-core-audio-state.test.ts` spec it
+without a browser.
 
 **The server paces audio out at a bounded lead** (`aai/host/audio-pacer.ts`,
 wired into `ws-handler.ts`'s `ClientSink`). TTS outruns playback, so relaying

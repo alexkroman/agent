@@ -7,7 +7,7 @@
  */
 
 import type { Epoch } from "@alexkroman1/aai/internal";
-import type { VoiceIO } from "./audio.ts";
+import type { AudioPath } from "./session-core-audio-state.ts";
 import type {
   AgentState,
   ChatMessage,
@@ -234,11 +234,18 @@ export type BrowserSession = {
 };
 
 /**
- * Shared mutable connection state for audio initialization.
+ * Shared mutable connection state.
  *
- * Tracks the active WebSocket, VoiceIO instance, and a generation counter
- * that prevents stale async operations (e.g. a slow `initAudioCapture`) from
- * assigning their results to a newer connection after a reconnect.
+ * **It used to carry the audio path too**, and the four fields that went are
+ * worth naming because the shape recurs: a `voiceIO` slot, an
+ * `audioSetupInFlight` latch, a `generation` epoch whose only readers were the
+ * bring-up's four staleness checks, and the two pre-init buffers. Each was a
+ * question about a position the connection did not have, readable and writable
+ * from anywhere. They are the audio path's own statechart now — see
+ * `session-core-audio-state.ts`.
+ *
+ * What is left is what the CONNECTION really owns: the socket, the server's
+ * idle retirement, and the turn boundary.
  */
 export type ConnState = {
   ws: InstanceType<WebSocketConstructor> | null;
@@ -253,12 +260,6 @@ export type ConnState = {
    * reconnect on demand).
    */
   retiredByServer: boolean;
-  voiceIO: VoiceIO | null;
-  audioSetupInFlight: boolean;
-  /** Connection epoch, bumped on each connect()/retry (see `createEpoch`).
-   *  Prevents a stale initAudioCapture from assigning its voiceIO to a newer
-   *  connection. */
-  generation: Epoch;
   /**
    * Turn epoch, bumped at every turn boundary — a committed user turn, a
    * barge-in, a reset, AND every audio-path teardown (`cleanupAudio`).
@@ -272,15 +273,6 @@ export type ConnState = {
    * later — a dead session reporting a live mic.
    */
   turn: Epoch;
-  /** Audio chunks that arrived before `voiceIO` was initialized — drained into
-   *  the playback worklet once init completes. Closes the race between the
-   *  server starting greeting audio (immediately on S2S connect) and the
-   *  client awaiting mic permission + worklet registration. */
-  preInitAudio: ArrayBuffer[];
-  /** True if `audio_done` arrived before `voiceIO` was initialized. The done
-   *  signal must be replayed after draining preInitAudio, or a short greeting
-   *  buffered during mic-permission never finishes playing. */
-  preInitDone: boolean;
 };
 
 /**
@@ -313,7 +305,7 @@ export const STOPPED = { running: false, recording: false } as const;
  * bump on its own now reads as a deliberate choice rather than a forgotten
  * flush.
  */
-export function bargeIn(conn: ConnState): void {
+export function bargeIn(conn: ConnState, audio: AudioPath): void {
   conn.turn.bump();
-  conn.voiceIO?.flush();
+  audio.flush();
 }
