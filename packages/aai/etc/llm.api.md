@@ -12,7 +12,7 @@ export interface AnthropicLlmOptions extends ModelOptions {
 }
 
 // @public
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 // @public
 export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
