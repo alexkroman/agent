@@ -234,6 +234,26 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   because every source file there is at least one directory deep, which is why
   the miss survived review. Verify any pathspec with `git ls-files "<glob>"`
   rather than reading it; `file-length-gate.test.ts` pins both shapes.
+
+  **Read the HEADROOM report before starting a feature in `transports/`, because
+  the cap is where a four-branch integration nearly broke.** The gate prints the
+  files closest to their ceiling for exactly this, and it is advisory, so nobody
+  reads it until something is already red. Measured 2026-09-11 on the
+  integration branch: **105 files sit within 10% of a cap.** Two of them were
+  already over on an unpushed branch —
+  `aai-runtime/src/transports/pipeline-transport.ts` at 530 and
+  `pipeline-user-speech.ts` at 592, neither allowlisted, 122 lines over between
+  them — and the violation went unnoticed only because that branch had never been
+  pushed and so had never run a pre-push `pnpm check`. Both files sat within six
+  lines of the cap on `main` (500 and 494), so *any* feature touching them owed a
+  split before it owed anything else. Two branches then extracted from the SAME
+  file independently and produced duplicate modules, which is the shape to expect
+  when a hot file has no headroom.
+
+  **And `aai-runtime/src/session-history-replay-equivalence.test.ts` is at
+  exactly 700/700**, so the next line added there forces a split. Recorded rather
+  than pre-split: the seam is not obvious and the split should belong to whoever
+  next needs the room.
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
   `assert`. A test with no assertion still runs the code, still counts in the
@@ -472,7 +492,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   ~60 s across tens of thousands of yields with no timer in the path to jump
   ahead of — and six in packages not importing `aai/host/_test-utils.ts`.
 
-  **The frozen `contracts/compatibility/**` examples are no longer baselined at
+  **The frozen `src/contracts/compatibility/**` examples are no longer baselined at
   all** — they are excluded from every line rule by a pathspec in
   `SOURCE_PATHSPECS` (read the comment there). That is the rule, not a
   convenience: an exemption is per FILE *and* per RULE, so the next widened rule
