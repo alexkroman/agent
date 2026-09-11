@@ -838,6 +838,8 @@ export default agent({
                                              // all four types are on "@alexkroman1/aai",
                                              // and on their own stage subpath
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
+  voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
+                                             // costs tokens on EVERY model request
   builtinTools?: BuiltinTool[];              // see built-in tools table
                                              // (there is no `tools` field — a tool is a FILE;
                                              //  see "A file in tools/ IS a tool")
@@ -1914,9 +1916,7 @@ bridge transcodes in both directions, so the agent, its tools and its slots
 behave exactly as they do in the browser — a phone call is a transport, not a
 mode. Nothing else about `agent.ts` changes to support one.
 
-**An agent that declares nothing answers no carrier**, which is a change from
-earlier releases: every voice agent used to serve both carriers' framing from
-the moment it booted, whether or not it had a phone number. `/phone` is the one
+**An agent that declares nothing answers no carrier.** `/phone` is the one
 door dialled from OUTSIDE your deployment, by a carrier following a number, so
 it is opened by a sentence in `agent.ts` rather than inherited. `aai dev` and a
 deployed sandbox honour the same declaration, so a call refused after a deploy
@@ -2638,10 +2638,8 @@ before this subpath existed.
 
 ## Persisting data — bring your own client
 
-**There is no `ctx.db`.** It was a SQL handle on the tool context, backed first
-by a Postgres the platform provisioned per app and later by a `DATABASE_URL` an
-author set. The platform provisions no database, and no longer hands tool code
-one either.
+**There is no `ctx.db`.** The platform provisions no database and hands tool
+code none.
 
 So a tool that needs to persist anything uses a client of its own:
 
@@ -2968,14 +2966,26 @@ Never hardcode secrets in agent code.
 
 ## Voice rules for systemPrompt
 
-- Short, punchy sentences — optimize for speech, not text
-- Never mention "search results" or "sources" — speak as if knowledge is
-  your own
-- No visual formatting (bullets, bold) — use "First", "Next", "Finally"
-- Lead with the most important information
-- Keep answers to 1-3 sentences
-- No exclamation points — calm, conversational tone
-- No hedging ("It seems that", "I believe")
+**Don't restate the voice rules — the framework always emits them** (read
+`DEFAULT_SYSTEM_PROMPT`; your own prompt is APPENDED to it). Write only what
+the defaults cannot say: "use run_code for ANY math", "you ARE the game".
+"Search first" and "don't guess" they already say.
+
+### Opt-in prompt presets
+
+`agent({ voicePresets: ["echoVerification", "smartMatching"] })` switches on
+named behaviours instead of writing them. They compose, each is removable on
+its own, and each is paid for on EVERY model request: `echoVerification`
+(~190 tokens — read critical values back and get a yes), `smartMatching`
+(~125 — believe a caller who confirms through an ASR slip: you ask "Are you
+Brandon?", the transcript says "Yes, this is Brendon"), `speechNormalization`
+(~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
+as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
+"That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
+the exact text. Those two spelling presets override the default "don't spell
+things back", so use them where a wrong value costs more than a slow call;
+`speechNormalization` is the PROMPT layer only, and for the agent's OWN data
+the renderers below do it in code for free.
 
 **Speech goes both ways, and `@alexkroman1/aai` publishes both conversions.**
 Inbound: `spokenDigits("four one five")` is `"415"`, `spokenOrdinal("the third
@@ -2984,7 +2994,7 @@ phrase meant — answering a `ToolFailure` when nothing matches or several do, t
 case a hand-written `.find()` gets wrong.
 
 Outbound: an engine handed `$240.50` may read "dollar sign two hundred forty
-point five zero", and `19:30` as "nineteen thirty" — right text, wrong call.
+point five zero" — right text, wrong call.
 Render the words first: `spokenMoney(240.5)` is `"240 dollars and 50 cents"`,
 `spokenDate("2026-06-08")` is `"Monday, June 8"`, `spokenTime("18:30")` is
 `"6:30 PM"`. `mintCode("HTL")` mints a reference with no `0`/`O`, `1`/`I` or
@@ -3000,16 +3010,6 @@ before it calls rather than as a refusal after. `isIsoDate` refuses
 substitute, so a dice roll or a minted code is something a spec can assert.
 `randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
 own journaled `ctx.random()` instead.
-
-Patterns by agent type:
-
-- **Code execution:** "You MUST use run_code for ANY math, counting, or
-  data processing. NEVER do mental math."
-- **Research:** "Search first. Never guess or rely on memory for factual
-  questions."
-- **FAQ/support:** "Base answers strictly on your knowledge — don't guess."
-- **Game/interactive:** "You ARE the game. Keep descriptions to 2-4
-  sentences. No visual formatting."
 
 ## Gotchas
 
@@ -3033,20 +3033,15 @@ Common mistakes when working in agent projects:
   `client.tsx`. Missing this = unstyled UI.
 - **Don't create `tailwind.config.js`.** Tailwind v4 is configured via
   CSS; the config file is ignored.
-- **Voice prompts ≠ chat prompts.** No bullets, no bold, no exclamation
-  points. See "Voice rules" above.
 - **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
 - **`run_code` only executes on the deployed platform.** It runs inside the
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **There is no `ctx.db`.** The platform provisions no database and hands tool
-  code none, so a tool that persists brings its own client — see "Persisting
-  data". Two consequences worth knowing before you do: a deployed agent reads a
-  secret when its sandbox is BUILT, so a newly set `DATABASE_URL` reaches it on
-  the next deploy rather than immediately; and a database you bring is shared by
-  every session of the deployment, so key rows yourself if sessions must not see
-  each other's data (or keep session-scoped data in a `sessionSlot`).
+- **There is no `ctx.db`.** A tool that persists brings its own client — see
+  "Persisting data". A secret is read when the sandbox is BUILT, so a newly set
+  `DATABASE_URL` arrives on the next deploy rather than immediately, and the
+  database is shared by every session, so key rows yourself.
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
   ISO 639-1 (`"en"`).
 

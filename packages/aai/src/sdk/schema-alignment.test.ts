@@ -8,8 +8,8 @@ import {
   ToolSchemaSchema,
 } from "./_internal-types.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
-import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
-import type { BuiltinTool, ToolChoice } from "./types.ts";
+import { BuiltinToolSchema, ToolChoiceSchema, VoicePresetNameSchema } from "./type-schemas.ts";
+import type { BuiltinTool, ToolChoice, VoicePresetName } from "./types.ts";
 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {
@@ -132,6 +132,34 @@ describe("type ↔ schema alignment", () => {
 
   test("ToolChoice type equals schema inference", () => {
     expectTypeOf<z.infer<typeof ToolChoiceSchema>>().toEqualTypeOf<ToolChoice>();
+  });
+
+  test("VoicePresetNameSchema values match the emit order", () => {
+    // Order matters here in a way it does not for the other two: this tuple is
+    // also what `voicePresetSection` emits in, so a reordering changes every
+    // agent's prompt.
+    expect(VoicePresetNameSchema.options).toMatchInlineSnapshot(`
+      [
+        "echoVerification",
+        "smartMatching",
+        "speechNormalization",
+        "natoAlphabet",
+      ]
+    `);
+  });
+
+  test("VoicePresetName type equals schema inference", () => {
+    expectTypeOf<z.infer<typeof VoicePresetNameSchema>>().toEqualTypeOf<VoicePresetName>();
+  });
+
+  test("AgentConfigSchema refuses a preset name nothing implements", () => {
+    const config = { name: "a", systemPrompt: "p", greeting: "g" };
+    expect(AgentConfigSchema.safeParse({ ...config, voicePresets: ["natoAlphabet"] }).success).toBe(
+      true,
+    );
+    expect(AgentConfigSchema.safeParse({ ...config, voicePresets: ["natoalphabet"] }).success).toBe(
+      false,
+    );
   });
 
   test.each<ToolChoice>(["auto", "required", "none", { type: "tool", toolName: "get_weather" }])(

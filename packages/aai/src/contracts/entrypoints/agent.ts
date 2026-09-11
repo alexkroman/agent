@@ -84,6 +84,16 @@
  * author is a field of the agent declaration, the same way `ToolContext.slots`
  * does not make `ToolContext` part of `state`.
  *
+ * **The three voice-preset names are here for the field-group reason above**,
+ * with one addition. `AgentVoicePresets` is the fifth interface `AgentDef`
+ * extends and `VoicePresetName` is the vocabulary its one field takes, so both
+ * are plainly part of what declaring an agent looks like. `VOICE_PRESETS` is
+ * the judgement call: it is TEXT, like `DEFAULT_SYSTEM_PROMPT` on `defaults`,
+ * and it lands here rather than there because a preset is not a default —
+ * nothing gets it by omission, it is the set of values the `voicePresets` field
+ * accepts, and its keys and that field's type are one union. What `defaults`
+ * covers is what an agent that declares NOTHING is given.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -105,6 +115,7 @@ export {
   type AgentParams,
   type AgentSessionContext,
   type AgentSystemPrompt,
+  type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
   agent,
   assemblyAIPipeline,
@@ -131,5 +142,7 @@ export {
   type TextAgentParams,
   type ToolChoice,
   type UsageLimits,
+  VOICE_PRESETS,
+  type VoicePresetName,
   workflowApp,
 } from "../../index.ts";

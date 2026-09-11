@@ -48,6 +48,12 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        echoVerification: "echoVerification";
+        natoAlphabet: "natoAlphabet";
+        smartMatching: "smartMatching";
+        speechNormalization: "speechNormalization";
+    }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;

@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
 
 /** @internal Zod schema for `BuiltinTool`. Exported for reuse in internal schemas. */
 export const BuiltinToolSchema = z.enum([
@@ -23,6 +24,13 @@ export const BuiltinToolSchema = z.enum([
   "recall",
   "calculate",
 ]);
+
+/**
+ * @internal Zod schema for `VoicePresetName`, DERIVED from the tuple that is
+ * also the emit order — the one list, so a fifth preset cannot reach the prompt
+ * while the wire schema rejects it.
+ */
+export const VoicePresetNameSchema = z.enum(VOICE_PRESET_NAMES);
 
 /** @internal Zod schema for `ToolChoice`. Exported for reuse in internal schemas. */
 export const ToolChoiceSchema = z.union([

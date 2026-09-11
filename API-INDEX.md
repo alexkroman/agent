@@ -45,6 +45,7 @@ each is for.
 | `AgentSessionContext` | `@alexkroman1/aai` |
 | `AgentState` | `@alexkroman1/aai-ui` |
 | `AgentSystemPrompt` | `@alexkroman1/aai` |
+| `AgentVoicePresets` | `@alexkroman1/aai` |
 | `AnthropicLlmOptions` | `@alexkroman1/aai/llm` |
 | `AnyDialog` | `@alexkroman1/aai` |
 | `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
@@ -582,7 +583,9 @@ each is for.
 | `UseWorkflowSubmitOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
+| `VOICE_PRESETS` | `@alexkroman1/aai` |
 | `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
+| `VoicePresetName` | `@alexkroman1/aai` |
 | `VoiceSessionOptions` | `@alexkroman1/aai-ui` |
 | `WAV_HEADER_BYTES` | `@alexkroman1/aai/step` |
 | `WORKFLOW_API_PREFIX` | `@alexkroman1/aai-runtime` |

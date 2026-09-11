@@ -45,6 +45,12 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        echoVerification: "echoVerification";
+        natoAlphabet: "natoAlphabet";
+        smartMatching: "smartMatching";
+        speechNormalization: "speechNormalization";
+    }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -101,7 +107,7 @@ type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
 };
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -164,6 +170,11 @@ interface AgentSessionContext {
 
 // @public
 type AgentSystemPrompt = string | AgentInstructions;
+
+// @public
+interface AgentVoicePresets {
+    voicePresets?: readonly VoicePresetName[];
+}
 
 // @public
 type AnyDialog = Dialog<AnyStateMachine, unknown>;
@@ -1170,6 +1181,9 @@ interface TypedSubagentDef<T> extends SubagentDef {
 interface UsageLimits {
     totalTokens?: number;
 }
+
+// @public
+type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
