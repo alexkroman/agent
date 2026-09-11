@@ -60,9 +60,6 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
       parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS, "input"),
       // OMITTED rather than set to `undefined` when undeclared, because
       // `ToolSchemaSchema` is what a stored config round-trips through and a
-      // `{ mutates: undefined }` survives a `structuredClone` and not a JSON
-      // hop. The same rule `toolResultMessage` applies to `toolName`.
-      ...omitUndefined({ mutates: def.mutates, completes: def.completes }),
     };
   });
 }

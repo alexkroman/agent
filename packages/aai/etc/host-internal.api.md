@@ -29,26 +29,6 @@ const AgentConfigSchema: z.ZodObject<{
     usageLimits: z.ZodOptional<z.ZodObject<{
         totalTokens: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    twoTier: z.ZodOptional<z.ZodObject<{
-        llm: z.ZodOptional<z.ZodUnion<readonly [z.ZodObject<{
-            kind: z.ZodString;
-            options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        }, z.core.$strip>, z.ZodString]>>;
-        effort: z.ZodOptional<z.ZodEnum<{
-            high: "high";
-            low: "low";
-            medium: "medium";
-            minimal: "minimal";
-        }>>;
-        timeoutMs: z.ZodOptional<z.ZodNumber>;
-        onTimeout: z.ZodOptional<z.ZodEnum<{
-            allow: "allow";
-            block: "block";
-        }>>;
-        completionGate: z.ZodOptional<z.ZodBoolean>;
-        annotateReads: z.ZodOptional<z.ZodBoolean>;
-        contextMessages: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strict>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -236,6 +216,13 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 1000000;
     };
+    readonly "claude-opus-5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 200000;
+    };
     readonly "claude-sonnet-4-5-20250929": {
         readonly tools: true;
         readonly stream: true;
@@ -302,9 +289,30 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
     readonly "gemini-3.6-flash": {
         readonly tools: true;
         readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
+        readonly eu: true;
+        readonly live: true;
         readonly context: 1048575;
+    };
+    readonly "gemini-3.7-flash": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 1048575;
+    };
+    readonly "gemini-3.8-flash": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 1048575;
+    };
+    readonly "gemma-4-31b": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 256000;
     };
     readonly "gpt-4.1": {
         readonly tools: true;
@@ -362,7 +370,21 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 270000;
     };
+    readonly "gpt-5.6-sol": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 270000;
+    };
     readonly "gpt-5.6-terra": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 270000;
+    };
+    readonly "gpt-6-astra": {
         readonly tools: true;
         readonly stream: true;
         readonly eu: false;
@@ -383,13 +405,6 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 131072;
     };
-    readonly "kimi-k2.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 200000;
-    };
     readonly "qwen3-32B": {
         readonly tools: true;
         readonly stream: true;
@@ -404,7 +419,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 200000;
     };
-    readonly "qwen3.5-4b-32k-experimental": {
+    readonly "qwen3.5-4b-32k-fast": {
         readonly tools: false;
         readonly stream: true;
         readonly eu: false;
@@ -460,7 +475,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -715,7 +730,7 @@ export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 export const GATEWAY_KIND: "gateway";
 
 // @public
-export function gatewayModelIds(options?: {
+export function gatewayModelIds(opts?: {
     eu?: boolean;
 }): AssemblyAIGatewayModel[];
 
@@ -1471,8 +1486,6 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
-    mutates?: boolean;
-    completes?: boolean;
 };
 
 // @public
@@ -1532,8 +1545,6 @@ type ToolSchema = {
     description: string;
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
-    mutates?: boolean | undefined;
-    completes?: boolean | undefined;
 };
 
 // @public

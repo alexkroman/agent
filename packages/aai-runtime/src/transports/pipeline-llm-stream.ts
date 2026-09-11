@@ -91,10 +91,10 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // models refuse a tool list outright: the AssemblyAI gateway answers
     // `400 {"errors":["model qwen3.5-4b-32k-fast does not support tools"]}` for
     // a request carrying one, and an empty `tools: {}` still serializes to a
-    // `tools` key. So a tool-free agent — which `twoTier` makes every fast tier
-    // (see `two-tier/`), and which a `page`-less agent with no tools already
-    // was — sends no tool key at all. `toolChoice` goes with it: a choice with
-    // nothing to choose from is refused by the same providers.
+    // `tools` key. So a tool-free agent — an agent that declares none, and one
+    // whose tools are all gated off — sends no tool key at all. `toolChoice`
+    // goes with it: a choice with nothing to choose from is refused by the same
+    // providers.
     ...(Object.keys(req.tools).length === 0
       ? {}
       : { tools: req.tools, ...omitUndefined({ toolChoice: req.toolChoice }) }),

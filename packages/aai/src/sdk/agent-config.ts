@@ -86,37 +86,6 @@ export const ProviderDescriptorSchema = z.object({
 });
 
 /**
- * Zod schema for {@link TwoTierConfig} — the fast/slow declaration.
- *
- * Serializable for the same reason the five scalar knobs above it are: it is
- * numbers, flags and one provider descriptor, and a deployed guest has to
- * carry all of it or the gate exists in `aai dev` and nowhere else.
- *
- * `.strict()`, unlike its neighbours, and for the reason
- * {@link McpServerConfigSchema} is: a misspelled `onTimeout` would deploy an
- * agent whose mutation gate fails open when the author wrote the opposite, and
- * the only symptom is a mutation that went through. A typo in a field that
- * decides whether something is REFUSED has to be a boundary error.
- *
- * `llm` accepts the descriptor OR the string shorthand `agent({ llm })` takes,
- * normalized host-side by `normalizeLlm` — one spelling on the authoring
- * surface, one on the wire, and no third.
- *
- * @internal
- */
-export const TwoTierConfigSchema = z
-  .object({
-    llm: z.union([ProviderDescriptorSchema, z.string().min(1)]).optional(),
-    effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
-    timeoutMs: z.number().int().positive().optional(),
-    onTimeout: z.enum(["allow", "block"]).optional(),
-    completionGate: z.boolean().optional(),
-    annotateReads: z.boolean().optional(),
-    contextMessages: z.number().int().positive().optional(),
-  })
-  .strict();
-
-/**
  * A name a person and a URL can both carry.
  *
  * `.min(1)` alone accepted `"   "`, which reaches the browser as the agent's
@@ -224,7 +193,6 @@ export const AgentConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative().optional(),
   resetToolChoice: z.boolean().optional(),
   usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
-  twoTier: TwoTierConfigSchema.optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   // Serializable like `builtinTools` beside it and for the same reason: it is a

@@ -149,19 +149,6 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  twoTier?: {
-     annotateReads?: boolean;
-     completionGate?: boolean;
-     contextMessages?: number;
-     effort?: "minimal" | "low" | "medium" | "high";
-     llm?:   | string
-        | {
-        kind: string;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-      };
-     onTimeout?: "allow" | "block";
-     timeoutMs?: number;
-  };
   usageLimits?: {
      totalTokens?: number;
   };
@@ -282,19 +269,6 @@ the runtime.
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  twoTier?: {
-     annotateReads?: boolean;
-     completionGate?: boolean;
-     contextMessages?: number;
-     effort?: "minimal" | "low" | "medium" | "high";
-     llm?:   | string
-        | {
-        kind: string;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-      };
-     onTimeout?: "allow" | "block";
-     timeoutMs?: number;
   };
   usageLimits?: {
      totalTokens?: number;
@@ -593,24 +567,6 @@ optional toolChoice?:
 }
 ```
 
-##### twoTier?
-
-```ts
-{
-  annotateReads?: boolean;
-  completionGate?: boolean;
-  contextMessages?: number;
-  effort?: "minimal" | "low" | "medium" | "high";
-  llm?:   | string
-     | {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-   };
-  onTimeout?: "allow" | "block";
-  timeoutMs?: number;
-}
-```
-
 ##### usageLimits?
 
 ```ts
@@ -834,10 +790,8 @@ A checked set of tools, keyed by the name the model calls.
 
 ```ts
 type ToolSchema = {
-  completes?: boolean;
   description: string;
   messages?: ToolMessages;
-  mutates?: boolean;
   name: string;
   parameters: JSONSchema7;
   type: "function";
@@ -847,22 +801,7 @@ type ToolSchema = {
 A tool declaration in wire form: name, description, and JSON Schema
 parameters — the serializable counterpart of `ToolDef`.
 
-`mutates` and `completes` ride along because the tool CLASSIFICATION is what
-the fast/slow gate routes on, and on the platform arm the runtime holds only
-these schemas — the `ToolDef` lives in the guest. Without them a deployed
-agent's gate would classify every tool as a read and verify nothing, which
-is the shape of bug the `guest-route-exposure` convention exists for: it
-works under `aai dev` and silently does nothing once deployed.
-
 #### Properties
-
-##### completes?
-
-```ts
-optional completes?: boolean;
-```
-
-See `ToolDef.completes`.
 
 ##### description
 
@@ -888,20 +827,6 @@ field. Nothing here reaches the model — `toVercelTools` passes `name`,
 Absent for every tool that declares none, which is what keeps an ordinary
 tool's wire declaration byte-identical to what it was before the field
 existed.
-
-##### mutates?
-
-```ts
-optional mutates?: boolean;
-```
-
-See `ToolDef.mutates`. Absent means "not declared", never "read-only".
-
-`| undefined` explicitly, unlike the four members above it: under
-`exactOptionalPropertyTypes` a bare `mutates?: boolean` is a DIFFERENT
-type from what `ToolSchemaSchema` infers for an `.optional()` key, and
-`schema-alignment.test.ts` asserts the two are interchangeable. The four
-required members never had to say so.
 
 ##### name
 

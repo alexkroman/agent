@@ -1,8 +1,11 @@
 {
   "agent": {
-    "current": 5,
-    "supported": [1, 2, 3, 4, 5],
-    "dropped": {}
+    "current": 7,
+    "supported": [1, 2, 3, 4, 7],
+    "dropped": {
+      "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
+      "6": "The fast/slow two-tier split is REMOVED. `AgentModelTuning.twoTier` and the whole `TwoTierConfig` surface go with it — TwoTierConfig, SlowTierEffort, DEFAULT_FAST_TIER_MODEL, DEFAULT_SLOW_TIER_MODEL, DEFAULT_SLOW_TIER_EFFORT, DEFAULT_SLOW_TIER_TIMEOUT_MS, DEFAULT_SLOW_TIER_CONTEXT_MESSAGES, FAST_TIER_REASONING_EFFORT, MAX_STATE_DIGEST_CHARS. It was measured on retail-orders-agent and did not work: because a digest entry records a tool NAME and never a result, and each caller utterance builds a fresh slow-tier loop whose only memory is that digest, reads were re-called every utterance, a terminal transfer LOOPED, and one session spent 252,825 tokens against a 200,000 cap. An agent that declared the field no longer compiles."
+    }
   },
   "builtins": {
     "current": 1,
@@ -25,8 +28,8 @@
     "dropped": {}
   },
   "defaults": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "dialog": {
@@ -50,9 +53,11 @@
     "dropped": {}
   },
   "llm": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 4,
+    "supported": [1, 3, 4],
+    "dropped": {
+      "2": "The AssemblyAIGatewayModel union lost two ids, which is breaking for any binding annotated with one: kimi-k2.5 was retired by the gateway (it answered 410 and is no longer advertised) and qwen3.5-4b-32k-experimental was RENAMED to -fast upstream. It also gained seven, including the two the fast/slow defaults now name. The union is a snapshot of a service that moves faster than this package, which is why the field still accepts a plain string — but a removed literal names a model the service will not run, so recording when it went is the point."
+    }
   },
   "procedure": {
     "current": 1,
@@ -105,16 +110,19 @@
     "dropped": {}
   },
   "testing": {
-    "current": 5,
-    "supported": [2, 3, 4, 5],
+    "current": 6,
+    "supported": [2, 3, 4, 6],
     "dropped": {
-      "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling."
+      "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
+      "5": "`ToolSchema` and `AgentConfigSchema` reach this subpath, and both lost members with the fast/slow split: the schema's `mutates`/`completes` and the config's `twoTier`. A spec that built either shape with one of those keys no longer compiles — `.strict()` on the config schema makes it a parse failure too."
     }
   },
   "tool": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
-    "dropped": {}
+    "current": 5,
+    "supported": [1, 2, 3, 5],
+    "dropped": {
+      "4": "`ToolDef.mutates` and `ToolDef.completes` are REMOVED with the fast/slow split they existed for. Nothing else ever read them — the gate in two-tier/ was their only consumer — so what is left of them after that removal is two fields whose own docs describe a feature that no longer exists. A tool that declared either no longer compiles; the declaration was inert for every other purpose, so nothing else changes."
+    }
   },
   "transcribe": {
     "current": 1,

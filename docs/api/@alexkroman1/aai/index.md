@@ -3608,29 +3608,6 @@ Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
 its voice).
 
-##### twoTier?
-
-```ts
-optional twoTier?: TwoTierConfig;
-```
-
-Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
-
-###### Default Value
-
-unset — one model, no gate, no digest, no extra request.
-
-It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
-because it shares this group's rule exactly and not the other one's: the
-gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
-mode both honour it and S2S structurally cannot — there the provider owns
-the loop, calls the tool itself, and there is no moment between the
-proposal and the mutation for a second model to stand in.
-
-###### Inherited from
-
-[`AgentModelTuning`](#agentmodeltuning).[`twoTier`](#twotier-1)
-
 ##### usageLimits?
 
 ```ts
@@ -3890,25 +3867,6 @@ one. A booking desk and a game master want different values, and until this
 existed neither could say so: `ctx.generate` and `subagent()` both took a
 temperature while the main loop — the one that does almost all the talking
 — took no sampling parameter at all.
-
-##### twoTier?
-
-```ts
-optional twoTier?: TwoTierConfig;
-```
-
-Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
-
-###### Default Value
-
-unset — one model, no gate, no digest, no extra request.
-
-It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
-because it shares this group's rule exactly and not the other one's: the
-gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
-mode both honour it and S2S structurally cannot — there the provider owns
-the loop, calls the tool itself, and there is no moment between the
-proposal and the mutation for a second model to stand in.
 
 ##### usageLimits?
 
@@ -7519,7 +7477,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -7685,139 +7643,6 @@ name: string;
 ```
 
 The tool's name, as the subagent's model called it.
-
-***
-
-### TwoTierConfig
-
-The FAST/SLOW two-tier configuration — see this module's header.
-
-The fast tier is `agent({ llm })`, unchanged and unnamed here: whatever the
-agent already talks on is the tier that holds the call, minus its tools. Only
-the second one needs declaring, which is what keeps this additive.
-
-#### Example
-
-**A tool-free conversational model in front of a careful one**
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "orders-desk",
-  llm: assemblyAILlm({ model: "qwen3.5-4b-32k-fast", reasoningEffort: "none" }),
-  twoTier: {
-    llm: assemblyAILlm({ model: "gpt-5.6-luna" }),
-    effort: "high",
-  },
-});
-```
-
-#### Properties
-
-##### completionGate?
-
-```ts
-optional completionGate?: boolean;
-```
-
-Refuse a `completes` tool while the digest still holds work that has not
-settled — DIGEST-GATED COMPLETION.
-
-###### Default Value
-
-`true`
-
-This is the half of TalkAct's contract that was a prompt rule there
-("never claim the task is done unless the computer agent state explicitly
-says so", written after early versions "hallucinated 'it's submitted!' and
-hung up") and is a refusal here. It is aimed at a failure mode this repo
-has measured by name on tau2: the agent says "I've updated your address"
-with no tool call behind it.
-
-**What it reaches.** Every tool declared `completes` — the author's
-hand-off or termination tool, and the slow tier's own "work finished"
-tool, which is not exempt. The refusal names what is still outstanding and
-arrives as an ordinary recoverable tool failure, so the run finishes the
-work and reports again rather than the turn ending. It is the same
-interception Pickle describes, where a blocked hand-off continues the
-conversation instead of silently terminating it.
-
-**What it does not reach**, stated because the difference matters: the
-fast tier SAYING a false completion. Speech is not a tool call. The levers
-there are the rendered statement of outstanding work on every fast-tier
-request (which this feature installs unconditionally) and, for an agent
-that wants a hard stop, an `outputGuardrails` entry the author writes.
-
-##### contextMessages?
-
-```ts
-optional contextMessages?: number;
-```
-
-How many trailing messages of the conversation the slow tier may see.
-
-###### Default Value
-
-`24` (`DEFAULT_SLOW_TIER_CONTEXT_MESSAGES`)
-
-A bound on COST and on the information boundary at once, which is SABER's
-third component (block-based context cleaning) read the way its motivation
-reads: errors grow with context length as an agent drifts from its role and
-acts on stale constraints. The window is the session's own conversation,
-trimmed — never a richer history assembled beside it.
-
-##### effort?
-
-```ts
-optional effort?: SlowTierEffort;
-```
-
-The slow tier's reasoning budget — see [SlowTierEffort](#slowtiereffort).
-
-###### Default Value
-
-`"high"` (`DEFAULT_SLOW_TIER_EFFORT`)
-
-##### llm?
-
-```ts
-optional llm?: string | LlmProvider;
-```
-
-The slow tier's model.
-
-###### Default Value
-
-the agent's own `llm` — which makes the declaration a pure
-ARCHITECTURE change rather than also a model change, and is the arm to run
-when you want to know which of the two a difference came from.
-
-##### timeoutMs?
-
-```ts
-optional timeoutMs?: number;
-```
-
-How long one slow-tier RUN may take before it is abandoned.
-
-###### Default Value
-
-`15000` (`DEFAULT_SLOW_TIER_TIMEOUT_MS`)
-
-**Nobody waits for this, and that is the point.** The slow tier runs
-detached from every turn, so a run that overruns costs a STALE DIGEST —
-the fast tier keeps talking from the last summary it was given — and never
-a silent caller. There is deliberately no fail-open/fail-closed policy
-beside it: failing open is what the architecture DOES, structurally,
-because the caller's turn never awaited the slow tier in the first place.
-A knob for it would be a setting with nothing to set.
-
-What the bound buys is that a wedged provider does not hold the run slot
-forever, so the next caller utterance still gets a fresh run. An abandoned
-run's in-flight work is settled as failed on its way out, which is what
-keeps [TwoTierConfig.completionGate](#completiongate) from wedging behind it.
 
 ***
 
@@ -8100,7 +7925,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -8611,6 +8436,7 @@ type AssemblyAIGatewayModel =
   | "claude-opus-4-6"
   | "claude-opus-4-7"
   | "claude-opus-4-8"
+  | "claude-opus-5"
   | "claude-sonnet-4-5-20250929"
   | "claude-sonnet-4-6"
   | "claude-sonnet-5"
@@ -8621,6 +8447,9 @@ type AssemblyAIGatewayModel =
   | "gemini-3.5-flash"
   | "gemini-3.5-flash-lite"
   | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
+  | "gemma-4-31b"
   | "gpt-4.1"
   | "gpt-5"
   | "gpt-5-mini"
@@ -8629,13 +8458,14 @@ type AssemblyAIGatewayModel =
   | "gpt-5.2"
   | "gpt-5.5"
   | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
   | "gpt-5.6-terra"
+  | "gpt-6-astra"
   | "gpt-oss-120b"
   | "gpt-oss-20b"
-  | "kimi-k2.5"
   | "qwen3-32B"
   | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-experimental";
+  | "qwen3.5-4b-32k-fast";
 ```
 
 An id the gateway advertises.
@@ -10149,30 +9979,6 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 ***
 
-### SlowTierEffort
-
-```ts
-type SlowTierEffort = "minimal" | "low" | "medium" | "high";
-```
-
-How much thinking the slow tier is given.
-
-A FIRST-CLASS knob rather than a constant, because the one published
-ablation on a second reasoning tier of this shape (Pickle's tool-mentor)
-attributes its gain to the supervisor's reasoning BUDGET rather than to its
-prompt wording — a full round of prompt iteration was worth net one task.
-Their numbers are single-trial under their own churn caveat and are not
-quoted here as an effect size; what survives is the design hint, which is
-cheap to honour: make the budget settable, and do not expect prompt tuning
-to carry the feature.
-
-Passed to the provider as its own reasoning option, spelled per family. A
-provider with no such option ignores it, which is why this is a HINT. An
-effort set on the descriptor itself — `assemblyAILlm({ reasoningEffort })` —
-is applied when the model is built and is the precise form.
-
-***
-
 ### StaticAgentParams
 
 ```ts
@@ -10999,11 +10805,9 @@ backend configured, naming which.
 
 ```ts
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
-  completes?: boolean;
   description: string;
   inputSchema?: P;
   messages?: ToolMessagesInput;
-  mutates?: boolean;
   onError?: ToolErrorHandler;
   execute: R;
 };
@@ -11091,25 +10895,6 @@ once per tool (see `warnOversizedResult` in `aai-runtime`'s
 
 #### Properties
 
-##### completes?
-
-```ts
-optional completes?: boolean;
-```
-
-Calling this tool ENDS or HANDS OFF the engagement — a stop call.
-
-`completes` implies [ToolDef.mutates](#mutates) for routing purposes: ending a
-call is not reversible by the next turn, so it is verified like a write
-whether or not it writes. What it adds on top is the digest gate — with
-`twoTier.completionGate` on (the default), this tool is REFUSED while the
-session's digest still holds unsettled work, and the refusal names what is
-pending.
-
-The tools that want it are the ones that sound like an answer: a transfer
-to a human, a "task complete" signal, a hang-up. It is the fix for an
-agent that announces the outcome and terminates before doing the work.
-
 ##### description
 
 ```ts
@@ -11175,51 +10960,6 @@ export default tool({
     failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
   },
   execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
-});
-```
-
-##### mutates?
-
-```ts
-optional mutates?: boolean;
-```
-
-This tool CHANGES something outside the conversation.
-
-A DECLARATION, never inferred. It is inert unless the agent declares
-`twoTier` (see [TwoTierConfig](#twotierconfig)), and then it is the whole routing
-decision: a `mutates` call is proposed by the fast tier and authorized by
-the slow one, where a read runs untouched at the latency it always had.
-
-**Declared rather than derived, deliberately.** A naming heuristic
-(`update_*`, `create_*`, `set_*`) is wrong in both directions on real
-agents — `check_out`, `submit`, `refund` mutate and match nothing;
-`update_view`, `set_language` match and mutate nothing outside the call —
-and being wrong in the second direction costs a second model call on the
-hot path while being wrong in the first silently un-gates the calls the
-gate was installed for. The author knows; nothing else does. (Pickle's
-own prompt constitution reaches the same conclusion from the other end:
-derive action classes from tool METADATA, and never name tools inside
-prompt text.)
-
-**Absent means "not declared", not "read-only".** A gate that treated
-silence as safe would un-gate every tool written before this field
-existed, which is exactly the population most likely to need it; the
-runtime therefore logs once per session naming the tools it is treating as
-reads, so an author who forgot finds out from a boot line rather than from
-a benchmark.
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Change the shipping address on an order",
-  inputSchema: z.object({ orderId: z.string(), address: z.string() }),
-  mutates: true,
-  execute: async ({ orderId, address }) => ({ orderId, address }),
 });
 ```
 
@@ -13241,36 +12981,6 @@ only reader is one field is documented by sitting next to it.
 
 ***
 
-### DEFAULT\_SLOW\_TIER\_CONTEXT\_MESSAGES
-
-```ts
-const DEFAULT_SLOW_TIER_CONTEXT_MESSAGES: 24 = 24;
-```
-
-Default [TwoTierConfig.contextMessages](#contextmessages).
-
-***
-
-### DEFAULT\_SLOW\_TIER\_EFFORT
-
-```ts
-const DEFAULT_SLOW_TIER_EFFORT: SlowTierEffort;
-```
-
-Default [TwoTierConfig.effort](#effort).
-
-***
-
-### DEFAULT\_SLOW\_TIER\_TIMEOUT\_MS
-
-```ts
-const DEFAULT_SLOW_TIER_TIMEOUT_MS: 15000 = 15000;
-```
-
-Default [TwoTierConfig.timeoutMs](#timeoutms-3).
-
-***
-
 ### DEFAULT\_STEP\_MAX\_ATTEMPTS
 
 ```ts
@@ -13289,7 +12999,7 @@ run its body; that was true before this change and is unchanged by it.
 ### DEFAULT\_SYSTEM\_PROMPT
 
 ```ts
-const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An IDENTIFIER is the\n  exception, and the rule for it is all-or-nothing: any code that mixes\n  letters and digits, or that is not a word, is spoken one character at\n  a time from end to end.\n  Right: \"A-B-C-one-two-three.\"\n  Wrong: \"ABC one hundred twenty three\" — the letters spelled and the\n  digits read as a number is the common failure, and it is unusable:\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-two\", never\n  \"two K two\".\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly. Never retype, reformat,\n  or construct an ID from a pattern — if you don't have it, look it up\n  first, then use it.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
+const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An amount under a\n  dollar is cents alone — \"twenty-six cents\", never \"$0.26\", which is\n  read out as \"zero dollars twenty-six cents\". Write a date in words\n  (\"May twelfth\"), never slashed — \"05/12\" is read \"zero five one\n  twelve\".\n- An IDENTIFIER is the exception, and the rule is about how you WRITE\n  it: hyphenate it, one character per hyphen, end to end, and drop any\n  \"#\". That spelling is what makes the voice read a code out instead of\n  adding it up, and it is the whole rule — a code you paste unchanged\n  is a code the caller loses.\n  Anything that names one record rather than counting something is an\n  identifier: an order, item, or product number, a card's last four, a\n  ZIP, a phone number, a confirmation code.\n  Right: \"W-2-3-7-8-1-5-6\", \"A-B-C-1-2-3\", \"ending in 2-4-7-8\".\n  Wrong: \"W2378156\", \"#W2378156\", \"2478\", \"7747408585\" — each is read\n  as a quantity (\"W two million three hundred seventy-eight\n  thousand...\", \"twenty-four seventy-eight\"), and even when it isn't\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"774, 740, 8585\" — commas turn one code into three numbers.\n  One unbroken hyphen run is the only form that survives.\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-2\", never\n  \"two K2\".\n- An EMAIL ADDRESS is never written as one token. Say the name as\n  ordinary words, hyphenate the digits, and speak the separators:\n  \"yusuf dot rossi, 7-3-0-1, at example dot com\". Written whole,\n  \"yusuf.rossi7301@example.com\" comes out as \"yusuf rossi seven\n  thousand three hundred one at example com\", and another address came\n  out as different words entirely. Don't spell the letters either —\n  that loses the \"at\". Spell one character only to settle an ambiguity.\n- Put a value the caller has to write down — an identifier, an amount,\n  an address, an email — in your FIRST sentence. Most of a long reply\n  is never heard, and a value saved for the end is the part that goes\n  missing.\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly into what you SEND a\n  tool. Never retype, reformat, or construct an ID from a pattern — if\n  you don't have it, look it up first, then use it. This is about tool\n  arguments only: what you SAY is respelled for the voice under\n  SPEAKING, which changes no characters, only where the hyphens go.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
 ```
 
 Default system prompt used when `systemPrompt` is not provided.
@@ -13364,22 +13074,6 @@ varies by state is unreachable either way, and n tools cost n schemas in every
 request where this costs one. The deciding reason is smaller: `delegate` is
 also where a shared instruction about HOW to brief a subagent goes, and n
 copies of it is n places for it to drift.
-
-***
-
-### MAX\_STATE\_DIGEST\_CHARS
-
-```ts
-const MAX_STATE_DIGEST_CHARS: 2000 = 2000;
-```
-
-The longest a rendered digest section may be, in characters.
-
-It rides on EVERY request the fast tier makes, so an unbounded one is a
-prompt that grows for the length of the call — and the cost lands on the
-number this repo measures time-to-first-token on. The cap trims the oldest
-SETTLED entries first: what is outstanding is the half the section exists to
-state.
 
 ***
 
