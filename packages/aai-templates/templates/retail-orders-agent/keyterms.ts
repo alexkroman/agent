@@ -131,9 +131,11 @@ export const RETAIL_KEYTERMS: readonly string[] = [...PRODUCTS, ...OPTIONS, ...P
  * The cap is 100 terms, so an account base of any size does not fit, and the
  * mechanism for it is not this one: an application that knows WHO is calling
  * (a CRM lookup on the inbound number) puts that in
- * `assemblyAIStt({ agentContext })`, which is free text and measured at −49%
- * entity error on names when it carries specifics. What a keyterm list is for
- * is the closed vocabulary a store has regardless of who calls.
+ * `assemblyAIStt({ agentContext })`, which is free text — AssemblyAI's own
+ * published benchmark reports −49% entity error on NAMES for a detailed
+ * context, which is a vendor claim rather than anything measured here. What a
+ * keyterm list is for is the closed vocabulary a store has regardless of who
+ * calls.
  */
 export const IDENTIFYING_KEYTERMS: readonly string[] = [
   // First names from `seed.json`, minus the ones a general model gets right.

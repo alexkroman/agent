@@ -313,9 +313,11 @@ Reference providers shipped today:
   IGNORES an over-long term and REFUSES a connect over the cap, so
   `normalizeKeyterms` trims host-side rather than letting a grown catalogue
   take an agent off the air). `agentContext` is what the application already
-  knows about THIS call, and it is the one to reach for first: AssemblyAI's own
-  benchmark over 20,000 voice-agent calls puts a detailed context at −21% WER
-  and −29% entity error against none, with names nearly halving. It needs no
+  knows about THIS call, and it is the one to reach for first — on a VENDOR
+  CLAIM rather than a measurement of ours: AssemblyAI's published benchmark
+  over 20,000 voice-agent calls puts a detailed context at −21% WER and
+  −29% entity error against none, with names nearly halving, and nobody here
+  has seen its methodology or reproduced it on this pipeline. It needs no
   declaration to be useful — the runtime seeds the greeting at connect and
   replaces it with the agent's own reply after every turn, so the recognizer
   transcribing "1-2-3-4" has just been told the agent asked for an order

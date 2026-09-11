@@ -238,6 +238,13 @@ export interface SttSession {
    *
    * Implementations must skip the wire message when the resolved list has not
    * changed: this is called once per agent turn.
+   *
+   * **Its one caller today is the transport, from the active `dialog()`
+   * state.** A TOOL cannot reach it — the fact worth boosting most on a
+   * support call is the caller's own name, which is known only after a lookup,
+   * and there is no seam from a tool body to here. See "There is no
+   * PER-SESSION steering seam, and what one needs" in
+   * `packages/aai-runtime/CLAUDE.md` for the four things such a seam owes.
    */
   updateKeyterms?(keyterms: readonly string[] | undefined): void;
 }
