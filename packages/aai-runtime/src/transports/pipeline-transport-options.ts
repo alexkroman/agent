@@ -5,13 +5,19 @@
 // so each option's default lives next to its documentation rather than being
 // re-applied at the point of use.
 
-import type { ToolChoice } from "@alexkroman1/aai";
-import type { ExecuteTool, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
+import type { LowConfidencePolicy, ToolChoice } from "@alexkroman1/aai";
+import type {
+  ExecuteTool,
+  ResolvedLowConfidence,
+  SttOpener,
+  TtsOpener,
+} from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
+  resolveLowConfidence,
 } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_ERROR_PHRASE,
@@ -243,6 +249,12 @@ export interface PipelineTransportOptions {
    * the agent's own value alone.
    */
   dialogTurn?: DialogTurnSource | undefined;
+  /**
+   * Act on the recognizer's confidence in a committed turn — `AgentDef.lowConfidence`.
+   * Absent leaves every final transcript committing, which is what shipped
+   * before the field existed; `{}` opts in at the documented defaults.
+   */
+  lowConfidence?: LowConfidencePolicy | undefined;
   /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */
@@ -269,6 +281,13 @@ export interface ResolvedPipelineOptions {
   startFailurePhrase: string;
   resumeFalseInterruption: boolean;
   preemptiveGeneration: boolean;
+  /**
+   * Resolved once, and `undefined` for the agents that declare no policy —
+   * which is the state the transport reads as "commit every final". A resolved
+   * bag of defaults would be indistinguishable from an opted-in policy at the
+   * defaults, and those are different agents.
+   */
+  lowConfidence: ResolvedLowConfidence | undefined;
   speechIdleTimeoutMs: number;
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
@@ -313,6 +332,8 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
     startFailurePhrase: or(options.startFailurePhrase, DEFAULT_START_FAILURE_PHRASE),
     resumeFalseInterruption: or(options.resumeFalseInterruption, true),
     preemptiveGeneration: or(options.preemptiveGeneration, false),
+    lowConfidence:
+      options.lowConfidence === undefined ? undefined : resolveLowConfidence(options.lowConfidence),
     speechIdleTimeoutMs: or(options.speechIdleTimeoutMs, DEFAULT_SPEECH_IDLE_TIMEOUT_MS),
     toolChoice: or(options.toolChoice, DEFAULT_TOOL_CHOICE),
     toolSchemas: or(options.toolSchemas, []),

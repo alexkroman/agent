@@ -82,6 +82,21 @@ export * from "./sdk/define.ts";
 export * from "./sdk/dialog.ts";
 export * from "./sdk/generate.ts";
 /**
+ * The policy `agent({ lowConfidence })` is written against, and the two unions
+ * its fields take.
+ *
+ * Here for the reason the stage descriptor types are: `AgentDef` names the
+ * interface in its own signature, so an author assembling a config across
+ * files — or annotating a shared policy object — could not otherwise write the
+ * type down. The DEFAULTS behind it are on `@alexkroman1/aai/internal` with
+ * every other framework default; an author sets fields, not constants.
+ */
+export type {
+  LowConfidenceAction,
+  LowConfidencePolicy,
+  LowConfidenceStatistic,
+} from "./sdk/low-confidence.ts";
+/**
  * The other machine: one unit of WORK inside a tool call, where a flow is where
  * a CONVERSATION is. On the root beside it because an author reaching for one
  * needs to see the other to pick correctly.

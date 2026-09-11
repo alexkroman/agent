@@ -241,6 +241,9 @@ each is for.
 | `LogPage` | `@alexkroman1/aai-runtime` |
 | `LogStream` | `@alexkroman1/aai-runtime` |
 | `Logger` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
+| `LowConfidenceAction` | `@alexkroman1/aai` |
+| `LowConfidencePolicy` | `@alexkroman1/aai` |
+| `LowConfidenceStatistic` | `@alexkroman1/aai` |
 | `MAX_WORKFLOW_FIND_LIMIT` | `@alexkroman1/aai-runtime` |
 | `MAX_WORKFLOW_INPUT_BYTES` | `@alexkroman1/aai-runtime` |
 | `MAX_WORKSPACE_FILES` | `@alexkroman1/aai/workspace-files` |
@@ -1008,6 +1011,10 @@ trace or a type error can be traced back to something.
 | `DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_IDLE_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | `@alexkroman1/aai/internal` |
+| `DEFAULT_LOW_CONFIDENCE_ACTION_BELOW` | `@alexkroman1/aai/host-internal` |
+| `DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW` | `@alexkroman1/aai/host-internal` |
+| `DEFAULT_LOW_CONFIDENCE_NOTE` | `@alexkroman1/aai/host-internal` |
+| `DEFAULT_LOW_CONFIDENCE_PHRASE` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_MAX_HISTORY` | `@alexkroman1/aai/internal` |
 | `DEFAULT_MAX_STEPS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_MAX_TURN_SILENCE_MS` | `@alexkroman1/aai/internal` |
@@ -1046,13 +1053,18 @@ trace or a type error can be traced back to something.
 | `InvariantViolation` | `@alexkroman1/aai/internal` |
 | `JitteredBackoffOptions` | `@alexkroman1/aai/internal` |
 | `JournalConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
+| `KeytermDrop` | `@alexkroman1/aai/host-internal` |
+| `KeytermDropReason` | `@alexkroman1/aai/host-internal` |
 | `LOG_PREVIEW_CHARS` | `@alexkroman1/aai/host-internal` |
+| `LowConfidenceVerdict` | `@alexkroman1/aai/host-internal` |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | `@alexkroman1/aai/internal` |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | `@alexkroman1/aai/internal` |
 | `MAX_CLIENT_WS_BUFFERED_BYTES` | `@alexkroman1/aai/host-internal` |
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | `@alexkroman1/aai/host-internal` |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | `@alexkroman1/aai/host-internal` |
 | `MAX_DB_RESULT_ROWS` | `@alexkroman1/aai/internal` |
+| `MAX_KEYTERMS` | `@alexkroman1/aai/host-internal` |
+| `MAX_KEYTERM_CHARS` | `@alexkroman1/aai/host-internal` |
 | `MAX_MESSAGE_BUFFER_SIZE` | `@alexkroman1/aai/host-internal` |
 | `MAX_MISSING_READS` | `@alexkroman1/aai-ui/internal` |
 | `MAX_PLATFORM_SOCKET_FRAME_BYTES` | `@alexkroman1/aai-runtime/internal` |
@@ -1071,6 +1083,7 @@ trace or a type error can be traced back to something.
 | `MIC_SILENCE_PROBE_MS` | `@alexkroman1/aai/internal` |
 | `MISTRAL_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `MISTRAL_KIND` | `@alexkroman1/aai/host-internal` |
+| `NormalizedKeyterms` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
@@ -1109,6 +1122,7 @@ trace or a type error can be traced back to something.
 | `RIME_KIND` | `@alexkroman1/aai/host-internal` |
 | `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
 | `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
+| `ResolvedLowConfidence` | `@alexkroman1/aai/host-internal` |
 | `RunCappedOptions` | `@alexkroman1/aai/host-internal` |
 | `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
 | `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |
@@ -1192,6 +1206,7 @@ trace or a type error can be traced back to something.
 | `buildSystemPrompt` | `@alexkroman1/aai/host-internal` |
 | `capToolResult` | `@alexkroman1/aai/internal` |
 | `clampWorkflowWait` | `@alexkroman1/aai/internal` |
+| `classifyConfidence` | `@alexkroman1/aai/host-internal` |
 | `clientEventDropMessage` | `@alexkroman1/aai/internal` |
 | `consoleLogger` | `@alexkroman1/aai-runtime/internal` |
 | `createCoalescingRunner` | `@alexkroman1/aai/internal` |
@@ -1212,6 +1227,7 @@ trace or a type error can be traced back to something.
 | `createUploadStore` | `@alexkroman1/aai-runtime/internal` |
 | `decideClientEvent` | `@alexkroman1/aai/internal` |
 | `defaultProviders` | `@alexkroman1/aai/host-internal` |
+| `describeKeytermDrops` | `@alexkroman1/aai/host-internal` |
 | `executeToolCall` | `@alexkroman1/aai-runtime/internal` |
 | `firstWriteWins` | `@alexkroman1/aai-runtime/internal` |
 | `formatSchemaIssues` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
@@ -1222,12 +1238,14 @@ trace or a type error can be traced back to something.
 | `isConvertibleSchema` | `@alexkroman1/aai/host-internal` |
 | `isInvariantViolation` | `@alexkroman1/aai/internal` |
 | `isTextAssetPath` | `@alexkroman1/aai/internal` |
+| `isUniversal35Pro` | `@alexkroman1/aai/host-internal` |
 | `jitteredBackoff` | `@alexkroman1/aai/internal` |
 | `linkConfirmationCode` | `@alexkroman1/aai/internal` |
 | `loadClientConfig` | `@alexkroman1/aai-ui/internal` |
 | `loadJournalConformance` | `@alexkroman1/aai-runtime/internal` |
 | `loadSessionStateConformance` | `@alexkroman1/aai-runtime/internal` |
 | `mapStream` | `@alexkroman1/aai/host-internal` |
+| `normalizeKeyterms` | `@alexkroman1/aai/host-internal` |
 | `normalizeLlm` | `@alexkroman1/aai/host-internal` |
 | `normalizeSpeechText` | `@alexkroman1/aai/internal` |
 | `outputWithKillNote` | `@alexkroman1/aai/host-internal` |
@@ -1257,6 +1275,7 @@ trace or a type error can be traced back to something.
 | `resolveCartesiaTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveDeepgramSttSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
+| `resolveLowConfidence` | `@alexkroman1/aai/host-internal` |
 | `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
 | `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
 | `runAgentGuardrails` | `@alexkroman1/aai/host-internal` |

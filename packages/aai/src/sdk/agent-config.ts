@@ -31,7 +31,7 @@ import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
+import { BuiltinToolSchema, LowConfidencePolicySchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -196,6 +196,7 @@ export const AgentConfigSchema = z.object({
   startFailurePhrase: z.string().optional(),
   resumeFalseInterruption: z.boolean().optional(),
   preemptiveGeneration: z.boolean().optional(),
+  lowConfidence: LowConfidencePolicySchema.optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

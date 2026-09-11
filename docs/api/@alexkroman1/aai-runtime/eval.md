@@ -297,7 +297,7 @@ function customEventsIn(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -499,7 +499,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -812,7 +812,7 @@ function errorsIn(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -1037,7 +1037,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -1516,7 +1516,7 @@ function lastStateIn<T>(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -1728,7 +1728,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -1927,7 +1927,7 @@ function lastStateIn(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -2133,7 +2133,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -2595,7 +2595,7 @@ function saidIn(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -2794,7 +2794,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -2993,7 +2993,7 @@ function statesIn<T>(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -3209,7 +3209,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -3408,7 +3408,7 @@ function statesIn(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -3618,7 +3618,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -3919,7 +3919,7 @@ function toolCallsInEvents(events: readonly (
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -4117,7 +4117,7 @@ readonly (
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -4691,6 +4691,7 @@ type EvalSession = {
         id: z.ZodString;
      }, z.core.$strip>;
      recovery?: z.ZodOptional<z.ZodEnum<{
+        low-confidence: "low-confidence";
         session-failed: "session-failed";
         turn-failed: "turn-failed";
      }>>;
@@ -4916,6 +4917,7 @@ events(): readonly (
      id: z.ZodString;
   }, z.core.$strip>;
   recovery?: z.ZodOptional<z.ZodEnum<{
+     low-confidence: "low-confidence";
      session-failed: "session-failed";
      turn-failed: "turn-failed";
   }>>;
@@ -5123,6 +5125,7 @@ readonly (
      `id`: `z.ZodString`;
   \}, `z.core.$strip`\>;
   `recovery?`: `z.ZodOptional`\<`z.ZodEnum`\<\{
+     `low-confidence`: `"low-confidence"`;
      `session-failed`: `"session-failed"`;
      `turn-failed`: `"turn-failed"`;
   \}\>\>;
@@ -5621,6 +5624,7 @@ type EvalTextAgent = {
         id: z.ZodString;
      }, z.core.$strip>;
      recovery?: z.ZodOptional<z.ZodEnum<{
+        low-confidence: "low-confidence";
         session-failed: "session-failed";
         turn-failed: "turn-failed";
      }>>;
@@ -5853,6 +5857,7 @@ events(): readonly (
      id: z.ZodString;
   }, z.core.$strip>;
   recovery?: z.ZodOptional<z.ZodEnum<{
+     low-confidence: "low-confidence";
      session-failed: "session-failed";
      turn-failed: "turn-failed";
   }>>;
@@ -6060,6 +6065,7 @@ readonly (
      `id`: `z.ZodString`;
   \}, `z.core.$strip`\>;
   `recovery?`: `z.ZodOptional`\<`z.ZodEnum`\<\{
+     `low-confidence`: `"low-confidence"`;
      `session-failed`: `"session-failed"`;
      `turn-failed`: `"turn-failed"`;
   \}\>\>;

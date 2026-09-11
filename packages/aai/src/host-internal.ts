@@ -89,6 +89,33 @@ export {
   WS_NORMAL_CLOSURE,
 } from "./sdk/constants.ts";
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "./sdk/env-types.ts";
+// Keyterm normalization and the low-confidence policy's resolver + classifier.
+// Framework readers both: an author declares `keyterms` / `lowConfidence` and
+// never calls either of these, and both are pure so the opener and the
+// transport can be specced without a socket.
+export {
+  describeKeytermDrops,
+  type KeytermDrop,
+  // `KeytermDropReason` and `NormalizedKeyterms` are here because the two
+  // names above REFERENCE them: a type a published signature mentions and no
+  // subpath exports is one a caller can receive and cannot write down, which
+  // `check:api-nameable` fails on.
+  type KeytermDropReason,
+  MAX_KEYTERM_CHARS,
+  MAX_KEYTERMS,
+  type NormalizedKeyterms,
+  normalizeKeyterms,
+} from "./sdk/keyterms.ts";
+export {
+  classifyConfidence,
+  DEFAULT_LOW_CONFIDENCE_ACTION_BELOW,
+  DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW,
+  DEFAULT_LOW_CONFIDENCE_NOTE,
+  DEFAULT_LOW_CONFIDENCE_PHRASE,
+  type LowConfidenceVerdict,
+  type ResolvedLowConfidence,
+  resolveLowConfidence,
+} from "./sdk/low-confidence.ts";
 export {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
@@ -163,6 +190,7 @@ export {
   ASSEMBLYAI_STT_API_KEY_ENV,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
   ASSEMBLYAI_STT_KIND,
+  isUniversal35Pro,
   resolveAssemblyAISttSettings,
 } from "./sdk/providers/stt/assemblyai.ts";
 export {

@@ -520,7 +520,7 @@ optional onEvent?: (event:
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -729,7 +729,7 @@ per turn — which is what `runTextAgent` does.
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}

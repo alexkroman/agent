@@ -435,6 +435,22 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export type LowConfidenceAction = "clarify" | "note";
+
+// @public
+export interface LowConfidencePolicy {
+    action?: LowConfidenceAction | undefined;
+    actionBelow?: number | undefined;
+    discardBelow?: number | undefined;
+    note?: string | undefined;
+    phrase?: string | undefined;
+    statistic?: LowConfidenceStatistic | undefined;
+}
+
+// @public
+export type LowConfidenceStatistic = "mean" | "minWord";
+
+// @public
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
@@ -528,6 +544,7 @@ export interface PipelineVoiceTuning {
     deadAirCoverMs?: number;
     errorPhrase?: string;
     interruptionMinDurationMs?: number;
+    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -710,6 +727,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
+        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

@@ -7,7 +7,6 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import { setMaxListeners } from "node:events";
 import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
@@ -19,7 +18,9 @@ import { createSpeechGate, NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
+import { createClarificationSpeaker } from "./pipeline-low-confidence.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
+import { createSessionSignal } from "./pipeline-session-signal.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
 import { flushTtsAndWait } from "./pipeline-stream.ts";
 import { createPipelineCommands } from "./pipeline-transport-commands.ts";
@@ -34,17 +35,6 @@ import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import { resolveSystemPrompt, type SendTtsOptions, type Transport } from "./types.ts";
-
-/**
- * `abort` listeners one session's signal may hold before Node calls it a leak.
- *
- * A LEAK threshold, not a capacity one — see the `setMaxListeners` call below
- * for why the signal needs opting in at all and why nothing legitimate comes
- * near this. Raising it to silence a warning is the wrong move: the warning
- * fires ONCE per signal and then never again however far the count climbs, so a
- * number chosen to be quiet is a number that reports nothing.
- */
-const SESSION_SIGNAL_MAX_LISTENERS = 50;
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
@@ -63,6 +53,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     resumeFalseInterruption,
     preemptiveGeneration,
+    lowConfidence,
     speechIdleTimeoutMs,
     toolChoice,
     resetToolChoice,
@@ -97,21 +88,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Omitting the third argument says the session is OVER — see pipeline-error.ts.
   const emitError = createEmitError(callbacks);
 
-  const sessionAbort = new AbortController();
-  // An `AbortSignal` is an EventTarget, and Node's max-listeners warning covers
-  // `EventEmitter` ONLY — 12 `addEventListener("abort", …)` on a signal produce
-  // no warning at all, where 11 on an emitter produce one. This signal lives for
-  // the whole CALL while almost everything attaching to it is per-TURN, so it is
-  // the one place in this transport where a missing `removeEventListener` would
-  // accumulate silently for the length of a conversation. Opting the signal in
-  // buys the same alarm the emitters get for free.
-  //
-  // 50 rather than the default 10 because a legitimate turn holds several at
-  // once — the turn's `AbortSignal.any` composite, the speculation's, the TTS
-  // drain, each provider session — and a barge-in can overlap two turns'
-  // teardown. The number is a LEAK threshold, not a capacity one: nothing here
-  // approaches it, so a run that reaches it is a bug rather than a busy call.
-  setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, sessionAbort.signal);
+  const sessionAbort = createSessionSignal();
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let terminated = false;
@@ -198,6 +175,19 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isIdle: () => !(turns.inFlight() || heard.pending()),
   });
 
+  // One sentence spoken on the transport's own behalf, running no model turn —
+  // today only the `lowConfidence` clarification. Shaped like the GREETING
+  // rather than like `errorPhrase`, and pipeline-low-confidence.ts says why.
+  // `sendTtsText` is read through the wrapper below rather than captured, since
+  // it is declared after this.
+  const speakClarification = createClarificationSpeaker({
+    chain: (run) => turnChain.chain(run),
+    runReply: (idPrefix, body) => runReply(idPrefix, body),
+    callbacks,
+    sendTtsText: (text, options) => sendTtsText(text, options),
+    onCrash: logTurnCrash("Pipeline clarification failed"),
+  });
+
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
@@ -210,6 +200,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechIdleTimeoutMs,
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+    lowConfidence,
+    speakClarification,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
@@ -359,6 +351,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     sendTtsText,
     drainTts: () => drainTts(sessionAbort.signal),
+    dialogKeyterms: knobs.keyterms,
   });
 
   const consumeLlmStream = createTurnLlmRunner({

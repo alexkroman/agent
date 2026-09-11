@@ -93,6 +93,31 @@ const LLM_SETTINGS: Record<string, SettingsFor> = {
   [ASSEMBLYAI_LLM_KIND]: (o) => ({ ...o, model: o.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL }),
 };
 
+/**
+ * A setting too big to print, printed as its SIZE.
+ *
+ * One boot line has to stay readable, and two of these settings are unbounded
+ * by nature: a keyterm list runs to 100 entries and an agent context to 1,500
+ * characters, either of which buries the endpointing window a reader came for.
+ * A count is derived from the same object the opener dials with, so it cannot
+ * drift from the wire the way a second copy of the `??` chains would — what it
+ * loses is the contents, which belong in the turn trace rather than in a line
+ * printed once per runtime.
+ *
+ * Deliberately generic rather than keyed by name: the next long setting gets
+ * the same treatment without this module learning about it. The thresholds are
+ * "longer than a glance" — a `languages: ["en", "es"]` still prints in full.
+ */
+function summarize(settings: ProviderSettings): ProviderSettings {
+  const out: ProviderSettings = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (Array.isArray(value) && value.length > 4) out[key] = `${value.length} item(s)`;
+    else if (typeof value === "string" && value.length > 80) out[key] = `${value.length} chars`;
+    else out[key] = value;
+  }
+  return out;
+}
+
 function describe(
   table: Record<string, SettingsFor>,
   descriptor: Descriptor | undefined,
@@ -102,7 +127,7 @@ function describe(
   // a newer SDK than this host) still reports its own options rather than
   // dropping to a bare kind — the point is to show what the stage runs with.
   const settings = table[descriptor.kind]?.(descriptor.options) ?? descriptor.options;
-  return { kind: descriptor.kind, ...settings };
+  return { kind: descriptor.kind, ...summarize(settings) };
 }
 
 /**
