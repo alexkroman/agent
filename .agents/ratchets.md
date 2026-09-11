@@ -245,8 +245,9 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   `pipeline-user-speech.ts` at 592, neither allowlisted, 122 lines over between
   them — and the violation went unnoticed only because that branch had never been
   pushed and so had never run a pre-push `pnpm check`. Both files sat within six
-  lines of the cap on `main` (500 and 494), so *any* feature touching them owed a
-  split before it owed anything else. Two branches then extracted from the SAME
+  lines of the cap on `main` (500 and 494), so *any* feature touching them
+  owed a split before it owed anything else. Two branches then extracted from
+  the SAME
   file independently and produced duplicate modules, which is the shape to expect
   when a hot file has no headroom.
 
@@ -492,7 +493,8 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   ~60 s across tens of thousands of yields with no timer in the path to jump
   ahead of — and six in packages not importing `aai/host/_test-utils.ts`.
 
-  **The frozen `src/contracts/compatibility/**` examples are no longer baselined at
+  **The frozen `src/contracts/compatibility/**` examples are no longer
+  baselined at
   all** — they are excluded from every line rule by a pathspec in
   `SOURCE_PATHSPECS` (read the comment there). That is the rule, not a
   convenience: an exemption is per FILE *and* per RULE, so the next widened rule

@@ -403,7 +403,8 @@ capability, where an allow-list would silently leave it uncovered.
 Six properties are load-bearing:
 
 - **A retained epoch obliges a frozen, compiling artifact.**
-  `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
+  `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` is written
+  the way that epoch
   was authored, under the package's own `tsconfig.json` — so **`pnpm typecheck`
   is the backward-compatibility gate**, a TEST of compatibility
   rather than a claim about it, which is what the `.test-d.ts` files cannot be:
@@ -495,7 +496,8 @@ Six properties are load-bearing:
   consumer must satisfy it while having no name to import it by — is still
   hashed by body; and a capability's own surface is never elided. The real
   backward-compatibility test was never the hash anyway: it is the frozen
-  example under `src/contracts/compatibility/`, which `pnpm typecheck` compiles, so
+  example under `src/contracts/compatibility/`, which `pnpm typecheck`
+  compiles, so
   a foreign type that breaks reddens every retained epoch that uses it whichever
   capability owns the name. Verified end to end — renaming `tool()`'s parameter
   in source and rebuilding leaves every contract green, while widening its
