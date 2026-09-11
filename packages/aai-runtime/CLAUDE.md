@@ -1428,9 +1428,9 @@ a transcript that reads perfectly and nothing anywhere reporting a problem.
 
 `AgentDef.lowConfidence` adds a third: `classifyConfidence` (the SDK's
 `sdk/low-confidence.ts`, pure) sorts a committed transcript into discard /
-clarify / note / accept, and `pipeline-user-speech.ts`'s `handleLowConfidence`
-is the one call site. Four things about the wiring are decisions rather than
-detail:
+clarify / note / accept, `pipeline-low-confidence.ts` binds it to a session's
+collaborators, and `pipeline-stt-handlers.ts`' `onSttFinal` is the one call
+site. Four things about the wiring are decisions rather than detail:
 
 - **It runs FIRST in that handler.** Everything below it treats the transcript
   as something the caller meant to say, and the two failing verdicts are
@@ -1448,9 +1448,10 @@ detail:
   member of that enum. The words it answers reach no history either, which is
   the point: a transcript nobody trusts must not be there for the model to act
   on two turns later.
-- **A `note` rides the seam `assembleSpelledRuns` already uses** — appended to
-  the MODEL's copy inside `commitUserTurn`, never to the client transcript or
-  the record. What the caller said is not ours to rewrite.
+- **A `note` rides the seam the spelled-run annotation already uses** —
+  appended to the MODEL's copy by `modelTranscript`, never to the client
+  transcript or the record. What the caller said is not ours to rewrite, and
+  `spelledAloudNote` owns what the other annotation may CLAIM.
 
 Which STATISTIC the bands read (`transcriptConfidence`, the mean of the turn's
 per-word scores, or `minWordConfidence`) is an open measurement and an author

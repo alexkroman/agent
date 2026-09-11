@@ -17,7 +17,7 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public (undocumented)
-export function assembleSpelledRuns(text: string): readonly string[];
+export function assembleSpelledRuns(text: string): readonly SpelledRun[];
 
 // @public
 interface AssistantEndpointingRule extends EndpointingRuleBase {
@@ -373,6 +373,15 @@ export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
+
+// @public
+export function spelledAloudNote(text: string): string | undefined;
+
+// @public
+export interface SpelledRun {
+    readonly letters: readonly string[];
+    readonly token: string;
+}
 
 // @public
 interface StandardSchemaIssue {

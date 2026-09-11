@@ -16,7 +16,7 @@
 
 import type { ResolvedLowConfidence, SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import { classifyConfidence } from "@alexkroman1/aai/host-internal";
-import { assembleSpelledRuns } from "@alexkroman1/aai/internal";
+import { spelledAloudNote } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
 import type { SendTtsText, TransportCallbacks } from "./types.ts";
 
@@ -113,17 +113,15 @@ export function createLowConfidenceGate(deps: {
  * The CLIENT's copy and both history views stay verbatim, because what the
  * caller said is not ours to rewrite — a spelling run read wrong must not be
  * able to destroy the record of it, and neither must our own doubt about the
- * words. `assembleSpelledRuns` has the measurement behind the first
- * annotation; the second is `lowConfidence`'s note.
+ * words. `spelledAloudNote` decides what the first annotation may CLAIM (and
+ * carries the measurement behind it); the second is `lowConfidence`'s note.
  *
  * @internal
  */
 export function modelTranscript(text: string, note: string | undefined): string {
-  const spelled = assembleSpelledRuns(text);
-  const annotations = [
-    ...(spelled.length > 0 ? [`spelled aloud: ${spelled.join(", ")}`] : []),
-    ...(note === undefined ? [] : [note]),
-  ];
+  const annotations = [spelledAloudNote(text), note].filter(
+    (one): one is string => one !== undefined,
+  );
   if (annotations.length === 0) return text;
   return `${text}\n${annotations.map((one) => `[${one}]`).join("\n")}`;
 }

@@ -507,6 +507,7 @@
     "PREVIEW_SLUG_SUFFIX",
     "RESERVED_SLUGS",
     "SleepTimerOptions",
+    "SpelledRun",
     "TELEPHONY_CARRIERS",
     "TERMINAL_WORKFLOW_STATUSES",
     "TOOL_EXECUTION_TIMEOUT_MS",
@@ -539,6 +540,7 @@
     "requestPath",
     "requestQuery",
     "sleep",
+    "spelledAloudNote",
     "toArgsRecord"
   ],
   "@alexkroman1/aai/llm": [

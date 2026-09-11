@@ -144,6 +144,20 @@ export function normalizeSpeechText(text: string): string {
 }
 
 /**
+ * One spelling run: what it assembles to, and the letters it was made of.
+ *
+ * The letters are kept because the assembled token throws away the one thing a
+ * caller who did not pause never gave us — where a word ends. See
+ * {@link spelledAloudNote}.
+ */
+export interface SpelledRun {
+  /** Letters joined, with spoken separators and digits in place. */
+  readonly token: string;
+  /** The single letters, lowercased, in the order the caller said them. */
+  readonly letters: readonly string[];
+}
+
+/**
  * Spoken spelling runs, assembled into the tokens the caller meant.
  *
  * A caller reading an identifier aloud produces a transcript of isolated
@@ -219,25 +233,34 @@ const SPOKEN_DIGITS: Readonly<Record<string, string>> = {
 };
 
 /**
- * A word the RECOGNIZER already joined into one token, split back into the
- * letters the caller said — or the word itself, unchanged.
+ * One transcript word, stripped of the punctuation a sentence put on the end
+ * of it and split back into the letters the caller said — or the word itself.
  *
  * A caller who spells a name aloud does not reliably arrive here as "s o f i
  * a": a formatted transcript renders the same speech as **`S-O-F-I-A`**, one
- * token, and the run detector that splits on whitespace and commas alone saw
- * no letters at all and assembled nothing. Observed on tau2-bench retail with
- * the caller's own correction — "Sofia Li" was heard as "Sophia Lee", the
- * caller spelled `S-O-F-I-A`, and the tool call went out as `Sophia` anyway,
- * because the annotation that would have carried the spelling was never
- * produced. The failure is ours and it is here: the caller did everything
- * right.
+ * token, and a run detector that splits on whitespace and commas alone sees no
+ * letters in it at all. Observed on tau2-bench retail with the caller's own
+ * correction — "Sofia Li" was heard as "Sophia Lee", the caller spelled
+ * `S-O-F-I-A`, and the tool call went out as `Sophia` anyway, because the
+ * annotation that would have carried the spelling was never produced.
+ *
+ * **The strip has to happen HERE, before the split, and that ordering was a
+ * defect for one release.** It used to run inside the walk below, on a word
+ * this function had already declined to explode — so a run that ENDED A
+ * SENTENCE never exploded at all. Measured on a graded run: `"my name is
+ * M-E-I and last name A-H-M-E-D."` yielded `mei` alone, and
+ * `"E-X-A-M-P-L-E dot C-O-M."` yielded `example.` — the surname and the TLD,
+ * which are the halves a lookup fails on, dropped by a full stop. Note what
+ * it was NOT: `and`, `last name` and `dot` all work, and the same two
+ * utterances without the trailing period were always correct.
  *
  * The pattern needs at least THREE letter segments, so the joined forms that
  * are ordinary words survive — `e-reader` and `t-shirt` have one letter each,
  * `u-s-b` has three and is a spelling run by any reading. Periods count
  * (`u.s.a`) for the same reason the separator table has `dot`.
  */
-function explodeSpelledWord(word: string): string[] {
+function explodeSpelledWord(raw: string): string[] {
+  const word = raw.replace(/[.,!?;:'"]+$/, "");
   return /^[a-z]([-.][a-z]){2,}$/.test(word) ? word.split(/[-.]/) : [word];
 }
 
@@ -250,7 +273,7 @@ function spelledPiece(word: string, inRun: boolean): string | undefined {
   return SPELLED_SEPARATORS[word] ?? SPOKEN_DIGITS[word] ?? (/^\d+$/.test(word) ? word : undefined);
 }
 
-export function assembleSpelledRuns(text: string): readonly string[] {
+export function assembleSpelledRuns(text: string): readonly SpelledRun[] {
   const words = text
     .toLowerCase()
     .split(/[\s,]+/)
@@ -260,21 +283,61 @@ export function assembleSpelledRuns(text: string): readonly string[] {
   // two, and the surname is the half that gets mis-assembled (`Johannson` for
   // `Johansson`, `garbia` for `garcia`). Returning one of them loses exactly
   // the token the lookup fails on.
-  const runs: string[] = [];
-  let run = "";
-  let letters = 0;
-  for (const raw of words) {
-    const word = raw.replace(/[.,!?;:'"]+$/, "");
-    const piece = spelledPiece(word, run !== "");
+  const runs: SpelledRun[] = [];
+  let token = "";
+  let letters: string[] = [];
+  const close = (): void => {
+    if (letters.length >= 3) runs.push({ token, letters });
+    token = "";
+    letters = [];
+  };
+  for (const word of words) {
+    const piece = spelledPiece(word, token !== "");
     if (piece === undefined) {
-      if (letters >= 3) runs.push(run);
-      run = "";
-      letters = 0;
+      close();
       continue;
     }
-    run += piece;
-    if (/^[a-z]$/.test(word)) letters++;
+    token += piece;
+    if (/^[a-z]$/.test(word)) letters.push(word);
   }
-  if (letters >= 3) runs.push(run);
+  close();
   return runs;
+}
+
+/**
+ * The annotation body for whatever `text` spelled out, or `undefined` when it
+ * spelled nothing.
+ *
+ * The WORDING lives here rather than at the call site because what it may
+ * claim is a property of the run, and there are two cases:
+ *
+ * - **Several runs.** The caller's own pauses gave the boundaries, so each
+ *   assembled token is a claim this function can support and the note is the
+ *   list of them. `"Y-U-S-U-F and R-O-S-S-I"` -> `yusuf, rossi`, which is the
+ *   shape measured to produce the right tool call on the case whose baseline
+ *   failure was three failed lookups and a transfer to a human.
+ * - **One run of pure letters.** The caller spelled without pausing, so
+ *   whether that is one word or two is NOT in the letters —
+ *   `"My name Sophia Liz, S-O-F-I-A-L-I"` assembles `sofiali`, which matches
+ *   no name, and a nonsense token asserted alone is worse than none because
+ *   it reads as authoritative: the model dropped it and sent the misheard
+ *   "Sophia". So the note carries the LETTERS as well and says the quiet part
+ *   out loud. Splitting them is the model's job and it is better placed for
+ *   it — "Sophia Liz" is in the same utterance — and a mechanical split is not
+ *   available here at any threshold, since `example` is as long as `sofiali`.
+ *
+ * A run carrying a spoken separator or a digit is an IDENTIFIER
+ * (`mei_kovacs_8020`, `example.com`) and takes the first shape however many
+ * runs there are: the separators are the boundaries, so there is nothing left
+ * to be unsure about.
+ */
+export function spelledAloudNote(text: string): string | undefined {
+  const runs = assembleSpelledRuns(text);
+  if (runs.length === 0) return;
+  const only = runs.length === 1 ? runs[0] : undefined;
+  if (only !== undefined && /^[a-z]+$/.test(only.token)) {
+    const spelled = only.letters.join("-").toUpperCase();
+    return `spelled aloud: ${spelled} = ${only.token} (may be more than one word)`;
+  }
+  return `spelled aloud: ${runs.map((one) => one.token).join(", ")}`;
 }
