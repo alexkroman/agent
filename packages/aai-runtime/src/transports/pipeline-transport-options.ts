@@ -5,7 +5,7 @@
 // so each option's default lives next to its documentation rather than being
 // re-applied at the point of use.
 
-import type { ToolChoice } from "@alexkroman1/aai";
+import type { EndpointingRule, ToolChoice } from "@alexkroman1/aai";
 import type { ExecuteTool, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
@@ -14,16 +14,22 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
 } from "@alexkroman1/aai/host-internal";
 import {
+  DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+  DEFAULT_ENDPOINTING_RULES,
   DEFAULT_ERROR_PHRASE,
+  DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+  DEFAULT_INTERRUPTION_PHRASES,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_START_FAILURE_PHRASE,
+  DEFAULT_START_SPEAKING_FLOOR_MS,
   DEFAULT_TOOL_CHOICE,
   HEARD_AUDIO_LAG_MS,
 } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
+import type { SttEndpointingWindow } from "../providers/_provider-settings.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";
@@ -78,6 +84,44 @@ export interface PipelineTransportOptions {
    * disables the gate.
    */
   interruptionMinDurationMs?: number | undefined;
+  /**
+   * Utterances that never interrupt, whatever the two gates above say.
+   * Defaults to {@link DEFAULT_ACKNOWLEDGEMENT_PHRASES}; `[]` disables.
+   */
+  acknowledgementPhrases?: readonly string[] | undefined;
+  /**
+   * Utterances that always interrupt, bypassing both gates above. Defaults to
+   * {@link DEFAULT_INTERRUPTION_PHRASES}; `[]` disables. Checked FIRST.
+   */
+  interruptionPhrases?: readonly string[] | undefined;
+  /**
+   * Content-keyed overrides of the STT's end-of-turn window, first match
+   * wins. Defaults to {@link DEFAULT_ENDPOINTING_RULES}; `[]` disables.
+   *
+   * Inert unless `sttEndpointing` is supplied AND the opened STT session
+   * exposes `updateEndpointing` — the window is the provider's, so a provider
+   * that cannot be reconfigured mid-stream cannot honour a rule. See
+   * `pipeline-endpointing.ts`.
+   */
+  endpointingRules?: readonly EndpointingRule[] | undefined;
+  /**
+   * The end-of-turn pair this session's STT stage dialled, for clamping a
+   * rule's window against the ceiling actually in force. Absent for a stage
+   * that reports no such pair, which makes the rule table inert.
+   */
+  sttEndpointing?: SttEndpointingWindow | undefined;
+  /**
+   * Minimum ms between a reply starting and its first audio reaching the
+   * caller. Defaults to {@link DEFAULT_START_SPEAKING_FLOOR_MS} (0 — today's
+   * behaviour, and a pass-through rather than a zero-length wait).
+   */
+  startSpeakingFloorMs?: number | undefined;
+  /**
+   * Ms of blocked agent audio after a real interruption. Defaults to
+   * {@link DEFAULT_INTERRUPTION_BACKOFF_MS} (0). Sequential with the floor
+   * above, never cumulative — see `pipeline-speak-gate.ts`.
+   */
+  interruptionBackoffMs?: number | undefined;
   /**
    * How long a turn may send nothing to TTS before the transport speaks a short
    * filler. Defaults to {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the
@@ -263,6 +307,11 @@ export interface ResolvedPipelineOptions {
   resetToolChoice: boolean;
   minBargeInWords: number;
   interruptionMinDurationMs: number;
+  acknowledgementPhrases: readonly string[];
+  interruptionPhrases: readonly string[];
+  endpointingRules: readonly EndpointingRule[];
+  startSpeakingFloorMs: number;
+  interruptionBackoffMs: number;
   deadAirCoverMs: number;
   heardLagMs: number;
   errorPhrase: string;
@@ -307,6 +356,13 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
       options.interruptionMinDurationMs,
       DEFAULT_INTERRUPTION_MIN_DURATION_MS,
     ),
+    // The two lists and the rule table REPLACE their defaults rather than
+    // extending them, so `[]` is the off switch and `or` is the whole rule.
+    acknowledgementPhrases: or(options.acknowledgementPhrases, DEFAULT_ACKNOWLEDGEMENT_PHRASES),
+    interruptionPhrases: or(options.interruptionPhrases, DEFAULT_INTERRUPTION_PHRASES),
+    endpointingRules: or(options.endpointingRules, DEFAULT_ENDPOINTING_RULES),
+    startSpeakingFloorMs: or(options.startSpeakingFloorMs, DEFAULT_START_SPEAKING_FLOOR_MS),
+    interruptionBackoffMs: or(options.interruptionBackoffMs, DEFAULT_INTERRUPTION_BACKOFF_MS),
     deadAirCoverMs: or(options.deadAirCoverMs, DEFAULT_DEAD_AIR_COVER_MS),
     heardLagMs: or(options.heardLagMs, HEARD_AUDIO_LAG_MS),
     errorPhrase: or(options.errorPhrase, DEFAULT_ERROR_PHRASE),

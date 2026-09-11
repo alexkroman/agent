@@ -80,6 +80,27 @@ export * from "./sdk/define.ts";
  * directly; nothing here re-exports it.
  */
 export * from "./sdk/dialog.ts";
+/**
+ * The endpointing rule table's four types.
+ *
+ * Here for the same reason the stage descriptors above are: `AgentDef` names
+ * `EndpointingRule` in its own signature (through `PipelineVoiceTuning`), so
+ * an author who assembles a rule list in a helper or across files needs
+ * somewhere to import the type from, and the three kinds are what a
+ * `switch (rule.type)` in such a helper narrows to.
+ *
+ * The DEFAULT table and the cap are not here — they are `./internal`, with
+ * every other framework default, under the membership rule in this module's
+ * doc: an author names the type, and reads the default's VALUE off the field's
+ * JSDoc rather than importing it.
+ */
+export type {
+  AssistantEndpointingRule,
+  BothEndpointingRule,
+  EndpointingRule,
+  EndpointingRuleBase,
+  UserEndpointingRule,
+} from "./sdk/endpointing-rules.ts";
 export * from "./sdk/generate.ts";
 /**
  * The other machine: one unit of WORK inside a tool call, where a flow is where

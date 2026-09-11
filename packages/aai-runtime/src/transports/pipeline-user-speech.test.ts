@@ -7,6 +7,10 @@
 // false-interruption recovery timer's specs live in pipeline-recovery.test.ts.
 
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
+import {
+  DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+  DEFAULT_INTERRUPTION_PHRASES,
+} from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { useVirtualTime } from "./_pipeline-transport-harness.ts";
@@ -259,6 +263,12 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     speechIdleTimeoutMs: 40,
     minBargeInWords: () => 2,
     interruptionMinDurationMs: () => 0,
+    // The phrase lists are OFF in these specs so each one reads as a
+    // statement about the thresholds alone; `phrase-policy` below is where
+    // the lists themselves are exercised, against the shipped defaults.
+    phrases: { acknowledgement: [], interruption: [] },
+    endpointing: { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() },
+    onInterrupted: vi.fn(),
     isTerminated: () => false,
     isSessionActive: () => true,
     isTurnInFlight: () => state.inFlight,
@@ -424,5 +434,138 @@ describe("no path leaves a stale resume armed", () => {
     // ...and exactly once: the released latch is not still armed.
     await laterUtteranceGoesIdle(activity);
     expect(resumes(calls)).toBe(1);
+  });
+});
+
+// ─── The two phrase lists, over the two thresholds ────────────────────────
+
+describe("acknowledgement and interruption phrases", () => {
+  /** The shipped lists, over thresholds that would decide the other way. */
+  function withPhrases(overrides: Partial<ActivityDeps> = {}) {
+    return makeActivity({
+      phrases: {
+        acknowledgement: DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+        interruption: DEFAULT_INTERRUPTION_PHRASES,
+      },
+      // High enough that nothing interrupts on word count alone, and a
+      // duration gate nothing has had time to clear — so every barge-in below
+      // is the phrase list's doing and nothing else's.
+      minBargeInWords: () => 5,
+      interruptionMinDurationMs: () => 5000,
+      ...overrides,
+    });
+  }
+
+  test("an interruption phrase interrupts THROUGH both gates", () => {
+    const { activity, calls } = withPhrases();
+    activity.sttEvents.onSttPartial("stop");
+    expect(calls.aborts).toBe(1);
+    expect(calls.cancelled).toBe(1);
+  });
+
+  test("an acknowledgement never interrupts, even when both gates would allow it", () => {
+    const { activity, calls } = makeActivity({
+      phrases: {
+        acknowledgement: DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+        interruption: DEFAULT_INTERRUPTION_PHRASES,
+      },
+      minBargeInWords: () => 1,
+      interruptionMinDurationMs: () => 0,
+    });
+    activity.sttEvents.onSttPartial("mm-hmm");
+    expect(calls.aborts).toBe(0);
+  });
+
+  test('THE ASYMMETRY: "yes" holds the agent\'s floor, "no" takes it', () => {
+    const yes = withPhrases();
+    yes.activity.sttEvents.onSttPartial("yes");
+    expect(yes.calls.aborts).toBe(0);
+
+    const no = withPhrases();
+    no.activity.sttEvents.onSttPartial("no");
+    expect(no.calls.aborts).toBe(1);
+  });
+
+  test("the same asymmetry holds on a COMMITTED final, where the duration gate never applied", () => {
+    const yes = withPhrases();
+    yes.activity.sttEvents.onSttFinal("Yes.");
+    expect(yes.calls.aborts).toBe(0);
+
+    const no = withPhrases();
+    no.activity.sttEvents.onSttFinal("No.");
+    expect(no.calls.aborts).toBe(1);
+  });
+
+  test("an acknowledgement that OPENS a real turn is not swallowed", () => {
+    const { activity, calls } = makeActivity({
+      phrases: {
+        acknowledgement: DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+        interruption: [],
+      },
+      minBargeInWords: () => 2,
+      interruptionMinDurationMs: () => 0,
+    });
+    activity.sttEvents.onSttPartial("okay so cancel that order");
+    expect(calls.aborts).toBe(1);
+  });
+
+  test('`bargeIn: "off"` WINS over the interruption list', () => {
+    // A disclosure state declares that this sentence gets finished. That is a
+    // local declaration by the author about this phase; the phrase list is an
+    // agent-wide override of a THRESHOLD, and there is no threshold here.
+    const { activity, calls } = withPhrases({
+      minBargeInWords: () => Number.POSITIVE_INFINITY,
+    });
+    activity.sttEvents.onSttPartial("stop");
+    activity.sttEvents.onSttFinal("stop");
+    expect(calls.aborts).toBe(0);
+  });
+
+  test("empty lists leave the two thresholds in sole charge", () => {
+    const { activity, calls } = makeActivity({
+      phrases: { acknowledgement: [], interruption: [] },
+      minBargeInWords: () => 5,
+      interruptionMinDurationMs: () => 5000,
+    });
+    activity.sttEvents.onSttPartial("stop");
+    expect(calls.aborts).toBe(0);
+  });
+
+  test("a real interruption arms the post-interruption audio block; an acknowledgement does not", () => {
+    const onInterrupted = vi.fn();
+    const interrupted = withPhrases({ onInterrupted });
+    interrupted.activity.sttEvents.onSttPartial("stop");
+    expect(onInterrupted).toHaveBeenCalledTimes(1);
+
+    const acknowledged = withPhrases({ onInterrupted });
+    acknowledged.activity.sttEvents.onSttPartial("uh-huh");
+    expect(onInterrupted).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the endpointing table is re-read on the transcript stream", () => {
+  test("every partial offers the in-flight transcript, and the final resets it", () => {
+    const endpointing = { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() };
+    const { activity } = makeActivity({ endpointing, minBargeInWords: () => 99 });
+    activity.sttEvents.onSttPartial("my order is 1");
+    activity.sttEvents.onSttPartial("my order is 19");
+    expect(endpointing.onUserPartial.mock.calls.map((call) => call[0])).toEqual([
+      "my order is 1",
+      "my order is 19",
+    ]);
+    expect(endpointing.onUtteranceEnded).not.toHaveBeenCalled();
+    activity.sttEvents.onSttFinal("my order is 19");
+    expect(endpointing.onUtteranceEnded).toHaveBeenCalledTimes(1);
+  });
+
+  test("a partial that BARGES IN still moves the window for the turn it starts", () => {
+    const endpointing = { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() };
+    const { activity, calls } = makeActivity({
+      endpointing,
+      phrases: { acknowledgement: [], interruption: DEFAULT_INTERRUPTION_PHRASES },
+    });
+    activity.sttEvents.onSttPartial("no wait");
+    expect(calls.aborts).toBe(1);
+    expect(endpointing.onUserPartial).toHaveBeenCalledWith("no wait");
   });
 });

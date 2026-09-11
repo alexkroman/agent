@@ -59,12 +59,14 @@ each is for.
 | `AssemblyAITtsVoice` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
 | `AssemblyAITtsVoiceId` | `@alexkroman1/aai/tts` |
 | `AssemblyAITtsVoiceInfo` | `@alexkroman1/aai/tts` |
+| `AssistantEndpointingRule` | `@alexkroman1/aai` |
 | `AudioResult` | `@alexkroman1/aai-ui` |
 | `AudioResultCaptions` | `@alexkroman1/aai-ui` |
 | `AudioResultProps` | `@alexkroman1/aai-ui` |
 | `AutoScroll` | `@alexkroman1/aai-ui` |
 | `BASH_TIMEOUT_MAX_MS` | `@alexkroman1/aai/coding-tools` |
 | `BASH_TIMEOUT_MS` | `@alexkroman1/aai/coding-tools` |
+| `BothEndpointingRule` | `@alexkroman1/aai` |
 | `BrowserSession` | `@alexkroman1/aai-ui` |
 | `BuildClientOptions` | `@alexkroman1/aai-cli/client-bundler` |
 | `BuildWorkerOptions` | `@alexkroman1/aai-cli/worker-bundler` |
@@ -153,6 +155,8 @@ each is for.
 | `DialogVoiceConfig` | `@alexkroman1/aai` |
 | `EVENT_ID_PREFIX` | `@alexkroman1/aai/protocol` |
 | `ElevenLabsSttOptions` | `@alexkroman1/aai/stt` |
+| `EndpointingRule` | `@alexkroman1/aai` |
+| `EndpointingRuleBase` | `@alexkroman1/aai` |
 | `EvalCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `EvalEmitted` | `@alexkroman1/aai-runtime/eval` |
@@ -582,6 +586,7 @@ each is for.
 | `UseWorkflowSubmitOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
+| `UserEndpointingRule` | `@alexkroman1/aai` |
 | `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
 | `VoiceSessionOptions` | `@alexkroman1/aai-ui` |
 | `WAV_HEADER_BYTES` | `@alexkroman1/aai/step` |
@@ -985,6 +990,7 @@ trace or a type error can be traced back to something.
 | `ASSEMBLYAI_TTS_HOST` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_TTS_KIND` | `@alexkroman1/aai/host-internal` |
 | `ApiUrlChip` | `@alexkroman1/aai-ui/internal` |
+| `BargeInPhraseVerdict` | `@alexkroman1/aai/internal` |
 | `BuiltinToolOptions` | `@alexkroman1/aai/host-internal` |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
 | `CARTESIA_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
@@ -1000,14 +1006,18 @@ trace or a type error can be traced back to something.
 | `DEAD_AIR_TOOL_COVER_MS` | `@alexkroman1/aai/host-internal` |
 | `DEEPGRAM_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `DEEPGRAM_KIND` | `@alexkroman1/aai/host-internal` |
+| `DEFAULT_ACKNOWLEDGEMENT_PHRASES` | `@alexkroman1/aai/internal` |
 | `DEFAULT_BUILTIN_TOOLS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_DEAD_AIR_COVER_MS` | `@alexkroman1/aai/host-internal` |
+| `DEFAULT_ENDPOINTING_RULES` | `@alexkroman1/aai/internal` |
 | `DEFAULT_ERROR_PHRASE` | `@alexkroman1/aai/internal` |
 | `DEFAULT_FALSE_INTERRUPTION_PROMPT` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_GREETING` | `@alexkroman1/aai/internal` |
 | `DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_IDLE_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
+| `DEFAULT_INTERRUPTION_BACKOFF_MS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | `@alexkroman1/aai/internal` |
+| `DEFAULT_INTERRUPTION_PHRASES` | `@alexkroman1/aai/internal` |
 | `DEFAULT_MAX_HISTORY` | `@alexkroman1/aai/internal` |
 | `DEFAULT_MAX_STEPS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_MAX_TURN_SILENCE_MS` | `@alexkroman1/aai/internal` |
@@ -1020,6 +1030,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_SILENCE_PROMPT` | `@alexkroman1/aai/internal` |
 | `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_START_FAILURE_PHRASE` | `@alexkroman1/aai/internal` |
+| `DEFAULT_START_SPEAKING_FLOOR_MS` | `@alexkroman1/aai/internal` |
 | `DEFAULT_STT_PROMPT` | `@alexkroman1/aai/internal` |
 | `DEFAULT_STT_SAMPLE_RATE` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_TOOL_CHOICE` | `@alexkroman1/aai/internal` |
@@ -1033,6 +1044,8 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
 | `ELEVENLABS_KIND` | `@alexkroman1/aai/host-internal` |
 | `EMPTY_PARAMS` | `@alexkroman1/aai/host-internal` |
+| `EndpointingInput` | `@alexkroman1/aai/internal` |
+| `EndpointingRuleMatch` | `@alexkroman1/aai/internal` |
 | `Epoch` | `@alexkroman1/aai/internal` |
 | `GATEWAY_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `GATEWAY_KIND` | `@alexkroman1/aai/host-internal` |
@@ -1053,6 +1066,8 @@ trace or a type error can be traced back to something.
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | `@alexkroman1/aai/host-internal` |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | `@alexkroman1/aai/host-internal` |
 | `MAX_DB_RESULT_ROWS` | `@alexkroman1/aai/internal` |
+| `MAX_ENDPOINTING_RULE_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
+| `MAX_INTERRUPTION_BACKOFF_MS` | `@alexkroman1/aai/internal` |
 | `MAX_MESSAGE_BUFFER_SIZE` | `@alexkroman1/aai/host-internal` |
 | `MAX_MISSING_READS` | `@alexkroman1/aai-ui/internal` |
 | `MAX_PLATFORM_SOCKET_FRAME_BYTES` | `@alexkroman1/aai-runtime/internal` |
@@ -1061,6 +1076,7 @@ trace or a type error can be traced back to something.
 | `MAX_PROVIDER_WS_BUFFERED_BYTES` | `@alexkroman1/aai/host-internal` |
 | `MAX_SESSION_STATE_BYTES` | `@alexkroman1/aai/host-internal` |
 | `MAX_SLUG_LENGTH` | `@alexkroman1/aai/internal` |
+| `MAX_START_SPEAKING_FLOOR_MS` | `@alexkroman1/aai/internal` |
 | `MAX_TOOL_RESULT_CHARS` | `@alexkroman1/aai/internal` |
 | `MAX_UPLOAD_BYTES_ENV` | `@alexkroman1/aai/host-internal` |
 | `MAX_WORKFLOW_UPLOAD_BYTES` | `@alexkroman1/aai/host-internal` |
@@ -1191,7 +1207,9 @@ trace or a type error can be traced back to something.
 | `buildAgentUrl` | `@alexkroman1/aai-ui/internal` |
 | `buildSystemPrompt` | `@alexkroman1/aai/host-internal` |
 | `capToolResult` | `@alexkroman1/aai/internal` |
+| `clampEndpointingTimeout` | `@alexkroman1/aai/internal` |
 | `clampWorkflowWait` | `@alexkroman1/aai/internal` |
+| `classifyBargeInPhrase` | `@alexkroman1/aai/internal` |
 | `clientEventDropMessage` | `@alexkroman1/aai/internal` |
 | `consoleLogger` | `@alexkroman1/aai-runtime/internal` |
 | `createCoalescingRunner` | `@alexkroman1/aai/internal` |
@@ -1228,6 +1246,8 @@ trace or a type error can be traced back to something.
 | `loadJournalConformance` | `@alexkroman1/aai-runtime/internal` |
 | `loadSessionStateConformance` | `@alexkroman1/aai-runtime/internal` |
 | `mapStream` | `@alexkroman1/aai/host-internal` |
+| `matchEndpointingRule` | `@alexkroman1/aai/internal` |
+| `normalizeBargeInText` | `@alexkroman1/aai/internal` |
 | `normalizeLlm` | `@alexkroman1/aai/host-internal` |
 | `normalizeSpeechText` | `@alexkroman1/aai/internal` |
 | `outputWithKillNote` | `@alexkroman1/aai/host-internal` |

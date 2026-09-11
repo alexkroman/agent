@@ -51,6 +51,23 @@ export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
 // composed, so no `agent.ts` names it — while a client rendering it before a
 // socket exists does.
 export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
+// The barge-in phrase lists and the classifier that reads them. The LISTS an
+// author may replace are authoring data and ride the `agent()` field; the
+// classifier is the framework's reading of them, and the transport is its only
+// caller.
+//
+// Reached here directly rather than through `sdk/constants.ts` like the
+// defaults below — that file is at the 500-line cap, and its role (one import
+// path for a constant) has exactly one reader, this subpath. The endpointing
+// rules and the speak-gate windows are imported the same way, for the same
+// reason.
+export {
+  type BargeInPhraseVerdict,
+  classifyBargeInPhrase,
+  DEFAULT_ACKNOWLEDGEMENT_PHRASES,
+  DEFAULT_INTERRUPTION_PHRASES,
+  normalizeBargeInText,
+} from "./sdk/barge-in-phrases.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,
 // which is a published subpath an agent author reads — a platform contract is
@@ -141,6 +158,17 @@ export {
 // runtime's OWN stores; the cap is what the driver and the guest mirror
 // enforce.
 export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
+// The endpointing rule matcher and its clamp — the framework's reading of the
+// table an author declares. Zod-free, like everything on this subpath: the
+// rule SCHEMA lives in `sdk/type-schemas.ts` instead.
+export {
+  clampEndpointingTimeout,
+  DEFAULT_ENDPOINTING_RULES,
+  type EndpointingInput,
+  type EndpointingRuleMatch,
+  MAX_ENDPOINTING_RULE_TIMEOUT_MS,
+  matchEndpointingRule,
+} from "./sdk/endpointing-rules.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export {
   type InvariantDetail,
@@ -181,6 +209,12 @@ export {
   RESERVED_SLUGS,
   VALID_SLUG_RE,
 } from "./sdk/slug.ts";
+export {
+  DEFAULT_INTERRUPTION_BACKOFF_MS,
+  DEFAULT_START_SPEAKING_FLOOR_MS,
+  MAX_INTERRUPTION_BACKOFF_MS,
+  MAX_START_SPEAKING_FLOOR_MS,
+} from "./sdk/speak-gate-constants.ts";
 // From `standard-schema.ts`, not from the `schema.ts` that re-exports it: this
 // function is zod-free and that module is not, so routing through it would pull
 // zod's graph into every importer of this subpath — the startup cost the

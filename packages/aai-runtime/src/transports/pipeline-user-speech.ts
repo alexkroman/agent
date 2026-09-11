@@ -15,6 +15,12 @@ import { assembleSpelledRuns, DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/in
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {
+  type BargeInPhraseLists,
+  createAgentSpeakingPredicate,
+  createBargeInPolicy,
+} from "./pipeline-barge-in-policy.ts";
+import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
+import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
 } from "./pipeline-recovery.ts";
@@ -26,7 +32,7 @@ import {
   type GatedSpeechEdges,
   type SpeechEdgeTracker,
 } from "./pipeline-speech-edges.ts";
-import { hasMinWords, scanWords } from "./pipeline-text.ts";
+import { scanWords } from "./pipeline-text.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 /**
@@ -89,12 +95,9 @@ function createSttEventHandlers(deps: {
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken: () => boolean;
   /**
-   * Is the agent actually speaking right now — audio already emitted for the
-   * in-flight turn, or forwarded audio still playing out client-side? Passed in
-   * rather than derived here, the way `edgeGate` is: it is the predicate the
-   * whole barge-in policy turns on, and the outward speaking-edge gate turns on
-   * the same one. See {@link createUserActivity} for the definition and why it
-   * is not "a turn is in flight".
+   * Does the agent have the floor? Passed in rather than derived here, the way
+   * `edgeGate` is — both must read the same answer. See
+   * `createAgentSpeakingPredicate`.
    */
   agentIsSpeaking: () => boolean;
   /** Has this reply sent real speech, as opposed to dead-air filler? */
@@ -122,18 +125,20 @@ function createSttEventHandlers(deps: {
   speculation: SpeculationHooks;
   /**
    * Interim words required to barge in — a THUNK, resolved at the moment a
-   * partial is classified.
-   *
-   * It was a number, captured for the length of the call, until a `dialog()`
-   * state could declare its own `bargeIn`: a disclosure state has to be able to
-   * FINISH its sentence and a menu state wants to be maximally interruptible, so
-   * the threshold belongs to the phase rather than to the session. `Infinity`
-   * is `bargeIn: "off"` and is what those two gates read as "never" — see
-   * `pipeline-dialog-knobs.ts`.
+   * partial is classified, because a `dialog()` state may declare its own
+   * `bargeIn`: a disclosure state has to be able to FINISH its sentence and a
+   * menu state wants to be maximally interruptible, so the threshold belongs
+   * to the phase rather than to the session. `Infinity` is `bargeIn: "off"`.
    */
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** The two phrase lists — agent-scoped. See `pipeline-barge-in-policy.ts`. */
+  phrases: BargeInPhraseLists;
+  /** The regex-keyed endpointing layer — see `pipeline-endpointing.ts`. */
+  endpointing: EndpointingPolicy;
+  /** A real interruption fired: arm the post-interruption audio block. */
+  onInterrupted: () => void;
   log: Logger;
   sid: string;
 }): SttEventHandlers {
@@ -167,16 +172,15 @@ function createSttEventHandlers(deps: {
     if (cutPrompt !== undefined) recovery.arm(cutPrompt);
   }
 
-  /** Should this interim transcript interrupt the agent right now? */
-  function partialTriggersBargeIn(words: number): boolean {
-    if (!agentIsSpeaking()) return false;
-    if (words < deps.minBargeInWords()) return false;
-    // Duration gate (interim-only): require sustained speech since the
-    // utterance's first partial before cutting the agent off. A committed
-    // final barging in via onSttFinal is never duration-gated.
-    const gate = deps.interruptionMinDurationMs();
-    return !(gate > 0 && speechEdges.durationMs() < gate);
-  }
+  // "May this utterance take the floor?" — the four-input precedence, in a
+  // module of its own. See pipeline-barge-in-policy.ts.
+  const bargeIn = createBargeInPolicy({
+    agentIsSpeaking,
+    minBargeInWords: deps.minBargeInWords,
+    interruptionMinDurationMs: deps.interruptionMinDurationMs,
+    utteranceDurationMs: () => speechEdges.durationMs(),
+    phrases: deps.phrases,
+  });
 
   return {
     onSttPartial(text: string, meta?: SttTurnMeta): void {
@@ -211,7 +215,13 @@ function createSttEventHandlers(deps: {
       // what holds an armed resume back while the user keeps talking, since the
       // watchdog is the only thing that releases one.
       if (words >= 1) speechEdges.speechStarted();
-      if (!partialTriggersBargeIn(words)) {
+      // The endpointing rule table is re-read here and nowhere else on the
+      // partial path: this is the moment the caller's in-flight transcript
+      // changes, and a `user` rule is keyed on exactly that. Before the
+      // barge-in branch, so an utterance that interrupts still moves the
+      // window for the turn it is about to start.
+      deps.endpointing.onUserPartial(text);
+      if (!bargeIn.partialInterrupts(words, text)) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
@@ -227,6 +237,11 @@ function createSttEventHandlers(deps: {
       }
       log.info("Pipeline barge-in", { sid: deps.sid });
       armBargeInRecovery();
+      // The caller has the floor: hold agent audio for the backoff window, so
+      // the reply that follows does not land on top of the utterance that
+      // interrupted this one. Armed before the abort, because the abort is
+      // what lets the next turn start.
+      deps.onInterrupted();
       deps.abortInFlightTurn();
       // Ordered before `cancelled`: this is the moment the agent yields, which
       // is what `speech_started` promises the client in S2S mode too.
@@ -277,12 +292,17 @@ function createSttEventHandlers(deps: {
       // interrupt — the turn is answered once the reply finishes (chainTurn
       // defers it), so neither short answers ("yes", a ZIP) spoken over the
       // agent nor re-prompts into a not-yet-spoken reply are lost.
-      if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords())) {
+      if (bargeIn.finalInterrupts(trimmed)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
+        deps.onInterrupted();
         deps.abortInFlightTurn();
         deps.edgeGate.release();
         callbacks.report({ type: "reply.cancelled" });
       }
+      // The utterance is over, so the user side of the endpointing table goes
+      // back to empty — a window a digit-final transcript bought must not
+      // still be in force for the NEXT utterance.
+      deps.endpointing.onUtteranceEnded();
       // Commit the turn immediately: endpointing (aggregating a disfluent
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
@@ -330,6 +350,12 @@ export function createUserActivity(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** The two phrase lists that sit above both gates — see `sdk/barge-in-phrases.ts`. */
+  phrases: BargeInPhraseLists;
+  /** The regex-keyed endpointing layer — see `pipeline-endpointing.ts`. */
+  endpointing: EndpointingPolicy;
+  /** A real interruption fired: arm the post-interruption audio block. */
+  onInterrupted(): void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   isTerminated(): boolean;
@@ -362,41 +388,10 @@ export function createUserActivity(deps: {
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
-  /**
-   * Is the agent actually speaking right now — audio already emitted for the
-   * in-flight turn, or forwarded audio still playing out client-side?
-   *
-   * Defined ONCE and passed to both readers (the outward speaking-edge gate
-   * and the STT handlers' barge-in rules), because the two must agree by
-   * construction: a gate that holds `speech_started` back on one definition
-   * while a barge-in fires on another is a client told the agent yielded by a
-   * transport that decided it had not.
-   *
-   * Deliberately not "a turn is in flight". A turn that has yet to emit audio
-   * cannot be spoken over, so a barge-in has nothing to stop; all it would do
-   * is discard the reply mid-computation and restart a strictly slower one (the
-   * abandoned work redone on top of a longer history). A user re-prompting into
-   * that silence on any regular cadence would then starve the reply
-   * indefinitely, every restart outliving the next re-prompt. Utterances
-   * arriving before the agent speaks take the deferral path instead: they
-   * commit as chained turns and are answered once the reply in progress lands.
-   *
-   * Once a turn has spoken it keeps the floor for the rest of its run, so a
-   * mid-reply TTS stall (playback draining while more text is still streaming)
-   * does not silently reopen the pre-audio window.
-   */
-  /**
-   * Is the agent SPEAKING — as opposed to merely making noise?
-   *
-   * Filler is not speaking, and the `hasSpokenRecordable` term is what makes
-   * that true of the predicate: without it a caller talking over a holding
-   * phrase counted as interrupting a reply, and the abort destroyed the reply
-   * being generated behind it. `HeardTracker.spokeRecordable` carries the
-   * measurement and the argument.
-   */
-  const agentIsSpeaking = (): boolean =>
-    (deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken())) &&
-    deps.hasSpokenRecordable();
+  // Does the agent HAVE the floor? One definition, two readers — see
+  // createAgentSpeakingPredicate for why that matters and what each term of it
+  // is for.
+  const agentIsSpeaking = createAgentSpeakingPredicate(deps);
 
   // Hold `speech_started` back while the agent has the floor, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
@@ -486,6 +481,9 @@ export function createUserActivity(deps: {
     },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
+    phrases: deps.phrases,
+    endpointing: deps.endpointing,
+    onInterrupted: deps.onInterrupted,
     log,
     sid,
   });

@@ -49,6 +49,8 @@ export type FakeSttSession = SttSession & {
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
   readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
+  /** Recorded pushes of the end-of-turn window — see `pipeline-endpointing.ts`. */
+  readonly updateEndpointing: ReturnType<typeof vi.fn<(minTurnSilenceMs: number) => void>>;
   /** `meta` carries provider turn signals, e.g. `endOfTurnConfidence`. */
   firePartial(text: string, meta?: SttTurnMeta): void;
   /** As {@link FakeSttSession.firePartial}, for the committed transcript. */
@@ -81,6 +83,9 @@ export function createFakeSttProvider(): FakeSttProvider {
           audioFrames.push(pcm);
         }),
         updateAgentContext: vi.fn((_text: string) => {
+          /* recorded via the mock's .mock.calls */
+        }),
+        updateEndpointing: vi.fn((_minTurnSilenceMs: number) => {
           /* recorded via the mock's .mock.calls */
         }),
         on: emitter.on.bind(emitter) as SttSession["on"],

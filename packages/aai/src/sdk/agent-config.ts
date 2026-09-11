@@ -28,10 +28,14 @@ import {
 import { MCP_SERVER_KEY_RE } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import {
+  MAX_INTERRUPTION_BACKOFF_MS,
+  MAX_START_SPEAKING_FLOOR_MS,
+} from "./speak-gate-constants.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
+import { BuiltinToolSchema, EndpointingRuleSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -191,6 +195,17 @@ export const AgentConfigSchema = z.object({
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),
   interruptionMinDurationMs: z.number().int().nonnegative().optional(),
+  // The two phrase lists and the endpointing table: serializable for the
+  // reason every other declaration here is — the runtime that reads them is in
+  // a guest sandbox, so they have to survive CLI → server → runtime. Which is
+  // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
+  // not survive `JSON.stringify`, and one that silently became `{}` would be a
+  // rule that matches nothing with nothing to report it.
+  acknowledgementPhrases: z.array(z.string()).readonly().optional(),
+  interruptionPhrases: z.array(z.string()).readonly().optional(),
+  endpointingRules: z.array(EndpointingRuleSchema).readonly().optional(),
+  startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
+  interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
   deadAirCoverMs: z.number().int().nonnegative().optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),

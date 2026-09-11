@@ -249,6 +249,12 @@ export {
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
 } from "./barge-in-constants.ts";
+// The two phrase lists that sit on top of those gates (`barge-in-phrases.ts`)
+// and the two windows deciding when agent audio may LEAVE
+// (`speak-gate-constants.ts`) are NOT re-exported here: this file is at the
+// 500-line cap, and `internal.ts` — the only subpath that publishes a default
+// — reaches those modules directly. Nothing outside the framework reads
+// either set.
 
 /**
  * Spoken when the session cannot start at all — a provider failed to open, so
@@ -324,6 +330,9 @@ export {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
+// The content-keyed override layer ABOVE that pair is `endpointing-rules.ts`,
+// reached from `internal.ts` directly for the same file-length reason as the
+// two modules noted above.
 // Pipeline/provider tuning (dead-air cover phrases, false-interruption
 // recovery, TTS batching, STT framing, provider connect budgets) lives in its
 // own module for file-length reasons; re-exported here so `@alexkroman1/aai`

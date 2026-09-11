@@ -51,6 +51,27 @@ export const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"assistant">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"user">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"both">;
+        assistantRegex: z.ZodString;
+        userRegex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>], "type">>>>;
+    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
@@ -196,6 +217,21 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
+interface AssistantEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "assistant";
+}
+
+// @public
+interface BothEndpointingRule extends EndpointingRuleBase {
+    assistantRegex: string;
+    // (undocumented)
+    type: "both";
+    userRegex: string;
+}
+
+// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -280,6 +316,15 @@ interface DialogVoiceConfig {
 }
 
 // @public
+type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
+
+// @public
+interface EndpointingRuleBase {
+    flags?: string | undefined;
+    timeoutMs: number;
+}
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -356,6 +401,11 @@ type Message = {
 const PIPELINE_ONLY_TUNING: {
     readonly minBargeInWords: "number";
     readonly interruptionMinDurationMs: "number";
+    readonly acknowledgementPhrases: "phrases";
+    readonly interruptionPhrases: "phrases";
+    readonly endpointingRules: "endpointingRules";
+    readonly startSpeakingFloorMs: "number";
+    readonly interruptionBackoffMs: "number";
     readonly deadAirCoverMs: "number";
     readonly errorPhrase: "string";
     readonly startFailurePhrase: "string";
@@ -365,7 +415,7 @@ const PIPELINE_ONLY_TUNING: {
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : string) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases" ? readonly string[] : readonly EndpointingRule[]) | undefined;
 };
 
 // @public (undocumented)
@@ -373,13 +423,18 @@ type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
 // @public
 interface PipelineVoiceTuning {
+    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
+    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
+    interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
+    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
+    startSpeakingFloorMs?: number;
 }
 
 // @public
@@ -829,6 +884,13 @@ interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+interface UserEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "user";
 }
 
 // @public

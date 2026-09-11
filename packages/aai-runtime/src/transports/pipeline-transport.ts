@@ -8,14 +8,15 @@
 // already handled by streamText.
 
 import { setMaxListeners } from "node:events";
-import { normalizeSpeechText } from "@alexkroman1/aai/internal";
-import { pcm16ToBytes } from "../_pcm.ts";
+
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createFatalToolLatch } from "../tool-error-policy.ts";
+import { createAudioOut } from "./pipeline-audio-out.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
+import { createSessionEndpointing } from "./pipeline-endpointing.ts";
 import { createEmitError } from "./pipeline-error.ts";
-import { createSpeechGate, NO_GUARDRAILS } from "./pipeline-guardrails.ts";
+import { NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
@@ -33,7 +34,7 @@ import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-tur
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
-import { resolveSystemPrompt, type SendTtsOptions, type Transport } from "./types.ts";
+import { resolveSystemPrompt, type Transport } from "./types.ts";
 
 /**
  * `abort` listeners one session's signal may hold before Node calls it a leak.
@@ -57,6 +58,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     maxSteps,
     minBargeInWords,
     interruptionMinDurationMs,
+    acknowledgementPhrases,
+    interruptionPhrases,
+    endpointingRules,
+    startSpeakingFloorMs,
+    interruptionBackoffMs,
     deadAirCoverMs,
     heardLagMs,
     errorPhrase,
@@ -134,16 +140,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);
-  // Bounds what each STEP sends the model, and learns the request's fixed cost
-  // (system prompt + tool declarations) from the provider's own reported usage.
-  // Built once per SESSION, deliberately: neither of those changes MUCH between
-  // turns (a per-turn prompt suffix moves the first of them, by the length of
-  // one phase's instructions), so what one turn's last step measured is the
-  // right number for the next turn's first step — the step that would otherwise be estimated blind,
-  // and the only step most turns have. `undefined` for a model whose context
-  // window this repo does not know, which trims nothing and leaves the session
-  // on the message cap alone. It bounds the REQUEST and never `history`, which
-  // the client, resume and `ctx.messages` all read. See
+  // Bounds what each STEP sends the model, in TOKENS, and learns the request's
+  // fixed cost from the provider's own reported usage — so it is built once per
+  // SESSION, and it bounds the REQUEST and never `history`. The argument for
+  // both, and what an unknown context window does instead, are in
   // pipeline-context-budget.ts.
   const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
@@ -198,6 +198,36 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isIdle: () => !(turns.inFlight() || heard.pending()),
   });
 
+  // Everything between a reply and the caller's ear: the speech funnel, the
+  // two TTS handlers, and the speak gate that may hold both — the
+  // start-speaking floor and the post-interruption backoff, as ONE deadline.
+  const audioOut = createAudioOut({
+    startSpeakingFloorMs,
+    interruptionBackoffMs,
+    now: opts.heardNow,
+    turns,
+    heard,
+    tts: () => providers.tts,
+    callbacks,
+    guardrails,
+    log,
+    sid: opts.sid,
+  });
+  const sendTtsText = audioOut.sendTtsText;
+
+  // The regex-keyed endpointing layer. Inert with an empty table, and inert
+  // with one warning on a provider that cannot move its window mid-stream.
+  // `stt` is a THUNK: that session is opened below and re-opened on a
+  // reconnect.
+  const endpointing = createSessionEndpointing({
+    rules: endpointingRules,
+    window: opts.sttEndpointing,
+    history,
+    stt: () => providers.stt,
+    log,
+    sid: opts.sid,
+  });
+
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
@@ -210,6 +240,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechIdleTimeoutMs,
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+    phrases: { acknowledgement: acknowledgementPhrases, interruption: interruptionPhrases },
+    endpointing,
+    onInterrupted: audioOut.onInterrupted,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
@@ -244,27 +277,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // `providers.open()`, which `lifecycle.start` is what calls.
       onSttError: (err) => lifecycle.onProviderError("stt", err),
       onTtsError: (err) => lifecycle.onProviderError("tts", err),
-      onTtsAudio: (pcm) => {
-        if (!turns.audioGateOpen()) return;
-        // The text->audio term, measured rather than inferred. It had only
-        // ever been a subtraction (endpointing + `firstPartMs` against L_R at
-        // the caller's ear), which put it at 0.7-1.8s; measured directly it is
-        // ~66ms, so synthesis is not where a voice turn's latency lives.
-        if (ttsTextAtMs !== undefined) {
-          log.info("TTS first audio", { sid: opts.sid, afterTextMs: Date.now() - ttsTextAtMs });
-          ttsTextAtMs = undefined;
-        }
-        turns.markSpoke();
-        heard.onAudio(pcm);
-        callbacks.onAudioChunk(pcm16ToBytes(pcm));
-      },
-      // Word timings ride the SAME audio gate as the audio itself, the proven
-      // guard for "output from a cancelled turn must not count" — no second
-      // epoch.
-      onTtsWords: (words) => {
-        if (!turns.audioGateOpen()) return;
-        heard.onWords(words);
-      },
+      // Both go through the output path, which owns the double gate and the
+      // one queue they share — see pipeline-audio-out.ts.
+      onTtsAudio: audioOut.onTtsAudio,
+      onTtsWords: audioOut.onTtsWords,
     },
     onAudioReady: () => lifecycle.onAudioReady(),
     emitError,
@@ -313,40 +329,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     heard.cut();
     turns.interrupt();
     providers.tts?.cancel();
+    // Anything the speak gate still holds belongs to the turn just aborted.
+    // Dropped rather than flushed — a queue that outlives its turn is a
+    // second, later opinion about what the caller heard.
+    audioOut.drop();
   }
-
-  /** Forward turn text to TTS, reopening the audio gate for the new turn.
-   * Publishing here rather than at reply end keeps captions with the audio — a
-   * tool chain speaks filler long before the answer exists. `publishTranscript:
-   * false` skips it for the greeting/start-failure lines, which publish their own
-   * final. The tail advances either way: it feeds the tail-resume estimate. */
-  /**
-   * When this turn's FIRST text went to TTS, for the `TTS first audio`
-   * measurement above. Cleared as soon as that turn's audio arrives, so a reply
-   * streamed as several sentences is timed from its first one rather than its
-   * latest.
-   */
-  let ttsTextAtMs: number | undefined;
-
-  function sendTtsTextNow(text: string, opts?: SendTtsOptions): void {
-    turns.openAudioGate();
-    ttsTextAtMs ??= Date.now();
-    // ASCII-fold typographic quotes for the engine; length-preserving, so the
-    // heard cursor below still indexes the same positions (normalizeSpeechText).
-    providers.tts?.sendText(normalizeSpeechText(text));
-    const tail = heard.onText(text, opts?.record !== false);
-    if (opts?.publishTranscript !== false)
-      callbacks.report({ type: "agent-transcript.updated", text: tail });
-  }
-
-  /**
-   * The funnel every collaborator below is handed — the raw send when this
-   * session declares no output guardrail, and a HOLDABLE wrapper around it when
-   * it does. Wrapping here rather than at each call site is what makes "one
-   * place all speech goes through" true of the hold as well as of the send.
-   */
-  const speech = createSpeechGate(guardrails.holdsSpeech, sendTtsTextNow);
-  const sendTtsText = speech.send;
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
   // spoken. See pipeline-turn-outcome.ts.
@@ -401,6 +388,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speculation.discard("turn-started");
     callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
 
+    // One reply, one floor, measured from the moment the turn took the floor
+    // rather than from whenever TTS produced its first frame. It takes the
+    // LATER of this and any backoff still standing, never the sum.
+    audioOut.armFloor();
+
     const ctl = new AbortController();
     // stop()/terminate() aborts only the turn of the moment; combine with
     // the session signal so a turn that starts later still dies with the
@@ -444,7 +436,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speculation,
     runReply,
     guardrails,
-    speech,
+    speech: audioOut.speech,
     fatalTool,
     usage,
     sendTtsText,
@@ -476,6 +468,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTerminated: () => terminated,
     markTerminated: () => {
       terminated = true;
+      // A pending flush timer keeps the event loop alive and would fire into
+      // a session whose providers are closed — the same rule the dialog
+      // deadlines follow.
+      audioOut.stop();
     },
     abortInFlightTurn,
     sendTtsText,

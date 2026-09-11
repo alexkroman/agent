@@ -12,6 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_MIN_TURN_SILENCE_MS } from "@alexkroman1/aai/internal";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
@@ -311,6 +312,63 @@ describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)",
     expect(fake.updateConfigurationCalls).toEqual([]);
 
     await session.close();
+  });
+});
+
+describe("assemblyAIStt STT adapter — updateEndpointing", () => {
+  test("pushes min_turn_silence mid-stream, and only on a CHANGE", async () => {
+    const session = await openSession({});
+    const fake = fakeOf(session);
+
+    // The rule table is re-evaluated per STT partial, so the no-op skip is
+    // what keeps this from being one wire frame per partial for the length of
+    // the call.
+    session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
+    expect(fake.updateConfigurationCalls).toEqual([]);
+
+    session.updateEndpointing?.(2600);
+    session.updateEndpointing?.(2600);
+    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 2600 }]);
+
+    session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
+    expect(fake.updateConfigurationCalls).toEqual([
+      { min_turn_silence: 2600 },
+      { min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS },
+    ]);
+
+    await session.close();
+  });
+
+  test("is clamped to the CEILING this session dialled, never inverting the pair", async () => {
+    // A floor above the ceiling is the measured regression on
+    // DEFAULT_MIN_TURN_SILENCE_MS: the completeness check can never fire, so
+    // every turn ends on the content-blind fallback that splits utterances.
+    const session = await openSession({ maxTurnSilenceMs: 2000 });
+    const fake = fakeOf(session);
+
+    session.updateEndpointing?.(5000);
+    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 2000 }]);
+
+    await session.close();
+  });
+
+  test("refuses 0, which on the wire means 'use the service default'", async () => {
+    const session = await openSession({});
+    const fake = fakeOf(session);
+
+    session.updateEndpointing?.(0);
+    expect(fake.updateConfigurationCalls).toEqual([{ min_turn_silence: 1 }]);
+
+    await session.close();
+  });
+
+  test("a closed session sends nothing", async () => {
+    const session = await openSession({});
+    const fake = fakeOf(session);
+    await session.close();
+
+    session.updateEndpointing?.(2600);
+    expect(fake.updateConfigurationCalls).toEqual([]);
   });
 });
 

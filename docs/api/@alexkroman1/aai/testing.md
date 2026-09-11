@@ -19,6 +19,7 @@ suppression the escape-hatch ratchet only lets move down.
 
 ```ts
 function commandedBuiltins(config: {
+  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -31,10 +32,32 @@ function commandedBuiltins(config: {
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
+  endpointingRules?: readonly (
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "assistant";
+   }
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "user";
+   }
+     | {
+     assistantRegex: string;
+     flags?: string;
+     timeoutMs: number;
+     type: "both";
+     userRegex: string;
+  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
+  interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
+  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -62,6 +85,7 @@ function commandedBuiltins(config: {
   silencePrompt?: string;
   silenceTimeoutMs?: number;
   startFailurePhrase?: string;
+  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -128,6 +152,10 @@ console.log(commandedBuiltins(config)); // ["fetch_json"]
 
 ##### config
 
+###### acknowledgementPhrases?
+
+readonly `string`[]
+
 ###### builtinTools?
 
 readonly (
@@ -149,6 +177,29 @@ readonly (
 
 `string`
 
+###### endpointingRules?
+
+readonly (
+  \| \{
+  `flags?`: `string`;
+  `regex`: `string`;
+  `timeoutMs`: `number`;
+  `type`: `"assistant"`;
+\}
+  \| \{
+  `flags?`: `string`;
+  `regex`: `string`;
+  `timeoutMs`: `number`;
+  `type`: `"user"`;
+\}
+  \| \{
+  `assistantRegex`: `string`;
+  `flags?`: `string`;
+  `timeoutMs`: `number`;
+  `type`: `"both"`;
+  `userRegex`: `string`;
+\})[]
+
 ###### errorPhrase?
 
 `string`
@@ -161,9 +212,17 @@ readonly (
 
 `number`
 
+###### interruptionBackoffMs?
+
+`number`
+
 ###### interruptionMinDurationMs?
 
 `number`
+
+###### interruptionPhrases?
+
+readonly `string`[]
 
 ###### llm?
 
@@ -258,6 +317,10 @@ readonly `string`[]
 ###### startFailurePhrase?
 
 `string`
+
+###### startSpeakingFloorMs?
+
+`number`
 
 ###### stt?
 
@@ -769,6 +832,7 @@ stay.result.options; // "garden view"
 
 ```ts
 function expectDeployable(def: AgentConfigSource): {
+  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -781,10 +845,32 @@ function expectDeployable(def: AgentConfigSource): {
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
+  endpointingRules?: readonly (
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "assistant";
+   }
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "user";
+   }
+     | {
+     assistantRegex: string;
+     flags?: string;
+     timeoutMs: number;
+     type: "both";
+     userRegex: string;
+  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
+  interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
+  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -812,6 +898,7 @@ function expectDeployable(def: AgentConfigSource): {
   silencePrompt?: string;
   silenceTimeoutMs?: number;
   startFailurePhrase?: string;
+  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -888,6 +975,7 @@ The agent under test — an `agent()` definition, or the raw
 
 ```ts
 {
+  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -900,10 +988,32 @@ The agent under test — an `agent()` definition, or the raw
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
+  endpointingRules?: readonly (
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "assistant";
+   }
+     | {
+     flags?: string;
+     regex: string;
+     timeoutMs: number;
+     type: "user";
+   }
+     | {
+     assistantRegex: string;
+     flags?: string;
+     timeoutMs: number;
+     type: "both";
+     userRegex: string;
+  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
+  interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
+  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -931,6 +1041,7 @@ The agent under test — an `agent()` definition, or the raw
   silencePrompt?: string;
   silenceTimeoutMs?: number;
   startFailurePhrase?: string;
+  startSpeakingFloorMs?: number;
   stt?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -959,6 +1070,12 @@ The agent under test — an `agent()` definition, or the raw
 
 The config a deploy carries, mode derived and defaults injected.
 
+##### acknowledgementPhrases?
+
+```ts
+optional acknowledgementPhrases?: readonly string[];
+```
+
 ##### builtinTools?
 
 ```ts
@@ -986,6 +1103,31 @@ optional deadAirCoverMs?: number;
 optional description?: string;
 ```
 
+##### endpointingRules?
+
+```ts
+optional endpointingRules?: readonly (
+  | {
+  flags?: string;
+  regex: string;
+  timeoutMs: number;
+  type: "assistant";
+}
+  | {
+  flags?: string;
+  regex: string;
+  timeoutMs: number;
+  type: "user";
+}
+  | {
+  assistantRegex: string;
+  flags?: string;
+  timeoutMs: number;
+  type: "both";
+  userRegex: string;
+})[];
+```
+
 ##### errorPhrase?
 
 ```ts
@@ -1004,10 +1146,22 @@ greeting: string;
 optional idleTimeoutMs?: number;
 ```
 
+##### interruptionBackoffMs?
+
+```ts
+optional interruptionBackoffMs?: number;
+```
+
 ##### interruptionMinDurationMs?
 
 ```ts
 optional interruptionMinDurationMs?: number;
+```
+
+##### interruptionPhrases?
+
+```ts
+optional interruptionPhrases?: readonly string[];
 ```
 
 ##### llm?
@@ -1120,6 +1274,12 @@ optional silenceTimeoutMs?: number;
 
 ```ts
 optional startFailurePhrase?: string;
+```
+
+##### startSpeakingFloorMs?
+
+```ts
+optional startSpeakingFloorMs?: number;
 ```
 
 ##### stt?

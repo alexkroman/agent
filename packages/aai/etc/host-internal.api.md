@@ -53,6 +53,27 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"assistant">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"user">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"both">;
+        assistantRegex: z.ZodString;
+        userRegex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>], "type">>>>;
+    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
@@ -1200,6 +1221,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateAgentContext?(text: string): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
 }
 
 // @public

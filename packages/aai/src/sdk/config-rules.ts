@@ -18,6 +18,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
+import type { EndpointingRule } from "./endpointing-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/assemblyai.ts";
 
@@ -167,12 +168,30 @@ export function assertSilencePolicy(
 const PIPELINE_ONLY_TUNING = {
   minBargeInWords: "number",
   interruptionMinDurationMs: "number",
+  acknowledgementPhrases: "phrases",
+  interruptionPhrases: "phrases",
+  endpointingRules: "endpointingRules",
+  startSpeakingFloorMs: "number",
+  interruptionBackoffMs: "number",
   deadAirCoverMs: "number",
   errorPhrase: "string",
   startFailurePhrase: "string",
   resumeFalseInterruption: "boolean",
   preemptiveGeneration: "boolean",
-} as const satisfies Record<keyof PipelineVoiceTuning, "number" | "string" | "boolean">;
+} as const satisfies Record<
+  keyof PipelineVoiceTuning,
+  // The five value shapes a pipeline-only tuning field may have. Written
+  // INLINE, both here and in the mapped type below, and that is a constraint
+  // rather than a style: a named alias for either half becomes a type
+  // `PipelineTuning`'s published signature references and no subpath exports,
+  // which `check:api-nameable` counts (it caught exactly that on the two
+  // aliases this replaced). The table used to be `"number" | "string" |
+  // "boolean"`, which was what the first four fields happened to be rather
+  // than a rule — the two phrase lists and the endpointing table are
+  // declarations rather than dials, and they get their own tags so that a
+  // field cannot skip this list and with it `assertPipelineTuning`.
+  "number" | "string" | "boolean" | "phrases" | "endpointingRules"
+>;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
@@ -193,7 +212,11 @@ export type PipelineTuning = {
         ? number
         : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean"
           ? boolean
-          : string)
+          : (typeof PIPELINE_ONLY_TUNING)[K] extends "string"
+            ? string
+            : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases"
+              ? readonly string[]
+              : readonly EndpointingRule[])
     | undefined;
 };
 

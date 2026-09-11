@@ -84,6 +84,16 @@
  * author is a field of the agent declaration, the same way `ToolContext.slots`
  * does not make `ToolContext` part of `state`.
  *
+ * **The five endpointing-rule types are here for the same reason the four
+ * field-group interfaces are.** `endpointingRules` is a field of
+ * `PipelineVoiceTuning`, already on this capability, and the rule objects are
+ * what an author writes INSIDE that field's array literal — so a change to a
+ * rule's shape is a change to what declaring an agent looks like, and would
+ * otherwise move `PipelineVoiceTuning`'s hash while the thing that actually
+ * changed had no epoch of its own. There is no `endpointing` capability to put
+ * them on: the two turn-silence NUMBERS they override are provider settings and
+ * belong to `stt`, where `assemblyAIStt({ minTurnSilenceMs })` is written.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -106,9 +116,13 @@ export {
   type AgentSessionContext,
   type AgentSystemPrompt,
   type AssemblyAIPipelineOptions,
+  type AssistantEndpointingRule,
   agent,
   assemblyAIPipeline,
+  type BothEndpointingRule,
   type BuiltinTool,
+  type EndpointingRule,
+  type EndpointingRuleBase,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
@@ -131,5 +145,6 @@ export {
   type TextAgentParams,
   type ToolChoice,
   type UsageLimits,
+  type UserEndpointingRule,
   workflowApp,
 } from "../../index.ts";
