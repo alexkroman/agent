@@ -4,6 +4,7 @@ import {
   assembleSpelledRuns,
   isTextAssetPath,
   normalizeSpeechText,
+  spelledAloudNote,
   toArgsRecord,
 } from "../internal.ts";
 import { serializeToolFailure } from "./_tool-failure-wire.ts";
@@ -520,6 +521,9 @@ describe("responseErrorMessage", () => {
 });
 
 describe("assembleSpelledRuns", () => {
+  /** The assembled tokens, which is what most of these cases are about. */
+  const tokensOf = (text: string): string[] => assembleSpelledRuns(text).map((run) => run.token);
+
   // Every input here is a transcript the model actually received on a 99-task
   // tau2-bench retail run, next to what it sent the lookup. The mis-assemblies
   // are the point: `mia.garbia2723` for `mia.garcia2723`, `Johannson` twice
@@ -536,7 +540,7 @@ describe("assembleSpelledRuns", () => {
     ["First name, N, O, A, H, last name P, A, T, E, L", ["noah", "patel"]],
     ["Y, U, S, U, F — R, O, S, S, I", ["yusuf", "rossi"]],
   ])("assembles %j", (text, expected) => {
-    expect([...assembleSpelledRuns(text)]).toEqual(expected);
+    expect(tokensOf(text)).toEqual(expected);
   });
 
   // A run needs THREE consecutive single letters, so prose containing "I" or
@@ -556,7 +560,7 @@ describe("assembleSpelledRuns", () => {
     ["N-O-A-H, then P, A, T, E, L", ["noah", "patel"]],
     ["u.s.a", ["usa"]],
   ])("assembles a recognizer-joined run %j", (text, expected) => {
-    expect([...assembleSpelledRuns(text)]).toEqual(expected);
+    expect(tokensOf(text)).toEqual(expected);
   });
 
   // A run needs THREE consecutive single letters, so prose containing "I" or
@@ -572,6 +576,65 @@ describe("assembleSpelledRuns", () => {
     // three-segment floor is what keeps them out.
     "I want to exchange the e-reader for a t-shirt",
   ])("does not fire on ordinary speech: %s", (text) => {
-    expect(assembleSpelledRuns(text)).toEqual([]);
+    expect(tokensOf(text)).toEqual([]);
+  });
+});
+
+// ─── The seven annotations a graded tau2 run produced ──────────────────────
+
+describe("the graded run's own utterances", () => {
+  // Verbatim off the wire, from one tau2-bench retail arm on the commit that
+  // shipped the recognizer-joined fix: 7 annotations against a baseline of 0,
+  // of which ONE was right. They are fixtures rather than invented strings
+  // because two of the six failures were in shapes nobody would have written
+  // — a run ended by a full stop, and two names spelled without a pause.
+  test.each([
+    // 1. DEFECT A. The caller spelled first and last name as one run, so
+    //    there is no boundary in the letters — `sofiali` matches no name, the
+    //    model dropped it and sent the misheard "Sophia". The token is still
+    //    reported, and the LETTERS with it, because splitting them is the
+    //    model's job: "Sophia Liz" is in the same utterance.
+    [
+      "My name Sophia Liz, S-O-F-I-A-L-I, and my zip 78260",
+      "spelled aloud: S-O-F-I-A-L-I = sofiali (may be more than one word)",
+    ],
+    // 2. The one that WORKED, and the format it worked in — two runs, the
+    //    caller's own pause as the boundary. Its tool call came out
+    //    `{first_name: "Yusuf", last_name: "Rossi"}` on the case whose
+    //    baseline failure was three failed lookups and a human transfer, so
+    //    this string is a regression pin rather than a preference.
+    ["verify it with Y-U-S-U-F and R-O-S-S-I, zip 19122", "spelled aloud: yusuf, rossi"],
+    // 3 & 4. DEFECT B, both halves. A full stop ended the utterance, the
+    //    trailing-punctuation strip ran after the explode, and the last run
+    //    never exploded at all: the SURNAME and the TLD, which are the halves
+    //    a lookup fails on.
+    ["my name is M-E-I and last name A-H-M-E-D.", "spelled aloud: mei, ahmed"],
+    ["yara.muller9246@ E-X-A-M-P-L-E dot C-O-M.", "spelled aloud: example.com"],
+    // 5. DEFECT C, which is NOT this function's: STT heard the spelling
+    //    itself as `F-O-F-I-A`, and a faithful reading of a mis-transcribed
+    //    spelling is what an extractor owes. A plausibility filter here would
+    //    be an extractor second-guessing its input; the guard belongs where
+    //    the "the letters REPLACE what you heard" instruction lives.
+    [
+      "Sophia is F-O-F-I-A, Lee is L-I, zip is 78260",
+      "spelled aloud: F-O-F-I-A = fofia (may be more than one word)",
+    ],
+    // 6. The same two names with the sentence break mid-utterance rather than
+    //    at the end — `Ahmed.` is prose here, and `A-H-M-E-D` is the run.
+    ["name is Mei Ahmed. That's M-E-I and last name A-H-M-E-D", "spelled aloud: mei, ahmed"],
+  ])("annotates %j", (text, expected) => {
+    expect(spelledAloudNote(text)).toBe(expected);
+  });
+
+  test("one run carrying a separator is an IDENTIFIER, so no letters are added", () => {
+    // The separators ARE the boundaries, so there is nothing left to be
+    // unsure about — and `M-E-I_K-O-V-A-C-S = mei_kovacs` would be noise.
+    expect(spelledAloudNote("It's M, E, I, underscore, K, O, V, A, C, S")).toBe(
+      "spelled aloud: mei_kovacs",
+    );
+  });
+
+  test("nothing spelled, nothing said", () => {
+    expect(spelledAloudNote("I want to return a water bottle")).toBeUndefined();
   });
 });

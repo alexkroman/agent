@@ -42,6 +42,8 @@ export {
   capToolResult,
   isTextAssetPath,
   normalizeSpeechText,
+  type SpelledRun,
+  spelledAloudNote,
   toArgsRecord,
 } from "./sdk/_wire-helpers.ts";
 // The workflow API's route prefix — the SERVER's half, with the wait clamp

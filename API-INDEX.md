@@ -1181,6 +1181,7 @@ trace or a type error can be traced back to something.
 | `SleepTimerOptions` | `@alexkroman1/aai/internal` |
 | `SpawnCappedResult` | `@alexkroman1/aai/host-internal` |
 | `SpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
+| `SpelledRun` | `@alexkroman1/aai/internal` |
 | `StandardSchemaIssue` | `@alexkroman1/aai/host-internal` |
 | `StandardSchemaV1` | `@alexkroman1/aai/host-internal` |
 | `StepDelegateFn` | `@alexkroman1/aai/host-internal` |
@@ -1323,6 +1324,7 @@ trace or a type error can be traced back to something.
 | `serializeToolFailure` | `@alexkroman1/aai/host-internal` |
 | `sessionStateDdl` | `@alexkroman1/aai-runtime/internal` |
 | `sleep` | `@alexkroman1/aai/internal` |
+| `spelledAloudNote` | `@alexkroman1/aai/internal` |
 | `ssrfSafeFetch` | `@alexkroman1/aai/host-internal` |
 | `stampSessionEvent` | `@alexkroman1/aai-runtime/internal` |
 | `staticSystemPrompt` | `@alexkroman1/aai/host-internal` |

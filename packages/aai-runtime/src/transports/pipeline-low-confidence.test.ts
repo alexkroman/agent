@@ -99,8 +99,10 @@ describe("modelTranscript", () => {
   });
 
   test("a spelled run is appended", () => {
+    // One run of pure letters, so the note carries the letters too — see
+    // `spelledAloudNote`: a caller who did not pause gave no word boundary.
     expect(modelTranscript("it is Y, U, S, U, F", undefined)).toBe(
-      "it is Y, U, S, U, F\n[spelled aloud: yusuf]",
+      "it is Y, U, S, U, F\n[spelled aloud: Y-U-S-U-F = yusuf (may be more than one word)]",
     );
   });
 
@@ -114,7 +116,7 @@ describe("modelTranscript", () => {
     // Order matters only for reading: the spelling is about the words, the
     // note is about our confidence in them.
     expect(modelTranscript("it is Y, U, S, U, F", "may be mis-heard")).toBe(
-      "it is Y, U, S, U, F\n[spelled aloud: yusuf]\n[may be mis-heard]",
+      "it is Y, U, S, U, F\n[spelled aloud: Y-U-S-U-F = yusuf (may be more than one word)]\n[may be mis-heard]",
     );
   });
 });
