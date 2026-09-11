@@ -1134,9 +1134,13 @@ Four properties, each of which is a test rather than a promise:
   is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
   conversational half was not where the reward went: "Sofia Li" transcribed as
   "Sophia Lee" went straight into a lookup, the miss was treated as
-  authoritative, and when the caller SPELLED the name the agent kept the heard
-  form. So the preset covers the tool-argument direction and makes a spelled
-  value REPLACE what was heard. Its own doc carries the runs.
+  authoritative, and the spelled correction the caller gave never reached the
+  prompt (`assembleSpelledRuns` tokenized on whitespace and commas, so a
+  hyphen-joined spelling was one token and produced no annotation). So the
+  preset covers the tool-argument direction and makes a spelled value REPLACE
+  what was heard — and it DEPENDS on that producer. Its own doc carries the
+  runs, what a phonetic retry cannot reach, and the rule that its examples may
+  not name a benchmark entity.
 
 A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
 model request, so a preset there is the most expensive no-op available.

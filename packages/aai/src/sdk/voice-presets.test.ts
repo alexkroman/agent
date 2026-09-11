@@ -35,11 +35,45 @@ import {
  * failing — a preset that doubles, and a preset gutted to a stub.
  */
 const MEASURED: Record<VoicePresetName, { tokens: number; chars: number }> = {
-  echoVerification: { tokens: 191, chars: 799 },
-  smartMatching: { tokens: 202, chars: 799 },
+  echoVerification: { tokens: 196, chars: 810 },
+  smartMatching: { tokens: 204, chars: 811 },
   speechNormalization: { tokens: 919, chars: 3105 },
   natoAlphabet: { tokens: 182, chars: 671 },
 };
+
+/**
+ * Names an example may NOT use: the entities of the benchmark this SDK is
+ * tuned against.
+ *
+ * An illustrative pair written into the prompt is the answer key in context
+ * for any case built on it, so "the case recovers" stops being evidence that
+ * the rule generalizes — it converts a test case into a training case, and
+ * silently. The vivid pairs are exactly the ones the measured evidence hands
+ * you: tau2-bench retail case 51 turns on "Sofia Li" transcribed as "Sophia
+ * Lee", case 66 on "Aarav Lee", case 12 on "Mia Garcia", case 92 on "Mei
+ * Ahmed" and another on "Yusuf". Every name the shipped presets DO use was
+ * checked against the real domain data (`~/Code/tau2-bench`: 34 MB of retail,
+ * 142 MB over all five domains) and occurs ZERO times in either.
+ *
+ * The distinction worth keeping, because the two look alike: naming a corpus
+ * entity in a prompt EXAMPLE is contamination, while BOOSTING names drawn
+ * from the agent's own domain database (STT keyterms, per-turn context) is
+ * ordinary product behaviour — a real deployment has an account base and may
+ * query it. This list constrains the first and says nothing about the second.
+ */
+const BENCHMARK_ENTITIES = [
+  "Sofia",
+  "Sophia",
+  "Yusuf",
+  "Lee",
+  "Li",
+  "James",
+  "Mia",
+  "Mya",
+  "Ahmed",
+  "Ahmad",
+  "Aarav",
+] as const;
 
 describe("VOICE_PRESETS", () => {
   test("every declared name has text, and nothing else does", () => {
@@ -73,6 +107,14 @@ describe("VOICE_PRESETS", () => {
     );
   });
 
+  test.each(BENCHMARK_ENTITIES)("no preset names the benchmark entity %s", (entity) => {
+    // Whole-word, because "Li" is a substring of ordinary English.
+    const word = new RegExp(`\\b${entity}\\b`);
+    for (const name of VOICE_PRESET_NAMES) {
+      expect(VOICE_PRESETS[name]).not.toMatch(word);
+    }
+  });
+
   test("no preset spends tokens on markdown a voice cannot speak", () => {
     // The body of a preset is read aloud by the same TTS the rest of the prompt
     // governs, and `PROMPT_SPEAKING` bans bullets and emphasis in OUTPUT — the
@@ -90,7 +132,7 @@ describe("echoVerification", () => {
 
   test("carries the grouped read-back example verbatim", () => {
     expect(text).toContain(
-      '"Just to confirm, your first name is Ryan, last name\n  is James — is that correct?"',
+      '"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?"',
     );
   });
 
@@ -101,6 +143,7 @@ describe("echoVerification", () => {
 
   test("spells only an uncommon name, which is what keeps it from repealing LISTENING", () => {
     expect(text).toContain("Spell an uncommon or ambiguous name letter by letter");
+    expect(text).toContain('"That\'s A-S-H-F-O-R-D, Ashford."');
     expect(text).toContain("don't spell what nobody mishears");
   });
 
@@ -125,11 +168,14 @@ describe("smartMatching", () => {
   });
 
   test("a SPELLED value REPLACES what was heard, which is the measured line", () => {
-    // The tau2 baseline's caller spelled "S-O-F-I-A" and the agent went on
-    // using "Sophia": the correction was in the audio and was thrown away.
-    // "replaces", not "consider" — an averaged value is what failed.
+    // The tau2 baseline's caller spelled the name and the agent went on using
+    // the mis-heard form. The signal was dropped BEFORE the model by
+    // `assembleSpelledRuns` (`_wire-helpers.ts`), which split on whitespace
+    // and commas only and so saw a hyphen-joined spelling as one token; this
+    // rule is the half that makes the model ACT on the annotation once it is
+    // produced. "REPLACE", not "consider" — an averaged value is what failed.
     expect(text).toContain("the letters ARE the value: they");
-    expect(text).toContain('REPLACE what you heard, exactly as spelled — "S-O-F-I-A" is Sofia');
+    expect(text).toContain('REPLACE what you heard, exactly as spelled — "M-A-R-T-A" is Marta');
     expect(text).toContain("every later lookup uses the spelled form");
   });
 
@@ -139,7 +185,7 @@ describe("smartMatching", () => {
     // transcript, not about the record.
     expect(text).toContain("A name a lookup cannot find is a transcription to DOUBT");
     expect(text).toContain("Before you re-ask or hand off, retry its phonetic");
-    expect(text).toContain("neighbours (Sofia/Sophia, Lee/Li)");
+    expect(text).toContain("neighbours (Katherine/Kathryn, Clara/Klara)");
   });
 
   test("says why re-asking cannot work, not just that it is rude", () => {

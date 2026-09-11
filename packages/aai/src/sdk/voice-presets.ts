@@ -155,11 +155,11 @@ const ECHO_VERIFICATION = `\
   confirmation or reference codes.
 - Group the values that belong together into ONE read-back, then ask one
   closed question. "Just to confirm, your first name is Ryan, last name
-  is James — is that correct?" Three values confirmed in three turns is
-  three chances to be cut off.
+  is Ashford — is that correct?" Three values confirmed in three turns
+  is three chances to be cut off.
 - Spell an uncommon or ambiguous name letter by letter as you read it
-  back: "That's R-Y-A-N, Ryan." A common name read back as a word is
-  enough — don't spell what nobody mishears.
+  back: "That's A-S-H-F-O-R-D, Ashford." A common name read back as a
+  word is enough — don't spell what nobody mishears.
 - If the caller corrects part of it, read back only the corrected value.
   Never re-confirm what they already agreed to, and never ask again for
   a value they have confirmed.`;
@@ -185,11 +185,17 @@ const ECHO_VERIFICATION = `\
  *   tolerance has to cover the TOOL-ARGUMENT direction, not just the
  *   conversational one, and "a name a lookup cannot find is a transcription to
  *   DOUBT" is the bullet that says so.
- * - The caller then SPELLED it — "S-O-F-I-A, last name Lee, L-I" — and the
- *   agent kept using "Sophia". The correction was in the audio and was thrown
- *   away, which makes the spelled-correction bullet the highest-value line
- *   here: the letters REPLACE what was heard rather than being averaged with
- *   it. Note what that implies about `echoVerification`, which asks for a
+ * - The caller then SPELLED it, letter by letter, and the agent kept using the
+ *   mis-heard form. **That half was NOT the model's fault, and the attribution
+ *   matters more than the anecdote**: `assembleSpelledRuns`
+ *   (`sdk/_wire-helpers.ts`, applied by `aai-runtime`'s
+ *   `transports/pipeline-user-speech.ts`) split on whitespace and commas only,
+ *   so a hyphen-joined rendering arrived as ONE token, produced no spelled run,
+ *   and the `[spelled aloud: …]` annotation the model reads was never
+ *   generated. The signal was dropped before the prompt saw it. So this bullet
+ *   is the half that makes the model ACT on that annotation, and it DEPENDS on
+ *   the producer: without the tokenizer fix the rule has nothing to prefer.
+ *   Note also what it implies about `echoVerification`, which ASKS for a
  *   spelling: asking is not the hard part, and a preset that only asked would
  *   not have saved this run.
  *
@@ -210,6 +216,22 @@ const ECHO_VERIFICATION = `\
  * recoverable on the ASR side (keyterms, per-turn context) rather than in a
  * prompt. This preset addresses the Sofia/Sophia mechanism and not that one.
  *
+ * **Its examples may not name a benchmark entity, and that constraint outlives
+ * this preset.** The vivid pairs are the ones the evidence hands you, and
+ * writing them into the prompt puts the answer key in context for the very
+ * cases the gate measures — "case 51 recovers" then shows only that the
+ * mechanism fires when the exact pair is named. So the shipped text teaches
+ * with names that occur ZERO times in `data/tau2/domains` (all five domains,
+ * 142 MB, checked rather than assumed) and `voice-presets.test.ts` holds the
+ * contaminating ones out by name. The measurement belongs in this comment; the
+ * illustration does not.
+ *
+ * Do not confuse that with BOOSTING a name: feeding the agent's own account
+ * base to the transcriber (STT keyterms, per-turn context) is ordinary product
+ * behaviour, since a real deployment has that data and may query it. What is
+ * forbidden is naming a corpus entity in prompt TEXT that ships to every
+ * caller.
+ *
  * It stays scoped to values the caller has GIVEN or AGREED to. It does not
  * license accepting a near-match on a value nothing has confirmed, which is
  * what `PROMPT_TOOLS`' retry ladder is for — this preset makes that ladder's
@@ -221,11 +243,12 @@ const SMART_MATCHING = `\
   is a MATCH: you ask "Are you Brandon?", the transcript reads "Yes,
   this is Brendon" — that is a yes. Keep the value you hold and go on.
 - When the caller SPELLS a value, the letters ARE the value: they
-  REPLACE what you heard, exactly as spelled — "S-O-F-I-A" is Sofia,
-  never Sophia — and every later lookup uses the spelled form.
+  REPLACE what you heard, exactly as spelled — "M-A-R-T-A" is Marta,
+  never Martha — and every later lookup uses the spelled form.
 - A name a lookup cannot find is a transcription to DOUBT, not a
   missing record. Before you re-ask or hand off, retry its phonetic
-  neighbours (Sofia/Sophia, Lee/Li) and any form spelled earlier.
+  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled
+  earlier.
 - Never make the caller repeat what they have confirmed or spelled;
   asking again produces the same transcript. Ask only when the
   difference changes WHO or WHAT is meant.`;
