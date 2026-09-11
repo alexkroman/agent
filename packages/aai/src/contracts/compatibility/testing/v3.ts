@@ -2,21 +2,33 @@
 /**
  * Frozen authoring example: `aai:testing` epoch 3.
  *
- * Epoch 4 is COLLATERAL, exactly as epoch 3 was, and this file is the evidence
- * that collateral is all it was. Not one helper here changed signature; what
- * changed is the declaration they are pointed AT. `AgentDef` gained a fifth
- * field group (`AgentVoicePresets`, whose one optional field is
- * `voicePresets`), `AgentConfigSchema` — reachable from this subpath as a
- * forgotten export, which is why the hash moved at all — gained the matching
- * optional array, and `AgentConfigSource`, what `expectDeployable` takes,
- * followed both.
+ * **Epoch 4 is COLLATERAL, for the second epoch running, and every one of the
+ * four features that moved it is collateral.** This file is the evidence that
+ * collateral is all it was: the export list did not change at all — all 93
+ * names are the ones epoch 3 promised — and not one helper here changed
+ * signature. What moved is the declaration they are pointed AT.
+ *
+ * All four contributors reach this capability the same way, through
+ * `AgentConfigSchema` (reachable from this subpath as a forgotten export, which
+ * is why the hash moves at all) and `AgentConfigSource`, what `expectDeployable`
+ * takes:
+ *
+ * - **Voice presets** — `AgentDef` gained a fifth field group
+ *   (`AgentVoicePresets`, whose one optional field is `voicePresets`) and the
+ *   schema gained the matching optional array.
+ * - **Turn-taking rules and gates** — the endpointing rule table and the two
+ *   speak-gate windows, through `PipelineVoiceTuning`.
+ * - **The low-confidence band** — `lowConfidence`, through the same interface,
+ *   plus the matching optional zod key.
+ * - **Tool-call speech** — `ToolDef.messages`, which `AgentDef.tools` names.
  *
  * Every addition is optional, so a spec that hands `deployedAgent` an agent
- * written before presets existed still compiles, and so does one that reads
- * `expectDeployable`'s answer field by field. That is the whole promise. If a
- * later epoch makes any of them required, or narrows what `deployedAgent`
- * accepts, this file reddens, which is the signal to DROP the epoch rather
- * than to edit the example.
+ * written before any of them existed still compiles, and so does one that reads
+ * `expectDeployable`'s answer field by field. That is the whole promise — new
+ * optional fields on the declaration these helpers describe. If a later epoch
+ * makes any of them required, or narrows what `deployedAgent` accepts, this file
+ * reddens, which is the signal to DROP the epoch rather than to edit the
+ * example.
  *
  * ## Two things about its SHAPE, both imposed rather than chosen
  *

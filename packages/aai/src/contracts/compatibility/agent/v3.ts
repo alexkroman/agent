@@ -2,20 +2,43 @@
 /**
  * Frozen authoring example: `aai:agent` epoch 3.
  *
- * Epoch 4 added a FIFTH field-group interface to `AgentDef` —
- * `AgentVoicePresets`, whose one field `voicePresets` names the opt-in prompt
- * presets — plus the two names that describe it, `VoicePresetName` and the
- * `VOICE_PRESETS` text itself.
+ * ## Epoch 4 carries FOUR changes, and this capability's surface moved for all
  *
- * Everything in that change is additive, and this file is what says so. The
- * field is optional, nothing an epoch-3 author wrote moved to reach it, and an
- * agent that names none of it is emitted the byte-identical system prompt it
- * was at epoch 3 (`system-prompt.test.ts` pins exactly that). The one shape
- * worth holding to is the negative: `agent({ … })` below is a flat literal
- * with no `voicePresets` in it, so if a later epoch ever made a preset the
- * default — or made the field required, or moved it somewhere a literal cannot
- * reach — this file reddens, which is the signal to DROP the epoch rather than
- * to edit the example.
+ * Epoch 4 is one epoch covering four features that shipped in one release, so
+ * the reason the hash moved is worth naming per feature rather than in the
+ * aggregate. All four are additive to `AgentDef`, and every field is optional:
+ *
+ * - **Voice presets** — a FIFTH field-group interface, `AgentVoicePresets`,
+ *   whose one field `voicePresets` names the opt-in prompt presets, plus
+ *   `VoicePresetName` and the `VOICE_PRESETS` text itself.
+ * - **Turn-taking rules and gates** — `endpointingRules` and the five
+ *   endpointing-rule types, plus `startSpeakingFloorMs`,
+ *   `interruptionBackoffMs`, `acknowledgementPhrases` and
+ *   `interruptionPhrases`, all through `PipelineVoiceTuning`.
+ * - **The low-confidence band** — `lowConfidence` and the three
+ *   `LowConfidence*` types, also through `PipelineVoiceTuning`. (The STT half
+ *   of that feature is not here: `keyterms` is a field of the `assemblyAIStt`
+ *   descriptor and moved `aai:stt` instead.)
+ * - **Tool-call speech** — `ToolDef.messages`. `AgentDef.tools` names
+ *   `ToolDef`, so this capability's report moved with it even though nothing
+ *   an `agent()` literal contains changed shape.
+ *
+ * That last one is the one to read carefully, because it is a different KIND of
+ * move from the other three: the first three widened what this capability's own
+ * declaration accepts, where the fourth is ROLLUP COLLATERAL — a type this
+ * report reaches through `AgentDef.tools` changed, and the hash followed. Both
+ * kinds are `--retain`, and the promise is the same either way, but a reader
+ * asking which feature widened `agent()` should not have to guess.
+ *
+ * This file is what says the whole set is additive. Every field is optional,
+ * nothing an epoch-3 author wrote moved to reach any of them, and an agent that
+ * names none of it is emitted the byte-identical system prompt it was at epoch 3
+ * (`system-prompt.test.ts` pins exactly that). The one shape worth holding to is
+ * the negative: `agent({ … })` below is a flat literal naming none of the four
+ * features, so if a later epoch ever made a preset the default — or made any of
+ * these fields required, or moved one somewhere a literal cannot reach — this
+ * file reddens, which is the signal to DROP the epoch rather than to edit the
+ * example.
  *
  * The other half of epoch 3's own promise is unchanged and still tested here:
  * the four field groups it introduced (`AgentModelTuning`, `AgentGuardrails`,
@@ -23,6 +46,15 @@
  * in one object literal, and `systemPrompt` takes either a string or an
  * `AgentInstructions` resolver. Both arms appear below, because an epoch-3
  * author had both.
+ *
+ * **And the field groups are exercised BOTH ways**, which is the one thing the
+ * union of the four branches' examples added over the widest single one. Flat
+ * in a literal is what most authors write and is what the `desk` agent below
+ * does; built as standalone TYPED VALUES and spread in is the shape that proves
+ * those interfaces are independently constructible, which is the whole reason
+ * they are separate interfaces rather than inline field lists. `spreadDesk` at
+ * the end of this file is that second arm. An epoch-3 author had both, so a
+ * later epoch that made either unwritable has to drop the epoch.
  *
  * ## Two things about its SHAPE, both imposed rather than chosen
  *
@@ -239,3 +271,36 @@ export const epoch3Values = [
   mcpToolName,
   workflowApp,
 ] as const;
+
+// ─── The field groups as standalone VALUES, spread in ──────────────────────
+//
+// From the tool-call-speech branch's own epoch-3 example, kept in the union
+// because it is the one PATTERN the other three did not exercise: each field
+// group built as a typed value and spread into `agent()`, rather than written
+// flat. `minTurnSilenceMs` is inline here for the same reason — the other arm
+// reaches it through `assemblyAIPipeline()`, and an epoch-3 author had both
+// routes to it.
+const spreadLimits: UsageLimits = { totalTokens: 200_000 };
+const spreadTuning: AgentModelTuning = {
+  temperature: 0.4,
+  maxOutputTokens: 512,
+  usageLimits: spreadLimits,
+};
+const noWholesale: AgentGuardrail = (text) =>
+  text.includes("wholesale") ? "I can't discuss wholesale pricing." : true;
+const spreadGuardrails: AgentGuardrails = { inputGuardrails: [noWholesale] };
+const spreadObservation: AgentObservation = {
+  events: { "user-transcript.committed": () => undefined },
+};
+const houseRules: AgentSystemPrompt = (ctx: AgentSessionContext) =>
+  `You are the support line for a bicycle shop. Session ${ctx.sessionId}.`;
+
+export const spreadDesk = agent({
+  name: "Bike Support",
+  greeting: "Bike shop, how can I help?",
+  systemPrompt: houseRules,
+  minTurnSilenceMs: 1600,
+  ...spreadTuning,
+  ...spreadGuardrails,
+  ...spreadObservation,
+});

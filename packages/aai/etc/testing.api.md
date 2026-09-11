@@ -56,11 +56,46 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"assistant">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"user">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"both">;
+        assistantRegex: z.ZodString;
+        userRegex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>], "type">>>>;
+    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    lowConfidence: z.ZodOptional<z.ZodObject<{
+        discardBelow: z.ZodOptional<z.ZodNumber>;
+        actionBelow: z.ZodOptional<z.ZodNumber>;
+        action: z.ZodOptional<z.ZodEnum<{
+            clarify: "clarify";
+            note: "note";
+        }>>;
+        phrase: z.ZodOptional<z.ZodString>;
+        note: z.ZodOptional<z.ZodString>;
+        statistic: z.ZodOptional<z.ZodEnum<{
+            mean: "mean";
+            minWord: "minWord";
+        }>>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -189,6 +224,21 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+interface AssistantEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "assistant";
+}
+
+// @public
+interface BothEndpointingRule extends EndpointingRuleBase {
+    assistantRegex: string;
+    // (undocumented)
+    type: "both";
+    userRegex: string;
+}
+
+// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -305,6 +355,15 @@ interface DialogVoiceConfig {
 }
 
 // @public
+type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
+
+// @public
+interface EndpointingRuleBase {
+    flags?: string | undefined;
+    timeoutMs: number;
+}
+
+// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -375,6 +434,22 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type LowConfidenceAction = "clarify" | "note";
+
+// @public
+interface LowConfidencePolicy {
+    action?: LowConfidenceAction | undefined;
+    actionBelow?: number | undefined;
+    discardBelow?: number | undefined;
+    note?: string | undefined;
+    phrase?: string | undefined;
+    statistic?: LowConfidenceStatistic | undefined;
+}
+
+// @public
+type LowConfidenceStatistic = "mean" | "minWord";
+
+// @public
 type McpServerConfig = {
     url: string;
     tokenEnv?: string;
@@ -400,13 +475,19 @@ export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAg
 
 // @public
 interface PipelineVoiceTuning {
+    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
+    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
+    interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
+    interruptionPhrases?: readonly string[];
+    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
+    startSpeakingFloorMs?: number;
 }
 
 // @public
@@ -576,6 +657,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
+        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -1103,6 +1185,16 @@ type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1133,6 +1225,14 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
 };
 
 // @public
@@ -1150,6 +1250,21 @@ export function toolInputIssues(agent: ToolBearingAgent, name: string, value: un
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
 type ToolModules = Readonly<Record<string, unknown>>;
 
 // @public
@@ -1160,6 +1275,13 @@ export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputS
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -1180,6 +1302,13 @@ interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+interface UserEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "user";
 }
 
 // @public

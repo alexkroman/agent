@@ -158,6 +158,21 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
+export interface AssistantEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "assistant";
+}
+
+// @public
+export interface BothEndpointingRule extends EndpointingRuleBase {
+    assistantRegex: string;
+    // (undocumented)
+    type: "both";
+    userRegex: string;
+}
+
+// @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -324,6 +339,15 @@ export interface DialogVoiceConfig {
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
+export type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
+
+// @public
+export interface EndpointingRuleBase {
+    flags?: string | undefined;
+    timeoutMs: number;
+}
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -440,6 +464,22 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export type LowConfidenceAction = "clarify" | "note";
+
+// @public
+export interface LowConfidencePolicy {
+    action?: LowConfidenceAction | undefined;
+    actionBelow?: number | undefined;
+    discardBelow?: number | undefined;
+    note?: string | undefined;
+    phrase?: string | undefined;
+    statistic?: LowConfidenceStatistic | undefined;
+}
+
+// @public
+export type LowConfidenceStatistic = "mean" | "minWord";
+
+// @public
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
@@ -530,13 +570,19 @@ type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = 
 
 // @public
 export interface PipelineVoiceTuning {
+    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
+    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
+    interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
+    interruptionPhrases?: readonly string[];
+    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
+    startSpeakingFloorMs?: number;
 }
 
 // @public
@@ -715,6 +761,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
+        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -1103,6 +1150,16 @@ export type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
+export type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+export type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1123,6 +1180,14 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+export type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
 };
 
 // @public
@@ -1138,6 +1203,36 @@ export function toolFailure(message: string): ToolFailure;
 
 // @public
 export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+export type ToolMessages = {
+    start?: ToolStartMessage[] | undefined;
+    delayed?: ToolDelayedMessage[] | undefined;
+    complete?: ToolCompletionMessage[] | undefined;
+    failed?: ToolCompletionMessage[] | undefined;
+};
+
+// @public
+export type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
+export type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -1158,6 +1253,13 @@ export interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 export interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+export interface UserEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "user";
 }
 
 // @public
