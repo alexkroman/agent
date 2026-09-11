@@ -117,6 +117,11 @@ function commandedBuiltins(config: {
   usageLimits?: {
      totalTokens?: number;
   };
+  voicePresets?: readonly (
+     | "echoVerification"
+     | "smartMatching"
+     | "speechNormalization"
+    | "natoAlphabet")[];
 }): BuiltinTool[];
 ```
 
@@ -434,6 +439,14 @@ readonly `string`[]
 ###### usageLimits.totalTokens?
 
 `number`
+
+###### voicePresets?
+
+readonly (
+  \| `"echoVerification"`
+  \| `"smartMatching"`
+  \| `"speechNormalization"`
+  \| `"natoAlphabet"`)[]
 
 #### Returns
 
@@ -973,6 +986,11 @@ function expectDeployable(def: AgentConfigSource): {
   usageLimits?: {
      totalTokens?: number;
   };
+  voicePresets?: readonly (
+     | "echoVerification"
+     | "smartMatching"
+     | "speechNormalization"
+    | "natoAlphabet")[];
 };
 ```
 
@@ -1124,6 +1142,11 @@ The agent under test — an `agent()` definition, or the raw
   usageLimits?: {
      totalTokens?: number;
   };
+  voicePresets?: readonly (
+     | "echoVerification"
+     | "smartMatching"
+     | "speechNormalization"
+    | "natoAlphabet")[];
 }
 ```
 
@@ -1421,6 +1444,16 @@ optional toolChoice?:
 {
   totalTokens?: number;
 }
+```
+
+##### voicePresets?
+
+```ts
+optional voicePresets?: readonly (
+  | "echoVerification"
+  | "smartMatching"
+  | "speechNormalization"
+  | "natoAlphabet")[];
 ```
 
 #### Throws

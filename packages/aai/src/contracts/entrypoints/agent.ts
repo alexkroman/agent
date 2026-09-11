@@ -92,6 +92,7 @@
  * what `agent({ lowConfidence })` accepts, which is this capability's subject.
  * Note the STT side of the same feature is not here: `keyterms` is a field of
  * the `assemblyAIStt` descriptor and belongs to `aai:stt`.
+ *
  * **The five endpointing-rule types are here for the same reason the four
  * field-group interfaces are.** `endpointingRules` is a field of
  * `PipelineVoiceTuning`, already on this capability, and the rule objects are
@@ -101,6 +102,16 @@
  * changed had no epoch of its own. There is no `endpointing` capability to put
  * them on: the two turn-silence NUMBERS they override are provider settings and
  * belong to `stt`, where `assemblyAIStt({ minTurnSilenceMs })` is written.
+ *
+ * **The three voice-preset names are here for the field-group reason above**,
+ * with one addition. `AgentVoicePresets` is the fifth interface `AgentDef`
+ * extends and `VoicePresetName` is the vocabulary its one field takes, so both
+ * are plainly part of what declaring an agent looks like. `VOICE_PRESETS` is
+ * the judgement call: it is TEXT, like `DEFAULT_SYSTEM_PROMPT` on `defaults`,
+ * and it lands here rather than there because a preset is not a default —
+ * nothing gets it by omission, it is the set of values the `voicePresets` field
+ * accepts, and its keys and that field's type are one union. What `defaults`
+ * covers is what an agent that declares NOTHING is given.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
@@ -123,6 +134,7 @@ export {
   type AgentParams,
   type AgentSessionContext,
   type AgentSystemPrompt,
+  type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
   type AssistantEndpointingRule,
   agent,
@@ -157,5 +169,7 @@ export {
   type ToolChoice,
   type UsageLimits,
   type UserEndpointingRule,
+  VOICE_PRESETS,
+  type VoicePresetName,
   workflowApp,
 } from "../../index.ts";

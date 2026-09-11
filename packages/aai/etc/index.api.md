@@ -17,7 +17,7 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -85,6 +85,11 @@ export interface AgentSessionContext {
 export type AgentSystemPrompt = string | AgentInstructions;
 
 // @public
+export interface AgentVoicePresets {
+    voicePresets?: readonly VoicePresetName[];
+}
+
+// @public
 export type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
@@ -150,21 +155,6 @@ type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "ja
 interface AssemblyAITtsVoiceInfo {
     readonly accent: string;
     readonly language: AssemblyAITtsLanguage;
-}
-
-// @public
-export interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-export interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
 }
 
 // @public
@@ -332,15 +322,6 @@ export interface DialogVoiceConfig {
 
 // @public
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
-
-// @public
-export type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-export interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
 
 // @public
 export function errorDetail(err: unknown): string;
@@ -549,18 +530,13 @@ type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = 
 
 // @public
 export interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
-    interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
 }
 
 // @public
@@ -1127,16 +1103,6 @@ export type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
-export type ToolCompletionMessage = {
-    content: string;
-    when?: ToolMessageCondition[] | undefined;
-    role?: "assistant" | "system" | undefined;
-};
-
-// @public
-export type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
-
-// @public
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1157,14 +1123,6 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
-    messages?: ToolMessagesInput;
-};
-
-// @public
-export type ToolDelayedMessage = {
-    content: string;
-    when?: ToolMessageCondition[] | undefined;
-    afterMs: number;
 };
 
 // @public
@@ -1180,36 +1138,6 @@ export function toolFailure(message: string): ToolFailure;
 
 // @public
 export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @public
-export type ToolMessageCondition = {
-    arg: string;
-    op?: ToolConditionOperator | undefined;
-    value: string | number | boolean | null;
-};
-
-// @public
-export type ToolMessages = {
-    start?: ToolStartMessage[] | undefined;
-    delayed?: ToolDelayedMessage[] | undefined;
-    complete?: ToolCompletionMessage[] | undefined;
-    failed?: ToolCompletionMessage[] | undefined;
-};
-
-// @public
-export type ToolMessagesInput = {
-    start?: boolean | string | readonly (string | ToolStartMessage)[];
-    delayed?: readonly ToolDelayedMessage[];
-    complete?: string | readonly (string | ToolCompletionMessage)[];
-    failed?: string | readonly (string | ToolCompletionMessage)[];
-};
-
-// @public
-export type ToolStartMessage = {
-    content: string;
-    when?: ToolMessageCondition[] | undefined;
-    blocking?: boolean | undefined;
-};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -1233,11 +1161,15 @@ export interface UsageLimits {
 }
 
 // @public
-export interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
+export const VOICE_PRESETS: {
+    readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
+    readonly smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
+    readonly speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
+    readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
+};
+
+// @public
+export type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -1273,7 +1205,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

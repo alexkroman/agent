@@ -1162,6 +1162,47 @@ touches `Intl`, why `mintCode`'s alphabet is its whole design, and the ten
 hand-written date rules the fields replaced. `retail-orders-agent`'s
 `resolve.ts` is the worked example.
 
+## Four opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
+
+`agent({ voicePresets: ["echoVerification", "smartMatching"] })`. Four named
+prompt sections — `echoVerification`, `smartMatching`, `speechNormalization`,
+`natoAlphabet` — composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
+the author's own instructions, so the order of authority is voice core, then
+presets, then the agent's rules. `VOICE_PRESETS` is the shipped text (public,
+read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
+
+Four properties, each of which is a test rather than a promise:
+
+- **A LIST, not a mode.** They are independently toggleable because they are
+  independently PRICED — ~190 / ~200 / ~920 / ~190 tokens on every model
+  request (o200k, banded in `voice-presets.test.ts`). One `reliability: true`
+  would make the 920-token one the price of the 200-token one.
+- **Canonical ORDER, deduped, absent when empty.** A config cannot change the
+  prompt's shape by spelling its list differently, and an agent that declares
+  none sends the byte-identical prompt it sent before the field existed.
+- **One PRECEDENCE line above the block**, because two of them deliberately
+  contradict `## LISTENING` and `## SPEAKING` (spelling a name back, spelling
+  a code). That is also why they are opt-in: those defaults are measured, and
+  a demanded spelling cost 53-56s per round trip on tau2-bench retail.
+- **Prompt layer only.** `speechNormalization` tells the model how to WRITE;
+  it reaches no TTS engine, and for the agent's OWN data `spokenMoney` /
+  `spokenDate` / `spokenTime` are cheaper and testable. The module doc carries
+  the rest, including why the phone rule's spaced dash is load-bearing.
+- **`smartMatching` is the one with a measured case, and it is why that preset
+  is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
+  conversational half was not where the reward went: "Sofia Li" transcribed as
+  "Sophia Lee" went straight into a lookup, the miss was treated as
+  authoritative, and the spelled correction the caller gave never reached the
+  prompt (`assembleSpelledRuns` tokenized on whitespace and commas, so a
+  hyphen-joined spelling was one token and produced no annotation). So the
+  preset covers the tool-argument direction and makes a spelled value REPLACE
+  what was heard — and it DEPENDS on that producer. Its own doc carries the
+  runs, what a phonetic retry cannot reach, and the rule that its examples may
+  not name a benchmark entity.
+
+A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
+model request, so a preset there is the most expensive no-op available.
+
 ## Persistence, and the three things that were removed
 
 **There is no `ctx.db`.** It was a SQL handle on `ToolContext` and on the

@@ -41,6 +41,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "toolChoice",
   "tts",
   "usageLimits",
+  "voicePresets",
 ]
 `;
 

@@ -21,6 +21,9 @@ import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolDef`.
 import type { ToolChoice, ToolDef } from "./tool-def.ts";
+// Imported as well as re-exported below, for the reason `PipelineVoiceTuning`
+// is: `AgentDef` extends it.
+import type { AgentVoicePresets } from "./voice-presets.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
 /**
@@ -131,6 +134,13 @@ export type {
   ToolMessagesInput,
   ToolStartMessage,
 } from "./tool-messages.ts";
+/**
+ * The opt-in prompt presets and the field that names them — the fifth field
+ * group split off this file, re-exported here like the other four so no import
+ * moved. `voice-presets.ts` carries the shipped text of each, what it costs on
+ * every model request, and which default it overrides.
+ */
+export { type AgentVoicePresets, VOICE_PRESETS, type VoicePresetName } from "./voice-presets.ts";
 
 /**
  * Fully resolved agent definition.
@@ -146,13 +156,14 @@ export type {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Four groups of fields live on interfaces this extends, each because the
+ * Five groups of fields live on interfaces this extends, each because the
  * group shares ONE rule that is derived from the declaration rather than
  * restated beside it: {@link PipelineVoiceTuning} (pipeline transport or
  * nothing), {@link AgentModelTuning} (this runtime assembles the request, so
  * S2S refuses them), {@link AgentGuardrails} (the only declarations that may
- * stop a turn) and {@link AgentObservation} (the two that deliberately may
- * not). `agent()` and the deploy-time config check both derive their field
+ * stop a turn), {@link AgentObservation} (the two that deliberately may
+ * not) and {@link AgentVoicePresets} (paid for on every model request).
+ * `agent()` and the deploy-time config check both derive their field
  * lists from those interfaces, so a new one cannot skip either gate.
  *
  * @public
@@ -161,7 +172,8 @@ export interface AgentDef
   extends PipelineVoiceTuning,
     AgentModelTuning,
     AgentGuardrails,
-    AgentObservation {
+    AgentObservation,
+    AgentVoicePresets {
   /** Display name shown by the default client UI. */
   name: string;
   /**

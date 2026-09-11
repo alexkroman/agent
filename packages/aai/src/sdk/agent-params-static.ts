@@ -47,6 +47,11 @@ export type WorkflowAppOnlyField =
   | keyof AgentGuardrails
   | "system"
   | "systemPrompt"
+  // For the same reason `systemPrompt` is: a preset IS prompt text, and a
+  // workflow app assembles no prompt because it makes no model request. It
+  // would be the most expensive no-op on this list — `speechNormalization`
+  // alone is ~920 tokens of instructions nothing would ever read.
+  | "voicePresets"
   | "sttPrompt"
   | "maxSteps"
   | "toolChoice"

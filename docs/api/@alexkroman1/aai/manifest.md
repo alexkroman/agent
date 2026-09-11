@@ -152,6 +152,11 @@ function toAgentConfig(source: AgentConfigSource): {
   usageLimits?: {
      totalTokens?: number;
   };
+  voicePresets?: readonly (
+     | "echoVerification"
+     | "smartMatching"
+     | "speechNormalization"
+    | "natoAlphabet")[];
 };
 ```
 
@@ -268,6 +273,11 @@ the runtime.
   usageLimits?: {
      totalTokens?: number;
   };
+  voicePresets?: readonly (
+     | "echoVerification"
+     | "smartMatching"
+     | "speechNormalization"
+    | "natoAlphabet")[];
 }
 ```
 
@@ -563,6 +573,16 @@ optional toolChoice?:
 {
   totalTokens?: number;
 }
+```
+
+##### voicePresets?
+
+```ts
+optional voicePresets?: readonly (
+  | "echoVerification"
+  | "smartMatching"
+  | "speechNormalization"
+  | "natoAlphabet")[];
 ```
 
 ***
