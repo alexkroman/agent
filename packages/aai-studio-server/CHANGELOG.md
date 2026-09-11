@@ -1,5 +1,123 @@
 # aai-studio-server
 
+## 0.11.16
+
+### Patch Changes
+
+- c3ad142: Serve the agent surface's default browser client from an injected directory. `aai-server` no longer resolves `@alexkroman1/aai-ui` itself — compiled into the studio entry, that resolution put `defaultClientDir()` outside the package it self-references and every deployed agent page answered 500 with "Could not locate the default client UI".
+  
+  Keep `modal` and `microsandbox` out of the service bundle — both resolve files relative to their own package, which an inlined copy cannot do — and baseline the 25 npm packages still inlined into it (`pnpm check:bundled-deps`).
+- 07a046e: Make `aai-evals` a pure eval library, and move the studio starter eval into the package it is about.
+  
+  `packages/aai-evals` held two things: an eval FRAMEWORK — a recording runner, a spread report, an assertion vocabulary over the session event stream, a key gate — and the STUDIO's starter eval, which drives this product's HTTP surface and grades the source its coding agent generates. Six modules and their specs move to `aai-studio-server`:
+  
+  | was | is |
+  | --- | --- |
+  | `aai-evals/src/studio-target.ts` | `aai-studio-server/src/studio-eval-target.ts` |
+  | `aai-evals/src/starter-expectations.ts` | `aai-studio-server/src/studio-starter-expectations.ts` |
+  | `aai-evals/src/starter-grade.ts` | `aai-studio-server/src/studio-starter-grade.ts` |
+  | `aai-evals/src/starter.eval.test.ts` | `aai-studio-server/src/studio-starter.eval.test.ts` |
+  | `aai-evals/src/template-contract.ts` | `aai-studio-server/src/studio-template-contract.ts` |
+  | `_gate.ts`'s `evalOrigin`/`evalContracts`, `_env.ts`'s `evalStepCapHint` | `aai-studio-server/src/studio-eval-env.ts` |
+  
+  **The line is what a module is ABOUT, not what runs it.** What stayed names no product surface, no HTTP route, no prompt and no tool. What moved named the studio in every constant it declared — its chat route, its per-sandbox token, its step cap, the prose its own tools write, the eighteen starter prompts and what each asked for.
+  
+  What that arrangement had cost was legible in the manifests, and all four items are now gone from `aai-evals`: a dependency on `aai-studio-client` for the starter list, `undici` + `ai` + `eventsource-parser` for one target's transport, and an `evals-package-boundary` exception for a subpath one file read. That boundary is a total deny again — including `aai-studio-client/*`, which is the half worth keeping, because a package that MAY import the studio's starter list is where the next studio-shaped eval lands.
+  
+  `aai-evals` is importable now: five subpath exports (`/runner`, `/report`, `/gate`, `/register`, `/env`), `@dev/source` only since nothing there builds — exactly what the one consumer resolves, with `assertions.ts` and `tool-assertions.ts` deliberately left off until a case outside the package needs the vocabulary. `aai-studio-server` takes the framework from them rather than carrying a second runner — which is the same rule that let `scripts/starter-eval/run.mjs`'s 745 lines be deleted in the first place. The edge is one-way and closes no cycle: `aai-evals` depends on `@alexkroman1/aai` and `@alexkroman1/aai-runtime` and on nothing else in the workspace, and `evals-package-boundary` denies `aai-studio-server` by name.
+  
+  Three mechanical consequences:
+  
+  - **`_gate.ts`, `_register.ts` and `_env.ts` lost their underscores.** The prefix means "not part of the public API, never import cross-package"; a subpath export pointing at one would say the opposite.
+  - **`aai-studio-server` declares `test:eval` / `check:eval`**, and its `vitest.config.ts` excludes the `.eval.` infix like every other package with a slow tier. The eval env vars are already declared on the `check:eval` TASK in `turbo.json`, so they reach the new package with no further wiring — `AAI_EVAL_ORIGIN`, `AAI_EVAL_CONTRACTS` and `AAI_STEP_CAP_HINT` are now read only by it.
+  - **`eval-case-registration` and `eval-gate-is-not-unit-tier` each gained a studio-side twin.** Two conventions rather than one widened `paths`, because konsistent matches an import SPECIFIER literally and `./register.ts` and `aai-evals/register` are two strings for one module — a single rule could require only one and would exempt the other package.
+  
+  One latent bug fixed on the way: `.gitignore` named `packages/aai-evals/.eval-workspaces/`, one directory above where `new URL("./.eval-workspaces/", import.meta.url)` ever resolved, so the template-contract scratch tree had never actually been ignored. The entry now names the real path, and the package's vitest `exclude` keeps a leaked tree — the module removes it in a `finally`, so only a killed run leaves one — from being collected as tests.
+  
+  The reasoning that moved with the code is `packages/aai-studio-server/STARTER-EVAL-CLAUDE.md`, a sibling rather than a section because that package's guide is at 99% of the agent-context budget (1,582 chars left). The root `AGENTS.md` gains the one row that sibling owes it — `claude-md-limit.test.ts` asserts the root guide names every package guide and sibling, so a new one that nobody lists there fails.
+- ebcd052: Give the guest coding-agent eval the studio's shipped system prompt, as committed copies held current by check:studio-prompt, so a starter-shaped case grades the prompt the studio really sends rather than a harness constant.
+- 07a046e: Correct two docs that said the studio's coding-agent tools cannot be files because they close over a directory. The coding-agent template ships nine tools that close over one directory as files; what rules files out for the studio is per-session lifetime, not closure.
+- 350e80f: Give the studio front-end a `components/` (29 files) and a `hooks/` (the three `use-*` modules); everything else stays at `src/` root.
+  
+  The PANES deliberately do not move. konsistent's `studio-client-pane-modules` pins a thirteen-module roster as the statement of what the switcher renders, and that roster is a category rather than a subset of "components" — seven were moved into `components/`, the convention failed, and they came back. If they ever want a directory it should be `panes/`, with that convention's paths moved to match.
+  
+  `studio-client-cleanup-is-setup` had to be widened to cover subdirectories, and that is the failure mode to check for on any move in this package: it forbids importing Testing Library's `cleanup`, keyed on `src/{suite}.test.tsx`, so moving nine specs into subdirectories dropped them from a rule that went on printing green — including `hooks/use-event-stream.test.ts`, the one file the convention's own rationale is written about. Both glob spellings are listed, since a konsistent `**` needs a subdirectory to match, and the widening was A/B'd by adding the forbidden import and watching the rule fire.
+- 4ab107e: Test the studio coding agent as an agent: an agent-level unit spec, an eval, and the deployable claim every shipped template makes.
+  
+  ## The agent level, through the SDK's own testing framework
+  
+  `studio/agent-turns.test.ts` drives one turn of `createTextAgent` over the real `createStudioAgent` definition with a scripted model, using `runTextAgent` + `scriptedTextModel` (`@alexkroman1/aai-runtime/testing`). **That helper had no caller in the repo**, and the coding agent is the only text agent there is — its own doc says it "builds a fresh text agent per call and mandates a script", which "is right for a SPEC: one turn, no carry-over, the provider socket the only fake."
+  
+  Three suites tested this agent from both ends and nothing in the middle: `studio/agent.test.ts` (what the definition declares), `studio/tools.test.ts` (each tool through `runTool`), `studio/chat.scenario.test.ts` (the HTTP surface). What none of them drives is the LOOP — argument coercion, Standard Schema validation, the `ctx` a tool is handed, the reserved final-answer step, the event stream. Four claims, two of which could not be made anywhere else:
+  
+  - **The step budget reserves a final ANSWERING step, tools off.** The one behaviour that changed when this agent moved onto the SDK, and nothing pinned it for this definition: with `maxSteps: 1` and a script that would keep calling tools, the turn runs two steps and the second one speaks. Before, a capped turn ended wherever the budget ran out — including straight after a tool result with nothing said — and it ended *successfully*, so the user saw the agent simply stop.
+  - **A turn is a `SessionEvent` stream the eval readers take unchanged** (`toolCallsInEvents`, `saidIn`, exactly one terminator). That bridge is what makes the eval file below possible at all, and it is now asserted against a script — no key, no model, no tokens — rather than only where finding out costs money.
+  - An argument the schema rejects reaches the model as a repairable result rather than killing the turn. Load-bearing here rather than theoretical: the studio's model regularly emits a whole source file inside a JSON string.
+  - The tool the model chose runs through the real executor and its result is what the next step reads.
+  
+  It stays in the UNIT tier by choice of tool — `todo_write` closes over nothing and touches no disk, and the session fixture points at a path that does not exist, since `createStudioAgent` performs no I/O. A turn that writes files belongs to the scenario tier, where `studio/chat.scenario.test.ts` already drives one.
+  
+  `studio/agent.test.ts` also makes the claim every shipped template's spec opens with, for the first time: `expectDeployable` (`@alexkroman1/aai/testing`) runs `toAgentConfig` — the conversion `aai build` runs — and asserts per derived mode. For a text agent that is "no audio path", which is the one worth having, because this is the repo's only definition assembled in CODE rather than authored in an `agent.ts`: a `voice:` or an `stt` added here has no author reviewing an agent file, and `createTextAgent` would accept the def anyway. That test pins one surprising asymmetry it cost a wrong assertion to learn — the conversion carries `builtinTools` and NOT the nineteen declared tools, because a tool registry is extracted where the bundle is assembled, which is exactly why `test_agent` reports its tool list off the loaded bundle's own `__aaiConfig`.
+  
+  ## An eval of the studio coding agent, written with the templates' eval suite
+  
+  Nine cases in `packages/aai-guest/src/studio-agent.eval.test.ts` that drive `createStudioAgent` over a real workspace and ask the question no other suite in the repo can on this side of the boundary: given this instruction and this tree, did the agent reach for the right tool, in the right order, and leave something that compiles. `studio/agent.test.ts` asserts what the definition declares, `studio/tools.test.ts` drives each tool directly, `studio/chat.scenario.test.ts` drives the HTTP surface with a scripted model — all three are about parts.
+  
+  It is the templates' suite, not a second one: `openEvalTextAgent`, `EvalTurn`, `turnCalling`/`toolNames`/`describeTurn`, `resolveEvalMode` and `installStubLlm`, all from `@alexkroman1/aai-runtime/eval`, the subpath the twenty-five shipped template evals drive. The one piece that could not be reused is `describeEval` itself, and it is structural rather than a preference: that function stands up `openEvalSession` → `createRuntime`, which refuses `text: true` by name. `describeStudioEval` (`studio/_eval-harness.ts`) is the third owner of the announce that harness's own doc names ("`describeEval` for a template, `_gate.ts` for `aai-evals`") and adds only per-case lifetime.
+  
+  `packages/aai-evals/CLAUDE.md` argued for this before it existed and said where it would have to live; both halves held. It could not be built there — `StudioSession` carries a real workspace `dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`, all of which live in `aai-guest`, which `evals-package-boundary` denies that package by name. And it replaces nothing: the HTTP starter eval measures the DEPLOYED path (the broker, the per-sandbox token, the guest chat route, the workspace sync), which is where the harness it replaced had rotted.
+  
+  What is real in a case: `initStudioSession`, the four tool families and three web builtins, the SDK's tool executor with its `ctx` and the 120s studio deadline, the reserved final-answer step, `typecheckWorkspaceDir` behind the post-write diagnostics, and `test_agent`'s real build → bundle load → trial.
+  
+  **Four of the nine end by asking the workspace rather than the transcript.** `ctx.typecheck()` runs the same compiler the post-write diagnostics run and `ctx.runTests()` runs the workspace's own specs the way `test_agent` does — both called by the CASE, so the claim is about the tree on disk and not about what a tool result said about it. That is the one class of assertion a model cannot satisfy with prose, and it is why "adds what it was asked for and leaves the workspace type-clean" is a real case rather than a keyword search over the reply. Two more claims are sharpened the same way: the template case compares `agent.ts` byte for byte against the shipped template (a retyped file passes every structural check the starter eval makes and is a different file), and the failing-spec case requires `agent.test.ts` to be unchanged byte for byte, because editing the assertion to match the code makes the tests pass while destroying the only record of what was wanted. The repair loop is asserted per occurrence: every write whose result carried `Type errors after writing <file>` must be followed by another write to that file.
+  
+  Five cases are live and four are scripted, and the split is not about cost — the four are REFUSALS, and a refusal can only be observed if something calls the refused thing. A competent model does not write unparsable TypeScript, address a path outside its workspace, or ask for a template that does not exist. What they grade is the guest's own answer: whether the sentence the tool sends back is one a model can act on.
+  
+  **The honest limit: the system prompt is the harness's, not the studio's.** The shipped one is `studioSystemPrompt(kind)` in `aai-studio-server`, and `guest-package-boundary` denies the guest that import — correctly, since the guest must not link against the host. So these cases adjudicate the tool set, the tool descriptions, each tool's result prose and the model; the studio's prompt is graded by the HTTP starter eval and by nothing here, and no result from this file may be reported as covering it. `STUDIO_EVAL_PROMPT` is deliberately thin in one direction: a base prompt telling the agent to copy templates verbatim, or not to delete a failing spec, would turn the corresponding case into a measurement of that constant.
+  
+  `studioBundleAccess` (`studio/bundle-access.ts`) is the one production change, and the eval is what made it worth doing. `harness.ts` built the studio's bundle loader and trial executor as an inline object; `HarnessBundleAccess` was the one declaration of its shape while the two rules inside it had none — an inspection load carries an empty env, and a trial answers in prose (`Tool error: …`, `(no result)`, `agent not loaded`) because its consumer is a model reading a tool result. A second caller that wants the real pair rather than a double is where an inline object becomes a copy. Behaviour is unchanged; it has its own spec now, which pins the thing a snapshot of `state` would have got wrong: it reads `state.agent` at CALL time, because the access object is built once per session while `test_agent` loads and then trials inside one tool call.
+  
+  `studio/_eval-harness.test.ts` is the harness's own spec, and the one regression it catches is worth naming: it asserts that `STUDIO_EVAL_PROMPT` mentions neither templates, nor tests, nor deleting, nor type-checking. A well-meaning edit adding any of those is exactly how the template case and the failing-spec case would stop measuring the agent and start measuring that string — silently, both still green.
+  
+  Wiring: `aai-guest` gets `test:eval`/`check:eval` and excludes `**/*.eval.test.ts` from its unit config, so tier membership stays the `.eval.` infix. `check:eval` here is outside the merge path — `scripts/check.mjs` and `check.yml` both run it filtered to `aai-templates`. `AAI_EVAL_STUDIO_MODEL` is declared in `check:eval`'s `env` in `turbo.json`; the default it overrides is a literal, because `guest-package-boundary` denies the guest the host constant that owns the real one, and that literal will drift when the studio changes model — which the announce line prints on every run.
+  
+  Measured: the scripted run is 4 cases, 5 skipped, 38s, of which the `test_agent` case alone is 34s — two real in-guest rolldown passes, two bundle loads, a real vitest run and one trial call. The tier's wall clock here is its build passes and everything else is noise. The five live cases' fixtures and both ground-truth readers were validated against scripted runs driving the same tools — the broken tool really fails `tsc` and the diagnostic really reaches the write result, the failing spec really fails and an edit to `agent.ts` really makes it pass, a copied template really is byte-identical. What has not been observed is a live model's behaviour against them, so the first live run is the validation those five have not had.
+- Updated dependencies [c129f05]
+- Updated dependencies [49daf83]
+- Updated dependencies [440e38a]
+- Updated dependencies [0dcf247]
+- Updated dependencies [7fe0571]
+- Updated dependencies [b7e21aa]
+- Updated dependencies [4ab107e]
+- Updated dependencies [180fd15]
+- Updated dependencies [350e80f]
+- Updated dependencies [350e80f]
+- Updated dependencies [07a046e]
+- Updated dependencies [7832142]
+- Updated dependencies [142e639]
+- Updated dependencies [180fd15]
+- Updated dependencies [440e38a]
+- Updated dependencies [350e80f]
+- Updated dependencies [350e80f]
+- Updated dependencies [440e38a]
+- Updated dependencies [440e38a]
+- Updated dependencies [482b874]
+- Updated dependencies [350e80f]
+- Updated dependencies [f75ad5f]
+- Updated dependencies [440e38a]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [3e8e8a4]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [49cebb8]
+- Updated dependencies [7fe0571]
+- Updated dependencies [350e80f]
+  - @alexkroman1/aai@16.2.0
+  - @alexkroman1/aai-runtime@16.2.0
+  - @alexkroman1/aai-ui@16.2.0
+  - aai-server@5.3.6
+  - aai-studio-client@0.7.3
+
 ## 0.11.15
 
 ### Patch Changes

@@ -1,5 +1,137 @@
 # aai-templates
 
+## 0.5.0
+
+### Minor Changes
+
+- f75ad5f: Fix every live template eval failure, and the instrument that hid them.
+  
+  `pnpm test:eval:templates` failed 15 of 110 cases; it now fails none. The
+  instrument came first, because it is why finding them took eight passes:
+  `AAI_EVAL_REPEAT` and `AAI_EVAL_ONLY` were declared in `check:eval`'s `env`,
+  forwarded by `run-evals.mjs` and documented in its header, but read only by
+  `aai-evals` — for all 28 template suites both were silent no-ops. `eval/_env.ts`
+  reads them now and `SuiteSpread` reports the spread, so a case that failed only
+  SOME repeats prints as `UNSTABLE (n/m)` with the failure it saw and does not
+  fail, while one that failed every repeat does. Opt-in: an unset environment is
+  byte-identical to before. `describeWorkflowEval` is wired in too, which would
+  otherwise have left the five workflow suites silently running once.
+  
+  The spread report is what caught the one caller-facing defect. `roadside-assistance-agent`'s
+  `acknowledge_disclosure` carried "after you have read it to them in full" in its
+  DESCRIPTION and nowhere else, so a live desk called `lookup_coverage`,
+  `acknowledge_disclosure` and `dispatch_truck` while never calling
+  `service_disclosure` — a truck went out on a fee nobody read the caller, in the
+  one template whose stated purpose is a price they were told about before it
+  moved. `service_disclosure` records the handover now and `acknowledge_disclosure`
+  refuses without it.
+  
+  Eight template prompts had real defects, most of them one shape: an instruction
+  to ANNOUNCE a lookup with no instruction to then perform it (topic-briefing,
+  executive-inbox in three places), a tool the prompt never mentioned at all
+  (entertainment-picks' `recommend`), an escape hatch that literally permitted
+  answering uncited (web-research), reading a score conflated with awarding points
+  (text-adventure), a clarifying question asked over an already-complete objective
+  (research-planner), no positive counterpart to "never invent a value"
+  (hotel-reception), and every fee figure handed to the model behind a rule
+  forbidding it to summarise them (roadside `lookup_coverage`).
+  
+  Several evals were wrong rather than the agents: three asserted values a SCRIPT
+  determined against a live model, two forbade a documented-valid outcome, one
+  demanded three distinct scores from three separate `ctx.generate` calls that
+  never see each other, and several read a multi-tool chain out of a single turn.
+  `EvalTestContext.mode` now carries the rule that would have prevented the first
+  three — a value a script determined may only be asserted under `mode === "stub"`.
+  
+  Three new exports on `@alexkroman1/aai-runtime/eval`, moving that capability to
+  epoch 2 with epoch 1 retained: `expectCalled` names the tier's commonest finding
+  (the agent announced and stopped) in one assertion message that quotes the
+  sentence said in place of the tool; `lastToolResultIn` is `toolResultIn` without
+  the exactly-once refusal, which is right within a turn and wrong across turns;
+  and `EvalWorkflowEngineOptions.stepAttempt` lets a case reach a body's PRIMARY
+  branch — the engine only ever answered a first-and-only attempt, so
+  `isLastAttempt` was always true and `link-digest`'s degraded prompt was the only
+  one any eval had measured.
+
+### Patch Changes
+
+- b7e21aa: Extract the studio coding agent's tool set into the SDK, and ship a generic coding agent as a template.
+  
+  ## The nine tools are `@alexkroman1/aai/coding-tools` now
+  
+  `createCodingTools({ dir })` answers the tools an agent that edits code turns out to need — `read_file`, `write_file`, `edit_file`, `delete_file`, `list_files`, `glob`, `grep`, `bash`, `todo_write` — keyed by the names the model calls, over ONE directory and reaching nothing outside it. Every one of them was already written, tested and tuned; what it could not be was USED, because it lived in `aai-guest`, a private package, closed over one studio session's workspace and tangled with the three things only the studio wants: a write-time syntax gate, a post-write type check, and a bundle trial.
+  
+  What survives deleting all of that is most of it. `studio-edit.ts` and `studio-grep.ts` moved as `host/coding-edit.ts` and `host/coding-grep.ts` with their specs, the capped child-process runner moved as `host/coding-spawn.ts`, and `resolveInside`/`writeFileWithParents`/`isPathInside` joined `host/workspace-files.ts` — the module that already owns what a workspace IS on disk, and where the containment test now has ONE implementation rather than the four it had (`aai-runtime`'s `server-static.ts` re-exports it; the copies that were only correct for an absolute, normalized, trailing-slash-free root are gone).
+  
+  Three seams a host fills in, and each is a rule the studio paid for:
+  
+  - **`validate` refuses a write BEFORE it lands.** The studio parses the file: one that does not parse cannot be edited back into shape by text matching, so writing it strands the turn — sixteen steps of read → edit → "could not find that text", no work produced.
+  - **`afterWrite` appends to a write that SUCCEEDED**, which is where the studio hands back the workspace's type errors inside the result of the write that caused them. It is the cheap half of what a language server would do and the place a repair round is actually saved.
+  - **`env` is `bash`'s child environment**, defaulting to this process's own — right for a CLI on a laptop, wrong for a sandbox, which passes an allow-list so a credential the host holds is out by construction rather than by remembering to subtract it. The studio still passes its 24-name `workspaceChildEnv()`.
+  
+  `CODING_TOOL_DESCRIPTIONS` and the four limits ride along on the same subpath, because a host that overrides a description has to quote the number the code enforces, and cannot keep the two in step with a constant it may not import. The machinery UNDER the tools is not published with them: the edit matcher and the workspace grep have no consumer outside `coding-tools.ts`, and only the capped child-process runner is on `@alexkroman1/aai/host-internal` — because the guest harness spawns npm, the CLI bundler and the workspace test run through it, and each decides for itself whether a killed child is a failure or an annotated line. A name published in anticipation of a consumer is a surface with no reader.
+  
+  The record is typed by NAME (`Record<CodingToolName, ToolDef>`, narrowed by `only`) rather than by an index signature, because a template's `tools/read_file.ts` default-exports one entry of it and under `noUncheckedIndexedAccess` an index signature hands back `ToolDef | undefined`.
+  
+  It costs `@alexkroman1/aai` two runtime dependencies, `diff` and `picomatch`, which were `aai-guest`'s. Both are small and pure-JS; the artifact-size budget will report them and this is the intent.
+  
+  ## `templates/coding-agent`
+  
+  A generic coding agent: `text: true`, the nine tools over `WORKSPACE_DIR`, a `system-prompt.md` that is most of what makes it good, and nothing about building voice agents with this SDK. It is the first TEXT-mode template, and this repo's guide previously argued there could not be one — the argument was right about DEPLOYMENT (`createRuntime` refuses `text: true` by name, so there is no session for `aai dev` or the platform to serve) and wrong about the template, since a starter is a worked example first. So it ships its own front door: `chat.ts`, which is `createTextAgent` plus `withToolsDir` (a tool is a FILE even with no bundler in the path), a `readline` loop, and the conversation as a message list the file keeps.
+  
+  Its tools are ONE `createCodingTools` call in `shared.ts` that each `tools/*.ts` re-exports an entry of — nine factory calls would be nine chances to point one at a different directory, and the directory is the only security-relevant decision in the template. The template says so where an author will read it: `bash` runs what the model wrote with the authority of the process, which is the authority the write and delete tools already have, so it grants nothing new — what it does is make the grant obvious.
+  
+  ## A TEXT agent's eval suite: `describeTextEval`
+  
+  `@alexkroman1/aai-runtime/eval/vitest` gains `describeTextEval`, and `/eval` gains `evalTextCredentials`. A template's eval must import that vitest subpath (konsistent's `template-eval-spec`), and what was there for a text agent was a voice suite that refuses one: `describeEval` opens `openEvalSession` → `createRuntime`. Everything a case author sees is shared — the two modes, the announce line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn` and every reader above it — including `modeFrom`, so `AAI_EVAL_STUB` and `AAI_REQUIRE_EVAL` cannot come to mean one thing at two doors of three and another at the third.
+  
+  `evalTextCredentials` is a second gate rather than a flag on the first, because `evalCredentials` OVER-ASKS here: it answers about a voice agent, so an agent with no complete pipeline gets the default AssemblyAI STT key added, and a text agent declaring `anthropicLlm()` was reported as needing a key it will never read — which skips a suite the machine could have run live. It asks about the LLM alone, and about the DEFAULTED descriptor when the agent declares none, so the question is asked about the model the run would use.
+  
+  That is an additive change to the `aai-runtime:eval` capability: epoch 3, with epoch 2 RETAINED and its frozen authoring example written — `v2.ts` is `v1.ts` plus the two names epoch 2 added, used where a case would really reach for them.
+  
+  ## Why a carrier is in the header
+  
+  `aai-server` takes a patch because this changes `aai-guest`, whose built `dist/harness.mjs` is baked into the guest snapshot image the platform spawns every sandbox from — so the change reaches production through a server deploy and nothing else. Nothing in `aai-server` itself is touched.
+  
+  ## What changed in the studio, and what did not
+  
+  `createStudioTools` is `createCodingTools` with the three seams filled plus `test_agent`, which stays whole — it is the one tool that knows the workspace is an aai agent. The descriptions split the same way: the SDK's, three studio OVERRIDES (a write is type-checked, dependencies have their own tools, a workspace syncs back), and the tools only this host has. `studio/tool-descriptions.test.ts` asserts the three maps together cover the agent's real tool set exactly and that an override names a tool the SDK actually describes — an override of nothing is prose the model never reads. `studio/tools.test.ts` gave up the cases that are now the SDK's and keeps the ones about the seams. No behaviour changed in the studio.
+- 5ac5edb: Keep two templates' seed data out of their browser bundles.
+  
+  `hotel-reception-agent` and `technical-support-agent` each shipped their seeded
+  data to the page. Measured on the built client bundle before this change: all 43
+  of `hotel-reception-agent/seed.ts`'s guest phone numbers were present, and so was
+  the full text of every one of `technical-support-agent`'s ten knowledge-base
+  articles. Both are the failure `retail-orders-agent` already documents and
+  avoids, and the one `template-layout-gate.test.ts` names as the reason for its
+  single exemption — `shared.ts` is the module `client.tsx` imports for its view,
+  so anything it reaches is in the page.
+  
+  The two reach it by different routes, which is why neither was caught by the
+  other's precaution. A slot holds its factory as a LIVE reference, so nothing
+  tree-shakes it: `hotelSlot` sat in `shared.ts` and its `createHotelState` called
+  `seedHotel`, dragging an 18.5 KB `seed.ts` and `records.ts` behind it. The
+  factory, the slot and `deskProjection` move to a new `session.ts`; `shared.ts`
+  gains a seed-free `emptyHotelState()` and `client.tsx` derives its pre-first-call
+  frame with `deskView(emptyHotelState())`, the `useAgentState` overload
+  `retail-orders-agent` uses for the same reason. `technical-support-agent`'s index
+  is instead built at MODULE SCOPE — `for (const doc of DOCS)` runs on import — so
+  touching that file at all pulled every article; the knowledge base and its
+  retriever move to a new `knowledge.ts`, and `PRODUCT` stays behind as a NAMED
+  import off the same JSON so the page still derives its tab title without taking
+  `docs` with it.
+  
+  `applicant-screening-agent` was checked and is NOT affected: its `emptyHiring`
+  factory never reaches `LEADS`, and 0 of 24 `leads.json` strings appear in its
+  bundle. Verified by rebuilding both clients — 0/43 phone numbers and 0/20 article
+  fragments, with the intended product string retained, and bundles 12.6 KB and
+  4.9 KB smaller.
+  
+  `SLOT_ELSEWHERE` in the layout gate gains its second entry, which is what that
+  deny-list's own failure message asks for; the prose in both templates and the
+  package guide that named the moved symbols moves with them.
+- 49cebb8: Call the project the AssemblyAI Agent SDK in the READMEs, the documentation site, the shipped authoring guide, and the shipped skill. The npm package names, the `aai` CLI command, and every env var are unchanged.
+
 ## 0.4.0
 
 ### Minor Changes
