@@ -86,8 +86,18 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // prompt died with the run it was assembled for.
     system: resolveSystemPrompt(req.systemPrompt),
     messages: req.messages,
-    tools: req.tools,
-    toolChoice: req.toolChoice,
+    // OMITTED, not empty, when this request has no tools — and that is a
+    // provider requirement rather than tidiness. Several small conversational
+    // models refuse a tool list outright: the AssemblyAI gateway answers
+    // `400 {"errors":["model qwen3.5-4b-32k-fast does not support tools"]}` for
+    // a request carrying one, and an empty `tools: {}` still serializes to a
+    // `tools` key. So a tool-free agent — which `twoTier` makes every fast tier
+    // (see `two-tier/`), and which a `page`-less agent with no tools already
+    // was — sends no tool key at all. `toolChoice` goes with it: a choice with
+    // nothing to choose from is refused by the same providers.
+    ...(Object.keys(req.tools).length === 0
+      ? {}
+      : { tools: req.tools, ...omitUndefined({ toolChoice: req.toolChoice }) }),
     // Temperature only when set — Claude 5 ignores it and warns. The other two
     // follow the same rule for the same reason: an explicit `undefined` is not
     // the same request as an absent key to every provider, and `maxRetries: 0`

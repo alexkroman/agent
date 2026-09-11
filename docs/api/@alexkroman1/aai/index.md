@@ -3608,6 +3608,29 @@ Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
 its voice).
 
+##### twoTier?
+
+```ts
+optional twoTier?: TwoTierConfig;
+```
+
+Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
+
+###### Default Value
+
+unset — one model, no gate, no digest, no extra request.
+
+It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
+because it shares this group's rule exactly and not the other one's: the
+gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
+mode both honour it and S2S structurally cannot — there the provider owns
+the loop, calls the tool itself, and there is no moment between the
+proposal and the mutation for a second model to stand in.
+
+###### Inherited from
+
+[`AgentModelTuning`](#agentmodeltuning).[`twoTier`](#twotier-1)
+
 ##### usageLimits?
 
 ```ts
@@ -3867,6 +3890,25 @@ one. A booking desk and a game master want different values, and until this
 existed neither could say so: `ctx.generate` and `subagent()` both took a
 temperature while the main loop — the one that does almost all the talking
 — took no sampling parameter at all.
+
+##### twoTier?
+
+```ts
+optional twoTier?: TwoTierConfig;
+```
+
+Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
+
+###### Default Value
+
+unset — one model, no gate, no digest, no extra request.
+
+It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
+because it shares this group's rule exactly and not the other one's: the
+gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
+mode both honour it and S2S structurally cannot — there the provider owns
+the loop, calls the tool itself, and there is no moment between the
+proposal and the mutation for a second model to stand in.
 
 ##### usageLimits?
 
@@ -7477,7 +7519,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -7643,6 +7685,139 @@ name: string;
 ```
 
 The tool's name, as the subagent's model called it.
+
+***
+
+### TwoTierConfig
+
+The FAST/SLOW two-tier configuration — see this module's header.
+
+The fast tier is `agent({ llm })`, unchanged and unnamed here: whatever the
+agent already talks on is the tier that holds the call, minus its tools. Only
+the second one needs declaring, which is what keeps this additive.
+
+#### Example
+
+**A tool-free conversational model in front of a careful one**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "orders-desk",
+  llm: assemblyAILlm({ model: "qwen3.5-4b-32k-fast", reasoningEffort: "none" }),
+  twoTier: {
+    llm: assemblyAILlm({ model: "gpt-5.6-luna" }),
+    effort: "high",
+  },
+});
+```
+
+#### Properties
+
+##### completionGate?
+
+```ts
+optional completionGate?: boolean;
+```
+
+Refuse a `completes` tool while the digest still holds work that has not
+settled — DIGEST-GATED COMPLETION.
+
+###### Default Value
+
+`true`
+
+This is the half of TalkAct's contract that was a prompt rule there
+("never claim the task is done unless the computer agent state explicitly
+says so", written after early versions "hallucinated 'it's submitted!' and
+hung up") and is a refusal here. It is aimed at a failure mode this repo
+has measured by name on tau2: the agent says "I've updated your address"
+with no tool call behind it.
+
+**What it reaches.** Every tool declared `completes` — the author's
+hand-off or termination tool, and the slow tier's own "work finished"
+tool, which is not exempt. The refusal names what is still outstanding and
+arrives as an ordinary recoverable tool failure, so the run finishes the
+work and reports again rather than the turn ending. It is the same
+interception Pickle describes, where a blocked hand-off continues the
+conversation instead of silently terminating it.
+
+**What it does not reach**, stated because the difference matters: the
+fast tier SAYING a false completion. Speech is not a tool call. The levers
+there are the rendered statement of outstanding work on every fast-tier
+request (which this feature installs unconditionally) and, for an agent
+that wants a hard stop, an `outputGuardrails` entry the author writes.
+
+##### contextMessages?
+
+```ts
+optional contextMessages?: number;
+```
+
+How many trailing messages of the conversation the slow tier may see.
+
+###### Default Value
+
+`24` (`DEFAULT_SLOW_TIER_CONTEXT_MESSAGES`)
+
+A bound on COST and on the information boundary at once, which is SABER's
+third component (block-based context cleaning) read the way its motivation
+reads: errors grow with context length as an agent drifts from its role and
+acts on stale constraints. The window is the session's own conversation,
+trimmed — never a richer history assembled beside it.
+
+##### effort?
+
+```ts
+optional effort?: SlowTierEffort;
+```
+
+The slow tier's reasoning budget — see [SlowTierEffort](#slowtiereffort).
+
+###### Default Value
+
+`"high"` (`DEFAULT_SLOW_TIER_EFFORT`)
+
+##### llm?
+
+```ts
+optional llm?: string | LlmProvider;
+```
+
+The slow tier's model.
+
+###### Default Value
+
+the agent's own `llm` — which makes the declaration a pure
+ARCHITECTURE change rather than also a model change, and is the arm to run
+when you want to know which of the two a difference came from.
+
+##### timeoutMs?
+
+```ts
+optional timeoutMs?: number;
+```
+
+How long one slow-tier RUN may take before it is abandoned.
+
+###### Default Value
+
+`15000` (`DEFAULT_SLOW_TIER_TIMEOUT_MS`)
+
+**Nobody waits for this, and that is the point.** The slow tier runs
+detached from every turn, so a run that overruns costs a STALE DIGEST —
+the fast tier keeps talking from the last summary it was given — and never
+a silent caller. There is deliberately no fail-open/fail-closed policy
+beside it: failing open is what the architecture DOES, structurally,
+because the caller's turn never awaited the slow tier in the first place.
+A knob for it would be a setting with nothing to set.
+
+What the bound buys is that a wedged provider does not hold the run slot
+forever, so the next caller utterance still gets a fresh run. An abandoned
+run's in-flight work is settled as failed on its way out, which is what
+keeps [TwoTierConfig.completionGate](#completiongate) from wedging behind it.
 
 ***
 
@@ -7925,7 +8100,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -9974,6 +10149,30 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 ***
 
+### SlowTierEffort
+
+```ts
+type SlowTierEffort = "minimal" | "low" | "medium" | "high";
+```
+
+How much thinking the slow tier is given.
+
+A FIRST-CLASS knob rather than a constant, because the one published
+ablation on a second reasoning tier of this shape (Pickle's tool-mentor)
+attributes its gain to the supervisor's reasoning BUDGET rather than to its
+prompt wording — a full round of prompt iteration was worth net one task.
+Their numbers are single-trial under their own churn caveat and are not
+quoted here as an effect size; what survives is the design hint, which is
+cheap to honour: make the budget settable, and do not expect prompt tuning
+to carry the feature.
+
+Passed to the provider as its own reasoning option, spelled per family. A
+provider with no such option ignores it, which is why this is a HINT. An
+effort set on the descriptor itself — `assemblyAILlm({ reasoningEffort })` —
+is applied when the model is built and is the precise form.
+
+***
+
 ### StaticAgentParams
 
 ```ts
@@ -10800,9 +10999,11 @@ backend configured, naming which.
 
 ```ts
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+  completes?: boolean;
   description: string;
   inputSchema?: P;
   messages?: ToolMessagesInput;
+  mutates?: boolean;
   onError?: ToolErrorHandler;
   execute: R;
 };
@@ -10890,6 +11091,25 @@ once per tool (see `warnOversizedResult` in `aai-runtime`'s
 
 #### Properties
 
+##### completes?
+
+```ts
+optional completes?: boolean;
+```
+
+Calling this tool ENDS or HANDS OFF the engagement — a stop call.
+
+`completes` implies [ToolDef.mutates](#mutates) for routing purposes: ending a
+call is not reversible by the next turn, so it is verified like a write
+whether or not it writes. What it adds on top is the digest gate — with
+`twoTier.completionGate` on (the default), this tool is REFUSED while the
+session's digest still holds unsettled work, and the refusal names what is
+pending.
+
+The tools that want it are the ones that sound like an answer: a transfer
+to a human, a "task complete" signal, a hang-up. It is the fix for an
+agent that announces the outcome and terminates before doing the work.
+
 ##### description
 
 ```ts
@@ -10955,6 +11175,51 @@ export default tool({
     failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
   },
   execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+##### mutates?
+
+```ts
+optional mutates?: boolean;
+```
+
+This tool CHANGES something outside the conversation.
+
+A DECLARATION, never inferred. It is inert unless the agent declares
+`twoTier` (see [TwoTierConfig](#twotierconfig)), and then it is the whole routing
+decision: a `mutates` call is proposed by the fast tier and authorized by
+the slow one, where a read runs untouched at the latency it always had.
+
+**Declared rather than derived, deliberately.** A naming heuristic
+(`update_*`, `create_*`, `set_*`) is wrong in both directions on real
+agents — `check_out`, `submit`, `refund` mutate and match nothing;
+`update_view`, `set_language` match and mutate nothing outside the call —
+and being wrong in the second direction costs a second model call on the
+hot path while being wrong in the first silently un-gates the calls the
+gate was installed for. The author knows; nothing else does. (Pickle's
+own prompt constitution reaches the same conclusion from the other end:
+derive action classes from tool METADATA, and never name tools inside
+prompt text.)
+
+**Absent means "not declared", not "read-only".** A gate that treated
+silence as safe would un-gate every tool written before this field
+existed, which is exactly the population most likely to need it; the
+runtime therefore logs once per session naming the tools it is treating as
+reads, so an author who forgot finds out from a boot line rather than from
+a benchmark.
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Change the shipping address on an order",
+  inputSchema: z.object({ orderId: z.string(), address: z.string() }),
+  mutates: true,
+  execute: async ({ orderId, address }) => ({ orderId, address }),
 });
 ```
 
@@ -12976,6 +13241,36 @@ only reader is one field is documented by sitting next to it.
 
 ***
 
+### DEFAULT\_SLOW\_TIER\_CONTEXT\_MESSAGES
+
+```ts
+const DEFAULT_SLOW_TIER_CONTEXT_MESSAGES: 24 = 24;
+```
+
+Default [TwoTierConfig.contextMessages](#contextmessages).
+
+***
+
+### DEFAULT\_SLOW\_TIER\_EFFORT
+
+```ts
+const DEFAULT_SLOW_TIER_EFFORT: SlowTierEffort;
+```
+
+Default [TwoTierConfig.effort](#effort).
+
+***
+
+### DEFAULT\_SLOW\_TIER\_TIMEOUT\_MS
+
+```ts
+const DEFAULT_SLOW_TIER_TIMEOUT_MS: 15000 = 15000;
+```
+
+Default [TwoTierConfig.timeoutMs](#timeoutms-3).
+
+***
+
 ### DEFAULT\_STEP\_MAX\_ATTEMPTS
 
 ```ts
@@ -13069,6 +13364,22 @@ varies by state is unreachable either way, and n tools cost n schemas in every
 request where this costs one. The deciding reason is smaller: `delegate` is
 also where a shared instruction about HOW to brief a subagent goes, and n
 copies of it is n places for it to drift.
+
+***
+
+### MAX\_STATE\_DIGEST\_CHARS
+
+```ts
+const MAX_STATE_DIGEST_CHARS: 2000 = 2000;
+```
+
+The longest a rendered digest section may be, in characters.
+
+It rides on EVERY request the fast tier makes, so an unbounded one is a
+prompt that grows for the length of the call — and the cost lands on the
+number this repo measures time-to-first-token on. The cap trims the oldest
+SETTLED entries first: what is outstanding is the half the section exists to
+state.
 
 ***
 

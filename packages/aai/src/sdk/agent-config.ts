@@ -12,7 +12,6 @@
  * bundle entries call.
  */
 
-import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
@@ -35,7 +34,6 @@ import {
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 import {
   BuiltinToolSchema,
   EndpointingRuleSchema,
@@ -86,6 +84,37 @@ export const ProviderDescriptorSchema = z.object({
   kind: z.string().min(1),
   options: z.record(z.string(), z.unknown()),
 });
+
+/**
+ * Zod schema for {@link TwoTierConfig} — the fast/slow declaration.
+ *
+ * Serializable for the same reason the five scalar knobs above it are: it is
+ * numbers, flags and one provider descriptor, and a deployed guest has to
+ * carry all of it or the gate exists in `aai dev` and nowhere else.
+ *
+ * `.strict()`, unlike its neighbours, and for the reason
+ * {@link McpServerConfigSchema} is: a misspelled `onTimeout` would deploy an
+ * agent whose mutation gate fails open when the author wrote the opposite, and
+ * the only symptom is a mutation that went through. A typo in a field that
+ * decides whether something is REFUSED has to be a boundary error.
+ *
+ * `llm` accepts the descriptor OR the string shorthand `agent({ llm })` takes,
+ * normalized host-side by `normalizeLlm` — one spelling on the authoring
+ * surface, one on the wire, and no third.
+ *
+ * @internal
+ */
+export const TwoTierConfigSchema = z
+  .object({
+    llm: z.union([ProviderDescriptorSchema, z.string().min(1)]).optional(),
+    effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    onTimeout: z.enum(["allow", "block"]).optional(),
+    completionGate: z.boolean().optional(),
+    annotateReads: z.boolean().optional(),
+    contextMessages: z.number().int().positive().optional(),
+  })
+  .strict();
 
 /**
  * A name a person and a URL can both carry.
@@ -195,6 +224,7 @@ export const AgentConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative().optional(),
   resetToolChoice: z.boolean().optional(),
   usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
+  twoTier: TwoTierConfigSchema.optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   // Serializable like `builtinTools` beside it and for the same reason: it is a
@@ -421,45 +451,3 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   }
   return parsed.data;
 }
-
-// ─── ToolSchema ─────────────────────────────────────────────────────────────
-
-/**
- * Zod schema for {@link ToolSchema}. `parameters` must be a valid JSON Schema
- * object — the Vercel AI SDK wraps it via `jsonSchema()`.
- *
- * @internal
- */
-export const ToolSchemaSchema = z.object({
-  type: z.literal("function"),
-  name: z.string().min(1),
-  description: z.string().min(1),
-  parameters: z.record(z.string(), z.unknown()),
-  messages: ToolMessagesSchema.optional(),
-});
-
-/**
- * A tool declaration in wire form: name, description, and JSON Schema
- * parameters — the serializable counterpart of `ToolDef`.
- */
-export type ToolSchema = {
-  type: "function";
-  name: string;
-  description: string;
-  parameters: JSONSchema7;
-  /**
-   * The tool's spoken messages, NORMALIZED — see {@link ToolMessages}.
-   *
-   * It rides on the wire declaration rather than beside it because that is what
-   * makes the feature mean the same thing in every mode: the deployed guest
-   * builds this from the agent's own `ToolDef`s, and a host-mode client that
-   * supplies its own tool declarations gets the behaviour by declaring the
-   * field. Nothing here reaches the model — `toVercelTools` passes `name`,
-   * `description` and `parameters` to the provider and reads this itself.
-   *
-   * Absent for every tool that declares none, which is what keeps an ordinary
-   * tool's wire declaration byte-identical to what it was before the field
-   * existed.
-   */
-  messages?: ToolMessages | undefined;
-};

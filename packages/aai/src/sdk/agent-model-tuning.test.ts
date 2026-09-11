@@ -20,15 +20,16 @@ const SAMPLE: { [K in ModelTuningField]: AgentModelTuning[K] } = {
   maxRetries: 0,
   resetToolChoice: false,
   usageLimits: { totalTokens: 10_000 },
+  twoTier: { effort: "high" },
 };
 
 const FIELDS = Object.keys(MODEL_TUNING_FIELDS) as ModelTuningField[];
 
 describe("MODEL_TUNING_FIELDS", () => {
-  test("holds exactly the five knobs, in the order the interface declares them", () => {
+  test("holds exactly the six knobs, in the order the interface declares them", () => {
     // Pinned rather than derived from the interface, which has no runtime form:
     // the `satisfies` refuses a knob missing from the table AND an entry with no
-    // field behind it, so this line is what makes a sixth knob a deliberate
+    // field behind it, so this line is what makes a seventh knob a deliberate
     // edit here as well as a compile error there.
     expect(FIELDS).toEqual([
       "temperature",
@@ -36,6 +37,7 @@ describe("MODEL_TUNING_FIELDS", () => {
       "maxRetries",
       "resetToolChoice",
       "usageLimits",
+      "twoTier",
     ]);
   });
 

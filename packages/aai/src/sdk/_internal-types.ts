@@ -12,10 +12,10 @@
  */
 
 import { z } from "zod";
-import type { ToolSchema } from "./agent-config.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { toToolJsonSchema } from "./schema.ts";
 import { normalizeToolMessages } from "./tool-messages.ts";
+import type { ToolSchema } from "./tool-schema.ts";
 import type { ToolDef } from "./types.ts";
 
 export {
@@ -25,10 +25,9 @@ export {
   type ExecuteTool,
   type ExecuteToolOptions,
   type HostOnlyAgentField,
-  type ToolSchema,
-  ToolSchemaSchema,
   toAgentConfig,
 } from "./agent-config.ts";
+export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
 
 export const EMPTY_PARAMS = z.object({});
 
@@ -59,6 +58,11 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
       // value the tool already has. See `toToolJsonSchema`'s doc for the other
       // properties the direction moves.
       parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS, "input"),
+      // OMITTED rather than set to `undefined` when undeclared, because
+      // `ToolSchemaSchema` is what a stored config round-trips through and a
+      // `{ mutates: undefined }` survives a `structuredClone` and not a JSON
+      // hop. The same rule `toolResultMessage` applies to `toolName`.
+      ...omitUndefined({ mutates: def.mutates, completes: def.completes }),
     };
   });
 }

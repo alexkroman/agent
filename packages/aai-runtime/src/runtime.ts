@@ -202,7 +202,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     logger,
   );
 
-  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
+  // `tiers` is the fast/slow split — decided here because it is a decision about
+  // the TOOL SURFACE. See `two-tier/wire.ts`.
+  const { executeTool, toolSchemas, toolGuidance, tiers, pushStateSnapshot, commitSessionState } =
     setupTools({
       agent,
       options,
@@ -232,7 +234,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const buildTransport = createTransportFactory({
     agent,
     agentConfig,
-    toolSchemas,
+    toolSchemas: tiers.fastToolSchemas,
     executeTool,
     // Transports open STT/TTS/LLM/S2S connections, so they resolve credentials
     // from providerEnv rather than the agent-visible env.
@@ -250,7 +252,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   // `runtime-system-prompt.ts`.
   const systemPrompts = createSystemPromptResolver({
     agentConfig,
-    hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
+    hasTools: tiers.fastHasTools,
     toolGuidance,
     // `undefined` unless the author declared a RESOLVER, in which case
     // `toAgentConfig` put nothing on the wire for it and this is what fills the
@@ -267,7 +269,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Everything one session is wired with before its transport exists — the
     // event emitter and its hooks, the dialogs that address the prompt, the
     // token meter and the guardrails. See `runtime-session-controls.ts`.
-    const { dialogs, emitter, usage, guardrails } = openSessionWiring({
+    const { dialogs, emitter, usage, guardrails, twoTier } = openSessionWiring({
       agent,
       env,
       sessionId: sessionOpts.id,
@@ -277,7 +279,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       limits: agentConfig.usageLimits,
       transport: () => transport,
       logger,
-      ...omitUndefined({ commitSessionState }),
+      ...omitUndefined({ commitSessionState, openTwoTier: tiers.open }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
     const releaseMeter = meters.claim(sessionOpts.id, usage);
@@ -350,6 +352,9 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         // The dialog deadlines come off here too: a pending timer keeps the
         // event loop alive and would fire into a session already swept.
         dialogs.stop();
+        // Likewise a slow-tier run in flight: it is detached from every turn,
+        // so nothing else would ever end it.
+        twoTier?.stop();
         const owned = releaseSink();
         releaseEmitter();
         releaseMeter();

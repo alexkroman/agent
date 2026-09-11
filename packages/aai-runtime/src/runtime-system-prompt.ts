@@ -55,20 +55,32 @@ export interface SessionSystemPrompt {
    */
   resolve(): string;
   /**
-   * Install this session's suffix source. **This is the extension point.**
+   * Install one of this session's suffix sources, under a KEY.
    *
-   * Nothing calls it yet. What will is the `dialog()` integration: a dialog
-   * knows which phase the call is in and the model does not, because the only
-   * way a phase reaches the model today is a tool RESULT — so on a turn where
+   * **This is the extension point**, and what it exists for is the class of
+   * fact the model can otherwise learn only from a tool RESULT: on a turn where
    * no tool ran, the agent answers with no idea where in the script it is.
-   * Installing a suffix that renders the current phase is what makes the prompt
+   * Installing a suffix that renders the current state is what makes the prompt
    * state-addressed, and doing it here rather than by rebuilding the base keeps
    * the expensive half (the date stamp) cached.
    *
-   * Last writer wins, deliberately: a session has one dialog, and a second
-   * installer is a wiring mistake rather than a composition.
+   * **It used to be unkeyed, last-writer-wins, on the argument that "a session
+   * has one dialog, and a second installer is a wiring mistake rather than a
+   * composition."** There are two legitimate installers now — the dialogs, and
+   * the fast/slow tier's state digest — and under the old signature the second
+   * silently deleted the first: a `dialog()` agent that also declared `twoTier`
+   * lost its active instruction from every request, with nothing failing and no
+   * way to see it short of reading the prompt on the wire.
+   *
+   * Rendered in KEY order (`localeCompare`), which is stable, has no dependency
+   * on wiring order, and is the only ordering a reader of two prompts can
+   * predict. Re-installing a key REPLACES it, so a re-wire on reconnect does
+   * not accumulate.
+   *
+   * @param key who is contributing — `"dialogs"`, `"two-tier"`
+   * @param suffix the source, asked once per request
    */
-  setSuffix(suffix: SystemPromptSuffix): void;
+  setSuffix(key: string, suffix: SystemPromptSuffix): void;
 }
 
 /** The runtime-scoped prompt source: one base, one {@link SessionSystemPrompt} per session. */
@@ -146,7 +158,7 @@ export function createSystemPromptResolver(deps: {
   return {
     base,
     forSession(context: AgentSessionContext): SessionSystemPrompt {
-      let suffix: SystemPromptSuffix | null = null;
+      const suffixes = new Map<string, SystemPromptSuffix>();
       return {
         resolve(): string {
           const dynamic = deps.instructions?.(context) ?? "";
@@ -154,7 +166,15 @@ export function createSystemPromptResolver(deps: {
             dynamic === ""
               ? base()
               : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(dynamic)}`;
-          const extra = suffix?.() ?? "";
+          // Each source is asked once per request, and an empty answer
+          // contributes NOTHING — not a blank line, not a separator — which is
+          // what keeps a session whose sources all have nothing to say
+          // byte-identical to one with no sources at all.
+          const extra = [...suffixes.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([, render]) => render())
+            .filter((part) => part !== "")
+            .join(SUFFIX_SEPARATOR);
           // The identity return is load-bearing, not a micro-optimisation: with
           // no suffix installed this function IS `systemPromptForToday()`, so
           // every transport sends the same bytes it sent before this seam
@@ -162,8 +182,8 @@ export function createSystemPromptResolver(deps: {
           // shipped agent's prompt by two characters.
           return extra.length === 0 ? text : `${text}${SUFFIX_SEPARATOR}${extra}`;
         },
-        setSuffix(next: SystemPromptSuffix): void {
-          suffix = next;
+        setSuffix(key: string, next: SystemPromptSuffix): void {
+          suffixes.set(key, next);
         },
       };
     },

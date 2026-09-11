@@ -381,7 +381,10 @@ export function openSessionDialogs(
   // and hoping. A thunk that renders fresh, so pipeline mode — which resolves at
   // each `startLlmStream` — is correct with no push at all, and `settle`'s push
   // is only what a service holding its instructions as session state needs.
-  prompt.setSuffix(renderSuffix);
+  // Keyed, because the fast/slow tier's state digest is a second legitimate
+  // contributor and the unkeyed signature let it silently delete this one —
+  // see `SessionSystemPrompt.setSuffix`.
+  prompt.setSuffix("dialogs", renderSuffix);
 
   return {
     prompt,

@@ -127,6 +127,9 @@ each is for.
 | `DEFAULT_RETRY_DELAY_MS` | `@alexkroman1/aai/step-errors` |
 | `DEFAULT_RUN_TIMEOUT_MS` | `@alexkroman1/aai-runtime/eval` |
 | `DEFAULT_SERVICE_NAME` | `@alexkroman1/aai-runtime/tracing` |
+| `DEFAULT_SLOW_TIER_CONTEXT_MESSAGES` | `@alexkroman1/aai` |
+| `DEFAULT_SLOW_TIER_EFFORT` | `@alexkroman1/aai` |
+| `DEFAULT_SLOW_TIER_TIMEOUT_MS` | `@alexkroman1/aai` |
 | `DEFAULT_START_PORT` | `@alexkroman1/aai-cli/start` |
 | `DEFAULT_STEP_MAX_ATTEMPTS` | `@alexkroman1/aai` |
 | `DEFAULT_SYSTEM_PROMPT` | `@alexkroman1/aai` |
@@ -249,6 +252,7 @@ each is for.
 | `LowConfidenceAction` | `@alexkroman1/aai` |
 | `LowConfidencePolicy` | `@alexkroman1/aai` |
 | `LowConfidenceStatistic` | `@alexkroman1/aai` |
+| `MAX_STATE_DIGEST_CHARS` | `@alexkroman1/aai` |
 | `MAX_WORKFLOW_FIND_LIMIT` | `@alexkroman1/aai-runtime` |
 | `MAX_WORKFLOW_INPUT_BYTES` | `@alexkroman1/aai-runtime` |
 | `MAX_WORKSPACE_FILES` | `@alexkroman1/aai/workspace-files` |
@@ -409,6 +413,7 @@ each is for.
 | `SlotHolder` | `@alexkroman1/aai` |
 | `SlotStore` | `@alexkroman1/aai` |
 | `SlotToolDef` | `@alexkroman1/aai` |
+| `SlowTierEffort` | `@alexkroman1/aai` |
 | `SonioxSttOptions` | `@alexkroman1/aai/stt` |
 | `SpeakOptions` | `@alexkroman1/aai/step` |
 | `SpokenAudio` | `@alexkroman1/aai/step` |
@@ -552,6 +557,7 @@ each is for.
 | `TtsProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
 | `TtsSession` | `@alexkroman1/aai-runtime` |
 | `TtsWordTiming` | `@alexkroman1/aai-runtime` |
+| `TwoTierConfig` | `@alexkroman1/aai` |
 | `TypecheckResult` | `@alexkroman1/aai-cli/typecheck` |
 | `TypedDelegateResult` | `@alexkroman1/aai` |
 | `TypedSubagentDef` | `@alexkroman1/aai` |
