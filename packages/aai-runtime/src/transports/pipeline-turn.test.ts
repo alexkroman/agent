@@ -333,6 +333,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
       expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
     expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Sure!");
+    // The other half of the same push: with no dialog declaring keyterms the
+    // session asks for the DESCRIPTOR's list back, which is what `undefined`
+    // means on that seam — never "clear them".
+    expect(stt.last()?.updateKeyterms).toHaveBeenCalledWith(undefined);
     await t.stop();
   });
 

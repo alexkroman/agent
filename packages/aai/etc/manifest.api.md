@@ -56,6 +56,20 @@ export const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    lowConfidence: z.ZodOptional<z.ZodObject<{
+        discardBelow: z.ZodOptional<z.ZodNumber>;
+        actionBelow: z.ZodOptional<z.ZodNumber>;
+        action: z.ZodOptional<z.ZodEnum<{
+            clarify: "clarify";
+            note: "note";
+        }>>;
+        phrase: z.ZodOptional<z.ZodString>;
+        note: z.ZodOptional<z.ZodString>;
+        statistic: z.ZodOptional<z.ZodEnum<{
+            mean: "mean";
+            minWord: "minWord";
+        }>>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -335,6 +349,22 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type LowConfidenceAction = "clarify" | "note";
+
+// @public
+interface LowConfidencePolicy {
+    action?: LowConfidenceAction | undefined;
+    actionBelow?: number | undefined;
+    discardBelow?: number | undefined;
+    note?: string | undefined;
+    phrase?: string | undefined;
+    statistic?: LowConfidenceStatistic | undefined;
+}
+
+// @public
+type LowConfidenceStatistic = "mean" | "minWord";
+
+// @public
 type McpServerConfig = {
     url: string;
     tokenEnv?: string;
@@ -361,11 +391,12 @@ const PIPELINE_ONLY_TUNING: {
     readonly startFailurePhrase: "string";
     readonly resumeFalseInterruption: "boolean";
     readonly preemptiveGeneration: "boolean";
+    readonly lowConfidence: "lowConfidence";
 };
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : string) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "lowConfidence" ? LowConfidencePolicy : string) | undefined;
 };
 
 // @public (undocumented)
@@ -376,6 +407,7 @@ interface PipelineVoiceTuning {
     deadAirCoverMs?: number;
     errorPhrase?: string;
     interruptionMinDurationMs?: number;
+    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -485,6 +517,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
+        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

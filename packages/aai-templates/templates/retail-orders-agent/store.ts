@@ -2,6 +2,7 @@ import type { DialogEvent, ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { dialog, isToolFailure, omitUndefined, sessionSlot } from "@alexkroman1/aai";
 import { roundMoney } from "@alexkroman1/aai/utils";
 import type { z } from "zod";
+import { IDENTIFYING_KEYTERMS } from "./keyterms.ts";
 import seedJson from "./seed.json";
 import type {
   GiftCard,
@@ -131,6 +132,12 @@ const callSpec = {
         "You do not know who this is yet. Identify the caller with " +
         "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
         "remember the email. Do this even if they volunteer a user id.",
+      // The one phase whose vocabulary is PEOPLE. Pushed to the recognizer at
+      // the end of each agent turn, so the audio that answers "what name is
+      // the account under?" is transcribed against these, and the boost is
+      // gone the moment the call moves on. `keyterms.ts` carries which names
+      // are here and which are deliberately not.
+      keyterms: IDENTIFYING_KEYTERMS,
       on: {
         IDENTIFIED: "serving",
         TRANSFERRED: "transferred",

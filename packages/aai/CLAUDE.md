@@ -306,6 +306,35 @@ Reference providers shipped today:
   `sdk/providers/stt/assemblyai.ts`): **`streamingUrl`**, which overrides the
   endpoint and WINS over `region`, and **`languages`, whose unset value is
   "detect per turn", NOT "English"** — read that one before changing it.
+
+  **Three more are ASR STEERING, and what they are worth is not symmetric.**
+  `keyterms` is a list of the domain's own uncommon words and proper nouns
+  (`keyterms_prompt`, at most 100 terms of at most 50 characters — the service
+  IGNORES an over-long term and REFUSES a connect over the cap, so
+  `normalizeKeyterms` trims host-side rather than letting a grown catalogue
+  take an agent off the air). `agentContext` is what the application already
+  knows about THIS call, and it is the one to reach for first — on a VENDOR
+  CLAIM rather than a measurement of ours: AssemblyAI's published benchmark
+  over 20,000 voice-agent calls puts a detailed context at −21% WER and
+  −29% entity error against none, with names nearly halving, and nobody here
+  has seen its methodology or reproduced it on this pipeline. It needs no
+  declaration to be useful — the runtime seeds the greeting at connect and
+  replaces it with the agent's own reply after every turn, so the recognizer
+  transcribing "1-2-3-4" has just been told the agent asked for an order
+  number. `formatTurns` is the numeral/punctuation flag, and the thing to know
+  before reaching for it is that **it is not a parameter on
+  `universal-3-5-pro` at all** (formatting is always on there, and the opener
+  warns rather than sending it); on `universal-streaming-english` the service
+  default is `false`, and `true` makes that model emit TWO `end_of_turn`
+  messages per turn — the opener commits only the formatted one.
+
+  **`agent({ lowConfidence })` is the other half of the same problem**, one
+  layer up: the recognizer's confidence in the WORDS, acted on before the model
+  sees them. Three bands, two numbers — discard, act, accept — with `clarify`
+  (speak a phrase, run no turn) and `note` (run the turn with the model's copy
+  annotated) as the two actions. **It is OFF unless an agent declares it**, and
+  `sdk/low-confidence.ts` carries why, plus the rule everything rests on: a
+  provider that reports no confidence is ACCEPTED, never read as zero.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:

@@ -259,6 +259,9 @@ function driveRollbacks(script: readonly Fill[], door: Door, reached: Reached): 
     errorPhrase: "sorry",
     startFailurePhrase: "cannot start",
     drainTts: () => Promise.resolve(),
+    // No dialog declares keyterms here: `undefined` is "leave the STT stream on
+    // the keyterms it opened with".
+    dialogKeyterms: () => undefined,
     sendTtsText: () => undefined,
   });
   let serial = 0;

@@ -2767,6 +2767,40 @@ serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
 using credentials from the agent's env.
 
+##### lowConfidence?
+
+```ts
+optional lowConfidence?: LowConfidencePolicy;
+```
+
+Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
+turn before the model sees it: drop the words below a floor, and above the
+floor but under a second threshold either ask the caller to repeat or hand
+the model the turn with a note attached.
+
+###### Default Value
+
+absent — every final transcript runs a turn, whatever the
+recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
+
+###### Remarks
+
+The failure it exists for is the one a transcript cannot show you: a
+mis-heard order id or email reads as a fluent sentence, becomes a
+well-formed tool-call argument, and poisons every later step of the call.
+
+Only the AssemblyAI STT stage reports the confidence this reads
+(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
+a provider that reports none is always ACCEPTED — the policy can never
+make a silent provider look like a bad one.
+
+See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
+this is opt-in.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`lowConfidence`](#lowconfidence-1)
+
 ##### maxOutputTokens?
 
 ```ts
@@ -4241,7 +4275,7 @@ receive(ctx: SlotHolder, event:
      at: number;
      id: string;
   };
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: "low-confidence" | "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -4472,7 +4506,7 @@ export default agent({
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -5359,6 +5393,90 @@ The TTS voice for this phase of the call.
 
 ***
 
+### LowConfidencePolicy
+
+Act on the recognizer's confidence in a committed turn. Pipeline mode only.
+
+#### Properties
+
+##### action?
+
+```ts
+optional action?: LowConfidenceAction;
+```
+
+What to do in that band.
+
+###### Default Value
+
+`"clarify"`
+
+##### actionBelow?
+
+```ts
+optional actionBelow?: number;
+```
+
+Confidence below which [action](#action) fires (and at or above
+[discardBelow](#discardbelow)). At or above this the turn runs exactly as it does
+today.
+
+###### Default Value
+
+`0.4` (`DEFAULT_LOW_CONFIDENCE_ACTION_BELOW`)
+
+##### discardBelow?
+
+```ts
+optional discardBelow?: number;
+```
+
+Confidence below which the transcript is DROPPED — no turn, no caption
+commit, no clarification. Treated as noise the caller did not mean.
+
+###### Default Value
+
+`0.2` (`DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW`)
+
+##### note?
+
+```ts
+optional note?: string;
+```
+
+Appended to the model's copy under `action: "note"`.
+
+###### Default Value
+
+`DEFAULT_LOW_CONFIDENCE_NOTE`
+
+##### phrase?
+
+```ts
+optional phrase?: string;
+```
+
+Spoken under `action: "clarify"`. Set `""` to speak nothing — the turn is
+still dropped, which is `discardBelow` widened rather than a third mode.
+
+###### Default Value
+
+`DEFAULT_LOW_CONFIDENCE_PHRASE`
+
+##### statistic?
+
+```ts
+optional statistic?: LowConfidenceStatistic;
+```
+
+Which per-turn statistic the bands read.
+
+###### Default Value
+
+`"mean"`
+
+***
+
 ### MintCodeOptions
 
 Options for [mintCode](#mintcode).
@@ -5457,6 +5575,36 @@ never gated. Set 0 to disable the gate.
 ###### Default Value
 
 `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
+
+##### lowConfidence?
+
+```ts
+optional lowConfidence?: LowConfidencePolicy;
+```
+
+Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
+turn before the model sees it: drop the words below a floor, and above the
+floor but under a second threshold either ask the caller to repeat or hand
+the model the turn with a note attached.
+
+###### Default Value
+
+absent — every final transcript runs a turn, whatever the
+recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
+
+###### Remarks
+
+The failure it exists for is the one a transcript cannot show you: a
+mis-heard order id or email reads as a fluent sentence, becomes a
+well-formed tool-call argument, and poisons every later step of the call.
+
+Only the AssemblyAI STT stage reports the confidence this reads
+(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
+a provider that reports none is always ACCEPTED — the policy can never
+make a silent provider look like a bad one.
+
+See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
+this is opt-in.
 
 ##### minBargeInWords?
 
@@ -8408,6 +8556,47 @@ readonly optional __stage?: "llm";
 ```
 
 Compile-time stage tag; never present at runtime.
+
+***
+
+### LowConfidenceAction
+
+```ts
+type LowConfidenceAction = "clarify" | "note";
+```
+
+What the agent does with a transcript in the action band.
+
+- `clarify` — SPEAK [LowConfidencePolicy.phrase](#phrase) and run no turn. The
+  words reach neither the model nor history, exactly like the failure phrases
+  (see `AgentTranscriptRecovery`): a garbage transcript in the record is a
+  garbage transcript the model can still act on two turns later.
+- `note` — run the turn, with [LowConfidencePolicy.note](#note) appended to
+  the MODEL's copy of the transcript only. The caller's caption and the
+  session record stay verbatim, the rule `assembleSpelledRuns` already
+  follows: what the caller said is not ours to rewrite.
+
+***
+
+### LowConfidenceStatistic
+
+```ts
+type LowConfidenceStatistic = "mean" | "minWord";
+```
+
+Which number the bands are compared against.
+
+- `mean` — the mean of the turn's per-word confidences. The transcript-level
+  reading Vapi's published thresholds were chosen against, and the
+  conservative one: a single soft word in a long sentence does not fire it.
+- `minWord` — the LOWEST per-word confidence in the turn. The
+  entity-sensitive reading, and the one that matches the failure this policy
+  exists for — one mis-heard digit in an otherwise clean sentence. It fires
+  far more often at the same thresholds, so an agent choosing it should
+  expect to lower them.
+
+Which is right here is an open MEASUREMENT, not a preference; `mean` is the
+default because it is the one the published numbers belong to.
 
 ***
 

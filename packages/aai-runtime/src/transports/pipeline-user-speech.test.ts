@@ -6,7 +6,11 @@
 // End-to-end wiring is covered by pipeline-voice-events.test.ts; the
 // false-interruption recovery timer's specs live in pipeline-recovery.test.ts.
 
-import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
+import {
+  DEFAULT_FALSE_INTERRUPTION_PROMPT,
+  DEFAULT_LOW_CONFIDENCE_PHRASE,
+  resolveLowConfidence,
+} from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { useVirtualTime } from "./_pipeline-transport-harness.ts";
@@ -252,6 +256,10 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     },
     silenceTimeoutMs: undefined,
     silencePrompt: undefined,
+    // No confidence policy: every final commits, which is what an agent that
+    // declares none gets. The band's own specs override both of these.
+    lowConfidence: undefined,
+    speakClarification: vi.fn(),
     resumeFalseInterruption: true,
     // The watchdog IS the resume: an armed latch fires when the speaking edge
     // goes idle. Short here, since a barge-in opens the edge and these specs
@@ -424,5 +432,115 @@ describe("no path leaves a stale resume armed", () => {
     // ...and exactly once: the released latch is not still armed.
     await laterUtteranceGoesIdle(activity);
     expect(resumes(calls)).toBe(1);
+  });
+});
+
+// ─── The low-confidence band (AgentDef.lowConfidence) ──────────────────────
+
+describe("low-confidence transcripts", () => {
+  /** An activity whose committed transcripts and clarifications are recorded. */
+  function makeBanded(overrides: Partial<ActivityDeps> = {}): {
+    activity: ReturnType<typeof createUserActivity>;
+    calls: ReturnType<typeof makeActivity>["calls"];
+    spoken: string[];
+    committed: string[];
+  } {
+    const spoken: string[] = [];
+    const committed: string[] = [];
+    const made = makeActivity({
+      // Nothing is in flight: these specs are about what a FINAL does, not
+      // about barging in on a reply.
+      isTurnInFlight: () => false,
+      hasTurnSpoken: () => false,
+      hasSpokenRecordable: () => false,
+      lowConfidence: resolveLowConfidence({}),
+      speakClarification: (text) => spoken.push(text),
+      callbacks: {
+        report: (event) => {
+          if (event.type === "user-transcript.committed") committed.push(event.text);
+        },
+      },
+      ...overrides,
+    });
+    return { activity: made.activity, calls: made.calls, spoken, committed };
+  }
+
+  test("a confident turn commits exactly as it always did", () => {
+    const { activity, calls, spoken, committed } = makeBanded();
+    activity.sttEvents.onSttFinal("cancel order W two three seven", {
+      transcriptConfidence: 0.9,
+    });
+    expect(calls.chained.map((c) => c.text)).toEqual(["cancel order W two three seven"]);
+    expect(committed).toEqual(["cancel order W two three seven"]);
+    expect(spoken).toEqual([]);
+  });
+
+  test("a turn the provider said nothing about commits too", () => {
+    // Three of four STT providers report no per-word confidence at all, and
+    // silence must never read as a bad transcript.
+    const { activity, calls } = makeBanded();
+    activity.sttEvents.onSttFinal("hello", {});
+    activity.sttEvents.onSttFinal("hello again");
+    expect(calls.chained).toHaveLength(2);
+  });
+
+  test("below the floor the words never reach the model OR the record", () => {
+    const { activity, calls, spoken, committed } = makeBanded();
+    activity.sttEvents.onSttFinal("shhk order double you", { transcriptConfidence: 0.05 });
+    expect(calls.chained).toEqual([]);
+    expect(committed).toEqual([]);
+    expect(spoken).toEqual([]);
+  });
+
+  test("in the band the agent asks, and runs no turn", () => {
+    const { activity, calls, spoken, committed } = makeBanded();
+    activity.sttEvents.onSttFinal("order double you two three", { transcriptConfidence: 0.3 });
+    expect(spoken).toEqual([DEFAULT_LOW_CONFIDENCE_PHRASE]);
+    // The whole point: a transcript nobody trusts must not become a tool
+    // argument, and must not be in the record as if it had been understood.
+    expect(calls.chained).toEqual([]);
+    expect(committed).toEqual([]);
+  });
+
+  test("`note` runs the turn, annotating the MODEL's copy only", () => {
+    const { activity, calls, spoken, committed } = makeBanded({
+      lowConfidence: resolveLowConfidence({ action: "note", note: "may be mis-heard" }),
+    });
+    activity.sttEvents.onSttFinal("cancel order W two three seven", {
+      transcriptConfidence: 0.3,
+    });
+    expect(calls.chained[0]?.text).toBe("cancel order W two three seven\n[may be mis-heard]");
+    // Verbatim on the wire: what the caller said is not ours to rewrite.
+    expect(committed).toEqual(["cancel order W two three seven"]);
+    expect(spoken).toEqual([]);
+  });
+
+  test("`statistic: minWord` reads the other number", () => {
+    const { activity, calls, spoken } = makeBanded({
+      lowConfidence: resolveLowConfidence({ statistic: "minWord" }),
+    });
+    // A clean sentence with one soft word: the mean is fine and the minimum
+    // is in the band, which is exactly the case the two statistics differ on.
+    activity.sttEvents.onSttFinal("cancel order W two three seven", {
+      transcriptConfidence: 0.95,
+      minWordConfidence: 0.3,
+    });
+    expect(spoken).toEqual([DEFAULT_LOW_CONFIDENCE_PHRASE]);
+    expect(calls.chained).toEqual([]);
+  });
+
+  test("an agent that declares no policy is untouched by any of it", () => {
+    const { activity, calls } = makeBanded({ lowConfidence: undefined });
+    activity.sttEvents.onSttFinal("shhk order double you", { transcriptConfidence: 0.01 });
+    expect(calls.chained).toHaveLength(1);
+  });
+
+  test("an empty phrase drops the turn silently", () => {
+    const { activity, calls, spoken } = makeBanded({
+      lowConfidence: resolveLowConfidence({ phrase: "" }),
+    });
+    activity.sttEvents.onSttFinal("order double you", { transcriptConfidence: 0.3 });
+    expect(spoken).toEqual([]);
+    expect(calls.chained).toEqual([]);
   });
 });

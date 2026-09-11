@@ -39,6 +39,14 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  lowConfidence?: {
+     action?: "clarify" | "note";
+     actionBelow?: number;
+     discardBelow?: number;
+     note?: string;
+     phrase?: string;
+     statistic?: "mean" | "minWord";
+  };
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -179,6 +187,41 @@ readonly (
 ###### llm.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### lowConfidence?
+
+\{
+  `action?`: `"clarify"` \| `"note"`;
+  `actionBelow?`: `number`;
+  `discardBelow?`: `number`;
+  `note?`: `string`;
+  `phrase?`: `string`;
+  `statistic?`: `"mean"` \| `"minWord"`;
+\}
+
+###### lowConfidence.action?
+
+`"clarify"` \| `"note"`
+
+###### lowConfidence.actionBelow?
+
+`number`
+
+###### lowConfidence.discardBelow?
+
+`number`
+
+###### lowConfidence.note?
+
+`string`
+
+###### lowConfidence.phrase?
+
+`string`
+
+###### lowConfidence.statistic?
+
+`"mean"` \| `"minWord"`
 
 ###### maxOutputTokens?
 
@@ -789,6 +832,14 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  lowConfidence?: {
+     action?: "clarify" | "note";
+     actionBelow?: number;
+     discardBelow?: number;
+     note?: string;
+     phrase?: string;
+     statistic?: "mean" | "minWord";
+  };
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -908,6 +959,14 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  lowConfidence?: {
+     action?: "clarify" | "note";
+     actionBelow?: number;
+     discardBelow?: number;
+     note?: string;
+     phrase?: string;
+     statistic?: "mean" | "minWord";
+  };
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -1016,6 +1075,19 @@ optional interruptionMinDurationMs?: number;
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### lowConfidence?
+
+```ts
+{
+  action?: "clarify" | "note";
+  actionBelow?: number;
+  discardBelow?: number;
+  note?: string;
+  phrase?: string;
+  statistic?: "mean" | "minWord";
 }
 ```
 

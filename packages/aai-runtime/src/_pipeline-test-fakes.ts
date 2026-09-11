@@ -49,6 +49,9 @@ export type FakeSttSession = SttSession & {
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
   readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
+  readonly updateKeyterms: ReturnType<
+    typeof vi.fn<(keyterms: readonly string[] | undefined) => void>
+  >;
   /** `meta` carries provider turn signals, e.g. `endOfTurnConfidence`. */
   firePartial(text: string, meta?: SttTurnMeta): void;
   /** As {@link FakeSttSession.firePartial}, for the committed transcript. */
@@ -81,6 +84,9 @@ export function createFakeSttProvider(): FakeSttProvider {
           audioFrames.push(pcm);
         }),
         updateAgentContext: vi.fn((_text: string) => {
+          /* recorded via the mock's .mock.calls */
+        }),
+        updateKeyterms: vi.fn((_keyterms: readonly string[] | undefined) => {
           /* recorded via the mock's .mock.calls */
         }),
         on: emitter.on.bind(emitter) as SttSession["on"],

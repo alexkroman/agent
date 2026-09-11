@@ -14,6 +14,8 @@
  * `AgentDef` extends it; the docs below are the authoring surface.
  */
 
+import type { LowConfidencePolicy } from "./low-confidence.ts";
+
 /**
  * Pipeline-mode voice-UX tuning, extended by {@link AgentDef}.
  *
@@ -128,4 +130,27 @@ export interface PipelineVoiceTuning {
    * and seed showing no reward regression.
    */
   preemptiveGeneration?: boolean;
+  /**
+   * Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
+   * turn before the model sees it: drop the words below a floor, and above the
+   * floor but under a second threshold either ask the caller to repeat or hand
+   * the model the turn with a note attached.
+   *
+   * @defaultValue absent — every final transcript runs a turn, whatever the
+   * recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
+   *
+   * @remarks
+   * The failure it exists for is the one a transcript cannot show you: a
+   * mis-heard order id or email reads as a fluent sentence, becomes a
+   * well-formed tool-call argument, and poisons every later step of the call.
+   *
+   * Only the AssemblyAI STT stage reports the confidence this reads
+   * (`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
+   * a provider that reports none is always ACCEPTED — the policy can never
+   * make a silent provider look like a bad one.
+   *
+   * See {@link LowConfidencePolicy} for the bands, the two actions and why
+   * this is opt-in.
+   */
+  lowConfidence?: LowConfidencePolicy;
 }

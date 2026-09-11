@@ -1,6 +1,27 @@
-import { agent } from "@alexkroman1/aai";
+import { agent, type LowConfidencePolicy } from "@alexkroman1/aai";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
+import { RETAIL_KEYTERMS } from "./keyterms.ts";
 import { storeView } from "./shared.ts";
 import { callFlow, gateFor, record, retailSlot } from "./store.ts";
+
+/**
+ * What to do when the recognizer itself is unsure of a caller's turn.
+ *
+ * `note` rather than the default `clarify`, and the choice is a property of
+ * THIS agent rather than a preference: every change here is staged and read
+ * back before it happens (`awaitingConfirmation` in `store.ts`), so the
+ * conversation already has a place to verify a shaky identifier — and telling
+ * the model the words may be wrong lets it fold the check into that read-back
+ * instead of spending a turn on "could you repeat that?". An agent with no
+ * confirmation step should leave the default alone.
+ *
+ * The thresholds are the shipped ones (drop under 0.2, note between 0.2 and
+ * 0.4) and are NOT tuned for this domain — nobody has measured them here. The
+ * statistic they read is the mean of the turn's per-word confidences; the
+ * `minWord` reading is the one that would catch a single mis-heard digit in an
+ * otherwise clean sentence, and choosing it means lowering both numbers.
+ */
+const LOW_CONFIDENCE: LowConfidencePolicy = { action: "note" };
 
 export default agent({
   name: "Retail Support",
@@ -26,9 +47,28 @@ export default agent({
    */
   usageLimits: { totalTokens: 200_000 },
 
-  // No provider spread: pipeline mode is the default, and an unset stage is
-  // filled from the all-AssemblyAI pipeline at parse time. Only `stt` is
-  // overridden below; `llm` and `tts` take the defaults.
+  // Pipeline mode is the default and an unset stage is filled from the
+  // all-AssemblyAI pipeline at parse time, so only `stt` is named here; `llm`
+  // and `tts` take the defaults.
+  //
+  // What it names is the domain's own vocabulary (`keyterms.ts`), which is the
+  // cheapest thing available against this template's worst failure: a
+  // mis-heard product or option becomes a tool argument that resolves to the
+  // wrong item, or to nothing, and the transcript reads perfectly either way.
+  // Two other steering mechanisms are already on by default and need no
+  // declaration — the contextual `agent_context`, refreshed with the agent's
+  // own last reply after every turn, and the endpointing window that lets a
+  // caller pause mid-identifier.
+  //
+  // This list is the one that holds for the WHOLE call. The other one is per
+  // phase: `callFlow`'s `identifying` state boosts the account NAMES instead,
+  // for as long as the call is working out who is on the line, and gives them
+  // back when it moves on (`IDENTIFYING_KEYTERMS` in `keyterms.ts`). A name is
+  // the hardest thing here to recognize and the least useful thing to boost
+  // once it is known.
+  stt: assemblyAIStt({ keyterms: [...RETAIL_KEYTERMS] }),
+
+  lowConfidence: LOW_CONFIDENCE,
 
   // The store lives in one `sessionSlot` (`store.ts`), a pristine copy per
   // session — callers must not see each other's cancellations. Nothing declares

@@ -36,15 +36,23 @@ import type { DialogTurnKnobs } from "./transports/pipeline-dialog-knobs.ts";
 /**
  * The knobs a declared state may carry that nothing in this runtime applies.
  *
- * Both are fixed when the provider stream OPENS: the TTS voice rides on the
- * descriptor that produced the opener, and `SttOpenOptions` has no keyterms
- * field at all. Changing either mid-call means closing the socket and dialling
- * a new one, which on the TTS side is a gap in the agent's own sentence.
+ * One left. The TTS voice is fixed when the provider stream OPENS — it rides
+ * on the descriptor that produced the opener, so changing it mid-call means
+ * closing the socket and dialling a new one, which is a gap in the middle of
+ * the agent's own sentence.
+ *
+ * **`keyterms` was here and is LIVE now.** What retired it is AssemblyAI's
+ * `UpdateConfiguration` message, which takes `keyterms_prompt` mid-stream and
+ * is documented for exactly this case ("a voice agent moves between
+ * conversation stages") — so the STT side never needed a second socket.
+ * `SttSession.updateKeyterms` is the seam, applied at the end of each agent
+ * turn (the moment before the caller answers the question that state just
+ * asked), and a provider that has no equivalent ignores the call.
  */
-const INERT_KNOBS = ["voice", "keyterms"] as const;
+const INERT_KNOBS = ["voice"] as const;
 
 /** The knobs a declared state may carry that the pipeline DOES apply per state. */
-const LIVE_KNOBS = ["bargeIn", "toolChoice", "temperature"] as const;
+const LIVE_KNOBS = ["bargeIn", "toolChoice", "temperature", "keyterms"] as const;
 
 /**
  * Runtimes whose dialogs have already been reported.
@@ -83,10 +91,8 @@ function metaOf(node: AnyStateMachine["root"]): Record<string, unknown> | undefi
 }
 
 /** Why a per-state value for this knob cannot take effect, in the author's terms. */
-function inertReason(knob: (typeof INERT_KNOBS)[number]): string {
-  return knob === "voice"
-    ? "the TTS voice is fixed by the provider descriptor when the stream opens, and re-opening it mid-call would cut the agent's own sentence in half. Set it once with `agent({ voice })`"
-    : "the pipeline's STT stream takes no keyterms at all — only the AssemblyAI S2S service does, and only in its opening session config. Use `agent({ sttPrompt })`, which every transport forwards";
+function inertReason(_knob: (typeof INERT_KNOBS)[number]): string {
+  return "the TTS voice is fixed by the provider descriptor when the stream opens, and re-opening it mid-call would cut the agent's own sentence in half. Set it once with `agent({ voice })`";
 }
 
 /**
@@ -180,9 +186,13 @@ export function mergeTurnKnobs(
     merged = {
       ...merged,
       ...fromBargeIn(config.bargeIn),
-      // `voice` and `keyterms` are deliberately not read: nothing applies them,
-      // and `reportDialogKnobs` has already said so where an author can see it.
-      ...omitUndefined({ toolChoice: config.toolChoice, temperature: config.temperature }),
+      // `voice` is deliberately not read: nothing applies it, and
+      // `reportDialogKnobs` has already said so where an author can see it.
+      ...omitUndefined({
+        toolChoice: config.toolChoice,
+        temperature: config.temperature,
+        keyterms: config.keyterms,
+      }),
     };
   }
   return merged;
