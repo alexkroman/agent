@@ -134,16 +134,19 @@ export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
     // model that would reject it. An agent that wants thinking depth declares
     // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
     //
-    // On the current default (`qwen3-next-80b-a3b`) this argument is the ONLY
-    // thing turning reasoning off: qwen is outside TOOLS_REQUIRE_NO_REASONING,
-    // so the factory fills in nothing and the model would otherwise run on its
-    // own server-side reasoning default. Under a `gpt-5.6` id — two of the
-    // defaults this has held — the factory fills the same `"none"` because the
-    // value is a tool-calling REQUIREMENT there rather than a latency choice,
-    // and this line reads as redundant. **Keep it under either.** The measured
-    // cost of losing it is 1786ms p50 time-to-first-token on gpt-5.5's
-    // server-side reasoning default against 999ms with it off; deleting it as
-    // redundant makes the next id change a silent regression.
+    // On the current default (`gpt-5.6-sol`) this line reads as redundant: the
+    // id is inside TOOLS_REQUIRE_NO_REASONING, so the factory fills the same
+    // `"none"` because the value is a tool-calling REQUIREMENT there rather
+    // than a latency choice. Under a default OUTSIDE that set — which
+    // `qwen3-next-80b-a3b` was — this argument is the only thing turning
+    // reasoning off at all. **Keep it under either.** The measured cost of
+    // losing it is 1786ms p50 time-to-first-token on gpt-5.5's server-side
+    // reasoning default against 999ms with it off; deleting it as redundant
+    // makes the next id change a silent regression.
+    //
+    // It also assumes the default ACCEPTS the value, which is not free: the
+    // Gemini family has no `"none"` thinking level and answers 400, so a
+    // Gemini default would need this argument changed rather than inherited.
     llm: assemblyAILlm({ reasoningEffort: "none", ...omitUndefined({ region }) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

@@ -127,8 +127,8 @@ describe("agent()", () => {
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
     // alongside the effort because the two are coupled — and the direction of
-    // the coupling flipped when the default moved to `gpt-5.6-luna`, which is
-    // INSIDE TOOLS_REQUIRE_NO_REASONING. The factory now fills `"none"` on its
+    // the coupling flipped when the default moved into the `gpt-5.6` family,
+    // which is INSIDE TOOLS_REQUIRE_NO_REASONING. The factory now fills `"none"` on its
     // own, so the preset's explicit argument merely agrees with it: an id
     // property rather than a pipeline one, exactly as the previous version of
     // this comment predicted it would become.
@@ -144,7 +144,7 @@ describe("agent()", () => {
     // to a tool-carrying request on it unless the effort is off, so the pair
     // below is what stands between the default pipeline and a call that
     // connects and cannot answer.
-    expect(llm.options.model).toBe("gpt-5.6-luna");
+    expect(llm.options.model).toBe("gpt-5.6-sol");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the
