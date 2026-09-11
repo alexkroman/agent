@@ -80,6 +80,13 @@ describe("ToolSchemaSchema", () => {
       description: "test",
       parameters: { type: "object" },
     });
+    // `toExtend` rather than `toMatchObjectType`, and `messages` is why: an
+    // optional OBJECT-typed property defeats that matcher's deep brand, which
+    // then blames `parameters` for a mismatch that is not there. The same trap
+    // is why `sdk/tool-messages.ts` declares its four message types FLAT
+    // instead of intersecting a shared base — see "toMatchObjectType cannot
+    // see a type carrying an optional OBJECT-typed property" in
+    // `.agents/testing.md` before adding an assertion here.
     expectTypeOf(parsed).toExtend<ToolSchema>();
     expectTypeOf<z.infer<typeof ToolSchemaSchema>>().toExtend<ToolSchema>();
     expect(parsed.parameters).toEqual({ type: "object" });

@@ -87,6 +87,11 @@ test("a tool reaches session state through a slot, with no annotation", () => {
   // property as small as `{ start?: string[] }`, so it is the SHAPE and not the
   // size. `toExtend` pins assignability and `InferToolOutput` pins the R the
   // matcher was here for, which is the half that could regress.
+  //
+  // **It is a repo-wide trap, not a fact about `ToolDef`** — a degraded matcher
+  // reads as coverage and pins nothing, so before reaching for
+  // `toMatchObjectType` on any type here, read "toMatchObjectType cannot see a
+  // type carrying an optional OBJECT-typed property" in `.agents/testing.md`.
   expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
   expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>();
 });
