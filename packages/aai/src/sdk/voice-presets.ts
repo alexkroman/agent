@@ -20,12 +20,12 @@
  * EVERY model request, which is once per step of a tool-calling reply, not once
  * per call. That is the whole reason this is four names and not one
  * `reliability: true`: bundling them would make the 919-token one the price of
- * the 125-token one.
+ * the 200-token one.
  *
  * | Preset | Tokens | What it buys |
  * | --- | --- | --- |
  * | `echoVerification` | ~190 | critical values are read back and confirmed before they are acted on |
- * | `smartMatching` | ~125 | a caller CONFIRMING a value is believed through a transcription error |
+ * | `smartMatching` | ~200 | a caller's CONFIRMATION, SPELLING and name lookups survive a transcription error |
  * | `speechNormalization` | ~920 | numbers, money, dates, phones, emails and addresses are written as SPOKEN words |
  * | `natoAlphabet` | ~190 | spelling uses "B as in Bravo" with pauses |
  *
@@ -34,7 +34,10 @@
  * each to a band, so an edit that doubles a preset's cost fails rather than
  * being discovered on a bill. They are ports of Retell's "Agent Handbook"
  * toggles and are deliberately in the same size class as the published
- * originals (190 / 110 / 910 / 190).
+ * originals (190 / 110 / 910 / 190) — with one deliberate exception:
+ * `smartMatching` is ~200 against their ~110, because a measured tau2-bench
+ * baseline showed the confirmation half alone does not reach the failure. Its
+ * own doc carries the runs.
  *
  * **`speechNormalization` is the expensive one and is listed last in prose for
  * that reason.** It is ~4.7x the other three combined and it is a PROMPT-LAYER
@@ -66,12 +69,13 @@
  * call — a prescription, a payment, a dispatch address — not a default anybody
  * should reach for twice.
  *
- * `smartMatching` is the one with no such tension: it says a near-match on a
- * value the AGENT proposed and the CALLER confirmed is a match, which nothing
- * in the core prompt covers. It is also the cheapest thing here and the hardest
- * to write by hand, because the failure it prevents looks like success — the
- * agent asks "Are you Brandon?", the ASR hears "Yes, this is Brendon", and a
- * literal-minded model re-asks forever.
+ * `smartMatching` is the one with no such tension, and the one with a measured
+ * case: it says a near-match the caller CONFIRMED is a match, that a SPELLED
+ * value replaces what was heard, and that a name a lookup misses is a
+ * transcription to doubt. Nothing in the core prompt covers the first two, and
+ * the third is where the core's own retry ladder was measured to stall. It is
+ * the hardest of the four to write by hand, because every failure it prevents
+ * looks like success from inside the transcript.
  */
 
 /**
@@ -161,28 +165,57 @@ const ECHO_VERIFICATION = `\
   a value they have confirmed.`;
 
 /**
- * Treat a near-match on a value the caller CONFIRMED as a match.
+ * Believe the caller through a transcription error: on a confirmation, on a
+ * SPELLED correction, and on the lookup the mis-heard value goes into.
  *
- * ~125 tokens, the cheapest of the four and the one nobody writes by hand. The
- * failure is a confirmation loop that cannot terminate: the agent proposes
- * "Brandon", the ASR renders the caller's yes as "this is Brendon", and an
- * agent comparing strings asks again — producing the same transcript, forever.
+ * ~200 tokens, and the cheapest of the four relative to what it prevents. Its
+ * first bullet is the confirmation loop that cannot terminate — the agent
+ * proposes "Brandon", the ASR renders the caller's yes as "this is Brendon",
+ * and an agent comparing strings asks again, producing the same transcript
+ * forever.
  *
- * It is deliberately scoped to a value the agent PROPOSED and the caller
- * AGREED with. It does not license accepting a near-match on a value the caller
- * volunteered and nothing has confirmed, which is what `PROMPT_TOOLS`' retry
- * ladder is for.
+ * **The other two bullets are MEASURED, and they are why this is ~200 tokens
+ * rather than the ~110 the Retell toggle it ports costs.** On a tau2-bench
+ * retail baseline (9 simulations over 3 hard cases, mean reward 0.444) the
+ * conversational half was not where the reward went:
+ *
+ * - "Sofia Li" transcribed as "Sophia Lee", fed straight into
+ *   `find_user_id_by_name_zip`, and the miss treated as authoritative — the
+ *   agent retried the same string and then escalated to a human. So the
+ *   tolerance has to cover the TOOL-ARGUMENT direction, not just the
+ *   conversational one, and "a name a lookup cannot find is a transcription to
+ *   DOUBT" is the bullet that says so.
+ * - The caller then SPELLED it — "S-O-F-I-A, last name Lee, L-I" — and the
+ *   agent kept using "Sophia". The correction was in the audio and was thrown
+ *   away, which makes the spelled-correction bullet the highest-value line
+ *   here: the letters REPLACE what was heard rather than being averaged with
+ *   it. Note what that implies about `echoVerification`, which asks for a
+ *   spelling: asking is not the hard part, and a preset that only asked would
+ *   not have saved this run.
+ *
+ * Names are also the right entity class to spend the tokens on. In the same
+ * corpus ZIP codes transcribed correctly every time and order ids were near
+ * perfect (one digit wrong in 41 renderings, never reaching a tool).
+ *
+ * It stays scoped to values the caller has GIVEN or AGREED to. It does not
+ * license accepting a near-match on a value nothing has confirmed, which is
+ * what `PROMPT_TOOLS`' retry ladder is for — this preset makes that ladder's
+ * first rungs specific to a name, which is where it was measured to stall.
  */
 const SMART_MATCHING = `\
 ## SMART MATCHING
 - A transcript is approximate, so a NEAR-match on a value you proposed
   is a MATCH: you ask "Are you Brandon?", the transcript reads "Yes,
   this is Brendon" — that is a yes. Keep the value you hold and go on.
-- Judge the agreement, not the spelling — a letter or two different, a
-  swapped vowel, a doubled consonant, a nickname.
-- Never make the caller repeat what they have already confirmed; asking
-  again produces the same transcript. Ask only when the difference
-  changes WHO or WHAT is meant.`;
+- When the caller SPELLS a value, the letters ARE the value: they
+  REPLACE what you heard, exactly as spelled — "S-O-F-I-A" is Sofia,
+  never Sophia — and every later lookup uses the spelled form.
+- A name a lookup cannot find is a transcription to DOUBT, not a
+  missing record. Before you re-ask or hand off, retry its phonetic
+  neighbours (Sofia/Sophia, Lee/Li) and any form spelled earlier.
+- Never make the caller repeat what they have confirmed or spelled;
+  asking again produces the same transcript. Ask only when the
+  difference changes WHO or WHAT is meant.`;
 
 /**
  * Write numbers, money, dates, times, phone numbers, emails and addresses as
@@ -383,7 +416,7 @@ export interface AgentVoicePresets {
    * prompt it sent before the field existed.
    *
    * Each name costs tokens on EVERY model request: `echoVerification` ~190,
-   * `smartMatching` ~125, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+   * `smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
    * on what the desk needs and nothing else — see {@link VOICE_PRESETS} for the
    * exact text of each and for what it overrides.
    *

@@ -1116,9 +1116,9 @@ read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
 Four properties, each of which is a test rather than a promise:
 
 - **A LIST, not a mode.** They are independently toggleable because they are
-  independently PRICED — ~190 / ~125 / ~920 / ~190 tokens on every model
+  independently PRICED — ~190 / ~200 / ~920 / ~190 tokens on every model
   request (o200k, banded in `voice-presets.test.ts`). One `reliability: true`
-  would make the 920-token one the price of the 125-token one.
+  would make the 920-token one the price of the 200-token one.
 - **Canonical ORDER, deduped, absent when empty.** A config cannot change the
   prompt's shape by spelling its list differently, and an agent that declares
   none sends the byte-identical prompt it sent before the field existed.
@@ -1130,6 +1130,13 @@ Four properties, each of which is a test rather than a promise:
   it reaches no TTS engine, and for the agent's OWN data `spokenMoney` /
   `spokenDate` / `spokenTime` are cheaper and testable. The module doc carries
   the rest, including why the phone rule's spaced dash is load-bearing.
+- **`smartMatching` is the one with a measured case, and it is why that preset
+  is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
+  conversational half was not where the reward went: "Sofia Li" transcribed as
+  "Sophia Lee" went straight into a lookup, the miss was treated as
+  authoritative, and when the caller SPELLED the name the agent kept the heard
+  form. So the preset covers the tool-argument direction and makes a spelled
+  value REPLACE what was heard. Its own doc carries the runs.
 
 A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
 model request, so a preset there is the most expensive no-op available.

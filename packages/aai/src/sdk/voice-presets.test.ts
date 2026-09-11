@@ -36,7 +36,7 @@ import {
  */
 const MEASURED: Record<VoicePresetName, { tokens: number; chars: number }> = {
   echoVerification: { tokens: 191, chars: 799 },
-  smartMatching: { tokens: 125, chars: 520 },
+  smartMatching: { tokens: 202, chars: 799 },
   speechNormalization: { tokens: 919, chars: 3105 },
   natoAlphabet: { tokens: 182, chars: 671 },
 };
@@ -61,9 +61,9 @@ describe("VOICE_PRESETS", () => {
     expect(VOICE_PRESETS[name].length).toBeLessThan(Math.round(chars * 1.25));
   });
 
-  test("the four together cost about 1,400 tokens, and one of them is most of it", () => {
+  test("the four together cost about 1,500 tokens, and one of them is most of it", () => {
     const total = Object.values(MEASURED).reduce((sum, m) => sum + m.tokens, 0);
-    expect(total).toBeLessThan(1500);
+    expect(total).toBeLessThan(1700);
     // The reason the field is a LIST and not a boolean: bundling would make
     // this one the price of the other three.
     expect(MEASURED.speechNormalization.tokens).toBeGreaterThan(
@@ -124,8 +124,26 @@ describe("smartMatching", () => {
     expect(text).toContain("is a MATCH");
   });
 
+  test("a SPELLED value REPLACES what was heard, which is the measured line", () => {
+    // The tau2 baseline's caller spelled "S-O-F-I-A" and the agent went on
+    // using "Sophia": the correction was in the audio and was thrown away.
+    // "replaces", not "consider" — an averaged value is what failed.
+    expect(text).toContain("the letters ARE the value: they");
+    expect(text).toContain('REPLACE what you heard, exactly as spelled — "S-O-F-I-A" is Sofia');
+    expect(text).toContain("every later lookup uses the spelled form");
+  });
+
+  test("covers the TOOL-ARGUMENT direction, not only the conversational one", () => {
+    // The same run fed "Sophia Lee" into `find_user_id_by_name_zip`, retried
+    // the identical string, and escalated. A miss is evidence about the
+    // transcript, not about the record.
+    expect(text).toContain("A name a lookup cannot find is a transcription to DOUBT");
+    expect(text).toContain("Before you re-ask or hand off, retry its phonetic");
+    expect(text).toContain("neighbours (Sofia/Sophia, Lee/Li)");
+  });
+
   test("says why re-asking cannot work, not just that it is rude", () => {
-    expect(text).toContain("asking\n  again produces the same transcript");
+    expect(text).toContain("asking again produces the same transcript");
   });
 
   test("still refuses a difference that changes who is meant", () => {

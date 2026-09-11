@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "agent",
   "epoch": 4,
-  "sha256": "794a319a10aedc284a023e74085c4673e2b9a63a203dd20ac8931d93c2f5b574",
+  "sha256": "440ecae9c8278d819c30e77442ca7ceb94ca234c3a91c90b90d554c4721048d9",
   "exports": [
     "AgentDef",
     "AgentGuardrail",

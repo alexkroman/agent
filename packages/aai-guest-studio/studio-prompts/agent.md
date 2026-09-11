@@ -2977,8 +2977,9 @@ the defaults cannot say: "use run_code for ANY math", "you ARE the game".
 named behaviours instead of writing them. They compose, each is removable on
 its own, and each is paid for on EVERY model request: `echoVerification`
 (~190 tokens — read critical values back and get a yes), `smartMatching`
-(~125 — believe a caller who confirms through an ASR slip: you ask "Are you
-Brandon?", the transcript says "Yes, this is Brendon"), `speechNormalization`
+(~200 — believe a caller through an ASR slip: a confirmation ("Are you
+Brandon?" → "Yes, this is Brendon"), a spelling that REPLACES what was heard,
+and a name lookup that misses), `speechNormalization`
 (~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
 as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
 "That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
