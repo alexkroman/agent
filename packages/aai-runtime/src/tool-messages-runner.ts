@@ -75,7 +75,23 @@ export type ToolSpeechChannel = {
   boundary(): void;
   /** Accumulate into the turn's TRANSCRIPT. Only a verbatim completion does. */
   record(text: string): void;
-  /** Is the caller mid-utterance? Filler declines rather than talking across. */
+  /**
+   * Is the caller mid-utterance? Filler declines rather than talking across.
+   *
+   * **This is the ONLY suppressor, and a `bargeIn` one must not be added
+   * beside it.** The two are orthogonal: `bargeIn: "off"` governs whether
+   * CALLER speech takes the floor from the agent, where filler governs whether
+   * the agent covers its own latency. Suppressing filler inside a no-barge-in
+   * state would play dead air during exactly the phase in which the author has
+   * declared the agent must keep the floor — the gap this feature exists to
+   * close — so such a state wants filler MORE than an ordinary one, not less.
+   *
+   * The interesting sub-case is already covered by this predicate rather than
+   * by a second one: in a no-barge-in state the caller may be talking while
+   * the agent continues, `callerSpeaking()` is true there, and declining to
+   * add filler on top of a live utterance is right whoever holds the floor —
+   * cover is pointless when the line is not actually silent.
+   */
   callerSpeaking(): boolean;
   /**
    * Wait for `text` to have been spoken, for a `blocking` start.
@@ -87,6 +103,12 @@ export type ToolSpeechChannel = {
    * measured failure where a dead-air probe killed the real reply and the agent
    * went mute for 21-38s. An estimate cannot do that: it observes nothing and
    * signals nothing.
+   *
+   * **That property is the contract, not the accuracy.** It is a seam so a
+   * host can supply a better estimate, and a replacement owes "observes
+   * nothing and signals nothing" first: one that subscribes to a provider
+   * event, flushes a session, or holds anything the reply's own teardown also
+   * holds is a regression however much closer its timing is.
    */
   awaitSpoken(text: string, signal?: AbortSignal): Promise<void>;
 };
@@ -208,6 +230,14 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
    * The one send filler takes. `record: false` is not a parameter here, which
    * is the point: no argument can turn a hold line into something the barge-in
    * gate or history will see.
+   *
+   * **A parameter defaulting to `false` would look equivalent and would not
+   * be.** The literal IS the guarantee — it makes "this line is not the agent
+   * speaking" a property of the only code path filler has, rather than of what
+   * every caller happens to pass. Making it configurable re-opens the bug
+   * "Stop dead-air filler from opening the barge-in gate" closed, in which a
+   * caller's "are you still there?" counted as interrupting a reply and the
+   * abort discarded 16.6s of completed work. Refuse the proposal here.
    */
   function emitFiller(kind: string, toolName: string, text: string): boolean {
     if (channel === undefined || channel.callerSpeaking()) return false;
