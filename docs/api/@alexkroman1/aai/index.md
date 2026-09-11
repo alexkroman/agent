@@ -2527,6 +2527,31 @@ lists from those interfaces, so a new one cannot skip either gate.
 
 #### Properties
 
+##### acknowledgementPhrases?
+
+```ts
+optional acknowledgementPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that NEVER interrupt the agent, however
+many words they carry and however long they last — backchannels. Matched
+against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
+punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
+and `"okay so I need to change my order"` is a turn.
+
+`[]` switches the list off; setting it REPLACES the default list rather
+than adding to it.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
+"mm-hmm", …
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`acknowledgementPhrases`](#acknowledgementphrases-1)
+
 ##### builtinTools?
 
 ```ts
@@ -2596,6 +2621,56 @@ what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
 dialog can reach from inside a tool, because all three happen when no tool
 is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
+
+##### endpointingRules?
+
+```ts
+optional endpointingRules?: readonly EndpointingRule[];
+```
+
+Pipeline mode only. Content-keyed overrides of the end-of-turn silence
+window, evaluated as the HIGHEST-priority endpointing layer: the first
+rule that matches REPLACES the window the STT would otherwise use.
+
+Three kinds — `"assistant"` (tested against the agent's last message),
+`"user"` (tested against the caller's in-flight transcript) and `"both"`
+(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
+`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
+mean the whole thing.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "orders",
+  endpointingRules: [
+    // the agent just asked for something the caller reads out: wait
+    { type: "assistant", regex: "order number", timeoutMs: 2600 },
+    // the caller is mid-number: wait
+    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
+  ],
+});
+```
+
+`[]` switches the table off; setting it REPLACES the default table.
+A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
+and clamped again at run time to this agent's `maxTurnSilenceMs`, because
+a floor above the ceiling is the measured inversion
+`DEFAULT_MIN_TURN_SILENCE_MS` documents.
+
+**Honoured only by an STT provider that can move its endpointing window
+mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
+provider the table is inert and says so once, at warn level.
+
+###### Default Value
+
+`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
+patience after the agent asks for an identifier or while the caller's
+transcript ends in a digit, shorter after a closed yes/no question.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`endpointingRules`](#endpointingrules-1)
 
 ##### errorPhrase?
 
@@ -2734,6 +2809,27 @@ check so both failures are survivable.
 
 [`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-1)
 
+##### interruptionBackoffMs?
+
+```ts
+optional interruptionBackoffMs?: number;
+```
+
+Pipeline mode only. How long agent audio stays blocked after a real
+interruption, in ms. Vapi's `backoffSeconds`.
+
+SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
+deadline, `max(floor, backoff)`.
+
+###### Default Value
+
+`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
+Vapi's own default is 1.0s; see that constant for why this one is not.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionBackoffMs`](#interruptionbackoffms-1)
+
 ##### interruptionMinDurationMs?
 
 ```ts
@@ -2754,6 +2850,35 @@ never gated. Set 0 to disable the gate.
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionMinDurationMs`](#interruptionmindurationms-1)
 
+##### interruptionPhrases?
+
+```ts
+optional interruptionPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
+both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
+whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
+entries.
+
+Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
+
+**Note the deliberate asymmetry with the list above — "yes" never
+interrupts and "no" always does.** A caller saying "yes" over the agent is
+agreeing with a sentence still being spoken; one saying "no" is correcting
+it, and a missed correction is the expensive direction.
+
+`[]` switches the list off; setting it REPLACES the default list.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionPhrases`](#interruptionphrases-1)
+
 ##### llm?
 
 ```ts
@@ -2766,40 +2891,6 @@ stage defaults to the AssemblyAI LLM Gateway. Note this is pure
 serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
 using credentials from the agent's env.
-
-##### lowConfidence?
-
-```ts
-optional lowConfidence?: LowConfidencePolicy;
-```
-
-Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
-turn before the model sees it: drop the words below a floor, and above the
-floor but under a second threshold either ask the caller to repeat or hand
-the model the turn with a note attached.
-
-###### Default Value
-
-absent — every final transcript runs a turn, whatever the
-recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
-
-###### Remarks
-
-The failure it exists for is the one a transcript cannot show you: a
-mis-heard order id or email reads as a fluent sentence, becomes a
-well-formed tool-call argument, and poisons every later step of the call.
-
-Only the AssemblyAI STT stage reports the confidence this reads
-(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
-a provider that reports none is always ACCEPTED — the policy can never
-make a silent provider look like a bad one.
-
-See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
-this is opt-in.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`lowConfidence`](#lowconfidence-1)
 
 ##### maxOutputTokens?
 
@@ -3186,6 +3277,29 @@ cannot hear you. Please hang up and call back."`
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`startFailurePhrase`](#startfailurephrase-1)
+
+##### startSpeakingFloorMs?
+
+```ts
+optional startSpeakingFloorMs?: number;
+```
+
+Pipeline mode only. Minimum delay between a reply starting and its first
+audio reaching the caller, in ms — a floor at the END of the pipeline, so
+it decouples "when did I decide the turn ended" from "when do I start
+speaking". Vapi's `waitSeconds`.
+
+It is a MINIMUM: a pipeline slower than this pays nothing, and only a
+reply that was ready sooner waits.
+
+###### Default Value
+
+`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
+Vapi's own default is 0.4s; see that constant for why this one is not.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`startSpeakingFloorMs`](#startspeakingfloorms-1)
 
 ##### stt?
 
@@ -3989,6 +4103,144 @@ speaks.
 
 ***
 
+### AssistantEndpointingRule
+
+Match on the AGENT's last message.
+
+The use: the agent just asked for something that is READ OUT — an order id,
+an email, a postcode — so the caller will pause between chunks and the
+default window ends their turn mid-identifier. Or the inverse: the agent
+asked a yes/no question, the answer is one word, and waiting 1600ms for more
+of it is dead air.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### regex
+
+```ts
+regex: string;
+```
+
+Tested against the agent's last message. SUBSTRING semantics — see the module doc.
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "assistant";
+```
+
+***
+
+### BothEndpointingRule
+
+Both sides must match.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### assistantRegex
+
+```ts
+assistantRegex: string;
+```
+
+Tested against the agent's last message.
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "both";
+```
+
+##### userRegex
+
+```ts
+userRegex: string;
+```
+
+Tested against the in-flight user transcript.
+
+***
+
 ### DelegateOptions
 
 Per-call options for [DelegateFn](#delegatefn).
@@ -4275,7 +4527,7 @@ receive(ctx: SlotHolder, event:
      at: number;
      id: string;
   };
-  recovery?: "low-confidence" | "session-failed" | "turn-failed";
+  recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -4506,7 +4758,7 @@ export default agent({
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -5393,87 +5645,45 @@ The TTS voice for this phase of the call.
 
 ***
 
-### LowConfidencePolicy
+### EndpointingRuleBase
 
-Act on the recognizer's confidence in a committed turn. Pipeline mode only.
+Fields every endpointing rule carries.
+
+#### Extended by
+
+- [`AssistantEndpointingRule`](#assistantendpointingrule)
+- [`BothEndpointingRule`](#bothendpointingrule)
+- [`UserEndpointingRule`](#userendpointingrule)
 
 #### Properties
 
-##### action?
+##### flags?
 
 ```ts
-optional action?: LowConfidenceAction;
+optional flags?: string;
 ```
 
-What to do in that band.
+`RegExp` flags for this rule's pattern(s).
 
 ###### Default Value
 
-`"clarify"`
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
 
-##### actionBelow?
-
-```ts
-optional actionBelow?: number;
-```
-
-Confidence below which [action](#action) fires (and at or above
-[discardBelow](#discardbelow)). At or above this the turn runs exactly as it does
-today.
-
-###### Default Value
-
-`0.4` (`DEFAULT_LOW_CONFIDENCE_ACTION_BELOW`)
-
-##### discardBelow?
+##### timeoutMs
 
 ```ts
-optional discardBelow?: number;
+timeoutMs: number;
 ```
 
-Confidence below which the transcript is DROPPED — no turn, no caption
-commit, no clarification. Treated as noise the caller did not mean.
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
 
-###### Default Value
-
-`0.2` (`DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW`)
-
-##### note?
-
-```ts
-optional note?: string;
-```
-
-Appended to the model's copy under `action: "note"`.
-
-###### Default Value
-
-`DEFAULT_LOW_CONFIDENCE_NOTE`
-
-##### phrase?
-
-```ts
-optional phrase?: string;
-```
-
-Spoken under `action: "clarify"`. Set `""` to speak nothing — the turn is
-still dropped, which is `discardBelow` widened rather than a third mode.
-
-###### Default Value
-
-`DEFAULT_LOW_CONFIDENCE_PHRASE`
-
-##### statistic?
-
-```ts
-optional statistic?: LowConfidenceStatistic;
-```
-
-Which per-turn statistic the bands read.
-
-###### Default Value
-
-`"mean"`
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
 
 ***
 
@@ -5528,6 +5738,27 @@ Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
 
 #### Properties
 
+##### acknowledgementPhrases?
+
+```ts
+optional acknowledgementPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that NEVER interrupt the agent, however
+many words they carry and however long they last — backchannels. Matched
+against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
+punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
+and `"okay so I need to change my order"` is a turn.
+
+`[]` switches the list off; setting it REPLACES the default list rather
+than adding to it.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
+"mm-hmm", …
+
 ##### deadAirCoverMs?
 
 ```ts
@@ -5543,6 +5774,52 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Default Value
 
 `5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
+
+##### endpointingRules?
+
+```ts
+optional endpointingRules?: readonly EndpointingRule[];
+```
+
+Pipeline mode only. Content-keyed overrides of the end-of-turn silence
+window, evaluated as the HIGHEST-priority endpointing layer: the first
+rule that matches REPLACES the window the STT would otherwise use.
+
+Three kinds — `"assistant"` (tested against the agent's last message),
+`"user"` (tested against the caller's in-flight transcript) and `"both"`
+(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
+`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
+mean the whole thing.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "orders",
+  endpointingRules: [
+    // the agent just asked for something the caller reads out: wait
+    { type: "assistant", regex: "order number", timeoutMs: 2600 },
+    // the caller is mid-number: wait
+    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
+  ],
+});
+```
+
+`[]` switches the table off; setting it REPLACES the default table.
+A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
+and clamped again at run time to this agent's `maxTurnSilenceMs`, because
+a floor above the ceiling is the measured inversion
+`DEFAULT_MIN_TURN_SILENCE_MS` documents.
+
+**Honoured only by an STT provider that can move its endpointing window
+mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
+provider the table is inert and says so once, at warn level.
+
+###### Default Value
+
+`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
+patience after the agent asks for an identifier or while the caller's
+transcript ends in a digit, shorter after a closed yes/no question.
 
 ##### errorPhrase?
 
@@ -5560,6 +5837,23 @@ failed turn produces no text, so nothing would otherwise reach TTS. Set
 `"Sorry, I had a problem just then. Could you say that
 again?"` (`DEFAULT_ERROR_PHRASE`)
 
+##### interruptionBackoffMs?
+
+```ts
+optional interruptionBackoffMs?: number;
+```
+
+Pipeline mode only. How long agent audio stays blocked after a real
+interruption, in ms. Vapi's `backoffSeconds`.
+
+SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
+deadline, `max(floor, backoff)`.
+
+###### Default Value
+
+`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
+Vapi's own default is 1.0s; see that constant for why this one is not.
+
 ##### interruptionMinDurationMs?
 
 ```ts
@@ -5576,35 +5870,30 @@ never gated. Set 0 to disable the gate.
 
 `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
 
-##### lowConfidence?
+##### interruptionPhrases?
 
 ```ts
-optional lowConfidence?: LowConfidencePolicy;
+optional interruptionPhrases?: readonly string[];
 ```
 
-Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
-turn before the model sees it: drop the words below a floor, and above the
-floor but under a second threshold either ask the caller to repeat or hand
-the model the turn with a note attached.
+Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
+both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
+whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
+entries.
+
+Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
+
+**Note the deliberate asymmetry with the list above — "yes" never
+interrupts and "no" always does.** A caller saying "yes" over the agent is
+agreeing with a sentence still being spoken; one saying "no" is correcting
+it, and a missed correction is the expensive direction.
+
+`[]` switches the list off; setting it REPLACES the default list.
 
 ###### Default Value
 
-absent — every final transcript runs a turn, whatever the
-recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
-
-###### Remarks
-
-The failure it exists for is the one a transcript cannot show you: a
-mis-heard order id or email reads as a fluent sentence, becomes a
-well-formed tool-call argument, and poisons every later step of the call.
-
-Only the AssemblyAI STT stage reports the confidence this reads
-(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
-a provider that reports none is always ACCEPTED — the policy can never
-make a silent provider look like a bad one.
-
-See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
-this is opt-in.
+Vapi's published production list
+(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
 
 ##### minBargeInWords?
 
@@ -5708,6 +5997,25 @@ to disable.
 `"I am sorry, I am having trouble with my connection and
 cannot hear you. Please hang up and call back."`
 (`DEFAULT_START_FAILURE_PHRASE`)
+
+##### startSpeakingFloorMs?
+
+```ts
+optional startSpeakingFloorMs?: number;
+```
+
+Pipeline mode only. Minimum delay between a reply starting and its first
+audio reaching the caller, in ms — a floor at the END of the pipeline, so
+it decouples "when did I decide the turn ended" from "when do I start
+speaking". Vapi's `waitSeconds`.
+
+It is a MINIMUM: a pipeline slower than this pays nothing, and only a
+reply that was ready sooner waits.
+
+###### Default Value
+
+`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
+Vapi's own default is 0.4s; see that constant for why this one is not.
 
 ***
 
@@ -7631,6 +7939,74 @@ same sentence, which the calling tool may catch and answer around. An agent
 that wants a softer landing watches `usage.updated` through
 `agent({ events })` and says something before the cap arrives.
 
+***
+
+### UserEndpointingRule
+
+Match on the caller's IN-FLIGHT transcript — the interim, not the committed
+final, because the point is to decide how long to wait before it becomes
+one.
+
+The use: a transcript that currently ends in digits is a caller part-way
+through reading a number, and the gap between "one nine one" and "two two"
+is not the end of their turn.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### regex
+
+```ts
+regex: string;
+```
+
+Tested against the in-flight user transcript. SUBSTRING semantics.
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "user";
+```
+
 ## Type Aliases
 
 ### AgentGuardrail
@@ -8156,6 +8532,19 @@ by listing the dialog in [AgentDef.dialogs](#dialogs).
 
 ***
 
+### EndpointingRule
+
+```ts
+type EndpointingRule = 
+  | AssistantEndpointingRule
+  | UserEndpointingRule
+  | BothEndpointingRule;
+```
+
+One entry in [PipelineVoiceTuning.endpointingRules](#endpointingrules-1).
+
+***
+
 ### GenerateFn
 
 ```ts
@@ -8556,47 +8945,6 @@ readonly optional __stage?: "llm";
 ```
 
 Compile-time stage tag; never present at runtime.
-
-***
-
-### LowConfidenceAction
-
-```ts
-type LowConfidenceAction = "clarify" | "note";
-```
-
-What the agent does with a transcript in the action band.
-
-- `clarify` — SPEAK [LowConfidencePolicy.phrase](#phrase) and run no turn. The
-  words reach neither the model nor history, exactly like the failure phrases
-  (see `AgentTranscriptRecovery`): a garbage transcript in the record is a
-  garbage transcript the model can still act on two turns later.
-- `note` — run the turn, with [LowConfidencePolicy.note](#note) appended to
-  the MODEL's copy of the transcript only. The caller's caption and the
-  session record stay verbatim, the rule `assembleSpelledRuns` already
-  follows: what the caller said is not ours to rewrite.
-
-***
-
-### LowConfidenceStatistic
-
-```ts
-type LowConfidenceStatistic = "mean" | "minWord";
-```
-
-Which number the bands are compared against.
-
-- `mean` — the mean of the turn's per-word confidences. The transcript-level
-  reading Vapi's published thresholds were chosen against, and the
-  conservative one: a single soft word in a long sentence does not fire it.
-- `minWord` — the LOWEST per-word confidence in the turn. The
-  entity-sensitive reading, and the one that matches the failure this policy
-  exists for — one mis-heard digit in an otherwise clean sentence. It fires
-  far more often at the same thresholds, so an agent choosing it should
-  expect to lower them.
-
-Which is right here is an open MEASUREMENT, not a preference; `mean` is the
-default because it is the one the published numbers belong to.
 
 ***
 

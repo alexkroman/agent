@@ -153,6 +153,21 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
+export interface AssistantEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "assistant";
+}
+
+// @public
+export interface BothEndpointingRule extends EndpointingRuleBase {
+    assistantRegex: string;
+    // (undocumented)
+    type: "both";
+    userRegex: string;
+}
+
+// @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -319,6 +334,15 @@ export interface DialogVoiceConfig {
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
+export type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
+
+// @public
+export interface EndpointingRuleBase {
+    flags?: string | undefined;
+    timeoutMs: number;
+}
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -435,22 +459,6 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export type LowConfidenceAction = "clarify" | "note";
-
-// @public
-export interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-export type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
@@ -541,14 +549,18 @@ type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = 
 
 // @public
 export interface PipelineVoiceTuning {
+    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
+    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
+    interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    lowConfidence?: LowConfidencePolicy;
+    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
+    startSpeakingFloorMs?: number;
 }
 
 // @public
@@ -727,7 +739,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -1171,6 +1182,13 @@ export interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 export interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+export interface UserEndpointingRule extends EndpointingRuleBase {
+    regex: string;
+    // (undocumented)
+    type: "user";
 }
 
 // @public

@@ -53,25 +53,32 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        type: z.ZodLiteral<"assistant">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"user">;
+        regex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>, z.ZodObject<{
+        type: z.ZodLiteral<"both">;
+        assistantRegex: z.ZodString;
+        userRegex: z.ZodString;
+        flags: z.ZodOptional<z.ZodString>;
+        timeoutMs: z.ZodNumber;
+    }, z.core.$strip>], "type">>>>;
+    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    lowConfidence: z.ZodOptional<z.ZodObject<{
-        discardBelow: z.ZodOptional<z.ZodNumber>;
-        actionBelow: z.ZodOptional<z.ZodNumber>;
-        action: z.ZodOptional<z.ZodEnum<{
-            clarify: "clarify";
-            note: "note";
-        }>>;
-        phrase: z.ZodOptional<z.ZodString>;
-        note: z.ZodOptional<z.ZodString>;
-        statistic: z.ZodOptional<z.ZodEnum<{
-            mean: "mean";
-            minWord: "minWord";
-        }>>;
-    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -417,10 +424,7 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
-    agentContext?: string;
     connectTimeoutMs?: number;
-    formatTurns?: boolean;
-    keyterms?: string[];
     languages?: string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
@@ -489,9 +493,6 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
-// @internal
-export function classifyConfidence(confidence: number | undefined, policy: ResolvedLowConfidence): LowConfidenceVerdict;
-
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
@@ -537,18 +538,6 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_ACTION_BELOW = 0.4;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW = 0.2;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_NOTE = "low-confidence transcript: some words may be mis-heard \u2014 confirm any names, numbers or identifiers with the caller before acting on them";
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_PHRASE = "I'm sorry, I didn't quite catch that. Could you please repeat?";
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -600,9 +589,6 @@ interface DelegateResult extends SubagentAnswer {
     complaint?: string;
     revisions: number;
 }
-
-// @public
-export function describeKeytermDrops(dropped: readonly KeytermDrop[]): string | undefined;
 
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
@@ -729,20 +715,6 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 
 // @internal
-export function isUniversal35Pro(model: string): boolean;
-
-// @public
-export interface KeytermDrop {
-    // (undocumented)
-    readonly reason: KeytermDropReason;
-    // (undocumented)
-    readonly term: string;
-}
-
-// @public
-export type KeytermDropReason = "empty" | "too-long" | "duplicate" | "over-cap";
-
-// @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
@@ -752,38 +724,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
-
-// @public
-type LowConfidenceAction = "clarify" | "note";
-
-// @public
-interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-type LowConfidenceStatistic = "mean" | "minWord";
-
-// @internal
-export type LowConfidenceVerdict = {
-    kind: "accept";
-} | {
-    kind: "discard";
-    confidence: number;
-} | {
-    kind: "clarify";
-    confidence: number;
-    phrase: string;
-} | {
-    kind: "note";
-    confidence: number;
-    note: string;
-};
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -796,12 +736,6 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
-
-// @public
-export const MAX_KEYTERM_CHARS = 50;
-
-// @public
-export const MAX_KEYTERMS = 100;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -837,15 +771,6 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 
 // @public (undocumented)
 export const MISTRAL_KIND: "mistral";
-
-// @public
-export interface NormalizedKeyterms {
-    readonly dropped: readonly KeytermDrop[];
-    readonly terms: readonly string[];
-}
-
-// @public
-export function normalizeKeyterms(terms: readonly string[]): NormalizedKeyterms;
 
 // @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
@@ -963,9 +888,6 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     languages?: string[];
     streamingUrl?: string;
     region?: "us" | "eu";
-    keyterms?: readonly string[];
-    agentContext?: string;
-    formatTurns?: boolean;
 };
 
 // @public
@@ -998,30 +920,11 @@ export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
     endpointingMs: number;
 };
 
-// @internal
-export interface ResolvedLowConfidence {
-    // (undocumented)
-    action: LowConfidenceAction;
-    // (undocumented)
-    actionBelow: number;
-    // (undocumented)
-    discardBelow: number;
-    // (undocumented)
-    note: string;
-    // (undocumented)
-    phrase: string;
-    // (undocumented)
-    statistic: LowConfidenceStatistic;
-}
-
 // @public
 export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
-
-// @internal
-export function resolveLowConfidence(policy: LowConfidencePolicy): ResolvedLowConfidence;
 
 // @public
 export function resolveRimeTtsSettings(options: RimeTtsOptions): {
@@ -1318,14 +1221,12 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateAgentContext?(text: string): void;
-    updateKeyterms?(keyterms: readonly string[] | undefined): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
 }
 
 // @public
 export type SttTurnMeta = {
     endOfTurnConfidence?: number;
-    transcriptConfidence?: number;
-    minWordConfidence?: number;
 };
 
 // @public

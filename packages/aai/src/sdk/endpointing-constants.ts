@@ -171,6 +171,18 @@
  * the CARDINALITY, so a split is a named finding rather than a low similarity
  * score. Do not rewrite it. `scripts/failure_report.py` covers the wire side.
  *
+ * **But its RATES are inflated, hand-checked 2026-09-11, and a finding from it
+ * has to be read back against the wire before it is believed.** On the baseline
+ * it claimed 75% of turns mis-heard and 40% of those reaching a tool call; the
+ * excess is its own normalizer rather than the ASR. Three confirmed artifacts:
+ * `'w 505651 ninei' -> 'w5056519 i'` counted as a digit substitution where the
+ * transcription was CORRECT and the script mis-tokenized "nine—I"; a
+ * `NON_LATIN_SCRIPT` error on a plain-English turn; and a "non-gold address
+ * reached a write tool" finding derived from
+ * `"three, eight, zero Maple Drive" -> "380 Maple Drive"`, also correct. The
+ * CARDINALITY (split vs merge) is still what the numbers in this doc were read
+ * off, and is the half worth trusting; the error RATES are not.
+ *
  * And confirm the window was LIVE before believing a null result. Audio time is
  * `tick x 0.2` in tau2's discrete-time adapter and `user_labels.txt` shares that
  * timeline, so gold-utterance-end to `user_transcript` measures what the service

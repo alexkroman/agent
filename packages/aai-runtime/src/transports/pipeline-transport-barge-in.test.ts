@@ -295,12 +295,15 @@ describe("PipelineTransport", () => {
       tts.last()?.fireAudio(new Int16Array(240_000));
 
       // First partial opens the speaking edge — 0 ms of sustained speech.
-      stt.last()?.firePartial("wait stop");
+      // The text is deliberately ORDINARY: "wait" and "stop" are both on the
+      // default interruption list, which bypasses this gate by design, so a
+      // spec about the gate cannot use them and say anything.
+      stt.last()?.firePartial("can I");
       expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
 
       // The user keeps talking past the duration gate → the next partial interrupts.
       await vi.advanceTimersByTimeAsync(120);
-      stt.last()?.firePartial("wait stop that");
+      stt.last()?.firePartial("can I ask something");
       expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
