@@ -8,10 +8,10 @@
 // already handled by streamText.
 
 import { setMaxListeners } from "node:events";
-import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createFatalToolLatch } from "../tool-error-policy.ts";
+import { createToolSpeechController } from "../tool-messages-runner.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
 import { createEmitError } from "./pipeline-error.ts";
@@ -28,12 +28,13 @@ import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
+import { createTtsSender } from "./pipeline-tts-send.ts";
 import { createTurnBody } from "./pipeline-turn-body.ts";
 import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
-import { resolveSystemPrompt, type SendTtsOptions, type Transport } from "./types.ts";
+import { resolveSystemPrompt, type Transport } from "./types.ts";
 
 /**
  * `abort` listeners one session's signal may hold before Node calls it a leak.
@@ -246,14 +247,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsError: (err) => lifecycle.onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         if (!turns.audioGateOpen()) return;
-        // The text->audio term, measured rather than inferred. It had only
-        // ever been a subtraction (endpointing + `firstPartMs` against L_R at
-        // the caller's ear), which put it at 0.7-1.8s; measured directly it is
-        // ~66ms, so synthesis is not where a voice turn's latency lives.
-        if (ttsTextAtMs !== undefined) {
-          log.info("TTS first audio", { sid: opts.sid, afterTextMs: Date.now() - ttsTextAtMs });
-          ttsTextAtMs = undefined;
-        }
+        // The text->audio term, measured rather than inferred — see
+        // `TtsSender.reportFirstAudio`. Constructed below, and reached through
+        // the closure for the same reason `lifecycle` is.
+        ttsSender.reportFirstAudio();
         turns.markSpoke();
         heard.onAudio(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
@@ -274,9 +271,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Built once per session, not per turn: per-call aborts still track the
   // owning turn because streamText forwards its own abortSignal into each
   // execute's options, which takes precedence in toVercelTools.
+  // Speaks whatever `messages` a tool declares — see `tool-messages-runner.ts`.
+  // Session-scoped like the tool set; the turn binds its own speech channel.
+  const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
+
   const tools = toVercelTools(toolSchemas, {
     executeTool,
     sessionId: opts.sid,
+    toolSpeech,
     // The one thing that makes `ToolDef.onError`'s fatal arm stop a turn rather
     // than merely reject a call: the AI SDK swallows the rejection, so the
     // latch is how the in-flight request finds out.
@@ -315,29 +317,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     providers.tts?.cancel();
   }
 
-  /** Forward turn text to TTS, reopening the audio gate for the new turn.
-   * Publishing here rather than at reply end keeps captions with the audio — a
-   * tool chain speaks filler long before the answer exists. `publishTranscript:
-   * false` skips it for the greeting/start-failure lines, which publish their own
-   * final. The tail advances either way: it feeds the tail-resume estimate. */
-  /**
-   * When this turn's FIRST text went to TTS, for the `TTS first audio`
-   * measurement above. Cleared as soon as that turn's audio arrives, so a reply
-   * streamed as several sentences is timed from its first one rather than its
-   * latest.
-   */
-  let ttsTextAtMs: number | undefined;
-
-  function sendTtsTextNow(text: string, opts?: SendTtsOptions): void {
-    turns.openAudioGate();
-    ttsTextAtMs ??= Date.now();
-    // ASCII-fold typographic quotes for the engine; length-preserving, so the
-    // heard cursor below still indexes the same positions (normalizeSpeechText).
-    providers.tts?.sendText(normalizeSpeechText(text));
-    const tail = heard.onText(text, opts?.record !== false);
-    if (opts?.publishTranscript !== false)
-      callbacks.report({ type: "agent-transcript.updated", text: tail });
-  }
+  // The raw send, plus the `TTS first audio` measurement that reads its clock
+  // — see `pipeline-tts-send.ts`.
+  const ttsSender = createTtsSender({
+    turns,
+    heard,
+    tts: () => providers.tts,
+    callbacks,
+    log,
+    sid: opts.sid,
+  });
 
   /**
    * The funnel every collaborator below is handed — the raw send when this
@@ -345,7 +334,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * it does. Wrapping here rather than at each call site is what makes "one
    * place all speech goes through" true of the hold as well as of the send.
    */
-  const speech = createSpeechGate(guardrails.holdsSpeech, sendTtsTextNow);
+  const speech = createSpeechGate(guardrails.holdsSpeech, ttsSender.send);
   const sendTtsText = speech.send;
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
@@ -370,6 +359,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
+    toolSpeech,
     sendTtsText,
     callbacks,
     emitError,

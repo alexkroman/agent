@@ -26,6 +26,7 @@ import type {
 } from "ai";
 import type { Logger } from "../runtime-config.ts";
 import type { FatalToolLatch } from "../tool-error-policy.ts";
+import type { ToolSpeechController } from "../tool-messages-runner.ts";
 import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
 import type { StreamPart } from "./pipeline-stream-parts.ts";
 import type { EmitError, SendTtsText, SystemPromptOption, TransportCallbacks } from "./types.ts";
@@ -90,6 +91,18 @@ export interface ConsumeLlmStreamParams {
   deadAirCoverMs?: number | undefined;
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
+  /**
+   * The session's tool-message runner — see `tool-messages-runner.ts`.
+   *
+   * Read here for two things only this layer can do. The turn BINDS its speech
+   * channel to it (the TTS coalescer is per-turn, so a captured one would
+   * belong to a turn that has ended), and `startLlmStream` folds its verbatim
+   * latch into `stopWhen`, which is what "the model is not called at all" for a
+   * `role: "assistant"` completion actually means.
+   *
+   * Absent for a speculation and for every non-voice caller.
+   */
+  toolSpeech?: ToolSpeechController | undefined;
   /** Tool-call/tool-result observability hooks, forwarded to ServerSession. */
   callbacks: Pick<TransportCallbacks, "report">;
   /** Report an LLM-stream error. */
@@ -249,6 +262,7 @@ export type LlmRequest = Pick<
   | "maxRetries"
   | "resetToolChoice"
   | "onUsage"
+  | "toolSpeech"
   | "log"
   | "sid"
   | "signal"

@@ -1691,7 +1691,7 @@ When the run was created, as epoch ms.
 optional key?: string;
 ```
 
-The correlation key [WorkflowClient.start](index.md#start) was given, when it was given one.
+The correlation key [WorkflowClient.start](index.md#start-2) was given, when it was given one.
 
 ##### runId
 

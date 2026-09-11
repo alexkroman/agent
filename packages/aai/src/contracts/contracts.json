@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 4,
+    "supported": [1, 2, 3, 4],
     "dropped": {}
   },
   "builtins": {
@@ -20,8 +20,8 @@
     "dropped": {}
   },
   "coding": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "defaults": {
@@ -30,8 +30,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "ffmpeg": {
@@ -75,13 +75,13 @@
     "dropped": {}
   },
   "state": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 4,
+    "supported": [1, 2, 3, 4],
     "dropped": {}
   },
   "step": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "step-errors": {
@@ -100,20 +100,20 @@
     "dropped": {}
   },
   "subagent": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "testing": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [2, 3, 4],
     "dropped": {
       "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling."
     }
   },
   "tool": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "transcribe": {

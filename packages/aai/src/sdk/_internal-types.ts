@@ -13,7 +13,9 @@
 
 import { z } from "zod";
 import type { ToolSchema } from "./agent-config.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { toToolJsonSchema } from "./schema.ts";
+import { normalizeToolMessages } from "./tool-messages.ts";
 import type { ToolDef } from "./types.ts";
 
 export {
@@ -39,10 +41,16 @@ export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): T
         `Tool "${name}" uses the removed \`parameters\` field — rename it to \`inputSchema\`.`,
       );
     }
+    // Normalized HERE, once, at the only crossing from an author's `ToolDef`
+    // to the wire declaration — so the runtime reads one shape and never the
+    // shorthands, and `omitUndefined` keeps the key off a tool that declares
+    // nothing (an ordinary tool's schema is unchanged by this field existing).
+    const messages = normalizeToolMessages(def.messages);
     return {
       type: "function",
       name,
       description: def.description,
+      ...omitUndefined({ messages }),
       // `"input"`, not the conversion default: this document is part of the
       // prompt a model is given, describing what it SENDS. A `.default()` field
       // is one the executor fills in when the call omits it (see

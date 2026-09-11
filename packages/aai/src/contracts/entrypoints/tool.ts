@@ -16,6 +16,11 @@
  * declared beside `ToolDef` and a dialog tool is a tool with a position, so one
  * capability owns the handler and `dialog` owns the def that also accepts one.
  *
+ * The six `ToolMessage*` names are here for the same reason `ToolErrorHandler`
+ * is: `ToolDef.messages` takes them, so they are how an author says what the
+ * agent SAYS while a tool runs and what it says instead of the model when the
+ * tool lands. `dialog` owns the def that also accepts one, not the vocabulary.
+ *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
  * for this capability alone, hash it, and hold it to a committed epoch. See
@@ -32,11 +37,18 @@ export {
   type Message,
   orFail,
   requireEnv,
+  type ToolCompletionMessage,
+  type ToolConditionOperator,
   type ToolContext,
   type ToolDef,
+  type ToolDelayedMessage,
   type ToolErrorHandler,
   type ToolFailure,
   type ToolInputSchema,
+  type ToolMessageCondition,
+  type ToolMessages,
+  type ToolMessagesInput,
+  type ToolStartMessage,
   tool,
   toolFailure,
 } from "../../index.ts";

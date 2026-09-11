@@ -9584,6 +9584,74 @@ state" or "on this one step" depending on where it was written. The arms:
 
 ***
 
+### ToolCompletionMessage
+
+```ts
+type ToolCompletionMessage = {
+  content: string;
+  role?: "assistant" | "system";
+  when?: ToolMessageCondition[];
+};
+```
+
+The role switch, and the reason this feature is worth having.
+
+- `"assistant"` — the content IS the reply. It is spoken verbatim and **the
+  model is not called at all**: the step loop stops at this tool result, so a
+  deterministic outcome costs zero further LLM round-trips. Exclusive-or, as
+  Vapi states it — there is no arm where both happen.
+- `"system"` — the content is a HINT. It rides back with the tool's result as
+  guidance and the model writes the sentence, which is what an outcome the
+  agent has to reason about (or apologize for) needs.
+
+Defaults to `"assistant"`, because a message worth writing out in full is
+usually one worth saying.
+
+#### Properties
+
+##### content
+
+```ts
+content: string;
+```
+
+Spoken verbatim under `role: "assistant"`; told to the model under `"system"`.
+
+##### role?
+
+```ts
+optional role?: "assistant" | "system";
+```
+
+Defaults to `"assistant"`.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
+
+***
+
+### ToolConditionOperator
+
+```ts
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+```
+
+Comparison a [ToolMessageCondition](#toolmessagecondition) applies. Vapi's six, unchanged.
+
+Spelled out as a union rather than derived from the tuple below, which is
+the direction that reads right on a published type: TypeDoc refuses to
+document a `typeof CONST[number]` whose constant is not itself published,
+and publishing a tuple nobody names from an `agent.ts` would fail the root
+barrel's own membership test. The tuple `satisfies` the union, so an
+operator added to one and not the other fails to compile.
+
+***
+
 ### ToolContext
 
 ```ts
@@ -9921,6 +9989,7 @@ backend configured, naming which.
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description: string;
   inputSchema?: P;
+  messages?: ToolMessagesInput;
   onError?: ToolErrorHandler;
   execute: R;
 };
@@ -10026,6 +10095,56 @@ Schema for the tool's input, shown to the LLM and used to validate each
 call's arguments before `execute` runs. Named after the Vercel AI SDK's
 `tool({ inputSchema })`.
 
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
 ##### onError?
 
 ```ts
@@ -10084,6 +10203,54 @@ export default tool({
   },
 });
 ```
+
+***
+
+### ToolDelayedMessage
+
+```ts
+type ToolDelayedMessage = {
+  afterMs: number;
+  content: string;
+  when?: ToolMessageCondition[];
+};
+```
+
+Spoken when the tool has been running for [ToolDelayedMessage.afterMs](#afterms-2).
+
+**Same timing means VARIANTS; different timings mean STAGED updates.** Two
+entries at 3000 are two phrasings of one rung and one of them is drawn; an
+entry at 3000 and another at 8000 are a ladder — "still checking", then
+"almost there". That is Vapi's rule verbatim, and it is the whole reason the
+timing is on the message rather than on the list.
+
+#### Properties
+
+##### afterMs
+
+```ts
+afterMs: number;
+```
+
+Milliseconds from the start of the tool call. Rungs fire at their own
+offset, not one after another, so a ladder of 3000/8000 speaks at 3s and 8s
+— never at 3s and 11s.
+
+##### content
+
+```ts
+content: string;
+```
+
+What is spoken.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
 
 ***
 
@@ -10170,6 +10337,245 @@ A schema accepted for tool inputs and `ctx.generate` structured output:
 any Standard Schema that can also convert to JSON Schema (Zod natively,
 or a vendor `toJsonSchema()` method). Zod object schemas are the
 documented default.
+
+***
+
+### ToolMessageCondition
+
+```ts
+type ToolMessageCondition = {
+  arg: string;
+  op?: ToolConditionOperator;
+  value: string | number | boolean | null;
+};
+```
+
+One test a tool call's ARGUMENTS must pass for the message carrying it to be
+eligible.
+
+This is what makes a per-argument-value line possible — a different sentence
+when looking up an order than when issuing a refund — without splitting one
+tool into two. Conditions on a message are ANDed; a message with none always
+matches.
+
+`arg` names a top-level argument by the key the model sends. Values compare
+as JSON scalars: `eq`/`neq` are `Object.is`-style equality, and the four
+ordering operators apply only when BOTH sides are numbers (a condition that
+asks to order a string against a number does not match rather than throwing —
+the model chooses these values, so a comparison it makes nonsense of must not
+be able to fail a call).
+
+#### Properties
+
+##### arg
+
+```ts
+arg: string;
+```
+
+The argument's key, as the model sends it.
+
+##### op?
+
+```ts
+optional op?: ToolConditionOperator;
+```
+
+Defaults to `"eq"`.
+
+##### value
+
+```ts
+value: string | number | boolean | null;
+```
+
+The value to compare against.
+
+***
+
+### ToolMessages
+
+```ts
+type ToolMessages = {
+  complete?: ToolCompletionMessage[];
+  delayed?: ToolDelayedMessage[];
+  failed?: ToolCompletionMessage[];
+  start?: ToolStartMessage[];
+};
+```
+
+A tool's messages in NORMALIZED form — what a `ToolSchema` carries and
+what the runtime reads. Authors write [ToolMessagesInput](#toolmessagesinput), which
+`agentToolsToSchemas` normalizes into this.
+
+#### Properties
+
+##### complete?
+
+```ts
+optional complete?: ToolCompletionMessage[];
+```
+
+What a settled call says — see [ToolCompletionMessage](#toolcompletionmessage).
+
+##### delayed?
+
+```ts
+optional delayed?: ToolDelayedMessage[];
+```
+
+The delay ladder — see [ToolDelayedMessage](#tooldelayedmessage).
+
+##### failed?
+
+```ts
+optional failed?: ToolCompletionMessage[];
+```
+
+What a FAILED call says — a tool that returned a `ToolFailure`, or one
+whose throw the runtime serialized into one. The same role switch:
+`"system"` is what lets the model produce an error-aware reply instead of a
+canned one, which is almost always the better answer for a failure.
+
+##### start?
+
+```ts
+optional start?: ToolStartMessage[];
+```
+
+Spoken as the call begins — see [ToolStartMessage](#toolstartmessage).
+
+***
+
+### ToolMessagesInput
+
+```ts
+type ToolMessagesInput = {
+  complete?:   | string
+     | readonly (string | ToolCompletionMessage)[];
+  delayed?: readonly ToolDelayedMessage[];
+  failed?:   | string
+     | readonly (string | ToolCompletionMessage)[];
+  start?:   | boolean
+     | string
+     | readonly (string | ToolStartMessage)[];
+};
+```
+
+What an author writes for `tool({ messages })` — every kind also accepts the
+shorthands, because the common declaration is one string.
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: true, // the default filler pool, one drawn per call
+    delayed: [
+      { afterMs: 3000, content: "Still pulling that up." },
+      { afterMs: 3000, content: "Bear with me one second." },
+      { afterMs: 8000, content: "Sorry — this one is taking a while." },
+    ],
+    failed: [{ role: "system", content: "The order service is down. Offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+#### Properties
+
+##### complete?
+
+```ts
+optional complete?: 
+  | string
+  | readonly (string | ToolCompletionMessage)[];
+```
+
+A bare string is `{ role: "assistant", content }`.
+
+##### delayed?
+
+```ts
+optional delayed?: readonly ToolDelayedMessage[];
+```
+
+No shorthand: a rung without its `afterMs` is not a rung.
+
+##### failed?
+
+```ts
+optional failed?: 
+  | string
+  | readonly (string | ToolCompletionMessage)[];
+```
+
+A bare string is `{ role: "assistant", content }`.
+
+##### start?
+
+```ts
+optional start?: 
+  | boolean
+  | string
+  | readonly (string | ToolStartMessage)[];
+```
+
+`true` draws one of the five default hold lines per invocation.
+
+***
+
+### ToolStartMessage
+
+```ts
+type ToolStartMessage = {
+  blocking?: boolean;
+  content: string;
+  when?: ToolMessageCondition[];
+};
+```
+
+Spoken as the tool call BEGINS.
+
+Several entries are VARIANTS: one is drawn at random per invocation. Never
+fires for a call the model made and then abandoned, and never while the
+caller is talking — see the runner.
+
+#### Properties
+
+##### blocking?
+
+```ts
+optional blocking?: boolean;
+```
+
+Hold the tool call until this has been spoken. Defaults to `false`.
+
+The honest default, because the alternative charges every call the length
+of a sentence for a tool that may answer in 80ms. Reach for it when the
+tool has a side effect the caller should hear about BEFORE it happens
+("Okay, I'm cancelling that order now.") — the hold is bounded at eight
+seconds whatever the line, so a slow speech path costs one slow call and
+never a wedged turn.
+
+##### content
+
+```ts
+content: string;
+```
+
+What is spoken.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
 
 ***
 

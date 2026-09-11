@@ -77,6 +77,22 @@ type StreamPartHandlerDeps = {
    * speech tracking, which keeps the filler unconditional as before.
    */
   callerSpeaking?: (() => boolean) | undefined;
+  /**
+   * Is a tool call speaking for itself right now? (`ToolDef.messages`, see
+   * `tool-messages-runner.ts`.)
+   *
+   * Vapi disables its idle messages during a tool call for this reason and it
+   * transfers exactly: a tool declaring a 3s delay rung and a session on the
+   * default cover window would otherwise produce two sentences about one
+   * silence, the second of them generic. The gap is covered — by a line the
+   * AUTHOR wrote, which is strictly better than this module's — so the cover
+   * re-arms instead, the same way it does for a caller who is talking.
+   *
+   * True only while a call with a START or a DELAYED line is in flight. A tool
+   * that declares only `complete`/`failed` is as silent as any other during
+   * its execution and still gets the generic cover.
+   */
+  toolCovering?: (() => boolean) | undefined;
   log: Logger;
   sid: string;
 };
@@ -189,6 +205,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, signal, log, sid } = deps;
   const coverMs = deps.deadAirCoverMs ?? DEFAULT_DEAD_AIR_COVER_MS;
   const callerSpeaking = deps.callerSpeaking ?? ((): boolean => false);
+  const toolCovering = deps.toolCovering ?? ((): boolean => false);
   const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
@@ -270,8 +287,10 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     // an abort that raced the arm) must still no-op.
     if (signal?.aborted) return;
     // The caller is talking — the gap is already filled, by them. Re-arm and
-    // cover the next gap instead of speaking across this one.
-    if (callerSpeaking()) {
+    // cover the next gap instead of speaking across this one. A tool speaking
+    // its own declared lines fills it too, and the same answer applies: the
+    // cover exists for silence, and this is not silence.
+    if (callerSpeaking() || toolCovering()) {
       armCover();
       return;
     }

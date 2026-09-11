@@ -116,6 +116,21 @@ export type {
   ToolDef,
   ToolErrorHandler,
 } from "./tool-def.ts";
+/**
+ * What `ToolDef.messages` takes, from the same import path as `ToolDef` — a
+ * tool that declares one usually declares it inline, so these are here for the
+ * author who pulls a shared set of lines out into a constant, and because a
+ * type a published signature NAMES has to be importable (`check:api-nameable`).
+ */
+export type {
+  ToolCompletionMessage,
+  ToolConditionOperator,
+  ToolDelayedMessage,
+  ToolMessageCondition,
+  ToolMessages,
+  ToolMessagesInput,
+  ToolStartMessage,
+} from "./tool-messages.ts";
 
 /**
  * Fully resolved agent definition.

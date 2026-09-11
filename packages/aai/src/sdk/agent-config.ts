@@ -31,6 +31,7 @@ import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
+import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
@@ -406,6 +407,7 @@ export const ToolSchemaSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   parameters: z.record(z.string(), z.unknown()),
+  messages: ToolMessagesSchema.optional(),
 });
 
 /**
@@ -417,4 +419,19 @@ export type ToolSchema = {
   name: string;
   description: string;
   parameters: JSONSchema7;
+  /**
+   * The tool's spoken messages, NORMALIZED — see {@link ToolMessages}.
+   *
+   * It rides on the wire declaration rather than beside it because that is what
+   * makes the feature mean the same thing in every mode: the deployed guest
+   * builds this from the agent's own `ToolDef`s, and a host-mode client that
+   * supplies its own tool declarations gets the behaviour by declaring the
+   * field. Nothing here reaches the model — `toVercelTools` passes `name`,
+   * `description` and `parameters` to the provider and reads this itself.
+   *
+   * Absent for every tool that declares none, which is what keeps an ordinary
+   * tool's wire declaration byte-identical to what it was before the field
+   * existed.
+   */
+  messages?: ToolMessages | undefined;
 };

@@ -533,6 +533,9 @@ export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 // @internal (undocumented)
 export const DEFAULT_STT_SAMPLE_RATE = 16000;
 
+// @public
+export const DEFAULT_TOOL_START_PHRASES: readonly ["Hold on a sec.", "One moment.", "Just a sec.", "Give me a moment.", "This'll just take a sec."];
+
 // @internal (undocumented)
 export const DEFAULT_TTS_SAMPLE_RATE = 24000;
 
@@ -548,6 +551,12 @@ export function defaultProviders(config: ProviderFields): {
     llm?: LlmProvider;
     tts?: TtsProvider;
 } | null;
+
+// @public
+export type DelayedRung = {
+    afterMs: number;
+    content: string;
+};
 
 // @public
 type DelegateFn = {
@@ -583,6 +592,9 @@ interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
 }
+
+// @public
+export function eligibleToolMessages<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>): readonly T[];
 
 // @public (undocumented)
 export const EMPTY_PARAMS: z.ZodObject<{}, z.core.$strip>;
@@ -707,6 +719,9 @@ export const LOG_PREVIEW_CHARS = 200;
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
 
+// @public
+export function matchesToolConditions(when: readonly ToolMessageCondition[] | undefined, args: Readonly<Record<string, unknown>>): boolean;
+
 // @internal
 export const MAX_CLIENT_WS_BUFFERED_BYTES: number;
 
@@ -791,6 +806,9 @@ export type PinnedRequestInit = RequestInit & {
 
 // @internal
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
+
+// @public
+export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): DelayedRung[];
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
@@ -971,6 +989,9 @@ export const safeFetch: typeof globalThis.fetch;
 
 // @internal
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
+
+// @public
+export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
 // @internal
 export function serializeToolFailure(message: string): string;
@@ -1247,6 +1268,19 @@ export function systemPromptResolver(prompt: AgentSystemPrompt | undefined): Age
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 // @public
+export const TOOL_START_BLOCKING_MAX_MS = 8000;
+
+// @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1267,10 +1301,18 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
 };
 
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
+};
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -1284,11 +1326,48 @@ type ToolFailure = {
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
+export type ToolMessageBase = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+};
+
+// @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessages = {
+    start?: ToolStartMessage[] | undefined;
+    delayed?: ToolDelayedMessage[] | undefined;
+    complete?: ToolCompletionMessage[] | undefined;
+    failed?: ToolCompletionMessage[] | undefined;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
 type ToolSchema = {
     type: "function";
     name: string;
     description: string;
     parameters: JSONSchema7;
+    messages?: ToolMessages | undefined;
+};
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
 };
 
 // @public

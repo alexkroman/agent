@@ -708,6 +708,46 @@ throws for its own reason is fatal — are in
 [`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md)** with the mistake each one
 prevents.
 
+## A tool can SPEAK, and a filler line may not open the barge-in gate
+
+`ToolDef.messages` declares four kinds of line per tool — `start` (as the call
+begins), `delayed` (a ladder while it runs), `complete` and `failed` (when it
+lands). `tool-messages-runner.ts` speaks them, `to-vercel-tools.ts` drives it
+from inside `execute`, and the whole design — the four kinds, the
+variant-versus-stage rule, the argument conditions — is on
+`aai/sdk/tool-messages.ts`.
+
+**Two rules an editor of this package has to carry around.** Everything else is
+in the runner's module doc and in
+[`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md).
+
+**A `role: "assistant"` completion means the model is NOT CALLED, and the
+mechanism is `stopWhen`.** The line is spoken from inside the tool call and
+latches `ToolSpeechController.verbatim()`; `startLlmStream` folds that latch in
+beside `stepCountIs`, so the step that produced the tool result is the turn's
+last. Two consequences that are easy to miss: the sentence is in no step's
+response messages, so `consumeLlmStream` APPENDS it to the turn's model
+messages (without which the next turn's model does not know the agent said it),
+and the latch is per TURN — `beginTurn()` clears it, or the turn after a
+verbatim answer would refuse to call the model at all.
+
+**Filler goes out `record: false`, and nothing here may abort anything.** START
+and DELAYED ride the same flag the dead-air cover rides, which is what
+`HeardTracker.spokeRecordable()` reads — so a turn that has played only tool
+filler still cannot be spoken over, the invariant "Stop dead-air filler from
+opening the barge-in gate" established. The runner owns no signal, cancels no
+TTS and flushes nothing; the only thing it can delay is its own tool call, under
+`blocking`, bounded by `pTimeout` at the call site. A `blocking` wait is an
+ESTIMATE of the line's spoken length and deliberately not a provider
+acknowledgement: waiting on the TTS session means touching the lifecycle of the
+reply in flight, which is the move behind the measured failure where a dead-air
+probe killed the real reply and the agent went mute for 21-38s.
+
+And the generic cover STANDS DOWN while a tool is covering its own gap
+(`toolCovering` in `pipeline-stream-parts.ts`) — Vapi's "idle messages are
+disabled during tool calls", for the same reason: two sentences about one
+silence, the second of them generic.
+
 ## Three subpaths are RENDERED, and the root barrel is not
 
 `typedoc.json` here names `dist/eval-barrel.d.ts`, `dist/eval-vitest-barrel.d.ts`

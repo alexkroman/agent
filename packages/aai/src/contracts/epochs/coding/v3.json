@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "coding",
+  "epoch": 3,
+  "sha256": "54b02eb5755582e06403eefd87bf24d3e8a50705e2e5b326333d4dfcd00235a5",
+  "exports": [
+    "BASH_TIMEOUT_MAX_MS",
+    "BASH_TIMEOUT_MS",
+    "CODING_TOOL_DESCRIPTIONS",
+    "CodingToolName",
+    "CodingToolsOptions",
+    "GLOB_LIMIT",
+    "READ_LIMIT",
+    "createCodingTools"
+  ]
+}
