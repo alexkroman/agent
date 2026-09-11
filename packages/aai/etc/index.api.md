@@ -62,6 +62,7 @@ export interface AgentModelTuning {
     maxRetries?: number;
     resetToolChoice?: boolean;
     temperature?: number;
+    twoTier?: TwoTierConfig;
     usageLimits?: UsageLimits;
 }
 
@@ -194,6 +195,15 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 
 // @public
 export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+
+// @public
+export const DEFAULT_SLOW_TIER_CONTEXT_MESSAGES = 24;
+
+// @public
+export const DEFAULT_SLOW_TIER_EFFORT: SlowTierEffort;
+
+// @public
+export const DEFAULT_SLOW_TIER_TIMEOUT_MS = 15000;
 
 // @public
 export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
@@ -478,6 +488,9 @@ export interface LowConfidencePolicy {
 
 // @public
 export type LowConfidenceStatistic = "mean" | "minWord";
+
+// @public
+export const MAX_STATE_DIGEST_CHARS = 2000;
 
 // @public
 export const MCP_SERVER_KEY_RE: RegExp;
@@ -969,6 +982,9 @@ export interface SlotToolDef<P extends ToolInputSchema, V, R> {
 }
 
 // @public
+export type SlowTierEffort = "minimal" | "low" | "medium" | "high";
+
+// @public
 export function spokenAlphanumeric(spoken: string): string;
 
 // @public
@@ -1181,6 +1197,8 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    mutates?: boolean;
+    completes?: boolean;
 };
 
 // @public
@@ -1238,6 +1256,15 @@ export type ToolStartMessage = {
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+export interface TwoTierConfig {
+    completionGate?: boolean;
+    contextMessages?: number;
+    effort?: SlowTierEffort;
+    llm?: LlmProvider | string;
+    timeoutMs?: number;
+}
 
 // @public
 export interface TypedDelegateResult<T> extends DelegateResult {

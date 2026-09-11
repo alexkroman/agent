@@ -26,6 +26,26 @@ const AgentConfigSchema: z.ZodObject<{
     usageLimits: z.ZodOptional<z.ZodObject<{
         totalTokens: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
+    twoTier: z.ZodOptional<z.ZodObject<{
+        llm: z.ZodOptional<z.ZodUnion<readonly [z.ZodObject<{
+            kind: z.ZodString;
+            options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        }, z.core.$strip>, z.ZodString]>>;
+        effort: z.ZodOptional<z.ZodEnum<{
+            high: "high";
+            low: "low";
+            medium: "medium";
+            minimal: "minimal";
+        }>>;
+        timeoutMs: z.ZodOptional<z.ZodNumber>;
+        onTimeout: z.ZodOptional<z.ZodEnum<{
+            allow: "allow";
+            block: "block";
+        }>>;
+        completionGate: z.ZodOptional<z.ZodBoolean>;
+        annotateReads: z.ZodOptional<z.ZodBoolean>;
+        contextMessages: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -187,6 +207,7 @@ interface AgentModelTuning {
     maxRetries?: number;
     resetToolChoice?: boolean;
     temperature?: number;
+    twoTier?: TwoTierConfig;
     usageLimits?: UsageLimits;
 }
 
@@ -803,6 +824,9 @@ type SlotStore = {
 };
 
 // @public
+type SlowTierEffort = "minimal" | "low" | "medium" | "high";
+
+// @public
 interface StandardSchemaIssue {
     readonly errors?: unknown;
     readonly issues?: unknown;
@@ -1226,6 +1250,8 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    mutates?: boolean;
+    completes?: boolean;
 };
 
 // @public
@@ -1287,6 +1313,15 @@ type ToolStartMessage = {
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+interface TwoTierConfig {
+    completionGate?: boolean;
+    contextMessages?: number;
+    effort?: SlowTierEffort;
+    llm?: LlmProvider | string;
+    timeoutMs?: number;
+}
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {

@@ -160,9 +160,20 @@ group cannot skip the gate.
 | `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
 
 `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
-total over `AgentModelTuning`, so a sixth knob that skips the table fails to
+total over `AgentModelTuning`, so a seventh knob that skips the table fails to
 compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
 is inert unless `toolChoice` demands a call.
+
+**`twoTier` is the sixth member and the first that is not a scalar** — the
+FAST/SLOW split, off by default (`sdk/two-tier.ts`, which owns the design and
+the sources). It shares the group's rule structurally rather than by analogy:
+the gate interposes on the tool loop this runtime runs, so pipeline and text
+mode honour it and S2S cannot — there the provider calls the tool itself, and
+there is no moment between the proposal and the mutation for a second tier to
+stand in. `ToolDef.mutates` / `ToolDef.completes` are its other half: optional
+DECLARATIONS about a tool, inert unless an agent declares a second tier, and
+never inferred from a tool's name. **The runtime half is
+`packages/aai-runtime/TWO-TIER-CLAUDE.md`.**
 
 **A guardrail is pipeline-only, and the two refusals are different claims** —
 s2s has already spoken the sentence, text mode hands its caller the model stream

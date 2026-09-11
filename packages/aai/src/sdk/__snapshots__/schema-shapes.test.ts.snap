@@ -40,6 +40,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "text",
   "toolChoice",
   "tts",
+  "twoTier",
   "usageLimits",
   "voicePresets",
 ]
@@ -47,8 +48,10 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 
 exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
 [
+  "completes",
   "description",
   "messages",
+  "mutates",
   "name",
   "parameters",
   "type",

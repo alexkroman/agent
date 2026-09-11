@@ -33,6 +33,7 @@ import {
   executeToolCall,
   type SubagentRunner,
 } from "./tool-executor.ts";
+import { createTwoTierWiring, type TwoTierWiring } from "./two-tier/wire.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { type RunNotifier, withNotify } from "./workflow/notify.ts";
 
@@ -101,6 +102,12 @@ type ToolSetup = {
   toolSchemas: ToolSchema[];
   toolGuidance: string[];
   /**
+   * The fast/slow split — REQUIRED, and produced by neither MODE arm: they
+   * answer {@link ToolSurface} and `setupTools` adds this. `two-tier/wire.ts`
+   * carries why it is decided here at all, and why by subtraction.
+   */
+  tiers: TwoTierWiring;
+  /**
    * Send the current `syncState` projection to a client that just connected.
    *
    * Only meaningful on RESUME. A session's state survives a disconnect
@@ -120,6 +127,9 @@ type ToolSetup = {
    */
   commitSessionState?: (sessionId: string) => Promise<void>;
 };
+
+/** What each MODE's setup answers: {@link ToolSetup} minus the fast/slow split. */
+type ToolSurface = Omit<ToolSetup, "tiers">;
 
 /** Runtime state the tool-setup paths close over. */
 type ToolSetupDeps = {
@@ -215,7 +225,7 @@ function setupSandboxTools(
   deps: ToolSetupDeps,
   rpcExecuteTool: ExecuteTool,
   schemas: ToolSchema[],
-): ToolSetup {
+): ToolSurface {
   const { agent, options, env, workflows, notifier, logger } = deps;
   const builtinFetchOpt = options.fetch ? { fetch: options.fetch } : undefined;
   const generate = setupGenerate(deps);
@@ -271,7 +281,7 @@ function setupSandboxTools(
  * same name as a builtin wins: the builtin is dropped from both dispatch
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
-function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
+function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
   const { agent, options, env, workflows, notifier, logger, emitters, meters, stateStore } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
@@ -471,7 +481,11 @@ export function setupTools(deps: ToolSetupDeps): ToolSetup {
       `createRuntime: the relay pair is \`executeTool\` + \`toolSchemas\`, and \`${executeTool ? "toolSchemas" : "executeTool"}\` is absent. Pass both (\`toolSchemas: []\` for a relay with no tools) or neither.`,
     );
   }
-  return executeTool && toolSchemas
-    ? setupSandboxTools(deps, executeTool, toolSchemas)
-    : setupSelfHostedTools(deps);
+  const setup =
+    executeTool && toolSchemas
+      ? setupSandboxTools(deps, executeTool, toolSchemas)
+      : setupSelfHostedTools(deps);
+  // Applied to whichever surface came back, so both deployment paths get the
+  // same split — see `two-tier/wire.ts`.
+  return { ...setup, tiers: createTwoTierWiring(deps, setup) };
 }

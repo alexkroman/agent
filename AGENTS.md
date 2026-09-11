@@ -259,7 +259,7 @@ and the `typescript@6` pin — **and, because they answer three versions of one
 question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Fifteen files sit outside the table for a different reason — SIBLINGS of their
+Sixteen files sit outside the table for a different reason — SIBLINGS of their
 package's guide rather than second package guides:
 
 | Sibling | Covers |
@@ -271,6 +271,7 @@ package's guide rather than second package guides:
 | `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal and the replay engine's decisions |
 | `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` | Text mode |
 | `packages/aai-runtime/TOOL-OUTCOMES-CLAUDE.md` | What a settled tool call leaves in `ctx.messages` (the four producers, the two silent traps) and what a thrown one becomes (`onError`'s four guard rules) |
+| `packages/aai-runtime/TWO-TIER-CLAUDE.md` | The FAST/SLOW split (`agent({ twoTier })`): the ten modules, the five decisions, why the fast tier gets no tools and why that IS the mutation gate, how completion is gated, and the INFORMATION BOUNDARY — a branded view type plus the litmus test over every prompt string in that directory |
 | `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md` | Testing the studio coding agent: the agent-level unit spec through `runTextAgent`, and the agent's own EVAL — what is real in a case, the one thing that is not (the system prompt), and why it lives in `aai-guest` rather than `aai-evals` |
 | `packages/aai-server/MODAL-CLAUDE.md` | Modal sandboxes and backends |
 | `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |

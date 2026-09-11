@@ -57,7 +57,7 @@ describe("a session's prompt", () => {
   test("an installed suffix is appended below the base, as one more section", () => {
     const prompts = resolverFor();
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
-    session.setSuffix(() => "Phase: collecting the shipping address.");
+    session.setSuffix("dialogs", () => "Phase: collecting the shipping address.");
     expect(session.resolve()).toBe(`${prompts.base()}\n\nPhase: collecting the shipping address.`);
   });
 
@@ -67,7 +67,7 @@ describe("a session's prompt", () => {
     // one an agent without a dialog sends.
     const prompts = resolverFor();
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
-    session.setSuffix(() => "");
+    session.setSuffix("dialogs", () => "");
     expect(session.resolve()).toBe(prompts.base());
   });
 
@@ -77,7 +77,7 @@ describe("a session's prompt", () => {
     const prompts = resolverFor();
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
     let phase = "greeting";
-    session.setSuffix(() => `Phase: ${phase}.`);
+    session.setSuffix("dialogs", () => `Phase: ${phase}.`);
     expect(session.resolve()).toContain("Phase: greeting.");
     phase = "wrap-up";
     expect(session.resolve()).toContain("Phase: wrap-up.");
@@ -90,7 +90,7 @@ describe("a session's prompt", () => {
     const prompts = resolverFor();
     const a = prompts.forSession(TEST_SESSION_CONTEXT);
     const b = prompts.forSession(TEST_SESSION_CONTEXT);
-    a.setSuffix(() => "Phase: refund.");
+    a.setSuffix("dialogs", () => "Phase: refund.");
     expect(a.resolve()).toContain("Phase: refund.");
     expect(b.resolve()).toBe(prompts.base());
   });
@@ -105,7 +105,7 @@ describe("a session's prompt", () => {
   test("the agent's own instructions survive into every resolution", () => {
     const prompts = resolverFor("Always confirm the order number.");
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
-    session.setSuffix(() => "Phase: intake.");
+    session.setSuffix("dialogs", () => "Phase: intake.");
     expect(session.resolve()).toContain("Always confirm the order number.");
     expect(session.resolve()).toContain("Phase: intake.");
   });
@@ -175,7 +175,7 @@ describe("a systemPrompt RESOLVER", () => {
     // installed through `setSuffix` — that slot is the dialogs', last writer
     // wins.
     const session = withResolver(() => "Instructions.").forSession(TEST_SESSION_CONTEXT);
-    session.setSuffix(() => "Current phase: checkout.");
+    session.setSuffix("dialogs", () => "Current phase: checkout.");
     const resolved = session.resolve();
     expect(resolved).toContain("Instructions.");
     expect(resolved).toContain("Current phase: checkout.");

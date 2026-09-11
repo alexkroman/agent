@@ -333,6 +333,18 @@ export { failable, orFail } from "./sdk/tool-failure-flow.ts";
  * rather than discovered by being refused after it has already committed.
  */
 export * from "./sdk/tool-fields.ts";
+/**
+ * The FAST/SLOW declaration — `agent({ twoTier })`, the sixth member of the
+ * model-tuning group, plus the four numbers documenting its defaults.
+ *
+ * Re-exported here rather than through `sdk/types.ts` like its five siblings
+ * for one mechanical reason: that file sits AT the 500-line source cap, and
+ * this group is reached by no relative importer (`agent-model-tuning.ts` takes
+ * `TwoTierConfig` from the declaring module directly), so routing it through
+ * the barrel bought nothing but ten lines the cap does not have.
+ * `sdk/two-tier.ts` carries the design and its sources.
+ */
+export * from "./sdk/two-tier.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is

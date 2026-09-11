@@ -16,14 +16,20 @@
  * rather than a setting an S2S agent can write and never have honoured.
  *
  * `temperature` was the first of them and carried the rule alone. It reads the
- * same way now; what changed is that the next four did not each have to
+ * same way now; what changed is that the next five did not each have to
  * re-derive it.
+ *
+ * `twoTier` joined them last and is the first member that is not a scalar; see
+ * its doc on {@link AgentModelTuning} for why S2S refusing it is structural
+ * rather than merely consistent.
  *
  * These are not the VOICE-UX knobs. Those are pipeline-only because the
  * pipeline is what implements barge-in and dead air; these are pipeline-AND-TEXT
  * because both modes assemble their own model requests. A text agent has every
- * reason to set all five.
+ * reason to set all six.
  */
+
+import type { TwoTierConfig } from "./two-tier.ts";
 
 /**
  * The token budget a session may spend before the runtime stops it.
@@ -179,6 +185,19 @@ export interface AgentModelTuning {
    * session emits nothing rather than spending a durable event per model step.
    */
   usageLimits?: UsageLimits;
+  /**
+   * Put a SECOND model behind the first — see {@link TwoTierConfig}.
+   *
+   * @defaultValue unset — one model, no gate, no digest, no extra request.
+   *
+   * It belongs to this group rather than to {@link PipelineVoiceTuning}
+   * because it shares this group's rule exactly and not the other one's: the
+   * gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
+   * mode both honour it and S2S structurally cannot — there the provider owns
+   * the loop, calls the tool itself, and there is no moment between the
+   * proposal and the mutation for a second model to stand in.
+   */
+  twoTier?: TwoTierConfig;
 }
 
 /**
@@ -199,6 +218,7 @@ export const MODEL_TUNING_FIELDS = {
   maxRetries: "a provider-retry budget",
   resetToolChoice: "a per-step tool-choice policy",
   usageLimits: "a token budget",
+  twoTier: "a second model tier",
 } as const satisfies Record<keyof AgentModelTuning, string>;
 
 /** One {@link AgentModelTuning} field name. @internal */

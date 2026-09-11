@@ -114,6 +114,19 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  twoTier?: {
+     annotateReads?: boolean;
+     completionGate?: boolean;
+     contextMessages?: number;
+     effort?: "minimal" | "low" | "medium" | "high";
+     llm?:   | string
+        | {
+        kind: string;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+      };
+     onTimeout?: "allow" | "block";
+     timeoutMs?: number;
+  };
   usageLimits?: {
      totalTokens?: number;
   };
@@ -429,6 +442,54 @@ readonly `string`[]
 ###### tts.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### twoTier?
+
+\{
+  `annotateReads?`: `boolean`;
+  `completionGate?`: `boolean`;
+  `contextMessages?`: `number`;
+  `effort?`: `"minimal"` \| `"low"` \| `"medium"` \| `"high"`;
+  `llm?`:   \| `string`
+     \| \{
+     `kind`: `string`;
+     `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+   \};
+  `onTimeout?`: `"allow"` \| `"block"`;
+  `timeoutMs?`: `number`;
+\}
+
+###### twoTier.annotateReads?
+
+`boolean`
+
+###### twoTier.completionGate?
+
+`boolean`
+
+###### twoTier.contextMessages?
+
+`number`
+
+###### twoTier.effort?
+
+`"minimal"` \| `"low"` \| `"medium"` \| `"high"`
+
+###### twoTier.llm?
+
+  \| `string`
+  \| \{
+  `kind`: `string`;
+  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+\}
+
+###### twoTier.onTimeout?
+
+`"allow"` \| `"block"`
+
+###### twoTier.timeoutMs?
+
+`number`
 
 ###### usageLimits?
 
@@ -983,6 +1044,19 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  twoTier?: {
+     annotateReads?: boolean;
+     completionGate?: boolean;
+     contextMessages?: number;
+     effort?: "minimal" | "low" | "medium" | "high";
+     llm?:   | string
+        | {
+        kind: string;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+      };
+     onTimeout?: "allow" | "block";
+     timeoutMs?: number;
+  };
   usageLimits?: {
      totalTokens?: number;
   };
@@ -1138,6 +1212,19 @@ The agent under test — an `agent()` definition, or the raw
   tts?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  twoTier?: {
+     annotateReads?: boolean;
+     completionGate?: boolean;
+     contextMessages?: number;
+     effort?: "minimal" | "low" | "medium" | "high";
+     llm?:   | string
+        | {
+        kind: string;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+      };
+     onTimeout?: "allow" | "block";
+     timeoutMs?: number;
   };
   usageLimits?: {
      totalTokens?: number;
@@ -1435,6 +1522,24 @@ optional toolChoice?:
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### twoTier?
+
+```ts
+{
+  annotateReads?: boolean;
+  completionGate?: boolean;
+  contextMessages?: number;
+  effort?: "minimal" | "low" | "medium" | "high";
+  llm?:   | string
+     | {
+     kind: string;
+     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+   };
+  onTimeout?: "allow" | "block";
+  timeoutMs?: number;
 }
 ```
 

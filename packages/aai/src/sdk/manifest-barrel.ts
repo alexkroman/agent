@@ -16,8 +16,6 @@ export {
   HOST_ONLY_AGENT_FIELDS,
   type HostOnlyAgentField,
   ProviderDescriptorSchema,
-  type ToolSchema,
-  ToolSchemaSchema,
   toAgentConfig,
 } from "./agent-config.ts";
 // `assertProviderTriple` is deliberately NOT here. Its first overload carries
@@ -57,3 +55,4 @@ export {
   toolRegistry,
   withTools,
 } from "./tool-registry.ts";
+export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
