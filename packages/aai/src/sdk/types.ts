@@ -109,31 +109,25 @@ export type { ToolContext } from "./tool-context.ts";
  * `ToolContext`, `ToolDef`, `DefaultToolResult` and the two inference helpers
  * together. `DefaultToolResult` moved there when this file hit the 500-line
  * cap: it is a tool-authoring type declared in a barrel, and the group it
- * belongs to was already one re-export line below it.
+ * belongs to was already one re-export line below it. The seven
+ * `ToolMessages*`/`Tool*Message` names moved the same way when it hit the cap
+ * AGAIN, `tool-def.ts` being the module that names them.
  */
 export type {
   DefaultToolResult,
   InferToolInput,
   InferToolOutput,
   ToolChoice,
-  ToolDef,
-  ToolErrorHandler,
-} from "./tool-def.ts";
-/**
- * What `ToolDef.messages` takes, from the same import path as `ToolDef` — a
- * tool that declares one usually declares it inline, so these are here for the
- * author who pulls a shared set of lines out into a constant, and because a
- * type a published signature NAMES has to be importable (`check:api-nameable`).
- */
-export type {
   ToolCompletionMessage,
   ToolConditionOperator,
+  ToolDef,
   ToolDelayedMessage,
+  ToolErrorHandler,
   ToolMessageCondition,
   ToolMessages,
   ToolMessagesInput,
   ToolStartMessage,
-} from "./tool-messages.ts";
+} from "./tool-def.ts";
 /**
  * The opt-in prompt presets and the field that names them — the fifth field
  * group split off this file, re-exported here like the other four so no import

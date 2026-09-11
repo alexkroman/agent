@@ -303,3 +303,25 @@ export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName
  * @public
  */
 export type DefaultToolResult = any;
+
+/**
+ * What `ToolDef.messages` takes, re-exported from the module that declares
+ * `ToolDef` itself.
+ *
+ * The same move `DefaultToolResult` made when `types.ts` hit the 500-line cap,
+ * and for the same reason: these are tool-authoring types whose group was
+ * already one re-export line below them there, and this module is the one that
+ * NAMES them — `ToolMessagesInput` is the type of the field. A tool that
+ * declares `messages` usually declares it inline, so these are for the author
+ * who pulls a shared set of lines out into a constant, and because a type a
+ * published signature names has to be importable (`check:api-nameable`).
+ */
+export type {
+  ToolCompletionMessage,
+  ToolConditionOperator,
+  ToolDelayedMessage,
+  ToolMessageCondition,
+  ToolMessages,
+  ToolMessagesInput,
+  ToolStartMessage,
+} from "./tool-messages.ts";
