@@ -388,16 +388,11 @@ export function createUserActivity(deps: {
   /**
    * Is the agent SPEAKING — as opposed to merely making noise?
    *
-   * The `hasSpokenRecordable` term is the whole point: dead-air filler is
-   * audio, so it drives the playback clock and `turns.markSpoke()` exactly as
-   * real speech does, and without this a caller talking over a holding phrase
-   * counted as interrupting a reply. The abort then threw away the reply being
-   * generated behind the filler — the cover causing the silence it exists to
-   * cover. See `HeardTracker.spokeRecordable` for the 553s this discarded.
-   *
-   * A turn that has only played filler is therefore NOT spoken over, which is
-   * the invariant `pipeline-transport.ts` already states for `spoke()`: "a turn
-   * that has not spoken cannot be spoken over." Filler is not speaking.
+   * Filler is not speaking, and the `hasSpokenRecordable` term is what makes
+   * that true of the predicate: without it a caller talking over a holding
+   * phrase counted as interrupting a reply, and the abort destroyed the reply
+   * being generated behind it. `HeardTracker.spokeRecordable` carries the
+   * measurement and the argument.
    */
   const agentIsSpeaking = (): boolean =>
     (deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken())) &&
@@ -476,18 +471,10 @@ export function createUserActivity(deps: {
     callbacks,
     speculation: deps.speculation,
     commitUserTurn(text: string): void {
-      // A caller reading an identifier aloud arrives as isolated letters, and
-      // assembling them was asked of the MODEL in prose until now
-      // (`PROMPT_LISTENING`: "normalize spoken identifiers"). It does it wrong
-      // often enough to be the largest single failure source on a tau2-bench
-      // retail run — 22 of 57 failed calls never authenticated, every one with
-      // the right identifier already in the caller's own words. See
-      // `assembleSpelledRuns`.
-      //
-      // The model's copy is augmented; the CLIENT's and history's stay
-      // verbatim. What the caller said is not ours to rewrite, and a run this
-      // reads wrong must not be able to destroy the record of it — the model
-      // sees both and can still disagree.
+      // The MODEL's copy is augmented with any spelling run the caller read
+      // out; the CLIENT's and history's stay verbatim, because what the caller
+      // said is not ours to rewrite and a run read wrong must not be able to
+      // destroy the record of it. `assembleSpelledRuns` has the measurement.
       const spelled = assembleSpelledRuns(text);
       const forModel =
         spelled.length > 0 ? `${text}\n[spelled aloud: ${spelled.join(", ")}]` : text;
