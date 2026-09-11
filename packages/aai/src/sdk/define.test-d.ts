@@ -76,10 +76,24 @@ test("a tool reaches session state through a slot, with no annotation", () => {
       });
     },
   });
-  // The second type argument is the RESULT, captured from the body — this line
-  // used to pin the erased `Promise<unknown> | unknown` that made
-  // `InferToolOutput` useless.
-  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
+  // The second type argument is the RESULT, captured from the body — this pair
+  // pins the erased `Promise<unknown> | unknown` that made `InferToolOutput`
+  // useless.
+  //
+  // Two assertions rather than the one `toMatchObjectType<ToolDef<…, number>>`
+  // that stood here, because that matcher cannot see a `ToolDef` at all any
+  // more: `ToolDef.messages` is an optional OBJECT-typed property, and
+  // `toMatchObjectType`'s deep brand answers `never` for one — measured, on a
+  // property as small as `{ start?: string[] }`, so it is the SHAPE and not the
+  // size. `toExtend` pins assignability and `InferToolOutput` pins the R the
+  // matcher was here for, which is the half that could regress.
+  //
+  // **It is a repo-wide trap, not a fact about `ToolDef`** — a degraded matcher
+  // reads as coverage and pins nothing, so before reaching for
+  // `toMatchObjectType` on any type here, read "toMatchObjectType cannot see a
+  // type carrying an optional OBJECT-typed property" in `.agents/testing.md`.
+  expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
+  expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>();
 });
 
 /**

@@ -398,6 +398,9 @@ type Message = {
 };
 
 // @public
+export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
+
+// @public
 const PIPELINE_ONLY_TUNING: {
     readonly minBargeInWords: "number";
     readonly interruptionMinDurationMs: "number";
@@ -807,6 +810,16 @@ type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
+export type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -827,6 +840,14 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+export type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
 };
 
 // @public
@@ -839,6 +860,29 @@ type ToolFailure = {
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+export type ToolMessages = {
+    start?: ToolStartMessage[] | undefined;
+    delayed?: ToolDelayedMessage[] | undefined;
+    complete?: ToolCompletionMessage[] | undefined;
+    failed?: ToolCompletionMessage[] | undefined;
+};
+
+// @public
+export type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
 
 // @public
 export type ToolModules = Readonly<Record<string, unknown>>;
@@ -855,6 +899,7 @@ export type ToolSchema = {
     name: string;
     description: string;
     parameters: JSONSchema7;
+    messages?: ToolMessages | undefined;
 };
 
 // @internal
@@ -863,7 +908,86 @@ export const ToolSchemaSchema: z.ZodObject<{
     name: z.ZodString;
     description: z.ZodString;
     parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    messages: z.ZodOptional<z.ZodObject<{
+        start: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            content: z.ZodString;
+            when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                arg: z.ZodString;
+                op: z.ZodOptional<z.ZodEnum<{
+                    eq: "eq";
+                    gt: "gt";
+                    gte: "gte";
+                    lt: "lt";
+                    lte: "lte";
+                    neq: "neq";
+                }>>;
+                value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+            }, z.core.$strip>>>;
+            blocking: z.ZodOptional<z.ZodBoolean>;
+        }, z.core.$strip>>>;
+        delayed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            content: z.ZodString;
+            when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                arg: z.ZodString;
+                op: z.ZodOptional<z.ZodEnum<{
+                    eq: "eq";
+                    gt: "gt";
+                    gte: "gte";
+                    lt: "lt";
+                    lte: "lte";
+                    neq: "neq";
+                }>>;
+                value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+            }, z.core.$strip>>>;
+            afterMs: z.ZodNumber;
+        }, z.core.$strip>>>;
+        complete: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            content: z.ZodString;
+            when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                arg: z.ZodString;
+                op: z.ZodOptional<z.ZodEnum<{
+                    eq: "eq";
+                    gt: "gt";
+                    gte: "gte";
+                    lt: "lt";
+                    lte: "lte";
+                    neq: "neq";
+                }>>;
+                value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+            }, z.core.$strip>>>;
+            role: z.ZodOptional<z.ZodEnum<{
+                assistant: "assistant";
+                system: "system";
+            }>>;
+        }, z.core.$strip>>>;
+        failed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            content: z.ZodString;
+            when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                arg: z.ZodString;
+                op: z.ZodOptional<z.ZodEnum<{
+                    eq: "eq";
+                    gt: "gt";
+                    gte: "gte";
+                    lt: "lt";
+                    lte: "lte";
+                    neq: "neq";
+                }>>;
+                value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+            }, z.core.$strip>>>;
+            role: z.ZodOptional<z.ZodEnum<{
+                assistant: "assistant";
+                system: "system";
+            }>>;
+        }, z.core.$strip>>>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
+
+// @public
+export type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {

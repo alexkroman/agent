@@ -120,6 +120,35 @@ instead of a reply. `capLlm` heals the same shape when the front trim lands
 between a call and its result; the seed filter is the other half of that
 invariant.
 
+## What a tool SAYS, and the two places the outcome string forks
+
+`ToolDef.messages` (`aai/sdk/tool-messages.ts`) lets a tool declare its own
+speech. Three of its consequences belong here, because they are about what a
+settled call leaves behind rather than about what it says.
+
+**A `role: "system"` completion forks the result string, and the RECORD keeps
+the tool's own.** The hint is appended to what the MODEL is handed
+(`[guidance] …`, `TOOL_SYSTEM_HINT_LABEL`), while `recordToolResult` still
+writes the raw result — so `ctx.messages`, the `tool.completed` frame and a
+resumed history all carry what the tool returned and not a sentence about it.
+That is the same split the S2S arm already makes on its failure path, for the
+same reason: the two strings have different readers, and recording the
+provider's copy is how a live history and a rebuilt one drift.
+
+**A `role: "assistant"` completion adds an assistant message NO STEP
+PRODUCED.** The model is not called, so the sentence exists only in
+`consumeLlmStream`'s return value, appended after the settled steps' messages.
+It is a fourth producer of a message for history, and deliberately NOT a fifth
+producer of a `role: "tool"` one — the tool's result is recorded by
+`to-vercel-tools.ts` exactly as it always was.
+
+**Which arm a settled call takes is decided by `isToolFailure` over the parsed
+result**, not by whether `execute` threw. A throw the runtime serialized and a
+`ToolFailure` the author RETURNED are the same thing to the model, so they are
+the same thing here: both take `failed`. A call that rejects outright (the
+author's `onError` threw) takes neither — the model is handed nothing and
+`settled()` is never reached, only `dispose()`.
+
 ## Read the arm by ROLE, never by field presence
 
 `toolName` and `toolCallId` are optional, and the absence of one is not a

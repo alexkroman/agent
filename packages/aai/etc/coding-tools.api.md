@@ -236,6 +236,16 @@ interface SubagentToolCall {
 }
 
 // @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -256,6 +266,14 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
 };
 
 // @public
@@ -268,6 +286,28 @@ type ToolFailure = {
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {

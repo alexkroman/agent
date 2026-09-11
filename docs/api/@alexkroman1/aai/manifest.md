@@ -25,6 +25,31 @@ function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSche
 
 ***
 
+### normalizeToolMessages()
+
+```ts
+function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
+```
+
+Author input → the wire shape, dropping every kind the tool did not declare.
+
+Answers `undefined` for a tool with nothing to say, so a schema for an
+ordinary tool is byte-identical to what it was before this field existed —
+which is what keeps `messages` off every deployed agent's tool declarations
+and out of every snapshot that did not opt in.
+
+#### Parameters
+
+##### input
+
+[`ToolMessagesInput`](index.md#toolmessagesinput) \| `undefined`
+
+#### Returns
+
+[`ToolMessages`](index.md#toolmessages) \| `undefined`
+
+***
+
 ### toAgentConfig()
 
 ```ts
@@ -746,6 +771,7 @@ A checked set of tools, keyed by the name the model calls.
 ```ts
 type ToolSchema = {
   description: string;
+  messages?: ToolMessages;
   name: string;
   parameters: JSONSchema7;
   type: "function";
@@ -762,6 +788,25 @@ parameters — the serializable counterpart of `ToolDef`.
 ```ts
 description: string;
 ```
+
+##### messages?
+
+```ts
+optional messages?: ToolMessages;
+```
+
+The tool's spoken messages, NORMALIZED — see [ToolMessages](index.md#toolmessages).
+
+It rides on the wire declaration rather than beside it because that is what
+makes the feature mean the same thing in every mode: the deployed guest
+builds this from the agent's own `ToolDef`s, and a host-mode client that
+supplies its own tool declarations gets the behaviour by declaring the
+field. Nothing here reaches the model — `toVercelTools` passes `name`,
+`description` and `parameters` to the provider and reads this itself.
+
+Absent for every tool that declares none, which is what keeps an ordinary
+tool's wire declaration byte-identical to what it was before the field
+existed.
 
 ##### name
 
@@ -800,3 +845,39 @@ It cannot catch a SUPERFLUOUS entry, which is the other direction and the one
 that went stale: `state` sat here after `AgentDef.state` was deleted with the
 `ctx.state` bag, denying a key nothing produces and telling every reader the
 bag still exists. An entry here is a claim that `AgentDef` has that field.
+
+## References
+
+### ToolCompletionMessage
+
+Re-exports [ToolCompletionMessage](index.md#toolcompletionmessage)
+
+***
+
+### ToolDelayedMessage
+
+Re-exports [ToolDelayedMessage](index.md#tooldelayedmessage)
+
+***
+
+### ToolMessageCondition
+
+Re-exports [ToolMessageCondition](index.md#toolmessagecondition)
+
+***
+
+### ToolMessages
+
+Re-exports [ToolMessages](index.md#toolmessages)
+
+***
+
+### ToolMessagesInput
+
+Re-exports [ToolMessagesInput](index.md#toolmessagesinput)
+
+***
+
+### ToolStartMessage
+
+Re-exports [ToolStartMessage](index.md#toolstartmessage)

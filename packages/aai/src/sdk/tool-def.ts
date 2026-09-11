@@ -15,6 +15,7 @@
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext } from "./tool-context.ts";
+import type { ToolMessagesInput } from "./tool-messages.ts";
 import type { ToolFailure } from "./utils.ts";
 
 /**
@@ -156,6 +157,49 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * ```
    */
   onError?: ToolErrorHandler;
+  /**
+   * What the agent SAYS while this tool runs, and what it says when it lands.
+   *
+   * Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+   * {@link ToolMessagesInput}. Two of them change the shape of the turn rather
+   * than just filling it:
+   *
+   * - **`delayed` is a LADDER when the timings differ and VARIANTS when they
+   *   match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+   *   one of which is drawn; entries at 3000 and 8000 are two rungs.
+   * - **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+   *   and the model is NOT CALLED.** For a deterministic outcome that removes a
+   *   whole LLM round-trip from the turn. `role: "system"` is the other arm:
+   *   the content rides back as a hint and the model writes the sentence.
+   *
+   * `start` and `delayed` are filler — they are heard, and they are never
+   * recorded into `ctx.messages`, the model's view or the committed transcript,
+   * and never count as the agent having spoken (so a caller talking over one
+   * does not interrupt the reply being generated behind it). `complete` and
+   * `failed` with `role: "assistant"` are the opposite on every count: that IS
+   * the agent's answer.
+   *
+   * @example A hold line, a two-rung ladder, and an error the model phrases
+   * ```ts
+   * import { tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export default tool({
+   *   description: "Look up an order",
+   *   inputSchema: z.object({ orderId: z.string() }),
+   *   messages: {
+   *     start: ["Let me pull that up.", "One second while I check."],
+   *     delayed: [
+   *       { afterMs: 3000, content: "Still looking." },
+   *       { afterMs: 9000, content: "Sorry, the order system is slow today." },
+   *     ],
+   *     failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+   *   },
+   *   execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+   * });
+   * ```
+   */
+  messages?: ToolMessagesInput;
 };
 
 /**

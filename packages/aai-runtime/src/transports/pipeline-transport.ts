@@ -9,6 +9,7 @@
 
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createFatalToolLatch } from "../tool-error-policy.ts";
+import { createToolSpeechController } from "../tool-messages-runner.ts";
 import { createAudioOut } from "./pipeline-audio-out.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
@@ -281,9 +282,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Built once per session, not per turn: per-call aborts still track the
   // owning turn because streamText forwards its own abortSignal into each
   // execute's options, which takes precedence in toVercelTools.
+  // Speaks whatever `messages` a tool declares — see `tool-messages-runner.ts`.
+  // Session-scoped like the tool set; the turn binds its own speech channel.
+  const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
+
   const tools = toVercelTools(toolSchemas, {
     executeTool,
     sessionId: opts.sid,
+    toolSpeech,
     // The one thing that makes `ToolDef.onError`'s fatal arm stop a turn rather
     // than merely reject a call: the AI SDK swallows the rejection, so the
     // latch is how the in-flight request finds out.
@@ -349,6 +355,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     deadAirCoverMs,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
+    toolSpeech,
     sendTtsText,
     callbacks,
     emitError,

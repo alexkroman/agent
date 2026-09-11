@@ -730,6 +730,35 @@ the four producers that share it (`to-vercel-tools.ts`, `text-agent.ts`,
 where they are. Filters by role (`m.role === "user"`) are unaffected, which is
 what made this additive.
 
+## `ToolDef.messages` — what a tool SAYS, and the arm that skips the model
+
+`sdk/tool-messages.ts` declares it and `sdk/tool-messages-select.ts` chooses;
+both are pure, and the runtime that speaks them is `aai-runtime`'s
+`tool-messages-runner.ts`. A port of Vapi's tool `messages`, with two names
+moved to this repo's conventions (`timingMilliseconds` → `afterMs`,
+`conditions` → `when`). Four kinds — `start`, `delayed`, `complete`, `failed` —
+and three rules worth knowing before reading the module:
+
+- **Same timing means VARIANTS; different timings mean STAGES.** Two `delayed`
+  entries at `afterMs: 3000` are two phrasings of one rung and one is drawn;
+  3000 and 8000 are a ladder. Grouping happens BEFORE the draw, or a
+  three-variant rung would turn "both rungs" into a coin flip between them.
+- **`role: "assistant"` on a `complete`/`failed` entry means the model is NOT
+  CALLED.** The line is spoken verbatim and the step loop stops there, which
+  removes an entire LLM round-trip from a deterministic outcome. `"system"` is
+  the other arm: the content rides back with the tool's result as a hint and
+  the model writes the sentence.
+- **`start` and `delayed` are FILLER and never recorded** — not in
+  `ctx.messages`, not in the model's view, not in a committed transcript, and
+  they never count as the agent having spoken, so a caller talking over one
+  does not interrupt the reply being generated behind it. The barge-in rule and
+  the `blocking` bound are in `packages/aai-runtime/CLAUDE.md`, "A tool can
+  SPEAK".
+
+The field rides on `ToolSchema` (normalized by `agentToolsToSchemas`, absent
+for a tool that declares nothing), which is what makes it mean the same thing
+in `aai dev`, in a deployed guest and in host mode.
+
 ## `ctx.delegate` (subagents)
 
 The sibling of `ctx.generate`, and the line between them is how many model
