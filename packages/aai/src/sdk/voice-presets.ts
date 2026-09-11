@@ -195,7 +195,20 @@ const ECHO_VERIFICATION = `\
  *
  * Names are also the right entity class to spend the tokens on. In the same
  * corpus ZIP codes transcribed correctly every time and order ids were near
- * perfect (one digit wrong in 41 renderings, never reaching a tool).
+ * perfect (one digit wrong in 41 renderings, never reaching a tool). **Read
+ * that as "clean where it was exercised", not "digits are solved"** — it is a
+ * three-case sample, one of those cases is DESIGNED around a caller
+ * volunteering a real but wrong order id, and another case's poisoned-chain
+ * path never fired in the baseline at all. The scoping is a defensible default
+ * on that evidence and not a finding about digits.
+ *
+ * **What the phonetic-neighbour bullet does NOT reach, so nobody credits it
+ * with a run it cannot win:** a MANGLING is not a neighbour. In the same
+ * corpus "Yusuf" came back as "Yuta" and then "Yufus", and no retry over
+ * plausible confusions gets from "Yuta" to "Yusuf" — that task burned three
+ * lookups and ended in a human transfer after 191 seconds, and it is
+ * recoverable on the ASR side (keyterms, per-turn context) rather than in a
+ * prompt. This preset addresses the Sofia/Sophia mechanism and not that one.
  *
  * It stays scoped to values the caller has GIVEN or AGREED to. It does not
  * license accepting a near-match on a value nothing has confirmed, which is
