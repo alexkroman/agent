@@ -32,6 +32,7 @@ import biomeConfig from "../../../biome.json?raw";
 // the raw-import shape is the one the CLI bundler supports anyway.
 import scaffoldGuide from "../scaffold/CLAUDE.md?raw";
 import scaffoldWorkspaceYaml from "../scaffold/pnpm-workspace.yaml?raw";
+import scaffoldViteConfig from "../scaffold/vite.config.ts?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
 import { byCodeUnit } from "./_template-support.ts";
 
@@ -225,5 +226,37 @@ describe("scaffold is linted", () => {
     // The positive half: `packages/**` is what pulls the scaffold in, so a
     // narrowed root pattern would exclude it just as effectively.
     expect(biomeConfig).toMatch(/"packages\/\*\*"/);
+  });
+});
+
+/**
+ * Two kinds of file must stay OUT of React Fast Refresh, and the config that
+ * says so only ever fails in a project — `aai dev`, on a user's machine or on
+ * a linked checkout — which is what puts it here rather than in a dev-server
+ * spec.
+ *
+ * The failure mode is one step worse than "no refresh": the plugin makes any
+ * module that DECLARES a component a boundary, and can only refresh one whose
+ * every EXPORT is a component, so a module that is the first without the second
+ * is re-executed and only THEN discarded for a page reload. For a prebuilt
+ * `dist/` chunk that means the SDK's context module re-runs under a mounted
+ * tree (measured: 33 partial updates and 8 "Session hooks must be used within
+ * <SessionProvider>" throws from one `aai-ui` rebuild); for `client.tsx` it
+ * means a second `mountClient()` on a container that already has a root.
+ *
+ * Pinned per pattern, because the one that is easiest to lose is the one nobody
+ * wrote: `exclude` REPLACES the plugin's default rather than adding to it, so
+ * naming either of ours silently un-excludes node_modules.
+ */
+describe("scaffold vite.config.ts", () => {
+  test.each([
+    [
+      "node_modules — the plugin's own default, which `exclude` replaces",
+      String.raw`/\/node_modules\//`,
+    ],
+    ["a prebuilt dependency's bundled chunks, linked or installed", String.raw`/\/dist\//`],
+    ["the entry, which mounts and so cannot be re-executed", String.raw`/\/client\.tsx$/`],
+  ])("keeps Fast Refresh off %s", (_reason, pattern) => {
+    expect(scaffoldViteConfig).toContain(pattern);
   });
 });
