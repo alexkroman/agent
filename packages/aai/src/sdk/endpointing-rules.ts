@@ -55,6 +55,8 @@
  * @module
  */
 
+import { DEFAULT_MIN_TURN_SILENCE_MS } from "./endpointing-constants.ts";
+
 /**
  * Longest wait a single endpointing rule may declare, in ms.
  *
@@ -242,45 +244,6 @@ export function clampEndpointingTimeout(timeoutMs: number, maxTurnSilenceMs: num
 }
 
 /**
- * The shipped rule set for a retail-shaped voice line.
- *
- * **Every number is relative to the measured 1600ms baseline**
- * (`DEFAULT_MIN_TURN_SILENCE_MS`), not to Vapi's. Vapi's own heuristic
- * defaults are number-final 0.5s, punctuation 0.1s and no-punctuation 1.5s
- * against an unstated baseline; scaled onto ours, "wait longer for a number"
- * is the same SHAPE and a very different value, because 500ms would split a
- * spelled identifier on this corpus and 1600 already nearly does.
- *
- * | Rule | Wait | Where the number comes from |
- * | --- | --- | --- |
- * | caller is SPELLING (3+ single letters in a row) | **3000** | The one shape a global threshold is certain to cut: a letter-by-letter sequence has the longest inter-letter pauses of anything a caller says, and it happens precisely when the agent has already mis-heard them once ("S-O-F-I-A, last name Lee, L-I", measured). 3000 leaves 500ms under the 3500 ceiling, so a hesitant utterance is still force-ended by `max_turn_silence` rather than by nothing. |
- * | agent asked WHO the caller is | **3000** | **The most load-bearing rule in the table on this corpus.** Over 9 tau2-bench retail simulations on 3 hard cases, digit strings were already fine at 1600 — 41 order-id renderings, one digit substitution, never reaching a tool — while names collapsed: "Yusuf" → "Yuta" → "Yufus" (three failed lookups, then escalation), "Sofia Li" → "Sophia Lee". A name has no checksum, so one mis-heard syllable is a failed lookup rather than a retry. Same 3000 as the spelling rule, because the caller's response to a failed lookup IS to spell. |
- * | agent asked for a read-out identifier | **2600** | The measured worst-case intra-utterance pause while a caller spells a name is **1455ms** (`DEFAULT_MIN_TURN_SILENCE_MS`'s 18-pause instrumentation), and nine of those eighteen pauses cleared 1000. 1600 clears the observed worst case by 145ms, which is thin, and the failure it buys is the expensive one (a truncated auth argument, reward 1.00 → 0.40). 2600 clears it by ~1.1s and stays under the 3500 ceiling, so a hesitant utterance is still force-ended by `max_turn_silence` rather than by this. |
- * | caller's transcript ends in a digit | **2600** | Same window, keyed the other way, and the two are deliberately equal: a caller mid-number is mid-number whether or not the agent's question is what put them there ("it's one nine one two…" volunteered). The pause distribution is the same distribution. |
- * | agent asked a closed yes/no question | **900** | The answer is one word, so nothing is waiting to be merged, and the whole 1600 is dead air the caller hears as the agent being slow. 900 is deliberately NOT lower: the measured floor on this pipeline is ~470ms to a first partial (a MODEL floor — `interruption_delay` and `mode` are no-ops), so a window under ~700ms is decided before the second word of a two-word answer ("yes please", "no thanks") could arrive. |
- *
- * **This set is UNMEASURED as a set, and the instrument cannot settle it
- * either.** Each number is derived from a measurement above, but no run has
- * scored the table — and the gate runs n=3 per case, at which identical code
- * flips at least one of the three about half the time, so a reward delta from
- * it would be noise (`project_voice_benchmark_noise_floors`: 0.56/0.60 on
- * identical code, 9 of 25 tasks flipping). What CAN be read off a run at that
- * sample size is the entity-level count the numbers are argued from — how
- * often a name reached a tool call intact, and the split/merge cardinality
- * from tau2-bench's own `scripts/stt_errors.py`. Judge a change to this table
- * on those, not on reward. Pass `endpointingRules: []` to disable it.
- *
- * @internal
- */
-/**
- * The things a caller READS OUT, as an alternation.
- *
- * COMPOSED from a list rather than written as one literal, for the reason
- * `workflow/uploads.ts` and `eval/run-code.ts` compose theirs: biome's
- * `noSecrets` reads a long punctuation-dense string as a high-entropy secret.
- * It happens to read better too — each entry is one thing an agent asks for.
- */
-/**
  * A caller SPELLING, in progress — two arms, and the split is the whole
  * design.
  *
@@ -324,6 +287,14 @@ const IDENTITY_ASKS = [
   "may i (have|take) your name",
 ].join("|");
 
+/**
+ * The things a caller READS OUT, as an alternation.
+ *
+ * COMPOSED from a list rather than written as one literal, for the reason
+ * `workflow/uploads.ts` and `eval/run-code.ts` compose theirs: biome's
+ * `noSecrets` reads a long punctuation-dense string as a high-entropy secret.
+ * It happens to read better too — each entry is one thing an agent asks for.
+ */
 const READ_OUT_IDENTIFIERS = [
   "order (number|id|i\\.?d\\.?)",
   "confirmation (number|code)",
@@ -359,6 +330,97 @@ const CLOSED_QUESTION_OPENERS = [
   "might",
 ].join("|");
 
+/**
+ * The shipped rule set for a retail-shaped voice line.
+ *
+ * **Every number is relative to the measured 1600ms baseline**
+ * ({@link DEFAULT_MIN_TURN_SILENCE_MS}), not to Vapi's. Vapi's own heuristic
+ * defaults are number-final 0.5s, punctuation 0.1s and no-punctuation 1.5s
+ * against an unstated baseline; scaled onto ours, "wait longer for a number"
+ * is the same SHAPE and a very different value, because 500ms would split a
+ * spelled identifier on this corpus and 1600 already nearly does.
+ *
+ * **EVERY SHIPPED RULE LENGTHENS THE WAIT OR LEAVES IT ALONE — none shortens
+ * it, and that is the table's central property rather than a coincidence.**
+ * The two directions have asymmetric costs: a lengthening rule that fires
+ * wrongly makes the agent slower, and a shortening rule that fires wrongly
+ * TRUNCATES THE CALLER, which corrupts the turn's meaning instead of delaying
+ * it. And the harm is invisible to the instrument — a truncation surfaces as a
+ * reward flip, exactly the signal that is unreadable at n=3 against a
+ * 0.56/0.60 noise floor (see below). So a shortening default would be a change
+ * nobody could evaluate, in the expensive direction.
+ * `endpointing-rules.test.ts` asserts the property.
+ *
+ * | Rule | Wait | Where the number comes from |
+ * | --- | --- | --- |
+ * | caller is SPELLING | **3000** | **The one rule with a direct, mechanism-level observation behind it.** On a task-1 turn of the baseline wire the caller's entire spelling was truncated to *"ZIP is 19122."* — the spelled letters never reached the transcript at all, which is this rule's failure happening. A letter-by-letter sequence has the longest inter-letter pauses of anything a caller says, and it happens precisely when the agent has already mis-heard them once ("S-O-F-I-A, last name Lee, L-I", measured). |
+ * | agent asked WHO the caller is | **3000** | **The most load-bearing rule in the table on this corpus.** Over 9 tau2-bench retail simulations on 3 hard cases, digit strings were already fine at 1600 — 41 order-id renderings, one digit substitution, never reaching a tool — while names collapsed: "Yusuf" → "Yuta" → "Yufus" (three failed lookups, then escalation), "Sofia Li" → "Sophia Lee". A name has no checksum, so one mis-heard syllable is a failed lookup rather than a retry. Same 3000 as the spelling rule, because the caller's response to a failed lookup IS to spell. |
+ * | agent asked for a read-out identifier | **2600** | The measured worst-case intra-utterance pause while a caller spells a name is **1455ms** ({@link DEFAULT_MIN_TURN_SILENCE_MS}'s 18-pause instrumentation), and nine of those eighteen pauses cleared 1000. 1600 clears the observed worst case by 145ms, which is thin, and the failure it buys is the expensive one (a truncated auth argument, reward 1.00 → 0.40). 2600 clears it by ~1.1s. |
+ * | caller's transcript ends in a digit | **2600** | Same window, keyed the other way, and the two are deliberately equal: a caller mid-number is mid-number whether or not the agent's question is what put them there ("it's one nine one two…" volunteered). The pause distribution is the same distribution. |
+ * | agent asked a closed yes/no question | **1600 (NEUTRAL)** | Present, and deliberately shipping at the baseline — see below. |
+ *
+ * **Both 3000s sit 500ms under the 3500 `max_turn_silence` ceiling, and that
+ * chain is why Vapi's 4.0s equivalent is not portable here.** The ceiling is
+ * what force-ends an utterance that never reads complete, so a rule level with
+ * it would leave nothing to force-end a hesitation; and the ceiling itself is
+ * held below `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000) less final-emission
+ * latency, because the speaking edge going idle is what fires a
+ * false-interruption resume — cross that line and the agent resumes a reply
+ * over a caller who is still mid-sentence. A longer rule needs both numbers
+ * moved, in that order, with the resume window re-checked.
+ *
+ * ## The yes/no rule is PRESENT AND NEUTRAL, on purpose
+ *
+ * Shortening the wait after a closed question is the obvious fourth idea and
+ * the one this table declines to ship. What can be established is only a LOWER
+ * bound: ~470ms to a first partial is a MODEL floor on this pipeline
+ * (`interruption_delay` and `mode` are measured no-ops), so any window under
+ * ~700ms is decided before the second word of "yes please" could arrive, which
+ * makes **900** the aggressive value worth trying. What is NOT established —
+ * and what would be needed to ship it — is a measured distribution of caller
+ * responses to CLOSED questions on this corpus. The model floor is a different
+ * measurement and does not stand in for it.
+ *
+ * The failure it risks is specific: **closed questions get open answers
+ * routinely.** "Can you confirm that's the right address?" → *"Well,
+ * actually…"* with a pause after "actually"; "Is that everything?" → *"Um…
+ * actually one more thing"*. 1600 clears those hesitations and 900 lands inside
+ * them, and rule ordering does not help — a plain confirmation question matches
+ * this rule alone.
+ *
+ * So the rule ships at the baseline, which makes it a no-op that costs nothing
+ * (the transport change-gates its push, so a resolved value equal to the base
+ * sends no frame) and leaves the pattern written down one number from live. Set
+ * `timeoutMs: 900` on your own copy of the table to take it.
+ *
+ * ## What can and cannot settle this set
+ *
+ * **It is UNMEASURED as a set, and the instrument cannot settle it either.**
+ * Each number is derived from a measurement above, but no run has scored the
+ * table — and the gate runs n=3 per case, at which identical code flips at
+ * least one of the three about half the time, so a reward delta from it would
+ * be noise (`project_voice_benchmark_noise_floors`: 0.56/0.60 on identical
+ * code, 9 of 25 tasks flipping). What CAN be read off a run at that sample size
+ * is the ENTITY-LEVEL count the numbers are argued from: how often a name or a
+ * spelled identifier reached a tool call byte-for-byte intact. Judge a change
+ * to this table on that, not on reward.
+ *
+ * **And do NOT take `scripts/stt_errors.py`'s cardinality at face value.** It
+ * is the obvious instrument and it OVER-REPORTS: hand-checked against the
+ * baseline wire it claimed 75% of turns mis-heard and 40% of those reaching a
+ * tool call, and the excess is its own normalizer — it read
+ * `'w 505651 ninei' -> 'w5056519 i'` as a digit substitution where the
+ * transcription was correct and the script mis-tokenized "nine—I", flagged
+ * `NON_LATIN_SCRIPT` on a plain-English turn, and derived a
+ * "non-gold address reached a write tool" finding from
+ * `"three, eight, zero Maple Drive" -> "380 Maple Drive"`, which is also
+ * correct. Every finding it produces has to be read back against the wire
+ * before it is believed, or a reader will spend a day on a phantom regression.
+ *
+ * Pass `endpointingRules: []` to disable the table.
+ *
+ * @internal
+ */
 export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[] = [
   {
     // A caller SPELLING something out, in progress — see
@@ -407,13 +469,19 @@ export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[] = [
     // ends in a question mark. Anchored at both ends on purpose — an
     // unanchored "is" would match every sentence containing the word.
     //
-    // LAST of the three, which is what decides "Can you give me your order
+    // LAST in the table, which is what decides "Can you give me your order
     // number?": both this and the identifier rule match it, and first-match
     // wins, so patience beats brevity. That ordering is the rule, not an
     // accident of how the list was typed — the expensive failure is a
     // truncated identifier.
+    //
+    // NEUTRAL: the baseline, not the 900 the model floor would allow. This is
+    // the one rule that would SHORTEN the wait, so it is the one rule whose
+    // misfire truncates a caller rather than slowing an agent — and "closed
+    // questions get open answers" is routine. The module doc carries the
+    // argument in full, and the value to set on your own table to take it.
     type: "assistant",
     regex: `(^|[.!?]\\s+)(${CLOSED_QUESTION_OPENERS})\\b[^.!?]*\\?\\s*$`,
-    timeoutMs: 900,
+    timeoutMs: DEFAULT_MIN_TURN_SILENCE_MS,
   },
 ];

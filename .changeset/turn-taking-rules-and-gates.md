@@ -21,13 +21,24 @@ All three are Vapi's shapes with our numbers, because our measured baseline is
   (`UpdateConfiguration.min_turn_silence`); any other provider gets one warning
   and an inert table.
 
-  The shipped set is retail-shaped and every number is argued from a
-  measurement: 3000ms while the caller is SPELLING or after the agent asks WHO
-  they are (names are where turns collapse — "Yusuf" → "Yuta" → "Yufus", three
-  failed lookups; digit strings were already fine at 1600), 2600ms after an
-  identifier ask or while the transcript ends in a digit (the measured
-  worst-case dictation pause is 1455ms), 900ms after a closed yes/no question
-  (~470ms to a first partial is a model floor, so nothing shorter is safe).
+  The shipped set is retail-shaped, every number is argued from a measurement,
+  and **every rule lengthens the wait or leaves it alone**: 3000ms while the
+  caller is SPELLING or after the agent asks WHO they are (names are where
+  turns collapse — "Yusuf" → "Yuta" → "Yufus", three failed lookups; digit
+  strings were already fine at 1600), and 2600ms after an identifier ask or
+  while the transcript ends in a digit (the measured worst-case dictation pause
+  is 1455ms).
+
+  The closed-question rule is **present and NEUTRAL** — at the baseline, not
+  the 900ms the ~470ms first-partial model floor would allow. That floor is a
+  LOWER bound and not the measured distribution of caller responses to closed
+  questions that shipping a shortening default would need, and the asymmetry
+  decides it: a lengthening rule that misfires slows the agent, a shortening
+  one TRUNCATES the caller — and "closed questions get open answers" is routine
+  ("Can you confirm that's the right address?" → "Well, actually…"). A
+  truncation also surfaces as a reward flip, which is exactly the signal that
+  is unreadable at n=3. `endpointing-rules.test.ts` asserts the
+  never-shortens property.
 
 - **`startSpeakingFloorMs`** (Vapi's `waitSeconds`) — a minimum delay at the
   END of the pipeline, after TTS is ready, before audio goes out, so "when did

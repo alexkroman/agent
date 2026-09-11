@@ -3713,7 +3713,7 @@ export const DEFAULT_ACKNOWLEDGEMENT_PHRASES: readonly string[];
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
-// @public (undocumented)
+// @internal
 export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[];
 
 // @public

@@ -190,9 +190,33 @@ describe("DEFAULT_ENDPOINTING_RULES", () => {
     expect(match({ userTranscript: "that's all" })).toBeUndefined();
   });
 
-  test("a closed question shortens the wait below the baseline", () => {
+  test("EVERY shipped rule lengthens the wait or leaves it alone — none shortens it", () => {
+    // The table's central property. A lengthening rule that fires wrongly
+    // makes the agent slower; a shortening one truncates the CALLER, which
+    // corrupts the turn's meaning — and the harm is invisible to a benchmark
+    // that cannot read a reward flip at n=3. So a shortening default would be
+    // a change nobody could evaluate, in the expensive direction.
+    for (const rule of DEFAULT_ENDPOINTING_RULES) {
+      expect(rule.timeoutMs).toBeGreaterThanOrEqual(DEFAULT_MIN_TURN_SILENCE_MS);
+    }
+  });
+
+  test("the closed-question rule is PRESENT and NEUTRAL", () => {
+    // Present, so the pattern is written down one number from live; neutral,
+    // because only a LOWER bound on it is measured (the ~470ms first-partial
+    // model floor), and not the distribution of caller responses to closed
+    // questions that would be needed to ship the shorter value.
     const hit = match({ assistantMessage: "Is that the one ending in 4?" });
-    expect(hit?.timeoutMs).toBeLessThan(DEFAULT_MIN_TURN_SILENCE_MS);
+    expect(hit?.timeoutMs).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
+  });
+
+  test("...and being neutral costs no wire frame, because the push is change-gated", () => {
+    // The property that makes "present but neutral" free rather than merely
+    // harmless: the resolved value equals the base, and the transport only
+    // pushes a CHANGE (`pipeline-endpointing.ts`).
+    expect(match({ assistantMessage: "Is that right?" })?.timeoutMs).toBe(
+      DEFAULT_MIN_TURN_SILENCE_MS,
+    );
   });
 
   test("an identifier ask phrased as a closed question still buys the LONGER wait", () => {

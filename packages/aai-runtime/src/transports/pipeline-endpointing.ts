@@ -41,13 +41,37 @@
  * bought would still be in force for the NEXT utterance, which is the sort of
  * latency nobody can explain from the logs.
  *
- * ## What is NOT known
+ * ## A mid-stream change is IMMEDIATE, so the constraint is a RACE
  *
- * Whether the service applies a mid-stream `min_turn_silence` to the turn
- * already in progress or only to the next one. If it is the next one, a rule
- * keyed on the in-flight transcript pays a one-utterance lag and the
- * assistant-keyed rules (armed before the caller starts) are unaffected. Not
- * guessed at, and not something this side can observe.
+ * AssemblyAI documents turn-detection updates as taking effect immediately,
+ * without reconnecting — and the contrast in the same docs is explicit enough
+ * to rely on: `language_codes` applies "from the next turn",
+ * `keyterms_prompt` "immediately for subsequent audio processing", and turn
+ * detection is in the immediate class. Their own worked example is this
+ * module's rule 2 ("your voice agent just asked for a callback number — raise
+ * `min_turn_silence` mid-stream so those pauses don't end the turn").
+ *
+ * So a `user`-keyed rule is not inert by construction; what bounds it is a
+ * RACE. The end-of-turn check fires after `min_turn_silence` of silence, so a
+ * push has to land INSIDE that window to govern the turn it was computed for.
+ * Two things follow, and both are implemented rather than noted:
+ *
+ * - **Push from the EARLIEST partial that can match, not the latest.** The
+ *   table is re-read on every partial including the first, and the push runs
+ *   SYNCHRONOUSLY inside that handler — no queue, no await — so host-side
+ *   latency is not a term in the race and the only delay is the frame's flight
+ *   time. The `Pipeline endpointing override` line names the transition, which
+ *   is what correlates it against the provider's own turn trace when a rule
+ *   looks like it did not take.
+ * - **The restore writes our own numbers back, and there is no `mode` to
+ *   restore.** The docs' advice for a preset user is to re-send `mode`
+ *   afterwards, since a raw number would leave the preset's other defaults
+ *   behind. That does not apply here: this pipeline never sends `mode` at all
+ *   (`DEFAULT_MIN_TURN_SILENCE_MS` records why every preset is ruled out —
+ *   even `max_accuracy` is tuned for clean dictation into a mic), and both
+ *   halves of the pair are always sent explicitly. So restoring
+ *   `minTurnSilenceMs` restores the whole configuration. If a future agent
+ *   ever does send `mode`, this restore becomes wrong and has to re-send it.
  */
 
 import type { EndpointingRule } from "@alexkroman1/aai";
