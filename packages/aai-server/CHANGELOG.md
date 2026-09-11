@@ -1,5 +1,97 @@
 # @alexkroman1/aai-server
 
+## 5.3.6
+
+### Patch Changes
+
+- 7fe0571: Pick up the SDK's new agent-level guardrails, host-side usage metering and per-tool error classification, so a deployed agent runs a runtime that has them.
+- b7e21aa: Extract the studio coding agent's tool set into the SDK, and ship a generic coding agent as a template.
+  
+  ## The nine tools are `@alexkroman1/aai/coding-tools` now
+  
+  `createCodingTools({ dir })` answers the tools an agent that edits code turns out to need — `read_file`, `write_file`, `edit_file`, `delete_file`, `list_files`, `glob`, `grep`, `bash`, `todo_write` — keyed by the names the model calls, over ONE directory and reaching nothing outside it. Every one of them was already written, tested and tuned; what it could not be was USED, because it lived in `aai-guest`, a private package, closed over one studio session's workspace and tangled with the three things only the studio wants: a write-time syntax gate, a post-write type check, and a bundle trial.
+  
+  What survives deleting all of that is most of it. `studio-edit.ts` and `studio-grep.ts` moved as `host/coding-edit.ts` and `host/coding-grep.ts` with their specs, the capped child-process runner moved as `host/coding-spawn.ts`, and `resolveInside`/`writeFileWithParents`/`isPathInside` joined `host/workspace-files.ts` — the module that already owns what a workspace IS on disk, and where the containment test now has ONE implementation rather than the four it had (`aai-runtime`'s `server-static.ts` re-exports it; the copies that were only correct for an absolute, normalized, trailing-slash-free root are gone).
+  
+  Three seams a host fills in, and each is a rule the studio paid for:
+  
+  - **`validate` refuses a write BEFORE it lands.** The studio parses the file: one that does not parse cannot be edited back into shape by text matching, so writing it strands the turn — sixteen steps of read → edit → "could not find that text", no work produced.
+  - **`afterWrite` appends to a write that SUCCEEDED**, which is where the studio hands back the workspace's type errors inside the result of the write that caused them. It is the cheap half of what a language server would do and the place a repair round is actually saved.
+  - **`env` is `bash`'s child environment**, defaulting to this process's own — right for a CLI on a laptop, wrong for a sandbox, which passes an allow-list so a credential the host holds is out by construction rather than by remembering to subtract it. The studio still passes its 24-name `workspaceChildEnv()`.
+  
+  `CODING_TOOL_DESCRIPTIONS` and the four limits ride along on the same subpath, because a host that overrides a description has to quote the number the code enforces, and cannot keep the two in step with a constant it may not import. The machinery UNDER the tools is not published with them: the edit matcher and the workspace grep have no consumer outside `coding-tools.ts`, and only the capped child-process runner is on `@alexkroman1/aai/host-internal` — because the guest harness spawns npm, the CLI bundler and the workspace test run through it, and each decides for itself whether a killed child is a failure or an annotated line. A name published in anticipation of a consumer is a surface with no reader.
+  
+  The record is typed by NAME (`Record<CodingToolName, ToolDef>`, narrowed by `only`) rather than by an index signature, because a template's `tools/read_file.ts` default-exports one entry of it and under `noUncheckedIndexedAccess` an index signature hands back `ToolDef | undefined`.
+  
+  It costs `@alexkroman1/aai` two runtime dependencies, `diff` and `picomatch`, which were `aai-guest`'s. Both are small and pure-JS; the artifact-size budget will report them and this is the intent.
+  
+  ## `templates/coding-agent`
+  
+  A generic coding agent: `text: true`, the nine tools over `WORKSPACE_DIR`, a `system-prompt.md` that is most of what makes it good, and nothing about building voice agents with this SDK. It is the first TEXT-mode template, and this repo's guide previously argued there could not be one — the argument was right about DEPLOYMENT (`createRuntime` refuses `text: true` by name, so there is no session for `aai dev` or the platform to serve) and wrong about the template, since a starter is a worked example first. So it ships its own front door: `chat.ts`, which is `createTextAgent` plus `withToolsDir` (a tool is a FILE even with no bundler in the path), a `readline` loop, and the conversation as a message list the file keeps.
+  
+  Its tools are ONE `createCodingTools` call in `shared.ts` that each `tools/*.ts` re-exports an entry of — nine factory calls would be nine chances to point one at a different directory, and the directory is the only security-relevant decision in the template. The template says so where an author will read it: `bash` runs what the model wrote with the authority of the process, which is the authority the write and delete tools already have, so it grants nothing new — what it does is make the grant obvious.
+  
+  ## A TEXT agent's eval suite: `describeTextEval`
+  
+  `@alexkroman1/aai-runtime/eval/vitest` gains `describeTextEval`, and `/eval` gains `evalTextCredentials`. A template's eval must import that vitest subpath (konsistent's `template-eval-spec`), and what was there for a text agent was a voice suite that refuses one: `describeEval` opens `openEvalSession` → `createRuntime`. Everything a case author sees is shared — the two modes, the announce line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn` and every reader above it — including `modeFrom`, so `AAI_EVAL_STUB` and `AAI_REQUIRE_EVAL` cannot come to mean one thing at two doors of three and another at the third.
+  
+  `evalTextCredentials` is a second gate rather than a flag on the first, because `evalCredentials` OVER-ASKS here: it answers about a voice agent, so an agent with no complete pipeline gets the default AssemblyAI STT key added, and a text agent declaring `anthropicLlm()` was reported as needing a key it will never read — which skips a suite the machine could have run live. It asks about the LLM alone, and about the DEFAULTED descriptor when the agent declares none, so the question is asked about the model the run would use.
+  
+  That is an additive change to the `aai-runtime:eval` capability: epoch 3, with epoch 2 RETAINED and its frozen authoring example written — `v2.ts` is `v1.ts` plus the two names epoch 2 added, used where a case would really reach for them.
+  
+  ## Why a carrier is in the header
+  
+  `aai-server` takes a patch because this changes `aai-guest`, whose built `dist/harness.mjs` is baked into the guest snapshot image the platform spawns every sandbox from — so the change reaches production through a server deploy and nothing else. Nothing in `aai-server` itself is touched.
+  
+  ## What changed in the studio, and what did not
+  
+  `createStudioTools` is `createCodingTools` with the three seams filled plus `test_agent`, which stays whole — it is the one tool that knows the workspace is an aai agent. The descriptions split the same way: the SDK's, three studio OVERRIDES (a write is type-checked, dependencies have their own tools, a workspace syncs back), and the tools only this host has. `studio/tool-descriptions.test.ts` asserts the three maps together cover the agent's real tool set exactly and that an override names a tool the SDK actually describes — an override of nothing is prose the model never reads. `studio/tools.test.ts` gave up the cases that are now the SDK's and keeps the ones about the seams. No behaviour changed in the studio.
+- 350e80f: Split the guest into three packages. `aai-guest-core` holds the seven modules both guest modes need (`rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` — the `run_code`/tool executor — and `limits`), `aai-guest-studio` holds the coding agent's 60 modules and the generated `studio-prompts/`, and `aai-guest` keeps the entry, agent mode, `toolchain/` and `dist/harness.mjs`.
+  
+  **Three, not two, and the shape is forced.** The entry dispatches studio mode while studio reaches back for the shared five at twenty call sites, so whichever package holds the entry must depend on studio — and studio then cannot depend on it. Two packages could only express that as a cycle, which for workspace packages is unbuildable. The entry has to stay in a package named `aai-guest` because `aai-server` resolves `aai-guest/harness` and bakes the tag into the guest snapshot image, so the shared modules are what moved. Their closure is exactly the modules that were shared, with no transitive pull-in, which is what made it worth doing. `StudioSession` moved into core with them: `bundle.ts` holds the studio-session slot, and a package that owns a slot owns the slot's type — declared in the studio package it was the one core→studio edge, enough to make the cycle real even though nothing behavioural crossed.
+  
+  `guest-core-package-boundary` and `guest-studio-package-boundary` are what keep the graph a DAG rather than leaving it one, and all eleven boundary deny-lists were regenerated from the tree rather than hand-edited for two new names — `konsistent-config.test.ts` derives the same matrix, and a deny list that goes stale does so by silence.
+  
+  Nothing changes for `aai-server` or the guest image beyond the tag: tsdown still bundles all three into one self-contained artifact. It is not byte-identical (16,203,601 bytes against 16,193,652 — 0.06% larger, from module ordering and the re-export shim), so the content-addressed image tag moves, exactly as it does for any harness edit.
+  
+  Five gate floors caught their own corpus shrinking, which is the part worth keeping: `guard-invariants` rule 12's guest scan (18 files against a minimum of 20), `check-deploy-changeset`'s per-package file floor, and the three coverage ratchets. Coverage needed the most care — it attributes a file to whoever LOADED it, so five `describe` blocks moved from `aai-guest/src/harness.test.ts` into core beside the modules they test, and each package's config excludes its siblings by name (`include: ["src/**"]` does not do it: a sibling's path ends in `src/` and matches the same glob). Without that, `aai-guest` measured all 60 studio modules and read 27% lines against a floor of 83. The three suites total 514 tests, exactly what the one package ran.
+- 350e80f: Split this package's `src/` into the two things it is: `harness/` (24 files — the sandbox entry and its modes) and `studio/` (60 — the coding agent), the filename prefix becoming the path. `src/harness.ts` stays at the root beside `harness/` because it is tsdown's one entry, and `limits.ts`, `trial.ts` and `_test-utils.ts` stay because they belong to neither half.
+  
+  One trap is worth recording for the next such move: a directory URL must keep its TRAILING SLASH. `new URL("../studio-prompts/", import.meta.url)` had to become `"../../studio-prompts/"`, and written without the slash `new URL("agent.md", …)` REPLACES the last segment rather than appending to it — so the shipped studio prompts resolved to `packages/aai-guest/agent.md` and every eval that asked for one failed naming a path nobody wrote. A path-rewriting sweep drops that slash by construction, since `path.relative` does not preserve it.
+- 142e639: test_agent no longer runs the workspace's eval tier, matching `aai test`
+- 350e80f: Give this package's `src/` five directories. It held 305 TypeScript files and not one subdirectory, so the filename prefix was doing a directory's job: `platform/` (39 files), `sandbox/` (21), `modal/` (15), `guest/` (20) and `microsandbox/` (10) now hold what `platform-*`, `sandbox-*`, `modal-*`, `guest-*` and `microsandbox-*` did. The seven `*-barrel.ts` files stay at the root because they ARE this package's published surface, as do the handlers, the stores and `subprocess-sandbox.ts` — which is deliberately not a contained backend. No exported subpath moved, so `aai-studio-server` imports nothing different.
+  
+  Three shapes of stale path reference came out of it, and the useful part is that a relative import is a compiler error while none of these is: a spec reading a sibling by BARE filename, a spec whose base is another variable rather than its own directory (deepening that one is wrong — the variable moved with the file), and an `import.meta.glob` WILDCARD, which no existence check can resolve. Two directory scans were also rerooted at `src/` and made recursive; `guest/exec-env.test.ts`'s 120-file floor is what turned its narrowed scan into a failure rather than a rule that had quietly stopped covering most of the package.
+- 350e80f: Point this package's comments at the runtime modules they name. `aai-runtime`'s `workflow-*` prefix became a `workflow/` directory, so eleven files here referenced paths that no longer exist — `platform/workflow-journal.ts`'s account of the hooks it mirrors, `store-conformance.ts`'s cross-references to the journal arms, and the queue modules' pointers into the replay engine. Comments only; no statement, route or exported name changed.
+- 440e38a: The guest harness's Publish output carries the phone webhook URLs `aai deploy` now prints, one line per declared carrier with `?carrier=` filled in. Publish is the path most users take, so without this the URLs were printed only by a bare `aai deploy` that almost nobody types. The harness is baked into the sandbox image, so this needs a deploy to reach anyone.
+- Updated dependencies [c129f05]
+- Updated dependencies [440e38a]
+- Updated dependencies [0dcf247]
+- Updated dependencies [b7e21aa]
+- Updated dependencies [4ab107e]
+- Updated dependencies [180fd15]
+- Updated dependencies [350e80f]
+- Updated dependencies [350e80f]
+- Updated dependencies [07a046e]
+- Updated dependencies [7832142]
+- Updated dependencies [180fd15]
+- Updated dependencies [440e38a]
+- Updated dependencies [440e38a]
+- Updated dependencies [482b874]
+- Updated dependencies [4ab107e]
+- Updated dependencies [f75ad5f]
+- Updated dependencies [440e38a]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [3e8e8a4]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [49cebb8]
+- Updated dependencies [7fe0571]
+- Updated dependencies [350e80f]
+  - @alexkroman1/aai@16.2.0
+  - @alexkroman1/aai-runtime@16.2.0
+  - aai-guest@0.6.6
+
 ## 5.3.5
 
 ### Patch Changes

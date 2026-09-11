@@ -1,5 +1,122 @@
 # @alexkroman1/aai-cli
 
+## 16.2.0
+
+### Minor Changes
+
+- 440e38a: Three CLI defaults now match what the docs told people to do.
+  
+  `aai test` runs every non-eval spec in the project. It previously ran `agent.test.ts` alone and then FAILED naming any spec it had skipped, so a bare `aai test` could not pass on any project with a second spec file — the scaffold had already routed around it. `--only` is the fast inner loop and reports the specs it skipped rather than failing; `--all` is still accepted and does nothing, because it is what the old failure's own hint told people to put in CI.
+  
+  `aai dev` watches when stdin and stdout are both TTYs. A restart ends in-flight voice sessions, which is right while you are editing and wrong while something drives the agent for twenty minutes — so a harness or process supervisor, having no TTY, gets today's behaviour. `--watch=false` and `AAI_DEV_WATCH=0` turn it off.
+  
+  `aai init` installs with the caller's package manager (`npm_config_user_agent`, then pnpm/npm/bun/yarn on PATH) and stamps `packageManager` only for the one used. It previously ran `corepack enable` and installed with pnpm only — on users the install instructions had told to use npm, and `corepack` does not exist on Node 25 or 26, half the range the scaffold allows.
+- 440e38a: `aai build --target <host>` now derives the env a deployment needs from the agent itself — `requiredProviderEnvVars(config) ∪ requiredEnv`, unioned with `.env.example` — instead of from `.env.example` alone. An agent declaring `requiredEnv: ["ORDERS_API_KEY"]` with no example entry previously got neither a warning nor its `env add` step, which is the opposite of what the docs promised. Expect new warnings on projects that were quiet before; that is the fix, not a regression.
+  
+  `aai deploy` now prints the exact phone webhook URL for each declared carrier with `?carrier=` already filled in, carries them on the `--json` result, and warns when a declared carrier's signing secret is absent from the uploading env — a Telnyx agent reached without that query parameter was framed as Twilio and 403'd on "Invalid webhook signature". The studio Publish output carries the same lines, since Publish is the path most users take.
+- 75f3ea5: Print the deploy SEQUENCE each host needs, not one command.
+  
+  `aai build --target <host>` told you how to ship what it just built with a single string, and for both hosts that deploy from your own machine that string did not work. Verified end to end against a scaffolded `quickstart-agent`, with no change to the generated project:
+  
+  - `cd .aai/deno && deno deploy` fails `APP_NOT_FOUND` — the app has to be created first, and the create has to override Deno Deploy's auto-detected build config, which for this directory resolves to no entrypoint and fails the build. The deployment then fails at `warming` until the declared secret is set, because the server refuses to start without a provider credential rather than starting and failing at its first session. Three distinct failures behind one printed line.
+  - `modal deploy .aai/modal/app.py` dies unless the secret already exists, because `app.py` resolves `Secret.from_name` at deploy time.
+  
+  So `TargetOutput.deploy` is an ordered list of steps, each carrying `when`: `build`, `once`, `perSecret` or `each`. What a reader now sees after `aai build --target deno`:
+  
+  ```
+  Deploy it with:
+    1. deno deploy create --source local --region us --runtime-mode dynamic
+         --entrypoint server.mjs --do-not-use-detected-build-config
+         --org <ORG> --app <APP>                       (first deploy only)
+    2. deno deploy env add ASSEMBLYAI_API_KEY <value> --org <ORG> --app <APP>
+    3. cd .aai/deno && deno deploy --prod --org <ORG> --app <APP>
+  Re-run `aai build --target deno` before every deploy.
+  ```
+  
+  `resolveDeploySteps` fills in what the build knows and leaves the rest as prompts, which is the line `.env.example` already draws — declarations ship, values do not. Declared variable names are substituted, and so is Modal's secret name, derived from the agent's own exactly as `app.py` derives it (`modal secret create quickstart-assistant-env ASSEMBLYAI_API_KEY=<value>`), because a reader who invents that name gets a deploy that dies on `Secret.from_name`. `<ORG>`, `<APP>` and `<value>` survive into the printed command: they are account state and secrets, and this build knows neither.
+  
+  `when` is also what lets the two surfaces differ correctly from one source. The post-build log omits the `build` step — you just ran one — while the `--json` result keeps it, because a CI job scripting a fresh checkout has to run it. That step exists because its omission is the one silent failure here: both hosts upload the emitted directory as it stands, so a forgotten rebuild ships the previous bundle and reports success (Deno prints "No files were changed, so there is nothing to upload", which reads like a no-op). `once` is a label rather than a branch — whether your app exists is state on someone else's platform, so the step is printed with its caveat instead of guessed at.
+  
+  This retires `TargetOutput.secret`, which was absent for `deno` and `modal` on the grounds that their commands were unverified — the two hosts whose secret command is least guessable, so both fell back to "Set it in the ⟨target⟩ environment" and named nothing to run. The warning now reads the resolved `perSecret` step, so it and the printed sequence cannot name two different commands. `node` is unchanged and still prints no deploy sequence: it deploys nowhere, and the scaffold's `prestart` already chains a build to `aai start`.
+  
+  Separately, every target's bundle is now emitted without JSDoc (`comments: { legal: true, annotation: true, jsdoc: false }`). A commented `import()` is an edge in the module graph, so `deno info` on the emitted entry reported nine unresolvable specifiers — from undici, from html-to-text and from this SDK's own workflow docs — against an artifact whose `app.py` header claims "a bundle with no imports left to resolve". Deno Deploy tolerates them today; `deno info`, `deno check` and `@vercel/nft` all walk graphs rather than executing them. `annotation` and `legal` are kept deliberately: the first carries `@__PURE__` (6043 of them, an instruction to the tree-shaker), the second the licences of every third-party package inlined here. The bundle also gets ~1.5 MB smaller.
+  
+  Both targets are verified live — HTTP on `/health`, `/client-config` and `/`, plus a real voice session returning the greeting and TTS audio frames, on Modal and on Deno Deploy.
+
+### Patch Changes
+
+- 440e38a: Sync `.env` secrets before the FIRST publish, not after it. `aai publish` gated the sync on whether the project had ever been deployed, then re-ran it post-deploy and printed "They apply on the next `aai publish`" — so every new agent's first deployment ran without its credentials and the documented remedy was to publish twice.
+  
+  The gate was never needed: the sync writes to the project route, whose row `pushProject` has already created, and the server floors a newly minted slug from that record via its post-deploy hook.
+- 0e12342: Make a self-hosted deployment runnable under any of Node, Deno and Bun — and certify it under all three.
+  
+  The emitted deployment is a directory with no `node_modules`, no toolchain and one file to boot, so which runtime an operator puts in front of it is their choice. It was not: each long-lived entry read `PORT` through one runtime's global — `globalThis.Deno.env` in the Deno entry, `process.env` in the Modal one — so `.aai/deno/` ignored `PORT` under `node` and `bun` while looking perfectly healthy on its default. Both entries now come from one shared source (`RUNTIME_PORT_SOURCE` reads either runtime), differing only in a banner and a default port.
+  
+  `_target-runtimes.scenario.test.ts` is the new gate: one bundle, booted under `node`, `deno` and `bun` in turn, each arm asserting the emit boots with no `node_modules`, serves `/health`, `/client-config` and `/`, **dials `/websocket`** and exits 0 on SIGTERM. Nothing dialled a session before — all three host suites probed HTTP only, and the `ws`-over-`node:http` upgrade is the part of `node:http` compatibility a reimplementation is likeliest to get wrong. The bundle's `node:` imports are pinned to a portable set as well, which is what catches a dependency dragging `node:vm` or `node:cluster` into a deployment before a live session does.
+  
+  Bun needed a version FLOOR, and the matrix is what found it. Under 1.3.x the emit died on import — undici assigns `webidl.util.markAsUncloneable` unguarded from `node:worker_threads`, which Bun did not implement, and undici's `CacheStorage` calls it at module scope — and past that the `/websocket` upgrade wrote zero bytes to the client (raw-socket measured; server-side `handleUpgrade` ran and a session was created first). Both close at **1.4.0**, so `minVersion` is declared on that arm, CI pins 1.4.2, and a binary below the floor is treated as an absent one: announced, skipped, and a hard failure under `AAI_REQUIRE_BUN`. All three runtimes now boot, serve, accept a session and drain.
+  
+  The `ws` half is worth remembering for its shape rather than its fix: it was never a general gap in Bun's `node:http`. The same nine-line `ws` + `node:http` server worked under Bun 1.3.11 when `ws` was imported by NAME, because Bun substitutes its own native implementation for the package — and failed identically to the emit when the same script imported ws's real JavaScript by path. A bundle inlines that JavaScript, so the substitution never happens.
+- 5ac5edb: Keep two templates' seed data out of their browser bundles.
+  
+  `hotel-reception-agent` and `technical-support-agent` each shipped their seeded
+  data to the page. Measured on the built client bundle before this change: all 43
+  of `hotel-reception-agent/seed.ts`'s guest phone numbers were present, and so was
+  the full text of every one of `technical-support-agent`'s ten knowledge-base
+  articles. Both are the failure `retail-orders-agent` already documents and
+  avoids, and the one `template-layout-gate.test.ts` names as the reason for its
+  single exemption — `shared.ts` is the module `client.tsx` imports for its view,
+  so anything it reaches is in the page.
+  
+  The two reach it by different routes, which is why neither was caught by the
+  other's precaution. A slot holds its factory as a LIVE reference, so nothing
+  tree-shakes it: `hotelSlot` sat in `shared.ts` and its `createHotelState` called
+  `seedHotel`, dragging an 18.5 KB `seed.ts` and `records.ts` behind it. The
+  factory, the slot and `deskProjection` move to a new `session.ts`; `shared.ts`
+  gains a seed-free `emptyHotelState()` and `client.tsx` derives its pre-first-call
+  frame with `deskView(emptyHotelState())`, the `useAgentState` overload
+  `retail-orders-agent` uses for the same reason. `technical-support-agent`'s index
+  is instead built at MODULE SCOPE — `for (const doc of DOCS)` runs on import — so
+  touching that file at all pulled every article; the knowledge base and its
+  retriever move to a new `knowledge.ts`, and `PRODUCT` stays behind as a NAMED
+  import off the same JSON so the page still derives its tab title without taking
+  `docs` with it.
+  
+  `applicant-screening-agent` was checked and is NOT affected: its `emptyHiring`
+  factory never reaches `LEADS`, and 0 of 24 `leads.json` strings appear in its
+  bundle. Verified by rebuilding both clients — 0/43 phone numbers and 0/20 article
+  fragments, with the intended product string retained, and bundles 12.6 KB and
+  4.9 KB smaller.
+  
+  `SLOT_ELSEWHERE` in the layout gate gains its second entry, which is what that
+  deny-list's own failure message asks for; the prose in both templates and the
+  package guide that named the moved symbols moves with them.
+- Updated dependencies [c129f05]
+- Updated dependencies [49daf83]
+- Updated dependencies [440e38a]
+- Updated dependencies [0dcf247]
+- Updated dependencies [b7e21aa]
+- Updated dependencies [4ab107e]
+- Updated dependencies [180fd15]
+- Updated dependencies [07a046e]
+- Updated dependencies [7832142]
+- Updated dependencies [180fd15]
+- Updated dependencies [440e38a]
+- Updated dependencies [440e38a]
+- Updated dependencies [482b874]
+- Updated dependencies [f75ad5f]
+- Updated dependencies [440e38a]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [3e8e8a4]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [49cebb8]
+- Updated dependencies [7fe0571]
+- Updated dependencies [350e80f]
+  - @alexkroman1/aai@16.2.0
+  - @alexkroman1/aai-runtime@16.2.0
+  - @alexkroman1/aai-ui@16.2.0
+
 ## 16.1.0
 
 ### Minor Changes

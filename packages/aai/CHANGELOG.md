@@ -1,5 +1,442 @@
 # @alexkroman1/aai
 
+## 16.2.0
+
+### Minor Changes
+
+- c129f05: Steer the recognizer per agent and per turn, and act on the confidence band.
+  
+  We own the ASR and were using three of its steering parameters and none of the
+  rest. What the pipeline already sent: `prompt` (`agent({ sttPrompt })`, opt-in,
+  empty by default), `language_codes`, the endpointing pair, Voice Focus, and
+  `agent_context` — seeded with the greeting and REPLACED with the agent's own
+  reply after every spoken turn, which is the per-turn steering the docs
+  recommend. What it never sent: `keyterms_prompt` on any model (only the S2S
+  descriptor took keyterms), `format_turns`, and any author-supplied context of
+  its own.
+  
+  - **`assemblyAIStt({ keyterms })`** — the domain's own vocabulary, normalized
+    host-side before it reaches the wire: trimmed, de-duplicated
+    case-insensitively (keeping the first spelling, which is the one the author
+    wants in the transcript), terms over 50 characters dropped and the list
+    capped at 100. The service IGNORES an over-long term and REFUSES a connect
+    carrying more than 100, so a product catalogue that grew past the cap would
+    otherwise take a deployed agent off the air; dropped terms are named in a
+    warning instead.
+  - **`assemblyAIStt({ agentContext })`** — what the application already knows
+    about the call, winning over the greeting the runtime seeds. Universal-3.5
+    Pro only, as `agent_context` already was.
+  - **A `dialog()` state's `keyterms` is LIVE**, where it used to warn that
+    nothing applied it. AssemblyAI's `UpdateConfiguration` takes
+    `keyterms_prompt` mid-stream, so `SttSession.updateKeyterms` pushes the
+    active state's list at the END of each agent turn — the instant before the
+    caller answers the question that state just asked. An absent value restores
+    the descriptor's own list rather than clearing it.
+  - **`agent({ lowConfidence })`** — a third outcome for a committed transcript,
+    between "run the turn" and "drop an empty string". Below `discardBelow`
+    (0.2) the words reach neither the model nor the record; between it and
+    `actionBelow` (0.4) the agent either speaks a clarification and runs no turn
+    (`action: "clarify"`) or runs the turn with a note appended to the MODEL's
+    copy only (`action: "note"`). OFF unless an agent declares it: the numbers
+    are Vapi's published pair and nothing has measured them here. A provider
+    that reports no confidence is always ACCEPTED — `SttTurnMeta` carries
+    `transcriptConfidence` (the mean of a turn's per-word scores) and
+    `minWordConfidence` beside it, and only the AssemblyAI opener fills either
+    in. `AgentTranscriptRecovery` gains `low-confidence`, so the clarification is
+    spoken and captioned like the two failure phrases and enters no history.
+  - **`assemblyAIStt({ formatTurns })`** — one explicit flag for whether a turn
+    is punctuated, cased and inverse-text-normalized ("nine seven two" → "972"),
+    so it can be A/B'd rather than inherited. Not a parameter on
+    `universal-3-5-pro`, where formatting is always on: set there it is not sent
+    and the opener says so. On `universal-streaming-english` the service default
+    is `false`.
+  - **A turn is not answered TWICE, and the flag above is what would have caused
+    it.** With `format_turns: true` that model emits two `end_of_turn` messages
+    for one turn — the unformatted transcript first, the formatted one right
+    after — and the opener treated every `end_of_turn` as a commit. Nothing
+    triggered it before, because we sent the parameter on no model; enabling it
+    would have made the agent answer the same sentence a second time, on a
+    history already containing its own reply, which is a long day to diagnose
+    from a transcript. `isCommittingTurn` demotes the unformatted final to a
+    PARTIAL when the session asked for formatting — the caption still updates and
+    the commit waits for the formatted text. That demotion is load-bearing, not
+    tidy-up.
+  - **`assembleSpelledRuns` sees a run the RECOGNIZER joined.** It split on
+    whitespace and commas, so a formatted transcript's `S-O-F-I-A` — one token —
+    contained no single letters and assembled nothing. Measured on tau2-bench
+    retail: "Sofia Li" came back "Sophia Lee", the caller spelled the correction
+    out loud, and the lookup still went out as `Sophia`, because the annotation
+    that carries a spelling was never produced. A token of three or more
+    letter segments joined by `-` or `.` is now exploded first; `e-reader` and
+    `t-shirt` have one letter each and are unaffected.
+  - `retail-orders-agent` ships two worked keyterm sets (`keyterms.ts`): 37 terms
+    for the whole call — multi-word product names, variant options, and the words
+    the procedure is conducted in — and a per-phase list of the account NAMES,
+    declared on `callFlow`'s `identifying` state, boosted while the call is
+    working out who is on the line and given back when it moves on. It also sets
+    `lowConfidence: { action: "note" }`, which suits an agent that already reads
+    every change back before applying it.
+  
+  Epochs: `aai:agent` 4 (3 retained), `aai:stt` 2 (1 retained), `aai:dialog` 3
+  (2 retained), `aai:testing` 4 (3 retained) — every change is additive, and each
+  retained epoch has a frozen example.
+- 440e38a: Four fixes to the authoring surface, each a case where the docs described behaviour the SDK did not have.
+  
+  `agent({ llm })` is typed against the gateway model union instead of bare `string`, so a model id autocompletes and a typo is a compile error rather than a 400 at the first live session. `AssemblyAIGatewayModel` is re-exported from the root, following the precedent already recorded for `AssemblyAITtsVoice`. This is a widening — every value that was assignable still is.
+  
+  An unknown or deprecated AssemblyAI TTS voice now WARNS at config time, naming near catalog ids. A misspelled voice was refused in-band after connect, so the agent came up, reported ready, and never spoke. It warns and never throws: refusing a newly shipped voice the local catalog has not heard of yet would be worse.
+  
+  `resolveOne` ships the two scorers callers kept writing: `match` (whole-word overlap, filler words skipped) and `code` (compared through `spokenAlphanumeric`), tried as code → ordinal → words. Four shipped templates had four different hand-rolled splitting rules; their disagreements are now tests.
+  
+  `ToolDef.execute`'s documented 4000-character cap was only ever a CLIENT cap — the model gets the result whole. The comments now say so, and an oversized result warns once per tool with its size, so a forgotten projection is visible instead of silently riding in the prompt on every later turn. Interpolating `DEFAULT_SYSTEM_PROMPT` into your own prompt now warns as well: it never replaced anything, so that recipe shipped ~10,000 duplicate characters per turn.
+- 0dcf247: Fix dead-air filler opening the barge-in gate, and assemble spelled identifiers in code.
+  
+  Filler audio drove the playback clock and `turns.markSpoke()` exactly as real
+  speech did, so a caller's "are you still there?" counted as interrupting a
+  reply and the abort discarded the reply being generated behind it — the cover
+  causing the silence it exists to cover. Measured on a 114-task tau2-bench
+  retail run: 435 barge-ins and 75 aborted turns discarding 553s of completed
+  work, 48 of them losing over 5s each and the worst 40.6s.
+  
+  - `HeardTracker.spokeRecordable()` — a turn that has played only filler is no
+    longer spoken over, which is the invariant `pipeline-transport.ts` already
+    stated for `spoke()`: "a turn that has not spoken cannot be spoken over."
+  - Dead-air cover is armed on the `tool-call` part at `DEAD_AIR_TOOL_COVER_MS`
+    (1200ms) rather than 5000ms from turn open. 113 of 123 firings on that run
+    were the turn-open window at exactly 5000ms — the right turns, too late on
+    every one. Only safe because of the change above, and the constant says so.
+  - `assembleSpelledRuns()` assembles spoken spelling runs (`"M, E, I,
+    underscore, K…"` → `mei_kovacs`) for the model's transcript copy; the
+    client's and history's stay verbatim. Previously asked of the model in
+    prose, which mis-assembled often enough to be the largest single failure
+    source — 22 of 57 failed calls never authenticated, every one with the
+    correct identifier already in the caller's own words.
+  - `DEFAULT_SYSTEM_PROMPT`: the `PROMPT_ROLE` carve-out now names the TOOLS
+    recovery ladder alongside LISTENING and SPEAKING — it pointed at a method in
+    a section it did not protect — and TOOLS' "retry once" is scoped to
+    non-lookup errors, where it contradicted the four-step ladder four lines
+    above it. `aai:defaults` is epoch 2 with epoch 1 retained.
+- b7e21aa: Extract the studio coding agent's tool set into the SDK, and ship a generic coding agent as a template.
+  
+  ## The nine tools are `@alexkroman1/aai/coding-tools` now
+  
+  `createCodingTools({ dir })` answers the tools an agent that edits code turns out to need — `read_file`, `write_file`, `edit_file`, `delete_file`, `list_files`, `glob`, `grep`, `bash`, `todo_write` — keyed by the names the model calls, over ONE directory and reaching nothing outside it. Every one of them was already written, tested and tuned; what it could not be was USED, because it lived in `aai-guest`, a private package, closed over one studio session's workspace and tangled with the three things only the studio wants: a write-time syntax gate, a post-write type check, and a bundle trial.
+  
+  What survives deleting all of that is most of it. `studio-edit.ts` and `studio-grep.ts` moved as `host/coding-edit.ts` and `host/coding-grep.ts` with their specs, the capped child-process runner moved as `host/coding-spawn.ts`, and `resolveInside`/`writeFileWithParents`/`isPathInside` joined `host/workspace-files.ts` — the module that already owns what a workspace IS on disk, and where the containment test now has ONE implementation rather than the four it had (`aai-runtime`'s `server-static.ts` re-exports it; the copies that were only correct for an absolute, normalized, trailing-slash-free root are gone).
+  
+  Three seams a host fills in, and each is a rule the studio paid for:
+  
+  - **`validate` refuses a write BEFORE it lands.** The studio parses the file: one that does not parse cannot be edited back into shape by text matching, so writing it strands the turn — sixteen steps of read → edit → "could not find that text", no work produced.
+  - **`afterWrite` appends to a write that SUCCEEDED**, which is where the studio hands back the workspace's type errors inside the result of the write that caused them. It is the cheap half of what a language server would do and the place a repair round is actually saved.
+  - **`env` is `bash`'s child environment**, defaulting to this process's own — right for a CLI on a laptop, wrong for a sandbox, which passes an allow-list so a credential the host holds is out by construction rather than by remembering to subtract it. The studio still passes its 24-name `workspaceChildEnv()`.
+  
+  `CODING_TOOL_DESCRIPTIONS` and the four limits ride along on the same subpath, because a host that overrides a description has to quote the number the code enforces, and cannot keep the two in step with a constant it may not import. The machinery UNDER the tools is not published with them: the edit matcher and the workspace grep have no consumer outside `coding-tools.ts`, and only the capped child-process runner is on `@alexkroman1/aai/host-internal` — because the guest harness spawns npm, the CLI bundler and the workspace test run through it, and each decides for itself whether a killed child is a failure or an annotated line. A name published in anticipation of a consumer is a surface with no reader.
+  
+  The record is typed by NAME (`Record<CodingToolName, ToolDef>`, narrowed by `only`) rather than by an index signature, because a template's `tools/read_file.ts` default-exports one entry of it and under `noUncheckedIndexedAccess` an index signature hands back `ToolDef | undefined`.
+  
+  It costs `@alexkroman1/aai` two runtime dependencies, `diff` and `picomatch`, which were `aai-guest`'s. Both are small and pure-JS; the artifact-size budget will report them and this is the intent.
+  
+  ## `templates/coding-agent`
+  
+  A generic coding agent: `text: true`, the nine tools over `WORKSPACE_DIR`, a `system-prompt.md` that is most of what makes it good, and nothing about building voice agents with this SDK. It is the first TEXT-mode template, and this repo's guide previously argued there could not be one — the argument was right about DEPLOYMENT (`createRuntime` refuses `text: true` by name, so there is no session for `aai dev` or the platform to serve) and wrong about the template, since a starter is a worked example first. So it ships its own front door: `chat.ts`, which is `createTextAgent` plus `withToolsDir` (a tool is a FILE even with no bundler in the path), a `readline` loop, and the conversation as a message list the file keeps.
+  
+  Its tools are ONE `createCodingTools` call in `shared.ts` that each `tools/*.ts` re-exports an entry of — nine factory calls would be nine chances to point one at a different directory, and the directory is the only security-relevant decision in the template. The template says so where an author will read it: `bash` runs what the model wrote with the authority of the process, which is the authority the write and delete tools already have, so it grants nothing new — what it does is make the grant obvious.
+  
+  ## A TEXT agent's eval suite: `describeTextEval`
+  
+  `@alexkroman1/aai-runtime/eval/vitest` gains `describeTextEval`, and `/eval` gains `evalTextCredentials`. A template's eval must import that vitest subpath (konsistent's `template-eval-spec`), and what was there for a text agent was a voice suite that refuses one: `describeEval` opens `openEvalSession` → `createRuntime`. Everything a case author sees is shared — the two modes, the announce line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn` and every reader above it — including `modeFrom`, so `AAI_EVAL_STUB` and `AAI_REQUIRE_EVAL` cannot come to mean one thing at two doors of three and another at the third.
+  
+  `evalTextCredentials` is a second gate rather than a flag on the first, because `evalCredentials` OVER-ASKS here: it answers about a voice agent, so an agent with no complete pipeline gets the default AssemblyAI STT key added, and a text agent declaring `anthropicLlm()` was reported as needing a key it will never read — which skips a suite the machine could have run live. It asks about the LLM alone, and about the DEFAULTED descriptor when the agent declares none, so the question is asked about the model the run would use.
+  
+  That is an additive change to the `aai-runtime:eval` capability: epoch 3, with epoch 2 RETAINED and its frozen authoring example written — `v2.ts` is `v1.ts` plus the two names epoch 2 added, used where a case would really reach for them.
+  
+  ## Why a carrier is in the header
+  
+  `aai-server` takes a patch because this changes `aai-guest`, whose built `dist/harness.mjs` is baked into the guest snapshot image the platform spawns every sandbox from — so the change reaches production through a server deploy and nothing else. Nothing in `aai-server` itself is touched.
+  
+  ## What changed in the studio, and what did not
+  
+  `createStudioTools` is `createCodingTools` with the three seams filled plus `test_agent`, which stays whole — it is the one tool that knows the workspace is an aai agent. The descriptions split the same way: the SDK's, three studio OVERRIDES (a write is type-checked, dependencies have their own tools, a workspace syncs back), and the tools only this host has. `studio/tool-descriptions.test.ts` asserts the three maps together cover the agent's real tool set exactly and that an override names a tool the SDK actually describes — an override of nothing is prose the model never reads. `studio/tools.test.ts` gave up the cases that are now the SDK's and keeps the ones about the seams. No behaviour changed in the studio.
+- 07a046e: agent({ systemPrompt }) now takes a thunk as well as a string, resolved on every turn — for a prompt that has to carry something the model only learns mid-call. A string is unchanged, byte for byte; the text-agent path resolves through the same one spelling the transports do.
+- 7832142: Turn-taking defaults, measured on tau2-bench retail
+  
+  - `minBargeInWords` 2 -> 1: the caller's one-word give-up probe ("Hello?") could
+    not interrupt the agent at all; worst measured case held the floor 12.8s.
+    Replicated across two runs: truncated caller utterances 36% -> 20-24%,
+    spelled-identifier truncations 4 -> 0, the >3s endpointing tail 33-40% ->
+    12-20%, with no measurable cost to agent speech per call.
+  - AssemblyAI LLM default model -> `gpt-5.6-luna`, which is inside
+    `TOOLS_REQUIRE_NO_REASONING` and so depends on the `reasoning_effort: "none"`
+    fill (verified against the live gateway: 200 with the parameter, 500 without).
+  - Instrumentation only: dead-air cover firings and TTS first-audio latency are
+    now logged. Both closed measurement gaps — cover firings were previously
+    unobservable (`record: false`), and the text-to-audio term had only ever been
+    inferred by subtraction (it is 66ms, not the 0.7-1.8s assumed).
+  - Negative results recorded on the constants they concern, so they are not
+    re-tried blind: `preemptiveGeneration` (100% post-adoption poison on a
+    tool-calling agent), `deadAirCoverMs` (two clocks; a filler answers the wrong
+    question), `interruptionMinDurationMs` (500 is the backchannel filter, not
+    overhead), and the local-audio barge-in detector (onset recall is the wrong
+    objective).
+- 440e38a: A slot can declare its view once. `sessionSlot(name, init, { view })` builds `slot.projected` at declaration, so `agent({ syncState: cartSlot.projected })` and `useAgentState(cartSlot.projected)` are the same identity-stable object. Passing `slot.projection(view)` at both ends meant repeating the view and, if the two ever drifted, the frame the browser saw before the first push disagreed with every frame after it. `projection(view)` stays for the multi-view case.
+  
+  A workflow app needs no `client.tsx`. `mountPage`'s `component` is optional and defaults to a shell built from each workflow's own input schema — the listing, the fields, the run's progress and its result — and, more importantly, the prebuilt page an agent gets with no `client.tsx` at all now branches on its declared front door instead of always mounting the voice client. A workflow app previously got a start screen and then a websocket the server declines by design.
+  
+  `createWorkflowApi` returns the full `AgentClient` (a documented superset), so a page gets `config()` without a second factory, and `fetchClientConfig()` defaults its URL to `pageBaseUrl()` from the same package.
+- 440e38a: Three fixes to `@alexkroman1/aai/testing`, all cases where the published surface let a spec compile and then fail at runtime.
+  
+  `toolRunner` now refuses at BIND time when the agent it is handed declares no tools, with the sentence `toolOf` already carried. A tool is a file, so `agent.ts`'s default export carries none of them — handing the authored def to a runner is the mistake the docs themselves were making, and it surfaced as "declares: (none)" several assertions later.
+  
+  A `{ text }`-only script is now a compile error in `stubGenerate`, `createToolContext({ generate })` and `scriptedToolContext({ generate })`, via a `StubGenerateRoutes` misuse arm, plus a mirror refusal at bind for JS callers. It previously type-checked and was then read as a route table keyed by the system prompt `"text"`, so every call was rejected for having no matching route. This strictly narrows what compiles; every affected call is broken at runtime today.
+  
+  `createToolContext`'s `generate` and `delegate` now accept a SCRIPT as well as a function, building the fake for you and exposing it as `ctx.model` / `ctx.desk` — the `stubGenerate` → destructure → `createToolContext` three-step is one call. A function in either position is still the seam itself. `scriptedToolContext` keeps working unchanged. `TestToolContext` gains `model` and `desk`, so a hand-written value of that type needs them.
+- 9c1fb03: Add `ToolDef.messages` — what a tool says while it runs, and the outcome that answers without the model.
+  
+  A port of Vapi's tool `messages` design. Four kinds per tool, declared beside
+  `execute` and normalized onto the wire `ToolSchema`, so the feature means the
+  same thing under `aai dev`, in a deployed guest and in host mode:
+  
+  - **`start`** — spoken as the call begins. `start: true` draws from
+    `DEFAULT_TOOL_START_PHRASES` (Vapi's own five); several entries are VARIANTS
+    and one is drawn per invocation, so a turn calling three tools does not say
+    the same sentence three times. `blocking: true` holds the call until the line
+    has been spoken, bounded at `TOOL_START_BLOCKING_MAX_MS` by a `pTimeout` at
+    the call site.
+  - **`delayed`** — `afterMs` from the start of the call. **Same timing means
+    variants; different timings mean STAGED updates**, so 3000/3000/8000 is a
+    two-rung ladder with a coin flip on the first rung's wording, and the rungs
+    fire at 3s and 8s rather than 3s and 11s.
+  - **`complete`/`failed`** — the role switch, and the reason this is worth
+    having. `role: "assistant"` is spoken verbatim and **the model is not called
+    at all**: the line latches and `startLlmStream` folds that latch into
+    `stopWhen`, so a deterministic outcome costs zero further LLM round-trips.
+    `role: "system"` is the other arm — the content rides back with the tool's
+    result as a hint and the model writes the sentence, which is almost always
+    the better answer for a failure.
+  
+  All four take `when` conditions over the call's ARGUMENTS (Vapi's six
+  operators), so one tool can say a different thing for a refund than for a
+  lookup.
+  
+  **Filler cannot cost a caller a reply, which is the invariant the dead-air
+  cover already paid for.** `start` and `delayed` go out `record: false` — the
+  flag `HeardTracker.spokeRecordable()` reads — so a turn that has played only
+  tool filler still cannot be spoken over, and neither line reaches
+  `ctx.messages`, the model's view or a committed transcript. The runner owns no
+  signal, cancels no TTS and flushes nothing: a `blocking` start waits out the
+  line's ESTIMATED length rather than a provider acknowledgement, deliberately,
+  because waiting on the TTS session means touching the lifecycle of the reply in
+  flight. Vapi's "idle messages are disabled during tool calls" is here too — the
+  generic dead-air cover stands down while a tool is covering its own gap, rather
+  than speaking a second, generic sentence about one silence.
+  
+  `quickstart-agent`'s `get_weather` is the worked example. Eight `aai`
+  capabilities are bumped with their previous epoch retained: `ToolDef` gained an
+  optional field and appears in all eight reports.
+- 9c1fb03: Three turn-taking layers over the thresholds: a regex-keyed endpointing table, a start-speaking floor, and the two barge-in phrase lists.
+  
+  Each one answers a question the existing knobs are structurally unable to see.
+  All three are Vapi's shapes with our numbers, because our measured baseline is
+  1600ms of end-of-turn silence and theirs is not.
+  
+  - **`endpointingRules`** — content-keyed overrides of the STT's end-of-turn
+    window, evaluated as the HIGHEST-priority endpointing layer: three rule kinds
+    (`assistant`, `user`, `both`), first match wins, `RegExp.test` substring
+    semantics, `timeoutMs` capped at 5000 and clamped again at run time to the
+    session's `maxTurnSilenceMs` (a floor above that ceiling is the measured
+    inversion on `DEFAULT_MIN_TURN_SILENCE_MS`). Pushed to the provider mid-stream
+    through a new optional `SttSession.updateEndpointing`, because endpointing is
+    the provider's decision and a host-side hold could only ever lengthen a wait
+    the provider had already ended. AssemblyAI has the verb
+    (`UpdateConfiguration.min_turn_silence`); any other provider gets one warning
+    and an inert table.
+  
+    The shipped set is retail-shaped, every number is argued from a measurement,
+    and **every rule lengthens the wait or leaves it alone**: 3000ms while the
+    caller is SPELLING or after the agent asks WHO they are (names are where
+    turns collapse — "Yusuf" → "Yuta" → "Yufus", three failed lookups; digit
+    strings were already fine at 1600), and 2600ms after an identifier ask or
+    while the transcript ends in a digit (the measured worst-case dictation pause
+    is 1455ms).
+  
+    The closed-question rule is **present and NEUTRAL** — at the baseline, not
+    the 900ms the ~470ms first-partial model floor would allow. That floor is a
+    LOWER bound and not the measured distribution of caller responses to closed
+    questions that shipping a shortening default would need, and the asymmetry
+    decides it: a lengthening rule that misfires slows the agent, a shortening
+    one TRUNCATES the caller — and "closed questions get open answers" is routine
+    ("Can you confirm that's the right address?" → "Well, actually…"). A
+    truncation also surfaces as a reward flip, which is exactly the signal that
+    is unreadable at n=3. `endpointing-rules.test.ts` asserts the
+    never-shortens property.
+  
+  - **`startSpeakingFloorMs`** (Vapi's `waitSeconds`) — a minimum delay at the
+    END of the pipeline, after TTS is ready, before audio goes out, so "when did
+    I decide the turn ended" and "when do I start speaking" stop being one
+    number. **Defaults to 0**, which is a pass-through rather than a zero-length
+    wait: on this pipeline p50 response latency is ~4.1s, against which Vapi's
+    own 0.4s would be inert except on the turns that already feel good.
+  
+  - **`interruptionBackoffMs`** (Vapi's `backoffSeconds`) — agent audio stays
+    blocked for this long after a real interruption. SEQUENTIAL with the floor,
+    never cumulative: the two are one deadline, `max(floor, backoff)`. Also
+    **defaults to 0**, because `resumeFalseInterruption` already occupies that
+    window and waits on the transcript stream rather than a fixed deadline.
+  
+  - **`acknowledgementPhrases` / `interruptionPhrases`** — Vapi's published
+    production lists, ON by default. An acknowledgement NEVER interrupts however
+    many words it carries and however long it lasts (matched against the whole
+    normalized utterance, so "okay" is a backchannel and "okay so cancel that" is
+    a turn); an interruption phrase ALWAYS does, bypassing both
+    `minBargeInWords` and `interruptionMinDurationMs` (matched as a whole-word
+    run anywhere). The yes/no asymmetry is deliberate and pinned: "yes" never
+    interrupts, "no" always does. `bargeIn: "off"` still wins over both lists —
+    a dialog state declaring that this sentence gets finished is a stronger,
+    more local claim than an agent-wide list.
+  
+    Unmeasured as lists on this corpus, and the instrument is named: tau-voice
+    S_BC selectivity plus the give-up-probe rate, with the cancelled/reply_done
+    ratio (1.06 on the hardest measured case, ~85 events a run) as the direct
+    proxy. `[]` switches either off.
+  
+  `aai:agent` is epoch 4 and `aai:testing` epoch 4, both with epoch 3 retained —
+  every new field is optional, and the two frozen examples say so.
+- 3e8e8a4: A FAST/SLOW two-tier architecture, behind `agent({ twoTier })` and OFF by default.
+  
+  The shape is Pine AI's TalkAct: a cheap conversational model holds the call while an expensive one does the work. Their problem statement is the one a voice agent with tools always has — a frontier model driving a task takes seconds per step (they measure p50 4.2s) and natural conversation wants a reply inside one — and their measurement is p50 **0.63s** against **10.89s** for the same model doing both jobs, at 8/8 task success either way.
+  
+  **The fast tier gets no tools at all.** Not "is asked not to mutate" and not "its mutating calls are reviewed": with `twoTier` declared, the request carries no tool list, so the only tier that can change anything is the slow one — guaranteed by the request rather than by a policy. That is also what makes a small conversational model usable as the fast tier, several being tool-free by capability.
+  
+  Three couplings, each landing on plumbing this SDK already had rather than a channel invented for the feature:
+  
+  - **The state digest.** The slow tier writes a rolling summary as a mandatory `state_summary` argument on every tool call — TalkAct's mechanism, and the reason it costs nothing — rendered into the fast tier's system prompt through the same suffix seam `dialog()` uses. So the fast tier is grounded on a turn where no tool ran, which is exactly the turn a caller asks "so it's all set?".
+  - **`ask_user` / `tell_user`** are `Transport.injectTurn`, the verb that already existed for "a durable run finished, tell the caller". The return path is the session's own transcript, relayed unconditionally — so the fast tier is asked for no text protocol, which is what TalkAct's two queues and three scaffolding-stripping regexes exist to work around.
+  - **Digest-gated completion.** A tool declared `completes` is REFUSED while the digest holds unsettled work, and the refusal names what is outstanding. This is the half of TalkAct's contract that was a prompt rule there — written after early versions "hallucinated 'it's submitted!' and hung up" — and it is aimed at a failure mode measured by name on tau2: the agent says "I've updated your address" with no tool call behind it.
+  
+  `ToolDef` gains `mutates` and `completes`, both optional DECLARATIONS rather than heuristics over a tool's name. That is the classification SABER (arXiv:2512.07850) measures: each additional deviation on a mutating step cuts the odds of success by up to 96% on τ-bench Retail and up to 92% on Airline, while deviations on non-mutating steps have little to no effect. They ride on `ToolSchema` too, so a deployed agent's gate classifies the same tools `aai dev`'s does.
+  
+  `twoTier.effort` is a first-class knob because the one published ablation on a second reasoning tier of this shape attributes its gain to the reasoning BUDGET rather than to prompt wording. No effect size is claimed for it here.
+  
+  **Nobody waits for the slow tier.** It runs detached from every turn, so failing open is a property of the shape rather than a policy — there is no branch in which a hung second model makes the caller wait, which is the failure this repo has measured as 63 seconds of silence across four caller utterances.
+  
+  Omit `twoTier` and every path behaves exactly as it did: one model with its own tools, no digest, no second request, the same prompt bytes. That is a measurement requirement, not caution — the published numbers behind this design are single-trial or measured against a different user simulator, so the two arms have to be comparable inside one build.
+  
+  One fix falls out and applies to every agent: a request with no tools now omits the `tools` key entirely rather than sending an empty one, which several small models refuse outright (the AssemblyAI gateway answers `400 … does not support tools`).
+- 9c1fb03: Four opt-in prompt presets an agent turns on by name: `agent({ voicePresets: [...] })`.
+  
+  Each is one section of prompt text, composed after the framework's own voice
+  sections and before the author's instructions, and each is paid for on EVERY
+  model request — which is why this is a list of four names rather than one
+  switch. Measured with `tiktoken` (o200k, within 5 tokens on cl100k) and banded
+  in `voice-presets.test.ts`:
+  
+  - `echoVerification` (~190 tokens) — critical values are read back and
+    confirmed before they are acted on, grouped into one read-back, with an
+    uncommon name spelled out.
+  - `smartMatching` (~200) — the caller is believed through a transcription
+    error, in all three places it matters: a CONFIRMATION ("Are you Brandon?"
+    answered "Yes, this is Brendon" is a yes), a SPELLING (the letters REPLACE
+    what was heard, and every later lookup uses the spelled form), and a NAME
+    LOOKUP that misses (a transcription to doubt, not a missing record — retry
+    the phonetic neighbours before re-asking or handing off). ~200 rather than
+    the ~110 the toggle it ports costs, because a measured tau2-bench retail
+    baseline showed the conversational half alone does not reach the failure: a
+    mis-transcribed name went into a lookup, the miss was treated as
+    authoritative, and the agent escalated to a human. Its illustrative names
+    are deliberately ones the benchmark corpus does not contain — an example
+    that names a benchmark entity stops that case from measuring anything.
+  - `speechNormalization` (~920) — numbers, money, dates, times, phone numbers,
+    emails and addresses written as spoken words. The expensive one, and the
+    PROMPT layer only: `spokenMoney`/`spokenDate`/`spokenTime` already do this
+    in code for the agent's own data.
+  - `natoAlphabet` (~190) — spelling with "That's B as in Bravo, 7, K as in
+    Kilo, 2 — correct?", all 26 words listed rather than named.
+  
+  Two of them deliberately contradict the measured defaults in `## LISTENING`
+  and `## SPEAKING`, which is why they are opt-in and why the emitted block
+  carries one precedence line above it. Order is canonical, a repeat is emitted
+  once, and an agent that declares none sends the byte-identical prompt it sent
+  before the field existed. A `workflowApp()` refuses the field by name — it
+  makes no model request.
+  
+  `VOICE_PRESETS` (root export) is the shipped text, for reading and asserting
+  on. `aai:agent` is epoch 4 and `aai:testing` epoch 4 (collateral), both with
+  epoch 3 retained.
+- 7fe0571: Close the API-parity gaps found by comparing the authoring surface against the Anthropic Agent SDK, OpenAI Agents SDK, Mastra and Pydantic AI. Everything here is additive — no published type was renamed and no epoch was dropped.
+  
+  **`ctx.messages` has a real third arm.** `Message.role` has always included `"tool"` and nothing ever produced one, so a tool could see every word of the call and nothing any tool had returned. A settled call now contributes `{ role: "tool", content, toolName?, toolCallId? }` in all three modes and on resume, capped so a live history and a resumed one are the same history. Read the arm by role — the two id fields are optional.
+  
+  **Per-tool error classification.** `ToolDef.onError` (and `dialog.tool`, `slot.tool`, `slot.updateTool`) turns a throw into either a result the model may recover from or a fatal failure that stops the turn. Previously every exception — a bad credential, a bug in the tool body — was serialized back to the model and retried until `maxSteps` burned. A tool with no `onError` behaves exactly as before.
+  
+  **Agent-level guardrails.** `inputGuardrails` / `outputGuardrails` on `agent()`, reusing the subagent `GuardrailVerdict` vocabulary. The output guardrail holds a reply at the single TTS funnel and can discard it unspoken. Pipeline-only: s2s has already spoken the sentence and text mode owns no funnel, so both are refused by name at config time rather than silently doing nothing.
+  
+  **Dynamic instructions.** `systemPrompt` accepts `(ctx: AgentSessionContext) => string`, resolved per model request. A project carrying a `system-prompt.md` can now use one — `withSystemPrompt` passes a resolver through instead of throwing, and its string-case error no longer suggests a remedy that never worked.
+  
+  **Host-side usage accounting and budgets.** `usageLimits: { totalTokens }` plus a `usage.updated` session event. The meter counts the conversational loop, `ctx.generate` and `ctx.delegate`/subagents, and is checked at every spend site; durable workflow steps and s2s stay uncounted and say so on the field.
+  
+  **Agent/subagent parity.** `description`, `maxOutputTokens`, `maxRetries` and `resetToolChoice` on `agent()` — the subagent had several of these and the agent did not. All five model-tuning knobs are refused in s2s mode, where this runtime never assembles the request.
+  
+  **One vocabulary for delegation.** The `delegate` tool's input key is `subagent`, matching the `subagents` field and the `SubagentDef` type; it was `coworker`. This changes the tool's JSON schema, not any TypeScript type.
+
+### Patch Changes
+
+- 4ab107e: Stop the API reference landing page rendering `AAI SDK` twice.
+  
+  TypeDoc renders the project `name` as that page's own `<h1>` — plus the toolbar link and the `<title>` — and `docs/home.md`, which is the page's readme body, opened with `# AAI SDK` as well, so it stacked two identical `<h1>AAI SDK</h1>` elements at the top. The heading is gone from `home.md`; verified by reading the built page before and after (`docs/public/reference/index.html`, which Astro copies to `docs/dist/reference/`), two `<h1>` down to one, with the `<title>`, the toolbar and every `##` heading unchanged.
+  
+  `home.md` now starts on its first sentence, with a `markdownlint-disable-next-line MD041` above it — so `check:markdown`'s "first line should be a top-level heading" is off for one LINE rather than the file being added to `ignores`, and every other rule still reads the ~90 lines of prose below it.
+  
+  One thing to know before editing that comment: TypeDoc does not strip an HTML comment, it passes it through — invisible in HTML, which is what makes the directive harmless — but the markdown parser still reads its CONTENTS. A first attempt put the explanation there as a multi-line comment quoting `# AAI SDK` in backticks, and the backticks became a `<code>` element that broke the comment open and leaked the text into the page as a second `<h1>`, reproducing the exact defect it was explaining. The reasoning lives in `docs/CLAUDE.md`; the comment in `home.md` is one character-free line.
+  
+  Nothing downstream regenerates: the markdown rendering sets `readme: "none"`, so `home.md` reaches `docs/dist` only.
+- 180fd15: Correct the doc comments behind the generated SDK reference, which described an API the SDK no longer has.
+  
+  `ctx.db` and `ctx.state` are gone, but seven published comments still taught them. `ToolContext`'s summary claimed it "provides access to the session environment, state, database, and conversation history" — four things, two of which do not exist, on a type with eleven fields — and omitted `signal` and `deadlineAt`, the two a tool doing slow work most needs. It now rosters the real fields, grouped by what a tool reaches for. `ctx.generate`, `workflow()` and `stepReport()` no longer explain themselves by analogy to a capability that was removed, and `aai-runtime`'s README no longer tells a self-hosting reader that `ctx.db` is whatever `Db` they passed: a self-hosted tool receives no database, and `RuntimeOptions.db` is spent on session-slot storage and the workflow run journal and key store. `TextAgentOptions.db` is documented as accepted-and-unused rather than as the thing that makes `ctx.db` work.
+  
+  The reference front page taught `slot.projection()` where the guide teaches `slot.projected`; the `@module` table and its worked example now declare a `view` on the slot and pass `slot.projected`, and `AgentDef.syncState` leads with the same spelling, keeping `projection(view)` as the multi-view case. `mapConcurrent`'s only example issued no `ctx.step` at all, contradicting the hundred lines of module doc above it arguing the callback must issue exactly one, synchronously, under one literal name — it does now.
+  
+  A second sweep took the rest of both packages. On the published surface: the `/runtime` reference landing page introduced `createPostgresDb` as "the `ctx.db` handle over your own database" — the first thing a self-hosting reader meets — and now says what it is, a `Db` over your own Postgres for the stores the runtime keeps there (session slots, the workflow journal and its correlation-key index), never handed to tool code. `AgentServerOptions.db` said "SQL handle exposed to tool code as `ctx.db`" and now matches `RuntimeOptions.db`. `StartOptions.key` no longer offers "an index in `ctx.db`" as the alternative it saves you from, and `ClientConfig.credentials` and `unknownCredentialName` state the `DATABASE_URL` threat as what it now is — a client pointing the runtime's own stores at a server it controls. `createKeyedLock`'s module doc motivated itself with two tool calls interleaving on `ctx.state`; the bug is the same one and the thing they share is a session slot.
+  
+  The internal comments went with them, so the next reader of `postgres-db.ts`, `app-db.ts`, `workflow/client.ts`, `session-state-postgres.ts`, `runtime-session-state.ts` or `host-mode.ts` is not told a tenant database is on the other end of the pool. References that describe the REMOVAL — `sdk/db.ts`, `session-events.ts`, `workflow/keys.ts`, `uploads-platform.ts` and the conformance headers — are left as they are; they are the history, and they are correct.
+- 482b874: Fix the two defects a graded run found in the spelled-run extractor.
+  
+  The recognizer-joined fix is live and producing annotations — 7 on one
+  tau2-bench retail arm against a baseline of 0 — and **one of the seven was
+  right**. All seven utterances are now fixtures in `utils.test.ts`, verbatim off
+  the wire, because two of the six failures were in shapes nobody would have
+  invented.
+  
+  - **A run that ENDED A SENTENCE never exploded.** The trailing-punctuation
+    strip ran inside the walk, on a word `explodeSpelledWord` had already
+    declined to split, so `"…M-E-I and last name A-H-M-E-D."` yielded `mei`
+    alone and `"E-X-A-M-P-L-E dot C-O-M."` yielded `example.` — the surname and
+    the TLD, which are exactly the halves a lookup fails on. The strip happens
+    before the split now. Note what it was NOT: `and`, `last name` and `dot` all
+    worked, and the same two utterances without the full stop were always
+    correct, so the diagnosis "the separators are wrong" would have fixed
+    nothing.
+  - **A run spanning two names asserted a word that does not exist.**
+    `"My name Sophia Liz, S-O-F-I-A-L-I"` assembles `sofiali`, which matches no
+    name — and a nonsense token asserted alone reads as authoritative, so the
+    model dropped it and sent the misheard "Sophia". The boundary is not in the
+    letters and no threshold recovers it (`example` is as long as `sofiali`), so
+    `spelledAloudNote` now reports the LETTERS beside the token for a single run
+    of pure letters — `S-O-F-I-A-L-I = sofiali (may be more than one word)` — and
+    leaves the split to the model, which has "Sophia Liz" in the same utterance.
+    Several runs keep the old form (`yusuf, rossi`): the caller's own pauses gave
+    the boundaries, and that is the string measured to produce the right tool
+    call. A run carrying a separator or a digit is an identifier and keeps it too.
+  - `assembleSpelledRuns` returns `readonly SpelledRun[]` rather than strings, and
+    the annotation's WORDING moved to `spelledAloudNote` beside it — what the note
+    may claim is a property of the run, not of the call site.
+  
+  Deliberately NOT fixed here: a seventh annotation faithfully read `fofia` from
+  a spelling the recognizer itself misheard as `F-O-F-I-A`. That is the extractor
+  working correctly on bad input, and a plausibility filter inside it would be an
+  extractor second-guessing its own input; the guard belongs where the "the
+  letters REPLACE what you heard" instruction lives.
+- 49cebb8: Call the project the AssemblyAI Agent SDK in the READMEs, the documentation site, the shipped authoring guide, and the shipped skill. The npm package names, the `aai` CLI command, and every env var are unchanged.
+
 ## 16.1.0
 
 ## 16.0.1

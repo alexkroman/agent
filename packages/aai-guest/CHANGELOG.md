@@ -1,5 +1,138 @@
 # aai-guest
 
+## 0.6.6
+
+### Patch Changes
+
+- b7e21aa: Extract the studio coding agent's tool set into the SDK, and ship a generic coding agent as a template.
+  
+  ## The nine tools are `@alexkroman1/aai/coding-tools` now
+  
+  `createCodingTools({ dir })` answers the tools an agent that edits code turns out to need — `read_file`, `write_file`, `edit_file`, `delete_file`, `list_files`, `glob`, `grep`, `bash`, `todo_write` — keyed by the names the model calls, over ONE directory and reaching nothing outside it. Every one of them was already written, tested and tuned; what it could not be was USED, because it lived in `aai-guest`, a private package, closed over one studio session's workspace and tangled with the three things only the studio wants: a write-time syntax gate, a post-write type check, and a bundle trial.
+  
+  What survives deleting all of that is most of it. `studio-edit.ts` and `studio-grep.ts` moved as `host/coding-edit.ts` and `host/coding-grep.ts` with their specs, the capped child-process runner moved as `host/coding-spawn.ts`, and `resolveInside`/`writeFileWithParents`/`isPathInside` joined `host/workspace-files.ts` — the module that already owns what a workspace IS on disk, and where the containment test now has ONE implementation rather than the four it had (`aai-runtime`'s `server-static.ts` re-exports it; the copies that were only correct for an absolute, normalized, trailing-slash-free root are gone).
+  
+  Three seams a host fills in, and each is a rule the studio paid for:
+  
+  - **`validate` refuses a write BEFORE it lands.** The studio parses the file: one that does not parse cannot be edited back into shape by text matching, so writing it strands the turn — sixteen steps of read → edit → "could not find that text", no work produced.
+  - **`afterWrite` appends to a write that SUCCEEDED**, which is where the studio hands back the workspace's type errors inside the result of the write that caused them. It is the cheap half of what a language server would do and the place a repair round is actually saved.
+  - **`env` is `bash`'s child environment**, defaulting to this process's own — right for a CLI on a laptop, wrong for a sandbox, which passes an allow-list so a credential the host holds is out by construction rather than by remembering to subtract it. The studio still passes its 24-name `workspaceChildEnv()`.
+  
+  `CODING_TOOL_DESCRIPTIONS` and the four limits ride along on the same subpath, because a host that overrides a description has to quote the number the code enforces, and cannot keep the two in step with a constant it may not import. The machinery UNDER the tools is not published with them: the edit matcher and the workspace grep have no consumer outside `coding-tools.ts`, and only the capped child-process runner is on `@alexkroman1/aai/host-internal` — because the guest harness spawns npm, the CLI bundler and the workspace test run through it, and each decides for itself whether a killed child is a failure or an annotated line. A name published in anticipation of a consumer is a surface with no reader.
+  
+  The record is typed by NAME (`Record<CodingToolName, ToolDef>`, narrowed by `only`) rather than by an index signature, because a template's `tools/read_file.ts` default-exports one entry of it and under `noUncheckedIndexedAccess` an index signature hands back `ToolDef | undefined`.
+  
+  It costs `@alexkroman1/aai` two runtime dependencies, `diff` and `picomatch`, which were `aai-guest`'s. Both are small and pure-JS; the artifact-size budget will report them and this is the intent.
+  
+  ## `templates/coding-agent`
+  
+  A generic coding agent: `text: true`, the nine tools over `WORKSPACE_DIR`, a `system-prompt.md` that is most of what makes it good, and nothing about building voice agents with this SDK. It is the first TEXT-mode template, and this repo's guide previously argued there could not be one — the argument was right about DEPLOYMENT (`createRuntime` refuses `text: true` by name, so there is no session for `aai dev` or the platform to serve) and wrong about the template, since a starter is a worked example first. So it ships its own front door: `chat.ts`, which is `createTextAgent` plus `withToolsDir` (a tool is a FILE even with no bundler in the path), a `readline` loop, and the conversation as a message list the file keeps.
+  
+  Its tools are ONE `createCodingTools` call in `shared.ts` that each `tools/*.ts` re-exports an entry of — nine factory calls would be nine chances to point one at a different directory, and the directory is the only security-relevant decision in the template. The template says so where an author will read it: `bash` runs what the model wrote with the authority of the process, which is the authority the write and delete tools already have, so it grants nothing new — what it does is make the grant obvious.
+  
+  ## A TEXT agent's eval suite: `describeTextEval`
+  
+  `@alexkroman1/aai-runtime/eval/vitest` gains `describeTextEval`, and `/eval` gains `evalTextCredentials`. A template's eval must import that vitest subpath (konsistent's `template-eval-spec`), and what was there for a text agent was a voice suite that refuses one: `describeEval` opens `openEvalSession` → `createRuntime`. Everything a case author sees is shared — the two modes, the announce line, the per-case `stubReply`, the `live`/`scripted` markers, the `EvalTurn` and every reader above it — including `modeFrom`, so `AAI_EVAL_STUB` and `AAI_REQUIRE_EVAL` cannot come to mean one thing at two doors of three and another at the third.
+  
+  `evalTextCredentials` is a second gate rather than a flag on the first, because `evalCredentials` OVER-ASKS here: it answers about a voice agent, so an agent with no complete pipeline gets the default AssemblyAI STT key added, and a text agent declaring `anthropicLlm()` was reported as needing a key it will never read — which skips a suite the machine could have run live. It asks about the LLM alone, and about the DEFAULTED descriptor when the agent declares none, so the question is asked about the model the run would use.
+  
+  That is an additive change to the `aai-runtime:eval` capability: epoch 3, with epoch 2 RETAINED and its frozen authoring example written — `v2.ts` is `v1.ts` plus the two names epoch 2 added, used where a case would really reach for them.
+  
+  ## Why a carrier is in the header
+  
+  `aai-server` takes a patch because this changes `aai-guest`, whose built `dist/harness.mjs` is baked into the guest snapshot image the platform spawns every sandbox from — so the change reaches production through a server deploy and nothing else. Nothing in `aai-server` itself is touched.
+  
+  ## What changed in the studio, and what did not
+  
+  `createStudioTools` is `createCodingTools` with the three seams filled plus `test_agent`, which stays whole — it is the one tool that knows the workspace is an aai agent. The descriptions split the same way: the SDK's, three studio OVERRIDES (a write is type-checked, dependencies have their own tools, a workspace syncs back), and the tools only this host has. `studio/tool-descriptions.test.ts` asserts the three maps together cover the agent's real tool set exactly and that an override names a tool the SDK actually describes — an override of nothing is prose the model never reads. `studio/tools.test.ts` gave up the cases that are now the SDK's and keeps the ones about the seams. No behaviour changed in the studio.
+- 350e80f: Split the guest into three packages. `aai-guest-core` holds the seven modules both guest modes need (`rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` — the `run_code`/tool executor — and `limits`), `aai-guest-studio` holds the coding agent's 60 modules and the generated `studio-prompts/`, and `aai-guest` keeps the entry, agent mode, `toolchain/` and `dist/harness.mjs`.
+  
+  **Three, not two, and the shape is forced.** The entry dispatches studio mode while studio reaches back for the shared five at twenty call sites, so whichever package holds the entry must depend on studio — and studio then cannot depend on it. Two packages could only express that as a cycle, which for workspace packages is unbuildable. The entry has to stay in a package named `aai-guest` because `aai-server` resolves `aai-guest/harness` and bakes the tag into the guest snapshot image, so the shared modules are what moved. Their closure is exactly the modules that were shared, with no transitive pull-in, which is what made it worth doing. `StudioSession` moved into core with them: `bundle.ts` holds the studio-session slot, and a package that owns a slot owns the slot's type — declared in the studio package it was the one core→studio edge, enough to make the cycle real even though nothing behavioural crossed.
+  
+  `guest-core-package-boundary` and `guest-studio-package-boundary` are what keep the graph a DAG rather than leaving it one, and all eleven boundary deny-lists were regenerated from the tree rather than hand-edited for two new names — `konsistent-config.test.ts` derives the same matrix, and a deny list that goes stale does so by silence.
+  
+  Nothing changes for `aai-server` or the guest image beyond the tag: tsdown still bundles all three into one self-contained artifact. It is not byte-identical (16,203,601 bytes against 16,193,652 — 0.06% larger, from module ordering and the re-export shim), so the content-addressed image tag moves, exactly as it does for any harness edit.
+  
+  Five gate floors caught their own corpus shrinking, which is the part worth keeping: `guard-invariants` rule 12's guest scan (18 files against a minimum of 20), `check-deploy-changeset`'s per-package file floor, and the three coverage ratchets. Coverage needed the most care — it attributes a file to whoever LOADED it, so five `describe` blocks moved from `aai-guest/src/harness.test.ts` into core beside the modules they test, and each package's config excludes its siblings by name (`include: ["src/**"]` does not do it: a sibling's path ends in `src/` and matches the same glob). Without that, `aai-guest` measured all 60 studio modules and read 27% lines against a floor of 83. The three suites total 514 tests, exactly what the one package ran.
+- 350e80f: Split this package's `src/` into the two things it is: `harness/` (24 files — the sandbox entry and its modes) and `studio/` (60 — the coding agent), the filename prefix becoming the path. `src/harness.ts` stays at the root beside `harness/` because it is tsdown's one entry, and `limits.ts`, `trial.ts` and `_test-utils.ts` stay because they belong to neither half.
+  
+  One trap is worth recording for the next such move: a directory URL must keep its TRAILING SLASH. `new URL("../studio-prompts/", import.meta.url)` had to become `"../../studio-prompts/"`, and written without the slash `new URL("agent.md", …)` REPLACES the last segment rather than appending to it — so the shipped studio prompts resolved to `packages/aai-guest/agent.md` and every eval that asked for one failed naming a path nobody wrote. A path-rewriting sweep drops that slash by construction, since `path.relative` does not preserve it.
+- 4ab107e: Test the studio coding agent as an agent: an agent-level unit spec, an eval, and the deployable claim every shipped template makes.
+  
+  ## The agent level, through the SDK's own testing framework
+  
+  `studio/agent-turns.test.ts` drives one turn of `createTextAgent` over the real `createStudioAgent` definition with a scripted model, using `runTextAgent` + `scriptedTextModel` (`@alexkroman1/aai-runtime/testing`). **That helper had no caller in the repo**, and the coding agent is the only text agent there is — its own doc says it "builds a fresh text agent per call and mandates a script", which "is right for a SPEC: one turn, no carry-over, the provider socket the only fake."
+  
+  Three suites tested this agent from both ends and nothing in the middle: `studio/agent.test.ts` (what the definition declares), `studio/tools.test.ts` (each tool through `runTool`), `studio/chat.scenario.test.ts` (the HTTP surface). What none of them drives is the LOOP — argument coercion, Standard Schema validation, the `ctx` a tool is handed, the reserved final-answer step, the event stream. Four claims, two of which could not be made anywhere else:
+  
+  - **The step budget reserves a final ANSWERING step, tools off.** The one behaviour that changed when this agent moved onto the SDK, and nothing pinned it for this definition: with `maxSteps: 1` and a script that would keep calling tools, the turn runs two steps and the second one speaks. Before, a capped turn ended wherever the budget ran out — including straight after a tool result with nothing said — and it ended *successfully*, so the user saw the agent simply stop.
+  - **A turn is a `SessionEvent` stream the eval readers take unchanged** (`toolCallsInEvents`, `saidIn`, exactly one terminator). That bridge is what makes the eval file below possible at all, and it is now asserted against a script — no key, no model, no tokens — rather than only where finding out costs money.
+  - An argument the schema rejects reaches the model as a repairable result rather than killing the turn. Load-bearing here rather than theoretical: the studio's model regularly emits a whole source file inside a JSON string.
+  - The tool the model chose runs through the real executor and its result is what the next step reads.
+  
+  It stays in the UNIT tier by choice of tool — `todo_write` closes over nothing and touches no disk, and the session fixture points at a path that does not exist, since `createStudioAgent` performs no I/O. A turn that writes files belongs to the scenario tier, where `studio/chat.scenario.test.ts` already drives one.
+  
+  `studio/agent.test.ts` also makes the claim every shipped template's spec opens with, for the first time: `expectDeployable` (`@alexkroman1/aai/testing`) runs `toAgentConfig` — the conversion `aai build` runs — and asserts per derived mode. For a text agent that is "no audio path", which is the one worth having, because this is the repo's only definition assembled in CODE rather than authored in an `agent.ts`: a `voice:` or an `stt` added here has no author reviewing an agent file, and `createTextAgent` would accept the def anyway. That test pins one surprising asymmetry it cost a wrong assertion to learn — the conversion carries `builtinTools` and NOT the nineteen declared tools, because a tool registry is extracted where the bundle is assembled, which is exactly why `test_agent` reports its tool list off the loaded bundle's own `__aaiConfig`.
+  
+  ## An eval of the studio coding agent, written with the templates' eval suite
+  
+  Nine cases in `packages/aai-guest/src/studio-agent.eval.test.ts` that drive `createStudioAgent` over a real workspace and ask the question no other suite in the repo can on this side of the boundary: given this instruction and this tree, did the agent reach for the right tool, in the right order, and leave something that compiles. `studio/agent.test.ts` asserts what the definition declares, `studio/tools.test.ts` drives each tool directly, `studio/chat.scenario.test.ts` drives the HTTP surface with a scripted model — all three are about parts.
+  
+  It is the templates' suite, not a second one: `openEvalTextAgent`, `EvalTurn`, `turnCalling`/`toolNames`/`describeTurn`, `resolveEvalMode` and `installStubLlm`, all from `@alexkroman1/aai-runtime/eval`, the subpath the twenty-five shipped template evals drive. The one piece that could not be reused is `describeEval` itself, and it is structural rather than a preference: that function stands up `openEvalSession` → `createRuntime`, which refuses `text: true` by name. `describeStudioEval` (`studio/_eval-harness.ts`) is the third owner of the announce that harness's own doc names ("`describeEval` for a template, `_gate.ts` for `aai-evals`") and adds only per-case lifetime.
+  
+  `packages/aai-evals/CLAUDE.md` argued for this before it existed and said where it would have to live; both halves held. It could not be built there — `StudioSession` carries a real workspace `dir` and `StudioAgentDeps` is `HarnessBundleAccess & { typecheck }`, all of which live in `aai-guest`, which `evals-package-boundary` denies that package by name. And it replaces nothing: the HTTP starter eval measures the DEPLOYED path (the broker, the per-sandbox token, the guest chat route, the workspace sync), which is where the harness it replaced had rotted.
+  
+  What is real in a case: `initStudioSession`, the four tool families and three web builtins, the SDK's tool executor with its `ctx` and the 120s studio deadline, the reserved final-answer step, `typecheckWorkspaceDir` behind the post-write diagnostics, and `test_agent`'s real build → bundle load → trial.
+  
+  **Four of the nine end by asking the workspace rather than the transcript.** `ctx.typecheck()` runs the same compiler the post-write diagnostics run and `ctx.runTests()` runs the workspace's own specs the way `test_agent` does — both called by the CASE, so the claim is about the tree on disk and not about what a tool result said about it. That is the one class of assertion a model cannot satisfy with prose, and it is why "adds what it was asked for and leaves the workspace type-clean" is a real case rather than a keyword search over the reply. Two more claims are sharpened the same way: the template case compares `agent.ts` byte for byte against the shipped template (a retyped file passes every structural check the starter eval makes and is a different file), and the failing-spec case requires `agent.test.ts` to be unchanged byte for byte, because editing the assertion to match the code makes the tests pass while destroying the only record of what was wanted. The repair loop is asserted per occurrence: every write whose result carried `Type errors after writing <file>` must be followed by another write to that file.
+  
+  Five cases are live and four are scripted, and the split is not about cost — the four are REFUSALS, and a refusal can only be observed if something calls the refused thing. A competent model does not write unparsable TypeScript, address a path outside its workspace, or ask for a template that does not exist. What they grade is the guest's own answer: whether the sentence the tool sends back is one a model can act on.
+  
+  **The honest limit: the system prompt is the harness's, not the studio's.** The shipped one is `studioSystemPrompt(kind)` in `aai-studio-server`, and `guest-package-boundary` denies the guest that import — correctly, since the guest must not link against the host. So these cases adjudicate the tool set, the tool descriptions, each tool's result prose and the model; the studio's prompt is graded by the HTTP starter eval and by nothing here, and no result from this file may be reported as covering it. `STUDIO_EVAL_PROMPT` is deliberately thin in one direction: a base prompt telling the agent to copy templates verbatim, or not to delete a failing spec, would turn the corresponding case into a measurement of that constant.
+  
+  `studioBundleAccess` (`studio/bundle-access.ts`) is the one production change, and the eval is what made it worth doing. `harness.ts` built the studio's bundle loader and trial executor as an inline object; `HarnessBundleAccess` was the one declaration of its shape while the two rules inside it had none — an inspection load carries an empty env, and a trial answers in prose (`Tool error: …`, `(no result)`, `agent not loaded`) because its consumer is a model reading a tool result. A second caller that wants the real pair rather than a double is where an inline object becomes a copy. Behaviour is unchanged; it has its own spec now, which pins the thing a snapshot of `state` would have got wrong: it reads `state.agent` at CALL time, because the access object is built once per session while `test_agent` loads and then trials inside one tool call.
+  
+  `studio/_eval-harness.test.ts` is the harness's own spec, and the one regression it catches is worth naming: it asserts that `STUDIO_EVAL_PROMPT` mentions neither templates, nor tests, nor deleting, nor type-checking. A well-meaning edit adding any of those is exactly how the template case and the failing-spec case would stop measuring the agent and start measuring that string — silently, both still green.
+  
+  Wiring: `aai-guest` gets `test:eval`/`check:eval` and excludes `**/*.eval.test.ts` from its unit config, so tier membership stays the `.eval.` infix. `check:eval` here is outside the merge path — `scripts/check.mjs` and `check.yml` both run it filtered to `aai-templates`. `AAI_EVAL_STUDIO_MODEL` is declared in `check:eval`'s `env` in `turbo.json`; the default it overrides is a literal, because `guest-package-boundary` denies the guest the host constant that owns the real one, and that literal will drift when the studio changes model — which the announce line prints on every run.
+  
+  Measured: the scripted run is 4 cases, 5 skipped, 38s, of which the `test_agent` case alone is 34s — two real in-guest rolldown passes, two bundle loads, a real vitest run and one trial call. The tier's wall clock here is its build passes and everything else is noise. The five live cases' fixtures and both ground-truth readers were validated against scripted runs driving the same tools — the broken tool really fails `tsc` and the diagnostic really reaches the write result, the failing spec really fails and an edit to `agent.ts` really makes it pass, a copied template really is byte-identical. What has not been observed is a live model's behaviour against them, so the first live run is the validation those five have not had.
+- Updated dependencies [c129f05]
+- Updated dependencies [49daf83]
+- Updated dependencies [440e38a]
+- Updated dependencies [0dcf247]
+- Updated dependencies [440e38a]
+- Updated dependencies [b7e21aa]
+- Updated dependencies [440e38a]
+- Updated dependencies [75f3ea5]
+- Updated dependencies [4ab107e]
+- Updated dependencies [180fd15]
+- Updated dependencies [350e80f]
+- Updated dependencies [07a046e]
+- Updated dependencies [7832142]
+- Updated dependencies [440e38a]
+- Updated dependencies [180fd15]
+- Updated dependencies [440e38a]
+- Updated dependencies [0e12342]
+- Updated dependencies [440e38a]
+- Updated dependencies [482b874]
+- Updated dependencies [f75ad5f]
+- Updated dependencies [5ac5edb]
+- Updated dependencies [440e38a]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [3e8e8a4]
+- Updated dependencies [9c1fb03]
+- Updated dependencies [49cebb8]
+- Updated dependencies [7fe0571]
+- Updated dependencies [350e80f]
+  - @alexkroman1/aai@16.2.0
+  - @alexkroman1/aai-runtime@16.2.0
+  - @alexkroman1/aai-ui@16.2.0
+  - @alexkroman1/aai-cli@16.2.0
+  - aai-guest-core@0.6.6
+  - aai-guest-studio@0.6.6
+
 ## 0.6.5
 
 ### Patch Changes
