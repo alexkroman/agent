@@ -38,6 +38,7 @@
 
 // The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
 export {
+  assembleSpelledRuns,
   capToolResult,
   isTextAssetPath,
   normalizeSpeechText,

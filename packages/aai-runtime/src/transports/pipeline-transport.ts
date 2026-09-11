@@ -217,6 +217,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isResumeTurnInFlight: () => turns.resumeInFlight(),
     hasTurnSpoken: () => turns.spoke(),
     isPlaybackPending: () => heard.pending(),
+    hasSpokenRecordable: () => heard.spokeRecordable(),
     abortInFlightTurn: () => abortInFlightTurn(),
     tailResumePrompt: () => heard.resumePrompt(),
     runChainedTurn,

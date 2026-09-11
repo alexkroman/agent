@@ -6,7 +6,11 @@
 // pipeline-transport-barge-in.test.ts; shared helpers in
 // _pipeline-transport-harness.ts.
 
-import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
+import {
+  DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_TOOL_COVER_MS,
+  DEFAULT_DEAD_AIR_COVER_MS,
+} from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
@@ -655,10 +659,12 @@ describe("PipelineTransport", () => {
       stt.last()?.fireFinal("look it up");
       // Armed, but the window has not elapsed: the caller is in an ordinary
       // pause, and covering it here would cost the reply's opening sentence.
-      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS - 1);
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS - 1);
       expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
 
-      await vi.advanceTimersByTimeAsync(1);
+      // +1 beat for the model's own delayMs: the window is armed when the
+      // `tool-call` part ARRIVES, not when the turn opens.
+      await vi.advanceTimersByTimeAsync(21);
       expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
 
       // The tool lands and the reply follows it.

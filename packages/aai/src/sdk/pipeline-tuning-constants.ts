@@ -181,6 +181,41 @@ export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 /**
+ * Cover window armed by a `tool-call` stream part, rather than by the turn
+ * opening — short, because by the time a tool call is emitted the silence is
+ * no longer a guess.
+ *
+ * {@link DEFAULT_DEAD_AIR_COVER_MS} is armed when the turn's stream opens, a
+ * condition true of EVERY turn, so it can only distinguish the silent ones by
+ * waiting long enough to be sure — and 5000 ms from turn commit is ~6.7 s in
+ * the caller's frame, past the point a caller concludes the line is dead.
+ * Measured on a 114-task tau2-bench retail run: **123 firings across 1076
+ * turns, 113 of them `opening: true` at exactly `waitedMs: 5000`** — the right
+ * turns, too late on every one. Lowering the BASE instead was tried at 3000
+ * and 2000 and moved no outcome, because it also fires on the 67% of turns
+ * that were about to answer anyway.
+ *
+ * A `tool-call` part is the better condition: true of exactly the turns that
+ * go quiet, and early. Over 364 tool-calling turns the first call lands at
+ * **p50 1183 ms** and the silence from there to the answer is **p50 2220 ms,
+ * p90 8800 ms**. 1200 puts the filler ~2.4 s into the turn, ~4.0 s in the
+ * caller's frame at the default 1600 ms endpointing — inside the 5.0 s a
+ * caller waits before concluding the line is dead, and still long enough that
+ * a chain returning promptly says nothing.
+ *
+ * **This is only safe because filler no longer opens the barge-in gate.**
+ * Firing the cover three times sooner means three times the opportunity for a
+ * caller to talk over a holding phrase, and until `HeardTracker.spokeRecordable`
+ * that cancelled the real reply behind it. Do not shorten this window again
+ * without checking that predicate still holds.
+ *
+ * `deadAirCoverMs: 0` disables cover entirely and disables this with it.
+ *
+ * @internal
+ */
+export const DEAD_AIR_TOOL_COVER_MS = 1200;
+
+/**
  * Instruction injected as a synthetic user turn when a barge-in turns out to
  * be a false interruption (see {@link DEFAULT_SPEECH_IDLE_TIMEOUT_MS}, which
  * decides when that is recognised). The interrupted reply's spoken-so-far text

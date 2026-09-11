@@ -16,6 +16,9 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public (undocumented)
+export function assembleSpelledRuns(text: string): readonly string[];
+
 // @internal
 export function capToolResult(result: string): string;
 

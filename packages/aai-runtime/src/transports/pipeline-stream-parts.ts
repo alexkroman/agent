@@ -11,6 +11,7 @@ import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { capToolResult, toArgsRecord } from "@alexkroman1/aai/internal";
@@ -205,6 +206,23 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   let coverPhraseCount = 0;
   /** The window armed for the cover currently pending — see `armCover`. */
   let armedCoverMs = 0;
+  /**
+   * When the pending cover is due (epoch ms), 0 when none is armed.
+   *
+   * The tool-call branch needs to know whether its short window would fire
+   * SOONER than whatever is counting down, and `RestartableTimer` exposes only
+   * `pending()`. Without this the turn-open window keeps `pending()` true for
+   * the whole turn and the short window is never installed — which is exactly
+   * the silent no-op the first version of this shipped as.
+   */
+  let coverDueAt = 0;
+  /**
+   * Base for this turn's cover cycle. Drops to the tool window once a
+   * `tool-call` part has shown the turn is the silent kind — STICKY, because
+   * the timer re-arms from its own callback and would otherwise revert to the
+   * long base after the first filler.
+   */
+  let coverBase = coverMs;
 
   /**
    * Send text to the caller.
@@ -311,18 +329,25 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * 8000 would otherwise be clamped BELOW its own base, so an agent asking for
    * one filler every 20s would get the first at 8s.
    */
-  function armCover(): void {
+  /** Cancel the pending cover AND forget its deadline — see `coverDueAt`. */
+  function clearCover(): void {
+    coverDueAt = 0;
+    deadAir.clear();
+  }
+
+  function armCover(baseMs: number = coverBase): void {
     if (coverMs <= 0 || signal?.aborted) return;
     // Remembered rather than recomputed at the log site: `coverCount` has
     // already been incremented by then, so a recomputation would report the
     // NEXT window as the one that elapsed.
-    armedCoverMs = Math.min(coverMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs));
+    armedCoverMs = Math.min(baseMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs));
+    coverDueAt = Date.now() + armedCoverMs;
     deadAir.arm(armedCoverMs);
   }
 
   // Kill the armed cover the moment the turn aborts rather than at dispose(),
   // which a tool execution that ignores its abort signal defers for seconds.
-  const onAbort = (): void => deadAir.clear();
+  const onAbort = (): void => clearCover();
   signal?.addEventListener("abort", onAbort, { once: true });
 
   // Cover the turn's OPENING gap, not just gaps between things the model said.
@@ -342,7 +367,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
 
   function dispose(): void {
     signal?.removeEventListener("abort", onAbort);
-    deadAir.clear();
+    clearCover();
   }
 
   function emitToolResult(part: StreamPart): void {
@@ -366,7 +391,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         if (t.length > 0) {
           spokeText = true;
           // The model is speaking again — whatever gap was open just closed.
-          deadAir.clear();
+          clearCover();
         }
         emitText(t);
         return;
@@ -411,7 +436,19 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // there), which leaves `pending()` false and lets the next tool call
         // re-open the window. This only declines to move a deadline that is
         // already counting down toward silence the caller is already in.
-        if (!deadAir.pending()) armCover();
+        // Armed on the SHORT tool window: a `tool-call` part is true of exactly
+        // the turns that go quiet and arrives early enough to act on, where the
+        // turn-open window is true of every turn and can only find the silent
+        // ones by waiting. See DEAD_AIR_TOOL_COVER_MS.
+        //
+        // A tool call may only pull the deadline IN, never push it out — the
+        // invariant the bare `!pending()` guard carried, and why it cannot just
+        // become an unconditional re-arm: a chain whose calls each return
+        // inside the window would reset the countdown every time and the cover
+        // would never fire at all.
+        const toolBase = Math.min(DEAD_AIR_TOOL_COVER_MS, coverMs);
+        coverBase = toolBase;
+        if (!deadAir.pending() || Date.now() + toolBase < coverDueAt) armCover(toolBase);
         // Observability only — actual execution happens inline via toVercelTools.
         // An invalid tool call carries raw-string input; coerce it so the
         // `tool_call` frame stays schema-valid (a non-record args drops it).

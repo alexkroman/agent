@@ -11,7 +11,7 @@ import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
+import { assembleSpelledRuns, DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {
@@ -97,6 +97,8 @@ function createSttEventHandlers(deps: {
    * is not "a turn is in flight".
    */
   agentIsSpeaking: () => boolean;
+  /** Has this reply sent real speech, as opposed to dead-air filler? */
+  hasSpokenRecordable: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
   abortInFlightTurn: () => void;
   /**
@@ -341,6 +343,8 @@ export function createUserActivity(deps: {
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken(): boolean;
   isPlaybackPending(): boolean;
+  /** Has this reply sent real speech, as opposed to dead-air filler? */
+  hasSpokenRecordable(): boolean;
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
@@ -381,8 +385,23 @@ export function createUserActivity(deps: {
    * mid-reply TTS stall (playback draining while more text is still streaming)
    * does not silently reopen the pre-audio window.
    */
+  /**
+   * Is the agent SPEAKING — as opposed to merely making noise?
+   *
+   * The `hasSpokenRecordable` term is the whole point: dead-air filler is
+   * audio, so it drives the playback clock and `turns.markSpoke()` exactly as
+   * real speech does, and without this a caller talking over a holding phrase
+   * counted as interrupting a reply. The abort then threw away the reply being
+   * generated behind the filler — the cover causing the silence it exists to
+   * cover. See `HeardTracker.spokeRecordable` for the 553s this discarded.
+   *
+   * A turn that has only played filler is therefore NOT spoken over, which is
+   * the invariant `pipeline-transport.ts` already states for `spoke()`: "a turn
+   * that has not spoken cannot be spoken over." Filler is not speaking.
+   */
   const agentIsSpeaking = (): boolean =>
-    deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
+    (deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken())) &&
+    deps.hasSpokenRecordable();
 
   // Hold `speech_started` back while the agent has the floor, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
@@ -447,6 +466,7 @@ export function createUserActivity(deps: {
     isResumeTurnInFlight: deps.isResumeTurnInFlight,
     hasTurnSpoken: deps.hasTurnSpoken,
     agentIsSpeaking,
+    hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
     speechEdges,
@@ -456,11 +476,26 @@ export function createUserActivity(deps: {
     callbacks,
     speculation: deps.speculation,
     commitUserTurn(text: string): void {
-      // Debug trace (AAI_DEBUG=1): this is verbatim the text the turn prompts
-      // the LLM with, so it is the ground truth for "did the model see it?".
-      log.debug("Pipeline turn committed", { sid, text });
+      // A caller reading an identifier aloud arrives as isolated letters, and
+      // assembling them was asked of the MODEL in prose until now
+      // (`PROMPT_LISTENING`: "normalize spoken identifiers"). It does it wrong
+      // often enough to be the largest single failure source on a tau2-bench
+      // retail run — 22 of 57 failed calls never authenticated, every one with
+      // the right identifier already in the caller's own words. See
+      // `assembleSpelledRuns`.
+      //
+      // The model's copy is augmented; the CLIENT's and history's stay
+      // verbatim. What the caller said is not ours to rewrite, and a run this
+      // reads wrong must not be able to destroy the record of it — the model
+      // sees both and can still disagree.
+      const spelled = assembleSpelledRuns(text);
+      const forModel =
+        spelled.length > 0 ? `${text}\n[spelled aloud: ${spelled.join(", ")}]` : text;
+      // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
+      // the LLM with, so it stays the ground truth for "did the model see it?".
+      log.debug("Pipeline turn committed", { sid, text: forModel });
       callbacks.report({ type: "user-transcript.committed", text });
-      deps.runChainedTurn(text, "Pipeline turn crashed");
+      deps.runChainedTurn(forModel, "Pipeline turn crashed");
     },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,

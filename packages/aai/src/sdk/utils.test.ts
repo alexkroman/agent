@@ -1,6 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { isTextAssetPath, normalizeSpeechText, toArgsRecord } from "../internal.ts";
+import {
+  assembleSpelledRuns,
+  isTextAssetPath,
+  normalizeSpeechText,
+  toArgsRecord,
+} from "../internal.ts";
 import { serializeToolFailure } from "./_tool-failure-wire.ts";
 import {
   errorDetail,
@@ -511,5 +516,39 @@ describe("responseErrorMessage", () => {
       { status: 500 },
     );
     await expect(responseErrorMessage(res)).resolves.toBe("500");
+  });
+});
+
+describe("assembleSpelledRuns", () => {
+  // Every input here is a transcript the model actually received on a 99-task
+  // tau2-bench retail run, next to what it sent the lookup. The mis-assemblies
+  // are the point: `mia.garbia2723` for `mia.garcia2723`, `Johannson` twice
+  // byte-identically for `Johansson`, `amemia.silva` for `amelia.silva`.
+  test.each([
+    ["It's M, E, I, underscore, K, O, V, A, C, S", ["mei_kovacs"]],
+    [
+      "M, I, A, dot, G, A, R, C, I, A, two, seven, two, three, at, E, X, A, M, P, L, E, dot, C, O, M",
+      ["mia.garcia2723@example.com"],
+    ],
+    ["J, O, H, A, N, S, S, O, N", ["johansson"]],
+    // TWO runs, and the surname is the half that gets mis-assembled — a
+    // longest-run-wins version of this dropped it.
+    ["First name, N, O, A, H, last name P, A, T, E, L", ["noah", "patel"]],
+    ["Y, U, S, U, F — R, O, S, S, I", ["yusuf", "rossi"]],
+  ])("assembles %j", (text, expected) => {
+    expect([...assembleSpelledRuns(text)]).toEqual(expected);
+  });
+
+  // A run needs THREE consecutive single letters, so prose containing "I" or
+  // "a" cannot trigger it. False positives here would put a garbage token in
+  // front of the model on every ordinary turn.
+  test.each([
+    "I need to return a water bottle and a desk lamp",
+    "I want to exchange it for a bigger one",
+    "my username is may_kovacs_8020",
+    "yes",
+    "Can you help me?",
+  ])("does not fire on ordinary speech: %s", (text) => {
+    expect(assembleSpelledRuns(text)).toEqual([]);
   });
 });

@@ -64,6 +64,7 @@ function harness(overrides: { terminated?: boolean } = {}) {
     onWords: note("heard.onWords"),
     startReply: note("heard.startReply"),
     pending: () => false,
+    spokeRecordable: () => false,
     cut: note("heard.cut"),
     heard: () => ({ chars: 0, recordableChars: 0, text: "" }),
     resumePrompt: () => undefined,
