@@ -48,9 +48,18 @@ its own.
   so it can be A/B'd rather than inherited. Not a parameter on
   `universal-3-5-pro`, where formatting is always on: set there it is not sent
   and the opener says so. On `universal-streaming-english` the service default
-  is `false`, and `true` makes that model emit two `end_of_turn` messages per
-  turn — the opener commits only the formatted one, so a turn is not answered
-  twice.
+  is `false`.
+- **A turn is not answered TWICE, and the flag above is what would have caused
+  it.** With `format_turns: true` that model emits two `end_of_turn` messages
+  for one turn — the unformatted transcript first, the formatted one right
+  after — and the opener treated every `end_of_turn` as a commit. Nothing
+  triggered it before, because we sent the parameter on no model; enabling it
+  would have made the agent answer the same sentence a second time, on a
+  history already containing its own reply, which is a long day to diagnose
+  from a transcript. `isCommittingTurn` demotes the unformatted final to a
+  PARTIAL when the session asked for formatting — the caption still updates and
+  the commit waits for the formatted text. That demotion is load-bearing, not
+  tidy-up.
 - **`assembleSpelledRuns` sees a run the RECOGNIZER joined.** It split on
   whitespace and commas, so a formatted transcript's `S-O-F-I-A` — one token —
   contained no single letters and assembled nothing. Measured on tau2-bench

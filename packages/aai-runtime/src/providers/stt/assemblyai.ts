@@ -18,6 +18,7 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
@@ -330,7 +331,7 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
         // distinguishes the two, and "the provider said nothing" is the absent case.
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
-          ...(endOfTurnConfidence === undefined ? {} : { endOfTurnConfidence }),
+          ...omitUndefined({ endOfTurnConfidence }),
           ...heard,
         });
       });

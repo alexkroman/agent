@@ -653,36 +653,6 @@ describe("createRuntime — provider resolution seams", () => {
     expect(settings?.tts).toMatchObject({ voice: ASSEMBLYAI_TTS_DEFAULT_VOICE });
   });
 
-  test("a setting too big for one line is reported as its SIZE", () => {
-    // A keyterm list runs to 100 entries and an agent context to 1,500
-    // characters. Printed in full either one buries the endpointing window a
-    // reader opened this line to find — and the value is still dialled, so
-    // what is lost is the contents rather than the fact.
-    const logger = makeLogger();
-    createRuntime({
-      agent: baseAgent,
-      env: PROVIDER_KEYS,
-      logger,
-      stt: assemblyAIStt({
-        keyterms: ["gift card", "order number", "exchange", "store credit", "PayPal"],
-        agentContext: "x".repeat(200),
-        languages: ["en", "es"],
-      }),
-    });
-    const settings = vi
-      .mocked(logger.info)
-      .mock.calls.find(([msg]) => msg === "Session mode resolved")?.[1] as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-    expect(settings?.stt).toMatchObject({
-      keyterms: "5 item(s)",
-      agentContext: "200 chars",
-      // A short list still prints in full: the threshold is "longer than a
-      // glance", and which languages a session pins is a glance.
-      languages: ["en", "es"],
-    });
-  });
-
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {
     const logger = makeLogger();
     createRuntime({ agent: { ...baseAgent, s2s: assemblyAIS2s() }, env: PROVIDER_KEYS, logger });

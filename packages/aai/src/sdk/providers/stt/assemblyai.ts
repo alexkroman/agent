@@ -199,8 +199,12 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * ARGUMENT the model emits from a dictated identifier, and that is worth
    * A/B-ing rather than inheriting. Note what `true` costs mechanically: that
    * model then emits TWO `end_of_turn` messages per turn — the unformatted one
-   * first, the formatted one right after — and the opener commits only the
-   * formatted one, so the turn's commit waits for it.
+   * first, the formatted one right after — so the opener demotes the
+   * unformatted one to a PARTIAL and commits only the formatted text. Without
+   * that the agent answers the same sentence twice, the second time on a
+   * history already containing its own reply; `isCommittingTurn` in
+   * `aai-runtime`'s `providers/stt/_assemblyai-turn.ts` is where it lives, and
+   * it is load-bearing rather than tidy-up.
    */
   formatTurns?: boolean;
   /**

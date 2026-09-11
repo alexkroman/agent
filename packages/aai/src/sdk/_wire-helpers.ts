@@ -173,6 +173,24 @@ export function normalizeSpeechText(text: string): string {
  * `at`) because an identifier's shape is exactly where a model's guess goes
  * wrong — `mei_kovacs_8020` is three runs and two separators, and dropping the
  * separators is how it becomes `meikovacs8020`.
+ *
+ * ## The identified NEXT lever, recorded rather than built
+ *
+ * This function only fires on a run the caller SPELLED. The other shape a
+ * mis-read identifier arrives in is one the recognizer itself formatted: the
+ * same order id came back `W8855135` on some turns and `W88 55135` on another
+ * in one tau2-bench retail run, and the spaced form is what the model then
+ * passed to a lookup. Nothing upstream can fix that — on `universal-3-5-pro`
+ * formatting is always on and is not a parameter, keyterms cannot enumerate
+ * per-account ids under a 100-term cap, and `agent_context` already carries
+ * the question that primed the utterance. So the remaining route is
+ * normalization AFTER the wire, here: a rule that folds the spacing out of an
+ * alphanumeric identifier, applied to the MODEL's copy only, like everything
+ * else in this function.
+ *
+ * Deliberately not written yet. It is cheap, deterministic and testable
+ * without a model, and it is first in the queue once the steering already
+ * shipped has been graded — adding it before then is one more unevaluated arm.
  */
 /** Spoken separator words that may appear INSIDE a spelling run. */
 const SPELLED_SEPARATORS: Readonly<Record<string, string>> = {
