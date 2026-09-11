@@ -1054,6 +1054,7 @@ trace or a type error can be traced back to something.
 | `JitteredBackoffOptions` | `@alexkroman1/aai/internal` |
 | `JournalConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
 | `KeytermDrop` | `@alexkroman1/aai/host-internal` |
+| `KeytermDropReason` | `@alexkroman1/aai/host-internal` |
 | `LOG_PREVIEW_CHARS` | `@alexkroman1/aai/host-internal` |
 | `LowConfidenceVerdict` | `@alexkroman1/aai/host-internal` |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | `@alexkroman1/aai/internal` |
@@ -1082,6 +1083,7 @@ trace or a type error can be traced back to something.
 | `MIC_SILENCE_PROBE_MS` | `@alexkroman1/aai/internal` |
 | `MISTRAL_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `MISTRAL_KIND` | `@alexkroman1/aai/host-internal` |
+| `NormalizedKeyterms` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |

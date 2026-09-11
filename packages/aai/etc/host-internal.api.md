@@ -740,7 +740,7 @@ export interface KeytermDrop {
 }
 
 // @public
-type KeytermDropReason = "empty" | "too-long" | "duplicate" | "over-cap";
+export type KeytermDropReason = "empty" | "too-long" | "duplicate" | "over-cap";
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -839,7 +839,7 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 export const MISTRAL_KIND: "mistral";
 
 // @public
-interface NormalizedKeyterms {
+export interface NormalizedKeyterms {
     readonly dropped: readonly KeytermDrop[];
     readonly terms: readonly string[];
 }

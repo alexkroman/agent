@@ -96,8 +96,14 @@ export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "./sdk/env-types.t
 export {
   describeKeytermDrops,
   type KeytermDrop,
+  // `KeytermDropReason` and `NormalizedKeyterms` are here because the two
+  // names above REFERENCE them: a type a published signature mentions and no
+  // subpath exports is one a caller can receive and cannot write down, which
+  // `check:api-nameable` fails on.
+  type KeytermDropReason,
   MAX_KEYTERM_CHARS,
   MAX_KEYTERMS,
+  type NormalizedKeyterms,
   normalizeKeyterms,
 } from "./sdk/keyterms.ts";
 export {
