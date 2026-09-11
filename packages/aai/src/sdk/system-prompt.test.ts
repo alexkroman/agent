@@ -221,6 +221,85 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("Never read out a long\n  list");
   });
 
+  // The identifier rule is a SPELLING rule, and these pin the spelling rather
+  // than the intent. "Spoken one character at a time" is not a thing a model
+  // that only picks characters can comply with: across 1,811 tau2-bench retail
+  // calls 2.8% of agent turns still carried a bare `W`-plus-digits order
+  // number and 3.4% a bare digit run of seven or more, both worse in the
+  // newest runs than the oldest. Measured through AssemblyAI TTS with
+  // recognition formatting off, `#W2378156` is spoken "W two million three
+  // hundred seventy-eight thousand..." and `W-2-3-7-8-1-5-6` digit by digit.
+  test("SPEAKING says to hyphenate an identifier and drop the hash", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("hyphenate it, one character per hyphen");
+    expect(result).toContain('drop any\n  "#"');
+    expect(result).toContain('"W-2-3-7-8-1-5-6"');
+  });
+
+  // A DIGIT-ONLY identifier was uncovered by the old wording ("mixes letters
+  // and digits, or is not a word"), so a card's last four, an item number, a
+  // ZIP and a phone number all fell to "say numbers the way a person says
+  // them" and were said as quantities: `2478` is spoken "twenty-four
+  // seventy-eight" and `7747408585` "seven billion seven hundred forty-seven
+  // million...". 130 turns spoke a card's last four as one number, 71 an item
+  // number.
+  test("SPEAKING counts a digit-only code as an identifier", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("names one record rather than counting something");
+    expect(result).toContain("a card's last four");
+    expect(result).toContain('"ending in 2-4-7-8"');
+  });
+
+  // `yusuf.rossi7301@example.com` is spoken "yusuf rossi seven thousand three
+  // hundred one at example com", and `mei.kovacs8232@example.com` came out as
+  // "may kuvax eight thousand two hundred thirty two xample dot com" — the
+  // name itself different words and the domain's first letter eaten. Spelling
+  // the local part instead is worse, not better: `y-u-s-u-f dot r-o-s-s-i,
+  // seven-three-zero-one` lost the "at" entirely. 79 agent turns spoke a
+  // literal address, and the caller asked for a repeat after 13.6% of the ones
+  // that were delivered complete, against a 2.8% baseline.
+  test("SPEAKING gives an email its own three-part spelling", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("EMAIL ADDRESS is never written as one token");
+    expect(result).toContain('"yusuf dot rossi, 7-3-0-1, at example dot com"');
+    expect(result).toContain("Don't spell the letters either");
+  });
+
+  // 37.6% of agent utterances in those calls never reached a terminal
+  // punctuation mark — the caller cut in first — and 7.8% of ALL turns lost a
+  // number or price inside the cut tail ("the combined difference is a
+  // sixteen-dollar and sixty-"). The reply-length rules already push the
+  // ANSWER forward; this pushes the value the caller has to write down.
+  test("SPEAKING puts a written-down value in the first sentence", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("in your FIRST sentence");
+    expect(result).toContain("a value saved for the end");
+  });
+
+  // Markdown is banned for brevity and for the text channel, NOT because it is
+  // audible: `**641**`, `- ` bullets and newlines are all silent through this
+  // TTS, as are `20%`, `11:30`, `2026-05-12`, `RGB`, `64GB` and curly quotes.
+  // Pinned so a future reader does not "strengthen" the rule with a
+  // pronunciation claim the voice does not support.
+  test("SPEAKING does not claim markdown is mispronounced", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toContain("No markdown, bullet");
+    expect(result).not.toContain("asterisk");
+    expect(result).not.toContain("read aloud as");
+  });
+
+  // The contradiction this scope resolves: TOOLS said "never retype, reformat,
+  // or construct an ID" with no direction attached, which reads as an
+  // instruction to speak the id exactly as the tool result spelled it — the
+  // one written form measured to be read out as a quantity. Two rules, one
+  // saying hyphenate and one saying never reformat, resolve toward whichever
+  // sits closer to the value, and the tool result always does.
+  test("TOOLS scopes copy-exactly to what is SENT to a tool", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("exactly into what you SEND a\n  tool");
+    expect(result).toContain("This is about tool\n  arguments only");
+  });
+
   // Spoken "K dash 2" reached add_to_cart as "K-2" (expected "K2"), and a
   // spelled confirmation code "Z K 3 F F W" arrived as "ZEDK3FFW" — the
   // single most common tool error in tau2 was "User not found". These are
