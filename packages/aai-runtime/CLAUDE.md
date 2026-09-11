@@ -1379,6 +1379,46 @@ to a one-element script; two deterministic pins sit beside it in
 compares TAILS for an unrelated reason that still holds (the two sides trim
 different sequences), and its `liveTrims` floor stands after re-measurement.
 
+## A transcript the recognizer doubts is not automatically a TURN
+
+`onSttFinal` used to have two outcomes: an empty string, or a turn. Everything
+else went to the model at face value — which is how a mis-heard order id
+becomes a well-formed tool-call argument and poisons the rest of the call, with
+a transcript that reads perfectly and nothing anywhere reporting a problem.
+
+`AgentDef.lowConfidence` adds a third: `classifyConfidence` (the SDK's
+`sdk/low-confidence.ts`, pure) sorts a committed transcript into discard /
+clarify / note / accept, and `pipeline-user-speech.ts`'s `handleLowConfidence`
+is the one call site. Four things about the wiring are decisions rather than
+detail:
+
+- **It runs FIRST in that handler.** Everything below it treats the transcript
+  as something the caller meant to say, and the two failing verdicts are
+  precisely the claim that it is not.
+- **A discarded utterance looks to the rest of the transport like one that
+  never committed** — no `recovery.onUserTurn()`, no edge closed by hand — so
+  the false-interruption machinery treats it as what it is and resumes an
+  interrupted reply if one is waiting. The CLARIFY arm is the exception,
+  because it takes the floor itself: it clears the latch first, or the agent
+  would resume its old sentence on top of the clarification.
+- **The clarification is shaped like the GREETING, not like `errorPhrase`.**
+  `speakClarification` goes through `runReply` on the turn chain, so it holds
+  the floor, opens the audio gate, is interruptible and drains its TTS — and it
+  writes NEITHER history view, carrying `recovery: "low-confidence"`, the third
+  member of that enum. The words it answers reach no history either, which is
+  the point: a transcript nobody trusts must not be there for the model to act
+  on two turns later.
+- **A `note` rides the seam `assembleSpelledRuns` already uses** — appended to
+  the MODEL's copy inside `commitUserTurn`, never to the client transcript or
+  the record. What the caller said is not ours to rewrite.
+
+Which STATISTIC the bands read (`transcriptConfidence`, the mean of the turn's
+per-word scores, or `minWordConfidence`) is an open measurement and an author
+knob; `providers/stt/_assemblyai-turn.ts` computes both from one pass over the
+`Turn` event's words, and reports NEITHER for a turn that carried none —
+absence means "no opinion", and a zero there would discard a turn on every
+provider that reports nothing.
+
 ## History records what was HEARD, not what was generated
 
 An interrupted reply lands in history as the words the caller is estimated to

@@ -49,6 +49,14 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  lowConfidence?: {
+     action?: "clarify" | "note";
+     actionBelow?: number;
+     discardBelow?: number;
+     note?: string;
+     phrase?: string;
+     statistic?: "mean" | "minWord";
+  };
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -132,6 +140,14 @@ the runtime.
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  };
+  lowConfidence?: {
+     action?: "clarify" | "note";
+     actionBelow?: number;
+     discardBelow?: number;
+     note?: string;
+     phrase?: string;
+     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -239,6 +255,19 @@ optional interruptionMinDurationMs?: number;
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
+```
+
+##### lowConfidence?
+
+```ts
+{
+  action?: "clarify" | "note";
+  actionBelow?: number;
+  discardBelow?: number;
+  note?: string;
+  phrase?: string;
+  statistic?: "mean" | "minWord";
 }
 ```
 

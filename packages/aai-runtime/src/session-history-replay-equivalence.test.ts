@@ -309,6 +309,9 @@ async function driveSession(turns: readonly Turn[], reached: Reached): Promise<D
     errorPhrase: ERROR_PHRASE,
     startFailurePhrase: START_FAILURE_PHRASE,
     drainTts: () => Promise.resolve(),
+    // No dialog declares keyterms here: `undefined` is "leave the STT stream on
+    // the keyterms it opened with".
+    dialogKeyterms: () => undefined,
     sendTtsText: (text) => spoken.push(text),
   });
 

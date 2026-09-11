@@ -200,6 +200,29 @@ const SPOKEN_DIGITS: Readonly<Record<string, string>> = {
   nine: "9",
 };
 
+/**
+ * A word the RECOGNIZER already joined into one token, split back into the
+ * letters the caller said — or the word itself, unchanged.
+ *
+ * A caller who spells a name aloud does not reliably arrive here as "s o f i
+ * a": a formatted transcript renders the same speech as **`S-O-F-I-A`**, one
+ * token, and the run detector that splits on whitespace and commas alone saw
+ * no letters at all and assembled nothing. Observed on tau2-bench retail with
+ * the caller's own correction — "Sofia Li" was heard as "Sophia Lee", the
+ * caller spelled `S-O-F-I-A`, and the tool call went out as `Sophia` anyway,
+ * because the annotation that would have carried the spelling was never
+ * produced. The failure is ours and it is here: the caller did everything
+ * right.
+ *
+ * The pattern needs at least THREE letter segments, so the joined forms that
+ * are ordinary words survive — `e-reader` and `t-shirt` have one letter each,
+ * `u-s-b` has three and is a spelling run by any reading. Periods count
+ * (`u.s.a`) for the same reason the separator table has `dot`.
+ */
+function explodeSpelledWord(word: string): string[] {
+  return /^[a-z]([-.][a-z]){2,}$/.test(word) ? word.split(/[-.]/) : [word];
+}
+
 /** One word's contribution to a run, or `undefined` when it ENDS the run. */
 function spelledPiece(word: string, inRun: boolean): string | undefined {
   if (/^[a-z]$/.test(word)) return word;
@@ -213,7 +236,8 @@ export function assembleSpelledRuns(text: string): readonly string[] {
   const words = text
     .toLowerCase()
     .split(/[\s,]+/)
-    .filter(Boolean);
+    .filter(Boolean)
+    .flatMap(explodeSpelledWord);
   // EVERY run, not the longest: "first name N-O-A-H, last name P-A-T-E-L" is
   // two, and the surname is the half that gets mis-assembled (`Johannson` for
   // `Johansson`, `garbia` for `garcia`). Returning one of them loses exactly

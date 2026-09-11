@@ -19,6 +19,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
 import { isRecord } from "./is-record.ts";
+import type { LowConfidencePolicy } from "./low-confidence.ts";
 import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/assemblyai.ts";
 
 /** {@link MODEL_TUNING_FIELDS}' keys, in declaration order. @internal */
@@ -172,7 +173,14 @@ const PIPELINE_ONLY_TUNING = {
   startFailurePhrase: "string",
   resumeFalseInterruption: "boolean",
   preemptiveGeneration: "boolean",
-} as const satisfies Record<keyof PipelineVoiceTuning, "number" | "string" | "boolean">;
+  // The one non-scalar row, and the tag names the TYPE rather than the
+  // primitive: `PipelineTuning` maps it back to the policy interface, so this
+  // table stays the single declaration of the field list either way.
+  lowConfidence: "lowConfidence",
+} as const satisfies Record<
+  keyof PipelineVoiceTuning,
+  "number" | "string" | "boolean" | "lowConfidence"
+>;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
@@ -193,7 +201,9 @@ export type PipelineTuning = {
         ? number
         : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean"
           ? boolean
-          : string)
+          : (typeof PIPELINE_ONLY_TUNING)[K] extends "lowConfidence"
+            ? LowConfidencePolicy
+            : string)
     | undefined;
 };
 

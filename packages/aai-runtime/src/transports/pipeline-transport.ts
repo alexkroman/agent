@@ -63,6 +63,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     resumeFalseInterruption,
     preemptiveGeneration,
+    lowConfidence,
     speechIdleTimeoutMs,
     toolChoice,
     resetToolChoice,
@@ -210,6 +211,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechIdleTimeoutMs,
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+    lowConfidence,
+    speakClarification,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
@@ -305,6 +308,32 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     });
   }
 
+  /**
+   * Speak one sentence on the transport's own behalf, running no model turn —
+   * today only the `lowConfidence` clarification.
+   *
+   * Shaped like the GREETING rather than like `errorPhrase`: it goes through
+   * `runReply` on the turn chain, so it holds the floor, opens the audio gate,
+   * can be barged in on, and drains its TTS like any other reply. What it does
+   * NOT do is touch either history view — the caller hears it and the caption
+   * shows it, and the model never learns that its own replies open with
+   * apologies (the rule `AgentTranscriptRecovery` states; `low-confidence` is
+   * the third member of that enum for exactly this).
+   */
+  function speakClarification(text: string): void {
+    turnChain.chain(() =>
+      runReply("pipeline-clarify", async () => {
+        callbacks.report({
+          type: "agent-transcript.committed",
+          text,
+          recovery: "low-confidence",
+        });
+        sendTtsText(text, { publishTranscript: false });
+        return true;
+      }).catch(logTurnCrash("Pipeline clarification failed")),
+    );
+  }
+
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
     // FIRST: latch where the caller's ear had got to, before anything resets
@@ -359,6 +388,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     sendTtsText,
     drainTts: () => drainTts(sessionAbort.signal),
+    dialogKeyterms: knobs.keyterms,
   });
 
   const consumeLlmStream = createTurnLlmRunner({

@@ -171,6 +171,32 @@ export type SttTurnMeta = {
    * measured against the current one rather than guessed at.
    */
   endOfTurnConfidence?: number;
+  /**
+   * How confident the recognizer is in the WORDS, 0..1 — the mean of the
+   * turn's per-word confidences.
+   *
+   * A different question from {@link endOfTurnConfidence}, which is about
+   * whether the caller has FINISHED. This one is about whether what they said
+   * was heard correctly, and it is the signal
+   * `AgentDef.lowConfidence` acts on: a mis-heard order id reads as a fluent
+   * sentence, so the transcript itself carries no evidence and this number is
+   * the only thing upstream of the model that does.
+   *
+   * Absent means the provider reported none, which every consumer must read as
+   * "no opinion" rather than as a low value — only the AssemblyAI opener fills
+   * it in today, and only from a turn that carried words.
+   */
+  transcriptConfidence?: number;
+  /**
+   * The LOWEST per-word confidence in the turn, 0..1.
+   *
+   * Beside the mean because the two disagree exactly where this matters: one
+   * soft digit inside a clean sentence barely moves a mean over twenty words,
+   * and it is the whole failure. Which of the two a policy should read is an
+   * open measurement (see `LowConfidenceStatistic`), and carrying both is what
+   * lets a log answer it without a second deployment.
+   */
+  minWordConfidence?: number;
 };
 
 export type SttEvents = {
@@ -199,6 +225,21 @@ export interface SttSession {
    * simply omit it, and callers must use `?.()` to invoke it.
    */
   updateAgentContext?(text: string): void;
+  /**
+   * Replace the keyterms the recognizer is biased toward, mid-stream (e.g.
+   * AssemblyAI's `keyterms_prompt` in `UpdateConfiguration`). Optional, like
+   * {@link updateAgentContext}.
+   *
+   * `undefined` RESTORES the set the stream was opened with, which is what a
+   * per-phase caller wants when the phase that narrowed them ends — a
+   * `dialog()` state collecting an order number boosts that vocabulary and the
+   * state after it must not keep boosting it. Passing `[]` clears biasing
+   * outright, which is a different claim and deliberately reachable.
+   *
+   * Implementations must skip the wire message when the resolved list has not
+   * changed: this is called once per agent turn.
+   */
+  updateKeyterms?(keyterms: readonly string[] | undefined): void;
 }
 
 /** Options the host passes when opening an STT stream. */

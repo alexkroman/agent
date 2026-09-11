@@ -19,7 +19,8 @@ when no tool is running, which is why none of it could work from inside one:
 | the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix` | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
 | a per-state `timeout` is armed and fired | `createRestartableTimer` per dialog | every transport |
 | `bargeIn` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn` | **pipeline only** |
-| `voice` / `keyterms` per state | nothing | **nothing — warned at the first session** |
+| `keyterms` per state | `SttSession.updateKeyterms`, pushed at the END of each agent turn | **pipeline only**, and only on a provider that has the verb (AssemblyAI) |
+| `voice` per state | nothing | **nothing — warned at the first session** |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
 `projection` all work exactly as they did, and an author can still drive one by
@@ -117,11 +118,19 @@ the dialog actually is instead of firing a transition the conversation has left.
   the DESCRIPTOR that produced the opener, and the open happens once per session.
   Changing it mid-call means closing the socket and dialling a new one, which is
   a gap in the agent's own sentence.
-- **`keyterms`** — impossible. `SttOpenOptions` has no keyterms field at all.
-  Only the AssemblyAI S2S service takes them, in its opening `session.update`.
+- **`keyterms`** — LIVE, and this entry used to say "impossible". What changed
+  is not the pipeline but what we knew about the service: AssemblyAI's
+  `UpdateConfiguration` takes `keyterms_prompt` mid-stream, documented for
+  exactly this case ("a voice agent moves between conversation stages"), so no
+  second socket is needed. `SttSession.updateKeyterms` is the seam and
+  `pipeline-turn-outcome.ts` is the call site — the END of an agent turn, which
+  is the instant before the caller answers the question that state just asked.
+  Priming at the start of the NEXT turn would be a turn too late: the words
+  have been transcribed by then. An absent value RESTORES the STT descriptor's
+  own list rather than clearing it, which is what a phase ending means.
 
-Both impossible ones are WARNED rather than dropped, naming the dialog, the state
-and what to use instead (`agent({ voice })`, `agent({ sttPrompt })`) — a knob that
+The one impossible knob is WARNED rather than dropped, naming the dialog, the
+state and what to use instead (`agent({ voice })`) — a knob that
 silently does nothing is worse than one that is absent, and "the TTS voice
 changes mid-disclosure" is exactly the claim a reader would believe on finding
 the field accepted.
@@ -196,7 +205,8 @@ session takes one of those branches with knobs declared.
 
 - **`voice` and `keyterms` on the AssemblyAI S2S transport.** That service takes
   both in `session.update` and the handle already exposes the verb, so the knobs
-  are reachable there in a way they are not on the pipeline. Wiring them means
+  are reachable there in a way `voice` is not on the pipeline (`keyterms` is
+  live there now — see above). Wiring them means
   deciding what a mid-call `session.update` costs (the service re-derives VAD
   state, the same reason `refreshSystemPrompt` is change-gated) and moving them
   out of `INERT_KNOBS` for that branch only — which is a transport-aware check,

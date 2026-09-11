@@ -542,12 +542,35 @@ describe("assembleSpelledRuns", () => {
   // A run needs THREE consecutive single letters, so prose containing "I" or
   // "a" cannot trigger it. False positives here would put a garbage token in
   // front of the model on every ordinary turn.
+  // The recognizer may join a spelled run into ONE token — a formatted
+  // transcript writes the same speech as `S-O-F-I-A` — and splitting on
+  // whitespace and commas alone saw no letters in it at all. Measured on
+  // tau2-bench retail: "Sofia Li" came back "Sophia Lee", the caller spelled
+  // it out, and the lookup still went out as `Sophia`.
+  test.each([
+    ["It's S-O-F-I-A, last name Lee, L, I", ["sofia"]],
+    ["Y-U-S-U-F", ["yusuf"]],
+    ["first name N-O-A-H last name P-A-T-E-L", ["noah", "patel"]],
+    // Mixed renderings inside one utterance, which is what a correction turn
+    // looks like once the caller has already been misheard twice.
+    ["N-O-A-H, then P, A, T, E, L", ["noah", "patel"]],
+    ["u.s.a", ["usa"]],
+  ])("assembles a recognizer-joined run %j", (text, expected) => {
+    expect([...assembleSpelledRuns(text)]).toEqual(expected);
+  });
+
+  // A run needs THREE consecutive single letters, so prose containing "I" or
+  // "a" cannot trigger it. False positives here would put a garbage token in
+  // front of the model on every ordinary turn.
   test.each([
     "I need to return a water bottle and a desk lamp",
     "I want to exchange it for a bigger one",
     "my username is may_kovacs_8020",
     "yes",
     "Can you help me?",
+    // The joined forms that are ordinary words: one letter each, so the
+    // three-segment floor is what keeps them out.
+    "I want to exchange the e-reader for a t-shirt",
   ])("does not fire on ordinary speech: %s", (text) => {
     expect(assembleSpelledRuns(text)).toEqual([]);
   });

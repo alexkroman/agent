@@ -6,8 +6,9 @@
 // resume prompts live in pipeline-recovery.ts). The speaking edges those
 // handlers emit through live in pipeline-speech-edges.ts.
 
-import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
+import type { ResolvedLowConfidence, SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import {
+  classifyConfidence,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "@alexkroman1/aai/host-internal";
@@ -44,6 +45,22 @@ import type { TransportCallbacks } from "./types.ts";
 function tracePartial(log: Logger, sid: string, text: string, meta?: SttTurnMeta): void {
   if (!debugPartialsEnabled) return;
   log.debug("Pipeline STT partial", { sid, text, eot: meta?.endOfTurnConfidence });
+}
+
+/**
+ * Which per-turn confidence the policy compares — the statistic it names, off
+ * the provider's meta, or `undefined` when the provider reported none.
+ *
+ * A function rather than a field read at the call site because the two
+ * statistics are the same kind of thing measured at different sensitivities,
+ * and which one is right is an open question (`LowConfidenceStatistic`): one
+ * selector keeps the answer in one place for the day it is settled.
+ */
+function confidenceFor(
+  meta: SttTurnMeta | undefined,
+  policy: ResolvedLowConfidence,
+): number | undefined {
+  return policy.statistic === "minWord" ? meta?.minWordConfidence : meta?.transcriptConfidence;
 }
 
 /**
@@ -116,8 +133,19 @@ function createSttEventHandlers(deps: {
   recovery: FalseInterruptionRecovery;
   nudger: SilenceNudger;
   callbacks: Pick<TransportCallbacks, "report">;
-  /** Commit a user turn: emit the transcript and run the chained reply. */
-  commitUserTurn: (text: string) => void;
+  /**
+   * Commit a user turn: emit the transcript and run the chained reply. `note`
+   * rides on the MODEL's copy only — see {@link createUserActivity}.
+   */
+  commitUserTurn: (text: string, note?: string) => void;
+  /**
+   * This agent's low-confidence policy, or `undefined` when it declares none —
+   * in which case every final commits, which is what shipped before the field
+   * existed.
+   */
+  lowConfidence: ResolvedLowConfidence | undefined;
+  /** Speak one sentence on the transport's own behalf, running no turn. */
+  speakClarification: (text: string) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -178,6 +206,49 @@ function createSttEventHandlers(deps: {
     return !(gate > 0 && speechEdges.durationMs() < gate);
   }
 
+  /**
+   * Apply `AgentDef.lowConfidence` to a committed transcript.
+   *
+   * Answers `"handled"` when this utterance must NOT become a turn, a note
+   * string when it should run with the model's copy annotated, and `undefined`
+   * for the ordinary case (no policy, no opinion from the provider, or a
+   * confidence above the band).
+   *
+   * Both handled arms leave the utterance looking to the rest of the transport
+   * exactly like one that never committed: no `recovery.onUserTurn()`, no
+   * speaking edge closed by hand. That is deliberate rather than an omission —
+   * an utterance the recognizer could not make out is the same event as a
+   * barge-in that commits nothing, so the false-interruption machinery should
+   * see it that way and resume an interrupted reply if one is waiting. The
+   * clarify arm is the exception it has to be: it takes the floor itself, so
+   * `recovery.clear()` drops a latch that would otherwise fire a continuation
+   * on top of the clarification.
+   */
+  function handleLowConfidence(
+    text: string,
+    meta: SttTurnMeta | undefined,
+  ): "handled" | string | undefined {
+    const policy = deps.lowConfidence;
+    if (policy === undefined) return;
+    const verdict = classifyConfidence(confidenceFor(meta, policy), policy);
+    if (verdict.kind === "accept") return;
+    log.info("Pipeline low-confidence transcript", {
+      sid: deps.sid,
+      action: verdict.kind,
+      confidence: verdict.confidence,
+      statistic: policy.statistic,
+      text,
+    });
+    if (verdict.kind === "note") return verdict.note;
+    deps.speculation.onUtteranceIdle();
+    if (verdict.kind === "clarify" && verdict.phrase.length > 0) {
+      recovery.clear();
+      speechEdges.speechEnded();
+      deps.speakClarification(verdict.phrase);
+    }
+    return "handled";
+  }
+
   return {
     onSttPartial(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
@@ -235,10 +306,17 @@ function createSttEventHandlers(deps: {
       emitPartial();
     },
 
-    onSttFinal(text: string, _meta?: SttTurnMeta): void {
+    onSttFinal(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
+      // The recognizer's own verdict on the WORDS, before the model sees them.
+      // First, because everything below this line treats the transcript as
+      // something the caller meant to say — and the two failing verdicts are
+      // precisely the claim that it is not. `note` falls through: that turn
+      // runs normally and only the model's copy is annotated.
+      const note = handleLowConfidence(trimmed, meta);
+      if (note === "handled") return;
       // Debug trace (AAI_DEBUG=1): pairs with "Pipeline turn committed" below.
       // Finals that differ from the commit locate a loss in aggregation; a
       // commit that matches the finals locates it in STT instead.
@@ -287,7 +365,7 @@ function createSttEventHandlers(deps: {
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
-      deps.commitUserTurn(trimmed);
+      deps.commitUserTurn(trimmed, note);
     },
   };
 }
@@ -332,6 +410,16 @@ export function createUserActivity(deps: {
   interruptionMinDurationMs: () => number;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
+  /** `AgentDef.lowConfidence`, resolved; absent when the agent declares none. */
+  lowConfidence: ResolvedLowConfidence | undefined;
+  /**
+   * Speak one sentence on the transport's own behalf — the clarification a
+   * low-confidence turn is answered with. Reaches TTS and the caller's
+   * caption, and nothing else: like the two failure phrases it is a
+   * `recovery` utterance, kept out of history so the model never learns to
+   * open its own replies with an apology.
+   */
+  speakClarification(text: string): void;
   isTerminated(): boolean;
   /** False once the transport terminated or the session aborted (nudger gate). */
   isSessionActive(): boolean;
@@ -470,14 +558,24 @@ export function createUserActivity(deps: {
     nudger,
     callbacks,
     speculation: deps.speculation,
-    commitUserTurn(text: string): void {
+    lowConfidence: deps.lowConfidence,
+    speakClarification: deps.speakClarification,
+    commitUserTurn(text: string, note?: string): void {
       // The MODEL's copy is augmented with any spelling run the caller read
       // out; the CLIENT's and history's stay verbatim, because what the caller
       // said is not ours to rewrite and a run read wrong must not be able to
       // destroy the record of it. `assembleSpelledRuns` has the measurement.
+      //
+      // A low-confidence NOTE rides the same seam, and for the same reason:
+      // the model is being told the words may be mis-heard, and the record of
+      // what the caller said must not acquire our commentary on it.
       const spelled = assembleSpelledRuns(text);
+      const annotations = [
+        ...(spelled.length > 0 ? [`spelled aloud: ${spelled.join(", ")}`] : []),
+        ...(note === undefined ? [] : [note]),
+      ];
       const forModel =
-        spelled.length > 0 ? `${text}\n[spelled aloud: ${spelled.join(", ")}]` : text;
+        annotations.length > 0 ? `${text}\n${annotations.map((a) => `[${a}]`).join("\n")}` : text;
       // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
       // the LLM with, so it stays the ground truth for "did the model see it?".
       log.debug("Pipeline turn committed", { sid, text: forModel });

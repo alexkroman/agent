@@ -248,6 +248,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
+        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

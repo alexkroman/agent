@@ -84,6 +84,15 @@
  * author is a field of the agent declaration, the same way `ToolContext.slots`
  * does not make `ToolContext` part of `state`.
  *
+ * **The three `LowConfidence*` names ride with `PipelineVoiceTuning`**, for the
+ * reason `UsageLimits` rides with `AgentModelTuning`: the policy is the type of
+ * one of that interface's fields and has no reader anywhere else, and the two
+ * unions under it (`LowConfidenceAction`, `LowConfidenceStatistic`) are the
+ * vocabulary of two of ITS fields. A change to any of the three is a change to
+ * what `agent({ lowConfidence })` accepts, which is this capability's subject.
+ * Note the STT side of the same feature is not here: `keyterms` is a field of
+ * the `assemblyAIStt` descriptor and belongs to `aai:stt`.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -109,6 +118,9 @@ export {
   agent,
   assemblyAIPipeline,
   type BuiltinTool,
+  type LowConfidenceAction,
+  type LowConfidencePolicy,
+  type LowConfidenceStatistic,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,

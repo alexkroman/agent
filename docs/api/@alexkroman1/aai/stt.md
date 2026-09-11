@@ -247,6 +247,27 @@ Options for [assemblyAIStt](#assemblyaistt).
 
 #### Properties
 
+##### agentContext?
+
+```ts
+optional agentContext?: string;
+```
+
+Context about the CONVERSATION, sent as the `agent_context` connection
+parameter and refreshed per turn with the agent's own latest reply.
+`universal-3-5-pro` only; other models reject it at connect and strip it
+mid-stream.
+
+Set this to what the application already knows about the call — who is
+calling, what about, which order — and leave it unset to let the runtime
+seed the agent's greeting instead. Either way each spoken reply replaces
+it, so the recognizer transcribing "1-2-3-4" has just been told the agent
+asked for an order number.
+
+Capped at the documented ~1,500 characters, keeping the TAIL: a voice
+agent's question lands at the end of its reply, and that question is the
+part worth sending.
+
 ##### apiKeyEnv?
 
 ```ts
@@ -270,6 +291,62 @@ Deadline for one streaming connect attempt — socket open *and* the
 server's `Begin` message. Defaults to `STT_CONNECT_TIMEOUT_MS`
 (2500 ms), overriding the SDK's own 1000 ms, which a healthy handshake
 can exceed. `0` waits indefinitely.
+
+##### formatTurns?
+
+```ts
+optional formatTurns?: boolean;
+```
+
+Whether the service applies punctuation, casing and inverse text
+normalization to a committed turn — "my number is nine seven two" becomes
+"My number is 972…" — sent as the `format_turns` connection parameter.
+
+**Not a parameter on `universal-3-5-pro`, where formatting is ALWAYS ON**;
+setting it there is not sent, and the opener says so at warn level rather
+than letting an author believe they turned formatting off.
+On `universal-streaming-english` the service default is `false`, so that
+model's transcripts are lowercase, unpunctuated and spelled-out until this
+is set.
+
+It is a single explicit flag because the thing it changes is the tool-call
+ARGUMENT the model emits from a dictated identifier, and that is worth
+A/B-ing rather than inheriting. Note what `true` costs mechanically: that
+model then emits TWO `end_of_turn` messages per turn — the unformatted one
+first, the formatted one right after — and the opener commits only the
+formatted one, so the turn's commit waits for it.
+
+##### keyterms?
+
+```ts
+optional keyterms?: string[];
+```
+
+Terms to bias recognition toward, sent as the `keyterms_prompt` connection
+parameter — contact names, product names, SKUs, the words a domain uses
+that a general model has no reason to prefer. Accepted by
+`universal-3-5-pro` (free) and `universal-streaming-english` (+$0.04/hr).
+
+Normalized before it goes on the wire (`normalizeKeyterms`): trimmed,
+de-duplicated case-insensitively, terms over 50 characters dropped, and the
+list capped at 100 — the service IGNORES an over-long term and REFUSES a
+connect carrying more than 100, so a catalogue that grew past the cap would
+otherwise stop a deployed agent opening sessions at all.
+
+Three rules the code cannot check for you, and the reason to keep a list
+SHORT:
+
+- **Uncommon words and proper nouns only.** A common English word is
+  already recognized, and boosting it buys false positives elsewhere.
+- **The exact spelling and casing you want in the transcript** — this is
+  what the model is being told to produce, so `"AssemblyAI"` and
+  `"assembly ai"` are different requests.
+- **Start small.** Over-boosting makes the model hear terms that were not
+  said, which is the same failure this is meant to fix, pointed the other
+  way.
+
+A `dialog()` state may narrow them for one phase of the call —
+`DialogStateSpec.keyterms`, applied mid-stream.
 
 ##### languages?
 

@@ -2,8 +2,8 @@
 /**
  * The per-STATE voice knobs a `dialog()` declares, as the PIPELINE applies them.
  *
- * A dialog state may declare five (see `DialogVoiceConfig`). Three of them reach
- * this module and two never do, and the split is a property of where each
+ * A dialog state may declare five (see `DialogVoiceConfig`). Four of them reach
+ * this module and one never does, and the split is a property of where each
  * setting is fixed rather than a decision anyone made here:
  *
  * | Knob | Where it takes effect | Per state? |
@@ -11,14 +11,24 @@
  * | `bargeIn` | the two interim gates in `pipeline-user-speech.ts`, read at the moment a partial is classified | yes |
  * | `toolChoice` | the `streamText` request | yes, per STEP |
  * | `temperature` | the `streamText` request | yes, per STEP |
+ * | `keyterms` | `SttSession.updateKeyterms` — a mid-stream `UpdateConfiguration`, pushed at the END of each agent turn | yes, per TURN |
  * | `voice` | `TtsOpenOptions` — the voice is baked into the DESCRIPTOR that produced the opener, and the open happens once per session | **no** |
- * | `keyterms` | `SttOpenOptions` — which has no keyterms field at all; only the AssemblyAI S2S service takes them, in `session.update` | **no** |
  *
- * The last two are refused where an author can see it rather than dropped here —
+ * The last one is refused where an author can see it rather than dropped here —
  * see `reportDialogKnobs` in `runtime-dialog-knobs.ts`, which warns naming the
  * state and the knob. A knob that silently does nothing is worse than one that
  * is absent, and "the TTS voice changes mid-disclosure" is exactly the claim a
  * reader would believe on finding the field accepted.
+ *
+ * ## `keyterms` is per TURN, and the turn it belongs to is the one just ENDED
+ *
+ * The other three are read while a turn is being assembled. This one is pushed
+ * after the agent stops speaking, because its subject is the audio that comes
+ * NEXT: a state that asks "what is your order number?" wants the recognizer
+ * primed for an order number before the caller answers, and priming it at the
+ * start of the following turn is a turn too late — by then the words have
+ * already been transcribed. `pipeline-turn-outcome.ts` owns that call site,
+ * beside the agent-context push that is there for the identical reason.
  *
  * ## Per STEP, not per turn
  *
@@ -67,6 +77,12 @@ export interface DialogTurnKnobs {
   toolChoice?: ToolChoice | undefined;
   /** Sampling temperature for the steps taken while this state is active. */
   temperature?: number | undefined;
+  /**
+   * Recognition keyterms for as long as this state is active, replacing the
+   * STT descriptor's own list. Absent restores it — see
+   * {@link PipelineDialogKnobs.keyterms}.
+   */
+  keyterms?: readonly string[] | undefined;
 }
 
 /**
@@ -98,6 +114,17 @@ export interface PipelineDialogKnobs {
    * `pipeline-transport.ts`.
    */
   dialogStep: PrepareStepFunction<ToolSet> | undefined;
+  /**
+   * The active state's keyterms, or `undefined` when no state declares any —
+   * which the STT session reads as "restore the set you opened with", not as
+   * "clear them".
+   *
+   * Read once per agent turn rather than per classification, because the
+   * consumer is a WIRE MESSAGE rather than a comparison: the session pushes
+   * it to the provider after each reply, which is the instant before the
+   * caller answers the question that state exists to ask.
+   */
+  keyterms: () => readonly string[] | undefined;
 }
 
 /**
@@ -120,12 +147,14 @@ export function createDialogKnobs(
       minBargeInWords: () => base.minBargeInWords,
       interruptionMinDurationMs: () => base.interruptionMinDurationMs,
       dialogStep: undefined,
+      keyterms: () => undefined,
     };
   }
   return {
     minBargeInWords: () => source()?.minBargeInWords ?? base.minBargeInWords,
     interruptionMinDurationMs: () =>
       source()?.interruptionMinDurationMs ?? base.interruptionMinDurationMs,
+    keyterms: () => source()?.keyterms,
     // `undefined` rather than `{}` when the active state declares neither, so a
     // step the dialog has nothing to say about is prepared by exactly the
     // preparers that shipped before this existed. `composePrepareStep` treats an
