@@ -151,6 +151,31 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
   (`"**/*.test-d.ts"`). A type test is imported by nothing, so without it knip
   reports the file itself as unused — which is what happened to
   `aai-ui/hooks.test-d.ts`, on a pattern `packages/aai` had carried all along.
+
+  **`toMatchObjectType` cannot see a type carrying an optional OBJECT-typed
+  property, and it does not fail loudly.** vitest's deep brand answers `never`
+  for one, so the matcher's constraint stops describing the type and the
+  assertion reports a mismatch on an unrelated field — or, worse, looks like
+  coverage while pinning nothing. Measured on a property as small as
+  `{ start?: string[] }`, so it is the SHAPE and not the size, and not a depth
+  limit. Two independent encounters so far, both on the same change:
+  `sdk/define.test-d.ts`'s `toMatchObjectType<ToolDef<…>>()` broke the day
+  `ToolDef` gained `messages?: ToolMessagesInput`, and
+  `sdk/schema-alignment.test.ts`'s `toExtend<ToolSchema>()` started blaming
+  `parameters` for a mismatch that was not there.
+
+  Two workarounds, and pick by what the assertion is FOR. `toExtend` sees
+  through it, so use it plus a narrow companion assertion for whatever
+  `toMatchObjectType` was really pinning — `define.test-d.ts` pairs it with
+  `expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>()`, which
+  is the half that could regress. And declare a type FLAT rather than as
+  `Base & { … }` when a matcher has to read it: an intersection defeats the
+  brand the same way, which is why `sdk/tool-messages.ts`'s four message types
+  spell `content`/`when` out instead of sharing a base — that is a testability
+  decision, not a style one, and its own comment says so.
+
+  The cost of not knowing this is an afternoon: a degraded matcher produces a
+  type test that reads as an assertion and is vacuous.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run in
   the check pipeline AND in CI, and **every publishable package — the four

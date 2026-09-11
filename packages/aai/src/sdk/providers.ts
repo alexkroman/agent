@@ -247,6 +247,20 @@ export interface SttSession {
    * `packages/aai-runtime/CLAUDE.md` for the four things such a seam owes.
    */
   updateKeyterms?(keyterms: readonly string[] | undefined): void;
+  /**
+   * Move the end-of-turn silence window mid-stream, in ms — what the
+   * regex-keyed endpointing rule table is applied THROUGH.
+   *
+   * The window is the STT's decision, not the transport's (a host-side hold on
+   * a committed final could only ever lengthen the wait, and would lengthen it
+   * AFTER the provider had already split the utterance), so a provider that
+   * cannot be re-configured mid-stream cannot honour the table at all.
+   *
+   * Optional for exactly that reason: a provider with no equivalent omits it,
+   * callers use `?.()`, and the transport says once that the rules are inert.
+   * Today only AssemblyAI has it (`UpdateConfiguration.min_turn_silence`).
+   */
+  updateEndpointing?(minTurnSilenceMs: number): void;
 }
 
 /** Options the host passes when opening an STT stream. */

@@ -61,6 +61,15 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     speculation: { onPartial: vi.fn(), onFinal: vi.fn(), onUtteranceIdle: vi.fn() },
     minBargeInWords: () => 2,
     interruptionMinDurationMs: () => 0,
+    // Both phrase lists EMPTY, which leaves the two thresholds in sole charge —
+    // the behaviour these specs were written against, before the lists existed.
+    // The lists' own cases live in `pipeline-user-speech.test.ts`, which drives
+    // the shipped defaults through `createUserActivity`.
+    phrases: { acknowledgement: [], interruption: [] },
+    // Inert: the table's own cases are in `pipeline-user-speech.test.ts` too.
+    // Recorded rather than a no-op so a spec here can still assert the seam.
+    endpointing: { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() },
+    onInterrupted: vi.fn(),
     log: silentLogger,
     sid: "s1",
     ...overrides,

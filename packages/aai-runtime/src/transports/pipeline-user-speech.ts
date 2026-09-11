@@ -10,6 +10,11 @@ import type { ResolvedLowConfidence } from "@alexkroman1/aai/host-internal";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
+import {
+  type BargeInPhraseLists,
+  createAgentSpeakingPredicate,
+} from "./pipeline-barge-in-policy.ts";
+import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
 import { createLowConfidenceGate, modelTranscript } from "./pipeline-low-confidence.ts";
 import {
   createFalseInterruptionRecovery,
@@ -67,6 +72,12 @@ export function createUserActivity(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** The two phrase lists that sit above both gates — see `sdk/barge-in-phrases.ts`. */
+  phrases: BargeInPhraseLists;
+  /** The regex-keyed endpointing layer — see `pipeline-endpointing.ts`. */
+  endpointing: EndpointingPolicy;
+  /** A real interruption fired: arm the post-interruption audio block. */
+  onInterrupted(): void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /** `AgentDef.lowConfidence`, resolved; absent when the agent declares none. */
@@ -103,41 +114,10 @@ export function createUserActivity(deps: {
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
-  /**
-   * Is the agent actually speaking right now — audio already emitted for the
-   * in-flight turn, or forwarded audio still playing out client-side?
-   *
-   * Defined ONCE and passed to both readers (the outward speaking-edge gate
-   * and the STT handlers' barge-in rules), because the two must agree by
-   * construction: a gate that holds `speech_started` back on one definition
-   * while a barge-in fires on another is a client told the agent yielded by a
-   * transport that decided it had not.
-   *
-   * Deliberately not "a turn is in flight". A turn that has yet to emit audio
-   * cannot be spoken over, so a barge-in has nothing to stop; all it would do
-   * is discard the reply mid-computation and restart a strictly slower one (the
-   * abandoned work redone on top of a longer history). A user re-prompting into
-   * that silence on any regular cadence would then starve the reply
-   * indefinitely, every restart outliving the next re-prompt. Utterances
-   * arriving before the agent speaks take the deferral path instead: they
-   * commit as chained turns and are answered once the reply in progress lands.
-   *
-   * Once a turn has spoken it keeps the floor for the rest of its run, so a
-   * mid-reply TTS stall (playback draining while more text is still streaming)
-   * does not silently reopen the pre-audio window.
-   */
-  /**
-   * Is the agent SPEAKING — as opposed to merely making noise?
-   *
-   * Filler is not speaking, and the `hasSpokenRecordable` term is what makes
-   * that true of the predicate: without it a caller talking over a holding
-   * phrase counted as interrupting a reply, and the abort destroyed the reply
-   * being generated behind it. `HeardTracker.spokeRecordable` carries the
-   * measurement and the argument.
-   */
-  const agentIsSpeaking = (): boolean =>
-    (deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken())) &&
-    deps.hasSpokenRecordable();
+  // Does the agent HAVE the floor? One definition, two readers — see
+  // createAgentSpeakingPredicate for why that matters and what each term of it
+  // is for.
+  const agentIsSpeaking = createAgentSpeakingPredicate(deps);
 
   // Hold `speech_started` back while the agent has the floor, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
@@ -236,6 +216,9 @@ export function createUserActivity(deps: {
     },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
+    phrases: deps.phrases,
+    endpointing: deps.endpointing,
+    onInterrupted: deps.onInterrupted,
     log,
     sid,
   });

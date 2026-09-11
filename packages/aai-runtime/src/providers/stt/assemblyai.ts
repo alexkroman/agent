@@ -163,6 +163,7 @@ function buildTranscriberParams(
   baseKeyterms: readonly string[];
   /** Whether a commit must wait for the FORMATTED final — see isCommittingTurn. */
   awaitingFormatted: boolean;
+  settings: ReturnType<typeof resolveAssemblyAISttSettings>;
 } {
   // Every default lives in resolveAssemblyAISttSettings, which the runtime's
   // "Session mode resolved" log also reads — so the settings reported at
@@ -240,7 +241,7 @@ function buildTranscriberParams(
     params.voiceFocus = settings.voiceFocus;
     params.voiceFocusThreshold = settings.voiceFocusThreshold;
   }
-  return { params, agentContextCapable, baseKeyterms, awaitingFormatted };
+  return { params, agentContextCapable, baseKeyterms, awaitingFormatted, settings };
 }
 
 /** Warn once per open about keyterms this session is NOT sending, and why. */
@@ -269,8 +270,19 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         agentContextCapable,
         baseKeyterms,
         awaitingFormatted,
+        settings,
       } = buildTranscriberParams(opts, openOpts);
       warnDroppedKeyterms(opts.keyterms);
+      /**
+       * The end-of-turn floor this socket is currently running with.
+       *
+       * Tracked so `updateEndpointing` can skip a no-op: the rule table is
+       * re-evaluated on every STT partial (~5/s while the caller talks) and
+       * almost every evaluation lands on the same answer as the last one, so
+       * without this the session would send an `UpdateConfiguration` frame per
+       * partial for the length of the call.
+       */
+      let currentMinTurnSilenceMs = settings.minTurnSilenceMs;
       const transcriber = client.streaming.transcriber(
         transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
       );
@@ -402,6 +414,25 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
           if (key === sentKeyterms) return;
           sentKeyterms = key;
           transcriber.updateConfiguration({ keyterms_prompt: [...next] });
+        },
+        updateEndpointing(minTurnSilenceMs: number) {
+          if (shell.isClosed()) return;
+          // CLAMPED to the ceiling this session dialled, not to the shipped
+          // default: an agent may raise `maxTurnSilenceMs`, and the invariant
+          // is that the floor never passes the ceiling — sending a minimum
+          // above the maximum is the measured inversion in
+          // `DEFAULT_MIN_TURN_SILENCE_MS`, after which every turn ends on the
+          // content-blind fallback that splits utterances. Sub-millisecond
+          // values are refused rather than rounded to 0, because 0 on the wire
+          // means "use the service default" and would silently hand the window
+          // back to the `mode` preset.
+          const bounded = Math.round(
+            Math.max(1, Math.min(minTurnSilenceMs, settings.maxTurnSilenceMs)),
+          );
+          if (bounded === currentMinTurnSilenceMs) return;
+          currentMinTurnSilenceMs = bounded;
+          // NOTE: snake_case on the wire, like `agent_context` above.
+          transcriber.updateConfiguration({ min_turn_silence: bounded });
         },
         _transcriber: transcriber,
       };

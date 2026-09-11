@@ -730,6 +730,35 @@ the four producers that share it (`to-vercel-tools.ts`, `text-agent.ts`,
 where they are. Filters by role (`m.role === "user"`) are unaffected, which is
 what made this additive.
 
+## `ToolDef.messages` — what a tool SAYS, and the arm that skips the model
+
+`sdk/tool-messages.ts` declares it and `sdk/tool-messages-select.ts` chooses;
+both are pure, and the runtime that speaks them is `aai-runtime`'s
+`tool-messages-runner.ts`. A port of Vapi's tool `messages`, with two names
+moved to this repo's conventions (`timingMilliseconds` → `afterMs`,
+`conditions` → `when`). Four kinds — `start`, `delayed`, `complete`, `failed` —
+and three rules worth knowing before reading the module:
+
+- **Same timing means VARIANTS; different timings mean STAGES.** Two `delayed`
+  entries at `afterMs: 3000` are two phrasings of one rung and one is drawn;
+  3000 and 8000 are a ladder. Grouping happens BEFORE the draw, or a
+  three-variant rung would turn "both rungs" into a coin flip between them.
+- **`role: "assistant"` on a `complete`/`failed` entry means the model is NOT
+  CALLED.** The line is spoken verbatim and the step loop stops there, which
+  removes an entire LLM round-trip from a deterministic outcome. `"system"` is
+  the other arm: the content rides back with the tool's result as a hint and
+  the model writes the sentence.
+- **`start` and `delayed` are FILLER and never recorded** — not in
+  `ctx.messages`, not in the model's view, not in a committed transcript, and
+  they never count as the agent having spoken, so a caller talking over one
+  does not interrupt the reply being generated behind it. The barge-in rule and
+  the `blocking` bound are in `packages/aai-runtime/CLAUDE.md`, "A tool can
+  SPEAK".
+
+The field rides on `ToolSchema` (normalized by `agentToolsToSchemas`, absent
+for a tool that declares nothing), which is what makes it mean the same thing
+in `aai dev`, in a deployed guest and in host mode.
+
 ## `ctx.delegate` (subagents)
 
 The sibling of `ctx.generate`, and the line between them is how many model
@@ -1132,6 +1161,47 @@ the `spokenOrdinal` limitation that is pinned as a test, why nothing here
 touches `Intl`, why `mintCode`'s alphabet is its whole design, and the ten
 hand-written date rules the fields replaced. `retail-orders-agent`'s
 `resolve.ts` is the worked example.
+
+## Four opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
+
+`agent({ voicePresets: ["echoVerification", "smartMatching"] })`. Four named
+prompt sections — `echoVerification`, `smartMatching`, `speechNormalization`,
+`natoAlphabet` — composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
+the author's own instructions, so the order of authority is voice core, then
+presets, then the agent's rules. `VOICE_PRESETS` is the shipped text (public,
+read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
+
+Four properties, each of which is a test rather than a promise:
+
+- **A LIST, not a mode.** They are independently toggleable because they are
+  independently PRICED — ~190 / ~200 / ~920 / ~190 tokens on every model
+  request (o200k, banded in `voice-presets.test.ts`). One `reliability: true`
+  would make the 920-token one the price of the 200-token one.
+- **Canonical ORDER, deduped, absent when empty.** A config cannot change the
+  prompt's shape by spelling its list differently, and an agent that declares
+  none sends the byte-identical prompt it sent before the field existed.
+- **One PRECEDENCE line above the block**, because two of them deliberately
+  contradict `## LISTENING` and `## SPEAKING` (spelling a name back, spelling
+  a code). That is also why they are opt-in: those defaults are measured, and
+  a demanded spelling cost 53-56s per round trip on tau2-bench retail.
+- **Prompt layer only.** `speechNormalization` tells the model how to WRITE;
+  it reaches no TTS engine, and for the agent's OWN data `spokenMoney` /
+  `spokenDate` / `spokenTime` are cheaper and testable. The module doc carries
+  the rest, including why the phone rule's spaced dash is load-bearing.
+- **`smartMatching` is the one with a measured case, and it is why that preset
+  is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
+  conversational half was not where the reward went: "Sofia Li" transcribed as
+  "Sophia Lee" went straight into a lookup, the miss was treated as
+  authoritative, and the spelled correction the caller gave never reached the
+  prompt (`assembleSpelledRuns` tokenized on whitespace and commas, so a
+  hyphen-joined spelling was one token and produced no annotation). So the
+  preset covers the tool-argument direction and makes a spelled value REPLACE
+  what was heard — and it DEPENDS on that producer. Its own doc carries the
+  runs, what a phonetic retry cannot reach, and the rule that its examples may
+  not name a benchmark entity.
+
+A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
+model request, so a preset there is the most expensive no-op available.
 
 ## Persistence, and the three things that were removed
 

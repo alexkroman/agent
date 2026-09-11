@@ -159,3 +159,38 @@ export function describeResolvedProviders(resolved: {
   // thing this log must never do.
   return { s2s: describe({}, resolved.s2s) };
 }
+
+/** An STT stage's end-of-turn pair, in ms. */
+export interface SttEndpointingWindow {
+  /** When the provider runs its end-of-turn CHECK — the value a rule overrides. */
+  minTurnSilenceMs: number;
+  /** When it force-ends regardless of content — the ceiling a rule is clamped to. */
+  maxTurnSilenceMs: number;
+}
+
+/**
+ * The end-of-turn pair a resolved STT stage will dial, or `undefined` for a
+ * stage that has no such pair.
+ *
+ * Read through the SAME `resolve*Settings` the opener dials with — the rule
+ * this module exists for. A second `?? DEFAULT_MIN_TURN_SILENCE_MS` chain here
+ * would be a clamp computed against a ceiling the socket is not running with,
+ * which is the one arithmetic in this feature that has to be right: the
+ * inversion it prevents is silent.
+ *
+ * A stage reporting only one of the two is treated as reporting neither.
+ * Deepgram is the case — it endpoints on a single `endpointing` threshold with
+ * no content-blind ceiling above it, so there is nothing here to clamp
+ * against, and it has no mid-stream reconfigure verb to push through anyway.
+ *
+ * @internal
+ */
+export function resolveSttEndpointingWindow(
+  stt: SttProvider | undefined,
+): SttEndpointingWindow | undefined {
+  const settings = describe(STT_SETTINGS, stt);
+  const min = settings?.minTurnSilenceMs;
+  const max = settings?.maxTurnSilenceMs;
+  if (typeof min !== "number" || typeof max !== "number") return undefined;
+  return { minTurnSilenceMs: min, maxTurnSilenceMs: max };
+}

@@ -16,6 +16,7 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
+import type { SttEndpointingWindow } from "./providers/_provider-settings.ts";
 import {
   descriptorKind,
   isS2sKind,
@@ -146,6 +147,23 @@ export type ResolvedPipelineProviders = {
   stt: ResolvedOpener<SttOpener>;
   llm: LanguageModel;
   tts: ResolvedOpener<TtsOpener>;
+  /**
+   * The end-of-turn window this STT stage will dial, when the stage reports
+   * one.
+   *
+   * Carried here because `endpointingRules` is an override of exactly this
+   * pair and the transport is handed an OPENER rather than the descriptor: a
+   * rule's window has to be clamped against the ceiling the socket really
+   * opened with, and re-deriving it from `agentConfig.stt` would read
+   * `undefined` for the default pipeline (the triple is injected during
+   * provider resolution, after the config was written).
+   *
+   * Absent for a stage that endpoints on a single threshold or not at all —
+   * Deepgram's `endpointing`, ElevenLabs, Soniox — which is also every stage
+   * that has no mid-stream reconfigure verb, so the rule table is inert there
+   * either way.
+   */
+  sttEndpointing?: SttEndpointingWindow | undefined;
 };
 
 /** Runtime-scoped state the transport builders close over. */
@@ -228,6 +246,14 @@ export function createTransportFactory(
       silencePrompt: agentConfig.silencePrompt,
       minBargeInWords: agentConfig.minBargeInWords,
       interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
+      acknowledgementPhrases: agentConfig.acknowledgementPhrases,
+      interruptionPhrases: agentConfig.interruptionPhrases,
+      endpointingRules: agentConfig.endpointingRules,
+      // Not an agent field: the pair the STT stage resolved, so a rule's
+      // window is clamped against the ceiling the socket really dialled.
+      ...omitUndefined({ sttEndpointing: providers.sttEndpointing }),
+      startSpeakingFloorMs: agentConfig.startSpeakingFloorMs,
+      interruptionBackoffMs: agentConfig.interruptionBackoffMs,
       deadAirCoverMs: agentConfig.deadAirCoverMs,
       // errorPhrase used to be missing here, so an agent that set it (including
       // to "" to disable) silently got the default instead.

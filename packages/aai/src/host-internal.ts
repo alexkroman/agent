@@ -301,6 +301,26 @@ export {
   type StepWebhookMinter,
 } from "./sdk/step-webhook.ts";
 export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt.ts";
+// The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
+// root); choosing which line a given call gets is the runtime's, so the two
+// budgets and the three selectors come out here. The runner that speaks them
+// is `aai-runtime`'s `tool-messages-runner.ts`.
+export {
+  DEFAULT_TOOL_START_PHRASES,
+  TOOL_START_BLOCKING_MAX_MS,
+  // The generic constraint the three selectors below are written against. Here
+  // rather than only on the root because a type a published signature NAMES has
+  // to be importable from the same subpath as the signature — `check:api-nameable`
+  // counts one that is not.
+  type ToolMessageBase,
+} from "./sdk/tool-messages.ts";
+export {
+  type DelayedRung,
+  eligibleToolMessages,
+  matchesToolConditions,
+  planDelayedLadder,
+  selectToolMessage,
+} from "./sdk/tool-messages-select.ts";
 export {
   MAX_UPLOAD_BYTES_ENV,
   MAX_WORKFLOW_UPLOAD_BYTES,

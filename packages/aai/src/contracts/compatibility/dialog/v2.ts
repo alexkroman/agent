@@ -2,23 +2,36 @@
 /**
  * Frozen authoring example: `aai:dialog` epoch 2.
  *
- * **Nothing in this capability's own surface changed at epoch 3**, and that is
- * worth stating plainly because it is the reason this file is short. The hash
- * moved because a capability's report is the whole rollup its entrypoint pulls
- * in, and `agent({ lowConfidence })`'s three new types landed in that rollup
- * as foreign declarations. `DialogSpec`, `DialogStateSpec`, `DialogToolDef`
- * and the rest are byte-identical.
+ * **Nothing in this capability's own surface changed at epoch 3.** Both of the
+ * features that moved its hash moved it as ROLLUP COLLATERAL, and saying so is
+ * the point of this header: a capability's report is the whole rollup its
+ * entrypoint pulls in, so a foreign declaration landing in that rollup moves
+ * the hash while `DialogSpec`, `DialogStateSpec`, `DialogToolDef` and the rest
+ * stay byte-identical.
  *
- * What DID change is on the other side of the same feature and is invisible
- * from here: a state's `keyterms` used to be accepted and applied by nothing,
- * warned about once per deployed agent. It is live now, pushed to the STT
- * stream at the end of each agent turn. That is a behaviour change under an
- * unchanged declaration — which is exactly why the example below declares one
- * and asserts nothing about what happens to it.
+ * The two contributors, because one epoch now covers four features:
  *
- * So the promise is that every epoch-2 dialog declaration still compiles. If a
- * later epoch drops a spec feature or obliges a new key, this file reddens —
- * the signal to DROP the epoch rather than to edit the example.
+ * - **The low-confidence band** — `agent({ lowConfidence })`'s three new types
+ *   landed in this rollup as foreign declarations.
+ * - **Tool-call speech** — `ToolDef` gained an optional `messages` field, and
+ *   `DialogToolDef` is that def with a position, so the report followed.
+ *
+ * What DID change is on the other side of the low-confidence feature and is
+ * invisible from here: a state's `keyterms` used to be accepted and applied by
+ * nothing, warned about once per deployed agent. It is live now, pushed to the
+ * STT stream at the end of each agent turn. That is a behaviour change under an
+ * unchanged declaration — which is exactly why the examples below declare one
+ * and assert nothing about what happens to it.
+ *
+ * So the promise is that every epoch-2 dialog declaration still compiles, with
+ * no `messages` key of its own anywhere. If a later epoch drops a spec feature
+ * or obliges a new key, this file reddens — the signal to DROP the epoch rather
+ * than to edit the example.
+ *
+ * Both arms are here because the union of the four branches' examples covered
+ * two different halves of this capability: a STATE SPEC carrying the voice
+ * knobs, and a GATED TOOL carrying `onError` and a `sendFrom`. An epoch-2
+ * author wrote both.
  *
  * The 15 names epoch 2 promised are already imported and used by `v1.ts`
  * beside this file, and the gate's coverage rule reads the UNION of a
@@ -29,8 +42,9 @@
  * @module
  */
 
+import { z } from "zod";
 import type { DialogSpec, DialogStateSpec, DialogVoiceConfig } from "../../../index.ts";
-import { dialog } from "../../../index.ts";
+import { dialog, toolFailure } from "../../../index.ts";
 
 /**
  * A state that narrows the recognizer's vocabulary for one phase of the call.
@@ -52,6 +66,32 @@ const callSpec = {
     collecting,
     done: { final: true, instruction: "Thank them and stop." },
   },
-} as const satisfies DialogSpec;
+} satisfies DialogSpec;
 
 export const callFlow = dialog("call", callSpec);
+
+const checkoutSpec = {
+  initial: "confirming",
+  states: {
+    confirming: {
+      instruction: "You have read the order back. Ask for a plain yes or no.",
+      on: { CONFIRMED: "done", DECLINED: "done" },
+    },
+    done: { final: true, instruction: "Thank the caller." },
+  },
+} satisfies DialogSpec;
+
+export const checkout = dialog("checkout", checkoutSpec, { durable: true });
+
+/**
+ * An epoch-2 gated tool: `onError` classifies a throw, and there is no
+ * `messages` field for it to decline to set.
+ */
+export const confirmOrder = checkout.tool({
+  description: "Record the caller's yes or no on the order just read back.",
+  when: "confirming",
+  inputSchema: z.object({ answer: z.enum(["yes", "no"]) }),
+  execute: ({ answer }) => ({ confirmed: answer === "yes" }),
+  sendFrom: (result) => ({ type: result.confirmed ? "CONFIRMED" : "DECLINED" }),
+  onError: () => toolFailure("I couldn't record that just now."),
+});

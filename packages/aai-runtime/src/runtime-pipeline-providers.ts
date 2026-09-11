@@ -17,6 +17,7 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { SessionMode } from "@alexkroman1/aai/manifest";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
+import { resolveSttEndpointingWindow } from "./providers/_provider-settings.ts";
 import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import type { ResolvedPipelineProviders } from "./runtime-transport.ts";
 
@@ -43,6 +44,11 @@ function resolvePipelineProviders(
     stt: resolveStt(p.stt),
     llm: resolveLlm(p.llm, env),
     tts: resolveTts(p.tts),
+    // The endpointing pair travels with the opener for the same reason the
+    // env var does: it is read off the DESCRIPTOR, which is the last place it
+    // is available — and `endpointingRules` has to clamp against the ceiling
+    // this stage really dialled.
+    sttEndpointing: resolveSttEndpointingWindow(p.stt),
   };
 }
 

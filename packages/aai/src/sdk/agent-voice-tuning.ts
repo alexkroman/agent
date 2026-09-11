@@ -14,6 +14,7 @@
  * `AgentDef` extends it; the docs below are the authoring surface.
  */
 
+import type { EndpointingRule } from "./endpointing-rules.ts";
 import type { LowConfidencePolicy } from "./low-confidence.ts";
 
 /**
@@ -41,6 +42,104 @@ export interface PipelineVoiceTuning {
    * @defaultValue `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
    */
   interruptionMinDurationMs?: number;
+  /**
+   * Pipeline mode only. Utterances that NEVER interrupt the agent, however
+   * many words they carry and however long they last — backchannels. Matched
+   * against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
+   * punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
+   * and `"okay so I need to change my order"` is a turn.
+   *
+   * `[]` switches the list off; setting it REPLACES the default list rather
+   * than adding to it.
+   *
+   * @defaultValue Vapi's published production list
+   * (`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
+   * "mm-hmm", …
+   */
+  acknowledgementPhrases?: readonly string[];
+  /**
+   * Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
+   * both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
+   * whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
+   * entries.
+   *
+   * Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
+   *
+   * **Note the deliberate asymmetry with the list above — "yes" never
+   * interrupts and "no" always does.** A caller saying "yes" over the agent is
+   * agreeing with a sentence still being spoken; one saying "no" is correcting
+   * it, and a missed correction is the expensive direction.
+   *
+   * `[]` switches the list off; setting it REPLACES the default list.
+   *
+   * @defaultValue Vapi's published production list
+   * (`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
+   */
+  interruptionPhrases?: readonly string[];
+  /**
+   * Pipeline mode only. Content-keyed overrides of the end-of-turn silence
+   * window, evaluated as the HIGHEST-priority endpointing layer: the first
+   * rule that matches REPLACES the window the STT would otherwise use.
+   *
+   * Three kinds — `"assistant"` (tested against the agent's last message),
+   * `"user"` (tested against the caller's in-flight transcript) and `"both"`
+   * (an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
+   * `RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
+   * mean the whole thing.
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * agent({
+   *   name: "orders",
+   *   endpointingRules: [
+   *     // the agent just asked for something the caller reads out: wait
+   *     { type: "assistant", regex: "order number", timeoutMs: 2600 },
+   *     // the caller is mid-number: wait
+   *     { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
+   *   ],
+   * });
+   * ```
+   *
+   * `[]` switches the table off; setting it REPLACES the default table.
+   * A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
+   * and clamped again at run time to this agent's `maxTurnSilenceMs`, because
+   * a floor above the ceiling is the measured inversion
+   * `DEFAULT_MIN_TURN_SILENCE_MS` documents.
+   *
+   * **Honoured only by an STT provider that can move its endpointing window
+   * mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
+   * provider the table is inert and says so once, at warn level.
+   *
+   * @defaultValue `DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
+   * patience after the agent asks for an identifier or while the caller's
+   * transcript ends in a digit, shorter after a closed yes/no question.
+   */
+  endpointingRules?: readonly EndpointingRule[];
+  /**
+   * Pipeline mode only. Minimum delay between a reply starting and its first
+   * audio reaching the caller, in ms — a floor at the END of the pipeline, so
+   * it decouples "when did I decide the turn ended" from "when do I start
+   * speaking". Vapi's `waitSeconds`.
+   *
+   * It is a MINIMUM: a pipeline slower than this pays nothing, and only a
+   * reply that was ready sooner waits.
+   *
+   * @defaultValue `0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
+   * Vapi's own default is 0.4s; see that constant for why this one is not.
+   */
+  startSpeakingFloorMs?: number;
+  /**
+   * Pipeline mode only. How long agent audio stays blocked after a real
+   * interruption, in ms. Vapi's `backoffSeconds`.
+   *
+   * SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
+   * deadline, `max(floor, backoff)`.
+   *
+   * @defaultValue `0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
+   * Vapi's own default is 1.0s; see that constant for why this one is not.
+   */
+  interruptionBackoffMs?: number;
   /**
    * Pipeline mode only. How long a turn may send nothing to the caller before
    * the transport speaks a short filler, so a long tool chain doesn't sound

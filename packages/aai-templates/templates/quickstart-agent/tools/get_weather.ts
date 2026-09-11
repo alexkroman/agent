@@ -19,6 +19,29 @@ type Wttr = {
 export default tool({
   description: "Get the current weather for a city.",
   inputSchema: z.object({ city: z.string().describe("City name, e.g. Denver") }),
+  // What the caller HEARS while this runs. A third-party lookup on a live call
+  // is the case the field exists for: without it the agent goes silent for as
+  // long as wttr.in takes, which sounds like a dropped call rather than like
+  // someone checking.
+  //
+  // Several entries at one moment are VARIANTS — one is drawn per call, so an
+  // agent asked about three cities does not say the same sentence three times.
+  // Different `afterMs` values are STAGES: the second line below is the one a
+  // caller hears only when the first was not enough.
+  //
+  // None of this is recorded. A hold line is heard, never written into the
+  // conversation, and never counts as the agent having spoken — so a caller
+  // who talks over one is not interrupting the reply being fetched behind it.
+  messages: {
+    start: ["Let me check that.", "One moment, checking the forecast."],
+    delayed: [{ afterMs: 4000, content: "Still waiting on the weather service." }],
+    // `role: "system"` hands the model a hint instead of a sentence: the
+    // failure is worth apologizing for in the agent's own voice, and only the
+    // model knows what the caller asked.
+    failed: [
+      { role: "system", content: "The weather lookup failed. Apologize and offer to retry." },
+    ],
+  },
   execute: async ({ city }, ctx) => {
     // `ctx.signal` is the tool call's own deadline. Passing it means a slow
     // service ends the FETCH rather than being waited out and then discarded,

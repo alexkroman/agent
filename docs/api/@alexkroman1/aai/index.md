@@ -2512,20 +2512,46 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Four groups of fields live on interfaces this extends, each because the
+Five groups of fields live on interfaces this extends, each because the
 group shares ONE rule that is derived from the declaration rather than
 restated beside it: [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or
 nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
 S2S refuses them), [AgentGuardrails](#agentguardrails) (the only declarations that may
-stop a turn) and [AgentObservation](#agentobservation) (the two that deliberately may
-not). `agent()` and the deploy-time config check both derive their field
+stop a turn), [AgentObservation](#agentobservation) (the two that deliberately may
+not) and [AgentVoicePresets](#agentvoicepresets) (paid for on every model request).
+`agent()` and the deploy-time config check both derive their field
 lists from those interfaces, so a new one cannot skip either gate.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation)
+- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets)
 
 #### Properties
+
+##### acknowledgementPhrases?
+
+```ts
+optional acknowledgementPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that NEVER interrupt the agent, however
+many words they carry and however long they last — backchannels. Matched
+against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
+punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
+and `"okay so I need to change my order"` is a turn.
+
+`[]` switches the list off; setting it REPLACES the default list rather
+than adding to it.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
+"mm-hmm", …
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`acknowledgementPhrases`](#acknowledgementphrases-1)
 
 ##### builtinTools?
 
@@ -2596,6 +2622,56 @@ what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
 dialog can reach from inside a tool, because all three happen when no tool
 is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
+
+##### endpointingRules?
+
+```ts
+optional endpointingRules?: readonly EndpointingRule[];
+```
+
+Pipeline mode only. Content-keyed overrides of the end-of-turn silence
+window, evaluated as the HIGHEST-priority endpointing layer: the first
+rule that matches REPLACES the window the STT would otherwise use.
+
+Three kinds — `"assistant"` (tested against the agent's last message),
+`"user"` (tested against the caller's in-flight transcript) and `"both"`
+(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
+`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
+mean the whole thing.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "orders",
+  endpointingRules: [
+    // the agent just asked for something the caller reads out: wait
+    { type: "assistant", regex: "order number", timeoutMs: 2600 },
+    // the caller is mid-number: wait
+    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
+  ],
+});
+```
+
+`[]` switches the table off; setting it REPLACES the default table.
+A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
+and clamped again at run time to this agent's `maxTurnSilenceMs`, because
+a floor above the ceiling is the measured inversion
+`DEFAULT_MIN_TURN_SILENCE_MS` documents.
+
+**Honoured only by an STT provider that can move its endpointing window
+mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
+provider the table is inert and says so once, at warn level.
+
+###### Default Value
+
+`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
+patience after the agent asks for an identifier or while the caller's
+transcript ends in a digit, shorter after a closed yes/no question.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`endpointingRules`](#endpointingrules-1)
 
 ##### errorPhrase?
 
@@ -2734,6 +2810,27 @@ check so both failures are survivable.
 
 [`AgentGuardrails`](#agentguardrails).[`inputGuardrails`](#inputguardrails-1)
 
+##### interruptionBackoffMs?
+
+```ts
+optional interruptionBackoffMs?: number;
+```
+
+Pipeline mode only. How long agent audio stays blocked after a real
+interruption, in ms. Vapi's `backoffSeconds`.
+
+SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
+deadline, `max(floor, backoff)`.
+
+###### Default Value
+
+`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
+Vapi's own default is 1.0s; see that constant for why this one is not.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionBackoffMs`](#interruptionbackoffms-1)
+
 ##### interruptionMinDurationMs?
 
 ```ts
@@ -2753,6 +2850,35 @@ never gated. Set 0 to disable the gate.
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionMinDurationMs`](#interruptionmindurationms-1)
+
+##### interruptionPhrases?
+
+```ts
+optional interruptionPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
+both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
+whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
+entries.
+
+Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
+
+**Note the deliberate asymmetry with the list above — "yes" never
+interrupts and "no" always does.** A caller saying "yes" over the agent is
+agreeing with a sentence still being spoken; one saying "no" is correcting
+it, and a missed correction is the expensive direction.
+
+`[]` switches the list off; setting it REPLACES the default list.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionPhrases`](#interruptionphrases-1)
 
 ##### llm?
 
@@ -3187,6 +3313,29 @@ cannot hear you. Please hang up and call back."`
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`startFailurePhrase`](#startfailurephrase-1)
 
+##### startSpeakingFloorMs?
+
+```ts
+optional startSpeakingFloorMs?: number;
+```
+
+Pipeline mode only. Minimum delay between a reply starting and its first
+audio reaching the caller, in ms — a floor at the END of the pipeline, so
+it decouples "when did I decide the turn ended" from "when do I start
+speaking". Vapi's `waitSeconds`.
+
+It is a MINIMUM: a pipeline slower than this pays nothing, and only a
+reply that was ready sooner waits.
+
+###### Default Value
+
+`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
+Vapi's own default is 0.4s; see that constant for why this one is not.
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`startSpeakingFloorMs`](#startspeakingfloorms-1)
+
 ##### stt?
 
 ```ts
@@ -3478,6 +3627,42 @@ session emits nothing rather than spending a durable event per model step.
 ###### Inherited from
 
 [`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-1)
+
+##### voicePresets?
+
+```ts
+optional voicePresets?: readonly VoicePresetName[];
+```
+
+Opt-in prompt presets — named reliability behaviours, composed into the
+system prompt above your own instructions.
+
+###### Default Value
+
+none — an agent that declares nothing here sends exactly the
+prompt it sent before the field existed.
+
+Each name costs tokens on EVERY model request: `echoVerification` ~190,
+`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
+exact text of each and for what it overrides.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Claims Intake",
+  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+});
+```
+
+Order is ignored (the framework emits them in a fixed order) and a repeat
+is emitted once, so a list assembled from a config cannot change the
+prompt's shape.
+
+###### Inherited from
+
+[`AgentVoicePresets`](#agentvoicepresets).[`voicePresets`](#voicepresets-1)
 
 ##### workflows?
 
@@ -3852,6 +4037,56 @@ writes is writing several times a turn.
 
 ***
 
+### AgentVoicePresets
+
+The opt-in prompt presets, extended by `AgentDef`.
+
+Its own interface for the reason `PipelineVoiceTuning` and the three other
+field groups have one — `types.ts` sits at the source-length cap, and a group
+of fields sharing one rule reads better stated once. The rule here is the
+cost: **every name in the list is paid for on every model request**, and
+[VOICE\_PRESETS](#voice_presets)' table is the price list.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### voicePresets?
+
+```ts
+optional voicePresets?: readonly VoicePresetName[];
+```
+
+Opt-in prompt presets — named reliability behaviours, composed into the
+system prompt above your own instructions.
+
+###### Default Value
+
+none — an agent that declares nothing here sends exactly the
+prompt it sent before the field existed.
+
+Each name costs tokens on EVERY model request: `echoVerification` ~190,
+`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
+exact text of each and for what it overrides.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Claims Intake",
+  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+});
+```
+
+Order is ignored (the framework emits them in a fixed order) and a repeat
+is emitted once, so a list assembled from a config cannot change the
+prompt's shape.
+
+***
+
 ### AssemblyAIPipelineOptions
 
 #### Properties
@@ -3986,6 +4221,144 @@ failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
 catalog as unproven: a voice the service rejects comes back in-band after
 the socket opens, leaving an agent that connects, reports ready, and never
 speaks.
+
+***
+
+### AssistantEndpointingRule
+
+Match on the AGENT's last message.
+
+The use: the agent just asked for something that is READ OUT — an order id,
+an email, a postcode — so the caller will pause between chunks and the
+default window ends their turn mid-identifier. Or the inverse: the agent
+asked a yes/no question, the answer is one word, and waiting 1600ms for more
+of it is dead air.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### regex
+
+```ts
+regex: string;
+```
+
+Tested against the agent's last message. SUBSTRING semantics — see the module doc.
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "assistant";
+```
+
+***
+
+### BothEndpointingRule
+
+Both sides must match.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### assistantRegex
+
+```ts
+assistantRegex: string;
+```
+
+Tested against the agent's last message.
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "both";
+```
+
+##### userRegex
+
+```ts
+userRegex: string;
+```
+
+Tested against the in-flight user transcript.
 
 ***
 
@@ -5393,6 +5766,48 @@ The TTS voice for this phase of the call.
 
 ***
 
+### EndpointingRuleBase
+
+Fields every endpointing rule carries.
+
+#### Extended by
+
+- [`AssistantEndpointingRule`](#assistantendpointingrule)
+- [`BothEndpointingRule`](#bothendpointingrule)
+- [`UserEndpointingRule`](#userendpointingrule)
+
+#### Properties
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+***
+
 ### LowConfidencePolicy
 
 Act on the recognizer's confidence in a committed turn. Pipeline mode only.
@@ -5528,6 +5943,27 @@ Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
 
 #### Properties
 
+##### acknowledgementPhrases?
+
+```ts
+optional acknowledgementPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that NEVER interrupt the agent, however
+many words they carry and however long they last — backchannels. Matched
+against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
+punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
+and `"okay so I need to change my order"` is a turn.
+
+`[]` switches the list off; setting it REPLACES the default list rather
+than adding to it.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
+"mm-hmm", …
+
 ##### deadAirCoverMs?
 
 ```ts
@@ -5543,6 +5979,52 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Default Value
 
 `5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
+
+##### endpointingRules?
+
+```ts
+optional endpointingRules?: readonly EndpointingRule[];
+```
+
+Pipeline mode only. Content-keyed overrides of the end-of-turn silence
+window, evaluated as the HIGHEST-priority endpointing layer: the first
+rule that matches REPLACES the window the STT would otherwise use.
+
+Three kinds — `"assistant"` (tested against the agent's last message),
+`"user"` (tested against the caller's in-flight transcript) and `"both"`
+(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
+`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
+mean the whole thing.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "orders",
+  endpointingRules: [
+    // the agent just asked for something the caller reads out: wait
+    { type: "assistant", regex: "order number", timeoutMs: 2600 },
+    // the caller is mid-number: wait
+    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
+  ],
+});
+```
+
+`[]` switches the table off; setting it REPLACES the default table.
+A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
+and clamped again at run time to this agent's `maxTurnSilenceMs`, because
+a floor above the ceiling is the measured inversion
+`DEFAULT_MIN_TURN_SILENCE_MS` documents.
+
+**Honoured only by an STT provider that can move its endpointing window
+mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
+provider the table is inert and says so once, at warn level.
+
+###### Default Value
+
+`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
+patience after the agent asks for an identifier or while the caller's
+transcript ends in a digit, shorter after a closed yes/no question.
 
 ##### errorPhrase?
 
@@ -5560,6 +6042,23 @@ failed turn produces no text, so nothing would otherwise reach TTS. Set
 `"Sorry, I had a problem just then. Could you say that
 again?"` (`DEFAULT_ERROR_PHRASE`)
 
+##### interruptionBackoffMs?
+
+```ts
+optional interruptionBackoffMs?: number;
+```
+
+Pipeline mode only. How long agent audio stays blocked after a real
+interruption, in ms. Vapi's `backoffSeconds`.
+
+SEQUENTIAL with `startSpeakingFloorMs`, never cumulative: the two are one
+deadline, `max(floor, backoff)`.
+
+###### Default Value
+
+`0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`) — today's behaviour.
+Vapi's own default is 1.0s; see that constant for why this one is not.
+
 ##### interruptionMinDurationMs?
 
 ```ts
@@ -5575,6 +6074,31 @@ never gated. Set 0 to disable the gate.
 ###### Default Value
 
 `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
+
+##### interruptionPhrases?
+
+```ts
+optional interruptionPhrases?: readonly string[];
+```
+
+Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
+both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
+whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
+entries.
+
+Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
+
+**Note the deliberate asymmetry with the list above — "yes" never
+interrupts and "no" always does.** A caller saying "yes" over the agent is
+agreeing with a sentence still being spoken; one saying "no" is correcting
+it, and a missed correction is the expensive direction.
+
+`[]` switches the list off; setting it REPLACES the default list.
+
+###### Default Value
+
+Vapi's published production list
+(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
 
 ##### lowConfidence?
 
@@ -5708,6 +6232,25 @@ to disable.
 `"I am sorry, I am having trouble with my connection and
 cannot hear you. Please hang up and call back."`
 (`DEFAULT_START_FAILURE_PHRASE`)
+
+##### startSpeakingFloorMs?
+
+```ts
+optional startSpeakingFloorMs?: number;
+```
+
+Pipeline mode only. Minimum delay between a reply starting and its first
+audio reaching the caller, in ms — a floor at the END of the pipeline, so
+it decouples "when did I decide the turn ended" from "when do I start
+speaking". Vapi's `waitSeconds`.
+
+It is a MINIMUM: a pipeline slower than this pays nothing, and only a
+reply that was ready sooner waits.
+
+###### Default Value
+
+`0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
+Vapi's own default is 0.4s; see that constant for why this one is not.
 
 ***
 
@@ -7631,6 +8174,74 @@ same sentence, which the calling tool may catch and answer around. An agent
 that wants a softer landing watches `usage.updated` through
 `agent({ events })` and says something before the cap arrives.
 
+***
+
+### UserEndpointingRule
+
+Match on the caller's IN-FLIGHT transcript — the interim, not the committed
+final, because the point is to decide how long to wait before it becomes
+one.
+
+The use: a transcript that currently ends in digits is a caller part-way
+through reading a number, and the gap between "one nine one" and "two two"
+is not the end of their turn.
+
+#### Extends
+
+- [`EndpointingRuleBase`](#endpointingrulebase)
+
+#### Properties
+
+##### flags?
+
+```ts
+optional flags?: string;
+```
+
+`RegExp` flags for this rule's pattern(s).
+
+###### Default Value
+
+`"i"` — a transcript's casing is the ASR's choice, not the
+caller's, so a case-sensitive pattern is almost always a bug here. Pass
+`""` for case-sensitive matching.
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
+
+##### regex
+
+```ts
+regex: string;
+```
+
+Tested against the in-flight user transcript. SUBSTRING semantics.
+
+##### timeoutMs
+
+```ts
+timeoutMs: number;
+```
+
+The end-of-turn silence window to use while this rule matches, in ms —
+REPLACING the agent's own endpointing value rather than adding to it.
+
+Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
+again to the session's `maxTurnSilenceMs` when it is applied. (Named
+rather than `{@link}`ed: that constant is `@internal`, so a link to it
+from this public interface is a docs-build error.)
+
+###### Inherited from
+
+[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
+
+##### type
+
+```ts
+type: "user";
+```
+
 ## Type Aliases
 
 ### AgentGuardrail
@@ -8153,6 +8764,19 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDef.dialogs](#dialogs).
+
+***
+
+### EndpointingRule
+
+```ts
+type EndpointingRule = 
+  | AssistantEndpointingRule
+  | UserEndpointingRule
+  | BothEndpointingRule;
+```
+
+One entry in [PipelineVoiceTuning.endpointingRules](#endpointingrules-1).
 
 ***
 
@@ -9773,6 +10397,74 @@ state" or "on this one step" depending on where it was written. The arms:
 
 ***
 
+### ToolCompletionMessage
+
+```ts
+type ToolCompletionMessage = {
+  content: string;
+  role?: "assistant" | "system";
+  when?: ToolMessageCondition[];
+};
+```
+
+The role switch, and the reason this feature is worth having.
+
+- `"assistant"` — the content IS the reply. It is spoken verbatim and **the
+  model is not called at all**: the step loop stops at this tool result, so a
+  deterministic outcome costs zero further LLM round-trips. Exclusive-or, as
+  Vapi states it — there is no arm where both happen.
+- `"system"` — the content is a HINT. It rides back with the tool's result as
+  guidance and the model writes the sentence, which is what an outcome the
+  agent has to reason about (or apologize for) needs.
+
+Defaults to `"assistant"`, because a message worth writing out in full is
+usually one worth saying.
+
+#### Properties
+
+##### content
+
+```ts
+content: string;
+```
+
+Spoken verbatim under `role: "assistant"`; told to the model under `"system"`.
+
+##### role?
+
+```ts
+optional role?: "assistant" | "system";
+```
+
+Defaults to `"assistant"`.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
+
+***
+
+### ToolConditionOperator
+
+```ts
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+```
+
+Comparison a [ToolMessageCondition](#toolmessagecondition) applies. Vapi's six, unchanged.
+
+Spelled out as a union rather than derived from the tuple below, which is
+the direction that reads right on a published type: TypeDoc refuses to
+document a `typeof CONST[number]` whose constant is not itself published,
+and publishing a tuple nobody names from an `agent.ts` would fail the root
+barrel's own membership test. The tuple `satisfies` the union, so an
+operator added to one and not the other fails to compile.
+
+***
+
 ### ToolContext
 
 ```ts
@@ -10110,6 +10802,7 @@ backend configured, naming which.
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description: string;
   inputSchema?: P;
+  messages?: ToolMessagesInput;
   onError?: ToolErrorHandler;
   execute: R;
 };
@@ -10215,6 +10908,56 @@ Schema for the tool's input, shown to the LLM and used to validate each
 call's arguments before `execute` runs. Named after the Vercel AI SDK's
 `tool({ inputSchema })`.
 
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
 ##### onError?
 
 ```ts
@@ -10273,6 +11016,54 @@ export default tool({
   },
 });
 ```
+
+***
+
+### ToolDelayedMessage
+
+```ts
+type ToolDelayedMessage = {
+  afterMs: number;
+  content: string;
+  when?: ToolMessageCondition[];
+};
+```
+
+Spoken when the tool has been running for [ToolDelayedMessage.afterMs](#afterms-2).
+
+**Same timing means VARIANTS; different timings mean STAGED updates.** Two
+entries at 3000 are two phrasings of one rung and one of them is drawn; an
+entry at 3000 and another at 8000 are a ladder — "still checking", then
+"almost there". That is Vapi's rule verbatim, and it is the whole reason the
+timing is on the message rather than on the list.
+
+#### Properties
+
+##### afterMs
+
+```ts
+afterMs: number;
+```
+
+Milliseconds from the start of the tool call. Rungs fire at their own
+offset, not one after another, so a ladder of 3000/8000 speaks at 3s and 8s
+— never at 3s and 11s.
+
+##### content
+
+```ts
+content: string;
+```
+
+What is spoken.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
 
 ***
 
@@ -10362,6 +11153,245 @@ documented default.
 
 ***
 
+### ToolMessageCondition
+
+```ts
+type ToolMessageCondition = {
+  arg: string;
+  op?: ToolConditionOperator;
+  value: string | number | boolean | null;
+};
+```
+
+One test a tool call's ARGUMENTS must pass for the message carrying it to be
+eligible.
+
+This is what makes a per-argument-value line possible — a different sentence
+when looking up an order than when issuing a refund — without splitting one
+tool into two. Conditions on a message are ANDed; a message with none always
+matches.
+
+`arg` names a top-level argument by the key the model sends. Values compare
+as JSON scalars: `eq`/`neq` are `Object.is`-style equality, and the four
+ordering operators apply only when BOTH sides are numbers (a condition that
+asks to order a string against a number does not match rather than throwing —
+the model chooses these values, so a comparison it makes nonsense of must not
+be able to fail a call).
+
+#### Properties
+
+##### arg
+
+```ts
+arg: string;
+```
+
+The argument's key, as the model sends it.
+
+##### op?
+
+```ts
+optional op?: ToolConditionOperator;
+```
+
+Defaults to `"eq"`.
+
+##### value
+
+```ts
+value: string | number | boolean | null;
+```
+
+The value to compare against.
+
+***
+
+### ToolMessages
+
+```ts
+type ToolMessages = {
+  complete?: ToolCompletionMessage[];
+  delayed?: ToolDelayedMessage[];
+  failed?: ToolCompletionMessage[];
+  start?: ToolStartMessage[];
+};
+```
+
+A tool's messages in NORMALIZED form — what a `ToolSchema` carries and
+what the runtime reads. Authors write [ToolMessagesInput](#toolmessagesinput), which
+`agentToolsToSchemas` normalizes into this.
+
+#### Properties
+
+##### complete?
+
+```ts
+optional complete?: ToolCompletionMessage[];
+```
+
+What a settled call says — see [ToolCompletionMessage](#toolcompletionmessage).
+
+##### delayed?
+
+```ts
+optional delayed?: ToolDelayedMessage[];
+```
+
+The delay ladder — see [ToolDelayedMessage](#tooldelayedmessage).
+
+##### failed?
+
+```ts
+optional failed?: ToolCompletionMessage[];
+```
+
+What a FAILED call says — a tool that returned a `ToolFailure`, or one
+whose throw the runtime serialized into one. The same role switch:
+`"system"` is what lets the model produce an error-aware reply instead of a
+canned one, which is almost always the better answer for a failure.
+
+##### start?
+
+```ts
+optional start?: ToolStartMessage[];
+```
+
+Spoken as the call begins — see [ToolStartMessage](#toolstartmessage).
+
+***
+
+### ToolMessagesInput
+
+```ts
+type ToolMessagesInput = {
+  complete?:   | string
+     | readonly (string | ToolCompletionMessage)[];
+  delayed?: readonly ToolDelayedMessage[];
+  failed?:   | string
+     | readonly (string | ToolCompletionMessage)[];
+  start?:   | boolean
+     | string
+     | readonly (string | ToolStartMessage)[];
+};
+```
+
+What an author writes for `tool({ messages })` — every kind also accepts the
+shorthands, because the common declaration is one string.
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: true, // the default filler pool, one drawn per call
+    delayed: [
+      { afterMs: 3000, content: "Still pulling that up." },
+      { afterMs: 3000, content: "Bear with me one second." },
+      { afterMs: 8000, content: "Sorry — this one is taking a while." },
+    ],
+    failed: [{ role: "system", content: "The order service is down. Offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+#### Properties
+
+##### complete?
+
+```ts
+optional complete?: 
+  | string
+  | readonly (string | ToolCompletionMessage)[];
+```
+
+A bare string is `{ role: "assistant", content }`.
+
+##### delayed?
+
+```ts
+optional delayed?: readonly ToolDelayedMessage[];
+```
+
+No shorthand: a rung without its `afterMs` is not a rung.
+
+##### failed?
+
+```ts
+optional failed?: 
+  | string
+  | readonly (string | ToolCompletionMessage)[];
+```
+
+A bare string is `{ role: "assistant", content }`.
+
+##### start?
+
+```ts
+optional start?: 
+  | boolean
+  | string
+  | readonly (string | ToolStartMessage)[];
+```
+
+`true` draws one of the five default hold lines per invocation.
+
+***
+
+### ToolStartMessage
+
+```ts
+type ToolStartMessage = {
+  blocking?: boolean;
+  content: string;
+  when?: ToolMessageCondition[];
+};
+```
+
+Spoken as the tool call BEGINS.
+
+Several entries are VARIANTS: one is drawn at random per invocation. Never
+fires for a call the model made and then abandoned, and never while the
+caller is talking — see the runner.
+
+#### Properties
+
+##### blocking?
+
+```ts
+optional blocking?: boolean;
+```
+
+Hold the tool call until this has been spoken. Defaults to `false`.
+
+The honest default, because the alternative charges every call the length
+of a sentence for a tool that may answer in 80ms. Reach for it when the
+tool has a side effect the caller should hear about BEFORE it happens
+("Okay, I'm cancelling that order now.") — the hold is bounded at eight
+seconds whatever the line, so a slow speech path costs one slow call and
+never a wedged turn.
+
+##### content
+
+```ts
+content: string;
+```
+
+What is spoken.
+
+##### when?
+
+```ts
+optional when?: ToolMessageCondition[];
+```
+
+Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
+
+***
+
 ### TtsProvider
 
 ```ts
@@ -10382,6 +11412,28 @@ readonly optional __stage?: "tts";
 ```
 
 Compile-time stage tag; never present at runtime.
+
+***
+
+### VoicePresetName
+
+```ts
+type VoicePresetName = 
+  | "echoVerification"
+  | "smartMatching"
+  | "speechNormalization"
+  | "natoAlphabet";
+```
+
+One of the four opt-in prompt presets — see [VOICE\_PRESETS](#voice_presets) for what
+each one says and what it costs.
+
+Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
+which would be the shorter way round: a derived alias renders in the API
+report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
+internal constant a reader cannot import and TypeDoc refuses to link. The
+union renders as the four strings, which is the answer to the only question
+anybody asks of this type.
 
 ***
 
@@ -12067,6 +13119,76 @@ stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
 (`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
+
+***
+
+### VOICE\_PRESETS
+
+```ts
+const VOICE_PRESETS: {
+  echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
+  natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
+  smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
+  speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
+};
+```
+
+The shipped text of every preset, keyed by the name `agent({ voicePresets })`
+takes.
+
+Exported to be READ — printed while tuning an agent, diffed across SDK
+versions, asserted on in a spec, or quoted into an agent's own
+`system-prompt.md` when it wants the behaviour with one clause changed. It is
+the same membership argument `DEFAULT_SYSTEM_PROMPT` passes, and the same
+warning applies in reverse: do NOT interpolate a value here into your
+`systemPrompt` in order to turn the preset on. Name it in `voicePresets` and
+the framework emits it once, above your instructions, under a stated
+precedence.
+
+Un-annotated and `as const`, so the declaration's TYPE is the prompt text:
+the rolled-up `.d.ts` then carries every word, which is what puts a prompt
+change in `etc/index.api.md` where a reviewer reads it. `satisfies` is what
+keeps the record total — a fifth name in `VOICE_PRESET_NAMES` with no
+text here is a compile error.
+
+#### Type Declaration
+
+##### echoVerification
+
+```ts
+readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
+```
+
+##### natoAlphabet
+
+```ts
+readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
+```
+
+##### smartMatching
+
+```ts
+readonly smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
+```
+
+##### speechNormalization
+
+```ts
+readonly speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
+```
+
+#### Example
+
+**Turn two of them on**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Pharmacy Line",
+  voicePresets: ["echoVerification", "smartMatching"],
+});
+```
 
 ***
 

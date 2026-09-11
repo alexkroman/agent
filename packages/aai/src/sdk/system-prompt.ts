@@ -15,6 +15,7 @@
 
 import type { AgentConfig } from "./_internal-types.ts";
 import { warnDuplicatedDefaultPrompt } from "./_prompt-duplicate-warning.ts";
+import { voicePresetSection } from "./voice-presets.ts";
 
 /**
  * Role framing and precedence. Always first.
@@ -370,6 +371,7 @@ const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
  * Section order (each appears at most once):
  *   1. Role, personality, speaking, listening — the voice core
  *   2. TOOLS rules — only when the session actually has tools
+ *   2a. The opt-in presets an agent declared (`voicePresets`)
  *   3. Today's date
  *   4. Built-in tool usage guidance
  *   5. Agent-specific instructions — LAST, so position agrees with the
@@ -414,6 +416,10 @@ export function buildSystemPrompt(
   if (options.hasTools) {
     sections.push(PROMPT_TOOLS);
   }
+
+  // After the defaults, before the author's — the precedence the block states.
+  const presets = voicePresetSection(config.voicePresets);
+  if (presets !== undefined) sections.push(presets);
 
   sections.push(`Today's date is ${today}.`);
 

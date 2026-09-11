@@ -52,6 +52,8 @@ export type FakeSttSession = SttSession & {
   readonly updateKeyterms: ReturnType<
     typeof vi.fn<(keyterms: readonly string[] | undefined) => void>
   >;
+  /** Recorded pushes of the end-of-turn window — see `pipeline-endpointing.ts`. */
+  readonly updateEndpointing: ReturnType<typeof vi.fn<(minTurnSilenceMs: number) => void>>;
   /** `meta` carries provider turn signals, e.g. `endOfTurnConfidence`. */
   firePartial(text: string, meta?: SttTurnMeta): void;
   /** As {@link FakeSttSession.firePartial}, for the committed transcript. */
@@ -87,6 +89,9 @@ export function createFakeSttProvider(): FakeSttProvider {
           /* recorded via the mock's .mock.calls */
         }),
         updateKeyterms: vi.fn((_keyterms: readonly string[] | undefined) => {
+          /* recorded via the mock's .mock.calls */
+        }),
+        updateEndpointing: vi.fn((_minTurnSilenceMs: number) => {
           /* recorded via the mock's .mock.calls */
         }),
         on: emitter.on.bind(emitter) as SttSession["on"],

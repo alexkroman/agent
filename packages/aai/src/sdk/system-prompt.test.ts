@@ -11,6 +11,7 @@ import {
   PROMPT_SPEAKING,
   PROMPT_TOOLS,
 } from "./system-prompt.ts";
+import { VOICE_PRESETS } from "./voice-presets.ts";
 
 const VOICE_CORE = [PROMPT_ROLE, PROMPT_PERSONALITY, PROMPT_SPEAKING, PROMPT_LISTENING].join(
   "\n\n",
@@ -445,5 +446,69 @@ describe("an author's prompt that interpolates DEFAULT_SYSTEM_PROMPT", () => {
     const nearly = DEFAULT_SYSTEM_PROMPT.slice(1);
     const result = buildSystemPrompt(makeConfig({ systemPrompt: nearly }), { hasTools: true });
     expect(result.endsWith(`${AGENT_HEADER}\n${nearly}`)).toBe(true);
+  });
+});
+
+/**
+ * WHERE the opt-in presets land, which is the half `voice-presets.test.ts`
+ * cannot see: that file owns the text and the composition, this one owns the
+ * assembled prompt.
+ */
+describe("buildSystemPrompt with voicePresets", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(LOCAL_NOON(2025, 0, 15));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("an agent that declares none sends the byte-identical prompt", () => {
+    const before = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(buildSystemPrompt(makeConfig({ voicePresets: [] }), { hasTools: true })).toBe(before);
+  });
+
+  test("a preset lands AFTER the TOOLS section", () => {
+    const result = buildSystemPrompt(makeConfig({ voicePresets: ["echoVerification"] }), {
+      hasTools: true,
+    });
+    expect(result.indexOf(VOICE_PRESETS.echoVerification)).toBeGreaterThan(
+      result.indexOf(PROMPT_TOOLS),
+    );
+  });
+
+  test("a preset lands BEFORE the author's own instructions, which still win", () => {
+    const custom = "Only discuss pizza.";
+    const result = buildSystemPrompt(
+      makeConfig({ systemPrompt: custom, voicePresets: ["natoAlphabet"] }),
+      { hasTools: true },
+    );
+    expect(result.indexOf(VOICE_PRESETS.natoAlphabet)).toBeLessThan(result.indexOf(AGENT_HEADER));
+    expect(result.endsWith(`${AGENT_HEADER}\n${custom}`)).toBe(true);
+  });
+
+  test("presets are emitted for a toolless session too", () => {
+    const result = buildSystemPrompt(makeConfig({ voicePresets: ["smartMatching"] }), {
+      hasTools: false,
+    });
+    expect(result).toContain(VOICE_PRESETS.smartMatching);
+    expect(result).not.toContain(PROMPT_TOOLS);
+  });
+
+  test("each preset appears exactly once, whatever the list says", () => {
+    const result = buildSystemPrompt(
+      makeConfig({ voicePresets: ["natoAlphabet", "echoVerification", "natoAlphabet"] }),
+      { hasTools: true },
+    );
+    expect(countOf(result, VOICE_PRESETS.natoAlphabet)).toBe(1);
+    expect(countOf(result, VOICE_PRESETS.echoVerification)).toBe(1);
+  });
+
+  test("the date still comes last of the framework's own sections", () => {
+    const result = buildSystemPrompt(makeConfig({ voicePresets: ["speechNormalization"] }), {
+      hasTools: true,
+    });
+    expect(result.endsWith(DATE_LINE)).toBe(true);
   });
 });

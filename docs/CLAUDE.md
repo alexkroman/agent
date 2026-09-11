@@ -367,7 +367,9 @@ The **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` re-exporting
 from a published subpath — get a report of their own, and what
 is committed is that report's hash plus its export list, at
-`contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
+`packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` — the tree is
+PER PACKAGE, and `aai`, `aai-ui` and `aai-runtime` each have their own. When a
+capability's shape moves the
 hash stops matching and the change cannot land without being CLASSIFIED:
 
 ```sh
@@ -401,7 +403,8 @@ capability, where an allow-list would silently leave it uncovered.
 Six properties are load-bearing:
 
 - **A retained epoch obliges a frozen, compiling artifact.**
-  `contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
+  `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` is written
+  the way that epoch
   was authored, under the package's own `tsconfig.json` — so **`pnpm typecheck`
   is the backward-compatibility gate**, a TEST of compatibility
   rather than a claim about it, which is what the `.test-d.ts` files cannot be:
@@ -417,7 +420,7 @@ Six properties are load-bearing:
   "dropped" means it no longer compiles, and a leftover file would turn a
   recorded decision into a red typecheck.
 
-  **`contracts/compatibility/` holds one example per retained epoch**, so the
+  **`src/contracts/compatibility/` holds one example per retained epoch**, so the
   mechanism is a test rather than a claim for the first time. The count is
   deliberately not written here: a `--bump --drop` deletes a fixture, so any
   number in this paragraph is one classification away from wrong. Four things
@@ -493,7 +496,8 @@ Six properties are load-bearing:
   consumer must satisfy it while having no name to import it by — is still
   hashed by body; and a capability's own surface is never elided. The real
   backward-compatibility test was never the hash anyway: it is the frozen
-  example under `contracts/compatibility/`, which `pnpm typecheck` compiles, so
+  example under `src/contracts/compatibility/`, which `pnpm typecheck`
+  compiles, so
   a foreign type that breaks reddens every retained epoch that uses it whichever
   capability owns the name. Verified end to end — renaming `tool()`'s parameter
   in source and rebuilding leaves every contract green, while widening its
@@ -522,7 +526,7 @@ Six properties are load-bearing:
   drafting rather than anything a consumer could hold us to. So the epochs, the
   drop reasons and all 42 frozen examples were deleted and `--init` rebuilt one
   epoch per capability. Nothing is retained, so nothing is owed an example, and
-  `contracts/compatibility/` is empty by construction rather than by exemption.
+  `src/contracts/compatibility/` is empty by construction rather than by exemption.
 
   What this does NOT do is weaken the gate. Every capability still has a
   committed hash and export list, a surface change still cannot land without
@@ -582,7 +586,7 @@ template coverage ratchet reads.
 
 **Counting them is what got them fixed, which is the argument for the whole
 gate.** The internal-tagged names are the explicit exemption, committed to
-`contracts/internal-surface.json` as a **ratchet that may shrink and may never
+`src/contracts/internal-surface.json` as a **ratchet that may shrink and may never
 grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). It opened
 at 74 and stands at **0**, as do `aai-ui`'s and `aai-runtime`'s — the 71 root
 ones went to `@alexkroman1/aai/internal` in the change that cut the root barrel

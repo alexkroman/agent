@@ -24,6 +24,7 @@ import {
 import { createToolCallRepair } from "../tool-call-repair.ts";
 import { withFatalSignal } from "../tool-error-policy.ts";
 import { drainEntries, partsAsEntries } from "./pipeline-llm-drain.ts";
+import { bindToolSpeech, stepMessages } from "./pipeline-llm-tool-speech.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
 import type {
   AdoptedLlmStream,
@@ -101,7 +102,16 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     experimental_repairToolCall: req.repairToolCall,
     // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so the
     // forced answer step below has somewhere to run. See forceFinalAnswer.
-    stopWhen: stepCountIs(req.maxSteps + 1),
+    //
+    // The second condition is the whole of "the model is not called at all":
+    // a tool whose `complete`/`failed` message carries `role: "assistant"` has
+    // already SPOKEN the reply from inside its own `execute`, so the step that
+    // produced that tool result is the last one this turn gets. Nothing else
+    // would stop it — the SDK's default after a tool result is another model
+    // call, which is exactly the round-trip the feature exists to remove.
+    // Evaluated after each step, and the latch is set during the step's tool
+    // execution, so it is already true when the SDK asks.
+    stopWhen: [stepCountIs(req.maxSteps + 1), () => req.toolSpeech?.verbatim() !== undefined],
     // ONE slot, FOUR things to say — see `_prepare-step.ts`. Last writer wins
     // per key, so the ORDER is `ToolChoice`'s documented scope precedence
     // (agent → turn → dialog state → forced final step) written out:
@@ -254,6 +264,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     onRestart,
     adopted,
     fatalTool,
+    toolSpeech,
   } = params;
   // The REQUEST's signal, which is the turn's plus the fatal-tool latch. The
   // two are deliberately not the same signal: aborting the turn's would make
@@ -267,6 +278,17 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // transcript path (onDelta) keeps full delta granularity.
   let ttsText = createTtsTextCoalescer(sendTtsText);
   let handler: StreamPartHandler | undefined;
+  // Where this turn's tool messages go — see `bindToolSpeech`.
+  const unbindToolSpeech = bindToolSpeech(toolSpeech, {
+    coalescer: () => ttsText,
+    onDelta,
+    callerSpeaking,
+  });
+  // Hoisted rather than written at the handler below, where the conditional
+  // costs this function a cognitive-complexity point it does not have. It is
+  // OMITTED rather than answering `false` for a caller with no controller, so
+  // a tool-less turn's dead-air cover is byte-identical to what it was.
+  const toolCovering = toolSpeech === undefined ? undefined : () => toolSpeech.covering();
   // Response messages of completed steps — on the adopted path this module owns
   // the copy, since the speculation's own `collected` is behind the tape.
   const collected: ModelMessage[] = [];
@@ -294,6 +316,11 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         // execution parks the fullStream read, deferring dispose() below.
         signal,
         callerSpeaking,
+        // Vapi's "idle messages are disabled during tool calls", in this
+        // repo's vocabulary: a tool that declares its own start or delay lines
+        // is already covering the gap, so the generic cover stands down rather
+        // than speaking a second sentence about one silence.
+        toolCovering,
         // `pipeline-stream-parts.ts` keeps its own two parameters: it is transport
         // INTERNALS, where an `on*` argument is ordinary function decomposition
         // rather than an observability surface. This is the seam where the two
@@ -366,7 +393,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // resolves after the stream ends but before its onStepFinish fires.
       const settled = await steps;
       return {
-        messages: settled.flatMap((step) => step.response.messages),
+        messages: stepMessages(settled, toolSpeech),
         // A stream can end without throwing having emitted nothing but an `error`
         // part, which is still a turn the caller never heard a reply to.
         failed: handler.errored(),
@@ -417,5 +444,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // The turn is over on every path (completed, aborted, errored) — no
     // dead-air filler may fire into the silence that follows it.
     handler?.dispose();
+    // And no tool message may reach a coalescer this turn no longer owns. A
+    // tool call that outlives its turn (one ignoring its abort signal) finds
+    // the controller unbound and speaks nothing, which is the right answer.
+    unbindToolSpeech();
   }
 }

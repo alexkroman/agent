@@ -28,10 +28,21 @@ import {
 import { MCP_SERVER_KEY_RE } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import {
+  MAX_INTERRUPTION_BACKOFF_MS,
+  MAX_START_SPEAKING_FLOOR_MS,
+} from "./speak-gate-constants.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import { BuiltinToolSchema, LowConfidencePolicySchema, ToolChoiceSchema } from "./type-schemas.ts";
+import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
+import {
+  BuiltinToolSchema,
+  EndpointingRuleSchema,
+  LowConfidencePolicySchema,
+  ToolChoiceSchema,
+  VoicePresetNameSchema,
+} from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -186,11 +197,28 @@ export const AgentConfigSchema = z.object({
   usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
+  // Serializable like `builtinTools` beside it and for the same reason: it is a
+  // DECLARATION of what the agent has switched on, the runtime that assembles
+  // the prompt may be in a guest sandbox, and `buildSystemPrompt` reads it off
+  // the config. An unknown name is REFUSED rather than ignored — a preset
+  // silently dropped is a behaviour the author declared and never got.
+  voicePresets: z.array(VoicePresetNameSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
   silenceTimeoutMs: z.number().positive().optional(),
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),
   interruptionMinDurationMs: z.number().int().nonnegative().optional(),
+  // The two phrase lists and the endpointing table: serializable for the
+  // reason every other declaration here is — the runtime that reads them is in
+  // a guest sandbox, so they have to survive CLI → server → runtime. Which is
+  // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
+  // not survive `JSON.stringify`, and one that silently became `{}` would be a
+  // rule that matches nothing with nothing to report it.
+  acknowledgementPhrases: z.array(z.string()).readonly().optional(),
+  interruptionPhrases: z.array(z.string()).readonly().optional(),
+  endpointingRules: z.array(EndpointingRuleSchema).readonly().optional(),
+  startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
+  interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
   deadAirCoverMs: z.number().int().nonnegative().optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),
@@ -407,6 +435,7 @@ export const ToolSchemaSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
   parameters: z.record(z.string(), z.unknown()),
+  messages: ToolMessagesSchema.optional(),
 });
 
 /**
@@ -418,4 +447,19 @@ export type ToolSchema = {
   name: string;
   description: string;
   parameters: JSONSchema7;
+  /**
+   * The tool's spoken messages, NORMALIZED — see {@link ToolMessages}.
+   *
+   * It rides on the wire declaration rather than beside it because that is what
+   * makes the feature mean the same thing in every mode: the deployed guest
+   * builds this from the agent's own `ToolDef`s, and a host-mode client that
+   * supplies its own tool declarations gets the behaviour by declaring the
+   * field. Nothing here reaches the model — `toVercelTools` passes `name`,
+   * `description` and `parameters` to the provider and reads this itself.
+   *
+   * Absent for every tool that declares none, which is what keeps an ordinary
+   * tool's wire declaration byte-identical to what it was before the field
+   * existed.
+   */
+  messages?: ToolMessages | undefined;
 };

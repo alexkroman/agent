@@ -12,6 +12,7 @@ import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { toolResultMessage } from "./_tool-result-message.ts";
 import { coerceToolArgs } from "./tool-arg-coercion.ts";
 import { type FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
+import type { ToolSpeechController } from "./tool-messages-runner.ts";
 
 interface ToVercelToolsContext {
   executeTool: ExecuteTool;
@@ -45,7 +46,45 @@ interface ToVercelToolsContext {
    * `execute` at all, and `TextAgent.tools` is bound to no run.
    */
   onFatalToolError?: (error: FatalToolError) => void;
+  /**
+   * Speaks the tool's `messages` — see `tool-messages-runner.ts`.
+   *
+   * Here rather than in the stream-part handler because two of the four kinds
+   * can only be done from inside the call: a `blocking` start has to hold
+   * `execute` up, and `complete`/`failed` need the RESULT, which the
+   * `tool-result` part carries only after the fact. Optional, and absent for
+   * every caller that is not a voice turn — a text agent, a subagent and a
+   * speculation have nobody to speak to.
+   */
+  toolSpeech?: ToolSpeechController;
   signal?: AbortSignal;
+}
+
+/**
+ * The per-call options `executeTool` takes, assembled from what the AI SDK
+ * handed this invocation.
+ *
+ * Its own function because both members are conditional under
+ * `exactOptionalPropertyTypes` and the two guards were the difference between
+ * `execute` being inside the cognitive-complexity cap and outside it. The
+ * SIGNAL comes back beside them because the tool-message runner needs the same
+ * one, and deriving it twice is how the two would come to disagree.
+ */
+function callOptions(
+  options: ToolExecutionOptions<unknown>,
+  fallbackSignal: AbortSignal | undefined,
+): { signal: AbortSignal | undefined; executeOptions: ExecuteToolOptions } {
+  // Per-call abortSignal from streamText takes precedence over bag-level
+  // ctx.signal so individual invocations respect outer-turn aborts.
+  const signal = options.abortSignal ?? fallbackSignal;
+  const executeOptions: ExecuteToolOptions = {};
+  if (signal !== undefined) executeOptions.signal = signal;
+  // The AI SDK declares `toolCallId` required, so this guard is dead by the
+  // vendor's own types — kept because it is the vendor's claim about its
+  // runtime, not ours, and `ExecuteToolOptions.toolCallId` is optional under
+  // `exactOptionalPropertyTypes`.
+  if (options.toolCallId !== undefined) executeOptions.toolCallId = options.toolCallId;
+  return { signal, executeOptions };
 }
 
 export function toVercelTools(
@@ -64,21 +103,17 @@ export function toVercelTools(
           (args ?? {}) as Readonly<Record<string, unknown>>,
           schema.parameters,
         );
-        // Per-call abortSignal from streamText takes precedence over bag-level
-        // ctx.signal so individual invocations respect outer-turn aborts.
-        const signal = options.abortSignal ?? ctx.signal;
-        const executeOptions: ExecuteToolOptions = {};
-        if (signal !== undefined) executeOptions.signal = signal;
-        // The AI SDK declares `toolCallId` required, so this guard is dead by
-        // the vendor's own types — kept because it is the vendor's claim about
-        // its runtime, not ours, and `ExecuteToolOptions.toolCallId` is
-        // optional under `exactOptionalPropertyTypes`.
-        if (options.toolCallId !== undefined) executeOptions.toolCallId = options.toolCallId;
+        const { signal, executeOptions } = callOptions(options, ctx.signal);
         // Snapshot history so concurrent mutation from a newer turn can't
         // leak into this tool's view.
         const history = ctx.messages().slice();
+        // The tool's own voice for the length of this call: the START line
+        // (awaited only when it is `blocking`) and the delay ladder, both
+        // stopped on every exit path below.
+        const speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
         let result: string;
         try {
+          await speech?.start();
           result = await ctx.executeTool(
             schema.name,
             input,
@@ -87,6 +122,7 @@ export function toVercelTools(
             executeOptions,
           );
         } catch (err: unknown) {
+          speech?.dispose();
           // The ONE rejection `executeTool` produces (see its doc): a failure
           // the author declared unrecoverable. Announced before it is re-thrown,
           // because the throw itself goes nowhere useful — the AI SDK catches
@@ -94,6 +130,11 @@ export function toVercelTools(
           if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
           throw err;
         }
+        // Stops the ladder and speaks the outcome. The MODEL's copy is what
+        // comes back — a `role: "system"` completion annotates it with its
+        // hint — while the line below records the tool's OWN result, the same
+        // split the S2S arm makes on its failure path.
+        const forModel = speech?.settled(result) ?? result;
         // AFTER the call, so a tool never reads its own result back, and in
         // COMPLETION order, which is the only order that is true: the loop runs
         // a step's calls concurrently, so two siblings finishing out of issue
@@ -111,7 +152,7 @@ export function toVercelTools(
             toolCallId: options.toolCallId,
           }),
         );
-        return result;
+        return forModel;
       },
     });
   }
