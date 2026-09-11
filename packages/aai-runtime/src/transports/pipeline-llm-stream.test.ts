@@ -498,7 +498,7 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
 // one fails here rather than in production. See _prepare-step.ts.
 describe("the context budget and forceFinalAnswer share the prepareStep slot", () => {
   /** The catalog's SMALLEST advertised window (32k), so a case can overflow it. */
-  const SMALL_WINDOW_MODEL = "qwen3.5-4b-32k-experimental";
+  const SMALL_WINDOW_MODEL = "qwen3.5-4b-32k-fast";
 
   /** A fake model answering `script`, presenting as a real gateway model id. */
   function modelFor(steps: ScriptedPart[][]): FakeLanguageModel {

@@ -7,12 +7,12 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
 // Mirrors the module-private TOOLS_REQUIRE_NO_REASONING. Duplicated rather
 // than exported: the set is an implementation detail of the factory, and the
 // spec only needs to know which side of it the default falls on.
-const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-terra"];
+const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"];
 
 describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-luna, with reasoning off", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-luna");
+  it("defaults the model to gpt-5.6-sol, with reasoning off", () => {
+    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-sol");
+    expect(assemblyAILlm().options.model).toBe("gpt-5.6-sol");
     // The second assertion is the load-bearing one now. This id is INSIDE
     // TOOLS_REQUIRE_NO_REASONING, so the bare factory fills `"none"` — and
     // without that fill the gateway answers 500 to every tool-carrying request
@@ -37,7 +37,7 @@ describe("assemblyAILlm (LLM factory)", () => {
   // 500. Nearly every agent sends tools (DEFAULT_BUILTIN_TOOLS), so an unset
   // effort is not a usable descriptor state for these models.
   describe("models that reject tools unless reasoning is off", () => {
-    it.each(["gpt-5.6-luna", "gpt-5.6-terra"])('defaults %s to "none"', (model) => {
+    it.each(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"])('defaults %s to "none"', (model) => {
       expect(assemblyAILlm({ model }).options.reasoningEffort).toBe("none");
     });
 

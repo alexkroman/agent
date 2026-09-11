@@ -943,7 +943,7 @@ original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
 ### ASSEMBLYAI\_LLM\_DEFAULT\_MODEL
 
 ```ts
-const ASSEMBLYAI_LLM_DEFAULT_MODEL: "gpt-5.6-luna" = "gpt-5.6-luna";
+const ASSEMBLYAI_LLM_DEFAULT_MODEL: "gpt-5.6-sol" = "gpt-5.6-sol";
 ```
 
 The gateway model to reach for when an agent has no opinion.
@@ -958,23 +958,34 @@ that a code-generating agent falls into readily.
 that set makes the bare `assemblyAILlm()` carry an implicit
 `reasoningEffort: "none"`, and one outside it carry none at all.
 
-`gpt-5.6-luna` is INSIDE the set, so that fill is load-bearing again — and
-it is the whole reason this id is safe to default to. Verified against the
-live gateway on 2026-09-09 with a streaming, tool-carrying request:
-`reasoning_effort: "none"` answers **200**, and omitting the parameter
-answers **500** (`{"message":"something went wrong","code":500}`). So a bare
+`gpt-5.6-sol` is INSIDE the set, so that fill is load-bearing — and it is
+the whole reason this id is safe to default to. Measured against the live
+gateway with a tool-carrying request, 5/5: omitting `reasoning_effort`
+answers **400** naming the rule, `"none"` answers **200** with tool calls,
+any other level answers 400 — and STREAMING with the parameter omitted
+answers a bare **500** (`{"message":"something went wrong","code":500}`)
+with the explanation stripped, which is the path this SDK takes. So a bare
 `assemblyAILlm()`, every unset pipeline stage, and the `llm: "<id>"` string
-shorthand all now depend on the fill to work at all. Do not remove
-`gpt-5.6-luna` from that set without moving this default off it in the same
+shorthand all depend on the fill to work at all. Do not remove
+`gpt-5.6-sol` from that set without moving this default off it in the same
 change; the failure is a 500 on every tool-calling turn, which on a voice
 line is a call that connects and then cannot answer anything.
 
-It replaced `qwen3-next-80b-a3b`, which sat OUTSIDE the set (it accepts a
+It replaced `gpt-5.6-luna`, same family and the same side of the set, which
+in turn replaced `qwen3-next-80b-a3b` — that one sat OUTSIDE (it accepts a
 tool-carrying request at any effort, including its own server-side default).
+
+**A Gemini id would need this argument rewritten, not reused.** That family
+has no `"none"` thinking level at all — the gateway answers
+`400 Invalid value at 'generation_config.thinking_config.thinking_level'` —
+so both the fill and `assemblyAIPipeline()`'s explicit `"none"` would fail
+on every turn, and the level that turns thinking off differs per model
+(`"minimal"` on `gemini-3.5-flash-lite`, refused by `gemini-3.7-flash`).
 
 Only the raw factory is affected either way: `assemblyAIPipeline()` passes
 `"none"` explicitly, for latency rather than for that constraint, so the
-pipeline behaves identically whichever side of the set the default sits on.
+pipeline behaves identically whichever side of the set the default sits on
+— as long as the default is one that ACCEPTS the value.
 
 ***
 

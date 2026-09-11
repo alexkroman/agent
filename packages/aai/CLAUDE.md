@@ -160,20 +160,9 @@ group cannot skip the gate.
 | `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
 
 `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
-total over `AgentModelTuning`, so a seventh knob that skips the table fails to
+total over `AgentModelTuning`, so a sixth knob that skips the table fails to
 compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
 is inert unless `toolChoice` demands a call.
-
-**`twoTier` is the sixth member and the first that is not a scalar** — the
-FAST/SLOW split, off by default (`sdk/two-tier.ts`, which owns the design and
-the sources). It shares the group's rule structurally rather than by analogy:
-the gate interposes on the tool loop this runtime runs, so pipeline and text
-mode honour it and S2S cannot — there the provider calls the tool itself, and
-there is no moment between the proposal and the mutation for a second tier to
-stand in. `ToolDef.mutates` / `ToolDef.completes` are its other half: optional
-DECLARATIONS about a tool, inert unless an agent declares a second tier, and
-never inferred from a tool's name. **The runtime half is
-`packages/aai-runtime/TWO-TIER-CLAUDE.md`.**
 
 **A guardrail is pipeline-only, and the two refusals are different claims** —
 s2s has already spoken the sentence, text mode hands its caller the model stream
@@ -375,61 +364,66 @@ Reference providers shipped today:
     `_gateway-tool-schema.ts` carries why. Remove each once the gateway
     conforms.
 
-    **The default model is `qwen3-next-80b-a3b`, and check the constant before
-    trusting this line** — it has named the wrong model before, when an id was
-    reverted in code and not here. `ASSEMBLYAI_LLM_DEFAULT_MODEL` in
-    `sdk/providers/llm/assemblyai.ts` is the answer; a prose default is only a
-    claim about it. Changing the id moves WHERE reasoning gets turned off,
-    because `TOOLS_REQUIRE_NO_REASONING` in that same module is keyed by model
-    id: **on the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for
-    tool use, not a tuning knob**, and the factory fills it in for those ids
-    only. **That constant's doc carries the gateway's own rejection message,
-    the 4/4 measurement behind it, why the streaming path sees a bare 500
-    instead, and why an explicit `reasoningEffort` is left alone.** Read it
-    before changing the default. One thing it does not say: the generated
-    catalog (`gateway-models.ts`) cannot carry the flag — its flags come from
-    `supported_parameters`, which does not list `reasoning_effort` for ANY
-    model, including ones that plainly honour it (a bogus value 400s naming the
-    supported ones). `gpt-5.5` and `qwen3-next-80b-a3b` are both unaffected,
-    measured 2026-08-06: `"none"`, `"low"`, and no `reasoning_effort` at all
-    each return a normal tool-calling completion, streaming included.
+    **The default model is `gpt-5.6-sol`, and check the constant before
+    trusting this line** — it has named the wrong model twice, once when an id
+    was reverted in code and not here and once when the id moved on.
+    `ASSEMBLYAI_LLM_DEFAULT_MODEL` in `sdk/providers/llm/assemblyai.ts` is the
+    answer; a prose default is only a claim about it. Changing the id moves
+    WHERE reasoning gets turned off, because `TOOLS_REQUIRE_NO_REASONING` in
+    that same module is keyed by model id: **on the `gpt-5.6` family
+    `reasoning_effort: "none"` is REQUIRED for tool use, not a tuning knob**,
+    and the factory fills it in for those ids only. **That constant's doc
+    carries the gateway's own rejection message, the measurement behind it, why
+    the streaming path sees a bare 500 instead, and why an explicit
+    `reasoningEffort` is left alone.** Read it before changing the default. One
+    thing it does not say: the generated catalog (`gateway-models.ts`) cannot
+    carry the flag — its flags come from `supported_parameters`, which does not
+    list `reasoning_effort` for ANY model, including ones that plainly honour it
+    (a bogus value 400s naming the supported ones).
 
-    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is, on the
-    current default, the ONLY thing turning reasoning off.** Because
-    `qwen3-next-80b-a3b` is OUTSIDE `TOOLS_REQUIRE_NO_REASONING`, the factory
-    fills in nothing and the whole weight sits on the preset's argument
-    (`sdk/providers/assemblyai-pipeline.ts`); under `gpt-5.6-luna` or
-    `gpt-5.6-terra` the factory fills the same value and the argument merely
-    agrees with it. That agreement is a property of the id, not of
-    the pipeline, which is why the argument stays under either: deleting it as
-    redundant costs every
-    default pipeline **1786ms p50 time-to-first-token against 999ms with
-    reasoning off**, with seconds of pre-first-token silence rather than a
-    failure as the symptom. So the two settings are pinned TOGETHER in
+    **The default is INSIDE the set, so the factory's fill is what makes a bare
+    `assemblyAILlm()` work at all.** Measured on `gpt-5.6-sol`, 5/5: a
+    tool-carrying request with no `reasoning_effort` answers 400 naming the
+    rule, `"none"` answers 200 with tool calls, any other level answers 400 —
+    and the STREAMING arm with the parameter omitted answers a bare
+    `500 something went wrong`, which is the path this SDK takes. So the
+    failure mode of getting this wrong is a call that connects and then cannot
+    answer anything, with no diagnosis anywhere.
+
+    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` therefore
+    merely AGREES with the factory today**, and it stays anyway: what it
+    defends against is the default moving back OUTSIDE the set, as it was at
+    `qwen3-next-80b-a3b`, where the factory filled nothing and the preset's
+    argument was the only thing turning reasoning off. Deleting it as redundant
+    costs every default pipeline **1786ms p50 time-to-first-token against 999ms
+    with reasoning off**, with seconds of pre-first-token silence rather than a
+    failure as the symptom. The two settings are pinned TOGETHER in
     `define.test.ts` (effort and model id in one test): the preset's `"none"`
     is what makes the next id change safe, and the pin is what makes an id
     change that needs a second look fail loudly.
 
-    **The measured case is for `gpt-5.6-luna`, and it does not transfer to
-    either the current default or terra.** What is known about
-    `qwen3-next-80b-a3b` directly: the gateway advertises it with tools,
-    streaming, 200k context and a live probe (`gateway-models.ts`), it accepts
-    `reasoning_effort` as a hybrid-thinking model (`"none"` and `"low"` both
-    verified 2026-08-06), and it has **no paired latency numbers and no price
-    comparison here at all** — the same gap terra had. Luna's numbers, kept
-    because they bound the gpt-5.6 family: $1/$6 per M against `gpt-5.5`'s
-    $5/$30, and time-to-first-token (2026-08-06, 18 paired tool-calling turns,
-    `reasoning_effort: "none"` on both) p50 **832ms vs 999ms** — ~17%, against
-    `claude-opus-4-8`'s 1217ms and `claude-sonnet-5`'s 1568ms. The 5x-looking
-    gaps in the first measurements were an ARTIFACT of comparing
-    luna-with-`none` against `gpt-5.5` on its reasoning DEFAULT (1786ms): most
-    of what looked like a model difference was the reasoning setting, which
-    this pipeline turns off regardless of model.
+    **A GEMINI default would break both halves, and that is the trap to know.**
+    That family has no `"none"` thinking level — the gateway answers
+    `400 Invalid value at 'generation_config.thinking_config.thinking_level'` —
+    so the fill and the preset's argument would each fail on every turn. Worse,
+    the level that turns thinking off is per MODEL rather than per family:
+    `"minimal"` works on `gemini-3.5-flash-lite` (0 reasoning tokens, same as
+    bare) and is refused by `gemini-3.7-flash`, while `"low"` on
+    `gemini-3.5-flash-lite` measures 64 reasoning tokens — MORE than bare, not
+    less. Measured directly against the gateway.
 
     **No default here has been chosen on answer quality**, which is the axis
-    that should decide one — a tau2 run is what would settle it. The current
-    default has neither paired latency numbers nor a quality run, and neither
-    did terra. Treat it as unverified on both axes.
+    that should decide one — a tau2 run is what would settle it. What is known
+    about the gpt-5.6 family: $1/$6 per M against `gpt-5.5`'s $5/$30, and
+    time-to-first-token for `gpt-5.6-luna` (2026-08-06, 18 paired tool-calling
+    turns, `reasoning_effort: "none"` on both) p50 **832ms vs 999ms** for
+    `gpt-5.5` — ~17%, against `claude-opus-4-8`'s 1217ms and
+    `claude-sonnet-5`'s 1568ms. The 5x-looking gaps in the first measurements
+    were an ARTIFACT of comparing luna-with-`none` against `gpt-5.5` on its
+    reasoning DEFAULT (1786ms): most of what looked like a model difference was
+    the reasoning setting, which this pipeline turns off regardless of model.
+    **`sol` itself has neither paired latency numbers nor a quality run**, the
+    same gap luna and terra each had. Treat it as unverified on both axes.
 - **TTS**: one of
   - `cartesiaTts({ voice })` — `CARTESIA_API_KEY`
   - `rimeTts({ voice })` — `RIME_API_KEY`
@@ -1569,7 +1563,7 @@ Session mode resolved {
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
          maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
          voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
-  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'qwen3-next-80b-a3b' },
+  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-sol' },
   tts: { kind: 'assemblyai', voice: 'jane' }
 }
 ```

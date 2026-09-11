@@ -140,8 +140,6 @@ export const HostConfigMessageSchema: z.ZodObject<{
                     }>>;
                 }, z.core.$strip>>>;
             }, z.core.$strip>>;
-            mutates: z.ZodOptional<z.ZodBoolean>;
-            completes: z.ZodOptional<z.ZodBoolean>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
         credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -235,8 +233,6 @@ export const HostConfigSchema: z.ZodObject<{
                 }>>;
             }, z.core.$strip>>>;
         }, z.core.$strip>>;
-        mutates: z.ZodOptional<z.ZodBoolean>;
-        completes: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;

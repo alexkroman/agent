@@ -490,45 +490,17 @@ when somebody needs it, not before.
 
 `SessionSystemPrompt.setSuffix(key, render)`. It was unkeyed, last-writer-wins,
 on the argument that "a session has one dialog, and a second installer is a
-wiring mistake rather than a composition." There are two legitimate installers
-now — the dialogs, and the fast/slow tier's state digest — and under the old
-signature the second silently deleted the first: a `dialog()` agent that also
-declared `twoTier` lost its active instruction from every request, with nothing
-failing and no way to see it short of reading the prompt on the wire.
+wiring mistake rather than a composition." A second installer then arrived and
+silently deleted the dialogs' suffix: a session lost its active instruction from
+every request, with nothing failing and no way to see it short of reading the
+prompt on the wire. **That installer has since been removed and the dialogs are
+again the only one — the key stays**, because it costs nothing and it is what
+stops the next installer repeating that failure.
 
 Sources render in KEY order, and an empty answer contributes NOTHING — not a
 blank line, not a separator — which is what keeps a session whose sources all
-have nothing to say byte-identical to one with no sources at all. Adding a third
-installer means picking a key and nothing else.
-
-## The FAST/SLOW split: `agent({ twoTier })`
-
-A cheap conversational model holds the call while an expensive one owns every
-tool. OFF unless declared, and `createTwoTierWiring` answering `undefined` is
-the whole off-switch.
-
-Three things to know before touching anything under `two-tier/`:
-
-- **The fast tier is given NO tools** (`tiers.fastToolSchemas` is `[]`), which
-  is the mutation gate itself rather than a policy about one — and
-  `tiers.fastHasTools` is `false` with it, so the base prompt does not explain
-  tools to a model that has none. Both come back from one function because
-  honouring one and forgetting the other is the failure.
-- **The slow tier runs DETACHED from every turn.** Nothing the caller waits for
-  is downstream of it, so a hung second model cannot make the caller wait —
-  which is why there is no fail-open policy knob.
-- **The digest rides on the prompt SUFFIX** (above) and on tool ARGUMENTS
-  (`state_summary`, required on every slow-tier call), so it costs no extra
-  model call in either direction.
-
-**Everything else is [`TWO-TIER-CLAUDE.md`](TWO-TIER-CLAUDE.md)** beside this
-file, and it is REFERENCE: the ten modules and what each owns, the five
-decisions, why neither `ask_user`/`tell_user` channel is new, how completion is
-gated and why only in-flight work gates it, what the gate deliberately does NOT
-reach, and the INFORMATION BOUNDARY — why `SlowTierView` is a branded type
-rather than a convention, and the litmus test governing every prompt string in
-that directory. Read it before changing the contract;
-`packages/aai/src/sdk/two-tier.ts` owns the authoring half.
+have nothing to say byte-identical to one with no sources at all. Adding a
+second installer means picking a key and nothing else.
 
 ## Subagents: `ctx.delegate` is a second tool loop
 

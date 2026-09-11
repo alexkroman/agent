@@ -44,8 +44,20 @@ export default agent({
    *
    * Reaching it ends the session. An agent that wants a softer landing watches
    * `usage.updated` through `agent({ events })` and says something first.
+   *
+   * **It was 200_000, and a real call reached 252,825 and ended mid-support.**
+   * This is the template with the deepest tool chains and the largest
+   * projection, so the old number was a ceiling a legitimate call could touch
+   * — and reaching it is not a soft landing, it ends the session. Raised with
+   * headroom rather than tuned: read `usage.updated` on a few real
+   * conversations and pick from that.
+   *
+   * The overshoot past whatever number is here is expected and bounded by the
+   * requests in flight: the cap is checked BEFORE each request, never
+   * mid-stream, because a limit enforced mid-sentence reads to the caller as a
+   * dropped call.
    */
-  usageLimits: { totalTokens: 200_000 },
+  usageLimits: { totalTokens: 2_000_000 },
 
   // Pipeline mode is the default and an unset stage is filled from the
   // all-AssemblyAI pipeline at parse time, so only `stt` is named here; `llm`

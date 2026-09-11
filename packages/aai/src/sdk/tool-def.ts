@@ -200,61 +200,6 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * ```
    */
   messages?: ToolMessagesInput;
-  /**
-   * This tool CHANGES something outside the conversation.
-   *
-   * A DECLARATION, never inferred. It is inert unless the agent declares
-   * `twoTier` (see {@link TwoTierConfig}), and then it is the whole routing
-   * decision: a `mutates` call is proposed by the fast tier and authorized by
-   * the slow one, where a read runs untouched at the latency it always had.
-   *
-   * **Declared rather than derived, deliberately.** A naming heuristic
-   * (`update_*`, `create_*`, `set_*`) is wrong in both directions on real
-   * agents — `check_out`, `submit`, `refund` mutate and match nothing;
-   * `update_view`, `set_language` match and mutate nothing outside the call —
-   * and being wrong in the second direction costs a second model call on the
-   * hot path while being wrong in the first silently un-gates the calls the
-   * gate was installed for. The author knows; nothing else does. (Pickle's
-   * own prompt constitution reaches the same conclusion from the other end:
-   * derive action classes from tool METADATA, and never name tools inside
-   * prompt text.)
-   *
-   * **Absent means "not declared", not "read-only".** A gate that treated
-   * silence as safe would un-gate every tool written before this field
-   * existed, which is exactly the population most likely to need it; the
-   * runtime therefore logs once per session naming the tools it is treating as
-   * reads, so an author who forgot finds out from a boot line rather than from
-   * a benchmark.
-   *
-   * @example
-   * ```ts
-   * import { tool } from "@alexkroman1/aai";
-   * import { z } from "zod";
-   *
-   * export default tool({
-   *   description: "Change the shipping address on an order",
-   *   inputSchema: z.object({ orderId: z.string(), address: z.string() }),
-   *   mutates: true,
-   *   execute: async ({ orderId, address }) => ({ orderId, address }),
-   * });
-   * ```
-   */
-  mutates?: boolean;
-  /**
-   * Calling this tool ENDS or HANDS OFF the engagement — a stop call.
-   *
-   * `completes` implies {@link ToolDef.mutates} for routing purposes: ending a
-   * call is not reversible by the next turn, so it is verified like a write
-   * whether or not it writes. What it adds on top is the digest gate — with
-   * `twoTier.completionGate` on (the default), this tool is REFUSED while the
-   * session's digest still holds unsettled work, and the refusal names what is
-   * pending.
-   *
-   * The tools that want it are the ones that sound like an answer: a transfer
-   * to a human, a "task complete" signal, a hang-up. It is the fix for an
-   * agent that announces the outcome and terminates before doing the work.
-   */
-  completes?: boolean;
 };
 
 /**

@@ -113,14 +113,6 @@
  * accepts, and its keys and that field's type are one union. What `defaults`
  * covers is what an agent that declares NOTHING is given.
  *
- * **`TwoTierConfig` and its four constants are here for the same reason
- * `AgentModelTuning` is** — it is the type of one `agent()` field, a member of
- * that group, and it has no reader anywhere else. Not a capability of its own:
- * a second tier is a way of DECLARING an agent rather than a second thing to
- * declare, and the tier that holds the call is `agent({ llm })` unchanged. The
- * four constants ride with it because each documents one of its fields, which
- * is the membership test the root barrel's own doc states.
- *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -149,15 +141,11 @@ export {
   assemblyAIPipeline,
   type BothEndpointingRule,
   type BuiltinTool,
-  DEFAULT_SLOW_TIER_CONTEXT_MESSAGES,
-  DEFAULT_SLOW_TIER_EFFORT,
-  DEFAULT_SLOW_TIER_TIMEOUT_MS,
   type EndpointingRule,
   type EndpointingRuleBase,
   type LowConfidenceAction,
   type LowConfidencePolicy,
   type LowConfidenceStatistic,
-  MAX_STATE_DIGEST_CHARS,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
@@ -174,13 +162,11 @@ export {
   type SessionEventHandlers,
   type SessionEventType,
   type SharedAgentParams,
-  type SlowTierEffort,
   type StaticAgentParams,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,
   type ToolChoice,
-  type TwoTierConfig,
   type UsageLimits,
   type UserEndpointingRule,
   VOICE_PRESETS,

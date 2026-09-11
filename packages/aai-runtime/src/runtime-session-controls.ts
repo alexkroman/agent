@@ -39,8 +39,6 @@ import type { SystemPromptResolver } from "./runtime-system-prompt.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { createTurnGuardrails, type TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import type { Transport } from "./transports/types.ts";
-import type { TwoTierSession } from "./two-tier/session.ts";
-import type { TwoTierOpenArgs } from "./two-tier/wire.ts";
 import { createUsageMeter, type UsageMeter } from "./usage-meter.ts";
 
 /** What one session is wired with — see this module's header. @internal */
@@ -49,14 +47,6 @@ export interface SessionWiring {
   emitter: SessionEmitter;
   usage: UsageMeter;
   guardrails: TurnGuardrails;
-  /**
-   * The fast/slow bridge, for an agent that declared `twoTier`.
-   *
-   * Absent otherwise, and the caller's only obligation is to `stop()` it when
-   * the session releases — an in-flight slow run outlives the turn by design,
-   * so nothing else ends it.
-   */
-  twoTier?: TwoTierSession | undefined;
 }
 
 /** Build one session's observation and control wiring, in order. @internal */
@@ -71,16 +61,6 @@ export function openSessionWiring(deps: {
   transport: () => Transport;
   logger: Logger;
   commitSessionState?: ((sessionId: string) => Promise<void> | void) | undefined;
-  /**
-   * Open the session's fast/slow bridge, when the agent declared one.
-   *
-   * A THUNK supplied by the caller rather than the config, because the bridge
-   * needs the session's usage meter and its transport — both built here — and
-   * the slow tier's model and tool executor, which are the runtime's. Absent
-   * for every agent that declares no `twoTier`, which is what makes the whole
-   * feature allocate nothing by default.
-   */
-  openTwoTier?: ((args: TwoTierOpenArgs) => TwoTierSession) | undefined;
 }): SessionWiring {
   const { agent, env, sessionId, state, logger } = deps;
   // ONE view of this session's slots, shared by the hooks, the dialogs and the
@@ -110,23 +90,15 @@ export function openSessionWiring(deps: {
   // The one way this session publishes an event: recorded into the retained
   // stream, sent to the client, then announced to the agent's own hooks. Built
   // BEFORE the transport callbacks, because two of them emit directly.
-  // Late-bound, because the bridge needs the usage meter and the meter needs
-  // the emitter. Two observers of one stream, composed here rather than by
-  // widening `createSessionEmitter` to take a list: the emitter's contract is
-  // one `observe`, and the session's own state — which is what both of these
-  // are — is this module's business to assemble.
-  let twoTier: TwoTierSession | undefined;
   const emitter = createSessionEmitter({
     sessionId,
     client: deps.client,
     stream: state.stream,
-    // Dialogs FIRST, keeping the order `runtime-dialogs.ts` argues for (a
+    // Dialogs FIRST, keeping the order `runtime-dialogs.ts` argues for: a
     // dialog is part of the session's state and moves before any observer sees
-    // the effect). The bridge is the second observer for the same reason: its
-    // digest is state, and `agent({ events })` hooks run after both.
+    // the effect, and `agent({ events })` hooks run after it.
     observe: (event) => {
       dialogs.observe(event);
-      twoTier?.observe(event);
     },
     logger,
     ...omitUndefined({ hooks, commit }),
@@ -154,21 +126,10 @@ export function openSessionWiring(deps: {
       ? (snapshot) => emitter.emit({ type: "usage.updated", ...snapshot })
       : undefined,
   });
-  // Now that both exist. The digest's prompt section goes on the SAME
-  // `SessionSystemPrompt` the dialogs hold, under its own key — an unkeyed
-  // install would have deleted theirs (see `SessionSystemPrompt.setSuffix`).
-  twoTier = deps.openTwoTier?.({
-    sessionId,
-    usage,
-    transport: deps.transport,
-    instructions: () => deps.prompt.base(),
-  });
-  if (twoTier) dialogs.prompt.setSuffix("two-tier", twoTier.promptSection);
   return {
     dialogs,
     emitter,
     usage,
-    ...omitUndefined({ twoTier }),
     guardrails: createTurnGuardrails({
       inputGuardrails: agent.inputGuardrails,
       outputGuardrails: agent.outputGuardrails,
