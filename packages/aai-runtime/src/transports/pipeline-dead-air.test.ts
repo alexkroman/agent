@@ -14,6 +14,7 @@ import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
@@ -78,7 +79,9 @@ describe("createStreamPartHandler dead-air cover", () => {
     // MEASURED silence instead, so a tool that answers in 300ms costs nothing.
     const { spoken, toolCall } = harness();
     toolCall("tc-1");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
+    // The TOOL window, not the turn-open one: a `tool-call` part is evidence
+    // the turn is about to go quiet, where an ordinary pause is not.
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS - 1);
     expect(spoken).toEqual([]);
     vi.advanceTimersByTime(1);
     expect(spoken.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
@@ -125,7 +128,7 @@ describe("createStreamPartHandler dead-air cover", () => {
     // Measured on tau2-bench retail: zero fillers across 13.0s and 6.0s of
     // mid-authentication dead air, both ending in the caller asking "Hello?".
     const { spoken, toolCall } = harness();
-    const step = DEFAULT_DEAD_AIR_COVER_MS - 1;
+    const step = DEAD_AIR_TOOL_COVER_MS - 1;
     toolCall("tc-1");
     // Six calls, each landing just inside the window and none preceded by
     // speech: 5x longer than the window in total, and under the re-arm this
@@ -165,13 +168,13 @@ describe("createStreamPartHandler dead-air cover", () => {
     // The opening phrase counts toward the backoff, so the first cycle phrase
     // is two windows out rather than one — under a second of silence between
     // two fillers reads as chatter.
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS);
     expect(covers()).toBe(0);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS);
     expect(covers()).toBe(0);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS);
     expect(covers()).toBe(1);
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 8);
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS * 8);
     expect(covers()).toBeGreaterThanOrEqual(2);
   });
 
@@ -213,7 +216,7 @@ describe("createStreamPartHandler dead-air cover", () => {
   test("speech cancels a pending cover", () => {
     const { spoken, toolCall, handler } = harness();
     toolCall("tc-1");
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
+    vi.advanceTimersByTime(DEAD_AIR_TOOL_COVER_MS - 1);
     handler.handle({ type: "text-delta", text: "Found it. " });
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
     for (const phrase of [DEAD_AIR_OPENING_PHRASE, ...DEAD_AIR_COVER_PHRASES]) {

@@ -142,3 +142,97 @@ export function normalizeSpeechText(text: string): string {
   if (!SPEECH_CHARS.test(text)) return text;
   return text.replace(SPEECH_CHARS, (c) => SPEECH_CHAR_MAP.get(c) ?? c);
 }
+
+/**
+ * Spoken spelling runs, assembled into the tokens the caller meant.
+ *
+ * A caller reading an identifier aloud produces a transcript of isolated
+ * letters — `"It's M, E, I, underscore, K, O, V, A, C, S"` — and reassembling
+ * that into `mei_kovacs` was, until this function, asked of the MODEL in prose
+ * (`PROMPT_LISTENING`: "normalize spoken identifiers"). Measured on a 99-task
+ * tau2-bench retail run, it does it wrong often enough to be the single
+ * largest failure source: `find_user_id_by_name_zip` produced 58 errors and
+ * `find_user_id_by_email` 31, against 10 for every other tool combined, and
+ * **22 of 57 failed calls never authenticated at all** — every one of them
+ * with the correct identifier already in the caller's own words. Observed
+ * mis-assemblies include `mia.garbia2723` for `mia.garcia2723`, `Johannson`
+ * sent twice byte-identically for `Johansson`, and `amemia.silva` for
+ * `amelia.silva`.
+ *
+ * Three properties make this safe to run on every transcript:
+ *
+ * - **It APPENDS, never replaces.** The caller's words are what history and
+ *   the transcript record, and a spelling run that this function reads wrong
+ *   must not destroy them. The model sees both and can still disagree.
+ * - **It needs a RUN.** Three or more consecutive single letters, so ordinary
+ *   speech containing "I" or "a" cannot trigger it. Prose does not spell.
+ * - **It is case-folded and punctuation-free.** The assembled token is what a
+ *   lookup wants, not what a sentence wants.
+ *
+ * Spoken separators inside a run are honoured (`underscore`, `dash`, `dot`,
+ * `at`) because an identifier's shape is exactly where a model's guess goes
+ * wrong — `mei_kovacs_8020` is three runs and two separators, and dropping the
+ * separators is how it becomes `meikovacs8020`.
+ */
+/** Spoken separator words that may appear INSIDE a spelling run. */
+const SPELLED_SEPARATORS: Readonly<Record<string, string>> = {
+  underscore: "_",
+  dash: "-",
+  hyphen: "-",
+  dot: ".",
+  period: ".",
+  point: ".",
+  at: "@",
+};
+
+/** Spoken digits, which an identifier's tail is usually read out as. */
+const SPOKEN_DIGITS: Readonly<Record<string, string>> = {
+  zero: "0",
+  oh: "0",
+  one: "1",
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+};
+
+/** One word's contribution to a run, or `undefined` when it ENDS the run. */
+function spelledPiece(word: string, inRun: boolean): string | undefined {
+  if (/^[a-z]$/.test(word)) return word;
+  // A separator, spoken digit or bare number only ever EXTENDS a run that has
+  // already started — otherwise "two things" would open one.
+  if (!inRun) return undefined;
+  return SPELLED_SEPARATORS[word] ?? SPOKEN_DIGITS[word] ?? (/^\d+$/.test(word) ? word : undefined);
+}
+
+export function assembleSpelledRuns(text: string): readonly string[] {
+  const words = text
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+  // EVERY run, not the longest: "first name N-O-A-H, last name P-A-T-E-L" is
+  // two, and the surname is the half that gets mis-assembled (`Johannson` for
+  // `Johansson`, `garbia` for `garcia`). Returning one of them loses exactly
+  // the token the lookup fails on.
+  const runs: string[] = [];
+  let run = "";
+  let letters = 0;
+  for (const raw of words) {
+    const word = raw.replace(/[.,!?;:'"]+$/, "");
+    const piece = spelledPiece(word, run !== "");
+    if (piece === undefined) {
+      if (letters >= 3) runs.push(run);
+      run = "";
+      letters = 0;
+      continue;
+    }
+    run += piece;
+    if (/^[a-z]$/.test(word)) letters++;
+  }
+  if (letters >= 3) runs.push(run);
+  return runs;
+}

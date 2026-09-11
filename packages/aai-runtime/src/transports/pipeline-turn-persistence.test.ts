@@ -224,7 +224,14 @@ describe("interrupted-speech persistence", () => {
       expect(llm.calls.length).toBeGreaterThanOrEqual(2);
     });
     // The reply is audible by this point in production, so the turn holds the
-    // floor and is interruptible.
+    // floor and is interruptible. Wait for the model's own text to REACH TTS
+    // before firing audio: barge-in now requires that the reply has sent
+    // recordable speech (`HeardTracker.spokeRecordable`), and audio without a
+    // preceding text send is a state production cannot produce — the engine
+    // only emits audio for text it was given.
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.join("").length ?? 0).toBeGreaterThan(0);
+    });
     tts.last()?.fireAudio(new Int16Array(2400));
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {
@@ -294,10 +301,17 @@ describe("interrupted-speech persistence", () => {
     tts.last()?.fireAudio(new Int16Array((DEFAULT_TTS_SAMPLE_RATE * AUDIO_MS) / 1000));
     await vi.advanceTimersByTimeAsync(AUDIO_MS);
     stt.last()?.firePartial("stop");
+    await vi.advanceTimersByTimeAsync(50);
 
-    await vi.waitFor(() => {
-      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
-    });
+    // **The barge-in does NOT cancel, and that is the change.** Filler is not
+    // speech: a turn that has only played a holding phrase has said nothing to
+    // be spoken over, so cutting it buys nothing and costs the reply being
+    // generated behind it. Measured on a 114-task tau2-bench retail run, the
+    // old behaviour discarded 553s of completed work across 75 aborted turns
+    // — 48 of them losing over 5s each — because the caller's "are you still
+    // there?" landed on the very filler sent to reassure them. See
+    // `HeardTracker.spokeRecordable`.
+    expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
     // Only filler was audible → nothing persisted as interrupted.
     expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalledWith({
       type: "agent-transcript.committed",

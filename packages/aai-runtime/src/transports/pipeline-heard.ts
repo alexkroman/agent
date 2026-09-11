@@ -313,6 +313,23 @@ export interface HeardTracker {
    * but NOT the playback clock, which is session-scoped (see the module doc).
    */
   startReply(): void;
+  /**
+   * Has this reply sent any RECORDABLE text — real speech rather than filler?
+   *
+   * Barge-in gates on "is the agent speaking", and dead-air cover made that
+   * true without the agent having said anything: the filler is audio, so it
+   * drives the playback clock and `turns.markSpoke()` alike. A caller talking
+   * over a holding phrase was therefore treated as interrupting a reply, and
+   * the abort discarded the real reply being generated behind it. Measured on
+   * a 114-task tau2-bench retail run: 435 barge-ins and **75 aborted turns
+   * discarding 553s of completed work** — 48 losing more than 5s each, worst
+   * 40.6s — with calls ending in the caller hanging up on an agent that was,
+   * from its own side, still working.
+   *
+   * `spans` carries the flag per send and `startReply()` already clears it, so
+   * this reads state the tracker keeps anyway.
+   */
+  spokeRecordable(): boolean;
   /** True while the client may still be playing already-forwarded audio. */
   pending(): boolean;
   /**
@@ -441,6 +458,9 @@ export function createHeardTracker(opts: {
     },
     onWords(incoming: readonly TtsWordTiming[]): void {
       words.push(...incoming);
+    },
+    spokeRecordable(): boolean {
+      return spans.some((span) => span.record);
     },
     startReply(): void {
       spoken = "";

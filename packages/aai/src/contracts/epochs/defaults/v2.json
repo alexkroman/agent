@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "defaults",
+  "epoch": 2,
+  "sha256": "a2eeaf29579888a21ebe20658f8f74ab66c744ce15500320e92b26ec5ce14617",
+  "exports": ["DEFAULT_SYSTEM_PROMPT"]
+}

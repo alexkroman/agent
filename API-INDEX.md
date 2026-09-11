@@ -997,6 +997,7 @@ trace or a type error can be traced back to something.
 | `DEAD_AIR_COVER_MAX_MS` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_COVER_PHRASES` | `@alexkroman1/aai/host-internal` |
 | `DEAD_AIR_OPENING_PHRASE` | `@alexkroman1/aai/host-internal` |
+| `DEAD_AIR_TOOL_COVER_MS` | `@alexkroman1/aai/host-internal` |
 | `DEEPGRAM_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `DEEPGRAM_KIND` | `@alexkroman1/aai/host-internal` |
 | `DEFAULT_BUILTIN_TOOLS` | `@alexkroman1/aai/internal` |
@@ -1183,6 +1184,7 @@ trace or a type error can be traced back to something.
 | `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
 | `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
 | `asDispatcher` | `@alexkroman1/aai/host-internal` |
+| `assembleSpelledRuns` | `@alexkroman1/aai/internal` |
 | `assemblyAITtsLanguageCodes` | `@alexkroman1/aai/host-internal` |
 | `assertProviderTriple` | `@alexkroman1/aai/host-internal` |
 | `assertUploadToken` | `@alexkroman1/aai/host-internal` |

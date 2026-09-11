@@ -493,6 +493,9 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[];
 // @internal
 export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 
+// @internal
+export const DEAD_AIR_TOOL_COVER_MS = 1200;
+
 // @public
 export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
 

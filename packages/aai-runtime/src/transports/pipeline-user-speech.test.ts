@@ -266,6 +266,10 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     isResumeTurnInFlight: () => state.resumeInFlight,
     hasTurnSpoken: () => state.spoke,
     isPlaybackPending: () => false,
+    // These specs are about barge-in CLASSIFICATION, not about filler: a turn
+    // that has "spoken" here has spoken real text. The filler case has its own
+    // coverage in pipeline-turn-persistence.test.ts.
+    hasSpokenRecordable: () => state.spoke,
     abortInFlightTurn: () => {
       calls.aborts++;
       state.inFlight = false;

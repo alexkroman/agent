@@ -11,7 +11,7 @@ import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
+import { assembleSpelledRuns, DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {
@@ -97,6 +97,8 @@ function createSttEventHandlers(deps: {
    * is not "a turn is in flight".
    */
   agentIsSpeaking: () => boolean;
+  /** Has this reply sent real speech, as opposed to dead-air filler? */
+  hasSpokenRecordable: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
   abortInFlightTurn: () => void;
   /**
@@ -341,6 +343,8 @@ export function createUserActivity(deps: {
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken(): boolean;
   isPlaybackPending(): boolean;
+  /** Has this reply sent real speech, as opposed to dead-air filler? */
+  hasSpokenRecordable(): boolean;
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
@@ -381,8 +385,18 @@ export function createUserActivity(deps: {
    * mid-reply TTS stall (playback draining while more text is still streaming)
    * does not silently reopen the pre-audio window.
    */
+  /**
+   * Is the agent SPEAKING — as opposed to merely making noise?
+   *
+   * Filler is not speaking, and the `hasSpokenRecordable` term is what makes
+   * that true of the predicate: without it a caller talking over a holding
+   * phrase counted as interrupting a reply, and the abort destroyed the reply
+   * being generated behind it. `HeardTracker.spokeRecordable` carries the
+   * measurement and the argument.
+   */
   const agentIsSpeaking = (): boolean =>
-    deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
+    (deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken())) &&
+    deps.hasSpokenRecordable();
 
   // Hold `speech_started` back while the agent has the floor, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
@@ -447,6 +461,7 @@ export function createUserActivity(deps: {
     isResumeTurnInFlight: deps.isResumeTurnInFlight,
     hasTurnSpoken: deps.hasTurnSpoken,
     agentIsSpeaking,
+    hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
     speechEdges,
@@ -456,11 +471,18 @@ export function createUserActivity(deps: {
     callbacks,
     speculation: deps.speculation,
     commitUserTurn(text: string): void {
-      // Debug trace (AAI_DEBUG=1): this is verbatim the text the turn prompts
-      // the LLM with, so it is the ground truth for "did the model see it?".
-      log.debug("Pipeline turn committed", { sid, text });
+      // The MODEL's copy is augmented with any spelling run the caller read
+      // out; the CLIENT's and history's stay verbatim, because what the caller
+      // said is not ours to rewrite and a run read wrong must not be able to
+      // destroy the record of it. `assembleSpelledRuns` has the measurement.
+      const spelled = assembleSpelledRuns(text);
+      const forModel =
+        spelled.length > 0 ? `${text}\n[spelled aloud: ${spelled.join(", ")}]` : text;
+      // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
+      // the LLM with, so it stays the ground truth for "did the model see it?".
+      log.debug("Pipeline turn committed", { sid, text: forModel });
       callbacks.report({ type: "user-transcript.committed", text });
-      deps.runChainedTurn(text, "Pipeline turn crashed");
+      deps.runChainedTurn(forModel, "Pipeline turn crashed");
     },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
