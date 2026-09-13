@@ -7,18 +7,12 @@
 // Split out of `pipeline-stream.ts`, which owns the turn-level plumbing
 // (streamText invocation, TTS coalescing and flush, audio conversion).
 
-import {
-  DEAD_AIR_COVER_MAX_MS,
-  DEAD_AIR_COVER_PHRASES,
-  DEAD_AIR_OPENING_PHRASE,
-  DEAD_AIR_TOOL_COVER_MS,
-  DEFAULT_DEAD_AIR_COVER_MS,
-} from "@alexkroman1/aai/host-internal";
+import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import { capToolResult, toArgsRecord } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { APICallError, RetryError } from "ai";
-import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
+import { createDeadAirCover } from "./pipeline-dead-air.ts";
 import type { EmitError, SendTtsText } from "./types.ts";
 
 /** A single `fullStream` part from `streamText`. */
@@ -51,8 +45,8 @@ type StreamPartHandlerDeps = {
   emitError: EmitError;
   /**
    * How long the turn may send nothing to TTS before filler is spoken —
-   * {@link DEAD_AIR_OPENING_PHRASE} for the turn's opening gap,
-   * {@link DEAD_AIR_COVER_PHRASES} thereafter. Defaults to
+   * The opening gap gets its own phrase and later ones cycle — see
+   * {@link createDeadAirCover}. Defaults to
    * {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the cover outright.
    */
   deadAirCoverMs?: number | undefined;
@@ -214,32 +208,6 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   let spokeText = false;
   // An `error` part arrived — see StreamPartHandler.errored.
   let errored = false;
-  // Dead-air cover, tracked as two separate counts. `coverCount` is every filler
-  // spoken this turn and drives the backoff; `coverPhraseCount` is only the
-  // DEAD_AIR_COVER_PHRASES ones and picks the next phrase. Sharing one counter
-  // meant the opening phrase consumed a phrase slot, so the caller heard the
-  // opening filler and then skipped straight to the second cover phrase.
-  let coverCount = 0;
-  let coverPhraseCount = 0;
-  /** The window armed for the cover currently pending — see `armCover`. */
-  let armedCoverMs = 0;
-  /**
-   * When the pending cover is due (epoch ms), 0 when none is armed.
-   *
-   * The tool-call branch needs to know whether its short window would fire
-   * SOONER than whatever is counting down, and `RestartableTimer` exposes only
-   * `pending()`. Without this the turn-open window keeps `pending()` true for
-   * the whole turn and the short window is never installed — which is exactly
-   * the silent no-op the first version of this shipped as.
-   */
-  let coverDueAt = 0;
-  /**
-   * Base for this turn's cover cycle. Drops to the tool window once a
-   * `tool-call` part has shown the turn is the silent kind — STICKY, because
-   * the timer re-arms from its own callback and would otherwise revert to the
-   * long base after the first filler.
-   */
-  let coverBase = coverMs;
 
   /**
    * Send text to the caller.
@@ -274,119 +242,30 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     sendTtsText(out, { record });
   }
 
-  /**
-   * Speak the next filler, then schedule the one after it.
-   *
-   * The buffered-text release matters as much as the phrase: nothing else will
-   * arrive to flush the coalescer until the tool chain ends, and that silence
-   * is precisely what is being covered.
-   */
-  const deadAir = createRestartableTimer((): void => {
-    // Fire-time re-check, matching the transport's other timers: the abort
-    // listener below clears the timer, but a callback already dispatched (or
-    // an abort that raced the arm) must still no-op.
-    if (signal?.aborted) return;
-    // The caller is talking — the gap is already filled, by them. Re-arm and
-    // cover the next gap instead of speaking across this one. A tool speaking
-    // its own declared lines fills it too, and the same answer applies: the
-    // cover exists for silence, and this is not silence.
-    if (callerSpeaking() || toolCovering()) {
-      armCover();
-      return;
-    }
-    // Nothing has reached the caller yet, so this is the turn's OPENING gap
-    // rather than a gap between things the model said, and it needs its own
-    // phrase — the cycle opens with "I'm still checking on this.", which
-    // implies work already narrated and would be the very first words of the
-    // turn. `coverCount === 0` is the test rather than a flag of its own: only
-    // the FIRST filler of a turn can precede any speech.
-    const opening = !spokeText && coverCount === 0;
-    let phrase = DEAD_AIR_OPENING_PHRASE;
-    if (!opening) {
-      phrase = DEAD_AIR_COVER_PHRASES[coverPhraseCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
-      coverPhraseCount += 1;
-    }
-    // Counted either way: it drives the backoff, so an opening filler must
-    // still push the next one out. Left uncounted, the next cover came one base
-    // window (2s, the base at the time) after the opening phrase — net of its
-    // own ~1.3s of audio, under a second of silence between two fillers, which
-    // reads as chatter at the very start of the wait.
-    coverCount += 1;
-    // LOGGED, because until it was, nothing anywhere could confirm a filler
-    // played. The phrases are emitted `record: false`, so they never reach
-    // `onDelta`, never enter history, and never appear in a client's committed
-    // transcript — which meant a harness trajectory (tau2's included) could
-    // show a covered gap and an uncovered one identically. A `deadAirCoverMs`
-    // experiment was run on 2026-09-09 and could not be evaluated for exactly
-    // this reason: the response rate did not move and there was no way to tell
-    // whether cover had fired late or not at all. One line at info closes that.
-    //
-    // `waitedMs` is the value that was actually armed for this filler, not the
-    // configured `coverMs` — the window doubles per filler — so a reader can
-    // see the backoff rather than infer it.
-    log.info("Pipeline dead-air cover", {
-      sid,
-      phrase,
-      opening,
-      coverCount,
-      waitedMs: armedCoverMs,
-    });
-    emitText(phrase, false);
-    pendingSeparator = true;
-    ttsBoundary();
-    armCover();
+  // Armed at CONSTRUCTION, which is what covers the turn's OPENING gap — the
+  // window between the committed user turn and the model's first stream part.
+  // `createDeadAirCover` owns the timer, the backoff, the phrase cycle, and the
+  // two log lines that say what it did.
+  const cover = createDeadAirCover({
+    coverMs,
+    signal,
+    callerSpeaking,
+    toolCovering,
+    spokeText: () => spokeText,
+    // A filler is audible and never recorded, and it releases what is buffered:
+    // nothing else will arrive to flush the coalescer until the gap ends, and
+    // that silence is precisely what is being covered.
+    speak: (phrase) => {
+      emitText(phrase, false);
+      pendingSeparator = true;
+      ttsBoundary();
+    },
+    log,
+    sid,
   });
 
-  /**
-   * Open a cover window. The wait doubles per filler already spoken, so a short
-   * chain does not chatter — then flattens at {@link DEAD_AIR_COVER_MAX_MS} so a
-   * long one keeps a steady heartbeat instead of drifting back into the silence
-   * this exists to cover. See that constant for the measured cadence.
-   *
-   * The ceiling is `max(DEAD_AIR_COVER_MAX_MS, coverMs)` rather than the
-   * constant, because the base is now the author's: a `deadAirCoverMs` above
-   * 8000 would otherwise be clamped BELOW its own base, so an agent asking for
-   * one filler every 20s would get the first at 8s.
-   */
-  /** Cancel the pending cover AND forget its deadline — see `coverDueAt`. */
-  function clearCover(): void {
-    coverDueAt = 0;
-    deadAir.clear();
-  }
-
-  function armCover(baseMs: number = coverBase): void {
-    if (coverMs <= 0 || signal?.aborted) return;
-    // Remembered rather than recomputed at the log site: `coverCount` has
-    // already been incremented by then, so a recomputation would report the
-    // NEXT window as the one that elapsed.
-    armedCoverMs = Math.min(baseMs * 2 ** coverCount, Math.max(DEAD_AIR_COVER_MAX_MS, coverMs));
-    coverDueAt = Date.now() + armedCoverMs;
-    deadAir.arm(armedCoverMs);
-  }
-
-  // Kill the armed cover the moment the turn aborts rather than at dispose(),
-  // which a tool execution that ignores its abort signal defers for seconds.
-  const onAbort = (): void => clearCover();
-  signal?.addEventListener("abort", onAbort, { once: true });
-
-  // Cover the turn's OPENING gap, not just gaps between things the model said.
-  // armCover() used to be reachable only from the `tool-call` part and from the
-  // timer itself, which left the window between the committed user turn and the
-  // model's FIRST stream part uncovered — and unbounded. A slow first token, or
-  // a long reasoning phase (which emits reasoning deltas and no text), is then
-  // pure dead air for however long it lasts, while the only other filler
-  // mechanism waited on a `tool-call` part that had not arrived yet. Measured
-  // on tau2-bench retail with gpt-5.5 through the gateway: 31.4s of silence
-  // after a committed user turn, ended only by the first tool call finally
-  // triggering that filler, while the client kept streaming mic audio into a
-  // session that looked healthy from both ends. This handler is constructed as
-  // the turn's stream opens, and the first `text-delta` clears the timer, so a
-  // turn that answers promptly pays nothing.
-  armCover();
-
   function dispose(): void {
-    signal?.removeEventListener("abort", onAbort);
-    clearCover();
+    cover.dispose();
   }
 
   function emitToolResult(part: StreamPart): void {
@@ -410,7 +289,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         if (t.length > 0) {
           spokeText = true;
           // The model is speaking again — whatever gap was open just closed.
-          clearCover();
+          cover.clear();
         }
         emitText(t);
         return;
@@ -435,39 +314,10 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // execution window must never start with speech still buffered.
         ttsBoundary();
         // The execution window is open: from here until the model speaks
-        // again, nothing reaches TTS on its own.
-        //
-        // **Only when no window is already running.** `RestartableTimer.arm`
-        // clears and re-sets, so an unconditional call here RESTARTS the
-        // countdown on every tool call — and the deadline is measured from the
-        // last one rather than from the last thing the caller HEARD. A chain
-        // whose calls each return inside `coverMs` therefore pushes the
-        // deadline out indefinitely and the cover never fires at all, which is
-        // the exact silence it exists to break. Measured on tau2-bench retail:
-        // the cover fired ZERO times in two tasks while the caller sat through
-        // 13.0s and 6.0s of dead air mid-authentication and re-prompted with
-        // "Hello?"; across the run, dropped caller turns had gone from 0 in 130
-        // to 6.4% of 499 when the prompt's holding-line mandate was retired in
-        // favour of this mechanism — which was not covering the case.
-        //
-        // The re-arm is still needed and still happens: a `text-delta` CLEARS
-        // the timer (the caller heard something, so the clock restarts from
-        // there), which leaves `pending()` false and lets the next tool call
-        // re-open the window. This only declines to move a deadline that is
-        // already counting down toward silence the caller is already in.
-        // Armed on the SHORT tool window: a `tool-call` part is true of exactly
-        // the turns that go quiet and arrives early enough to act on, where the
-        // turn-open window is true of every turn and can only find the silent
-        // ones by waiting. See DEAD_AIR_TOOL_COVER_MS.
-        //
-        // A tool call may only pull the deadline IN, never push it out — the
-        // invariant the bare `!pending()` guard carried, and why it cannot just
-        // become an unconditional re-arm: a chain whose calls each return
-        // inside the window would reset the countdown every time and the cover
-        // would never fire at all.
-        const toolBase = Math.min(DEAD_AIR_TOOL_COVER_MS, coverMs);
-        coverBase = toolBase;
-        if (!deadAir.pending() || Date.now() + toolBase < coverDueAt) armCover(toolBase);
+        // again, nothing reaches TTS on its own. The re-arm rules — the short
+        // window, and a deadline a tool call may only pull IN — are
+        // `DeadAirCover.onToolCall`'s.
+        cover.onToolCall();
         // Observability only — actual execution happens inline via toVercelTools.
         // An invalid tool call carries raw-string input; coerce it so the
         // `tool_call` frame stays schema-valid (a non-record args drops it).
