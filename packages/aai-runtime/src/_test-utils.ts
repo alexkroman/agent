@@ -92,7 +92,6 @@ export function withDeadline<T>(
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},
-    steerRecognizer: () => false,
     slots: createDetachedSlotStore(),
     // The SDK's own published helper rather than `{} as never`: it REJECTS
     // naming itself, so a spec that unexpectedly reaches `ctx.db` says so
@@ -196,7 +195,6 @@ export function makeMockCore(overrides?: Partial<ServerSession>): ServerSession 
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
-    steerRecognizer: () => false,
     restoreHistory: vi.fn(),
     command: vi.fn(),
     onAudio: vi.fn(),

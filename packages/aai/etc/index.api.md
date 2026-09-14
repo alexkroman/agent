@@ -173,7 +173,7 @@ export interface BothEndpointingRule extends EndpointingRuleBase {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -1164,7 +1164,6 @@ export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
-    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;

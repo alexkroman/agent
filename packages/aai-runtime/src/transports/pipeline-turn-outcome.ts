@@ -95,13 +95,6 @@ export interface TurnOutcomeDeps {
    * dialog mid-turn, so the value at the START of the turn is the wrong one.
    */
   dialogKeyterms: () => readonly string[] | undefined;
-  /**
-   * The keyterms a TOOL asked for this session, read at the same moment and
-   * for the same reason as the dialog's. A thunk because a tool can write it
-   * mid-turn — the lookup that learns the caller's name usually runs in the
-   * very turn whose reply this is.
-   */
-  sessionKeyterms: () => readonly string[];
 }
 
 export interface TurnOutcome {
@@ -236,12 +229,7 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
       // agent's own words as context (AssemblyAI Universal-3.5 Pro only; other
       // providers have no such hook), and the active dialog state's keyterms.
       providers.stt?.updateAgentContext?.(text);
-      // Two lists, and the provider merges them: the PHASE's (or `undefined`,
-      // restoring the descriptor's own) and the SESSION's, which a tool wrote
-      // through `ctx.steerRecognizer`. Only the provider can union anything
-      // onto "the set the stream was opened with", so the merge is its job and
-      // not this one's — see `SttSession.updateKeyterms`.
-      providers.stt?.updateKeyterms?.(deps.dialogKeyterms(), deps.sessionKeyterms());
+      providers.stt?.updateKeyterms?.(deps.dialogKeyterms());
     },
   };
 }

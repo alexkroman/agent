@@ -79,8 +79,6 @@ export const BuiltinToolSchema = z.enum([
   "remember",
   "recall",
   "calculate",
-  "verify_action",
-  "listen_for",
 ]);
 
 /**

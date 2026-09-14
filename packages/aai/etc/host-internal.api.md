@@ -41,12 +41,10 @@ const AgentConfigSchema: z.ZodObject<{
         calculate: "calculate";
         fetch_json: "fetch_json";
         get_page_design: "get_page_design";
-        listen_for: "listen_for";
         recall: "recall";
         remember: "remember";
         run_code: "run_code";
         think: "think";
-        verify_action: "verify_action";
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
@@ -532,7 +530,7 @@ export function buildSystemPrompt(config: AgentConfig, options: {
 }): string;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 export type BuiltinToolOptions = {
@@ -1404,7 +1402,7 @@ export interface SttSession {
     sendAudio(pcm: Int16Array): void;
     updateAgentContext?(text: string): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
-    updateKeyterms?(keyterms: readonly string[] | undefined, additional?: readonly string[] | undefined): void;
+    updateKeyterms?(keyterms: readonly string[] | undefined): void;
 }
 
 // @public
@@ -1471,7 +1469,6 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
-    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;

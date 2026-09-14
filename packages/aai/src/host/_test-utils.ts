@@ -34,9 +34,6 @@ export function tick(): Promise<void> {
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},
-    // Inert and HONEST: no session is wired here, so a hint really would go
-    // nowhere, and `false` is what the real capability answers in that case.
-    steerRecognizer: () => false,
     slots: createDetachedSlotStore(),
     // The SDK's own published helper rather than `{} as never`: it REJECTS
     // naming itself, so a spec that unexpectedly reaches `ctx.db` says so

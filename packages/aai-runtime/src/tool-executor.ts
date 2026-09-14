@@ -157,15 +157,6 @@ type ExecuteToolCallOptions = {
    */
   workflows?: WorkflowClient | undefined;
   /**
-   * `ctx.steerRecognizer`, already bound to this call's SESSION.
-   *
-   * Absent for every context with no live session — a workflow step, a
-   * builtin run off a call — and absent resolves to the honest `false` rather
-   * than a throw, for the reason the capability answers `false` at all: a
-   * hint that went nowhere must never be a reason to fail a tool.
-   */
-  steerRecognizer?: ((keyterms: readonly string[]) => boolean) | undefined;
-  /**
    * Per-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
    * which is sized for a VOICE turn — past it the caller is listening to
    * silence, so a slow tool is already a failed turn.
@@ -189,7 +180,6 @@ function buildToolContext(
     options;
   return {
     env,
-    steerRecognizer: options.steerRecognizer ?? (() => false),
     deadlineAt: options.deadlineAt,
     // A caller with no session gets its own detached store rather than a shared
     // one: two such calls must not read each other's slots, which is the same

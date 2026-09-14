@@ -239,23 +239,14 @@ export interface SttSession {
    * Implementations must skip the wire message when the resolved list has not
    * changed: this is called once per agent turn.
    *
-   * `additional` is the SESSION's own list — what a tool learned mid-call and
-   * asked to boost through `ctx.steerRecognizer`, typically the caller's name
-   * once a lookup has returned it. It is kept as a second parameter rather
-   * than merged by the caller because only an implementation knows what
-   * `undefined` resolves to: the transport cannot union anything onto "the set
-   * the stream was opened with" without holding that set itself.
-   *
-   * **Implementations must put `additional` FIRST in the resolved list.** Both
-   * halves are subject to the provider's own cap, and the session's half is
-   * the specific one — this caller's actual name against a deployment-wide
-   * vocabulary — so an overflow has to drop the generic terms rather than the
-   * fact that was looked up for this call.
+   * **Its one caller today is the transport, from the active `dialog()`
+   * state.** A TOOL cannot reach it — the fact worth boosting most on a
+   * support call is the caller's own name, which is known only after a lookup,
+   * and there is no seam from a tool body to here. See "There is no
+   * PER-SESSION steering seam, and what one needs" in
+   * `packages/aai-runtime/CLAUDE.md` for the four things such a seam owes.
    */
-  updateKeyterms?(
-    keyterms: readonly string[] | undefined,
-    additional?: readonly string[] | undefined,
-  ): void;
+  updateKeyterms?(keyterms: readonly string[] | undefined): void;
   /**
    * Move the end-of-turn silence window mid-stream, in ms — what the
    * regex-keyed endpointing rule table is applied THROUGH.

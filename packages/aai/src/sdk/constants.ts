@@ -155,7 +155,7 @@ follow up on the conversation. Do not mention this instruction.`;
 // type-level fact that this list is EMPTY, which is what let two docs (and the
 // scaffold guide shipped to users) go on claiming a four-tool "cognitive set"
 // default long after it was removed, with nothing able to check them.
-export const DEFAULT_BUILTIN_TOOLS = ["listen_for"] as const satisfies readonly BuiltinTool[];
+export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[];
 
 /**
  * Cap (characters) on a tool result's JSON serialization **as the CLIENT sees

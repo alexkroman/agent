@@ -64,48 +64,6 @@ describe("assemblyAIStt STT adapter — keyterms", () => {
     await session.close();
   });
 
-  test("the SESSION's terms are unioned onto the phase's, session FIRST", async () => {
-    // The merge is the provider's job because only it knows what `undefined`
-    // resolves to: the transport cannot union anything onto "the set the
-    // stream was opened with" without holding that set.
-    const session = await openSession({ keyterms: ["gift card"] });
-    const fake = fakeOf(session);
-
-    session.updateKeyterms?.(undefined, ["Yusuf Rossi"]);
-
-    // Session first, and that ORDER is the decision: the list is trimmed to
-    // the service cap from the end, so a deployment shipping a full
-    // vocabulary must not lose the fact looked up for THIS caller.
-    expect(fake.updateConfigurationCalls).toEqual([
-      { keyterms_prompt: ["Yusuf Rossi", "gift card"] },
-    ]);
-    await session.close();
-  });
-
-  test("a session term already in the phase's list is not repeated", async () => {
-    // Both halves can name the same thing — a dialog collecting an order
-    // number and a tool that just looked one up — and a duplicate spends a
-    // slot of the shared cap to bias nothing further.
-    const session = await openSession({ keyterms: ["Gift Card"] });
-    const fake = fakeOf(session);
-
-    session.updateKeyterms?.(undefined, ["gift card"]);
-
-    expect(fake.updateConfigurationCalls).toEqual([{ keyterms_prompt: ["gift card"] }]);
-    await session.close();
-  });
-
-  test("an empty session list leaves the phase's push byte-identical", async () => {
-    // What keeps every agent that never steers exactly where it was: the
-    // added parameter must not itself become a wire change.
-    const session = await openSession({ keyterms: ["gift card"] });
-    const fake = fakeOf(session);
-
-    session.updateKeyterms?.(["order number"], []);
-    expect(fake.updateConfigurationCalls).toEqual([{ keyterms_prompt: ["order number"] }]);
-    await session.close();
-  });
-
   test("updateKeyterms(undefined) RESTORES the connect-time list", async () => {
     // What a dialog state ENDING means: the phase that narrowed the vocabulary
     // is over, and the agent's own list must come back — not be cleared.

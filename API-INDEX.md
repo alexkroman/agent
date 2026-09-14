@@ -1260,7 +1260,6 @@ trace or a type error can be traced back to something.
 | `createTtsError` | `@alexkroman1/aai/host-internal` |
 | `createUploadStore` | `@alexkroman1/aai-runtime/internal` |
 | `decideClientEvent` | `@alexkroman1/aai/internal` |
-| `defaultBuiltinTools` | `@alexkroman1/aai/internal` |
 | `defaultProviders` | `@alexkroman1/aai/host-internal` |
 | `describeKeytermDrops` | `@alexkroman1/aai/host-internal` |
 | `eligibleToolMessages` | `@alexkroman1/aai/host-internal` |

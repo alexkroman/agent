@@ -14,7 +14,7 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 type DelegateFn = {
@@ -409,7 +409,6 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
-    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;

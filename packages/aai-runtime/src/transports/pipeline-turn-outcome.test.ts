@@ -54,7 +54,6 @@ function harness(opts?: { tts?: boolean }) {
     // No dialog declares keyterms here: `undefined` is "leave the STT stream on
     // the keyterms it opened with".
     dialogKeyterms: () => undefined,
-    sessionKeyterms: () => [],
     sendTtsText: (text) => spoken.push(text),
   });
   return { outcome, reported, spoken, history };

@@ -104,66 +104,6 @@ describe("createSessionCore — announce", () => {
   });
 });
 
-describe("createSessionCore — steerRecognizer", () => {
-  test("hands the terms to the transport", () => {
-    const { core, transport } = makeCore();
-    const steer = vi.fn();
-    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = steer;
-
-    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(true);
-    expect(steer).toHaveBeenCalledWith(["Yusuf Rossi"]);
-  });
-
-  test("LOGS the terms, because steering leaves no other trace", () => {
-    // No history entry, no transcript, no client frame — and the provider
-    // skips the wire message when the resolved list is unchanged. Without
-    // this line a graded run cannot tell "nothing asked to steer" from
-    // "something asked and it changed nothing", which is exactly the question
-    // a run measuring the `listen_for` builtin has to answer.
-    const log = makeLogger();
-    const { core, transport } = makeCore({ logger: log });
-    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = vi.fn();
-    core.steerRecognizer(["Yusuf Rossi"]);
-    // COUNT at info: a steered term is a caller's name or an order id by
-    // construction, so the values are PII and do not belong in an operator's
-    // log. The count still separates "nothing asked to steer" from "something
-    // asked", which is the question the line exists for.
-    expect(log.info).toHaveBeenCalledWith(
-      "Session recognizer steered",
-      expect.objectContaining({ count: 1 }),
-    );
-    expect(JSON.stringify(log.info.mock.calls)).not.toContain("Yusuf Rossi");
-    // The values are reachable at DEBUG, which is a no-op unless AAI_DEBUG is
-    // set — that is where diagnosing WHICH terms a tool chose belongs.
-    expect(log.debug).toHaveBeenCalledWith(
-      "Session recognizer terms",
-      expect.objectContaining({ terms: ["Yusuf Rossi"] }),
-    );
-  });
-
-  test("reports FALSE for a transport with no such verb", () => {
-    // S2S runs recognition service-side and exposes no control over it. The
-    // caller is a tool mid-call, and a hint that went nowhere must be an
-    // ANSWER — never a throw, since a failed hint is not a reason to fail the
-    // tool that offered it.
-    const { core, transport } = makeCore();
-    expect(transport.steerRecognizer).toBeUndefined();
-    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(false);
-  });
-
-  test("reports false once the session has stopped", async () => {
-    // The session's own flag rather than the transport's: a stopped session
-    // may still hold sockets mid-teardown.
-    const { core, transport } = makeCore();
-    const steer = vi.fn();
-    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = steer;
-    await core.stop();
-
-    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(false);
-    expect(steer).not.toHaveBeenCalled();
-  });
-});
-
 describe("createSessionCore — client inbound", () => {
   test("onAudio forwards to transport", async () => {
     const { core, transport } = makeCore();

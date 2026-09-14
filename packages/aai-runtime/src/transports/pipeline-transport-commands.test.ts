@@ -113,7 +113,6 @@ function harness(overrides: { terminated?: boolean } = {}) {
       calls.push(`runChainedTurn(${text}|${label}|${JSON.stringify(kind)})`);
     },
     isTerminated: () => overrides.terminated === true,
-    addKeyterms: () => undefined,
   };
 
   const transport = createPipelineCommands(deps);

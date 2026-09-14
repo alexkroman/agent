@@ -25,7 +25,6 @@ import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
-import { createListenFor } from "./_listen-for.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
@@ -251,83 +250,6 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
   };
 }
 
-// ─── verify_action ──────────────────────────────────────────────────────────
-//
-// A pre-write scratchpad, and the difference from `think` is the SCHEMA. A
-// free-text thought can be filled in without answering anything; these fields
-// cannot. It exists because a graded voice run (tau2-bench retail, 108 calls)
-// produced 13 failures in which the agent reached the right tool and passed it
-// the wrong arguments, and all 13 are one omission — the write's arguments were
-// never compared against the state the tool result had just reported, nor
-// against the scope the caller actually asked for. Three of them set a field to
-// the value it already held, so the call was a no-op that reported success.
-//
-// `before`/`after` therefore sit side by side, because that is the comparison
-// nobody was making, and `unchanged` is asked separately because exceeding the
-// requested scope reads as diligence from inside the turn.
-//
-// Domain-free ON PURPOSE: it names no field, tool or record type of any
-// application, so what it adds is the habit of quoting state back, not
-// knowledge of one problem. The one judgement it makes is structural — an
-// action whose `after` equals its `before` changes nothing, which is true of
-// every transactional agent there is.
-
-const verifyActionParams = z.object({
-  action: z.string().min(1).describe("The tool you are about to call, and what it will do"),
-  target: z
-    .string()
-    .min(1)
-    .describe(
-      "Which record this will change, and how you know it is the right one among the candidates",
-    ),
-  before: z
-    .string()
-    .min(1)
-    .describe(
-      "The CURRENT value of every field this action changes, quoted from a tool result — not from the conversation",
-    ),
-  after: z.string().min(1).describe("The value each of those fields will hold afterwards"),
-  requested: z.string().min(1).describe("What the customer asked for, in their own words"),
-  unchanged: z
-    .string()
-    .describe("Anything in this record the customer did NOT ask to change, which must stay as-is")
-    .optional(),
-});
-
-/** Normalize for the no-op comparison: case, surrounding and repeated space. */
-function sameValue(before: string, after: string): boolean {
-  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-  return norm(before) === norm(after);
-}
-
-function createVerifyAction(): ToolDef<typeof verifyActionParams> & { guidance: string } {
-  return {
-    guidance:
-      "Before EVERY action that changes data, call verify_action first. Quote the current " +
-      "values from the tool result that reported them, state what each becomes, and name what " +
-      "must stay unchanged. If it answers `no_change`, you were about to make a call that does " +
-      "nothing — re-read the customer's request before trying again. Never call it after the " +
-      "write; it is the check that decides whether to make one.",
-    description:
-      "Check a data-changing action before you take it. State the action, which record it " +
-      "touches, the current values of the fields it changes, what they become, and what the " +
-      "customer asked for. Records the check and tells you if the change is a no-op. It does " +
-      "not perform the action or read anything.",
-    inputSchema: verifyActionParams,
-    execute(args) {
-      if (sameValue(args.before, args.after)) {
-        return {
-          verdict: "no_change",
-          detail:
-            "`after` is the same value as `before`, so this action would change nothing. " +
-            "Re-read what the customer asked for and identify the field that should differ.",
-        };
-      }
-      return { verdict: "ok" };
-    },
-  };
-}
-
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
@@ -397,8 +319,6 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
   remember: createRemember(),
   recall: createRecall(),
   calculate: createCalculate(),
-  verify_action: createVerifyAction(),
-  listen_for: createListenFor(),
 };
 
 /**

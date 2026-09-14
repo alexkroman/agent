@@ -397,28 +397,13 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
           // unlike the connect-time constructor param (`agentContext`).
           transcriber.updateConfiguration({ agent_context: normalized });
         },
-        updateKeyterms(
-          keyterms: readonly string[] | undefined,
-          additional?: readonly string[] | undefined,
-        ) {
+        updateKeyterms(keyterms: readonly string[] | undefined) {
           if (shell.isClosed()) return;
           // `undefined` RESTORES the connect-time set — the contract a phase
           // ending depends on, since a state that narrowed the vocabulary must
           // not leave it narrowed for the rest of the call. `[]` from a caller
           // is a different claim and passes straight through as "clear".
-          const phase = keyterms === undefined ? baseKeyterms : normalizeKeyterms(keyterms).terms;
-          // The session's own terms go FIRST, and the order is the decision:
-          // `normalizeKeyterms` trims to the service's cap from the END, so a
-          // call whose deployment ships a full vocabulary would otherwise drop
-          // the one term that was looked up FOR this caller. Deduped with the
-          // session's spelling winning, since a phase list and a looked-up
-          // name can differ only in case.
-          const next =
-            additional === undefined || additional.length === 0
-              ? phase
-              : normalizeKeyterms([...additional, ...phase]).terms.filter(
-                  (t, i, all) => all.findIndex((o) => o.toLowerCase() === t.toLowerCase()) === i,
-                );
+          const next = keyterms === undefined ? baseKeyterms : normalizeKeyterms(keyterms).terms;
           // Compared as a STRING because this is called once per agent turn and
           // the overwhelming majority of those change nothing; a wire message
           // per turn for an unchanged list is pure noise on the socket that is

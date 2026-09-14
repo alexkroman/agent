@@ -33,25 +33,9 @@ describe("constants", () => {
    * users) went on describing a four-tool "cognitive set" default long after it
    * was removed. An agent that opts into no built-ins must get none.
    */
-  test("DEFAULT_BUILTIN_TOOLS carries listen_for, and nothing else", () => {
-    // Every other builtin gives the agent something to DO, which is the
-    // author's decision; `listen_for` changes only what it HEARS, and is worth
-    // most exactly where nobody thought to switch it on. Anything else
-    // arriving in this list is a product decision that has to be argued where
-    // the constant is declared.
-    expect(DEFAULT_BUILTIN_TOOLS).toEqual(["listen_for"]);
-    // Still UNSET on the declaration: the default is applied when builtins are
-    // resolved, so an agent's own config is unchanged by it and a config that
-    // names nothing still round-trips as naming nothing.
+  test("DEFAULT_BUILTIN_TOOLS is empty — built-ins are opt-in by name", () => {
+    expect(DEFAULT_BUILTIN_TOOLS).toEqual([]);
     expect(agent({ name: "t" }).builtinTools).toBeUndefined();
-  });
-
-  test("naming any builtin REPLACES the default — the list is not a patch", () => {
-    // The trap this pins: `["think"]` means think and nothing else, so an
-    // author who wants to keep the recognizer hint has to name it too. Not
-    // special-cased, because a tool that cannot be switched off is worse than
-    // one that has to be re-named.
-    expect(agent({ name: "t", builtinTools: ["think"] }).builtinTools).toEqual(["think"]);
   });
 });
 

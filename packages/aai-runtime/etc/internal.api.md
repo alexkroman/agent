@@ -145,7 +145,6 @@ type ExecuteToolCallOptions = {
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
-    steerRecognizer?: ((keyterms: readonly string[]) => boolean) | undefined;
     timeoutMs?: number | undefined;
 };
 
@@ -442,7 +441,6 @@ type ServerSession = {
     command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
-    steerRecognizer(keyterms: readonly string[]): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;

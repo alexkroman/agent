@@ -37,9 +37,6 @@ interface BothEndpointingRule extends EndpointingRuleBase {
     userRegex: string;
 }
 
-// @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
-
 // @internal
 export function capToolResult(result: string): string;
 
@@ -120,7 +117,7 @@ export function decideClientEvent(event: string, data: unknown): ClientEventDeci
 export const DEFAULT_ACKNOWLEDGEMENT_PHRASES: readonly string[];
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly ["listen_for"];
+export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
 // @internal
 export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[];
@@ -172,12 +169,6 @@ export const DEFAULT_STT_PROMPT = "";
 
 // @public
 export const DEFAULT_TOOL_CHOICE: "auto";
-
-// @internal
-export function defaultBuiltinTools(agent: {
-    text?: boolean | undefined;
-    s2s?: unknown;
-}): readonly BuiltinTool[];
 
 // @internal
 export interface EndpointingInput {

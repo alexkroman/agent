@@ -47,41 +47,66 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * name" is a failure mode with no compile-time or deploy-time guard, and one
  * that a code-generating agent falls into readily.
  *
- * **Changing this id changes more than the model**, because
- * `TOOLS_REQUIRE_NO_REASONING` is keyed by model id: a default inside
- * that set makes the bare `assemblyAILlm()` carry an implicit
- * `reasoningEffort: "none"`, and one outside it carry none at all.
+ * **Changing this id changes more than the model.** Two things are keyed to
+ * it, they disagree between model families, and getting either wrong is a
+ * silent failure rather than a loud one. The default has moved four times, so
+ * what follows is the RULE plus the measured matrix rather than a story about
+ * each id:
  *
- * `gpt-5.6-sol` is INSIDE the set, so that fill is load-bearing — and it is
- * the whole reason this id is safe to default to. Measured against the live
- * gateway with a tool-carrying request, 5/5: omitting `reasoning_effort`
- * answers **400** naming the rule, `"none"` answers **200** with tool calls,
- * any other level answers 400 — and STREAMING with the parameter omitted
- * answers a bare **500** (`{"message":"something went wrong","code":500}`)
- * with the explanation stripped, which is the path this SDK takes. So a bare
- * `assemblyAILlm()`, every unset pipeline stage, and the `llm: "<id>"` string
- * shorthand all depend on the fill to work at all. Do not remove
- * `gpt-5.6-sol` from that set without moving this default off it in the same
- * change; the failure is a 500 on every tool-calling turn, which on a voice
- * line is a call that connects and then cannot answer anything.
+ * 1. **`TOOLS_REQUIRE_NO_REASONING` membership** decides whether the bare
+ *    `assemblyAILlm()` carries an implicit `reasoningEffort: "none"`.
+ * 2. **`assemblyAIPipeline()`'s explicit effort** must be a value the id
+ *    ACCEPTS. It is not a free tuning knob; a rejected value is a 400, and on
+ *    the streaming path this SDK uses it arrives as a bare
+ *    `500 {"message":"something went wrong"}` with the explanation stripped.
  *
- * It replaced `gpt-5.6-luna`, same family and the same side of the set, which
- * in turn replaced `qwen3-next-80b-a3b` — that one sat OUTSIDE (it accepts a
- * tool-carrying request at any effort, including its own server-side default).
+ * | id | in the set? | `"none"` | lowest accepted | reasoning tokens there |
+ * | --- | --- | --- | --- | --- |
+ * | `qwen3-next-80b-a3b` | no | **accepted** | `"none"` | **0** |
+ * | `gpt-5.6-luna` / `-sol` / `-terra` | **yes** | REQUIRED for tools | `"none"` | 0 |
+ * | `gemini-3.7-flash` | no | **400** | `"low"` | ~80 |
+ * | `gemini-3.5-flash-lite` | no | **400** | `"minimal"` | 0 |
  *
- * **A Gemini id would need this argument rewritten, not reused.** That family
- * has no `"none"` thinking level at all — the gateway answers
- * `400 Invalid value at 'generation_config.thinking_config.thinking_level'` —
- * so both the fill and `assemblyAIPipeline()`'s explicit `"none"` would fail
- * on every turn, and the level that turns thinking off differs per model
- * (`"minimal"` on `gemini-3.5-flash-lite`, refused by `gemini-3.7-flash`).
+ * `gpt-5.6-luna` is INSIDE the set, so the bare factory fills `"none"` and
+ * that fill is what makes a tool-carrying request work at all on it —
+ * measured: `"none"` answers 200, omitting the parameter answers 400
+ * non-streaming and a bare 500 streaming. `assemblyAIPipeline()`'s explicit
+ * `"none"` therefore merely AGREES with the factory here, and it stays anyway,
+ * because it is the only thing turning reasoning off under a default that sits
+ * outside the set. **Keep it under every id.**
  *
- * Only the raw factory is affected either way: `assemblyAIPipeline()` passes
- * `"none"` explicitly, for latency rather than for that constraint, so the
- * pipeline behaves identically whichever side of the set the default sits on
- * — as long as the default is one that ACCEPTS the value.
+ * ## This default is the only one MEASURED on answer quality
+ *
+ * Four ids held it in one day; the benchmark settled it. All on tau2-bench
+ * retail, matched per task against the same baseline run:
+ *
+ * | default | reward | time-to-first-token (p50) |
+ * | --- | --- | --- |
+ * | **`gpt-5.6-luna`** | **0.463** (108 tasks) / 0.433 +/- 0.090 (0-9 x3) | 832ms |
+ * | `gpt-5.6-sol` | 0.19 (16 sims) | 1156-1287ms |
+ * | `gemini-3.7-flash` | not run | **2253ms** |
+ * | `qwen3-next-80b-a3b` | **0.212** (33 matched tasks) | **664ms** |
+ *
+ * The qwen row is the decisive one and the reason this constant came back:
+ * over 33 tasks run against the identical set, luna scored 0.485 and qwen
+ * 0.212, with **11 regressions against 2 improvements** — McNemar two-sided
+ * **p = 0.022**. Two unrelated replacement models both landed near 0.19-0.21,
+ * so it is the model that moves this number, not one bad id.
+ *
+ * **Time-to-first-token does not buy it back**, which is the finding worth
+ * keeping: qwen is 3.4x faster to first token than the Gemini id and ~2x
+ * faster than luna, and it still fails more than twice as often. The failures
+ * are not latency-shaped — they are the lookup-recovery procedure in
+ * `system-prompt-sections.ts` ("work this list in order") going unfollowed: on
+ * a mis-heard name the smaller models re-ask for the same value, which that
+ * list forbids as step one, instead of retrying a confusion or an identifier
+ * they already hold. Every regression in that run was an
+ * authentication-by-name task.
+ *
+ * So a candidate default needs a tau2 run, not a latency measurement. Do not
+ * move this id on price or first-token numbers alone.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-sol";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 /**
  * Reasoning effort accepted by the gateway's GPT-5-family models, including

@@ -10,15 +10,14 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
 const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"];
 
 describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-sol, with reasoning off", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-sol");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-sol");
-    // The second assertion is the load-bearing one now. This id is INSIDE
+  it("defaults the model to gpt-5.6-luna, with reasoning off", () => {
+    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-luna");
+    expect(assemblyAILlm().options.model).toBe("gpt-5.6-luna");
+    // The second assertion is the load-bearing one. This id is INSIDE
     // TOOLS_REQUIRE_NO_REASONING, so the bare factory fills `"none"` — and
-    // without that fill the gateway answers 500 to every tool-carrying request
-    // on it (verified live: 200 with the parameter, 500 without). A default
-    // model that is in the set and a fill that is missing would give a
-    // descriptor that type-checks, deploys, connects, and then cannot answer.
+    // without that fill the gateway answers 400 to a tool-carrying request and
+    // a bare 500 on the streaming path this SDK uses. A default in the set with
+    // the fill missing type-checks, deploys, connects, and answers nothing.
     expect(assemblyAILlm().options.reasoningEffort).toBe("none");
   });
 
