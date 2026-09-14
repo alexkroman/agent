@@ -5,7 +5,7 @@
  *
  * Split from `pipeline-user-speech.ts`, which is the other half of the same
  * subject and now holds only the WIRING — the nudger, the recovery latch, the
- * speaking edges, the low-confidence gate and the predicates all of those are
+ * speaking edges and the predicates all of those are
  * built from. The seam is the one that file's own doc already described, and
  * the two halves read differently: this one is threshold and ordering rules
  * (when does a partial barge in, when is a final not a turn), and that one is
@@ -18,7 +18,6 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import { type BargeInPhraseLists, createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
 import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
-import type { LowConfidenceGate } from "./pipeline-low-confidence.ts";
 import type { FalseInterruptionRecovery } from "./pipeline-recovery.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
@@ -115,8 +114,6 @@ export function createSttEventHandlers(deps: {
    * rides on the MODEL's copy only — see {@link createUserActivity}.
    */
   commitUserTurn: (text: string, note?: string) => void;
-  /** `AgentDef.lowConfidence`, bound to this session; absent when unset. */
-  lowConfidence: LowConfidenceGate | undefined;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -246,17 +243,10 @@ export function createSttEventHandlers(deps: {
       emitPartial();
     },
 
-    onSttFinal(text: string, meta?: SttTurnMeta): void {
+    onSttFinal(text: string): void {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
-      // The recognizer's own verdict on the WORDS, before the model sees them.
-      // FIRST, because everything below this line treats the transcript as
-      // something the caller meant to say — and the two failing verdicts are
-      // precisely the claim that it is not. A note falls through: that turn
-      // runs normally and only the model's copy is annotated.
-      const verdict = deps.lowConfidence?.classify(trimmed, meta);
-      if (verdict === "handled") return;
       // Debug trace (AAI_DEBUG=1): pairs with "Pipeline turn committed" below.
       // Finals that differ from the commit locate a loss in aggregation; a
       // commit that matches the finals locates it in STT instead.
@@ -310,7 +300,7 @@ export function createSttEventHandlers(deps: {
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
-      deps.commitUserTurn(trimmed, verdict?.note);
+      deps.commitUserTurn(trimmed);
     },
   };
 }

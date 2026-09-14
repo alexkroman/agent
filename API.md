@@ -803,20 +803,6 @@ const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    lowConfidence: z.ZodOptional<z.ZodObject<{
-        discardBelow: z.ZodOptional<z.ZodNumber>;
-        actionBelow: z.ZodOptional<z.ZodNumber>;
-        action: z.ZodOptional<z.ZodEnum<{
-            clarify: "clarify";
-            note: "note";
-        }>>;
-        phrase: z.ZodOptional<z.ZodString>;
-        note: z.ZodOptional<z.ZodString>;
-        statistic: z.ZodOptional<z.ZodEnum<{
-            mean: "mean";
-            minWord: "minWord";
-        }>>;
-    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -1197,10 +1183,8 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
-    agentContext?: string;
     connectTimeoutMs?: number;
     formatTurns?: boolean;
-    keyterms?: string[];
     languages?: string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
@@ -1269,9 +1253,6 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
-// @internal
-export function classifyConfidence(confidence: number | undefined, policy: ResolvedLowConfidence): LowConfidenceVerdict;
-
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
@@ -1317,18 +1298,6 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_ACTION_BELOW = 0.4;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW = 0.2;
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_NOTE = "low-confidence transcript: some words may be mis-heard \u2014 confirm any names, numbers or identifiers with the caller before acting on them";
-
-// @public
-export const DEFAULT_LOW_CONFIDENCE_PHRASE = "I'm sorry, I didn't quite catch that. Could you please repeat?";
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -1389,9 +1358,6 @@ interface DelegateResult extends SubagentAnswer {
     complaint?: string;
     revisions: number;
 }
-
-// @public
-export function describeKeytermDrops(dropped: readonly KeytermDrop[]): string | undefined;
 
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
@@ -1523,17 +1489,6 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 // @internal
 export function isUniversal35Pro(model: string): boolean;
 
-// @public
-export interface KeytermDrop {
-    // (undocumented)
-    readonly reason: KeytermDropReason;
-    // (undocumented)
-    readonly term: string;
-}
-
-// @public
-export type KeytermDropReason = "empty" | "too-long" | "duplicate" | "over-cap";
-
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -1544,38 +1499,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
-
-// @public
-type LowConfidenceAction = "clarify" | "note";
-
-// @public
-interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-type LowConfidenceStatistic = "mean" | "minWord";
-
-// @internal
-export type LowConfidenceVerdict = {
-    kind: "accept";
-} | {
-    kind: "discard";
-    confidence: number;
-} | {
-    kind: "clarify";
-    confidence: number;
-    phrase: string;
-} | {
-    kind: "note";
-    confidence: number;
-    note: string;
-};
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -1591,12 +1514,6 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 // @internal
 export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
-
-// @public
-export const MAX_KEYTERM_CHARS = 50;
-
-// @public
-export const MAX_KEYTERMS = 100;
 
 // @internal (undocumented)
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
@@ -1632,15 +1549,6 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 
 // @public (undocumented)
 export const MISTRAL_KIND: "mistral";
-
-// @public
-export interface NormalizedKeyterms {
-    readonly dropped: readonly KeytermDrop[];
-    readonly terms: readonly string[];
-}
-
-// @public
-export function normalizeKeyterms(terms: readonly string[]): NormalizedKeyterms;
 
 // @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
@@ -1761,8 +1669,6 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     languages?: string[];
     streamingUrl?: string;
     region?: "us" | "eu";
-    keyterms?: readonly string[];
-    agentContext?: string;
     formatTurns?: boolean;
 };
 
@@ -1796,30 +1702,11 @@ export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
     endpointingMs: number;
 };
 
-// @internal
-export interface ResolvedLowConfidence {
-    // (undocumented)
-    action: LowConfidenceAction;
-    // (undocumented)
-    actionBelow: number;
-    // (undocumented)
-    discardBelow: number;
-    // (undocumented)
-    note: string;
-    // (undocumented)
-    phrase: string;
-    // (undocumented)
-    statistic: LowConfidenceStatistic;
-}
-
 // @public
 export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
 };
-
-// @internal
-export function resolveLowConfidence(policy: LowConfidencePolicy): ResolvedLowConfidence;
 
 // @public
 export function resolveRimeTtsSettings(options: RimeTtsOptions): {
@@ -2097,7 +1984,6 @@ export interface SttOpener {
 
 // @public
 export interface SttOpenOptions {
-    agentContext?: string | undefined;
     apiKey: string;
     sampleRate: number;
     // (undocumented)
@@ -2118,16 +2004,12 @@ export interface SttSession {
     // (undocumented)
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
-    updateAgentContext?(text: string): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
-    updateKeyterms?(keyterms: readonly string[] | undefined): void;
 }
 
 // @public
 export type SttTurnMeta = {
     endOfTurnConfidence?: number;
-    transcriptConfidence?: number;
-    minWordConfidence?: number;
 };
 
 // @public
@@ -2838,7 +2720,6 @@ export interface DialogStateSpec {
     final?: true;
     initial?: string;
     instruction?: string;
-    keyterms?: readonly string[];
     on?: Record<string, string>;
     states?: Record<string, DialogStateSpec>;
     temperature?: number;
@@ -2880,7 +2761,6 @@ export interface DialogToolResult<R> extends DialogPosition {
 // @public
 export interface DialogVoiceConfig {
     readonly bargeIn?: DialogBargeIn;
-    readonly keyterms?: readonly string[];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -3015,22 +2895,6 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export type LowConfidenceAction = "clarify" | "note";
-
-// @public
-export interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-export type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
@@ -3128,7 +2992,6 @@ export interface PipelineVoiceTuning {
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
     interruptionPhrases?: readonly string[];
-    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -3312,7 +3175,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -4729,20 +4591,6 @@ export const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    lowConfidence: z.ZodOptional<z.ZodObject<{
-        discardBelow: z.ZodOptional<z.ZodNumber>;
-        actionBelow: z.ZodOptional<z.ZodNumber>;
-        action: z.ZodOptional<z.ZodEnum<{
-            clarify: "clarify";
-            note: "note";
-        }>>;
-        phrase: z.ZodOptional<z.ZodString>;
-        note: z.ZodOptional<z.ZodString>;
-        statistic: z.ZodOptional<z.ZodEnum<{
-            mean: "mean";
-            minWord: "minWord";
-        }>>;
-    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -4980,7 +4828,6 @@ interface DialogToolResult<R> extends DialogPosition {
 // @public
 interface DialogVoiceConfig {
     readonly bargeIn?: DialogBargeIn;
-    readonly keyterms?: readonly string[];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -5051,22 +4898,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type LowConfidenceAction = "clarify" | "note";
-
-// @public
-interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 type McpServerConfig = {
     url: string;
     tokenEnv?: string;
@@ -5101,12 +4932,11 @@ const PIPELINE_ONLY_TUNING: {
     readonly startFailurePhrase: "string";
     readonly resumeFalseInterruption: "boolean";
     readonly preemptiveGeneration: "boolean";
-    readonly lowConfidence: "lowConfidence";
 };
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases" ? readonly string[] : (typeof PIPELINE_ONLY_TUNING)[K] extends "lowConfidence" ? LowConfidencePolicy : readonly EndpointingRule[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases" ? readonly string[] : readonly EndpointingRule[]) | undefined;
 };
 
 // @public (undocumented)
@@ -5121,7 +4951,6 @@ interface PipelineVoiceTuning {
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
     interruptionPhrases?: readonly string[];
-    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -5232,7 +5061,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -6213,7 +6041,6 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -7409,10 +7236,8 @@ export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 
 // @public
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
-    agentContext?: string;
     connectTimeoutMs?: number;
     formatTurns?: boolean;
-    keyterms?: string[];
     languages?: string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
@@ -7555,20 +7380,6 @@ const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    lowConfidence: z.ZodOptional<z.ZodObject<{
-        discardBelow: z.ZodOptional<z.ZodNumber>;
-        actionBelow: z.ZodOptional<z.ZodNumber>;
-        action: z.ZodOptional<z.ZodEnum<{
-            clarify: "clarify";
-            note: "note";
-        }>>;
-        phrase: z.ZodOptional<z.ZodString>;
-        note: z.ZodOptional<z.ZodString>;
-        statistic: z.ZodOptional<z.ZodEnum<{
-            mean: "mean";
-            minWord: "minWord";
-        }>>;
-    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -7821,7 +7632,6 @@ interface DialogToolResult<R> extends DialogPosition {
 // @public
 interface DialogVoiceConfig {
     readonly bargeIn?: DialogBargeIn;
-    readonly keyterms?: readonly string[];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -7907,22 +7717,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type LowConfidenceAction = "clarify" | "note";
-
-// @public
-interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 type McpServerConfig = {
     url: string;
     tokenEnv?: string;
@@ -7955,7 +7749,6 @@ interface PipelineVoiceTuning {
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
     interruptionPhrases?: readonly string[];
-    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -8130,7 +7923,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

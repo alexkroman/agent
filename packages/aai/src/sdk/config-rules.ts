@@ -20,7 +20,6 @@ import {
 } from "./endpointing-constants.ts";
 import type { EndpointingRule } from "./endpointing-rules.ts";
 import { isRecord } from "./is-record.ts";
-import type { LowConfidencePolicy } from "./low-confidence.ts";
 import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/assemblyai.ts";
 
 /** {@link MODEL_TUNING_FIELDS}' keys, in declaration order. @internal */
@@ -179,10 +178,6 @@ const PIPELINE_ONLY_TUNING = {
   startFailurePhrase: "string",
   resumeFalseInterruption: "boolean",
   preemptiveGeneration: "boolean",
-  // The one non-scalar row, and the tag names the TYPE rather than the
-  // primitive: `PipelineTuning` maps it back to the policy interface, so this
-  // table stays the single declaration of the field list either way.
-  lowConfidence: "lowConfidence",
 } as const satisfies Record<
   keyof PipelineVoiceTuning,
   // The six value shapes a pipeline-only tuning field may have. Written
@@ -192,11 +187,11 @@ const PIPELINE_ONLY_TUNING = {
   // which `check:api-nameable` counts (it caught exactly that on the two
   // aliases this replaced). The table used to be `"number" | "string" |
   // "boolean"`, which was what the first four fields happened to be rather
-  // than a rule — the two phrase lists, the endpointing table and the
-  // low-confidence policy are declarations rather than dials, and they get
+  // than a rule — the two phrase lists and the endpointing table are
+  // declarations rather than dials, and they get
   // their own tags so that a field cannot skip this list and with it
   // `assertPipelineTuning`.
-  "number" | "string" | "boolean" | "phrases" | "endpointingRules" | "lowConfidence"
+  "number" | "string" | "boolean" | "phrases" | "endpointingRules"
 >;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
@@ -222,9 +217,7 @@ export type PipelineTuning = {
             ? string
             : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases"
               ? readonly string[]
-              : (typeof PIPELINE_ONLY_TUNING)[K] extends "lowConfidence"
-                ? LowConfidencePolicy
-                : readonly EndpointingRule[])
+              : readonly EndpointingRule[])
     | undefined;
 };
 

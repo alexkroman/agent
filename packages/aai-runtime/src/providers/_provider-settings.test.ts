@@ -22,15 +22,11 @@ describe("describeResolvedProviders", () => {
     const described = describeResolvedProviders({
       mode: "pipeline",
       stt: assemblyAIStt({
-        keyterms: ["gift card", "order number", "exchange", "store credit", "PayPal"],
-        agentContext: "x".repeat(200),
         languages: ["en", "es"],
       }),
     });
     expect(described.stt).toMatchObject({
       kind: "assemblyai",
-      keyterms: "5 item(s)",
-      agentContext: "200 chars",
       // A short list still prints in full: the threshold is "longer than a
       // glance", and which languages a session pins is a glance.
       languages: ["en", "es"],

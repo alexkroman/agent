@@ -37,7 +37,6 @@ import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
 import {
   BuiltinToolSchema,
   EndpointingRuleSchema,
-  LowConfidencePolicySchema,
   ToolChoiceSchema,
   VoicePresetNameSchema,
 } from "./type-schemas.ts";
@@ -222,7 +221,6 @@ export const AgentConfigSchema = z.object({
   startFailurePhrase: z.string().optional(),
   resumeFalseInterruption: z.boolean().optional(),
   preemptiveGeneration: z.boolean().optional(),
-  lowConfidence: LowConfidencePolicySchema.optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

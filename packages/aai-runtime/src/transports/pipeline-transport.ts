@@ -19,7 +19,6 @@ import { NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
-import { createClarificationSpeaker } from "./pipeline-low-confidence.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createSessionSignal } from "./pipeline-session-signal.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
@@ -59,7 +58,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     resumeFalseInterruption,
     preemptiveGeneration,
-    lowConfidence,
     speechIdleTimeoutMs,
     toolChoice,
     resetToolChoice,
@@ -205,19 +203,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sid: opts.sid,
   });
 
-  // One sentence spoken on the transport's own behalf, running no model turn —
-  // today only the `lowConfidence` clarification. Shaped like the GREETING
-  // rather than like `errorPhrase`, and pipeline-low-confidence.ts says why.
-  // `sendTtsText` is `audioOut`'s, read through a wrapper rather than captured
-  // so this stays independent of where the funnel is assembled.
-  const speakClarification = createClarificationSpeaker({
-    chain: (run) => turnChain.chain(run),
-    runReply: (idPrefix, body) => runReply(idPrefix, body),
-    callbacks,
-    sendTtsText: (text, options) => sendTtsText(text, options),
-    onCrash: logTurnCrash("Pipeline clarification failed"),
-  });
-
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
@@ -230,8 +215,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechIdleTimeoutMs,
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
-    lowConfidence,
-    speakClarification,
     phrases: { acknowledgement: acknowledgementPhrases, interruption: interruptionPhrases },
     endpointing,
     onInterrupted: audioOut.onInterrupted,
@@ -343,7 +326,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     startFailurePhrase,
     sendTtsText,
     drainTts: () => drainTts(sessionAbort.signal),
-    dialogKeyterms: knobs.keyterms,
   });
 
   const consumeLlmStream = createTurnLlmRunner({

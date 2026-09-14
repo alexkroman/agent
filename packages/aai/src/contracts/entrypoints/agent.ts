@@ -84,15 +84,6 @@
  * author is a field of the agent declaration, the same way `ToolContext.slots`
  * does not make `ToolContext` part of `state`.
  *
- * **The three `LowConfidence*` names ride with `PipelineVoiceTuning`**, for the
- * reason `UsageLimits` rides with `AgentModelTuning`: the policy is the type of
- * one of that interface's fields and has no reader anywhere else, and the two
- * unions under it (`LowConfidenceAction`, `LowConfidenceStatistic`) are the
- * vocabulary of two of ITS fields. A change to any of the three is a change to
- * what `agent({ lowConfidence })` accepts, which is this capability's subject.
- * Note the STT side of the same feature is not here: `keyterms` is a field of
- * the `assemblyAIStt` descriptor and belongs to `aai:stt`.
- *
  * **The five endpointing-rule types are here for the same reason the four
  * field-group interfaces are.** `endpointingRules` is a field of
  * `PipelineVoiceTuning`, already on this capability, and the rule objects are
@@ -143,9 +134,6 @@ export {
   type BuiltinTool,
   type EndpointingRule,
   type EndpointingRuleBase,
-  type LowConfidenceAction,
-  type LowConfidencePolicy,
-  type LowConfidenceStatistic,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,

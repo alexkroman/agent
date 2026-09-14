@@ -191,7 +191,6 @@ export function mergeTurnKnobs(
       ...omitUndefined({
         toolChoice: config.toolChoice,
         temperature: config.temperature,
-        keyterms: config.keyterms,
       }),
     };
   }

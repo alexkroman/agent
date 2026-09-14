@@ -161,11 +161,7 @@ export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
  * Zod schema for {@link AgentTranscriptRecovery}.
  * @public
  */
-export const AgentTranscriptRecoverySchema = z.enum([
-  "turn-failed",
-  "session-failed",
-  "low-confidence",
-]);
+export const AgentTranscriptRecoverySchema = z.enum(["turn-failed", "session-failed"]);
 
 /**
  * Why the TRANSPORT spoke a committed transcript on its own behalf.
@@ -179,12 +175,6 @@ export const AgentTranscriptRecoverySchema = z.enum([
  *   outage hands the conversation back instead of going quiet.
  * - `session-failed` — `startFailurePhrase`, when a provider failed to open and
  *   there is no conversation to have.
- * - `low-confidence` — `AgentDef.lowConfidence`'s clarification, when the
- *   recognizer's confidence in the caller's turn landed in the action band.
- *   The transcript it answers never reached the model either, which is the
- *   whole point: the words the agent is asking to have repeated are exactly
- *   the ones that must not enter the record as if they had been understood.
- *
  * **A recovery utterance is SPOKEN but never RECORDED, and this field is the
  * only thing on the wire that says so.** Both phrases reach the caller's ears
  * and the caller's caption — that is deliberate, the UI matching the audio — and

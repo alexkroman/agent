@@ -45,17 +45,6 @@ describe("pipeline greeting", () => {
       await t.stop();
     });
 
-    test("also pushes the greeting via sttSession.updateAgentContext", async () => {
-      const { opts, stt, callbacks } = greetingOpts();
-      const t = createPipelineTransport(opts);
-      await t.start();
-      await vi.waitFor(() => {
-        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
-      });
-      expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith(GREETING);
-      await t.stop();
-    });
-
     test("publishes the greeting transcript exactly once", async () => {
       // The whole greeting reaches TTS in one call, so the interim transcript
       // would be a byte-identical copy of the final: the turn emitted the same

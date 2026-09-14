@@ -322,24 +322,6 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.stop();
   });
 
-  test("full assistant reply is pushed via sttSession.updateAgentContext after the turn", async () => {
-    const { opts, stt, callbacks } = makeOpts({
-      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
-    });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("test question");
-    await vi.waitFor(() => {
-      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
-    });
-    expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Sure!");
-    // The other half of the same push: with no dialog declaring keyterms the
-    // session asks for the DESCRIPTOR's list back, which is what `undefined`
-    // means on that seam — never "clear them".
-    expect(stt.last()?.updateKeyterms).toHaveBeenCalledWith(undefined);
-    await t.stop();
-  });
-
   test("TTS flush is called after LLM stream finishes", async () => {
     const { opts, stt, tts } = makeOpts({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),

@@ -2,20 +2,17 @@
 // The WIRING of the pipeline transport's user-activity machinery: the silence
 // nudger, the false-interruption recovery latch (whose tail tracker and resume
 // prompts live in pipeline-recovery.ts), the speaking edges
-// (pipeline-speech-edges.ts), the low-confidence gate
-// (pipeline-low-confidence.ts), and the predicates every one of those is built
+// (pipeline-speech-edges.ts), and the predicates every one of those is built
 // from. What the handlers DO with a transcript is pipeline-stt-handlers.ts.
 
-import type { ResolvedLowConfidence } from "@alexkroman1/aai/host-internal";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
+import { DEFAULT_SILENCE_PROMPT, spelledAloudNote } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
 import {
   type BargeInPhraseLists,
   createAgentSpeakingPredicate,
 } from "./pipeline-barge-in-policy.ts";
 import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
-import { createLowConfidenceGate, modelTranscript } from "./pipeline-low-confidence.ts";
 import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
@@ -80,10 +77,7 @@ export function createUserActivity(deps: {
   onInterrupted(): void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
-  /** `AgentDef.lowConfidence`, resolved; absent when the agent declares none. */
-  lowConfidence: ResolvedLowConfidence | undefined;
   /** Speak one sentence on the transport's own behalf, running no turn. */
-  speakClarification(text: string): void;
   isTerminated(): boolean;
   /** False once the transport terminated or the session aborted (nudger gate). */
   isSessionActive(): boolean;
@@ -191,23 +185,12 @@ export function createUserActivity(deps: {
     nudger,
     callbacks,
     speculation: deps.speculation,
-    // The gate is built HERE because it needs this module's recovery latch and
-    // speaking edges, and `undefined` from the factory is what the handler
-    // reads as "commit every final". See pipeline-low-confidence.ts.
-    lowConfidence: createLowConfidenceGate({
-      policy: deps.lowConfidence,
-      log,
-      sid,
-      retireSpeculation: () => deps.speculation.onUtteranceIdle(),
-      clearRecovery: () => recovery.clear(),
-      endSpeech: () => speechEdges.speechEnded(),
-      speakClarification: deps.speakClarification,
-    }),
-    commitUserTurn(text: string, note?: string): void {
-      // The model's copy carries the annotations and the client's and
-      // history's stay verbatim — `modelTranscript` owns both halves of that
-      // rule, and the measurement behind the spelled one.
-      const forModel = modelTranscript(text, note);
+    commitUserTurn(text: string): void {
+      // The model's copy carries the spelled-run annotation and the client's
+      // and history's stay verbatim — see `spelledAloudNote` for what that
+      // note may CLAIM and the measurement behind it.
+      const note = spelledAloudNote(text);
+      const forModel = note === undefined ? text : `${text}\n[${note}]`;
       // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
       // the LLM with, so it stays the ground truth for "did the model see it?".
       log.debug("Pipeline turn committed", { sid, text: forModel });

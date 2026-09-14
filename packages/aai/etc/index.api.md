@@ -287,7 +287,6 @@ export interface DialogStateSpec {
     final?: true;
     initial?: string;
     instruction?: string;
-    keyterms?: readonly string[];
     on?: Record<string, string>;
     states?: Record<string, DialogStateSpec>;
     temperature?: number;
@@ -329,7 +328,6 @@ export interface DialogToolResult<R> extends DialogPosition {
 // @public
 export interface DialogVoiceConfig {
     readonly bargeIn?: DialogBargeIn;
-    readonly keyterms?: readonly string[];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
@@ -464,22 +462,6 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export type LowConfidenceAction = "clarify" | "note";
-
-// @public
-export interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-export type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
@@ -577,7 +559,6 @@ export interface PipelineVoiceTuning {
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
     interruptionPhrases?: readonly string[];
-    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -761,7 +742,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

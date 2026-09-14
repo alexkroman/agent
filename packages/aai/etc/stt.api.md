@@ -12,10 +12,8 @@ export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 
 // @public
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
-    agentContext?: string;
     connectTimeoutMs?: number;
     formatTurns?: boolean;
-    keyterms?: string[];
     languages?: string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;

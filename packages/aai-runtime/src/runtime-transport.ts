@@ -261,7 +261,6 @@ export function createTransportFactory(
       startFailurePhrase: agentConfig.startFailurePhrase,
       resumeFalseInterruption: agentConfig.resumeFalseInterruption,
       preemptiveGeneration: agentConfig.preemptiveGeneration,
-      lowConfidence: agentConfig.lowConfidence,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       ...omitUndefined({ dialogTurn: args.dialogTurn }),
       logger,

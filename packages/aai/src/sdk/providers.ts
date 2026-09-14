@@ -171,32 +171,6 @@ export type SttTurnMeta = {
    * measured against the current one rather than guessed at.
    */
   endOfTurnConfidence?: number;
-  /**
-   * How confident the recognizer is in the WORDS, 0..1 — the mean of the
-   * turn's per-word confidences.
-   *
-   * A different question from {@link endOfTurnConfidence}, which is about
-   * whether the caller has FINISHED. This one is about whether what they said
-   * was heard correctly, and it is the signal
-   * `AgentDef.lowConfidence` acts on: a mis-heard order id reads as a fluent
-   * sentence, so the transcript itself carries no evidence and this number is
-   * the only thing upstream of the model that does.
-   *
-   * Absent means the provider reported none, which every consumer must read as
-   * "no opinion" rather than as a low value — only the AssemblyAI opener fills
-   * it in today, and only from a turn that carried words.
-   */
-  transcriptConfidence?: number;
-  /**
-   * The LOWEST per-word confidence in the turn, 0..1.
-   *
-   * Beside the mean because the two disagree exactly where this matters: one
-   * soft digit inside a clean sentence barely moves a mean over twenty words,
-   * and it is the whole failure. Which of the two a policy should read is an
-   * open measurement (see `LowConfidenceStatistic`), and carrying both is what
-   * lets a log answer it without a second deployment.
-   */
-  minWordConfidence?: number;
 };
 
 export type SttEvents = {
@@ -218,35 +192,6 @@ export interface SttSession {
   sendAudio(pcm: Int16Array): void;
   on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
   close(): Promise<void>;
-  /**
-   * Push the agent's latest reply text mid-stream so the next user turn is
-   * transcribed with that context (e.g. AssemblyAI's `agent_context`, gated
-   * to models that support it). Optional: providers that have no equivalent
-   * simply omit it, and callers must use `?.()` to invoke it.
-   */
-  updateAgentContext?(text: string): void;
-  /**
-   * Replace the keyterms the recognizer is biased toward, mid-stream (e.g.
-   * AssemblyAI's `keyterms_prompt` in `UpdateConfiguration`). Optional, like
-   * {@link updateAgentContext}.
-   *
-   * `undefined` RESTORES the set the stream was opened with, which is what a
-   * per-phase caller wants when the phase that narrowed them ends — a
-   * `dialog()` state collecting an order number boosts that vocabulary and the
-   * state after it must not keep boosting it. Passing `[]` clears biasing
-   * outright, which is a different claim and deliberately reachable.
-   *
-   * Implementations must skip the wire message when the resolved list has not
-   * changed: this is called once per agent turn.
-   *
-   * **Its one caller today is the transport, from the active `dialog()`
-   * state.** A TOOL cannot reach it — the fact worth boosting most on a
-   * support call is the caller's own name, which is known only after a lookup,
-   * and there is no seam from a tool body to here. See "There is no
-   * PER-SESSION steering seam, and what one needs" in
-   * `packages/aai-runtime/CLAUDE.md` for the four things such a seam owes.
-   */
-  updateKeyterms?(keyterms: readonly string[] | undefined): void;
   /**
    * Move the end-of-turn silence window mid-stream, in ms — what the
    * regex-keyed endpointing rule table is applied THROUGH.
@@ -270,12 +215,6 @@ export interface SttOpenOptions {
   /** Provider API key, resolved from the agent's env. */
   apiKey: string;
   sttPrompt?: string | undefined;
-  /**
-   * Initial agent-side context to seed at connect time (e.g. the opening
-   * greeting), for providers that support it. Providers that don't support
-   * it, or whose resolved model doesn't qualify, ignore this.
-   */
-  agentContext?: string | undefined;
   signal: AbortSignal;
 }
 
