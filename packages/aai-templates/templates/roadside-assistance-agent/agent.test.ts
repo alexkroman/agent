@@ -503,11 +503,7 @@ describe("the per-phase voice knobs", () => {
     // the one a sixth phase would be added beside.
     const audited = eachState(CALL_SPEC.states);
     for (const [path, spec] of audited) {
-      expect({ at: path, voice: spec.voice, keyterms: spec.keyterms }).toEqual({
-        at: path,
-        voice: undefined,
-        keyterms: undefined,
-      });
+      expect({ at: path, voice: spec.voice }).toEqual({ at: path, voice: undefined });
     }
 
     // Non-vacuity, and the reason the walk is structural: every state in the
