@@ -329,6 +329,15 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // own flag rather than the transport's: a stopped session may still hold
       // sockets mid-teardown.
       if (stopped || !opts.transport.steerRecognizer) return false;
+      // LOGGED for the reason `announce` above is, and the gap was worse here:
+      // steering has NO other trace. The terms never enter history, never
+      // reach a transcript and never produce a client frame, and the provider
+      // skips the wire message when the resolved list has not changed — so a
+      // run could not answer "did anything ask for this?" at all. A graded run
+      // measuring whether the `listen_for` builtin is worth its tokens is
+      // uninterpretable without it: no calls and a call that changed nothing
+      // look identical from outside.
+      log.info("Session recognizer steered", { sid: opts.id, terms: keyterms });
       opts.transport.steerRecognizer(keyterms);
       return true;
     },

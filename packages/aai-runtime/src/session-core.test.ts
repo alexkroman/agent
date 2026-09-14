@@ -114,6 +114,22 @@ describe("createSessionCore — steerRecognizer", () => {
     expect(steer).toHaveBeenCalledWith(["Yusuf Rossi"]);
   });
 
+  test("LOGS the terms, because steering leaves no other trace", () => {
+    // No history entry, no transcript, no client frame — and the provider
+    // skips the wire message when the resolved list is unchanged. Without
+    // this line a graded run cannot tell "nothing asked to steer" from
+    // "something asked and it changed nothing", which is exactly the question
+    // a run measuring the `listen_for` builtin has to answer.
+    const log = makeLogger();
+    const { core, transport } = makeCore({ logger: log });
+    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = vi.fn();
+    core.steerRecognizer(["Yusuf Rossi"]);
+    expect(log.info).toHaveBeenCalledWith(
+      "Session recognizer steered",
+      expect.objectContaining({ terms: ["Yusuf Rossi"] }),
+    );
+  });
+
   test("reports FALSE for a transport with no such verb", () => {
     // S2S runs recognition service-side and exposes no control over it. The
     // caller is a tool mid-call, and a hint that went nowhere must be an
