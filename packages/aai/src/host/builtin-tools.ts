@@ -25,6 +25,7 @@ import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
+import { createListenFor } from "./_listen-for.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
@@ -323,52 +324,6 @@ function createVerifyAction(): ToolDef<typeof verifyActionParams> & { guidance: 
         };
       }
       return { verdict: "ok" };
-    },
-  };
-}
-
-const listenForParams = z.object({
-  terms: z
-    .array(z.string().min(1))
-    .min(1)
-    .max(10)
-    .describe(
-      "The words themselves, spelled the way they should be transcribed — a person's " +
-        "name, an order id, a product. Not a sentence.",
-    ),
-});
-
-/**
- * `listen_for` — bias the recognizer toward words the caller is about to say.
- *
- * The one builtin that changes what the agent HEARS rather than what it does,
- * and the only one whose moment the model is uniquely placed to spot: a lookup
- * has just returned a name, and the caller is about to confirm or repeat it.
- */
-function createListenFor(): ToolDef<typeof listenForParams> & { guidance: string } {
-  return {
-    guidance:
-      "The moment a tool result gives you a name, an order id or a product the caller will " +
-      "say back, call listen_for with those exact words. It costs nothing and makes the next " +
-      "thing you hear more likely to be right. Do NOT call it for words YOU are about to say, " +
-      "for whole sentences, or for anything the caller has already confirmed correctly.",
-    description:
-      "Tell the speech recognizer to expect specific words for the rest of the call — a " +
-      "caller's name, an order id, a product — so they transcribe correctly when spoken. Use " +
-      "it right after a lookup returns a value the caller will say or confirm. It does not " +
-      "speak, read, or change anything.",
-    inputSchema: listenForParams,
-    execute(args, ctx) {
-      // The capability reports whether the hint reached a recognizer at all
-      // (S2S runs recognition service-side, and a stopped session has none),
-      // and the model is told plainly rather than left to assume it worked.
-      const applied = ctx.steerRecognizer(args.terms);
-      return applied
-        ? { listening_for: args.terms }
-        : {
-            listening_for: [],
-            detail: "This session's recognizer cannot be steered. Carry on without it.",
-          };
     },
   };
 }
