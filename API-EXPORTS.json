@@ -518,6 +518,7 @@
     "normalizeBargeInText",
     "normalizeSpeechText",
     "parseWsUpgradeParams",
+    "promptingNote",
     "rejectingWorkflows",
     "requestPath",
     "requestQuery",

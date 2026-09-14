@@ -341,3 +341,74 @@ export function spelledAloudNote(text: string): string | undefined {
   }
   return `spelled aloud: ${runs.map((one) => one.token).join(", ")}`;
 }
+
+/**
+ * Phrases a caller uses to PROMPT rather than to answer — "hello?", "are you
+ * still there?", "any update?".
+ *
+ * Deliberately not the barge-in lists: `DEFAULT_INTERRUPTION_PHRASES` and
+ * `DEFAULT_ACKNOWLEDGEMENT_PHRASES` decide whether speech takes the FLOOR, and
+ * a prompt is neither — it is speech that needs the agent to say its last
+ * thing again. Nothing classified a prompt at all before this, so it fell
+ * through to the generic path and reached the model as an ordinary turn.
+ */
+const PROMPTING_PATTERNS: readonly RegExp[] = [
+  /\bhello\b/,
+  /\bhi\b/,
+  /\bhey\b/,
+  /\byo\b/,
+  /are you (?:still )?(?:there|with me)/,
+  /you (?:still )?there/,
+  /still with me/,
+  /any (?:update|news|luck)/,
+  /did you (?:find|get|hear)\b/,
+  /can you hear me/,
+  /what(?:'s| is) (?:the )?(?:status|happening)/,
+];
+
+/** Words that carry no content, so a prompt plus these is still just a prompt. */
+const PROMPTING_FILLER = /\b(?:yeah|yes|no|um+|uh+|er+|ok|okay|so|just|please|sorry|there)\b/g;
+
+/**
+ * A note for the MODEL's copy of a transcript when the caller is prompting
+ * rather than answering.
+ *
+ * **The failure it exists for is an agent ABANDONING a write.** Measured on a
+ * graded tau2-bench retail run: of fourteen calls that authenticated and whose
+ * plan required a data change, seven never attempted one — every one of them in
+ * the same loop, where the agent asks for confirmation, the caller answers
+ * "Hello? Did you find anything?", the agent re-asks, and eventually says
+ * "Understood. No return was submitted. Goodbye." The caller never said no.
+ * Calls that did attempt the write scored 0.86; the seven scored 0.000.
+ *
+ * It is a LABEL rather than an instruction, and that is the whole design. The
+ * same run showed the two prompt-rule shapes this repo can and cannot rely on:
+ * a token-level formatting rule holds (bare identifiers went from 4.8% of agent
+ * turns to 0.0%), while a rule asking the model to notice a condition and act
+ * does not — "your FIRST sentence carries the next question" is in the shipped
+ * prompt and was followed in 0 of 94 replies. So the runtime classifies and the
+ * model only has to read, which is the seam `spelledAloudNote` above already
+ * uses and the reason this lives beside it.
+ *
+ * Both readings the note rules out are named, because both were observed: a
+ * prompt is not an ANSWER (so the question still stands) and not a REFUSAL (so
+ * the pending action is still pending).
+ *
+ * Conservative by construction: the prompt phrases are stripped along with
+ * filler, and a note is offered only when almost nothing is left. "Hello? Yes,
+ * go ahead with the exchange" keeps its content and gets no note — labelling a
+ * real answer as a prompt would be strictly worse than the failure this fixes.
+ */
+export function promptingNote(text: string): string | undefined {
+  const lower = text.toLowerCase();
+  if (!PROMPTING_PATTERNS.some((one) => one.test(lower))) return;
+  let rest = lower;
+  for (const one of PROMPTING_PATTERNS) rest = rest.replace(one, " ");
+  rest = rest
+    .replace(PROMPTING_FILLER, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const words = rest.length === 0 ? [] : rest.split(/\s+/);
+  if (words.length > 2) return;
+  return "prompting you for a reply — not an answer, and not a refusal";
+}

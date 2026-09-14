@@ -6,7 +6,7 @@
 // from. What the handlers DO with a transcript is pipeline-stt-handlers.ts.
 
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_SILENCE_PROMPT, spelledAloudNote } from "@alexkroman1/aai/internal";
+import { DEFAULT_SILENCE_PROMPT, promptingNote, spelledAloudNote } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
 import {
   type BargeInPhraseLists,
@@ -186,11 +186,14 @@ export function createUserActivity(deps: {
     callbacks,
     speculation: deps.speculation,
     commitUserTurn(text: string): void {
-      // The model's copy carries the spelled-run annotation and the client's
-      // and history's stay verbatim — see `spelledAloudNote` for what that
-      // note may CLAIM and the measurement behind it.
-      const note = spelledAloudNote(text);
-      const forModel = note === undefined ? text : `${text}\n[${note}]`;
+      // The model's copy carries the annotations and the client's and history's
+      // stay verbatim — see `spelledAloudNote` and `promptingNote` for what
+      // each may CLAIM and the measurement behind it.
+      const notes = [spelledAloudNote(text), promptingNote(text)].filter(
+        (one): one is string => one !== undefined,
+      );
+      const forModel =
+        notes.length === 0 ? text : `${text}\n${notes.map((one) => `[${one}]`).join("\n")}`;
       // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
       // the LLM with, so it stays the ground truth for "did the model see it?".
       log.debug("Pipeline turn committed", { sid, text: forModel });

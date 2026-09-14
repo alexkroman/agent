@@ -4167,6 +4167,9 @@ export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 // @public
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
+// @public
+export function promptingNote(text: string): string | undefined;
+
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 

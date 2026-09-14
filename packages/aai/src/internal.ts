@@ -42,6 +42,7 @@ export {
   capToolResult,
   isTextAssetPath,
   normalizeSpeechText,
+  promptingNote,
   type SpelledRun,
   spelledAloudNote,
   toArgsRecord,

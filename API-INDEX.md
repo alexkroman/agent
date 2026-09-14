@@ -1277,6 +1277,7 @@ trace or a type error can be traced back to something.
 | `pinnedFetch` | `@alexkroman1/aai/host-internal` |
 | `planDelayedLadder` | `@alexkroman1/aai/host-internal` |
 | `platformSocketUrl` | `@alexkroman1/aai-runtime/internal` |
+| `promptingNote` | `@alexkroman1/aai/internal` |
 | `publishSpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
 | `publishStepDelegate` | `@alexkroman1/aai/host-internal` |
 | `publishStepEnv` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
