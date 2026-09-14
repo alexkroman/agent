@@ -29,8 +29,7 @@ function commandedBuiltins(config: {
      | "think"
      | "remember"
      | "recall"
-     | "calculate"
-    | "verify_action")[];
+    | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -62,14 +61,6 @@ function commandedBuiltins(config: {
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -181,8 +172,7 @@ readonly (
   \| `"think"`
   \| `"remember"`
   \| `"recall"`
-  \| `"calculate"`
-  \| `"verify_action"`)[]
+  \| `"calculate"`)[]
 
 ###### deadAirCoverMs?
 
@@ -253,41 +243,6 @@ readonly `string`[]
 ###### llm.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### lowConfidence?
-
-\{
-  `action?`: `"clarify"` \| `"note"`;
-  `actionBelow?`: `number`;
-  `discardBelow?`: `number`;
-  `note?`: `string`;
-  `phrase?`: `string`;
-  `statistic?`: `"mean"` \| `"minWord"`;
-\}
-
-###### lowConfidence.action?
-
-`"clarify"` \| `"note"`
-
-###### lowConfidence.actionBelow?
-
-`number`
-
-###### lowConfidence.discardBelow?
-
-`number`
-
-###### lowConfidence.note?
-
-`string`
-
-###### lowConfidence.phrase?
-
-`string`
-
-###### lowConfidence.statistic?
-
-`"mean"` \| `"minWord"`
 
 ###### maxOutputTokens?
 
@@ -900,8 +855,7 @@ function expectDeployable(def: AgentConfigSource): {
      | "think"
      | "remember"
      | "recall"
-     | "calculate"
-    | "verify_action")[];
+    | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -933,14 +887,6 @@ function expectDeployable(def: AgentConfigSource): {
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -1057,8 +1003,7 @@ The agent under test — an `agent()` definition, or the raw
      | "think"
      | "remember"
      | "recall"
-     | "calculate"
-    | "verify_action")[];
+    | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -1090,14 +1035,6 @@ The agent under test — an `agent()` definition, or the raw
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -1174,8 +1111,7 @@ optional builtinTools?: readonly (
   | "think"
   | "remember"
   | "recall"
-  | "calculate"
-  | "verify_action")[];
+  | "calculate")[];
 ```
 
 ##### deadAirCoverMs?
@@ -1257,19 +1193,6 @@ optional interruptionPhrases?: readonly string[];
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### lowConfidence?
-
-```ts
-{
-  action?: "clarify" | "note";
-  actionBelow?: number;
-  discardBelow?: number;
-  note?: string;
-  phrase?: string;
-  statistic?: "mean" | "minWord";
 }
 ```
 
