@@ -167,10 +167,6 @@ export function createPipelineProviderSessions(
             sampleRate: opts.sttSampleRate,
             apiKey: opts.providerKeys.stt,
             sttPrompt: opts.sttPrompt,
-            // Seed the agent's opening line as connect-time context (e.g.
-            // AssemblyAI `agent_context`) — providers that don't support it,
-            // or whose model doesn't qualify, ignore this field.
-            agentContext: opts.greeting,
             signal: opts.signal,
           }),
         adoptStt,

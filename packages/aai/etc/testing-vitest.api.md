@@ -426,8 +426,6 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
-    mutates?: boolean;
-    completes?: boolean;
 };
 
 // @public

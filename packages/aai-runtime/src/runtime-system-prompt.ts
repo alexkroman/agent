@@ -66,18 +66,21 @@ export interface SessionSystemPrompt {
    *
    * **It used to be unkeyed, last-writer-wins, on the argument that "a session
    * has one dialog, and a second installer is a wiring mistake rather than a
-   * composition."** There are two legitimate installers now — the dialogs, and
-   * the fast/slow tier's state digest — and under the old signature the second
-   * silently deleted the first: a `dialog()` agent that also declared `twoTier`
-   * lost its active instruction from every request, with nothing failing and no
-   * way to see it short of reading the prompt on the wire.
+   * composition."** It is keyed because a second installer arrived and that
+   * argument turned out to be wrong: under the old signature it silently
+   * deleted the dialogs' suffix, so a session lost its active instruction from
+   * every request with nothing failing and no way to see it short of reading
+   * the prompt on the wire. The second installer has since been removed and
+   * the dialogs are again the only one — the KEY stays, because what it costs
+   * is nothing and what it buys is that the next installer cannot repeat that
+   * failure.
    *
    * Rendered in KEY order (`localeCompare`), which is stable, has no dependency
    * on wiring order, and is the only ordering a reader of two prompts can
    * predict. Re-installing a key REPLACES it, so a re-wire on reconnect does
    * not accumulate.
    *
-   * @param key who is contributing — `"dialogs"`, `"two-tier"`
+   * @param key who is contributing — `"dialogs"` today
    * @param suffix the source, asked once per request
    */
   setSuffix(key: string, suffix: SystemPromptSuffix): void;

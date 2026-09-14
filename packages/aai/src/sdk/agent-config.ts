@@ -34,13 +34,7 @@ import {
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import {
-  BuiltinToolSchema,
-  EndpointingRuleSchema,
-  LowConfidencePolicySchema,
-  ToolChoiceSchema,
-  VoicePresetNameSchema,
-} from "./type-schemas.ts";
+import { BuiltinToolSchema, ToolChoiceSchema, VoicePresetNameSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -84,37 +78,6 @@ export const ProviderDescriptorSchema = z.object({
   kind: z.string().min(1),
   options: z.record(z.string(), z.unknown()),
 });
-
-/**
- * Zod schema for {@link TwoTierConfig} — the fast/slow declaration.
- *
- * Serializable for the same reason the five scalar knobs above it are: it is
- * numbers, flags and one provider descriptor, and a deployed guest has to
- * carry all of it or the gate exists in `aai dev` and nowhere else.
- *
- * `.strict()`, unlike its neighbours, and for the reason
- * {@link McpServerConfigSchema} is: a misspelled `onTimeout` would deploy an
- * agent whose mutation gate fails open when the author wrote the opposite, and
- * the only symptom is a mutation that went through. A typo in a field that
- * decides whether something is REFUSED has to be a boundary error.
- *
- * `llm` accepts the descriptor OR the string shorthand `agent({ llm })` takes,
- * normalized host-side by `normalizeLlm` — one spelling on the authoring
- * surface, one on the wire, and no third.
- *
- * @internal
- */
-export const TwoTierConfigSchema = z
-  .object({
-    llm: z.union([ProviderDescriptorSchema, z.string().min(1)]).optional(),
-    effort: z.enum(["minimal", "low", "medium", "high"]).optional(),
-    timeoutMs: z.number().int().positive().optional(),
-    onTimeout: z.enum(["allow", "block"]).optional(),
-    completionGate: z.boolean().optional(),
-    annotateReads: z.boolean().optional(),
-    contextMessages: z.number().int().positive().optional(),
-  })
-  .strict();
 
 /**
  * A name a person and a URL can both carry.
@@ -224,7 +187,6 @@ export const AgentConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative().optional(),
   resetToolChoice: z.boolean().optional(),
   usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
-  twoTier: TwoTierConfigSchema.optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   // Serializable like `builtinTools` beside it and for the same reason: it is a
@@ -244,9 +206,6 @@ export const AgentConfigSchema = z.object({
   // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
   // not survive `JSON.stringify`, and one that silently became `{}` would be a
   // rule that matches nothing with nothing to report it.
-  acknowledgementPhrases: z.array(z.string()).readonly().optional(),
-  interruptionPhrases: z.array(z.string()).readonly().optional(),
-  endpointingRules: z.array(EndpointingRuleSchema).readonly().optional(),
   startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
   interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
   deadAirCoverMs: z.number().int().nonnegative().optional(),
@@ -254,7 +213,6 @@ export const AgentConfigSchema = z.object({
   startFailurePhrase: z.string().optional(),
   resumeFalseInterruption: z.boolean().optional(),
   preemptiveGeneration: z.boolean().optional(),
-  lowConfidence: LowConfidencePolicySchema.optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

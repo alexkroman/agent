@@ -11,11 +11,8 @@
 
 import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import {
-  DEFAULT_ACKNOWLEDGEMENT_PHRASES,
-  DEFAULT_ENDPOINTING_RULES,
   DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-  DEFAULT_INTERRUPTION_PHRASES,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_START_SPEAKING_FLOOR_MS,
@@ -57,26 +54,6 @@ describe("pipeline defaults", () => {
     // while unreachable: the cover's enable was `holdPhrase.length > 0` and
     // `holdPhrase` defaulted to `""`, so no default agent had cover at all.
     expect(resolved.deadAirCoverMs).toBe(DEFAULT_DEAD_AIR_COVER_MS);
-  });
-
-  test("the two phrase lists and the endpointing table ship ON", () => {
-    const resolved = resolveBare();
-    expect(resolved.acknowledgementPhrases).toBe(DEFAULT_ACKNOWLEDGEMENT_PHRASES);
-    expect(resolved.interruptionPhrases).toBe(DEFAULT_INTERRUPTION_PHRASES);
-    expect(resolved.endpointingRules).toBe(DEFAULT_ENDPOINTING_RULES);
-  });
-
-  test("an empty list REPLACES the default rather than being treated as absent", () => {
-    // `[]` is the off switch for all three, so `or()` must not read it as
-    // "unset" — which is exactly what a `.length > 0` test here would do.
-    const resolved = resolveBare({
-      acknowledgementPhrases: [],
-      interruptionPhrases: [],
-      endpointingRules: [],
-    });
-    expect(resolved.acknowledgementPhrases).toEqual([]);
-    expect(resolved.interruptionPhrases).toEqual([]);
-    expect(resolved.endpointingRules).toEqual([]);
   });
 
   test("both speak-gate windows are OFF in the shipped default", () => {

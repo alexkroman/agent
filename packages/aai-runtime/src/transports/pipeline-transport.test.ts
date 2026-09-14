@@ -49,16 +49,6 @@ describe("PipelineTransport", () => {
       expect(stt.last()?.options.sttPrompt).toBe("be brief");
       await t.stop();
     });
-
-    test("seeds the greeting as the STT opener's connect-time agentContext", async () => {
-      const { opts, stt } = makeOpts({
-        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-      expect(stt.last()?.options.agentContext).toBe("Hi there!");
-      await t.stop();
-    });
   });
 
   describe("streamText config plumbing", () => {

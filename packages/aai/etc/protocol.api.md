@@ -140,8 +140,6 @@ export const HostConfigMessageSchema: z.ZodObject<{
                     }>>;
                 }, z.core.$strip>>>;
             }, z.core.$strip>>;
-            mutates: z.ZodOptional<z.ZodBoolean>;
-            completes: z.ZodOptional<z.ZodBoolean>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
         credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -235,8 +233,6 @@ export const HostConfigSchema: z.ZodObject<{
                 }>>;
             }, z.core.$strip>>>;
         }, z.core.$strip>>;
-        mutates: z.ZodOptional<z.ZodBoolean>;
-        completes: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -396,7 +392,6 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;

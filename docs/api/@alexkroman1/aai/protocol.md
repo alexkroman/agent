@@ -323,7 +323,7 @@ event(event:
      at: number;
      id: string;
   };
-  recovery?: "low-confidence" | "session-failed" | "turn-failed";
+  recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -522,7 +522,7 @@ event the stream had already recorded under another.
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -863,7 +863,6 @@ const HostConfigMessageSchema: z.ZodObject<{
      sttPrompt: z.ZodOptional<z.ZodString>;
      systemPrompt: z.ZodString;
      tools: z.ZodArray<z.ZodObject<{
-        completes: z.ZodOptional<z.ZodBoolean>;
         description: z.ZodString;
         messages: z.ZodOptional<z.ZodObject<{
            complete: z.ZodOptional<...>;
@@ -871,7 +870,6 @@ const HostConfigMessageSchema: z.ZodObject<{
            failed: z.ZodOptional<...>;
            start: z.ZodOptional<...>;
         }, z.core.$strip>>;
-        mutates: z.ZodOptional<z.ZodBoolean>;
         name: z.ZodString;
         parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
         type: z.ZodLiteral<"function">;
@@ -904,7 +902,6 @@ const HostConfigSchema: z.ZodObject<{
   sttPrompt: z.ZodOptional<z.ZodString>;
   systemPrompt: z.ZodString;
   tools: z.ZodArray<z.ZodObject<{
-     completes: z.ZodOptional<z.ZodBoolean>;
      description: z.ZodString;
      messages: z.ZodOptional<z.ZodObject<{
         complete: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
@@ -912,7 +909,6 @@ const HostConfigSchema: z.ZodObject<{
         failed: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
         start: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
      }, z.core.$strip>>;
-     mutates: z.ZodOptional<z.ZodBoolean>;
      name: z.ZodString;
      parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
      type: z.ZodLiteral<"function">;
@@ -1109,7 +1105,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
      id: z.ZodString;
   }, z.core.$strip>;
   recovery: z.ZodOptional<z.ZodEnum<{
-     low-confidence: "low-confidence";
      session-failed: "session-failed";
      turn-failed: "turn-failed";
   }>>;

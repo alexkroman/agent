@@ -254,8 +254,6 @@ export interface DialogVoiceConfig {
   readonly voice?: string;
   /** How interruptible the agent is here. See {@link DialogBargeIn}. */
   readonly bargeIn?: DialogBargeIn;
-  /** STT biasing for what the caller is about to say here. */
-  readonly keyterms?: readonly string[];
   /** The model's tool-choice policy while this state is active. */
   readonly toolChoice?: ToolChoice;
   /** The model's sampling temperature while this state is active. */
@@ -275,7 +273,7 @@ export interface DialogVoiceConfig {
  *
  * The six became eleven when a dialog had to be able to describe a CALL rather
  * than a form: a deadline (`timeout`) and the five per-phase voice knobs
- * (`voice`, `bargeIn`, `keyterms`, `toolChoice`, `temperature`). Every one of
+ * (`voice`, `bargeIn`, `toolChoice`, `temperature`). Every one of
  * them is plain JSON and rides in the same `meta` the instruction does, so the
  * constraint above is untouched and a `durable: true` dialog written before any
  * of this resumes byte-identically — a state declaring none of them compiles to
@@ -344,11 +342,6 @@ export interface DialogStateSpec {
    * a menu state wants to be maximally interruptible. See {@link DialogBargeIn}.
    */
   bargeIn?: DialogBargeIn;
-  /**
-   * STT biasing for what the caller is about to say in this state — the policy
-   * number they are reading out, the product names on the menu.
-   */
-  keyterms?: readonly string[];
   /** The model's tool-choice policy while this state is active. */
   toolChoice?: ToolChoice;
   /** The model's sampling temperature while this state is active. */

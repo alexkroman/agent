@@ -27,26 +27,6 @@ export const AgentConfigSchema: z.ZodObject<{
     usageLimits: z.ZodOptional<z.ZodObject<{
         totalTokens: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    twoTier: z.ZodOptional<z.ZodObject<{
-        llm: z.ZodOptional<z.ZodUnion<readonly [z.ZodObject<{
-            kind: z.ZodString;
-            options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        }, z.core.$strip>, z.ZodString]>>;
-        effort: z.ZodOptional<z.ZodEnum<{
-            high: "high";
-            low: "low";
-            medium: "medium";
-            minimal: "minimal";
-        }>>;
-        timeoutMs: z.ZodOptional<z.ZodNumber>;
-        onTimeout: z.ZodOptional<z.ZodEnum<{
-            allow: "allow";
-            block: "block";
-        }>>;
-        completionGate: z.ZodOptional<z.ZodBoolean>;
-        annotateReads: z.ZodOptional<z.ZodBoolean>;
-        contextMessages: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strict>>;
     toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         auto: "auto";
         none: "none";
@@ -69,7 +49,6 @@ export const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -77,25 +56,6 @@ export const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
@@ -103,20 +63,6 @@ export const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    lowConfidence: z.ZodOptional<z.ZodObject<{
-        discardBelow: z.ZodOptional<z.ZodNumber>;
-        actionBelow: z.ZodOptional<z.ZodNumber>;
-        action: z.ZodOptional<z.ZodEnum<{
-            clarify: "clarify";
-            note: "note";
-        }>>;
-        phrase: z.ZodOptional<z.ZodString>;
-        note: z.ZodOptional<z.ZodString>;
-        statistic: z.ZodOptional<z.ZodEnum<{
-            mean: "mean";
-            minWord: "minWord";
-        }>>;
-    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -216,7 +162,6 @@ interface AgentModelTuning {
     maxRetries?: number;
     resetToolChoice?: boolean;
     temperature?: number;
-    twoTier?: TwoTierConfig;
     usageLimits?: UsageLimits;
 }
 
@@ -261,21 +206,6 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 
 // @internal
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
-
-// @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -355,19 +285,9 @@ interface DialogToolResult<R> extends DialogPosition {
 // @public
 interface DialogVoiceConfig {
     readonly bargeIn?: DialogBargeIn;
-    readonly keyterms?: readonly string[];
     readonly temperature?: number;
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
-}
-
-// @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
 }
 
 // @public
@@ -426,22 +346,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type LowConfidenceAction = "clarify" | "note";
-
-// @public
-interface LowConfidencePolicy {
-    action?: LowConfidenceAction | undefined;
-    actionBelow?: number | undefined;
-    discardBelow?: number | undefined;
-    note?: string | undefined;
-    phrase?: string | undefined;
-    statistic?: LowConfidenceStatistic | undefined;
-}
-
-// @public
-type LowConfidenceStatistic = "mean" | "minWord";
-
-// @public
 type McpServerConfig = {
     url: string;
     tokenEnv?: string;
@@ -466,9 +370,6 @@ export function normalizeToolMessages(input: ToolMessagesInput | undefined): Too
 const PIPELINE_ONLY_TUNING: {
     readonly minBargeInWords: "number";
     readonly interruptionMinDurationMs: "number";
-    readonly acknowledgementPhrases: "phrases";
-    readonly interruptionPhrases: "phrases";
-    readonly endpointingRules: "endpointingRules";
     readonly startSpeakingFloorMs: "number";
     readonly interruptionBackoffMs: "number";
     readonly deadAirCoverMs: "number";
@@ -476,12 +377,11 @@ const PIPELINE_ONLY_TUNING: {
     readonly startFailurePhrase: "string";
     readonly resumeFalseInterruption: "boolean";
     readonly preemptiveGeneration: "boolean";
-    readonly lowConfidence: "lowConfidence";
 };
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases" ? readonly string[] : (typeof PIPELINE_ONLY_TUNING)[K] extends "lowConfidence" ? LowConfidencePolicy : readonly EndpointingRule[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -489,14 +389,10 @@ type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
 // @public
 interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
-    lowConfidence?: LowConfidencePolicy;
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -607,7 +503,6 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>;
     text: z.ZodString;
     recovery: z.ZodOptional<z.ZodEnum<{
-        "low-confidence": "low-confidence";
         "session-failed": "session-failed";
         "turn-failed": "turn-failed";
     }>>;
@@ -754,9 +649,6 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
-
-// @public
-type SlowTierEffort = "minimal" | "low" | "medium" | "high";
 
 // @public
 interface StandardSchemaIssue {
@@ -909,8 +801,6 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
-    mutates?: boolean;
-    completes?: boolean;
 };
 
 // @public
@@ -970,8 +860,6 @@ export type ToolSchema = {
     description: string;
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
-    mutates?: boolean | undefined;
-    completes?: boolean | undefined;
 };
 
 // @internal
@@ -1052,8 +940,6 @@ export const ToolSchemaSchema: z.ZodObject<{
             }>>;
         }, z.core.$strip>>>;
     }, z.core.$strip>>;
-    mutates: z.ZodOptional<z.ZodBoolean>;
-    completes: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>;
 
 // @public
@@ -1067,15 +953,6 @@ export type ToolStartMessage = {
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
-
-// @public
-interface TwoTierConfig {
-    completionGate?: boolean;
-    contextMessages?: number;
-    effort?: SlowTierEffort;
-    llm?: LlmProvider | string;
-    timeoutMs?: number;
-}
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {
@@ -1094,14 +971,7 @@ interface UsageLimits {
 }
 
 // @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

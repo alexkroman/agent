@@ -19,7 +19,6 @@ suppression the escape-hatch ratchet only lets move down.
 
 ```ts
 function commandedBuiltins(config: {
-  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -32,43 +31,14 @@ function commandedBuiltins(config: {
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
-  endpointingRules?: readonly (
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "assistant";
-   }
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "user";
-   }
-     | {
-     assistantRegex: string;
-     flags?: string;
-     timeoutMs: number;
-     type: "both";
-     userRegex: string;
-  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
   interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
-  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -114,27 +84,10 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  twoTier?: {
-     annotateReads?: boolean;
-     completionGate?: boolean;
-     contextMessages?: number;
-     effort?: "minimal" | "low" | "medium" | "high";
-     llm?:   | string
-        | {
-        kind: string;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-      };
-     onTimeout?: "allow" | "block";
-     timeoutMs?: number;
-  };
   usageLimits?: {
      totalTokens?: number;
   };
-  voicePresets?: readonly (
-     | "echoVerification"
-     | "smartMatching"
-     | "speechNormalization"
-    | "natoAlphabet")[];
+  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }): BuiltinTool[];
 ```
 
@@ -178,10 +131,6 @@ console.log(commandedBuiltins(config)); // ["fetch_json"]
 
 ##### config
 
-###### acknowledgementPhrases?
-
-readonly `string`[]
-
 ###### builtinTools?
 
 readonly (
@@ -203,29 +152,6 @@ readonly (
 
 `string`
 
-###### endpointingRules?
-
-readonly (
-  \| \{
-  `flags?`: `string`;
-  `regex`: `string`;
-  `timeoutMs`: `number`;
-  `type`: `"assistant"`;
-\}
-  \| \{
-  `flags?`: `string`;
-  `regex`: `string`;
-  `timeoutMs`: `number`;
-  `type`: `"user"`;
-\}
-  \| \{
-  `assistantRegex`: `string`;
-  `flags?`: `string`;
-  `timeoutMs`: `number`;
-  `type`: `"both"`;
-  `userRegex`: `string`;
-\})[]
-
 ###### errorPhrase?
 
 `string`
@@ -246,10 +172,6 @@ readonly (
 
 `number`
 
-###### interruptionPhrases?
-
-readonly `string`[]
-
 ###### llm?
 
 \{
@@ -264,41 +186,6 @@ readonly `string`[]
 ###### llm.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### lowConfidence?
-
-\{
-  `action?`: `"clarify"` \| `"note"`;
-  `actionBelow?`: `number`;
-  `discardBelow?`: `number`;
-  `note?`: `string`;
-  `phrase?`: `string`;
-  `statistic?`: `"mean"` \| `"minWord"`;
-\}
-
-###### lowConfidence.action?
-
-`"clarify"` \| `"note"`
-
-###### lowConfidence.actionBelow?
-
-`number`
-
-###### lowConfidence.discardBelow?
-
-`number`
-
-###### lowConfidence.note?
-
-`string`
-
-###### lowConfidence.phrase?
-
-`string`
-
-###### lowConfidence.statistic?
-
-`"mean"` \| `"minWord"`
 
 ###### maxOutputTokens?
 
@@ -443,54 +330,6 @@ readonly `string`[]
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
 
-###### twoTier?
-
-\{
-  `annotateReads?`: `boolean`;
-  `completionGate?`: `boolean`;
-  `contextMessages?`: `number`;
-  `effort?`: `"minimal"` \| `"low"` \| `"medium"` \| `"high"`;
-  `llm?`:   \| `string`
-     \| \{
-     `kind`: `string`;
-     `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-   \};
-  `onTimeout?`: `"allow"` \| `"block"`;
-  `timeoutMs?`: `number`;
-\}
-
-###### twoTier.annotateReads?
-
-`boolean`
-
-###### twoTier.completionGate?
-
-`boolean`
-
-###### twoTier.contextMessages?
-
-`number`
-
-###### twoTier.effort?
-
-`"minimal"` \| `"low"` \| `"medium"` \| `"high"`
-
-###### twoTier.llm?
-
-  \| `string`
-  \| \{
-  `kind`: `string`;
-  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-\}
-
-###### twoTier.onTimeout?
-
-`"allow"` \| `"block"`
-
-###### twoTier.timeoutMs?
-
-`number`
-
 ###### usageLimits?
 
 \{
@@ -503,11 +342,7 @@ readonly `string`[]
 
 ###### voicePresets?
 
-readonly (
-  \| `"echoVerification"`
-  \| `"smartMatching"`
-  \| `"speechNormalization"`
-  \| `"natoAlphabet"`)[]
+readonly (`"echoVerification"` \| `"speechNormalization"` \| `"natoAlphabet"`)[]
 
 #### Returns
 
@@ -949,7 +784,6 @@ stay.result.options; // "garden view"
 
 ```ts
 function expectDeployable(def: AgentConfigSource): {
-  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -962,43 +796,14 @@ function expectDeployable(def: AgentConfigSource): {
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
-  endpointingRules?: readonly (
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "assistant";
-   }
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "user";
-   }
-     | {
-     assistantRegex: string;
-     flags?: string;
-     timeoutMs: number;
-     type: "both";
-     userRegex: string;
-  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
   interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
-  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -1044,27 +849,10 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  twoTier?: {
-     annotateReads?: boolean;
-     completionGate?: boolean;
-     contextMessages?: number;
-     effort?: "minimal" | "low" | "medium" | "high";
-     llm?:   | string
-        | {
-        kind: string;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-      };
-     onTimeout?: "allow" | "block";
-     timeoutMs?: number;
-  };
   usageLimits?: {
      totalTokens?: number;
   };
-  voicePresets?: readonly (
-     | "echoVerification"
-     | "smartMatching"
-     | "speechNormalization"
-    | "natoAlphabet")[];
+  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 };
 ```
 
@@ -1118,7 +906,6 @@ The agent under test — an `agent()` definition, or the raw
 
 ```ts
 {
-  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -1131,43 +918,14 @@ The agent under test — an `agent()` definition, or the raw
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
-  endpointingRules?: readonly (
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "assistant";
-   }
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "user";
-   }
-     | {
-     assistantRegex: string;
-     flags?: string;
-     timeoutMs: number;
-     type: "both";
-     userRegex: string;
-  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
   interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
-  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  lowConfidence?: {
-     action?: "clarify" | "note";
-     actionBelow?: number;
-     discardBelow?: number;
-     note?: string;
-     phrase?: string;
-     statistic?: "mean" | "minWord";
   };
   maxOutputTokens?: number;
   maxRetries?: number;
@@ -1213,37 +971,14 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  twoTier?: {
-     annotateReads?: boolean;
-     completionGate?: boolean;
-     contextMessages?: number;
-     effort?: "minimal" | "low" | "medium" | "high";
-     llm?:   | string
-        | {
-        kind: string;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-      };
-     onTimeout?: "allow" | "block";
-     timeoutMs?: number;
-  };
   usageLimits?: {
      totalTokens?: number;
   };
-  voicePresets?: readonly (
-     | "echoVerification"
-     | "smartMatching"
-     | "speechNormalization"
-    | "natoAlphabet")[];
+  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }
 ```
 
 The config a deploy carries, mode derived and defaults injected.
-
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
-```
 
 ##### builtinTools?
 
@@ -1270,31 +1005,6 @@ optional deadAirCoverMs?: number;
 
 ```ts
 optional description?: string;
-```
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly (
-  | {
-  flags?: string;
-  regex: string;
-  timeoutMs: number;
-  type: "assistant";
-}
-  | {
-  flags?: string;
-  regex: string;
-  timeoutMs: number;
-  type: "user";
-}
-  | {
-  assistantRegex: string;
-  flags?: string;
-  timeoutMs: number;
-  type: "both";
-  userRegex: string;
-})[];
 ```
 
 ##### errorPhrase?
@@ -1327,31 +1037,12 @@ optional interruptionBackoffMs?: number;
 optional interruptionMinDurationMs?: number;
 ```
 
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
-```
-
 ##### llm?
 
 ```ts
 {
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### lowConfidence?
-
-```ts
-{
-  action?: "clarify" | "note";
-  actionBelow?: number;
-  discardBelow?: number;
-  note?: string;
-  phrase?: string;
-  statistic?: "mean" | "minWord";
 }
 ```
 
@@ -1525,24 +1216,6 @@ optional toolChoice?:
 }
 ```
 
-##### twoTier?
-
-```ts
-{
-  annotateReads?: boolean;
-  completionGate?: boolean;
-  contextMessages?: number;
-  effort?: "minimal" | "low" | "medium" | "high";
-  llm?:   | string
-     | {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-   };
-  onTimeout?: "allow" | "block";
-  timeoutMs?: number;
-}
-```
-
 ##### usageLimits?
 
 ```ts
@@ -1554,11 +1227,7 @@ optional toolChoice?:
 ##### voicePresets?
 
 ```ts
-optional voicePresets?: readonly (
-  | "echoVerification"
-  | "smartMatching"
-  | "speechNormalization"
-  | "natoAlphabet")[];
+optional voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 ```
 
 #### Throws

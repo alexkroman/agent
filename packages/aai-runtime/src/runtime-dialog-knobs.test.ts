@@ -32,18 +32,6 @@ describe("the two knobs nothing applies", () => {
     expect(message).toContain("agent({ voice })");
   });
 
-  test("a per-state `keyterms` is LIVE — no warning, and the seam is armed", () => {
-    // It used to warn and point at `agent({ sttPrompt })`. AssemblyAI's
-    // `UpdateConfiguration` takes `keyterms_prompt` mid-stream, so the STT
-    // side needs no second socket and the knob applies per turn.
-    const logger = makeLogger();
-
-    const live = reportDialogKnobs([knobbed("menu", { keyterms: ["Acme Rewards"] })], logger);
-
-    expect(live).toBe(true);
-    expect(logger.warn).not.toHaveBeenCalled();
-  });
-
   test("it is reported ONCE per agent definition, not once per session", () => {
     const logger = makeLogger();
     // The same ARRAY twice is the same `agent.dialogs` across two sessions.
@@ -113,22 +101,6 @@ describe("what the active states ask of the turn", () => {
 
   test('`bargeIn: "default"` contributes nothing', () => {
     expect(mergeTurnKnobs([knobbed("dflt", { bargeIn: "default" })], ctx())).toEqual({});
-  });
-
-  test("`voice` is DROPPED rather than passed on; `keyterms` is carried", () => {
-    const knobs = mergeTurnKnobs(
-      [knobbed("inert", { voice: "michael", keyterms: ["Acme"], temperature: 0.3 })],
-      ctx(),
-    );
-
-    expect(knobs).toEqual({ temperature: 0.3, keyterms: ["Acme"] });
-  });
-
-  test("a state declaring no keyterms carries the key ABSENT, not empty", () => {
-    // Absent means "restore the STT descriptor's own list" on the other side
-    // of the seam; `[]` would mean "clear biasing", which is a different act.
-    const knobs = mergeTurnKnobs([knobbed("plain", { temperature: 0.3 })], ctx());
-    expect(knobs && "keyterms" in knobs).toBe(false);
   });
 
   test("two dialogs merge per KEY, last declaration winning", () => {

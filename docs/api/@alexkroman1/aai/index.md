@@ -2528,31 +2528,6 @@ lists from those interfaces, so a new one cannot skip either gate.
 
 #### Properties
 
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that NEVER interrupt the agent, however
-many words they carry and however long they last — backchannels. Matched
-against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
-punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
-and `"okay so I need to change my order"` is a turn.
-
-`[]` switches the list off; setting it REPLACES the default list rather
-than adding to it.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
-"mm-hmm", …
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`acknowledgementPhrases`](#acknowledgementphrases-1)
-
 ##### builtinTools?
 
 ```ts
@@ -2622,56 +2597,6 @@ what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
 dialog can reach from inside a tool, because all three happen when no tool
 is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly EndpointingRule[];
-```
-
-Pipeline mode only. Content-keyed overrides of the end-of-turn silence
-window, evaluated as the HIGHEST-priority endpointing layer: the first
-rule that matches REPLACES the window the STT would otherwise use.
-
-Three kinds — `"assistant"` (tested against the agent's last message),
-`"user"` (tested against the caller's in-flight transcript) and `"both"`
-(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
-`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
-mean the whole thing.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-agent({
-  name: "orders",
-  endpointingRules: [
-    // the agent just asked for something the caller reads out: wait
-    { type: "assistant", regex: "order number", timeoutMs: 2600 },
-    // the caller is mid-number: wait
-    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
-  ],
-});
-```
-
-`[]` switches the table off; setting it REPLACES the default table.
-A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
-and clamped again at run time to this agent's `maxTurnSilenceMs`, because
-a floor above the ceiling is the measured inversion
-`DEFAULT_MIN_TURN_SILENCE_MS` documents.
-
-**Honoured only by an STT provider that can move its endpointing window
-mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
-provider the table is inert and says so once, at warn level.
-
-###### Default Value
-
-`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
-patience after the agent asks for an identifier or while the caller's
-transcript ends in a digit, shorter after a closed yes/no question.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`endpointingRules`](#endpointingrules-1)
 
 ##### errorPhrase?
 
@@ -2851,35 +2776,6 @@ never gated. Set 0 to disable the gate.
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionMinDurationMs`](#interruptionmindurationms-1)
 
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
-both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
-whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
-entries.
-
-Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
-
-**Note the deliberate asymmetry with the list above — "yes" never
-interrupts and "no" always does.** A caller saying "yes" over the agent is
-agreeing with a sentence still being spoken; one saying "no" is correcting
-it, and a missed correction is the expensive direction.
-
-`[]` switches the list off; setting it REPLACES the default list.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionPhrases`](#interruptionphrases-1)
-
 ##### llm?
 
 ```ts
@@ -2892,40 +2788,6 @@ stage defaults to the AssemblyAI LLM Gateway. Note this is pure
 serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
 using credentials from the agent's env.
-
-##### lowConfidence?
-
-```ts
-optional lowConfidence?: LowConfidencePolicy;
-```
-
-Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
-turn before the model sees it: drop the words below a floor, and above the
-floor but under a second threshold either ask the caller to repeat or hand
-the model the turn with a note attached.
-
-###### Default Value
-
-absent — every final transcript runs a turn, whatever the
-recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
-
-###### Remarks
-
-The failure it exists for is the one a transcript cannot show you: a
-mis-heard order id or email reads as a fluent sentence, becomes a
-well-formed tool-call argument, and poisons every later step of the call.
-
-Only the AssemblyAI STT stage reports the confidence this reads
-(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
-a provider that reports none is always ACCEPTED — the policy can never
-make a silent provider look like a bad one.
-
-See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
-this is opt-in.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`lowConfidence`](#lowconfidence-1)
 
 ##### maxOutputTokens?
 
@@ -3608,29 +3470,6 @@ Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
 its voice).
 
-##### twoTier?
-
-```ts
-optional twoTier?: TwoTierConfig;
-```
-
-Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
-
-###### Default Value
-
-unset — one model, no gate, no digest, no extra request.
-
-It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
-because it shares this group's rule exactly and not the other one's: the
-gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
-mode both honour it and S2S structurally cannot — there the provider owns
-the loop, calls the tool itself, and there is no moment between the
-proposal and the mutation for a second model to stand in.
-
-###### Inherited from
-
-[`AgentModelTuning`](#agentmodeltuning).[`twoTier`](#twotier-1)
-
 ##### usageLimits?
 
 ```ts
@@ -3666,7 +3505,7 @@ none — an agent that declares nothing here sends exactly the
 prompt it sent before the field existed.
 
 Each name costs tokens on EVERY model request: `echoVerification` ~190,
-`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+`speechNormalization` ~920, `natoAlphabet` ~190. Turn
 on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
 exact text of each and for what it overrides.
 
@@ -3675,7 +3514,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Claims Intake",
-  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 
@@ -3891,25 +3730,6 @@ existed neither could say so: `ctx.generate` and `subagent()` both took a
 temperature while the main loop — the one that does almost all the talking
 — took no sampling parameter at all.
 
-##### twoTier?
-
-```ts
-optional twoTier?: TwoTierConfig;
-```
-
-Put a SECOND model behind the first — see [TwoTierConfig](#twotierconfig).
-
-###### Default Value
-
-unset — one model, no gate, no digest, no extra request.
-
-It belongs to this group rather than to [PipelineVoiceTuning](#pipelinevoicetuning)
-because it shares this group's rule exactly and not the other one's: the
-gate interposes on the TOOL LOOP this runtime runs, so pipeline and text
-mode both honour it and S2S structurally cannot — there the provider owns
-the loop, calls the tool itself, and there is no moment between the
-proposal and the mutation for a second model to stand in.
-
 ##### usageLimits?
 
 ```ts
@@ -4110,7 +3930,7 @@ none — an agent that declares nothing here sends exactly the
 prompt it sent before the field existed.
 
 Each name costs tokens on EVERY model request: `echoVerification` ~190,
-`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+`speechNormalization` ~920, `natoAlphabet` ~190. Turn
 on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
 exact text of each and for what it overrides.
 
@@ -4119,7 +3939,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Claims Intake",
-  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 
@@ -4263,144 +4083,6 @@ failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
 catalog as unproven: a voice the service rejects comes back in-band after
 the socket opens, leaving an agent that connects, reports ready, and never
 speaks.
-
-***
-
-### AssistantEndpointingRule
-
-Match on the AGENT's last message.
-
-The use: the agent just asked for something that is READ OUT — an order id,
-an email, a postcode — so the caller will pause between chunks and the
-default window ends their turn mid-identifier. Or the inverse: the agent
-asked a yes/no question, the answer is one word, and waiting 1600ms for more
-of it is dead air.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### regex
-
-```ts
-regex: string;
-```
-
-Tested against the agent's last message. SUBSTRING semantics — see the module doc.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "assistant";
-```
-
-***
-
-### BothEndpointingRule
-
-Both sides must match.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### assistantRegex
-
-```ts
-assistantRegex: string;
-```
-
-Tested against the agent's last message.
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "both";
-```
-
-##### userRegex
-
-```ts
-userRegex: string;
-```
-
-Tested against the in-flight user transcript.
 
 ***
 
@@ -4690,7 +4372,7 @@ receive(ctx: SlotHolder, event:
      at: number;
      id: string;
   };
-  recovery?: "low-confidence" | "session-failed" | "turn-failed";
+  recovery?: "session-failed" | "turn-failed";
   text: string;
   type: "agent-transcript.committed";
 }
@@ -4921,7 +4603,7 @@ export default agent({
      `at`: `number`;
      `id`: `string`;
   \};
-  `recovery?`: `"low-confidence"` \| `"session-failed"` \| `"turn-failed"`;
+  `recovery?`: `"session-failed"` \| `"turn-failed"`;
   `text`: `string`;
   `type`: `"agent-transcript.committed"`;
 \}
@@ -5298,7 +4980,7 @@ restated every name already written in the `on` maps, and a
 
 The six became eleven when a dialog had to be able to describe a CALL rather
 than a form: a deadline (`timeout`) and the five per-phase voice knobs
-(`voice`, `bargeIn`, `keyterms`, `toolChoice`, `temperature`). Every one of
+(`voice`, `bargeIn`, `toolChoice`, `temperature`). Every one of
 them is plain JSON and rides in the same `meta` the instruction does, so the
 constraint above is untouched and a `durable: true` dialog written before any
 of this resumes byte-identically — a state declaring none of them compiles to
@@ -5360,15 +5042,6 @@ optional instruction?: string;
 What the agent is supposed to be doing here, in this state's own words.
 Becomes [DialogPosition.instruction](#instruction) while the state is active, which
 is what a refusal quotes and what every gated tool's result carries.
-
-##### keyterms?
-
-```ts
-optional keyterms?: readonly string[];
-```
-
-STT biasing for what the caller is about to say in this state — the policy
-number they are reading out, the product names on the menu.
 
 ##### on?
 
@@ -5774,14 +5447,6 @@ readonly optional bargeIn?: DialogBargeIn;
 
 How interruptible the agent is here. See [DialogBargeIn](#dialogbargein).
 
-##### keyterms?
-
-```ts
-readonly optional keyterms?: readonly string[];
-```
-
-STT biasing for what the caller is about to say here.
-
 ##### temperature?
 
 ```ts
@@ -5805,132 +5470,6 @@ readonly optional voice?: string;
 ```
 
 The TTS voice for this phase of the call.
-
-***
-
-### EndpointingRuleBase
-
-Fields every endpointing rule carries.
-
-#### Extended by
-
-- [`AssistantEndpointingRule`](#assistantendpointingrule)
-- [`BothEndpointingRule`](#bothendpointingrule)
-- [`UserEndpointingRule`](#userendpointingrule)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-***
-
-### LowConfidencePolicy
-
-Act on the recognizer's confidence in a committed turn. Pipeline mode only.
-
-#### Properties
-
-##### action?
-
-```ts
-optional action?: LowConfidenceAction;
-```
-
-What to do in that band.
-
-###### Default Value
-
-`"clarify"`
-
-##### actionBelow?
-
-```ts
-optional actionBelow?: number;
-```
-
-Confidence below which [action](#action) fires (and at or above
-[discardBelow](#discardbelow)). At or above this the turn runs exactly as it does
-today.
-
-###### Default Value
-
-`0.4` (`DEFAULT_LOW_CONFIDENCE_ACTION_BELOW`)
-
-##### discardBelow?
-
-```ts
-optional discardBelow?: number;
-```
-
-Confidence below which the transcript is DROPPED — no turn, no caption
-commit, no clarification. Treated as noise the caller did not mean.
-
-###### Default Value
-
-`0.2` (`DEFAULT_LOW_CONFIDENCE_DISCARD_BELOW`)
-
-##### note?
-
-```ts
-optional note?: string;
-```
-
-Appended to the model's copy under `action: "note"`.
-
-###### Default Value
-
-`DEFAULT_LOW_CONFIDENCE_NOTE`
-
-##### phrase?
-
-```ts
-optional phrase?: string;
-```
-
-Spoken under `action: "clarify"`. Set `""` to speak nothing — the turn is
-still dropped, which is `discardBelow` widened rather than a third mode.
-
-###### Default Value
-
-`DEFAULT_LOW_CONFIDENCE_PHRASE`
-
-##### statistic?
-
-```ts
-optional statistic?: LowConfidenceStatistic;
-```
-
-Which per-turn statistic the bands read.
-
-###### Default Value
-
-`"mean"`
 
 ***
 
@@ -5985,27 +5524,6 @@ Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
 
 #### Properties
 
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that NEVER interrupt the agent, however
-many words they carry and however long they last — backchannels. Matched
-against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
-punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
-and `"okay so I need to change my order"` is a turn.
-
-`[]` switches the list off; setting it REPLACES the default list rather
-than adding to it.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
-"mm-hmm", …
-
 ##### deadAirCoverMs?
 
 ```ts
@@ -6021,52 +5539,6 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Default Value
 
 `5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly EndpointingRule[];
-```
-
-Pipeline mode only. Content-keyed overrides of the end-of-turn silence
-window, evaluated as the HIGHEST-priority endpointing layer: the first
-rule that matches REPLACES the window the STT would otherwise use.
-
-Three kinds — `"assistant"` (tested against the agent's last message),
-`"user"` (tested against the caller's in-flight transcript) and `"both"`
-(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
-`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
-mean the whole thing.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-agent({
-  name: "orders",
-  endpointingRules: [
-    // the agent just asked for something the caller reads out: wait
-    { type: "assistant", regex: "order number", timeoutMs: 2600 },
-    // the caller is mid-number: wait
-    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
-  ],
-});
-```
-
-`[]` switches the table off; setting it REPLACES the default table.
-A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
-and clamped again at run time to this agent's `maxTurnSilenceMs`, because
-a floor above the ceiling is the measured inversion
-`DEFAULT_MIN_TURN_SILENCE_MS` documents.
-
-**Honoured only by an STT provider that can move its endpointing window
-mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
-provider the table is inert and says so once, at warn level.
-
-###### Default Value
-
-`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
-patience after the agent asks for an identifier or while the caller's
-transcript ends in a digit, shorter after a closed yes/no question.
 
 ##### errorPhrase?
 
@@ -6116,61 +5588,6 @@ never gated. Set 0 to disable the gate.
 ###### Default Value
 
 `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
-
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
-both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
-whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
-entries.
-
-Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
-
-**Note the deliberate asymmetry with the list above — "yes" never
-interrupts and "no" always does.** A caller saying "yes" over the agent is
-agreeing with a sentence still being spoken; one saying "no" is correcting
-it, and a missed correction is the expensive direction.
-
-`[]` switches the list off; setting it REPLACES the default list.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
-
-##### lowConfidence?
-
-```ts
-optional lowConfidence?: LowConfidencePolicy;
-```
-
-Pipeline mode only. Act on the RECOGNIZER's confidence in a committed
-turn before the model sees it: drop the words below a floor, and above the
-floor but under a second threshold either ask the caller to repeat or hand
-the model the turn with a note attached.
-
-###### Default Value
-
-absent — every final transcript runs a turn, whatever the
-recognizer thought of it. `lowConfidence: {}` opts in at 0.2/0.4/clarify.
-
-###### Remarks
-
-The failure it exists for is the one a transcript cannot show you: a
-mis-heard order id or email reads as a fluent sentence, becomes a
-well-formed tool-call argument, and poisons every later step of the call.
-
-Only the AssemblyAI STT stage reports the confidence this reads
-(`SttTurnMeta.transcriptConfidence`, from the turn's per-word scores), and
-a provider that reports none is always ACCEPTED — the policy can never
-make a silent provider look like a bad one.
-
-See [LowConfidencePolicy](#lowconfidencepolicy) for the bands, the two actions and why
-this is opt-in.
 
 ##### minBargeInWords?
 
@@ -7519,7 +6936,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -7685,139 +7102,6 @@ name: string;
 ```
 
 The tool's name, as the subagent's model called it.
-
-***
-
-### TwoTierConfig
-
-The FAST/SLOW two-tier configuration — see this module's header.
-
-The fast tier is `agent({ llm })`, unchanged and unnamed here: whatever the
-agent already talks on is the tier that holds the call, minus its tools. Only
-the second one needs declaring, which is what keeps this additive.
-
-#### Example
-
-**A tool-free conversational model in front of a careful one**
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
-
-export default agent({
-  name: "orders-desk",
-  llm: assemblyAILlm({ model: "qwen3.5-4b-32k-fast", reasoningEffort: "none" }),
-  twoTier: {
-    llm: assemblyAILlm({ model: "gpt-5.6-luna" }),
-    effort: "high",
-  },
-});
-```
-
-#### Properties
-
-##### completionGate?
-
-```ts
-optional completionGate?: boolean;
-```
-
-Refuse a `completes` tool while the digest still holds work that has not
-settled — DIGEST-GATED COMPLETION.
-
-###### Default Value
-
-`true`
-
-This is the half of TalkAct's contract that was a prompt rule there
-("never claim the task is done unless the computer agent state explicitly
-says so", written after early versions "hallucinated 'it's submitted!' and
-hung up") and is a refusal here. It is aimed at a failure mode this repo
-has measured by name on tau2: the agent says "I've updated your address"
-with no tool call behind it.
-
-**What it reaches.** Every tool declared `completes` — the author's
-hand-off or termination tool, and the slow tier's own "work finished"
-tool, which is not exempt. The refusal names what is still outstanding and
-arrives as an ordinary recoverable tool failure, so the run finishes the
-work and reports again rather than the turn ending. It is the same
-interception Pickle describes, where a blocked hand-off continues the
-conversation instead of silently terminating it.
-
-**What it does not reach**, stated because the difference matters: the
-fast tier SAYING a false completion. Speech is not a tool call. The levers
-there are the rendered statement of outstanding work on every fast-tier
-request (which this feature installs unconditionally) and, for an agent
-that wants a hard stop, an `outputGuardrails` entry the author writes.
-
-##### contextMessages?
-
-```ts
-optional contextMessages?: number;
-```
-
-How many trailing messages of the conversation the slow tier may see.
-
-###### Default Value
-
-`24` (`DEFAULT_SLOW_TIER_CONTEXT_MESSAGES`)
-
-A bound on COST and on the information boundary at once, which is SABER's
-third component (block-based context cleaning) read the way its motivation
-reads: errors grow with context length as an agent drifts from its role and
-acts on stale constraints. The window is the session's own conversation,
-trimmed — never a richer history assembled beside it.
-
-##### effort?
-
-```ts
-optional effort?: SlowTierEffort;
-```
-
-The slow tier's reasoning budget — see [SlowTierEffort](#slowtiereffort).
-
-###### Default Value
-
-`"high"` (`DEFAULT_SLOW_TIER_EFFORT`)
-
-##### llm?
-
-```ts
-optional llm?: string | LlmProvider;
-```
-
-The slow tier's model.
-
-###### Default Value
-
-the agent's own `llm` — which makes the declaration a pure
-ARCHITECTURE change rather than also a model change, and is the arm to run
-when you want to know which of the two a difference came from.
-
-##### timeoutMs?
-
-```ts
-optional timeoutMs?: number;
-```
-
-How long one slow-tier RUN may take before it is abandoned.
-
-###### Default Value
-
-`15000` (`DEFAULT_SLOW_TIER_TIMEOUT_MS`)
-
-**Nobody waits for this, and that is the point.** The slow tier runs
-detached from every turn, so a run that overruns costs a STALE DIGEST —
-the fast tier keeps talking from the last summary it was given — and never
-a silent caller. There is deliberately no fail-open/fail-closed policy
-beside it: failing open is what the architecture DOES, structurally,
-because the caller's turn never awaited the slow tier in the first place.
-A knob for it would be a setting with nothing to set.
-
-What the bound buys is that a wedged provider does not hold the run slot
-forever, so the next caller utterance still gets a fresh run. An abandoned
-run's in-flight work is settled as failed on its way out, which is what
-keeps [TwoTierConfig.completionGate](#completiongate) from wedging behind it.
 
 ***
 
@@ -8100,7 +7384,7 @@ optional llm?: string | LlmProvider;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-3). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -8349,74 +7633,6 @@ same sentence, which the calling tool may catch and answer around. An agent
 that wants a softer landing watches `usage.updated` through
 `agent({ events })` and says something before the cap arrives.
 
-***
-
-### UserEndpointingRule
-
-Match on the caller's IN-FLIGHT transcript — the interim, not the committed
-final, because the point is to decide how long to wait before it becomes
-one.
-
-The use: a transcript that currently ends in digits is a caller part-way
-through reading a number, and the gap between "one nine one" and "two two"
-is not the end of their turn.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### regex
-
-```ts
-regex: string;
-```
-
-Tested against the in-flight user transcript. SUBSTRING semantics.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "user";
-```
-
 ## Type Aliases
 
 ### AgentGuardrail
@@ -8611,6 +7827,7 @@ type AssemblyAIGatewayModel =
   | "claude-opus-4-6"
   | "claude-opus-4-7"
   | "claude-opus-4-8"
+  | "claude-opus-5"
   | "claude-sonnet-4-5-20250929"
   | "claude-sonnet-4-6"
   | "claude-sonnet-5"
@@ -8621,6 +7838,9 @@ type AssemblyAIGatewayModel =
   | "gemini-3.5-flash"
   | "gemini-3.5-flash-lite"
   | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
+  | "gemma-4-31b"
   | "gpt-4.1"
   | "gpt-5"
   | "gpt-5-mini"
@@ -8629,13 +7849,14 @@ type AssemblyAIGatewayModel =
   | "gpt-5.2"
   | "gpt-5.5"
   | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
   | "gpt-5.6-terra"
+  | "gpt-6-astra"
   | "gpt-oss-120b"
   | "gpt-oss-20b"
-  | "kimi-k2.5"
   | "qwen3-32B"
   | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-experimental";
+  | "qwen3.5-4b-32k-fast";
 ```
 
 An id the gateway advertises.
@@ -8939,19 +8160,6 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDef.dialogs](#dialogs).
-
-***
-
-### EndpointingRule
-
-```ts
-type EndpointingRule = 
-  | AssistantEndpointingRule
-  | UserEndpointingRule
-  | BothEndpointingRule;
-```
-
-One entry in [PipelineVoiceTuning.endpointingRules](#endpointingrules-1).
 
 ***
 
@@ -9355,47 +8563,6 @@ readonly optional __stage?: "llm";
 ```
 
 Compile-time stage tag; never present at runtime.
-
-***
-
-### LowConfidenceAction
-
-```ts
-type LowConfidenceAction = "clarify" | "note";
-```
-
-What the agent does with a transcript in the action band.
-
-- `clarify` — SPEAK [LowConfidencePolicy.phrase](#phrase) and run no turn. The
-  words reach neither the model nor history, exactly like the failure phrases
-  (see `AgentTranscriptRecovery`): a garbage transcript in the record is a
-  garbage transcript the model can still act on two turns later.
-- `note` — run the turn, with [LowConfidencePolicy.note](#note) appended to
-  the MODEL's copy of the transcript only. The caller's caption and the
-  session record stay verbatim, the rule `assembleSpelledRuns` already
-  follows: what the caller said is not ours to rewrite.
-
-***
-
-### LowConfidenceStatistic
-
-```ts
-type LowConfidenceStatistic = "mean" | "minWord";
-```
-
-Which number the bands are compared against.
-
-- `mean` — the mean of the turn's per-word confidences. The transcript-level
-  reading Vapi's published thresholds were chosen against, and the
-  conservative one: a single soft word in a long sentence does not fire it.
-- `minWord` — the LOWEST per-word confidence in the turn. The
-  entity-sensitive reading, and the one that matches the failure this policy
-  exists for — one mis-heard digit in an otherwise clean sentence. It fires
-  far more often at the same thresholds, so an agent choosing it should
-  expect to lower them.
-
-Which is right here is an open MEASUREMENT, not a preference; `mean` is the
-default because it is the one the published numbers belong to.
 
 ***
 
@@ -10146,30 +9313,6 @@ virtual one is neither, because the things a virtual slot exists to hold
 ###### Returns
 
 `void`
-
-***
-
-### SlowTierEffort
-
-```ts
-type SlowTierEffort = "minimal" | "low" | "medium" | "high";
-```
-
-How much thinking the slow tier is given.
-
-A FIRST-CLASS knob rather than a constant, because the one published
-ablation on a second reasoning tier of this shape (Pickle's tool-mentor)
-attributes its gain to the supervisor's reasoning BUDGET rather than to its
-prompt wording — a full round of prompt iteration was worth net one task.
-Their numbers are single-trial under their own churn caveat and are not
-quoted here as an effect size; what survives is the design hint, which is
-cheap to honour: make the budget settable, and do not expect prompt tuning
-to carry the feature.
-
-Passed to the provider as its own reasoning option, spelled per family. A
-provider with no such option ignores it, which is why this is a HINT. An
-effort set on the descriptor itself — `assemblyAILlm({ reasoningEffort })` —
-is applied when the model is built and is the precise form.
 
 ***
 
@@ -10999,11 +10142,9 @@ backend configured, naming which.
 
 ```ts
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
-  completes?: boolean;
   description: string;
   inputSchema?: P;
   messages?: ToolMessagesInput;
-  mutates?: boolean;
   onError?: ToolErrorHandler;
   execute: R;
 };
@@ -11091,25 +10232,6 @@ once per tool (see `warnOversizedResult` in `aai-runtime`'s
 
 #### Properties
 
-##### completes?
-
-```ts
-optional completes?: boolean;
-```
-
-Calling this tool ENDS or HANDS OFF the engagement — a stop call.
-
-`completes` implies [ToolDef.mutates](#mutates) for routing purposes: ending a
-call is not reversible by the next turn, so it is verified like a write
-whether or not it writes. What it adds on top is the digest gate — with
-`twoTier.completionGate` on (the default), this tool is REFUSED while the
-session's digest still holds unsettled work, and the refusal names what is
-pending.
-
-The tools that want it are the ones that sound like an answer: a transfer
-to a human, a "task complete" signal, a hang-up. It is the fix for an
-agent that announces the outcome and terminates before doing the work.
-
 ##### description
 
 ```ts
@@ -11175,51 +10297,6 @@ export default tool({
     failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
   },
   execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
-});
-```
-
-##### mutates?
-
-```ts
-optional mutates?: boolean;
-```
-
-This tool CHANGES something outside the conversation.
-
-A DECLARATION, never inferred. It is inert unless the agent declares
-`twoTier` (see [TwoTierConfig](#twotierconfig)), and then it is the whole routing
-decision: a `mutates` call is proposed by the fast tier and authorized by
-the slow one, where a read runs untouched at the latency it always had.
-
-**Declared rather than derived, deliberately.** A naming heuristic
-(`update_*`, `create_*`, `set_*`) is wrong in both directions on real
-agents — `check_out`, `submit`, `refund` mutate and match nothing;
-`update_view`, `set_language` match and mutate nothing outside the call —
-and being wrong in the second direction costs a second model call on the
-hot path while being wrong in the first silently un-gates the calls the
-gate was installed for. The author knows; nothing else does. (Pickle's
-own prompt constitution reaches the same conclusion from the other end:
-derive action classes from tool METADATA, and never name tools inside
-prompt text.)
-
-**Absent means "not declared", not "read-only".** A gate that treated
-silence as safe would un-gate every tool written before this field
-existed, which is exactly the population most likely to need it; the
-runtime therefore logs once per session naming the tools it is treating as
-reads, so an author who forgot finds out from a boot line rather than from
-a benchmark.
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Change the shipping address on an order",
-  inputSchema: z.object({ orderId: z.string(), address: z.string() }),
-  mutates: true,
-  execute: async ({ orderId, address }) => ({ orderId, address }),
 });
 ```
 
@@ -11683,11 +10760,7 @@ Compile-time stage tag; never present at runtime.
 ### VoicePresetName
 
 ```ts
-type VoicePresetName = 
-  | "echoVerification"
-  | "smartMatching"
-  | "speechNormalization"
-  | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 ```
 
 One of the four opt-in prompt presets — see [VOICE\_PRESETS](#voice_presets) for what
@@ -13241,36 +12314,6 @@ only reader is one field is documented by sitting next to it.
 
 ***
 
-### DEFAULT\_SLOW\_TIER\_CONTEXT\_MESSAGES
-
-```ts
-const DEFAULT_SLOW_TIER_CONTEXT_MESSAGES: 24 = 24;
-```
-
-Default [TwoTierConfig.contextMessages](#contextmessages).
-
-***
-
-### DEFAULT\_SLOW\_TIER\_EFFORT
-
-```ts
-const DEFAULT_SLOW_TIER_EFFORT: SlowTierEffort;
-```
-
-Default [TwoTierConfig.effort](#effort).
-
-***
-
-### DEFAULT\_SLOW\_TIER\_TIMEOUT\_MS
-
-```ts
-const DEFAULT_SLOW_TIER_TIMEOUT_MS: 15000 = 15000;
-```
-
-Default [TwoTierConfig.timeoutMs](#timeoutms-3).
-
-***
-
 ### DEFAULT\_STEP\_MAX\_ATTEMPTS
 
 ```ts
@@ -13289,7 +12332,7 @@ run its body; that was true before this change and is unchanged by it.
 ### DEFAULT\_SYSTEM\_PROMPT
 
 ```ts
-const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An IDENTIFIER is the\n  exception, and the rule for it is all-or-nothing: any code that mixes\n  letters and digits, or that is not a word, is spoken one character at\n  a time from end to end.\n  Right: \"A-B-C-one-two-three.\"\n  Wrong: \"ABC one hundred twenty three\" — the letters spelled and the\n  digits read as a number is the common failure, and it is unusable:\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-two\", never\n  \"two K two\".\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly. Never retype, reformat,\n  or construct an ID from a pattern — if you don't have it, look it up\n  first, then use it.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
+const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An amount under a\n  dollar is cents alone — \"twenty-six cents\", never \"$0.26\", which is\n  read out as \"zero dollars twenty-six cents\". Write a date in words\n  (\"May twelfth\"), never slashed — \"05/12\" is read \"zero five one\n  twelve\".\n- An IDENTIFIER is the exception, and the rule is about how you WRITE\n  it: hyphenate it, one character per hyphen, end to end, and drop any\n  \"#\". That spelling is what makes the voice read a code out instead of\n  adding it up, and it is the whole rule — a code you paste unchanged\n  is a code the caller loses.\n  Anything that names one record rather than counting something is an\n  identifier: an order, item, or product number, a card's last four, a\n  ZIP, a phone number, a confirmation code.\n  Right: \"W-2-3-7-8-1-5-6\", \"A-B-C-1-2-3\", \"ending in 2-4-7-8\".\n  Wrong: \"W2378156\", \"#W2378156\", \"2478\", \"7747408585\" — each is read\n  as a quantity (\"W two million three hundred seventy-eight\n  thousand...\", \"twenty-four seventy-eight\"), and even when it isn't\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"774, 740, 8585\" — commas turn one code into three numbers.\n  One unbroken hyphen run is the only form that survives.\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-2\", never\n  \"two K2\".\n- An EMAIL ADDRESS is never written as one token. Say the name as\n  ordinary words, hyphenate the digits, and speak the separators:\n  \"yusuf dot rossi, 7-3-0-1, at example dot com\". Written whole,\n  \"yusuf.rossi7301@example.com\" comes out as \"yusuf rossi seven\n  thousand three hundred one at example com\", and another address came\n  out as different words entirely. Don't spell the letters either —\n  that loses the \"at\". Spell one character only to settle an ambiguity.\n- Put a value the caller has to write down — an identifier, an amount,\n  an address, an email — in your FIRST sentence. Most of a long reply\n  is never heard, and a value saved for the end is the part that goes\n  missing.\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly into what you SEND a\n  tool. Never retype, reformat, or construct an ID from a pattern — if\n  you don't have it, look it up first, then use it. This is about tool\n  arguments only: what you SAY is respelled for the voice under\n  SPEAKING, which changes no characters, only where the hyphens go.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
 ```
 
 Default system prompt used when `systemPrompt` is not provided.
@@ -13367,22 +12410,6 @@ copies of it is n places for it to drift.
 
 ***
 
-### MAX\_STATE\_DIGEST\_CHARS
-
-```ts
-const MAX_STATE_DIGEST_CHARS: 2000 = 2000;
-```
-
-The longest a rendered digest section may be, in characters.
-
-It rides on EVERY request the fast tier makes, so an unbounded one is a
-prompt that grows for the length of the call — and the cost lands on the
-number this repo measures time-to-first-token on. The cap trims the oldest
-SETTLED entries first: what is outstanding is the half the section exists to
-state.
-
-***
-
 ### MCP\_SERVER\_KEY\_RE
 
 ```ts
@@ -13439,7 +12466,6 @@ themselves, and even that loses: the native tool wins and the drop is logged
 const VOICE_PRESETS: {
   echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
   natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
-  smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
   speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
 };
 ```
@@ -13476,12 +12502,6 @@ readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value ba
 readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
 ```
 
-##### smartMatching
-
-```ts
-readonly smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
-```
-
 ##### speechNormalization
 
 ```ts
@@ -13497,7 +12517,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Pharmacy Line",
-  voicePresets: ["echoVerification", "smartMatching"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 

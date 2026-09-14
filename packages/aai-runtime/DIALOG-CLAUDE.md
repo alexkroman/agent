@@ -19,7 +19,6 @@ when no tool is running, which is why none of it could work from inside one:
 | the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix` | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
 | a per-state `timeout` is armed and fired | `createRestartableTimer` per dialog | every transport |
 | `bargeIn` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn` | **pipeline only** |
-| `keyterms` per state | `SttSession.updateKeyterms`, pushed at the END of each agent turn | **pipeline only**, and only on a provider that has the verb (AssemblyAI) |
 | `voice` per state | nothing | **nothing — warned at the first session** |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
@@ -118,39 +117,6 @@ the dialog actually is instead of firing a transition the conversation has left.
   the DESCRIPTOR that produced the opener, and the open happens once per session.
   Changing it mid-call means closing the socket and dialling a new one, which is
   a gap in the agent's own sentence.
-- **`keyterms`** — LIVE, and this entry used to say "impossible". What changed
-  is not the pipeline but what we knew about the service: AssemblyAI's
-  `UpdateConfiguration` takes `keyterms_prompt` mid-stream, documented for
-  exactly this case ("a voice agent moves between conversation stages"), so no
-  second socket is needed. `SttSession.updateKeyterms` is the seam and
-  `pipeline-turn-outcome.ts` is the call site — the END of an agent turn, which
-  is the instant before the caller answers the question that state just asked.
-  Priming at the start of the NEXT turn would be a turn too late: the words
-  have been transcribed by then. An absent value RESTORES the STT descriptor's
-  own list rather than clearing it, which is what a phase ending means.
-
-The one impossible knob is WARNED rather than dropped, naming the dialog, the
-state and what to use instead (`agent({ voice })`) — a knob that
-silently does nothing is worse than one that is absent, and "the TTS voice
-changes mid-disclosure" is exactly the claim a reader would believe on finding
-the field accepted.
-
-**It warns rather than throws, and the choice is about WHEN it runs.** `dialog()`
-refuses at declaration the defects it can see for itself (an `after` no dialog can
-fire, a `when` naming no state). This one cannot live there: whether `voice` can
-take effect is a property of the TRANSPORT, which the SDK does not know. The
-earliest moment it can run is the first session — a caller already on the line —
-and hanging up on them over a knob that merely does nothing is the worse outcome.
-Reported once per agent definition (a `WeakSet` keyed on the `agent.dialogs`
-array), at warn level.
-
-**The transport half of the same warning is in `runtime-transport.ts`.** Neither
-S2S branch applies any of the three live knobs — those services assemble each
-request and own turn-taking — so `warnDialogKnobsUnavailable` says so when a
-session takes one of those branches with knobs declared.
-
-## Mechanics worth not rediscovering
-
 - **The dialogs are PRIMED on the first session event, not when they are bound.**
   A resume hydrates the slot store inside `core.start()`, which runs after
   `createSession` returns. Reading a dialog before that stores the machine's fresh
@@ -203,9 +169,9 @@ session takes one of those branches with knobs declared.
   tool body is async and a dialog's mutation window is not — and not a gap to
   paper over at a call site.
 
-- **`voice` and `keyterms` on the AssemblyAI S2S transport.** That service takes
+- **`voice` on the AssemblyAI S2S transport.** That service takes
   both in `session.update` and the handle already exposes the verb, so the knobs
-  are reachable there in a way `voice` is not on the pipeline (`keyterms` is
+  is reachable there in a way it is not on the pipeline (it is
   live there now — see above). Wiring them means
   deciding what a mid-call `session.update` costs (the service re-derives VAD
   state, the same reason `refreshSystemPrompt` is change-gated) and moving them

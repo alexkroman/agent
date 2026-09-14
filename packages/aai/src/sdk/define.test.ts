@@ -124,11 +124,18 @@ describe("agent()", () => {
     // elapses. Pinned as a test because the symptom of losing it is seconds of
     // silence rather than an error.
     const { llm } = assemblyAIPipeline();
+    // This pin and the model pin below are ONE fact: the value has to be one
+    // the id accepts, and the families disagree — `"none"` here reaches 0
+    // reasoning tokens, a Gemini id answers 400 to it. See
+    // ASSEMBLYAI_LLM_DEFAULT_MODEL for the matrix.
     expect(llm.options.reasoningEffort).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
-    // alongside the effort because the two are coupled — and the direction of
-    // the coupling flipped when the default moved to `gpt-5.6-luna`, which is
-    // INSIDE TOOLS_REQUIRE_NO_REASONING. The factory now fills `"none"` on its
+    // alongside the effort because the two are coupled, and the direction of
+    // the coupling has now flipped twice: into the `gpt-5.6` family (INSIDE
+    // TOOLS_REQUIRE_NO_REASONING, where `"none"` was a tool-calling
+    // requirement the factory filled) and back out to a Gemini id, which
+    // REFUSES `"none"` and makes the preset's explicit value load-bearing
+    // again — this time to avoid a 500 rather than to buy latency. The factory now fills `"none"` on its
     // own, so the preset's explicit argument merely agrees with it: an id
     // property rather than a pipeline one, exactly as the previous version of
     // this comment predicted it would become.

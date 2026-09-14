@@ -1264,6 +1264,68 @@ and both are fail-closed:
   mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
   harness that genuinely steps faster than real time.
 
+## `aai dev` must not FAST-REFRESH a prebuilt `dist/`
+
+The React plugin is the PROJECT's — `aai dev` reads the project's own
+`vite.config.ts`, and `packages/aai-templates/scaffold/vite.config.ts` is the
+file every project gets one of — so the fix for this is there and not in
+`_dev-vite-config.ts`. It is written down here because the symptom is
+`aai dev`'s, because nothing in this package can override it (below), and
+because `aai-templates/CLAUDE.md` has 244 characters of headroom.
+
+**What it looked like.** One `pnpm --filter @alexkroman1/aai-ui build` against a
+running `aai dev` produced 33 hot-update rounds, 12 invalidations, 8 throws of
+`Session hooks must be used within <SessionProvider>`, and a page reload only at
+the very end. The throw is the tell: a hot update RE-EXECUTES the module, so a
+fresh `context.js` mints a new context object while the mounted tree still holds
+the old one — every session hook under it fails at once.
+
+**Why a LINKED SDK is the trigger.** `@vitejs/plugin-react` excludes
+`/\/node_modules\//`, and Vite resolves `node_modules/@alexkroman1/aai-ui`
+through its symlink to `packages/aai-ui/dist/index.js`, which contains no such
+segment. So the plugin treats a bundled library as the project's source. An
+npm-installed SDK resolves inside `node_modules` and is excluded, which is why
+this never reproduces for a user and never showed up in any tier here.
+
+**Why the library cannot fix it.** React Refresh makes any module DECLARING a
+component a boundary and can only refresh one whose every EXPORT is a component.
+`dist/define-client.js` declares `DefaultShell`/`DefaultRoot` and exports
+`mountClient` — hence the message an author actually sees — but the same run
+reported `chat-view-…js ("a" export is incompatible)` and
+`index.js ("AGENT_STATE_LABELS")`. A bundled chunk always mixes components with
+constants, so every file in that tree is an invalid boundary and no refactor of
+`aai-ui` changes that.
+
+**And `client.tsx` was the second half.** The entry declares components and
+exports nothing, so it registered as a boundary and could never validate — it
+was re-executed and THEN discarded on every edit, and re-executing it is a
+second `mountClient()` on a container that already has a root. Fast refresh has
+therefore never worked for a template's `client.tsx`; it only cost a duplicate
+mount before the reload it was always going to do. A component in its OWN file
+does refresh properly, which is the reason to put one there.
+
+**Two things that do NOT work**, both tried against a running server:
+
+- `optimizeDeps.include: ["@alexkroman1/aai-ui"]` pre-bundles the linked SDK
+  into `.vite/deps` (excluded, since that IS under node_modules) and is silent
+  and wrong: a rebuild of `aai-ui` produced **no dev-server event at all**, so
+  the page keeps serving the old bundle until someone restarts with `--force`.
+- `resolve.preserveSymlinks` would put the dist back under `node_modules` for
+  the plugin's purposes, and under `server.watch.ignored`'s default at the same
+  time — the same silent staleness, plus pnpm's usual duplicate-React hazard
+  against `DEDUPED_PEERS`.
+
+Nor can this package set the exclusion itself: the oxc half is config
+(`oxc.jsxRefreshInclude`/`Exclude`, mergeable), but the footer that installs
+`import.meta.hot.accept` comes from `vite:react:refresh-wrapper`, which reads
+`include`/`exclude` out of the `react()` CLOSURE. Only the call site can say it.
+
+Fixed, the same rebuild is 22 `page reload` sends and nothing else — no
+invalidation, no re-execution, no React error. The sends are one per changed
+dist file and the first one wins, since the socket goes away with the page; a
+debounce would cost a hand-rolled timer in this package for a reload the browser
+coalesces anyway.
+
 ## Windows is NOT tested, and is currently broken
 
 There is no Windows leg in CI. One was added, run once, and removed — and what

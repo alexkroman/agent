@@ -61,7 +61,13 @@ export function resolveEffectiveProviders(
       mode: "pipeline",
     };
   }
-  return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
+  return {
+    stt,
+    llm,
+    tts,
+    s2s,
+    mode: assertProviderTriple(stt, llm, tts, s2s),
+  };
 }
 
 /**

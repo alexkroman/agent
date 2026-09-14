@@ -148,13 +148,6 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 
   // What this runtime resolved, once, at boot — including the WORKFLOW APP case,
   // whose line is deliberately not the pipeline one. See `runtime-providers.ts`.
-  logResolvedRuntime({
-    logger,
-    slug,
-    page: agent.page,
-    providers: effectiveProviders,
-    sessionState: sessionState.describe,
-  });
   // Owned maps because teardown is async on both: a reconnect resuming the
   // same session id re-claims the key while the old session's stop() drains,
   // and release-by-claim is what keeps that drain from evicting the
@@ -202,9 +195,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     logger,
   );
 
-  // `tiers` is the fast/slow split — decided here because it is a decision about
-  // the TOOL SURFACE. See `two-tier/wire.ts`.
-  const { executeTool, toolSchemas, toolGuidance, tiers, pushStateSnapshot, commitSessionState } =
+  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
     setupTools({
       agent,
       options,
@@ -219,9 +210,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       stateStore: sessionState.store,
     });
 
-  // Resolved once per runtime, and resolved EAGERLY only for a voice agent —
-  // see `runtime-pipeline-providers.ts`, which owns that policy and why a
-  // workflow app must not pay it.
+  logResolvedRuntime({
+    logger,
+    slug,
+    page: agent.page,
+    providers: effectiveProviders,
+    sessionState: sessionState.describe,
+  });
+  // Per runtime, and EAGER only for a voice agent — that module owns the policy.
   const pipelineProviders = createPipelineProviderResolver({
     agent,
     effectiveProviders,
@@ -234,7 +230,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const buildTransport = createTransportFactory({
     agent,
     agentConfig,
-    toolSchemas: tiers.fastToolSchemas,
+    toolSchemas,
     executeTool,
     // Transports open STT/TTS/LLM/S2S connections, so they resolve credentials
     // from providerEnv rather than the agent-visible env.
@@ -252,7 +248,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   // `runtime-system-prompt.ts`.
   const systemPrompts = createSystemPromptResolver({
     agentConfig,
-    hasTools: tiers.fastHasTools,
+    hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
     toolGuidance,
     // `undefined` unless the author declared a RESOLVER, in which case
     // `toAgentConfig` put nothing on the wire for it and this is what fills the
@@ -269,7 +265,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Everything one session is wired with before its transport exists — the
     // event emitter and its hooks, the dialogs that address the prompt, the
     // token meter and the guardrails. See `runtime-session-controls.ts`.
-    const { dialogs, emitter, usage, guardrails, twoTier } = openSessionWiring({
+    const { dialogs, emitter, usage, guardrails } = openSessionWiring({
       agent,
       env,
       sessionId: sessionOpts.id,
@@ -279,7 +275,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       limits: agentConfig.usageLimits,
       transport: () => transport,
       logger,
-      ...omitUndefined({ commitSessionState, openTwoTier: tiers.open }),
+      ...omitUndefined({ commitSessionState }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
     const releaseMeter = meters.claim(sessionOpts.id, usage);
@@ -352,9 +348,6 @@ export function createRuntime(options: RuntimeOptions): Runtime {
         // The dialog deadlines come off here too: a pending timer keeps the
         // event loop alive and would fire into a session already swept.
         dialogs.stop();
-        // Likewise a slow-tier run in flight: it is detached from every turn,
-        // so nothing else would ever end it.
-        twoTier?.stop();
         const owned = releaseSink();
         releaseEmitter();
         releaseMeter();

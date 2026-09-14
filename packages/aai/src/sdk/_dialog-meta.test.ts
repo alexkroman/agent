@@ -114,7 +114,6 @@ describe("voiceConfig", () => {
         on: { READ: "collecting" },
       },
       collecting: {
-        keyterms: ["policy number", "excess"],
         bargeIn: { minWords: 1, minDurationMs: 100 },
         toolChoice: "required",
         temperature: 0.2,
@@ -136,7 +135,6 @@ describe("voiceConfig", () => {
     const ctx = createToolContext();
     call.send(ctx, { type: "READ" });
     expect(call.voiceConfig(ctx)).toEqual({
-      keyterms: ["policy number", "excess"],
       bargeIn: { minWords: 1, minDurationMs: 100 },
       toolChoice: "required",
       temperature: 0.2,
@@ -235,7 +233,6 @@ describe("backward compatibility", () => {
         verifying: {
           instruction: "Verify the policy number.",
           voice: "amy",
-          keyterms: ["policy number"],
           timeout: { afterMs: 30_000, send: "VERIFIED" },
           on: { VERIFIED: "quoting" },
         },

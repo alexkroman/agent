@@ -326,7 +326,7 @@ placeholders or guess missing parameters.
   and there is no way to reach S2S by omission.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
-  of exactly these: gpt-5.5, gpt-5-mini, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-opus-4-5-20251101, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-sonnet-4-5-20250929, claude-sonnet-5, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-lite, gemini-3.5-flash, gemini-3.5-flash-lite, gpt-4.1, gpt-5, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.6-luna, gpt-5.6-terra, qwen3-32B, qwen3-next-80b-a3b. Prefer
+  of exactly these: gpt-5.5, gpt-5-mini, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-opus-4-5-20251101, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-sonnet-4-5-20250929, claude-sonnet-5, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-lite, gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemma-4-31b, gpt-4.1, gpt-5, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, qwen3-32B, qwen3-next-80b-a3b. Prefer
   "gpt-5.6-luna" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its `schema` option is
@@ -3021,17 +3021,14 @@ the defaults cannot say: "use run_code for ANY math", "you ARE the game".
 
 ### Opt-in prompt presets
 
-`agent({ voicePresets: ["echoVerification", "smartMatching"] })` switches on
+`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
 named behaviours instead of writing them. They compose, each is removable on
 its own, and each is paid for on EVERY model request: `echoVerification`
-(~190 tokens — read critical values back and get a yes), `smartMatching`
-(~200 — believe a caller through an ASR slip: a confirmation ("Are you
-Brandon?" → "Yes, this is Brendon"), a spelling that REPLACES what was heard,
-and a name lookup that misses), `speechNormalization`
+(~190 tokens — read critical values back and get a yes), `speechNormalization`
 (~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
 as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
 "That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
-the exact text. Those two spelling presets override the default "don't spell
+the exact text. The two spelling presets override the default "don't spell
 things back", so use them where a wrong value costs more than a slow call;
 `speechNormalization` is the PROMPT layer only, and for the agent's OWN data
 the renderers below do it in code for free.

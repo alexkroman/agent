@@ -148,7 +148,6 @@ describe("type ↔ schema alignment", () => {
     expect(VoicePresetNameSchema.options).toMatchInlineSnapshot(`
       [
         "echoVerification",
-        "smartMatching",
         "speechNormalization",
         "natoAlphabet",
       ]

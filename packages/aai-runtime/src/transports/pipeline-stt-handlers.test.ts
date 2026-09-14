@@ -57,7 +57,6 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     nudger: { arm: vi.fn(), clear: vi.fn(), onUserSpeech: vi.fn(), onUserTurn: vi.fn() },
     callbacks: { report: (event) => reported.push(event.type) },
     commitUserTurn: (text, note) => committed.push(note === undefined ? { text } : { text, note }),
-    lowConfidence: undefined,
     speculation: { onPartial: vi.fn(), onFinal: vi.fn(), onUtteranceIdle: vi.fn() },
     minBargeInWords: () => 2,
     interruptionMinDurationMs: () => 0,
@@ -65,10 +64,6 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     // the behaviour these specs were written against, before the lists existed.
     // The lists' own cases live in `pipeline-user-speech.test.ts`, which drives
     // the shipped defaults through `createUserActivity`.
-    phrases: { acknowledgement: [], interruption: [] },
-    // Inert: the table's own cases are in `pipeline-user-speech.test.ts` too.
-    // Recorded rather than a no-op so a spec here can still assert the seam.
-    endpointing: { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() },
     onInterrupted: vi.fn(),
     log: silentLogger,
     sid: "s1",
@@ -102,20 +97,6 @@ describe("onSttFinal", () => {
     handlers.onSttPartial("cancel my");
     expect(committed).toEqual([]);
     expect(edges).toEqual({ started: 0, ended: 0 });
-  });
-
-  test("the low-confidence gate can take the turn away, and pass a note through", () => {
-    const handled = makeHandlers({
-      lowConfidence: { classify: () => "handled" },
-    });
-    handled.handlers.onSttFinal("shhk");
-    expect(handled.committed).toEqual([]);
-
-    const noted = makeHandlers({
-      lowConfidence: { classify: () => ({ note: "may be mis-heard" }) },
-    });
-    noted.handlers.onSttFinal("cancel W123");
-    expect(noted.committed).toEqual([{ text: "cancel W123", note: "may be mis-heard" }]);
   });
 });
 

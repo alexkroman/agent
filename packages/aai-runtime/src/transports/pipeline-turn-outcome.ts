@@ -82,19 +82,6 @@ export interface TurnOutcomeDeps {
    *  the caller publishes as a final itself — see the definition in
    *  pipeline-transport.ts. */
   sendTtsText: SendTtsText;
-  /**
-   * The keyterms the active `dialog()` state asks for, read at the end of a
-   * turn and pushed to the STT stream — `undefined` restores the descriptor's
-   * own list.
-   *
-   * Here rather than in the turn body because THIS is the moment that makes it
-   * worth doing: the agent has just asked its question, so the next audio the
-   * recognizer hears is the answer to it, and a state that exists to collect
-   * an order number gets to say what an order number sounds like. Read as a
-   * thunk for the reason every other dialog knob is — a tool can move the
-   * dialog mid-turn, so the value at the START of the turn is the wrong one.
-   */
-  dialogKeyterms: () => readonly string[] | undefined;
 }
 
 export interface TurnOutcome {
@@ -193,7 +180,6 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
         heard,
         persistedLen: args.persistedLen,
         stepMessages: args.stepMessages,
-        updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
       });
       if (args.syntheticPrompt !== undefined && leftNoTrace) {
         history.dropTrailingUser(args.syntheticPrompt);
@@ -225,11 +211,6 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
     finishSpokenTurn(text) {
       callbacks.report({ type: "agent-transcript.committed", text });
       history.pushConversation({ role: "assistant", content: text });
-      // Steer the recognizer for the answer this reply just invited: the
-      // agent's own words as context (AssemblyAI Universal-3.5 Pro only; other
-      // providers have no such hook), and the active dialog state's keyterms.
-      providers.stt?.updateAgentContext?.(text);
-      providers.stt?.updateKeyterms?.(deps.dialogKeyterms());
     },
   };
 }

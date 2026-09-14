@@ -32,20 +32,11 @@ export const ToolSchemaSchema = z.object({
   description: z.string().min(1),
   parameters: z.record(z.string(), z.unknown()),
   messages: ToolMessagesSchema.optional(),
-  mutates: z.boolean().optional(),
-  completes: z.boolean().optional(),
 });
 
 /**
  * A tool declaration in wire form: name, description, and JSON Schema
  * parameters — the serializable counterpart of `ToolDef`.
- *
- * `mutates` and `completes` ride along because the tool CLASSIFICATION is what
- * the fast/slow gate routes on, and on the platform arm the runtime holds only
- * these schemas — the `ToolDef` lives in the guest. Without them a deployed
- * agent's gate would classify every tool as a read and verify nothing, which
- * is the shape of bug the `guest-route-exposure` convention exists for: it
- * works under `aai dev` and silently does nothing once deployed.
  */
 export type ToolSchema = {
   type: "function";
@@ -67,16 +58,4 @@ export type ToolSchema = {
    * existed.
    */
   messages?: ToolMessages | undefined;
-  /**
-   * See `ToolDef.mutates`. Absent means "not declared", never "read-only".
-   *
-   * `| undefined` explicitly, unlike the four members above it: under
-   * `exactOptionalPropertyTypes` a bare `mutates?: boolean` is a DIFFERENT
-   * type from what `ToolSchemaSchema` infers for an `.optional()` key, and
-   * `schema-alignment.test.ts` asserts the two are interchangeable. The four
-   * required members never had to say so.
-   */
-  mutates?: boolean | undefined;
-  /** See `ToolDef.completes`. */
-  completes?: boolean | undefined;
 };

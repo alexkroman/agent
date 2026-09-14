@@ -496,44 +496,34 @@ describe("createPipelineHistory — dropTrailingUser", () => {
 });
 
 describe("persistInterruptedTurn — the record is what was HEARD", () => {
-  function setup(): {
-    history: ReturnType<typeof createPipelineHistory>;
-    agentContext: string[];
-  } {
-    const agentContext: string[] = [];
-    return { history: createPipelineHistory(), agentContext };
+  function setup(): { history: ReturnType<typeof createPipelineHistory> } {
+    return { history: createPipelineHistory() };
   }
 
   test("writes the heard prefix, marked [interrupted]", () => {
-    const { history, agentContext } = setup();
+    const { history } = setup();
     persistInterruptedTurn({
       history,
       heard: "Your balance is",
       persistedLen: 0,
       stepMessages: [],
-      updateAgentContext: (t) => agentContext.push(t),
     });
     expect(history.conversation).toEqual([
       { role: "assistant", content: "Your balance is [interrupted]" },
     ]);
     expect(history.llm).toEqual([{ role: "assistant", content: "Your balance is [interrupted]" }]);
-    // The STT bias hint is the agent's own voice echoing back, so it gets what
-    // was in the air rather than what the model generated.
-    expect(agentContext).toEqual(["Your balance is"]);
   });
 
   test("writes NOTHING to either view when the caller heard none of it", () => {
-    const { history, agentContext } = setup();
+    const { history } = setup();
     persistInterruptedTurn({
       history,
       heard: "",
       persistedLen: 0,
       stepMessages: [],
-      updateAgentContext: (t) => agentContext.push(t),
     });
     expect(history.conversation).toEqual([]);
     expect(history.llm).toEqual([]);
-    expect(agentContext).toEqual([]);
   });
 
   test("still pushes the completed tool steps when nothing was heard", () => {
@@ -545,7 +535,6 @@ describe("persistInterruptedTurn — the record is what was HEARD", () => {
       heard: "",
       persistedLen: 0,
       stepMessages: [toolCallMsg("c1"), toolResultMsg("c1")],
-      updateAgentContext: () => undefined,
     });
     expect(history.llm).toHaveLength(2);
     expect(history.conversation).toEqual([]);
@@ -560,7 +549,6 @@ describe("persistInterruptedTurn — the record is what was HEARD", () => {
       heard: "Your balance",
       persistedLen: 999,
       stepMessages: [],
-      updateAgentContext: () => undefined,
     });
     expect(history.conversation).toEqual([
       { role: "assistant", content: "Your balance [interrupted]" },

@@ -189,9 +189,6 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
       history.pushConversation({ role: "assistant", content: text });
       history.pushLlm({ role: "assistant", content: text });
       sendTtsText(text, { publishTranscript: false });
-      // Push the greeting mid-stream too (it was already seeded at STT connect
-      // time) — covers providers that only support the mid-stream hook.
-      deps.providers().stt?.updateAgentContext?.(text);
       return true;
     });
   }

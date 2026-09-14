@@ -1,11 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// End-to-end wiring of the three turn-taking layers that sit OVER the
-// thresholds — the regex-keyed endpointing table, the start-speaking floor
-// and the post-interruption backoff. The policies themselves are unit-tested
-// next door (`pipeline-endpointing.test.ts`, `pipeline-speak-gate.test.ts`,
-// and the phrase lists in `pipeline-user-speech.test.ts`); what this file
-// covers is that the transport really reaches them — the half that was wrong
-// in every "the knob did nothing" bug this repo has recorded.
+// End-to-end wiring of the two turn-taking layers that sit OVER the
+// thresholds — the start-speaking floor and the post-interruption backoff.
+// The policies themselves are unit-tested next door
+// (`pipeline-speak-gate.test.ts`, and the phrase lists in
+// `pipeline-user-speech.test.ts`); what this file covers is that the transport
+// really reaches them — the half that was wrong in every "the knob did
+// nothing" bug this repo has recorded.
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
@@ -13,66 +13,6 @@ import { inFlightReplyScript, makeOpts, useVirtualTime } from "./_pipeline-trans
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 useVirtualTime();
-
-const WINDOW = { minTurnSilenceMs: 1600, maxTurnSilenceMs: 3500 };
-
-describe("the endpointing table reaches the STT session", () => {
-  test("a matching rule pushes its window; the utterance ending puts it back", async () => {
-    const { opts, stt } = makeOpts({
-      llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
-      sttEndpointing: WINDOW,
-      endpointingRules: [{ type: "user", regex: "\\d\\s*$", timeoutMs: 2600 }],
-    });
-    const t = createPipelineTransport(opts);
-    await t.start();
-
-    stt.last()?.firePartial("my zip is one nine");
-    expect(stt.last()?.updateEndpointing).not.toHaveBeenCalled();
-
-    stt.last()?.firePartial("my zip is 19122");
-    expect(stt.last()?.updateEndpointing).toHaveBeenCalledWith(2600);
-
-    stt.last()?.fireFinal("my zip is 19122");
-    expect(stt.last()?.updateEndpointing).toHaveBeenLastCalledWith(1600);
-    await t.stop();
-  });
-
-  test("an assistant rule reads the reply the agent just gave", async () => {
-    const { opts, stt, tts } = makeOpts({
-      llm: createFakeLanguageModel({
-        script: [{ type: "text", text: "What's your order number?" }],
-      }),
-      sttEndpointing: WINDOW,
-      endpointingRules: [{ type: "assistant", regex: "order number", timeoutMs: 2600 }],
-    });
-    const t = createPipelineTransport(opts);
-    await t.start();
-
-    stt.last()?.fireFinal("I need help");
-    await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
-    });
-    // Nothing pushed yet: the caller has not spoken since, so the table has
-    // not been re-read.
-    stt.last()?.firePartial("it's");
-    expect(stt.last()?.updateEndpointing).toHaveBeenCalledWith(2600);
-    await t.stop();
-  });
-
-  test("no table means no frames at all", async () => {
-    const { opts, stt } = makeOpts({
-      llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
-      sttEndpointing: WINDOW,
-      endpointingRules: [],
-    });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.firePartial("19122");
-    stt.last()?.fireFinal("19122");
-    expect(stt.last()?.updateEndpointing).not.toHaveBeenCalled();
-    await t.stop();
-  });
-});
 
 describe("the start-speaking floor", () => {
   test("holds the first audio frame back, and the caller hears nothing until it passes", async () => {

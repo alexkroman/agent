@@ -9,8 +9,6 @@
  * produces two finals.
  */
 
-import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
-
 /**
  * The turn fields this module reads, as the service sends them.
  *
@@ -25,36 +23,6 @@ export interface AssemblyAITurnLike {
   readonly end_of_turn?: boolean | undefined;
   readonly turn_is_formatted?: boolean | undefined;
   readonly words?: readonly { readonly confidence?: unknown }[] | undefined;
-}
-
-/**
- * The MEAN and the MINIMUM of a turn's per-word confidences.
- *
- * Both, because they answer the same question at different sensitivities and
- * which one a policy should read is unmeasured — see `LowConfidenceStatistic`.
- * Carrying both costs one pass over a list the event already carries and is
- * what lets a log settle it.
- *
- * `{}` — not zeros — for a turn with no words or none carrying a numeric
- * confidence. Absent means "no opinion", and every consumer must read it that
- * way: a turn reported as confidence 0 would be DISCARDED by a policy that
- * should never have fired.
- */
-export function wordConfidences(
-  words: AssemblyAITurnLike["words"],
-): Pick<SttTurnMeta, "transcriptConfidence" | "minWordConfidence"> {
-  let total = 0;
-  let count = 0;
-  let min = Number.POSITIVE_INFINITY;
-  for (const word of words ?? []) {
-    const value = word.confidence;
-    if (typeof value !== "number" || !Number.isFinite(value)) continue;
-    total += value;
-    count += 1;
-    if (value < min) min = value;
-  }
-  if (count === 0) return {};
-  return { transcriptConfidence: total / count, minWordConfidence: min };
 }
 
 /**

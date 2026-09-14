@@ -21,7 +21,6 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "../../endpointing-constants.ts";
-import { normalizeKeyterms } from "../../keyterms.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import {
   DEFAULT_VOICE_FOCUS,
@@ -139,51 +138,6 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    */
   maxTurnSilenceMs?: number;
   /**
-   * Terms to bias recognition toward, sent as the `keyterms_prompt` connection
-   * parameter — contact names, product names, SKUs, the words a domain uses
-   * that a general model has no reason to prefer. Accepted by
-   * `universal-3-5-pro` (free) and `universal-streaming-english` (+$0.04/hr).
-   *
-   * Normalized before it goes on the wire (`normalizeKeyterms`): trimmed,
-   * de-duplicated case-insensitively, terms over 50 characters dropped, and the
-   * list capped at 100 — the service IGNORES an over-long term and REFUSES a
-   * connect carrying more than 100, so a catalogue that grew past the cap would
-   * otherwise stop a deployed agent opening sessions at all.
-   *
-   * Three rules the code cannot check for you, and the reason to keep a list
-   * SHORT:
-   *
-   * - **Uncommon words and proper nouns only.** A common English word is
-   *   already recognized, and boosting it buys false positives elsewhere.
-   * - **The exact spelling and casing you want in the transcript** — this is
-   *   what the model is being told to produce, so `"AssemblyAI"` and
-   *   `"assembly ai"` are different requests.
-   * - **Start small.** Over-boosting makes the model hear terms that were not
-   *   said, which is the same failure this is meant to fix, pointed the other
-   *   way.
-   *
-   * A `dialog()` state may narrow them for one phase of the call —
-   * `DialogStateSpec.keyterms`, applied mid-stream.
-   */
-  keyterms?: string[];
-  /**
-   * Context about the CONVERSATION, sent as the `agent_context` connection
-   * parameter and refreshed per turn with the agent's own latest reply.
-   * `universal-3-5-pro` only; other models reject it at connect and strip it
-   * mid-stream.
-   *
-   * Set this to what the application already knows about the call — who is
-   * calling, what about, which order — and leave it unset to let the runtime
-   * seed the agent's greeting instead. Either way each spoken reply replaces
-   * it, so the recognizer transcribing "1-2-3-4" has just been told the agent
-   * asked for an order number.
-   *
-   * Capped at the documented ~1,500 characters, keeping the TAIL: a voice
-   * agent's question lands at the end of its reply, and that question is the
-   * part worth sending.
-   */
-  agentContext?: string;
-  /**
    * Whether the service applies punctuation, casing and inverse text
    * normalization to a committed turn — "my number is nine seven two" becomes
    * "My number is 972…" — sent as the `format_turns` connection parameter.
@@ -280,19 +234,11 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   languages?: string[];
   streamingUrl?: string;
   region?: "us" | "eu";
-  keyterms?: readonly string[];
-  agentContext?: string;
   formatTurns?: boolean;
 } {
   // "off" is spelled as the empty string on the wire; normalize here so the
   // log and the connection parameter agree on what "disabled" looks like.
   const requestedVoiceFocus = options.voiceFocus ?? DEFAULT_VOICE_FOCUS;
-  // NORMALIZED here rather than at the opener, for the reason this whole
-  // function exists: the startup line reports these settings, and a list
-  // reported with 140 terms while 100 went on the wire is the kind of log that
-  // is worse than none. The opener re-runs it for the DROPPED half, which is a
-  // warning rather than a setting.
-  const keyterms = normalizeKeyterms(options.keyterms ?? []).terms;
   return {
     model: options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
     minTurnSilenceMs: options.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
@@ -308,12 +254,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
       : {}),
     ...(options.streamingUrl ? { streamingUrl: options.streamingUrl } : {}),
     ...omitUndefined({ region: options.region }),
-    // Absent rather than empty: "this agent declares no keyterms" and "this
-    // agent declares an empty list" are one thing here, and an empty
-    // `keyterms_prompt` is a wire message that CLEARS biasing — which is only
-    // meaningful mid-stream, never at connect.
-    ...(keyterms.length > 0 ? { keyterms } : {}),
-    ...omitUndefined({ agentContext: options.agentContext, formatTurns: options.formatTurns }),
+    ...omitUndefined({ formatTurns: options.formatTurns }),
   };
 }
 

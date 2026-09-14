@@ -275,7 +275,6 @@ export function persistInterruptedTurn(args: {
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
   /** Seed the STT provider with the agent's side of the dialog. */
-  updateAgentContext: (text: string) => void;
 }): void {
   const { history, heard, stepMessages } = args;
   // Pushed unconditionally, BEFORE the empty-heard return: a turn whose tools
@@ -300,7 +299,6 @@ export function persistInterruptedTurn(args: {
   // fighting the agent's own voice echoing back, so what was in the air is the
   // right hint. (Judgement call — the fuller text might bias vocabulary
   // better; no measurement either way.)
-  args.updateAgentContext(spoken);
 }
 
 /**

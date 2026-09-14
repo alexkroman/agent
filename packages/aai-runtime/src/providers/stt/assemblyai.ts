@@ -3,11 +3,7 @@
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
   createSttError,
-  describeKeytermDrops,
   isUniversal35Pro,
-  MAX_KEYTERM_CHARS,
-  MAX_KEYTERMS,
-  normalizeKeyterms,
   resolveAssemblyAISttSettings,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_FRAME_FLOOR_MS,
@@ -32,23 +28,11 @@ import {
   pickEndpoint,
   requireApiKey,
 } from "../_utils.ts";
-import { isCommittingTurn, wordConfidences } from "./_assemblyai-turn.ts";
+import { isCommittingTurn } from "./_assemblyai-turn.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
   readonly _transcriber: StreamingTranscriber;
-}
-
-/**
- * `agent_context` is accepted only by the Universal-3.5 Pro streaming family —
- * connection-time is rejected and mid-stream updates are stripped (with a
- * server warning) on every other model. `format_turns` is the mirror image:
- * accepted everywhere EXCEPT that family, where formatting is always on and is
- * not a parameter at all. One predicate answers both, and it lives in the SDK
- * beside the descriptor so the model-name list has one home.
- */
-function supportsAgentContext(resolvedSpeechModel: string): boolean {
-  return isUniversal35Pro(resolvedSpeechModel);
 }
 
 function supportsFormatTurns(resolvedSpeechModel: string): boolean {
@@ -117,22 +101,6 @@ function transcriberBufferedAmount(transcriber: StreamingTranscriber): number | 
  * {@link normalizeAgentContext}). Trimming at the documented cap keeps the
  * decision here.
  */
-const AGENT_CONTEXT_MAX_CHARS = 1500;
-
-/**
- * Cap `text` at {@link AGENT_CONTEXT_MAX_CHARS}; `undefined` for
- * empty/whitespace-only text.
- *
- * Keeps the **tail**, not the head. The docs say to "trim long agent replies
- * down to the substantive question", and a voice agent's question lands at the
- * end of its reply ("…so, what's your email address?") — that trailing question
- * is the whole reason to send context, and slicing from the front is exactly
- * what would drop it.
- */
-function normalizeAgentContext(text: string): string | undefined {
-  if (text.trim().length === 0) return;
-  return text.length > AGENT_CONTEXT_MAX_CHARS ? text.slice(-AGENT_CONTEXT_MAX_CHARS) : text;
-}
 
 /**
  * The streaming endpoint to dial, or `undefined` to leave the SDK's own.
@@ -158,9 +126,6 @@ function buildTranscriberParams(
   openOpts: SttOpenOptions,
 ): {
   params: Record<string, unknown>;
-  agentContextCapable: boolean;
-  /** The connect-time keyterms, which a mid-stream `undefined` restores. */
-  baseKeyterms: readonly string[];
   /** Whether a commit must wait for the FORMATTED final — see isCommittingTurn. */
   awaitingFormatted: boolean;
   settings: ReturnType<typeof resolveAssemblyAISttSettings>;
@@ -170,15 +135,10 @@ function buildTranscriberParams(
   // startup are the ones dialled here, not a second copy of the same `??`
   // chains. This function only maps them onto the SDK's parameter names.
   const settings = resolveAssemblyAISttSettings(opts);
-  const agentContextCapable = supportsAgentContext(settings.model);
   // The DESCRIPTOR's context wins over the host's seed. They are two different
-  // claims — `assemblyAIStt({ agentContext })` is what the application knows
   // about this call, `openOpts.agentContext` is the greeting the runtime is
   // about to speak — and the author's own is the more specific of the two.
   // Either way the first spoken reply replaces it (see `updateAgentContext`).
-  const initialAgentContext = agentContextCapable
-    ? normalizeAgentContext(settings.agentContext ?? openOpts.agentContext ?? "")
-    : undefined;
   const params: Record<string, unknown> = {
     sampleRate: openOpts.sampleRate,
     speechModel: settings.model,
@@ -214,13 +174,6 @@ function buildTranscriberParams(
   // the generic default that briefly lived there was reverted.
   const sttPrompt = openOpts.sttPrompt ?? DEFAULT_STT_PROMPT;
   if (sttPrompt) params.prompt = sttPrompt;
-  if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;
-  // Keyterms. Already normalized by `resolveAssemblyAISttSettings` (so the
-  // startup line reports what goes on the wire); absent means the agent
-  // declared none, and an empty `keyterms_prompt` at CONNECT would mean
-  // nothing anyway — clearing biasing is only a mid-stream act.
-  const baseKeyterms = settings.keyterms ?? [];
-  if (baseKeyterms.length > 0) params.keytermsPrompt = [...baseKeyterms];
   // Turn formatting. Sent only where it IS a parameter: on the Universal-3.5
   // Pro family formatting is always on, so `formatTurns: false` there is a
   // request this service cannot honour and the caller is told rather than left
@@ -241,16 +194,7 @@ function buildTranscriberParams(
     params.voiceFocus = settings.voiceFocus;
     params.voiceFocusThreshold = settings.voiceFocusThreshold;
   }
-  return { params, agentContextCapable, baseKeyterms, awaitingFormatted, settings };
-}
-
-/** Warn once per open about keyterms this session is NOT sending, and why. */
-function warnDroppedKeyterms(declared: readonly string[] | undefined): void {
-  const reasons = describeKeytermDrops(normalizeKeyterms(declared ?? []).dropped);
-  if (reasons === undefined) return;
-  consoleLogger.warn(
-    `assemblyAIStt: ${reasons}. The service ignores a keyterm over ${MAX_KEYTERM_CHARS} characters and REFUSES a connect carrying more than ${MAX_KEYTERMS}, so these were dropped rather than sent.`,
-  );
+  return { params, awaitingFormatted, settings };
 }
 
 export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
@@ -267,12 +211,9 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
       const client = new AssemblyAI({ apiKey });
       const {
         params: transcriberParams,
-        agentContextCapable,
-        baseKeyterms,
         awaitingFormatted,
         settings,
       } = buildTranscriberParams(opts, openOpts);
-      warnDroppedKeyterms(opts.keyterms);
       /**
        * The end-of-turn floor this socket is currently running with.
        *
@@ -287,11 +228,6 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
       );
       suppressDiscardedSocketError(transcriber);
-
-      // What the service currently believes the keyterms are, as the key
-      // `updateKeyterms` compares against. Seeded with the connect-time list so
-      // a first turn under a dialog state that declares none sends nothing.
-      let sentKeyterms = baseKeyterms.join("\u0000");
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       const shell = createSttSessionShell({
@@ -324,17 +260,11 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         // the final one is attributable to STT rather than to the transport's
         // turn aggregation (see pipeline-user-speech.ts's matching trace).
         const endOfTurnConfidence = readEndOfTurnConfidence(event);
-        // The two WORD-confidence statistics, which are a different question
-        // from the end-of-turn one beside them: not "has the caller finished"
-        // but "was what they said heard correctly". `AgentDef.lowConfidence`
-        // is the one policy that reads them.
-        const heard = wordConfidences(event.words);
         consoleLogger.debug("AssemblyAI STT turn", {
           transcript: text,
           endOfTurn: event.end_of_turn,
           formatted: event.turn_is_formatted,
           endOfTurnConfidence,
-          ...heard,
         });
         if (text.length === 0) return;
         // Through the shell: this fires from inside the SDK's own turn handler,
@@ -344,7 +274,6 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         // distinguishes the two, and "the provider said nothing" is the absent case.
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
           ...omitUndefined({ endOfTurnConfidence }),
-          ...heard,
         });
       });
 
@@ -389,32 +318,6 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         },
         on: shell.on,
         close: closeAfterFlush(shell, frames),
-        updateAgentContext(text: string) {
-          if (!agentContextCapable || shell.isClosed()) return;
-          const normalized = normalizeAgentContext(text);
-          if (normalized === undefined) return;
-          // NOTE: the wire/update-message field is snake_case (`agent_context`),
-          // unlike the connect-time constructor param (`agentContext`).
-          transcriber.updateConfiguration({ agent_context: normalized });
-        },
-        updateKeyterms(keyterms: readonly string[] | undefined) {
-          if (shell.isClosed()) return;
-          // `undefined` RESTORES the connect-time set — the contract a phase
-          // ending depends on, since a state that narrowed the vocabulary must
-          // not leave it narrowed for the rest of the call. `[]` from a caller
-          // is a different claim and passes straight through as "clear".
-          const next = keyterms === undefined ? baseKeyterms : normalizeKeyterms(keyterms).terms;
-          // Compared as a STRING because this is called once per agent turn and
-          // the overwhelming majority of those change nothing; a wire message
-          // per turn for an unchanged list is pure noise on the socket that is
-          // also carrying audio. NUL-joined rather than space-joined: a keyterm
-          // is often several words, so a space would make ["a b"] and
-          // ["a", "b"] one key.
-          const key = next.join("\u0000");
-          if (key === sentKeyterms) return;
-          sentKeyterms = key;
-          transcriber.updateConfiguration({ keyterms_prompt: [...next] });
-        },
         updateEndpointing(minTurnSilenceMs: number) {
           if (shell.isClosed()) return;
           // CLAMPED to the ceiling this session dialled, not to the shipped

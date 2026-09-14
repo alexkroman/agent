@@ -10,7 +10,6 @@
  */
 
 import { z } from "zod";
-import { MAX_ENDPOINTING_RULE_TIMEOUT_MS } from "./endpointing-rules.ts";
 import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
 
 /**
@@ -23,50 +22,6 @@ import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
  * build time and the deploy boundary re-runs it, so a typo'd pattern is an
  * error the author sees rather than a rule that does nothing on a call.
  */
-const RegexSource = z.string().min(1).superRefine(refineRegexSource);
-
-function refineRegexSource(source: string, ctx: z.RefinementCtx): void {
-  try {
-    new RegExp(source);
-  } catch (err) {
-    ctx.addIssue({
-      code: "custom",
-      message: `not a valid regular expression: ${err instanceof Error ? err.message : String(err)}`,
-    });
-  }
-}
-
-/** `flags` accepted on an endpointing rule — the `RegExp` flag alphabet. */
-const RegexFlags = z.string().regex(/^[dgimsuvy]*$/, "invalid RegExp flags");
-
-const EndpointingTimeout = z.number().int().positive().max(MAX_ENDPOINTING_RULE_TIMEOUT_MS);
-
-/**
- * @internal Zod schema for `EndpointingRule`. A discriminated union on `type`,
- * so an unknown kind is rejected by name rather than silently matching
- * nothing.
- */
-export const EndpointingRuleSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("assistant"),
-    regex: RegexSource,
-    flags: RegexFlags.optional(),
-    timeoutMs: EndpointingTimeout,
-  }),
-  z.object({
-    type: z.literal("user"),
-    regex: RegexSource,
-    flags: RegexFlags.optional(),
-    timeoutMs: EndpointingTimeout,
-  }),
-  z.object({
-    type: z.literal("both"),
-    assistantRegex: RegexSource,
-    userRegex: RegexSource,
-    flags: RegexFlags.optional(),
-    timeoutMs: EndpointingTimeout,
-  }),
-]);
 
 /** @internal Zod schema for `BuiltinTool`. Exported for reuse in internal schemas. */
 export const BuiltinToolSchema = z.enum([
@@ -93,22 +48,3 @@ export const ToolChoiceSchema = z.union([
   z.enum(["auto", "required", "none"]),
   z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
 ]);
-
-/**
- * @internal Zod schema for `LowConfidencePolicy`.
- *
- * Both thresholds are bounded to 0..1 because that is the range a
- * recognizer's confidence lives in, and an out-of-range number here is
- * silently one of two different mistakes: `40` means "I thought this was a
- * percentage" (which would discard every turn) and `-1` means "I thought this
- * disabled it" (which would discard none). Neither fails at run time on its
- * own, so the schema is the only place either can be caught.
- */
-export const LowConfidencePolicySchema = z.object({
-  discardBelow: z.number().min(0).max(1).optional(),
-  actionBelow: z.number().min(0).max(1).optional(),
-  action: z.enum(["clarify", "note"]).optional(),
-  phrase: z.string().optional(),
-  note: z.string().optional(),
-  statistic: z.enum(["mean", "minWord"]).optional(),
-});

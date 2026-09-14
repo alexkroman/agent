@@ -5,7 +5,7 @@
  * A state node's `meta` was one string — the `instruction` a refusal quotes —
  * and reading it was four lines in `_dialog-snapshot.ts`. It carries a voice
  * call's per-phase settings now (a deadline, a TTS voice, a barge-in policy,
- * STT keyterms, the two model knobs), and every one of them is read back by the
+ * the two model knobs), and every one of them is read back by the
  * SAME rule from the SAME place, so the rule and the field list belong in one
  * module rather than repeated per getter.
  *
@@ -74,7 +74,6 @@ export function toStateMeta(state: DialogStateSpec): Record<string, unknown> | u
     timeout: state.timeout,
     voice: state.voice,
     bargeIn: state.bargeIn,
-    keyterms: state.keyterms,
     toolChoice: state.toolChoice,
     temperature: state.temperature,
   });
@@ -169,12 +168,6 @@ function toBargeIn(value: unknown): DialogBargeIn | undefined {
   });
 }
 
-/** A keyterm list, or nothing — a partly-string array is a typo, not a list. */
-function toKeyterms(value: unknown): readonly string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.every((term) => typeof term === "string") ? [...value] : undefined;
-}
-
 /** See {@link ToolChoice}: three names, or the one-tool form. */
 function toToolChoice(value: unknown): ToolChoice | undefined {
   if (value === "auto" || value === "required" || value === "none") return value;
@@ -189,7 +182,6 @@ function declaredVoiceConfig(declared: Record<string, unknown>): DialogVoiceConf
   const config = omitUndefined({
     voice: typeof declared.voice === "string" ? declared.voice : undefined,
     bargeIn: toBargeIn(declared.bargeIn),
-    keyterms: toKeyterms(declared.keyterms),
     toolChoice: toToolChoice(declared.toolChoice),
     temperature: typeof declared.temperature === "number" ? declared.temperature : undefined,
   });

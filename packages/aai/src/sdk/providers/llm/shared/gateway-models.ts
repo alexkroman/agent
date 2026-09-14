@@ -37,8 +37,11 @@ export type GatewayModelInfo = {
   /**
    * Answered a minimal request, as this SDK sends one, when generated.
    * `false` means the gateway advertises the model and will not run it for
-   * us: `kimi-k2.5` answers 410 (deprecated), `gemini-3.6-flash` answers
-   * 400 (needs a `model_region` parameter nothing here sends).
+   * us — `kimi-k2.5` answers 410 (deprecated).
+   *
+   * The probe leaves room for reasoning tokens; at `max_tokens: 1` it read
+   * the whole gpt-5 family as dead. See `isLive` in
+   * `scripts/gen-gateway-models.mjs`.
    */
   readonly live: boolean;
   /** Context window in tokens, as the gateway reports it. */
@@ -52,6 +55,7 @@ export type AssemblyAIGatewayModel =
   | "claude-opus-4-6"
   | "claude-opus-4-7"
   | "claude-opus-4-8"
+  | "claude-opus-5"
   | "claude-sonnet-4-5-20250929"
   | "claude-sonnet-4-6"
   | "claude-sonnet-5"
@@ -62,6 +66,9 @@ export type AssemblyAIGatewayModel =
   | "gemini-3.5-flash"
   | "gemini-3.5-flash-lite"
   | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
+  | "gemma-4-31b"
   | "gpt-4.1"
   | "gpt-5"
   | "gpt-5-mini"
@@ -70,13 +77,14 @@ export type AssemblyAIGatewayModel =
   | "gpt-5.2"
   | "gpt-5.5"
   | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
   | "gpt-5.6-terra"
+  | "gpt-6-astra"
   | "gpt-oss-120b"
   | "gpt-oss-20b"
-  | "kimi-k2.5"
   | "qwen3-32B"
   | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-experimental";
+  | "qwen3.5-4b-32k-fast";
 
 export const ASSEMBLYAI_GATEWAY_MODELS = {
   "claude-haiku-4-5-20251001": {
@@ -96,6 +104,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "claude-opus-4-6": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
   "claude-opus-4-7": { tools: true, stream: true, eu: false, live: true, context: 1_000_000 },
   "claude-opus-4-8": { tools: true, stream: true, eu: false, live: true, context: 1_000_000 },
+  "claude-opus-5": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
   "claude-sonnet-4-5-20250929": {
     tools: true,
     stream: true,
@@ -111,7 +120,10 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "gemini-3.1-flash-lite": { tools: true, stream: true, eu: false, live: true, context: 1_048_575 },
   "gemini-3.5-flash": { tools: true, stream: true, eu: false, live: true, context: 1_048_575 },
   "gemini-3.5-flash-lite": { tools: true, stream: true, eu: false, live: true, context: 1_048_575 },
-  "gemini-3.6-flash": { tools: true, stream: true, eu: false, live: false, context: 1_048_575 },
+  "gemini-3.6-flash": { tools: true, stream: true, eu: true, live: true, context: 1_048_575 },
+  "gemini-3.7-flash": { tools: true, stream: true, eu: true, live: true, context: 1_048_575 },
+  "gemini-3.8-flash": { tools: true, stream: true, eu: true, live: true, context: 1_048_575 },
+  "gemma-4-31b": { tools: true, stream: true, eu: false, live: true, context: 256_000 },
   "gpt-4.1": { tools: true, stream: true, eu: false, live: true, context: 1_047_576 },
   "gpt-5": { tools: true, stream: true, eu: false, live: true, context: 400_000 },
   "gpt-5-mini": { tools: true, stream: true, eu: false, live: true, context: 400_000 },
@@ -120,19 +132,14 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "gpt-5.2": { tools: true, stream: true, eu: false, live: true, context: 400_000 },
   "gpt-5.5": { tools: true, stream: true, eu: false, live: true, context: 272_000 },
   "gpt-5.6-luna": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
+  "gpt-5.6-sol": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
   "gpt-5.6-terra": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
+  "gpt-6-astra": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
   "gpt-oss-120b": { tools: true, stream: false, eu: false, live: true, context: 131_072 },
   "gpt-oss-20b": { tools: true, stream: false, eu: false, live: true, context: 131_072 },
-  "kimi-k2.5": { tools: true, stream: true, eu: false, live: false, context: 200_000 },
   "qwen3-32B": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
   "qwen3-next-80b-a3b": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
-  "qwen3.5-4b-32k-experimental": {
-    tools: false,
-    stream: true,
-    eu: false,
-    live: true,
-    context: 32_768,
-  },
+  "qwen3.5-4b-32k-fast": { tools: false, stream: true, eu: false, live: true, context: 32_768 },
 } as const satisfies Record<AssemblyAIGatewayModel, GatewayModelInfo>;
 
 /**
@@ -141,8 +148,8 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
  * a model that is deprecated or loses `stream` upstream drops out on the
  * next regeneration instead of waiting to be noticed.
  */
-export function gatewayModelIds(options: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
+export function gatewayModelIds(opts: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
   return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [AssemblyAIGatewayModel, GatewayModelInfo][])
-    .filter(([, m]) => m.live && m.tools && m.stream && (!options.eu || m.eu))
+    .filter(([, m]) => m.live && m.tools && m.stream && (!opts.eu || m.eu))
     .map(([id]) => id);
 }

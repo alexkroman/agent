@@ -38,12 +38,9 @@
 
 // The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
 export {
-  assembleSpelledRuns,
   capToolResult,
   isTextAssetPath,
   normalizeSpeechText,
-  type SpelledRun,
-  spelledAloudNote,
   toArgsRecord,
 } from "./sdk/_wire-helpers.ts";
 // The workflow API's route prefix — the SERVER's half, with the wait clamp
@@ -60,16 +57,8 @@ export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 //
 // Reached here directly rather than through `sdk/constants.ts` like the
 // defaults below — that file is at the 500-line cap, and its role (one import
-// path for a constant) has exactly one reader, this subpath. The endpointing
-// rules and the speak-gate windows are imported the same way, for the same
-// reason.
-export {
-  type BargeInPhraseVerdict,
-  classifyBargeInPhrase,
-  DEFAULT_ACKNOWLEDGEMENT_PHRASES,
-  DEFAULT_INTERRUPTION_PHRASES,
-  normalizeBargeInText,
-} from "./sdk/barge-in-phrases.ts";
+// path for a constant) has exactly one reader, this subpath. The speak-gate
+// windows are imported the same way, for the same reason.
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,
 // which is a published subpath an agent author reads — a platform contract is
@@ -160,17 +149,6 @@ export {
 // runtime's OWN stores; the cap is what the driver and the guest mirror
 // enforce.
 export { type Db, MAX_DB_RESULT_ROWS } from "./sdk/db.ts";
-// The endpointing rule matcher and its clamp — the framework's reading of the
-// table an author declares. Zod-free, like everything on this subpath: the
-// rule SCHEMA lives in `sdk/type-schemas.ts` instead.
-export {
-  clampEndpointingTimeout,
-  DEFAULT_ENDPOINTING_RULES,
-  type EndpointingInput,
-  type EndpointingRuleMatch,
-  MAX_ENDPOINTING_RULE_TIMEOUT_MS,
-  matchEndpointingRule,
-} from "./sdk/endpointing-rules.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export {
   type InvariantDetail,

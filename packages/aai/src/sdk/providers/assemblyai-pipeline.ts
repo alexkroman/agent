@@ -115,11 +115,11 @@ export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
   return {
     stt: assemblyAIStt(omitUndefined({ region, minTurnSilenceMs, maxTurnSilenceMs })),
     // `reasoningEffort: "none"` because on a voice line time-to-first-token IS
-    // the quality, and the default model is a reasoning model. Measured against
-    // tau2-bench retail: 12 of 53 turns waited over 5s for the agent's first
-    // word, worst 19.1s — and in every gap over 8s the first word was ordinary
-    // content with no tool call yet, so the wait was the model thinking, not
-    // work being done.
+    // the quality, and the default model is a hybrid-thinking one. Measured
+    // against tau2-bench retail: 12 of 53 turns waited over 5s for the agent's
+    // first word, worst 19.1s — and in every gap over 8s the first word was
+    // ordinary content with no tool call yet, so the wait was the model
+    // thinking, not work being done.
     //
     // The dead-air cover does reach that window — it is armed as the turn's
     // stream opens, not at the first tool call — but cover is not a substitute
@@ -128,22 +128,21 @@ export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
     // the filler itself ("One moment.", the hold phrase of the day) arriving
     // 10.9s late.
     //
-    // Safe as a default because the preset's descriptor carries the factory's
-    // own default model, which accepts the parameter; an agent overriding
-    // `llm` replaces this descriptor whole, so the parameter never reaches a
-    // model that would reject it. An agent that wants thinking depth declares
-    // its own stage (`assemblyAILlm({ model, reasoningEffort })`).
+    // **The value must be one the default ACCEPTS, and that is not uniform.**
+    // `ASSEMBLYAI_LLM_DEFAULT_MODEL` carries the matrix; the short version is
+    // that this id takes `"none"` and reaches 0 reasoning tokens, the
+    // `gpt-5.6` family REQUIRES `"none"` for tool calls, and a Gemini id
+    // refuses it outright with a 400 that the streaming path turns into an
+    // opaque 500. So the id and this argument move TOGETHER — the default has
+    // moved four times and this line changed with it three of those times.
     //
-    // On the current default (`qwen3-next-80b-a3b`) this argument is the ONLY
-    // thing turning reasoning off: qwen is outside TOOLS_REQUIRE_NO_REASONING,
-    // so the factory fills in nothing and the model would otherwise run on its
-    // own server-side reasoning default. Under a `gpt-5.6` id — two of the
-    // defaults this has held — the factory fills the same `"none"` because the
-    // value is a tool-calling REQUIREMENT there rather than a latency choice,
-    // and this line reads as redundant. **Keep it under either.** The measured
-    // cost of losing it is 1786ms p50 time-to-first-token on gpt-5.5's
-    // server-side reasoning default against 999ms with it off; deleting it as
-    // redundant makes the next id change a silent regression.
+    // On the current default this argument AGREES with the factory rather than
+    // doing the work: the id is inside `TOOLS_REQUIRE_NO_REASONING`, where
+    // `"none"` is a tool-calling requirement and the factory fills it in. It
+    // stays anyway, because under a default OUTSIDE that set it is the only
+    // thing turning reasoning off — and the measured cost of losing it there is
+    // 1786ms p50 time-to-first-token against 999ms. Deleting it as redundant
+    // makes the next id change a silent regression.
     llm: assemblyAILlm({ reasoningEffort: "none", ...omitUndefined({ region }) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };

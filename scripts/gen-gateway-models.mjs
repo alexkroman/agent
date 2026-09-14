@@ -39,6 +39,12 @@ const { values: FLAGS } = parseScriptArgs({
 const US = "https://llm-gateway.assemblyai.com/v1/models";
 const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
 const CHAT = "https://llm-gateway.assemblyai.com/v1/chat/completions";
+/**
+ * Output budget for the liveness probe — see {@link isLive}, which is where
+ * the argument for it being 64 rather than 1 lives.
+ */
+const PROBE_MAX_TOKENS = 64;
+
 const TARGET = new URL(
   "../packages/aai/src/sdk/providers/llm/shared/gateway-models.ts",
   import.meta.url,
@@ -73,21 +79,39 @@ async function models(url, key) {
  * Does the model answer a request of the shape this SDK sends?
  *
  * Not the same question as "is it advertised". `/v1/models` lists
- * `kimi-k2.5`, which answers 410, and `gemini-3.6-flash`, which answers
- * `400 model gemini-3.6-flash can only be used with model_region = 'global'`
- * — a parameter nothing here sends. Both are unusable for us, which is the
- * decision this flag drives, so both are recorded the same way rather than
- * split into a taxonomy no caller would branch on.
+ * `kimi-k2.5`, which answers 410 — unusable for us, which is the decision
+ * this flag drives.
  *
  * Only 400 and 410 count. Any other failure — a timeout, a 429, a real
  * outage — leaves the model in, because a transient blip must not silently
  * delete a working model on whichever afternoon someone regenerates.
+ *
+ * ## `max_tokens` has to leave room for REASONING, and it was 1
+ *
+ * A reasoning model spends its budget on thinking before it emits a content
+ * token, so `max_tokens: 1` is refused outright — *"Could not finish the
+ * message because max_tokens…"*, a **400**, which this probe read as a dead
+ * model. It reported the ENTIRE gpt-5 family dead in one run (`gpt-5`,
+ * `-mini`, `-nano`, `5.1`, `5.2`, `5.5`, both `5.6`s, `gpt-6-astra`), and
+ * `gpt-5.6-luna` is `ASSEMBLYAI_LLM_DEFAULT_MODEL` — so a regeneration
+ * silently dropped the default model, and every other one an agent is likely
+ * to want, out of `gatewayModelIds()` and therefore out of the studio's model
+ * picker. Measured per model: 400 at `max_tokens: 1`, 200 at 16.
+ *
+ * {@link PROBE_MAX_TOKENS} is the budget, and it is deliberately generous
+ * rather than minimal — the whole probe spends it once per model per
+ * regeneration, and the failure it buys off is a false negative that reads
+ * exactly like a real outage. Do not trim it back toward 1.
  */
 async function isLive(id, key) {
   const res = await fetch(CHAT, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: id, max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+    body: JSON.stringify({
+      model: id,
+      max_tokens: PROBE_MAX_TOKENS,
+      messages: [{ role: "user", content: "hi" }],
+    }),
   }).catch(() => null);
   if (!res) return true;
   return !(res.status === 400 || res.status === 410);
@@ -189,8 +213,11 @@ export type GatewayModelInfo = {
   /**
    * Answered a minimal request, as this SDK sends one, when generated.
    * \`false\` means the gateway advertises the model and will not run it for
-   * us: \`kimi-k2.5\` answers 410 (deprecated), \`gemini-3.6-flash\` answers
-   * 400 (needs a \`model_region\` parameter nothing here sends).
+   * us — \`kimi-k2.5\` answers 410 (deprecated).
+   *
+   * The probe leaves room for reasoning tokens; at \`max_tokens: 1\` it read
+   * the whole gpt-5 family as dead. See \`isLive\` in
+   * \`scripts/gen-gateway-models.mjs\`.
    */
   readonly live: boolean;
   /** Context window in tokens, as the gateway reports it. */

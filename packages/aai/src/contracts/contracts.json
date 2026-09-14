@@ -1,8 +1,14 @@
 {
   "agent": {
-    "current": 5,
-    "supported": [1, 2, 3, 4, 5],
-    "dropped": {}
+    "current": 9,
+    "supported": [1, 2, 3, 9],
+    "dropped": {
+      "4": "keyterms, agentContext and the lowConfidence policy are removed. An epoch-4 agent that declared assemblyAIStt({ keyterms }) or agent({ lowConfidence }) no longer compiles, so its frozen example could not either — which is why this is a retire rather than an example somebody owes.",
+      "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
+      "6": "The fast/slow two-tier split is REMOVED. `AgentModelTuning.twoTier` and the whole `TwoTierConfig` surface go with it — TwoTierConfig, SlowTierEffort, DEFAULT_FAST_TIER_MODEL, DEFAULT_SLOW_TIER_MODEL, DEFAULT_SLOW_TIER_EFFORT, DEFAULT_SLOW_TIER_TIMEOUT_MS, DEFAULT_SLOW_TIER_CONTEXT_MESSAGES, FAST_TIER_REASONING_EFFORT, MAX_STATE_DIGEST_CHARS. It was measured on retail-orders-agent and did not work: because a digest entry records a tool NAME and never a result, and each caller utterance builds a fresh slow-tier loop whose only memory is that digest, reads were re-called every utterance, a terminal transfer LOOPED, and one session spent 252,825 tokens against a 200,000 cap. An agent that declared the field no longer compiles.",
+      "7": "Removes agent({ lowConfidence }) and the three LowConfidence* types with it. An epoch-7 agent that declared the policy no longer compiles; one that did not is unaffected, but the type is gone from the surface so there is nothing to retain.",
+      "8": "The regex-keyed endpointing rule table, the two barge-in phrase lists and the smartMatching preset are removed, so an epoch-8 agent declaring endpointingRules, acknowledgementPhrases, interruptionPhrases or voicePresets: [\"smartMatching\"] no longer compiles. All four decided behaviour by pattern-matching the caller's own words; the table was measured to absorb 27-40% of turns' endpointing budget, which is why a minTurnSilenceMs change could not be measured at all."
+    }
   },
   "builtins": {
     "current": 1,
@@ -25,14 +31,18 @@
     "dropped": {}
   },
   "defaults": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
-  },
-  "dialog": {
     "current": 3,
     "supported": [1, 2, 3],
     "dropped": {}
+  },
+  "dialog": {
+    "current": 4,
+    "supported": [4],
+    "dropped": {
+      "1": "DialogStateSpec.keyterms and DialogVoiceConfig.keyterms are removed with the pipeline ASR-steering seam, so an epoch-1 dialog that narrowed the recognizer's vocabulary for a phase no longer compiles.",
+      "2": "Same removal one epoch on: the per-state keyterms knob is gone, and epoch 2's example was written around it.",
+      "3": "Removes the per-state keyterms knob from DialogStateSpec and DialogVoiceConfig. An epoch-3 dialog that narrowed the recognizer for one phase no longer compiles."
+    }
   },
   "ffmpeg": {
     "current": 1,
@@ -50,9 +60,11 @@
     "dropped": {}
   },
   "llm": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 7,
+    "supported": [1, 3, 4, 5, 6, 7],
+    "dropped": {
+      "2": "The AssemblyAIGatewayModel union lost two ids, which is breaking for any binding annotated with one: kimi-k2.5 was retired by the gateway (it answered 410 and is no longer advertised) and qwen3.5-4b-32k-experimental was RENAMED to -fast upstream. It also gained seven, including the two the fast/slow defaults now name. The union is a snapshot of a service that moves faster than this package, which is why the field still accepts a plain string — but a removed literal names a model the service will not run, so recording when it went is the point."
+    }
   },
   "procedure": {
     "current": 1,
@@ -95,9 +107,11 @@
     "dropped": {}
   },
   "stt": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "Removes assemblyAIStt({ keyterms, agentContext }) and the SttSession.updateKeyterms / updateAgentContext seam. An epoch-2 descriptor naming either option no longer compiles, and a custom STT provider implementing either method now implements a member that does not exist."
+    }
   },
   "subagent": {
     "current": 3,
@@ -105,16 +119,21 @@
     "dropped": {}
   },
   "testing": {
-    "current": 5,
-    "supported": [2, 3, 4, 5],
+    "current": 8,
+    "supported": [2, 3, 4, 8],
     "dropped": {
-      "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling."
+      "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
+      "5": "`ToolSchema` and `AgentConfigSchema` reach this subpath, and both lost members with the fast/slow split: the schema's `mutates`/`completes` and the config's `twoTier`. A spec that built either shape with one of those keys no longer compiles — `.strict()` on the config schema makes it a parse failure too.",
+      "6": "Collateral, as it has been for six epochs: AgentConfigSchema and AgentConfigSource reach this surface, and both lost the lowConfidence field. A spec that built either shape with that key no longer compiles.",
+      "7": "AgentConfigSchema is published here, and its shape lost acknowledgementPhrases, interruptionPhrases, endpointingRules and the smartMatching preset value with the removal recorded on aai:agent epoch 8. A spec asserting on any of those keys no longer compiles."
     }
   },
   "tool": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
-    "dropped": {}
+    "current": 5,
+    "supported": [1, 2, 3, 5],
+    "dropped": {
+      "4": "`ToolDef.mutates` and `ToolDef.completes` are REMOVED with the fast/slow split they existed for. Nothing else ever read them — the gate in two-tier/ was their only consumer — so what is left of them after that removal is two fields whose own docs describe a feature that no longer exists. A tool that declared either no longer compiles; the declaration was inert for every other purpose, so nothing else changes."
+    }
   },
   "transcribe": {
     "current": 1,

@@ -160,20 +160,9 @@ group cannot skip the gate.
 | `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
 
 `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
-total over `AgentModelTuning`, so a seventh knob that skips the table fails to
+total over `AgentModelTuning`, so a sixth knob that skips the table fails to
 compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
 is inert unless `toolChoice` demands a call.
-
-**`twoTier` is the sixth member and the first that is not a scalar** — the
-FAST/SLOW split, off by default (`sdk/two-tier.ts`, which owns the design and
-the sources). It shares the group's rule structurally rather than by analogy:
-the gate interposes on the tool loop this runtime runs, so pipeline and text
-mode honour it and S2S cannot — there the provider calls the tool itself, and
-there is no moment between the proposal and the mutation for a second tier to
-stand in. `ToolDef.mutates` / `ToolDef.completes` are its other half: optional
-DECLARATIONS about a tool, inert unless an agent declares a second tier, and
-never inferred from a tool's name. **The runtime half is
-`packages/aai-runtime/TWO-TIER-CLAUDE.md`.**
 
 **A guardrail is pipeline-only, and the two refusals are different claims** —
 s2s has already spoken the sentence, text mode hands its caller the model stream
@@ -318,34 +307,6 @@ Reference providers shipped today:
   endpoint and WINS over `region`, and **`languages`, whose unset value is
   "detect per turn", NOT "English"** — read that one before changing it.
 
-  **Three more are ASR STEERING, and what they are worth is not symmetric.**
-  `keyterms` is a list of the domain's own uncommon words and proper nouns
-  (`keyterms_prompt`, at most 100 terms of at most 50 characters — the service
-  IGNORES an over-long term and REFUSES a connect over the cap, so
-  `normalizeKeyterms` trims host-side rather than letting a grown catalogue
-  take an agent off the air). `agentContext` is what the application already
-  knows about THIS call, and it is the one to reach for first — on a VENDOR
-  CLAIM rather than a measurement of ours: AssemblyAI's published benchmark
-  over 20,000 voice-agent calls puts a detailed context at −21% WER and
-  −29% entity error against none, with names nearly halving, and nobody here
-  has seen its methodology or reproduced it on this pipeline. It needs no
-  declaration to be useful — the runtime seeds the greeting at connect and
-  replaces it with the agent's own reply after every turn, so the recognizer
-  transcribing "1-2-3-4" has just been told the agent asked for an order
-  number. `formatTurns` is the numeral/punctuation flag, and the thing to know
-  before reaching for it is that **it is not a parameter on
-  `universal-3-5-pro` at all** (formatting is always on there, and the opener
-  warns rather than sending it); on `universal-streaming-english` the service
-  default is `false`, and `true` makes that model emit TWO `end_of_turn`
-  messages per turn — the opener commits only the formatted one.
-
-  **`agent({ lowConfidence })` is the other half of the same problem**, one
-  layer up: the recognizer's confidence in the WORDS, acted on before the model
-  sees them. Three bands, two numbers — discard, act, accept — with `clarify`
-  (speak a phrase, run no turn) and `note` (run the turn with the model's copy
-  annotated) as the two actions. **It is OFF unless an agent declares it**, and
-  `sdk/low-confidence.ts` carries why, plus the rule everything rests on: a
-  provider that reports no confidence is ACCEPTED, never read as zero.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:
@@ -375,61 +336,53 @@ Reference providers shipped today:
     `_gateway-tool-schema.ts` carries why. Remove each once the gateway
     conforms.
 
-    **The default model is `qwen3-next-80b-a3b`, and check the constant before
-    trusting this line** — it has named the wrong model before, when an id was
-    reverted in code and not here. `ASSEMBLYAI_LLM_DEFAULT_MODEL` in
-    `sdk/providers/llm/assemblyai.ts` is the answer; a prose default is only a
-    claim about it. Changing the id moves WHERE reasoning gets turned off,
-    because `TOOLS_REQUIRE_NO_REASONING` in that same module is keyed by model
-    id: **on the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for
-    tool use, not a tuning knob**, and the factory fills it in for those ids
-    only. **That constant's doc carries the gateway's own rejection message,
-    the 4/4 measurement behind it, why the streaming path sees a bare 500
-    instead, and why an explicit `reasoningEffort` is left alone.** Read it
-    before changing the default. One thing it does not say: the generated
-    catalog (`gateway-models.ts`) cannot carry the flag — its flags come from
+    **The default model is `gpt-5.6-luna`, and check the constant before
+    trusting this line** — it has named the wrong model twice.
+    `ASSEMBLYAI_LLM_DEFAULT_MODEL` in `sdk/providers/llm/assemblyai.ts` is the
+    answer; a prose default is only a claim about it.
+
+    **Two things are keyed to the id, they disagree between model families, and
+    getting either wrong fails SILENTLY.** That constant's doc carries the full
+    matrix; the rule is that `TOOLS_REQUIRE_NO_REASONING` membership decides
+    whether a bare `assemblyAILlm()` fills `reasoningEffort: "none"`, and
+    `assemblyAIPipeline()`'s explicit effort must be a value the id ACCEPTS —
+    a rejected one is a 400 that the streaming path this SDK uses turns into a
+    bare `500 {"message":"something went wrong"}` with the explanation
+    stripped. `"none"` is REQUIRED on the `gpt-5.6` family (the current
+    default, so the fill is load-bearing), accepted with 0 reasoning tokens on
+    `qwen3-next-80b-a3b`, and **refused outright by every Gemini id** (whose
+    floor is `"low"` or `"minimal"` depending on the model). The id and the
+    preset's effort are pinned together in `define.test.ts`, which is what
+    makes an id change that needs a second look fail loudly.
+
+    **This default is the only one MEASURED on answer quality, and that is why
+    it is back.** Four ids held it in one day. On tau2-bench retail, matched
+    per task against one baseline run: **luna 0.463** over 108 tasks
+    (0.433 +/- 0.090 over tasks 0-9 x3), `gpt-5.6-sol` **0.19** over 16 sims,
+    and `qwen3-next-80b-a3b` **0.212** over 33 matched tasks where luna scored
+    0.485 — **11 regressions against 2 improvements, McNemar two-sided
+    p = 0.022**. Two unrelated replacements both landed near 0.19-0.21, so the
+    model is what moves this number.
+
+    **Time-to-first-token does not buy it back.** qwen is ~2x faster to first
+    token than luna (p50 664ms vs 832ms) and 3.4x faster than
+    `gemini-3.7-flash` (2253ms), and it still fails more than twice as often.
+    The failures are not latency-shaped: every regression was an
+    authentication-by-name task, and the transcripts show the smaller models
+    re-asking for the same mis-heard value — which the lookup-recovery list in
+    `system-prompt-sections.ts` forbids as step one — instead of retrying a
+    plausible confusion or an identifier they already hold. **So a candidate
+    default needs a tau2 run, not a latency measurement.**
+
+    One thing the constant's doc does not say: the generated catalog
+    (`gateway-models.ts`) cannot carry the reasoning flag — its flags come from
     `supported_parameters`, which does not list `reasoning_effort` for ANY
-    model, including ones that plainly honour it (a bogus value 400s naming the
-    supported ones). `gpt-5.5` and `qwen3-next-80b-a3b` are both unaffected,
-    measured 2026-08-06: `"none"`, `"low"`, and no `reasoning_effort` at all
-    each return a normal tool-calling completion, streaming included.
+    model, including ones that plainly honour it.
 
-    **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is, on the
-    current default, the ONLY thing turning reasoning off.** Because
-    `qwen3-next-80b-a3b` is OUTSIDE `TOOLS_REQUIRE_NO_REASONING`, the factory
-    fills in nothing and the whole weight sits on the preset's argument
-    (`sdk/providers/assemblyai-pipeline.ts`); under `gpt-5.6-luna` or
-    `gpt-5.6-terra` the factory fills the same value and the argument merely
-    agrees with it. That agreement is a property of the id, not of
-    the pipeline, which is why the argument stays under either: deleting it as
-    redundant costs every
-    default pipeline **1786ms p50 time-to-first-token against 999ms with
-    reasoning off**, with seconds of pre-first-token silence rather than a
-    failure as the symptom. So the two settings are pinned TOGETHER in
-    `define.test.ts` (effort and model id in one test): the preset's `"none"`
-    is what makes the next id change safe, and the pin is what makes an id
-    change that needs a second look fail loudly.
-
-    **The measured case is for `gpt-5.6-luna`, and it does not transfer to
-    either the current default or terra.** What is known about
-    `qwen3-next-80b-a3b` directly: the gateway advertises it with tools,
-    streaming, 200k context and a live probe (`gateway-models.ts`), it accepts
-    `reasoning_effort` as a hybrid-thinking model (`"none"` and `"low"` both
-    verified 2026-08-06), and it has **no paired latency numbers and no price
-    comparison here at all** — the same gap terra had. Luna's numbers, kept
-    because they bound the gpt-5.6 family: $1/$6 per M against `gpt-5.5`'s
-    $5/$30, and time-to-first-token (2026-08-06, 18 paired tool-calling turns,
-    `reasoning_effort: "none"` on both) p50 **832ms vs 999ms** — ~17%, against
-    `claude-opus-4-8`'s 1217ms and `claude-sonnet-5`'s 1568ms. The 5x-looking
-    gaps in the first measurements were an ARTIFACT of comparing
-    luna-with-`none` against `gpt-5.5` on its reasoning DEFAULT (1786ms): most
-    of what looked like a model difference was the reasoning setting, which
-    this pipeline turns off regardless of model.
-
-    **No default here has been chosen on answer quality**, which is the axis
-    that should decide one — a tau2 run is what would settle it. The current
-    default has neither paired latency numbers nor a quality run, and neither
-    did terra. Treat it as unverified on both axes.
+    On price within the gpt-5.6 family: $1/$6 per M against `gpt-5.5`'s
+    $5/$30, and luna's p50 832ms vs 999ms for gpt-5.5 (18 paired tool-calling
+    turns, reasoning off on both), against `claude-opus-4-8`'s 1217ms and
+    `claude-sonnet-5`'s 1568ms.
 - **TTS**: one of
   - `cartesiaTts({ voice })` — `CARTESIA_API_KEY`
   - `rimeTts({ voice })` — `RIME_API_KEY`
@@ -1086,7 +1039,7 @@ both learned by getting them wrong, are argued in
 event (`"@session.timed-out": "abandoned"`), checked at declaration and kept out
 of the union an author may `send`; `Dialog.receive` offers one. A state may also
 carry `timeout: { afterMs, send }` and the knobs
-`voice`/`bargeIn`/`keyterms`/`toolChoice`/`temperature`, both read
+`voice`/`bargeIn`/`toolChoice`/`temperature`, both read
 deepest-active-state-first like `instruction` and riding in `meta`, so the
 stored snapshot is unchanged and a `durable` dialog predating them resumes.
 **`after` is REFUSED in both forms**: the actor is stopped inside the window it
@@ -1173,11 +1126,11 @@ touches `Intl`, why `mintCode`'s alphabet is its whole design, and the ten
 hand-written date rules the fields replaced. `retail-orders-agent`'s
 `resolve.ts` is the worked example.
 
-## Four opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
+## Three opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
 
-`agent({ voicePresets: ["echoVerification", "smartMatching"] })`. Four named
-prompt sections — `echoVerification`, `smartMatching`, `speechNormalization`,
-`natoAlphabet` — composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
+`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })`. Three named
+prompt sections — `echoVerification`, `speechNormalization`, `natoAlphabet` —
+composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
 the author's own instructions, so the order of authority is voice core, then
 presets, then the agent's rules. `VOICE_PRESETS` is the shipped text (public,
 read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
@@ -1185,9 +1138,9 @@ read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
 Four properties, each of which is a test rather than a promise:
 
 - **A LIST, not a mode.** They are independently toggleable because they are
-  independently PRICED — ~190 / ~200 / ~920 / ~190 tokens on every model
-  request (o200k, banded in `voice-presets.test.ts`). One `reliability: true`
-  would make the 920-token one the price of the 200-token one.
+  independently PRICED — ~190 / ~920 / ~190 tokens on every model request
+  (o200k, banded in `voice-presets.test.ts`). One `reliability: true` would
+  make the 920-token one the price of the 190-token one.
 - **Canonical ORDER, deduped, absent when empty.** A config cannot change the
   prompt's shape by spelling its list differently, and an agent that declares
   none sends the byte-identical prompt it sent before the field existed.
@@ -1199,17 +1152,17 @@ Four properties, each of which is a test rather than a promise:
   it reaches no TTS engine, and for the agent's OWN data `spokenMoney` /
   `spokenDate` / `spokenTime` are cheaper and testable. The module doc carries
   the rest, including why the phone rule's spaced dash is load-bearing.
-- **`smartMatching` is the one with a measured case, and it is why that preset
-  is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
-  conversational half was not where the reward went: "Sofia Li" transcribed as
-  "Sophia Lee" went straight into a lookup, the miss was treated as
-  authoritative, and the spelled correction the caller gave never reached the
-  prompt (`assembleSpelledRuns` tokenized on whitespace and commas, so a
-  hyphen-joined spelling was one token and produced no annotation). So the
-  preset covers the tool-argument direction and makes a spelled value REPLACE
-  what was heard — and it DEPENDS on that producer. Its own doc carries the
-  runs, what a phonetic retry cannot reach, and the rule that its examples may
-  not name a benchmark entity.
+- **There was a FOURTH, `smartMatching`, and its removal left a known gap.**
+  It was the one with a measured case: on a tau2-bench retail baseline "Sofia
+  Li" transcribed as "Sophia Lee" went straight into a lookup, the miss was
+  treated as authoritative, and the preset's job was to make a spelled
+  correction REPLACE what was heard. But it was the prompt half of a runtime
+  annotation that pattern-matched spelled runs out of the transcript, and that
+  whole family of transcript pattern-matching is gone — so the rule lost the
+  producer it was written against and went with it. **Nothing in this module
+  now addresses a name a lookup cannot find**; `PROMPT_TOOLS`' retry ladder is
+  the only cover and was measured to stall on exactly that case. Recorded as a
+  gap rather than closed.
 
 A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
 model request, so a preset there is the most expensive no-op available.
@@ -1569,7 +1522,7 @@ Session mode resolved {
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
          maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
          voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
-  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'qwen3-next-80b-a3b' },
+  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-luna' },
   tts: { kind: 'assemblyai', voice: 'jane' }
 }
 ```

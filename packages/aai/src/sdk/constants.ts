@@ -330,9 +330,6 @@ export {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
-// The content-keyed override layer ABOVE that pair is `endpointing-rules.ts`,
-// reached from `internal.ts` directly for the same file-length reason as the
-// two modules noted above.
 // Pipeline/provider tuning (dead-air cover phrases, false-interruption
 // recovery, TTS batching, STT framing, provider connect budgets) lives in its
 // own module for file-length reasons; re-exported here so `@alexkroman1/aai`

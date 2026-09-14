@@ -84,25 +84,6 @@
  * author is a field of the agent declaration, the same way `ToolContext.slots`
  * does not make `ToolContext` part of `state`.
  *
- * **The three `LowConfidence*` names ride with `PipelineVoiceTuning`**, for the
- * reason `UsageLimits` rides with `AgentModelTuning`: the policy is the type of
- * one of that interface's fields and has no reader anywhere else, and the two
- * unions under it (`LowConfidenceAction`, `LowConfidenceStatistic`) are the
- * vocabulary of two of ITS fields. A change to any of the three is a change to
- * what `agent({ lowConfidence })` accepts, which is this capability's subject.
- * Note the STT side of the same feature is not here: `keyterms` is a field of
- * the `assemblyAIStt` descriptor and belongs to `aai:stt`.
- *
- * **The five endpointing-rule types are here for the same reason the four
- * field-group interfaces are.** `endpointingRules` is a field of
- * `PipelineVoiceTuning`, already on this capability, and the rule objects are
- * what an author writes INSIDE that field's array literal — so a change to a
- * rule's shape is a change to what declaring an agent looks like, and would
- * otherwise move `PipelineVoiceTuning`'s hash while the thing that actually
- * changed had no epoch of its own. There is no `endpointing` capability to put
- * them on: the two turn-silence NUMBERS they override are provider settings and
- * belong to `stt`, where `assemblyAIStt({ minTurnSilenceMs })` is written.
- *
  * **The three voice-preset names are here for the field-group reason above**,
  * with one addition. `AgentVoicePresets` is the fifth interface `AgentDef`
  * extends and `VoicePresetName` is the vocabulary its one field takes, so both
@@ -112,14 +93,6 @@
  * nothing gets it by omission, it is the set of values the `voicePresets` field
  * accepts, and its keys and that field's type are one union. What `defaults`
  * covers is what an agent that declares NOTHING is given.
- *
- * **`TwoTierConfig` and its four constants are here for the same reason
- * `AgentModelTuning` is** — it is the type of one `agent()` field, a member of
- * that group, and it has no reader anywhere else. Not a capability of its own:
- * a second tier is a way of DECLARING an agent rather than a second thing to
- * declare, and the tier that holds the call is `agent({ llm })` unchanged. The
- * four constants ride with it because each documents one of its fields, which
- * is the membership test the root barrel's own doc states.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
@@ -144,20 +117,9 @@ export {
   type AgentSystemPrompt,
   type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
-  type AssistantEndpointingRule,
   agent,
   assemblyAIPipeline,
-  type BothEndpointingRule,
   type BuiltinTool,
-  DEFAULT_SLOW_TIER_CONTEXT_MESSAGES,
-  DEFAULT_SLOW_TIER_EFFORT,
-  DEFAULT_SLOW_TIER_TIMEOUT_MS,
-  type EndpointingRule,
-  type EndpointingRuleBase,
-  type LowConfidenceAction,
-  type LowConfidencePolicy,
-  type LowConfidenceStatistic,
-  MAX_STATE_DIGEST_CHARS,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
@@ -174,15 +136,12 @@ export {
   type SessionEventHandlers,
   type SessionEventType,
   type SharedAgentParams,
-  type SlowTierEffort,
   type StaticAgentParams,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,
   type ToolChoice,
-  type TwoTierConfig,
   type UsageLimits,
-  type UserEndpointingRule,
   VOICE_PRESETS,
   type VoicePresetName,
   workflowApp,
