@@ -20,7 +20,7 @@ export const BASH_TIMEOUT_MAX_MS = 300000;
 export const BASH_TIMEOUT_MS = 60000;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public (undocumented)
 export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
@@ -250,6 +250,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;

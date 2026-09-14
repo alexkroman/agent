@@ -8513,7 +8513,8 @@ type BuiltinTool =
   | "think"
   | "remember"
   | "recall"
-  | "calculate";
+  | "calculate"
+  | "verify_action";
 ```
 
 Identifier for a built-in server-side tool.
@@ -8531,6 +8532,8 @@ and provide capabilities like web search, code execution, and API access.
 - `"remember"` — Save a confirmed fact (ID, code, date) to private session notes.
 - `"recall"` — Read back facts saved with `remember`.
 - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
+- `"verify_action"` — Check a data-changing action against current state before
+  taking it; reports a change that would be a no-op.
 
 When `builtinTools` is not set, NONE are enabled
 (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent

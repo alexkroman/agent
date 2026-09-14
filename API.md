@@ -195,7 +195,7 @@ export const BASH_TIMEOUT_MAX_MS = 300000;
 export const BASH_TIMEOUT_MS = 60000;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public (undocumented)
 export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
@@ -425,6 +425,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -759,10 +760,12 @@ const AgentConfigSchema: z.ZodObject<{
         calculate: "calculate";
         fetch_json: "fetch_json";
         get_page_design: "get_page_design";
+        listen_for: "listen_for";
         recall: "recall";
         remember: "remember";
         run_code: "run_code";
         think: "think";
+        verify_action: "verify_action";
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
@@ -1248,7 +1251,7 @@ export function buildSystemPrompt(config: AgentConfig, options: {
 }): string;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 export type BuiltinToolOptions = {
@@ -2120,7 +2123,7 @@ export interface SttSession {
     sendAudio(pcm: Int16Array): void;
     updateAgentContext?(text: string): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
-    updateKeyterms?(keyterms: readonly string[] | undefined): void;
+    updateKeyterms?(keyterms: readonly string[] | undefined, additional?: readonly string[] | undefined): void;
 }
 
 // @public
@@ -2187,6 +2190,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -2724,7 +2728,7 @@ export interface BothEndpointingRule extends EndpointingRuleBase {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -3715,6 +3719,7 @@ export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -3994,6 +3999,9 @@ interface BothEndpointingRule extends EndpointingRuleBase {
     userRegex: string;
 }
 
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
+
 // @internal
 export function capToolResult(result: string): string;
 
@@ -4074,7 +4082,7 @@ export function decideClientEvent(event: string, data: unknown): ClientEventDeci
 export const DEFAULT_ACKNOWLEDGEMENT_PHRASES: readonly string[];
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly [];
+export const DEFAULT_BUILTIN_TOOLS: readonly ["listen_for"];
 
 // @internal
 export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[];
@@ -4126,6 +4134,12 @@ export const DEFAULT_STT_PROMPT = "";
 
 // @public
 export const DEFAULT_TOOL_CHOICE: "auto";
+
+// @internal
+export function defaultBuiltinTools(agent: {
+    text?: boolean | undefined;
+    s2s?: unknown;
+}): readonly BuiltinTool[];
 
 // @internal
 export interface EndpointingInput {
@@ -4546,7 +4560,7 @@ export interface AnthropicLlmOptions extends ModelOptions {
 }
 
 // @public
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-sol";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
 
 // @public
 export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
@@ -4685,10 +4699,12 @@ export const AgentConfigSchema: z.ZodObject<{
         calculate: "calculate";
         fetch_json: "fetch_json";
         get_page_design: "get_page_design";
+        listen_for: "listen_for";
         recall: "recall";
         remember: "remember";
         run_code: "run_code";
         think: "think";
+        verify_action: "verify_action";
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
@@ -4903,7 +4919,7 @@ interface BothEndpointingRule extends EndpointingRuleBase {
 }
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 type DelegateFn = {
@@ -5514,6 +5530,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -6407,7 +6424,7 @@ type AnyWorkflowDef<R = unknown> = {
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
@@ -6838,6 +6855,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -7511,10 +7529,12 @@ const AgentConfigSchema: z.ZodObject<{
         calculate: "calculate";
         fetch_json: "fetch_json";
         get_page_design: "get_page_design";
+        listen_for: "listen_for";
         recall: "recall";
         remember: "remember";
         run_code: "run_code";
         think: "think";
+        verify_action: "verify_action";
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
@@ -7712,7 +7732,7 @@ interface BothEndpointingRule extends EndpointingRuleBase {
 }
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
@@ -8672,6 +8692,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -8942,7 +8963,7 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 type DelegateFn = {
@@ -9337,6 +9358,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
@@ -11544,6 +11566,7 @@ export type ServerSession = {
     command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
+    steerRecognizer(keyterms: readonly string[]): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
@@ -12061,6 +12084,7 @@ type ExecuteToolCallOptions = {
     send?: ((event: string, data: unknown) => void) | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
+    steerRecognizer?: ((keyterms: readonly string[]) => boolean) | undefined;
     timeoutMs?: number | undefined;
 };
 
@@ -12357,6 +12381,7 @@ type ServerSession = {
     command(command: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
+    steerRecognizer(keyterms: readonly string[]): boolean;
     restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;

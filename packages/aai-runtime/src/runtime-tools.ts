@@ -12,8 +12,8 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
-  DEFAULT_BUILTIN_TOOLS,
   decideClientEvent,
+  defaultBuiltinTools,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
@@ -63,7 +63,7 @@ export function mergeBuiltinSurface(
   guidance: string[];
 } {
   const providedNames = new Set(provided.schemas.map((s) => s.name));
-  const declared = agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS;
+  const declared = agent.builtinTools ?? defaultBuiltinTools(agent);
   const names = declared.filter((name) => !providedNames.has(name));
   const shadowed = declared.filter((name) => providedNames.has(name));
   if (shadowed.length > 0) {

@@ -70,6 +70,28 @@ export {
   DEFAULT_INTERRUPTION_PHRASES,
   normalizeBargeInText,
 } from "./sdk/barge-in-phrases.ts";
+/**
+ * The Content-Security-Policy every agent UI is served under, the WebSocket
+ * readyState the client checks, and the DOCUMENTED DEFAULTS.
+ *
+ * The defaults arrived here in the same move that emptied `sdk/constants.ts`
+ * off the root barrel. They were kept there on the argument that each one
+ * documents an `agent()` field — but the field's JSDoc already carries the
+ * value, so the constant added nothing an author reads, and no template, no
+ * scaffold and no line of the shipped authoring guide ever named one. Who does
+ * read them is exactly this subpath's audience, and the `defaults` capability's
+ * own frozen example had said so out loud all along: "a client sizing a buffer,
+ * a harness matching the host's endpointing, a test asserting the shipped
+ * value." All three are framework readers.
+ *
+ * They are still the one declaration of each value, still the constants the
+ * runtime resolves a missing field to, and still assertable by a test. What
+ * changed is that reproducing a default is no longer advertised as authoring
+ * API. `DEFAULT_SYSTEM_PROMPT` is the exception and stayed on the root, because
+ * `agent({ systemPrompt })` replaces it wholesale and composing against it is
+ * the documented recipe — see `index.ts`.
+ */
+export { defaultBuiltinTools } from "./sdk/builtin-tools.ts";
 // The `aai login` confirmation code and the slug shape: the two contracts BOTH
 // ends of a platform interaction must derive identically. They were on `/utils`,
 // which is a published subpath an agent author reads — a platform contract is
@@ -113,27 +135,6 @@ export {
   type CoalescingRunner,
   createCoalescingRunner,
 } from "./sdk/coalescing-runner.ts";
-/**
- * The Content-Security-Policy every agent UI is served under, the WebSocket
- * readyState the client checks, and the DOCUMENTED DEFAULTS.
- *
- * The defaults arrived here in the same move that emptied `sdk/constants.ts`
- * off the root barrel. They were kept there on the argument that each one
- * documents an `agent()` field — but the field's JSDoc already carries the
- * value, so the constant added nothing an author reads, and no template, no
- * scaffold and no line of the shipped authoring guide ever named one. Who does
- * read them is exactly this subpath's audience, and the `defaults` capability's
- * own frozen example had said so out loud all along: "a client sizing a buffer,
- * a harness matching the host's endpointing, a test asserting the shipped
- * value." All three are framework readers.
- *
- * They are still the one declaration of each value, still the constants the
- * runtime resolves a missing field to, and still assertable by a test. What
- * changed is that reproducing a default is no longer advertised as authoring
- * API. `DEFAULT_SYSTEM_PROMPT` is the exception and stayed on the root, because
- * `agent({ systemPrompt })` replaces it wholesale and composing against it is
- * the documented recipe — see `index.ts`.
- */
 export {
   AGENT_CSP,
   DEFAULT_BUILTIN_TOOLS,

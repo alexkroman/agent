@@ -250,6 +250,129 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
   };
 }
 
+// ─── verify_action ──────────────────────────────────────────────────────────
+//
+// A pre-write scratchpad, and the difference from `think` is the SCHEMA. A
+// free-text thought can be filled in without answering anything; these fields
+// cannot. It exists because a graded voice run (tau2-bench retail, 108 calls)
+// produced 13 failures in which the agent reached the right tool and passed it
+// the wrong arguments, and all 13 are one omission — the write's arguments were
+// never compared against the state the tool result had just reported, nor
+// against the scope the caller actually asked for. Three of them set a field to
+// the value it already held, so the call was a no-op that reported success.
+//
+// `before`/`after` therefore sit side by side, because that is the comparison
+// nobody was making, and `unchanged` is asked separately because exceeding the
+// requested scope reads as diligence from inside the turn.
+//
+// Domain-free ON PURPOSE: it names no field, tool or record type of any
+// application, so what it adds is the habit of quoting state back, not
+// knowledge of one problem. The one judgement it makes is structural — an
+// action whose `after` equals its `before` changes nothing, which is true of
+// every transactional agent there is.
+
+const verifyActionParams = z.object({
+  action: z.string().min(1).describe("The tool you are about to call, and what it will do"),
+  target: z
+    .string()
+    .min(1)
+    .describe(
+      "Which record this will change, and how you know it is the right one among the candidates",
+    ),
+  before: z
+    .string()
+    .min(1)
+    .describe(
+      "The CURRENT value of every field this action changes, quoted from a tool result — not from the conversation",
+    ),
+  after: z.string().min(1).describe("The value each of those fields will hold afterwards"),
+  requested: z.string().min(1).describe("What the customer asked for, in their own words"),
+  unchanged: z
+    .string()
+    .describe("Anything in this record the customer did NOT ask to change, which must stay as-is")
+    .optional(),
+});
+
+/** Normalize for the no-op comparison: case, surrounding and repeated space. */
+function sameValue(before: string, after: string): boolean {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  return norm(before) === norm(after);
+}
+
+function createVerifyAction(): ToolDef<typeof verifyActionParams> & { guidance: string } {
+  return {
+    guidance:
+      "Before EVERY action that changes data, call verify_action first. Quote the current " +
+      "values from the tool result that reported them, state what each becomes, and name what " +
+      "must stay unchanged. If it answers `no_change`, you were about to make a call that does " +
+      "nothing — re-read the customer's request before trying again. Never call it after the " +
+      "write; it is the check that decides whether to make one.",
+    description:
+      "Check a data-changing action before you take it. State the action, which record it " +
+      "touches, the current values of the fields it changes, what they become, and what the " +
+      "customer asked for. Records the check and tells you if the change is a no-op. It does " +
+      "not perform the action or read anything.",
+    inputSchema: verifyActionParams,
+    execute(args) {
+      if (sameValue(args.before, args.after)) {
+        return {
+          verdict: "no_change",
+          detail:
+            "`after` is the same value as `before`, so this action would change nothing. " +
+            "Re-read what the customer asked for and identify the field that should differ.",
+        };
+      }
+      return { verdict: "ok" };
+    },
+  };
+}
+
+const listenForParams = z.object({
+  terms: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(10)
+    .describe(
+      "The words themselves, spelled the way they should be transcribed — a person's " +
+        "name, an order id, a product. Not a sentence.",
+    ),
+});
+
+/**
+ * `listen_for` — bias the recognizer toward words the caller is about to say.
+ *
+ * The one builtin that changes what the agent HEARS rather than what it does,
+ * and the only one whose moment the model is uniquely placed to spot: a lookup
+ * has just returned a name, and the caller is about to confirm or repeat it.
+ */
+function createListenFor(): ToolDef<typeof listenForParams> & { guidance: string } {
+  return {
+    guidance:
+      "The moment a tool result gives you a name, an order id or a product the caller will " +
+      "say back, call listen_for with those exact words. It costs nothing and makes the next " +
+      "thing you hear more likely to be right. Do NOT call it for words YOU are about to say, " +
+      "for whole sentences, or for anything the caller has already confirmed correctly.",
+    description:
+      "Tell the speech recognizer to expect specific words for the rest of the call — a " +
+      "caller's name, an order id, a product — so they transcribe correctly when spoken. Use " +
+      "it right after a lookup returns a value the caller will say or confirm. It does not " +
+      "speak, read, or change anything.",
+    inputSchema: listenForParams,
+    execute(args, ctx) {
+      // The capability reports whether the hint reached a recognizer at all
+      // (S2S runs recognition service-side, and a stopped session has none),
+      // and the model is told plainly rather than left to assume it worked.
+      const applied = ctx.steerRecognizer(args.terms);
+      return applied
+        ? { listening_for: args.terms }
+        : {
+            listening_for: [],
+            detail: "This session's recognizer cannot be steered. Carry on without it.",
+          };
+    },
+  };
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
@@ -319,6 +442,8 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
   remember: createRemember(),
   recall: createRecall(),
   calculate: createCalculate(),
+  verify_action: createVerifyAction(),
+  listen_for: createListenFor(),
 };
 
 /**

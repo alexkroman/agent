@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 8,
-    "supported": [1, 2, 3, 4, 7, 8],
+    "current": 9,
+    "supported": [1, 2, 3, 4, 7, 8, 9],
     "dropped": {
       "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
       "6": "The fast/slow two-tier split is REMOVED. `AgentModelTuning.twoTier` and the whole `TwoTierConfig` surface go with it — TwoTierConfig, SlowTierEffort, DEFAULT_FAST_TIER_MODEL, DEFAULT_SLOW_TIER_MODEL, DEFAULT_SLOW_TIER_EFFORT, DEFAULT_SLOW_TIER_TIMEOUT_MS, DEFAULT_SLOW_TIER_CONTEXT_MESSAGES, FAST_TIER_REASONING_EFFORT, MAX_STATE_DIGEST_CHARS. It was measured on retail-orders-agent and did not work: because a digest entry records a tool NAME and never a result, and each caller utterance builds a fresh slow-tier loop whose only memory is that digest, reads were re-called every utterance, a terminal transfer LOOPED, and one session spent 252,825 tokens against a 200,000 cap. An agent that declared the field no longer compiles."
@@ -110,8 +110,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 7,
-    "supported": [2, 3, 4, 6, 7],
+    "current": 8,
+    "supported": [2, 3, 4, 6, 7, 8],
     "dropped": {
       "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
       "5": "`ToolSchema` and `AgentConfigSchema` reach this subpath, and both lost members with the fast/slow split: the schema's `mutates`/`completes` and the config's `twoTier`. A spec that built either shape with one of those keys no longer compiles — `.strict()` on the config schema makes it a parse failure too."

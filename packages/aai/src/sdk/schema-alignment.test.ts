@@ -129,6 +129,8 @@ describe("type ↔ schema alignment", () => {
         "remember",
         "recall",
         "calculate",
+        "verify_action",
+        "listen_for",
       ]
     `);
   });

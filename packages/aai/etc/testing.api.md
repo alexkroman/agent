@@ -38,10 +38,12 @@ const AgentConfigSchema: z.ZodObject<{
         calculate: "calculate";
         fetch_json: "fetch_json";
         get_page_design: "get_page_design";
+        listen_for: "listen_for";
         recall: "recall";
         remember: "remember";
         run_code: "run_code";
         think: "think";
+        verify_action: "verify_action";
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
@@ -239,7 +241,7 @@ interface BothEndpointingRule extends EndpointingRuleBase {
 }
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "verify_action" | "listen_for";
 
 // @public
 export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
@@ -1199,6 +1201,7 @@ type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
     generate: GenerateFn;
+    steerRecognizer: (keyterms: readonly string[]) => boolean;
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;

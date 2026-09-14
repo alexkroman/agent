@@ -29,7 +29,8 @@ function commandedBuiltins(config: {
      | "think"
      | "remember"
      | "recall"
-    | "calculate")[];
+     | "calculate"
+    | "verify_action")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -180,7 +181,8 @@ readonly (
   \| `"think"`
   \| `"remember"`
   \| `"recall"`
-  \| `"calculate"`)[]
+  \| `"calculate"`
+  \| `"verify_action"`)[]
 
 ###### deadAirCoverMs?
 
@@ -898,7 +900,8 @@ function expectDeployable(def: AgentConfigSource): {
      | "think"
      | "remember"
      | "recall"
-    | "calculate")[];
+     | "calculate"
+    | "verify_action")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -1054,7 +1057,8 @@ The agent under test — an `agent()` definition, or the raw
      | "think"
      | "remember"
      | "recall"
-    | "calculate")[];
+     | "calculate"
+    | "verify_action")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -1170,7 +1174,8 @@ optional builtinTools?: readonly (
   | "think"
   | "remember"
   | "recall"
-  | "calculate")[];
+  | "calculate"
+  | "verify_action")[];
 ```
 
 ##### deadAirCoverMs?

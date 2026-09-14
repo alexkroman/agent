@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import { schemaInputIssues } from "../sdk/_testing-schema.ts";
 import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";
@@ -372,6 +373,148 @@ describe("resolveAllBuiltins defs", () => {
       createMockToolContext(),
     );
     expect(result).toBe("ok");
+  });
+
+  // ─── listen_for ────────────────────────────────────────────────────────
+  //
+  // The one builtin that is ON by default, and the only one whose whole effect
+  // is on a collaborator: it changes what the recognizer HEARS and returns
+  // nothing the model acts on. So what is worth pinning is that it reaches
+  // `ctx.steerRecognizer` with the terms verbatim, and that it tells the model
+  // the truth when the session has no recognizer to steer.
+
+  test("listen_for is registered with schema and guidance", () => {
+    const { defs, schemas, guidance } = resolveAllBuiltins(["listen_for"]);
+    expect(defs.listen_for?.execute).toBeTypeOf("function");
+    expect(schemas.map((s) => s.name)).toContain("listen_for");
+    expect(guidance.some((g) => g.includes("listen_for"))).toBe(true);
+  });
+
+  test("listen_for hands the terms to the session's recognizer, verbatim", async () => {
+    const steerRecognizer = vi.fn(() => true);
+    const { defs } = resolveAllBuiltins(["listen_for"]);
+    const result = await defs.listen_for?.execute(
+      { terms: ["Yusuf Rossi", "W2378156"] },
+      createMockToolContext({ steerRecognizer }),
+    );
+    // Verbatim matters: the caller is about to SAY these, and a tool that
+    // normalized them would bias the recognizer toward a spelling nobody uses.
+    expect(steerRecognizer).toHaveBeenCalledWith(["Yusuf Rossi", "W2378156"]);
+    expect(result).toEqual({ listening_for: ["Yusuf Rossi", "W2378156"] });
+  });
+
+  test("listen_for tells the model plainly when nothing can be steered", async () => {
+    // S2S, or a session already stopping. The capability answers `false`
+    // rather than throwing, and the model is told rather than left to assume
+    // a hint landed — a tool that reported success here would teach it to
+    // rely on biasing that never happened.
+    const { defs } = resolveAllBuiltins(["listen_for"]);
+    const result = await defs.listen_for?.execute(
+      { terms: ["Yusuf Rossi"] },
+      createMockToolContext({ steerRecognizer: () => false }),
+    );
+    expect(result).toMatchObject({ listening_for: [] });
+    expect(JSON.stringify(result)).toContain("cannot be steered");
+  });
+
+  // ─── verify_action ─────────────────────────────────────────────────────
+  //
+  // The cases are the four argument-error shapes a graded tau2-bench retail run
+  // produced (13 of 108 calls). Only the first is something the tool DECIDES;
+  // the rest are what its schema obliges the model to write down, so they are
+  // pinned as "the field exists and is required" rather than as behaviour.
+
+  test("verify_action is registered with schema and guidance", () => {
+    const { defs, schemas, guidance } = resolveAllBuiltins(["verify_action"]);
+    expect(defs.verify_action?.execute).toBeTypeOf("function");
+    expect(schemas.map((s) => s.name)).toContain("verify_action");
+    expect(guidance.some((g) => g.includes("verify_action"))).toBe(true);
+  });
+
+  test("verify_action reports a no-op when after equals before", async () => {
+    // The measured case: an exchange whose replacement item id was the id it
+    // already held, which the tool reported as a success three times.
+    const { defs } = resolveAllBuiltins(["verify_action"]);
+    const result = await defs.verify_action?.execute(
+      {
+        action: "exchange the delivered item",
+        target: "order #W2890441, the only delivered order with this item",
+        before: "item 8069050545",
+        after: "item 8069050545",
+        requested: "swap the laptop for the 16GB version",
+      },
+      createMockToolContext(),
+    );
+    expect(result).toMatchObject({ verdict: "no_change" });
+    expect((result as { detail: string }).detail).toContain("change nothing");
+  });
+
+  test("verify_action passes a real change", async () => {
+    const { defs } = resolveAllBuiltins(["verify_action"]);
+    const result = await defs.verify_action?.execute(
+      {
+        action: "exchange the delivered item",
+        target: "order #W2890441",
+        before: "item 8069050545",
+        after: "item 1071497737",
+        requested: "swap the laptop for the 16GB version",
+        unchanged: "the other two items on this order",
+      },
+      createMockToolContext(),
+    );
+    expect(result).toEqual({ verdict: "ok" });
+  });
+
+  test("verify_action ignores case and spacing when comparing", async () => {
+    // A model re-quoting a value rarely reproduces its spacing, and a no-op
+    // that reads as a change because of a capital letter is the finding lost.
+    const { defs } = resolveAllBuiltins(["verify_action"]);
+    const result = await defs.verify_action?.execute(
+      {
+        action: "update the address",
+        target: "order #W1845024",
+        before: "224 Elm Street,  Suite 491",
+        after: "224 elm street, Suite 491",
+        requested: "ship it to my New York address",
+      },
+      createMockToolContext(),
+    );
+    expect(result).toMatchObject({ verdict: "no_change" });
+  });
+
+  test("verify_action requires the fields the measured failures skipped", async () => {
+    // before/after is the comparison nobody made; target is which record among
+    // several (6 failures acted on the wrong one); requested is the scope
+    // (3 failures changed more than was asked). A thought string has none.
+    //
+    // Through `schemaInputIssues` rather than `schema.safeParse`, because
+    // `ToolInputSchema` is a Standard Schema and `validate` may be async — the
+    // rule `_testing-schema.ts` exists to enforce.
+    const { defs } = resolveAllBuiltins(["verify_action"]);
+    const issues = await schemaInputIssues(
+      defs.verify_action?.inputSchema,
+      { action: "cancel the order" },
+      "verify_action",
+    );
+    const missing = issues?.map((i) => (i.path ?? []).join("."));
+    expect(missing).toEqual(expect.arrayContaining(["target", "before", "after", "requested"]));
+    // `unchanged` is the one optional field: not every action has a sibling
+    // field to preserve, and a required one would be filled with "n/a".
+    expect(missing).not.toContain("unchanged");
+  });
+
+  test("verify_action never touches db or fetch, and answers SYNCHRONOUSLY", () => {
+    // db is a throwing stub in the mock context; a checker that reads anything
+    // is a second source of truth for state the tool results already reported.
+    // Synchronous like `think` and for the same reason: this tool is on the
+    // path of every write, so it must add no await to a live call.
+    const { defs } = resolveAllBuiltins(["verify_action"]);
+    const result = defs.verify_action?.execute(
+      { action: "a", target: "b", before: "c", after: "d", requested: "e" },
+      createMockToolContext(),
+    );
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(result).toEqual({ verdict: "ok" });
   });
 
   // ─── remember / recall ─────────────────────────────────────────────────

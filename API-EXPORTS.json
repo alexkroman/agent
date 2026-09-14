@@ -526,6 +526,7 @@
     "createEpoch",
     "createOwnedMap",
     "decideClientEvent",
+    "defaultBuiltinTools",
     "formatSchemaIssues",
     "invariant",
     "isInvariantViolation",

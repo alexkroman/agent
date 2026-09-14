@@ -64,7 +64,8 @@ function toAgentConfig(source: AgentConfigSource): {
      | "think"
      | "remember"
      | "recall"
-    | "calculate")[];
+     | "calculate"
+    | "verify_action")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -185,7 +186,8 @@ the runtime.
      | "think"
      | "remember"
      | "recall"
-    | "calculate")[];
+     | "calculate"
+    | "verify_action")[];
   deadAirCoverMs?: number;
   description?: string;
   endpointingRules?: readonly (
@@ -299,7 +301,8 @@ optional builtinTools?: readonly (
   | "think"
   | "remember"
   | "recall"
-  | "calculate")[];
+  | "calculate"
+  | "verify_action")[];
 ```
 
 ##### deadAirCoverMs?

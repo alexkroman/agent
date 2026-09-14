@@ -15,11 +15,11 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "@alexkroman1/aai/internal";
-import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropicLlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropicLlm, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
-import { ASSEMBLYAI_TTS_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE, assemblyAITts, cartesiaTts } from "@alexkroman1/aai/tts";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
@@ -440,7 +440,7 @@ describe("executeToolCall", () => {
 });
 
 describe("createRuntime sandbox mode", () => {
-  test("uses provided executeTool and adds no builtins by default", async () => {
+  test("uses provided executeTool, and appends only the DEFAULT builtin", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
@@ -453,9 +453,10 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: mockToolSchemas,
     });
 
-    // Relay/host-mode path. DEFAULT_BUILTIN_TOOLS is empty, so an agent that
-    // sets no `builtinTools` gets exactly the tools it declared — nothing is
-    // appended behind its back.
+    // Relay/host-mode path on an S2S agent, which is what `makeAgent()`
+    // builds: `listen_for` is the one default builtin and S2S has no
+    // recognizer this runtime can steer, so nothing is appended behind the
+    // host's back. The pipeline case is the sibling test below.
     expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool"]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
@@ -534,7 +535,12 @@ describe("createRuntime sandbox mode", () => {
     });
     const names = runtime.toolSchemas.map((s) => s.name);
     expect(names).toContain("mock_tool");
-    expect(names).toEqual(expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS]));
+    // S2S, so the recognizer-steering default is filtered — see
+    // `defaultBuiltinsFor`. What the guard is about is that resolution happens
+    // HERE for every caller, which the pipeline case below shows positively.
+    expect(names).toEqual(
+      expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS.filter((n) => n !== "listen_for")]),
+    );
   });
 });
 
@@ -670,5 +676,23 @@ describe("createRuntime — provider resolution seams", () => {
         env: PROVIDER_KEYS,
       }),
     ).toThrow(/deadAirCoverMs requires pipeline mode/);
+  });
+  test("a PIPELINE agent gets the default builtin merged in; an S2S one does not", () => {
+    // `listen_for` steers a recognizer and only pipeline mode has one this
+    // runtime can reach, so offering it to an S2S or text agent would spend
+    // tokens advertising a capability that session does not have.
+    const schemas = [
+      { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
+    ];
+    const names = (overrides: Parameters<typeof makeAgent>[0]) =>
+      createRuntime({
+        agent: makeAgent(overrides),
+        env: { ASSEMBLYAI_API_KEY: "k" },
+        executeTool: vi.fn(async () => "ok"),
+        toolSchemas: schemas,
+      }).toolSchemas.map((s) => s.name);
+    const pipeline = { stt: assemblyAIStt(), llm: assemblyAILlm(), tts: assemblyAITts() };
+    expect(names(pipeline)).toEqual(["mock_tool", "listen_for"]);
+    expect(names(undefined)).toEqual(["mock_tool"]);
   });
 });
