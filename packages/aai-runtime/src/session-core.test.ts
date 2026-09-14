@@ -124,8 +124,19 @@ describe("createSessionCore — steerRecognizer", () => {
     const { core, transport } = makeCore({ logger: log });
     (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = vi.fn();
     core.steerRecognizer(["Yusuf Rossi"]);
+    // COUNT at info: a steered term is a caller's name or an order id by
+    // construction, so the values are PII and do not belong in an operator's
+    // log. The count still separates "nothing asked to steer" from "something
+    // asked", which is the question the line exists for.
     expect(log.info).toHaveBeenCalledWith(
       "Session recognizer steered",
+      expect.objectContaining({ count: 1 }),
+    );
+    expect(JSON.stringify(log.info.mock.calls)).not.toContain("Yusuf Rossi");
+    // The values are reachable at DEBUG, which is a no-op unless AAI_DEBUG is
+    // set — that is where diagnosing WHICH terms a tool chose belongs.
+    expect(log.debug).toHaveBeenCalledWith(
+      "Session recognizer terms",
       expect.objectContaining({ terms: ["Yusuf Rossi"] }),
     );
   });

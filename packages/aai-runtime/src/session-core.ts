@@ -337,7 +337,16 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // measuring whether the `listen_for` builtin is worth its tokens is
       // uninterpretable without it: no calls and a call that changed nothing
       // look identical from outside.
-      log.info("Session recognizer steered", { sid: opts.id, terms: keyterms });
+      // COUNT at info, TERMS at debug, and the split is a privacy one rather
+      // than a volume one: a steered term is a caller's name or an order id by
+      // construction — that is what the feature is FOR — so emitting the
+      // values at info writes PII into every operator's log for the life of
+      // the retention window. The count answers the question this line was
+      // added for ("did anything ask to steer, or did nothing?"), and `debug`
+      // is a no-op unless AAI_DEBUG is set, which is where reading the actual
+      // terms belongs.
+      log.info("Session recognizer steered", { sid: opts.id, count: keyterms.length });
+      log.debug?.("Session recognizer terms", { sid: opts.id, terms: keyterms });
       opts.transport.steerRecognizer(keyterms);
       return true;
     },
