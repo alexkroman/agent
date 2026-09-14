@@ -262,6 +262,7 @@ function driveRollbacks(script: readonly Fill[], door: Door, reached: Reached): 
     // No dialog declares keyterms here: `undefined` is "leave the STT stream on
     // the keyterms it opened with".
     dialogKeyterms: () => undefined,
+    sessionKeyterms: () => [],
     sendTtsText: () => undefined,
   });
   let serial = 0;

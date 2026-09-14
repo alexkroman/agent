@@ -198,6 +198,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
     setupTools({
       agent,
+      // `ctx.steerRecognizer`, resolved through the same session map the
+      // announcer above uses — and reporting the same way, since a tool is
+      // entitled to know a hint reached no recognizer.
+      steerRecognizer: (sid, keyterms) => sessions.get(sid)?.steerRecognizer(keyterms) ?? false,
       options,
       ...omitUndefined({ notifier }),
       llm: effectiveProviders.llm,

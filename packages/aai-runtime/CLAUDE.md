@@ -1476,47 +1476,62 @@ knob; `providers/stt/_assemblyai-turn.ts` computes both from one pass over the
 absence means "no opinion", and a zero there would discard a turn on every
 provider that reports nothing.
 
-### There is no PER-SESSION steering seam, and what one needs
+### The recognizer is steered from THREE places, and the third is a tool's
 
-The recognizer can be steered from three places now, and all three are decided
-before a call knows who is ON it: `assemblyAIStt({ keyterms, agentContext })`
-is the DEPLOYMENT's, a `dialog()` state's `keyterms` is the PHASE's, and the
-per-turn `agent_context` push is the AGENT's own last reply. What none of them
-can express is the fact with the most value in it — *this caller is Yusuf
-Rossi, calling about order #W2378156* — because that is known only once a tool
-has looked it up, and by then the descriptor is frozen and the dialog's lists
-are literals in source.
+`assemblyAIStt({ keyterms, agentContext })` is the DEPLOYMENT's, a `dialog()`
+state's `keyterms` is the PHASE's, and **`ctx.steerRecognizer(keyterms)` is the
+SESSION's** — the only one that can know who is actually on the line. The first
+two are decided before a call connects; the third carries what a lookup
+returned.
 
-Measured on tau2-bench retail, that is the gap that matters: order ids came
+Measured on tau2-bench retail, that is the gap that mattered: order ids came
 through 41 renderings with one digit substitution, while a caller's NAME
 collapsed repeatedly and fatally ("Yusuf" → "Yuta" → "Yufus", three failed
 lookups and a transfer to a human). A name the agent has already read out of
-its own database is exactly what a keyterm list or a context string would fix,
-and there is no route from a tool body to either.
+its own database is exactly what a keyterm list fixes, and until this there was
+no route from a tool body to either sink.
 
-**Both sinks are already wired**, which is what makes this a seam rather than a
-feature: `SttSession.updateKeyterms` and `updateAgentContext` are live on the
-AssemblyAI session and are called every turn from `pipeline-turn-outcome.ts`.
-What is missing is a WRITER a tool or an `events` hook can reach. Four things
-that seam owes, in rough order of how easy each is to get wrong:
+```ts
+const user = await findUser(args);
+ctx.steerRecognizer([user.firstName, user.lastName]);
+```
 
-- **A PRECEDENCE with the dialog's list.** The two want the same wire field,
-  and `updateKeyterms(undefined)` currently means "restore the descriptor's
-  own list" — so a session-scoped addition has to compose with the phase's
-  rather than race it. Merge, cap at 100, and decide which half loses when the
-  merge overflows.
-- **A place to live that is not a transport option.** A tool runs behind
-  `executeTool` and holds a `ToolContext`, which reaches no transport; the
-  existing route for "a tool changes the session" is a `sessionSlot`, and a
-  slot the transport WATCHES is a shape this runtime does not have yet.
-- **A budget.** `updateKeyterms` skips an unchanged list, which is what keeps a
-  per-turn push free; a writer called from a tool body has no such guarantee
-  and would need its own.
-- **S2S has neither method**, so whatever shape this takes must degrade to a
-  logged no-op there, like `injectTurn` does.
+The chain is `ctx.steerRecognizer` → `ServerSession.steerRecognizer` →
+`Transport.steerRecognizer` → the accumulator in
+`transports/pipeline-session-keyterms.ts` → the push
+`pipeline-turn-outcome.ts` already makes at the end of each agent turn. Five
+things about it are decisions rather than detail:
 
-Not built deliberately: it is a change with its own eval, and the value of the
-steering already shipped has not been measured yet either.
+- **The PROVIDER merges, not the transport.** `updateKeyterms(phase, session)`
+  takes both lists, because `undefined` on the first means "restore the set the
+  stream was opened with" and only the implementation holds that set — a
+  transport unioning anything onto it would have to keep a second copy.
+- **The session's terms go FIRST**, and the order is the whole decision: both
+  halves share the service's 100-term cap and `normalizeKeyterms` trims from
+  the end, so a deployment shipping a full vocabulary would otherwise drop the
+  one term looked up FOR this caller.
+- **Nothing is pushed at call time.** The terms ride the end-of-turn push,
+  which is both where the two lists meet and the moment steering is worth most
+  — the agent has just asked its question, so the next audio answers it.
+- **The BUDGET is the accumulator's**, not the caller's: terms are deduped
+  case-insensitively (first spelling wins, so a term already on the wire is not
+  rewritten for nothing), capped at `SESSION_KEYTERM_LIMIT`, and the OLDEST
+  drops — refusing new ones would leave a long call permanently unable to learn
+  the fact it is currently failing on. The provider's existing string-key
+  compare then means a repeated hint costs nothing on the socket.
+- **It reports FALSE rather than throwing** when the hint went nowhere — a
+  stopped session, or S2S, which runs recognition service-side and exposes no
+  control. `ServerSession.steerRecognizer` mirrors `announce` exactly, for the
+  same reason: a failed hint is never a reason to fail the tool that offered
+  it.
+
+**`agentContext` is deliberately NOT reachable this way**, and the reason is a
+real interaction rather than an omission: `updateAgentContext` is overwritten
+every turn with the agent's own last reply (the line above the keyterm push),
+so a session-scoped value would need a composition rule deciding what to keep
+of each. That is a second design, and the vendor claim behind `agentContext`
+(−21% WER, −29% entity error over 20,000 calls) is one nobody here has
+reproduced. Keyterms is the sink the measurement points at.
 
 ## History records what was HEARD, not what was generated
 

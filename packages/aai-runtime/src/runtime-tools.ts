@@ -153,6 +153,15 @@ type ToolSetupDeps = {
    * WHEN a run lands, and an agent that cannot start one never lands any.
    */
   notifier?: RunNotifier | undefined;
+  /**
+   * Reach one session's recognizer — the half only `createRuntime`'s scope has,
+   * for the reason the announcer above is passed the same way: the session map
+   * lives there and a tool holds nothing but its `sessionId`.
+   *
+   * Answers FALSE when the hint went nowhere (no such session, a stopped one,
+   * or an S2S transport), which is what `ctx.steerRecognizer` reports back.
+   */
+  steerRecognizer?: ((sessionId: string, keyterms: readonly string[]) => boolean) | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   /**
    * Live EMITTER per session, so `ctx.send` and a `syncState` push are recorded
@@ -254,6 +263,8 @@ function setupSandboxTools(
         messages,
         generate,
         subagents,
+        steerRecognizer: (keyterms) =>
+          sessionId === undefined ? false : (deps.steerRecognizer?.(sessionId, keyterms) ?? false),
         usage: deps.meters.get(sessionId ?? ""),
         logger,
         signal: callOptions?.signal,
@@ -378,6 +389,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         messages,
         generate,
         subagents,
+        steerRecognizer: (keyterms) => deps.steerRecognizer?.(sid, keyterms) ?? false,
         // Resolved when the call STARTS rather than captured at setup: the
         // meter belongs to the session, and a resume mints a new one.
         usage: meters.get(sid),

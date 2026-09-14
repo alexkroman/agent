@@ -336,7 +336,51 @@ describe("PipelineTransport — STT → LLM turn", () => {
     // The other half of the same push: with no dialog declaring keyterms the
     // session asks for the DESCRIPTOR's list back, which is what `undefined`
     // means on that seam — never "clear them".
-    expect(stt.last()?.updateKeyterms).toHaveBeenCalledWith(undefined);
+    // `undefined` for the phase's half — never "clear them" — and an EMPTY
+    // session half, no tool having steered.
+    expect(stt.last()?.updateKeyterms).toHaveBeenCalledWith(undefined, []);
+    await t.stop();
+  });
+
+  test("a tool's keyterms reach the recognizer on the next turn's push", async () => {
+    // The whole point of the seam, and the failure it is most exposed to:
+    // every layer between `ctx.steerRecognizer` and the wire is optional
+    // (`Transport.steerRecognizer?`, `SttSession.updateKeyterms?`, a
+    // `steerRecognizer` option that defaults to a `false`-returning stub), so
+    // a break anywhere in the chain is a silent no-op rather than an error.
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.steerRecognizer?.(["Yusuf", "Rossi"]);
+    stt.last()?.fireFinal("test question");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
+    });
+    expect(stt.last()?.updateKeyterms).toHaveBeenCalledWith(undefined, ["Yusuf", "Rossi"]);
+    await t.stop();
+  });
+
+  test("session keyterms persist across turns and accumulate", async () => {
+    // They describe the CALLER, not the turn, so they outlive the turn that
+    // learned them — the opposite of the dialog's list, which is the phase's.
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.steerRecognizer?.(["Yusuf"]);
+    stt.last()?.fireFinal("first question");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
+    });
+    t.steerRecognizer?.(["W2378156"]);
+    stt.last()?.fireFinal("second question");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(2);
+    });
+    expect(stt.last()?.updateKeyterms).toHaveBeenLastCalledWith(undefined, ["Yusuf", "W2378156"]);
     await t.stop();
   });
 

@@ -126,6 +126,18 @@ export type ServerSession = {
    * "this session cannot be spoken to" is what a notifier needs to stop trying.
    */
   announce(instruction: string): boolean;
+
+  /**
+   * Bias this session's recognizer toward terms a tool has learned — the
+   * session-scoped third of ASR steering, beside the deployment's
+   * `assemblyAIStt({ keyterms })` and a `dialog()` state's own list.
+   *
+   * Reports FALSE for the reasons {@link announce} does, and the caller acts on
+   * it the same way: a stopped session, or a transport with no such verb (S2S
+   * runs recognition service-side and exposes no control over it). A tool is
+   * entitled to know its hint went nowhere rather than to have it swallowed.
+   */
+  steerRecognizer(keyterms: readonly string[]): boolean;
   /**
    * Put a prior conversation back, on resume.
    *

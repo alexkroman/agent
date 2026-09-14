@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session",
+  "epoch": 2,
+  "sha256": "f91b45c56cb3d9e2f514f7d03d0257f116dc749c6c3af9c1d8be4997e4406a06",
+  "exports": [
+    "SESSION_EVENTS_TOKEN_ENV",
+    "ServerSession",
+    "SessionEventPage",
+    "SessionEventStream",
+    "SessionWebSocket",
+    "StateSyncSession",
+    "StoredSessionEvent",
+    "TransportEventBody",
+    "TransportEventType"
+  ]
+}

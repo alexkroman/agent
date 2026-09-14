@@ -267,6 +267,32 @@ export interface Transport {
    * `ServerSession.announce`, which reports it rather than pretending.
    */
   injectTurn?(instruction: string): void;
+
+  /**
+   * Bias the recognizer for the REST of this call — the session-scoped half of
+   * ASR steering.
+   *
+   * The other two steering sources are decided before a call knows who is on
+   * it: `assemblyAIStt({ keyterms })` is the deployment's and a `dialog()`
+   * state's list is the phase's. This one is for the fact with the most value
+   * in it and the shortest life — *this caller is Yusuf Rossi* — which is known
+   * only once a tool has looked it up. Measured on tau2-bench retail, order ids
+   * survived 41 renderings with one digit substitution while a caller's NAME
+   * collapsed repeatedly and fatally ("Yusuf" → "Yuta" → "Yufus", three failed
+   * lookups and a transfer).
+   *
+   * ADDITIVE and idempotent: terms accumulate for the session, the phase's own
+   * list still applies over them, and re-sending a term already held changes
+   * nothing on the wire. Nothing is pushed at call time — the terms ride the
+   * push the transport already makes at the END of each agent turn, which is
+   * the moment that makes steering worth doing (the agent has just asked its
+   * question, so the next audio is the answer to it).
+   *
+   * OPTIONAL for the reason {@link injectTurn} is: S2S runs recognition
+   * service-side and exposes no such control, so a caller has to treat "not
+   * supported" as an answer — see `ServerSession.steerRecognizer`.
+   */
+  steerRecognizer?(keyterms: readonly string[]): void;
   /**
    * Re-read the session's {@link SystemPromptOption} and push it to the
    * provider if — and only if — it has CHANGED since the last push.

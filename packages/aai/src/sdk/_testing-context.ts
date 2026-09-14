@@ -337,6 +337,10 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   return {
     sessionId: `test-session-${sessionCounter}`,
     env: {},
+    // Answers `false` — the truthful default, since nothing here is attached
+    // to a recognizer. A spec that asserts its tool steers passes its own spy
+    // through the overrides.
+    steerRecognizer: () => false,
     // A real slot store, empty, and NOT a stub: it applies the same
     // storability check and the same freeze the deployed one does, so a
     // template holding a `Map` in a slot fails in its own spec rather than on

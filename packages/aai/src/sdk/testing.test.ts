@@ -39,6 +39,10 @@ describe("createToolContext", () => {
       "sessionId",
       "signal",
       "slots",
+      // Inert here — it answers `false`, which is what the real capability
+      // answers when nothing is attached to a recognizer. A spec asserting
+      // its tool steers passes a spy through the overrides.
+      "steerRecognizer",
       "workflows",
     ]);
   });

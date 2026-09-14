@@ -107,6 +107,36 @@ export type ToolContext = {
    */
   generate: GenerateFn;
   /**
+   * Bias the recognizer toward words this call is about to contain — a
+   * caller's name, an order id, a product — for the REST of the session.
+   *
+   * The third source of ASR steering and the only one that can know who is on
+   * the line: `assemblyAIStt({ keyterms })` is the deployment's vocabulary and
+   * a `dialog()` state's list is the phase's, both fixed before the call
+   * connects. This is for what a LOOKUP returned, which is where the value is
+   * — measured on tau2-bench retail, order ids survived 41 renderings with one
+   * digit substitution while a caller's NAME collapsed repeatedly and fatally
+   * ("Yusuf" → "Yuta" → "Yufus", three failed lookups and a transfer to a
+   * human).
+   *
+   * ```ts
+   * const user = await findUser(args);
+   * ctx.steerRecognizer([user.firstName, user.lastName]);
+   * ```
+   *
+   * ADDITIVE and idempotent — terms accumulate for the call, the phase's list
+   * still applies over them, and re-sending a term costs nothing on the wire.
+   * Nothing is sent at call time: the terms ride the push the runtime already
+   * makes at the end of the agent's next turn, which is when steering is worth
+   * most, since the audio after a question is the answer to it.
+   *
+   * Answers FALSE when the hint went nowhere — an S2S session (recognition
+   * runs service-side, with no control exposed) or one already stopping. A
+   * tool is entitled to know, rather than have the hint swallowed; nothing is
+   * thrown, because a failed hint is never a reason to fail a tool.
+   */
+  steerRecognizer: (keyterms: readonly string[]) => boolean;
+  /**
    * Hand a bounded task to a SUBAGENT — a second tool loop with its own
    * instructions, model, tools and context window — and get back what it
    * concluded, not how it got there ({@link DelegateFn}).

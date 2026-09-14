@@ -51,6 +51,8 @@ export interface PipelineCommandDeps {
     kind?: { isResume?: boolean; synthetic?: boolean },
   ) => void;
   isTerminated: () => boolean;
+  /** Record the session's own keyterms — see `pipeline-session-keyterms.ts`. */
+  addKeyterms: (terms: readonly string[]) => void;
 }
 
 /** Build the transport's command surface. @internal */
@@ -68,6 +70,7 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
     abortInFlightTurn,
     runChainedTurn,
     isTerminated,
+    addKeyterms,
   } = deps;
   return {
     start: () => lifecycle.start(),
@@ -111,6 +114,15 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
       // and `synthetic` keeps the instruction out of the user transcript while
       // leaving it in the LLM's history where the reply is built from it.
       runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
+    },
+
+    steerRecognizer(keyterms: readonly string[]): void {
+      if (isTerminated()) return;
+      // Accumulate only. Nothing is pushed here: the wire message goes at the
+      // END of the agent's next turn, alongside the dialog's own list, which
+      // is both the moment steering is worth most (the next audio answers the
+      // question just asked) and the only place the two lists are merged.
+      addKeyterms(keyterms);
     },
 
     seedHistory(messages: readonly Message[]): void {

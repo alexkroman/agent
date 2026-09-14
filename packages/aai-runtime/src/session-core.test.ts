@@ -104,6 +104,39 @@ describe("createSessionCore — announce", () => {
   });
 });
 
+describe("createSessionCore — steerRecognizer", () => {
+  test("hands the terms to the transport", () => {
+    const { core, transport } = makeCore();
+    const steer = vi.fn();
+    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = steer;
+
+    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(true);
+    expect(steer).toHaveBeenCalledWith(["Yusuf Rossi"]);
+  });
+
+  test("reports FALSE for a transport with no such verb", () => {
+    // S2S runs recognition service-side and exposes no control over it. The
+    // caller is a tool mid-call, and a hint that went nowhere must be an
+    // ANSWER — never a throw, since a failed hint is not a reason to fail the
+    // tool that offered it.
+    const { core, transport } = makeCore();
+    expect(transport.steerRecognizer).toBeUndefined();
+    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(false);
+  });
+
+  test("reports false once the session has stopped", async () => {
+    // The session's own flag rather than the transport's: a stopped session
+    // may still hold sockets mid-teardown.
+    const { core, transport } = makeCore();
+    const steer = vi.fn();
+    (transport as { steerRecognizer?: (t: readonly string[]) => void }).steerRecognizer = steer;
+    await core.stop();
+
+    expect(core.steerRecognizer(["Yusuf Rossi"])).toBe(false);
+    expect(steer).not.toHaveBeenCalled();
+  });
+});
+
 describe("createSessionCore — client inbound", () => {
   test("onAudio forwards to transport", async () => {
     const { core, transport } = makeCore();

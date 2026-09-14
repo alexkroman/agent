@@ -324,6 +324,14 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       opts.transport.injectTurn(instruction);
       return true;
     },
+    steerRecognizer(keyterms) {
+      // Same two guards as `announce`, and the same reason for the session's
+      // own flag rather than the transport's: a stopped session may still hold
+      // sockets mid-teardown.
+      if (stopped || !opts.transport.steerRecognizer) return false;
+      opts.transport.steerRecognizer(keyterms);
+      return true;
+    },
     restoreHistory(messages, toolCalls = []) {
       pushMessages(...messages);
       // Forward to the transport so pipeline mode's LLM sees the restored

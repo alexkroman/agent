@@ -21,6 +21,7 @@ import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
 import { createClarificationSpeaker } from "./pipeline-low-confidence.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
+import { createSessionKeyterms } from "./pipeline-session-keyterms.ts";
 import { createSessionSignal } from "./pipeline-session-signal.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
 import { flushTtsAndWait } from "./pipeline-stream.ts";
@@ -31,7 +32,12 @@ import {
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
 import { createTurnBody } from "./pipeline-turn-body.ts";
-import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
+import {
+  createTurnChain,
+  createTurnDoors,
+  createTurnGate,
+  turnCrashLogger,
+} from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
@@ -125,6 +131,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const turnChain = createTurnChain({ gate, isTerminated: () => terminated });
+  const { runChainedTurn, runCallerTurn } = createTurnDoors({
+    chain: turnChain,
+    setResumeScope: (isResume) => turns.setResumeScope(isResume),
+    runTurn: (text, opts) => runTurn(text, opts),
+    logTurnCrash,
+  });
   // What the caller has actually HEARD of the current reply: the barge-in
   // gate, the cut point history is truncated to, and the resume anchor, all
   // from one cursor — see createHeardTracker.
@@ -246,6 +258,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     abortInFlightTurn: () => abortInFlightTurn(),
     tailResumePrompt: () => heard.resumePrompt(),
     runChainedTurn,
+    runCallerTurn,
   });
 
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
@@ -301,23 +314,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     recordToolResult: (message) => history.pushToolResult(message),
   });
 
-  function runChainedTurn(
-    text: string,
-    crashLabel: string,
-    kind?: { isResume?: boolean; synthetic?: boolean },
-  ): void {
-    turnChain.chain(async () => {
-      turns.setResumeScope(kind?.isResume === true);
-      try {
-        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
-          logTurnCrash(crashLabel),
-        );
-      } finally {
-        turns.setResumeScope(false);
-      }
-    });
-  }
-
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
     // FIRST: latch where the caller's ear had got to, before anything resets
@@ -332,6 +328,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     audioOut.drop();
   }
 
+  // What a tool asked the recognizer to listen for, for the rest of the call.
+  const sessionKeyterms = createSessionKeyterms();
+
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
   // spoken. See pipeline-turn-outcome.ts.
   const outcome = createTurnOutcome({
@@ -344,6 +343,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
     drainTts: () => drainTts(sessionAbort.signal),
     dialogKeyterms: knobs.keyterms,
+    sessionKeyterms: sessionKeyterms.current,
   });
 
   const consumeLlmStream = createTurnLlmRunner({
@@ -491,5 +491,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     abortInFlightTurn,
     runChainedTurn,
     isTerminated: () => terminated,
+    addKeyterms: sessionKeyterms.add,
   });
 }
