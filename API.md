@@ -769,7 +769,6 @@ const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -777,25 +776,6 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
@@ -2591,21 +2571,6 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-export interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
-// @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -2768,15 +2733,6 @@ export interface DialogVoiceConfig {
 
 // @public
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
-
-// @public
-export type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-export interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
 
 // @public
 export function errorDetail(err: unknown): string;
@@ -2985,13 +2941,10 @@ type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = 
 
 // @public
 export interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -3669,22 +3622,14 @@ export interface UsageLimits {
 }
 
 // @public
-export interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
-
-// @public
 export const VOICE_PRESETS: {
     readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
-    readonly smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
     readonly speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
     readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
 };
 
 // @public
-export type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
+export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -3835,44 +3780,14 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
-export function assembleSpelledRuns(text: string): readonly SpelledRun[];
-
-// @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @internal
-export type BargeInPhraseVerdict = "interrupt" | "acknowledge" | "none";
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
 // @internal
 export function capToolResult(result: string): string;
 
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
-// @internal
-export function clampEndpointingTimeout(timeoutMs: number, maxTurnSilenceMs: number): number;
-
 // @public
 export function clampWorkflowWait(requested: number | undefined): number;
-
-// @internal
-export function classifyBargeInPhrase(text: string, lists: {
-    acknowledgement: readonly string[];
-    interruption: readonly string[];
-}): BargeInPhraseVerdict;
 
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1500;
@@ -3932,14 +3847,8 @@ export type Db = {
 // @internal
 export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
-// @internal
-export const DEFAULT_ACKNOWLEDGEMENT_PHRASES: readonly string[];
-
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
-
-// @internal
-export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[];
 
 // @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
@@ -3955,9 +3864,6 @@ export const DEFAULT_INTERRUPTION_BACKOFF_MS = 0;
 
 // @public (undocumented)
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-
-// @internal
-export const DEFAULT_INTERRUPTION_PHRASES: readonly string[];
 
 // @public
 export const DEFAULT_MAX_HISTORY = 200;
@@ -3988,27 +3894,6 @@ export const DEFAULT_STT_PROMPT = "";
 
 // @public
 export const DEFAULT_TOOL_CHOICE: "auto";
-
-// @internal
-export interface EndpointingInput {
-    assistantMessage?: string | undefined;
-    userTranscript?: string | undefined;
-}
-
-// @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
-
-// @internal
-export interface EndpointingRuleMatch {
-    index: number;
-    timeoutMs: number;
-}
 
 // @internal (undocumented)
 export interface Epoch {
@@ -4064,9 +3949,6 @@ export function linkConfirmationCode(code: string): string;
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
-// @internal
-export function matchEndpointingRule(rules: readonly EndpointingRule[], input: EndpointingInput): EndpointingRuleMatch | undefined;
-
 // @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
@@ -4075,9 +3957,6 @@ export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
-
-// @internal
-export const MAX_ENDPOINTING_RULE_TIMEOUT_MS = 5000;
 
 // @internal
 export const MAX_INTERRUPTION_BACKOFF_MS = 5000;
@@ -4105,9 +3984,6 @@ export const MIC_SEND_MAX_BUFFERED_BYTES: number;
 
 // @internal
 export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @internal
-export function normalizeBargeInText(text: string): string;
 
 // @public
 export function normalizeSpeechText(text: string): string;
@@ -4167,9 +4043,6 @@ export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 // @public
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
-// @public
-export function promptingNote(text: string): string | undefined;
-
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 
@@ -4195,15 +4068,6 @@ export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
-
-// @public
-export function spelledAloudNote(text: string): string | undefined;
-
-// @public
-export interface SpelledRun {
-    readonly letters: readonly string[];
-    readonly token: string;
-}
 
 // @public
 interface StandardSchemaIssue {
@@ -4278,13 +4142,6 @@ export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
 
 // @public
 export const VALID_SLUG_RE: RegExp;
@@ -4560,7 +4417,6 @@ export const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -4568,25 +4424,6 @@ export const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
@@ -4739,21 +4576,6 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
-// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -4837,15 +4659,6 @@ interface DialogVoiceConfig {
 }
 
 // @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
-
-// @public
 type FindOptions = {
     limit?: number;
 };
@@ -4925,9 +4738,6 @@ export function normalizeToolMessages(input: ToolMessagesInput | undefined): Too
 const PIPELINE_ONLY_TUNING: {
     readonly minBargeInWords: "number";
     readonly interruptionMinDurationMs: "number";
-    readonly acknowledgementPhrases: "phrases";
-    readonly interruptionPhrases: "phrases";
-    readonly endpointingRules: "endpointingRules";
     readonly startSpeakingFloorMs: "number";
     readonly interruptionBackoffMs: "number";
     readonly deadAirCoverMs: "number";
@@ -4939,7 +4749,7 @@ const PIPELINE_ONLY_TUNING: {
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases" ? readonly string[] : readonly EndpointingRule[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -4947,13 +4757,10 @@ type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
 
 // @public
 interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -5532,14 +5339,7 @@ interface UsageLimits {
 }
 
 // @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -7349,7 +7149,6 @@ const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -7357,25 +7156,6 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
@@ -7511,21 +7291,6 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
-// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -7641,15 +7406,6 @@ interface DialogVoiceConfig {
 }
 
 // @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
-
-// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -7745,13 +7501,10 @@ export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAg
 
 // @public
 interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -8573,14 +8326,7 @@ interface UsageLimits {
 }
 
 // @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

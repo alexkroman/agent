@@ -16,44 +16,14 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
-export function assembleSpelledRuns(text: string): readonly SpelledRun[];
-
-// @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @internal
-export type BargeInPhraseVerdict = "interrupt" | "acknowledge" | "none";
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
 // @internal
 export function capToolResult(result: string): string;
 
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
-// @internal
-export function clampEndpointingTimeout(timeoutMs: number, maxTurnSilenceMs: number): number;
-
 // @public
 export function clampWorkflowWait(requested: number | undefined): number;
-
-// @internal
-export function classifyBargeInPhrase(text: string, lists: {
-    acknowledgement: readonly string[];
-    interruption: readonly string[];
-}): BargeInPhraseVerdict;
 
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1500;
@@ -113,14 +83,8 @@ export type Db = {
 // @internal
 export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
-// @internal
-export const DEFAULT_ACKNOWLEDGEMENT_PHRASES: readonly string[];
-
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
-
-// @internal
-export const DEFAULT_ENDPOINTING_RULES: readonly EndpointingRule[];
 
 // @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
@@ -136,9 +100,6 @@ export const DEFAULT_INTERRUPTION_BACKOFF_MS = 0;
 
 // @public (undocumented)
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-
-// @internal
-export const DEFAULT_INTERRUPTION_PHRASES: readonly string[];
 
 // @public
 export const DEFAULT_MAX_HISTORY = 200;
@@ -169,27 +130,6 @@ export const DEFAULT_STT_PROMPT = "";
 
 // @public
 export const DEFAULT_TOOL_CHOICE: "auto";
-
-// @internal
-export interface EndpointingInput {
-    assistantMessage?: string | undefined;
-    userTranscript?: string | undefined;
-}
-
-// @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
-
-// @internal
-export interface EndpointingRuleMatch {
-    index: number;
-    timeoutMs: number;
-}
 
 // @internal (undocumented)
 export interface Epoch {
@@ -245,9 +185,6 @@ export function linkConfirmationCode(code: string): string;
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
-// @internal
-export function matchEndpointingRule(rules: readonly EndpointingRule[], input: EndpointingInput): EndpointingRuleMatch | undefined;
-
 // @public
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
@@ -256,9 +193,6 @@ export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
-
-// @internal
-export const MAX_ENDPOINTING_RULE_TIMEOUT_MS = 5000;
 
 // @internal
 export const MAX_INTERRUPTION_BACKOFF_MS = 5000;
@@ -286,9 +220,6 @@ export const MIC_SEND_MAX_BUFFERED_BYTES: number;
 
 // @internal
 export const MIC_SILENCE_PROBE_MS = 1500;
-
-// @internal
-export function normalizeBargeInText(text: string): string;
 
 // @public
 export function normalizeSpeechText(text: string): string;
@@ -348,9 +279,6 @@ export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 // @public
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
-// @public
-export function promptingNote(text: string): string | undefined;
-
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 
@@ -376,15 +304,6 @@ export type SleepTimerOptions = {
     signal?: AbortSignal;
     unref?: boolean;
 };
-
-// @public
-export function spelledAloudNote(text: string): string | undefined;
-
-// @public
-export interface SpelledRun {
-    readonly letters: readonly string[];
-    readonly token: string;
-}
 
 // @public
 interface StandardSchemaIssue {
@@ -459,13 +378,6 @@ export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
-
-// @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
 
 // @public
 export const VALID_SLUG_RE: RegExp;

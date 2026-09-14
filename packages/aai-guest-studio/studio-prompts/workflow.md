@@ -3021,17 +3021,14 @@ the defaults cannot say: "use run_code for ANY math", "you ARE the game".
 
 ### Opt-in prompt presets
 
-`agent({ voicePresets: ["echoVerification", "smartMatching"] })` switches on
+`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })` switches on
 named behaviours instead of writing them. They compose, each is removable on
 its own, and each is paid for on EVERY model request: `echoVerification`
-(~190 tokens — read critical values back and get a yes), `smartMatching`
-(~200 — believe a caller through an ASR slip: a confirmation ("Are you
-Brandon?" → "Yes, this is Brendon"), a spelling that REPLACES what was heard,
-and a name lookup that misses), `speechNormalization`
+(~190 tokens — read critical values back and get a yes), `speechNormalization`
 (~920 — money, dates, phone numbers and emails as spoken words, `"$758.08"`
 as "seven fifty-eight dollars and eight cents") and `natoAlphabet` (~190 —
 "That's B as in Bravo, 7, K as in Kilo, 2 — correct?"). `VOICE_PRESETS` holds
-the exact text. Those two spelling presets override the default "don't spell
+the exact text. The two spelling presets override the default "don't spell
 things back", so use them where a wrong value costs more than a slow call;
 `speechNormalization` is the PROMPT layer only, and for the agent's OWN data
 the renderers below do it in code for free.

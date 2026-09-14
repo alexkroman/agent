@@ -36,7 +36,6 @@ import {
  */
 const MEASURED: Record<VoicePresetName, { tokens: number; chars: number }> = {
   echoVerification: { tokens: 196, chars: 810 },
-  smartMatching: { tokens: 204, chars: 811 },
   speechNormalization: { tokens: 919, chars: 3105 },
   natoAlphabet: { tokens: 182, chars: 671 },
 };
@@ -99,11 +98,9 @@ describe("VOICE_PRESETS", () => {
     const total = Object.values(MEASURED).reduce((sum, m) => sum + m.tokens, 0);
     expect(total).toBeLessThan(1700);
     // The reason the field is a LIST and not a boolean: bundling would make
-    // this one the price of the other three.
+    // this one the price of the other two.
     expect(MEASURED.speechNormalization.tokens).toBeGreaterThan(
-      MEASURED.echoVerification.tokens +
-        MEASURED.smartMatching.tokens +
-        MEASURED.natoAlphabet.tokens,
+      MEASURED.echoVerification.tokens + MEASURED.natoAlphabet.tokens,
     );
   });
 
@@ -151,49 +148,6 @@ describe("echoVerification", () => {
     for (const kind of ["names", "phone numbers", "emails", "dates", "times", "addresses"]) {
       expect(text).toContain(kind);
     }
-  });
-});
-
-describe("smartMatching", () => {
-  const text = VOICE_PRESETS.smartMatching;
-
-  test("carries the Brandon/Brendon case, which is the whole preset", () => {
-    expect(text).toContain('you ask "Are you Brandon?", the transcript reads "Yes,');
-    expect(text).toContain('this is Brendon" — that is a yes');
-  });
-
-  test("scopes the tolerance to a value the AGENT proposed", () => {
-    expect(text).toContain("a NEAR-match on a value you proposed");
-    expect(text).toContain("is a MATCH");
-  });
-
-  test("a SPELLED value REPLACES what was heard, which is the measured line", () => {
-    // The tau2 baseline's caller spelled the name and the agent went on using
-    // the mis-heard form. The signal was dropped BEFORE the model by
-    // `assembleSpelledRuns` (`_wire-helpers.ts`), which split on whitespace
-    // and commas only and so saw a hyphen-joined spelling as one token; this
-    // rule is the half that makes the model ACT on the annotation once it is
-    // produced. "REPLACE", not "consider" — an averaged value is what failed.
-    expect(text).toContain("the letters ARE the value: they");
-    expect(text).toContain('REPLACE what you heard, exactly as spelled — "M-A-R-T-A" is Marta');
-    expect(text).toContain("every later lookup uses the spelled form");
-  });
-
-  test("covers the TOOL-ARGUMENT direction, not only the conversational one", () => {
-    // The same run fed "Sophia Lee" into `find_user_id_by_name_zip`, retried
-    // the identical string, and escalated. A miss is evidence about the
-    // transcript, not about the record.
-    expect(text).toContain("A name a lookup cannot find is a transcription to DOUBT");
-    expect(text).toContain("Before you re-ask or hand off, retry its phonetic");
-    expect(text).toContain("neighbours (Katherine/Kathryn, Clara/Klara)");
-  });
-
-  test("says why re-asking cannot work, not just that it is rude", () => {
-    expect(text).toContain("asking again produces the same transcript");
-  });
-
-  test("still refuses a difference that changes who is meant", () => {
-    expect(text).toContain("changes WHO or WHAT is meant");
   });
 });
 
@@ -306,8 +260,8 @@ describe("voicePresetSection", () => {
   });
 
   test("one preset is the precedence line plus that preset, and nothing else", () => {
-    expect(voicePresetSection(["smartMatching"])).toBe(
-      `${VOICE_PRESET_PRECEDENCE}\n\n${VOICE_PRESETS.smartMatching}`,
+    expect(voicePresetSection(["echoVerification"])).toBe(
+      `${VOICE_PRESET_PRECEDENCE}\n\n${VOICE_PRESETS.echoVerification}`,
     );
   });
 
@@ -356,8 +310,8 @@ describe("voicePresetSection", () => {
     const names: readonly string[] = ["notAPreset"];
     const stale = names as readonly VoicePresetName[];
     expect(voicePresetSection(stale)).toBeUndefined();
-    expect(voicePresetSection([...stale, "smartMatching"])).toBe(
-      voicePresetSection(["smartMatching"]),
+    expect(voicePresetSection([...stale, "echoVerification"])).toBe(
+      voicePresetSection(["echoVerification"]),
     );
   });
 });

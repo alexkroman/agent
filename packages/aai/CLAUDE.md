@@ -1126,11 +1126,11 @@ touches `Intl`, why `mintCode`'s alphabet is its whole design, and the ten
 hand-written date rules the fields replaced. `retail-orders-agent`'s
 `resolve.ts` is the worked example.
 
-## Four opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
+## Three opt-in prompt presets, priced per turn (`sdk/voice-presets.ts`)
 
-`agent({ voicePresets: ["echoVerification", "smartMatching"] })`. Four named
-prompt sections — `echoVerification`, `smartMatching`, `speechNormalization`,
-`natoAlphabet` — composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
+`agent({ voicePresets: ["echoVerification", "natoAlphabet"] })`. Three named
+prompt sections — `echoVerification`, `speechNormalization`, `natoAlphabet` —
+composed by `buildSystemPrompt` AFTER `## TOOLS` and BEFORE
 the author's own instructions, so the order of authority is voice core, then
 presets, then the agent's rules. `VOICE_PRESETS` is the shipped text (public,
 read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
@@ -1138,9 +1138,9 @@ read-only, like `DEFAULT_SYSTEM_PROMPT`); `voicePresetSection` composes it.
 Four properties, each of which is a test rather than a promise:
 
 - **A LIST, not a mode.** They are independently toggleable because they are
-  independently PRICED — ~190 / ~200 / ~920 / ~190 tokens on every model
-  request (o200k, banded in `voice-presets.test.ts`). One `reliability: true`
-  would make the 920-token one the price of the 200-token one.
+  independently PRICED — ~190 / ~920 / ~190 tokens on every model request
+  (o200k, banded in `voice-presets.test.ts`). One `reliability: true` would
+  make the 920-token one the price of the 190-token one.
 - **Canonical ORDER, deduped, absent when empty.** A config cannot change the
   prompt's shape by spelling its list differently, and an agent that declares
   none sends the byte-identical prompt it sent before the field existed.
@@ -1152,17 +1152,17 @@ Four properties, each of which is a test rather than a promise:
   it reaches no TTS engine, and for the agent's OWN data `spokenMoney` /
   `spokenDate` / `spokenTime` are cheaper and testable. The module doc carries
   the rest, including why the phone rule's spaced dash is load-bearing.
-- **`smartMatching` is the one with a measured case, and it is why that preset
-  is ~200 rather than Retell's ~110.** On a tau2-bench retail baseline the
-  conversational half was not where the reward went: "Sofia Li" transcribed as
-  "Sophia Lee" went straight into a lookup, the miss was treated as
-  authoritative, and the spelled correction the caller gave never reached the
-  prompt (`assembleSpelledRuns` tokenized on whitespace and commas, so a
-  hyphen-joined spelling was one token and produced no annotation). So the
-  preset covers the tool-argument direction and makes a spelled value REPLACE
-  what was heard — and it DEPENDS on that producer. Its own doc carries the
-  runs, what a phonetic retry cannot reach, and the rule that its examples may
-  not name a benchmark entity.
+- **There was a FOURTH, `smartMatching`, and its removal left a known gap.**
+  It was the one with a measured case: on a tau2-bench retail baseline "Sofia
+  Li" transcribed as "Sophia Lee" went straight into a lookup, the miss was
+  treated as authoritative, and the preset's job was to make a spelled
+  correction REPLACE what was heard. But it was the prompt half of a runtime
+  annotation that pattern-matched spelled runs out of the transcript, and that
+  whole family of transcript pattern-matching is gone — so the rule lost the
+  producer it was written against and went with it. **Nothing in this module
+  now addresses a name a lookup cannot find**; `PROMPT_TOOLS`' retry ladder is
+  the only cover and was measured to stall on exactly that case. Recorded as a
+  gap rather than closed.
 
 A workflow app refuses the field by name (`WorkflowAppOnlyField`): it makes no
 model request, so a preset there is the most expensive no-op available.

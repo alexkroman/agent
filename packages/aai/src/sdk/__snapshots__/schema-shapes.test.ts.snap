@@ -2,17 +2,14 @@
 
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
-  "acknowledgementPhrases",
   "builtinTools",
   "deadAirCoverMs",
   "description",
-  "endpointingRules",
   "errorPhrase",
   "greeting",
   "idleTimeoutMs",
   "interruptionBackoffMs",
   "interruptionMinDurationMs",
-  "interruptionPhrases",
   "llm",
   "maxOutputTokens",
   "maxRetries",

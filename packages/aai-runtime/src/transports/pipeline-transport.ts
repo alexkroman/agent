@@ -13,7 +13,6 @@ import { createToolSpeechController } from "../tool-messages-runner.ts";
 import { createAudioOut } from "./pipeline-audio-out.ts";
 import { createContextBudget } from "./pipeline-context-budget.ts";
 import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
-import { createSessionEndpointing } from "./pipeline-endpointing.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
@@ -47,9 +46,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     maxSteps,
     minBargeInWords,
     interruptionMinDurationMs,
-    acknowledgementPhrases,
-    interruptionPhrases,
-    endpointingRules,
     startSpeakingFloorMs,
     interruptionBackoffMs,
     deadAirCoverMs,
@@ -190,19 +186,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
   const sendTtsText = audioOut.sendTtsText;
 
-  // The regex-keyed endpointing layer. Inert with an empty table, and inert
-  // with one warning on a provider that cannot move its window mid-stream.
-  // `stt` is a THUNK: that session is opened below and re-opened on a
-  // reconnect.
-  const endpointing = createSessionEndpointing({
-    rules: endpointingRules,
-    window: opts.sttEndpointing,
-    history,
-    stt: () => providers.stt,
-    log,
-    sid: opts.sid,
-  });
-
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
   const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
@@ -215,8 +198,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechIdleTimeoutMs,
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
-    phrases: { acknowledgement: acknowledgementPhrases, interruption: interruptionPhrases },
-    endpointing,
     onInterrupted: audioOut.onInterrupted,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),

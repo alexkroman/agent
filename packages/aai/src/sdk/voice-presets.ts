@@ -14,18 +14,17 @@
  *
  * ## They are a LIST, not a mode
  *
- * `agent({ voicePresets: ["echoVerification", "smartMatching"] })`. Each name is
+ * `agent({ voicePresets: ["echoVerification", "natoAlphabet"] })`. Each name is
  * one section of prompt text, they compose, they are independently removable,
  * and the cost of each is published below — because a preset is paid for on
  * EVERY model request, which is once per step of a tool-calling reply, not once
- * per call. That is the whole reason this is four names and not one
+ * per call. That is the whole reason this is three names and not one
  * `reliability: true`: bundling them would make the 919-token one the price of
- * the 200-token one.
+ * the 190-token one.
  *
  * | Preset | Tokens | What it buys |
  * | --- | --- | --- |
  * | `echoVerification` | ~190 | critical values are read back and confirmed before they are acted on |
- * | `smartMatching` | ~200 | a caller's CONFIRMATION, SPELLING and name lookups survive a transcription error |
  * | `speechNormalization` | ~920 | numbers, money, dates, phones, emails and addresses are written as SPOKEN words |
  * | `natoAlphabet` | ~190 | spelling uses "B as in Bravo" with pauses |
  *
@@ -34,10 +33,14 @@
  * each to a band, so an edit that doubles a preset's cost fails rather than
  * being discovered on a bill. They are ports of Retell's "Agent Handbook"
  * toggles and are deliberately in the same size class as the published
- * originals (190 / 110 / 910 / 190) — with one deliberate exception:
- * `smartMatching` is ~200 against their ~110, because a measured tau2-bench
- * baseline showed the confirmation half alone does not reach the failure. Its
- * own doc carries the runs.
+ * originals (190 / 910 / 190).
+ *
+ * **There was a fourth, `smartMatching`, and it is gone.** It told the model a
+ * near-match the caller CONFIRMED is a match and that a SPELLED value replaces
+ * what was heard — the prompt half of a runtime annotation that pattern-matched
+ * spelled runs out of the transcript. That whole family of transcript
+ * pattern-matching has been removed, so the rule lost the producer it was
+ * written against.
  *
  * **`speechNormalization` is the expensive one and is listed last in prose for
  * that reason.** It is ~4.7x the other three combined and it is a PROMPT-LAYER
@@ -69,13 +72,10 @@
  * call — a prescription, a payment, a dispatch address — not a default anybody
  * should reach for twice.
  *
- * `smartMatching` is the one with no such tension, and the one with a measured
- * case: it says a near-match the caller CONFIRMED is a match, that a SPELLED
- * value replaces what was heard, and that a name a lookup misses is a
- * transcription to doubt. Nothing in the core prompt covers the first two, and
- * the third is where the core's own retry ladder was measured to stall. It is
- * the hardest of the four to write by hand, because every failure it prevents
- * looks like success from inside the transcript.
+ * What is left after `smartMatching`'s removal is that NOTHING in this module
+ * addresses a name a lookup cannot find. `PROMPT_TOOLS`' retry ladder is the
+ * only cover, and it was measured to stall on exactly that case — so the gap
+ * is real and is recorded here rather than papered over.
  */
 
 /**
@@ -91,11 +91,7 @@
  *
  * @public
  */
-export type VoicePresetName =
-  | "echoVerification"
-  | "smartMatching"
-  | "speechNormalization"
-  | "natoAlphabet";
+export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 /**
  * The preset names, in the order {@link voicePresetSection} emits them.
@@ -113,7 +109,6 @@ export type VoicePresetName =
  */
 export const VOICE_PRESET_NAMES = [
   "echoVerification",
-  "smartMatching",
   "speechNormalization",
   "natoAlphabet",
 ] as const satisfies readonly VoicePresetName[];
@@ -163,95 +158,6 @@ const ECHO_VERIFICATION = `\
 - If the caller corrects part of it, read back only the corrected value.
   Never re-confirm what they already agreed to, and never ask again for
   a value they have confirmed.`;
-
-/**
- * Believe the caller through a transcription error: on a confirmation, on a
- * SPELLED correction, and on the lookup the mis-heard value goes into.
- *
- * ~200 tokens, and the cheapest of the four relative to what it prevents. Its
- * first bullet is the confirmation loop that cannot terminate — the agent
- * proposes "Brandon", the ASR renders the caller's yes as "this is Brendon",
- * and an agent comparing strings asks again, producing the same transcript
- * forever.
- *
- * **The other two bullets are MEASURED, and they are why this is ~200 tokens
- * rather than the ~110 the Retell toggle it ports costs.** On a tau2-bench
- * retail baseline (9 simulations over 3 hard cases, mean reward 0.444) the
- * conversational half was not where the reward went:
- *
- * - "Sofia Li" transcribed as "Sophia Lee", fed straight into
- *   `find_user_id_by_name_zip`, and the miss treated as authoritative — the
- *   agent retried the same string and then escalated to a human. So the
- *   tolerance has to cover the TOOL-ARGUMENT direction, not just the
- *   conversational one, and "a name a lookup cannot find is a transcription to
- *   DOUBT" is the bullet that says so.
- * - The caller then SPELLED it, letter by letter, and the agent kept using the
- *   mis-heard form. **That half was NOT the model's fault, and the attribution
- *   matters more than the anecdote**: `assembleSpelledRuns`
- *   (`sdk/_wire-helpers.ts`, applied by `aai-runtime`'s
- *   `transports/pipeline-user-speech.ts`) split on whitespace and commas only,
- *   so a hyphen-joined rendering arrived as ONE token, produced no spelled run,
- *   and the `[spelled aloud: …]` annotation the model reads was never
- *   generated. The signal was dropped before the prompt saw it. So this bullet
- *   is the half that makes the model ACT on that annotation, and it DEPENDS on
- *   the producer: without the tokenizer fix the rule has nothing to prefer.
- *   Note also what it implies about `echoVerification`, which ASKS for a
- *   spelling: asking is not the hard part, and a preset that only asked would
- *   not have saved this run.
- *
- * Names are also the right entity class to spend the tokens on. In the same
- * corpus ZIP codes transcribed correctly every time and order ids were near
- * perfect (one digit wrong in 41 renderings, never reaching a tool). **Read
- * that as "clean where it was exercised", not "digits are solved"** — it is a
- * three-case sample, one of those cases is DESIGNED around a caller
- * volunteering a real but wrong order id, and another case's poisoned-chain
- * path never fired in the baseline at all. The scoping is a defensible default
- * on that evidence and not a finding about digits.
- *
- * **What the phonetic-neighbour bullet does NOT reach, so nobody credits it
- * with a run it cannot win:** a MANGLING is not a neighbour. In the same
- * corpus "Yusuf" came back as "Yuta" and then "Yufus", and no retry over
- * plausible confusions gets from "Yuta" to "Yusuf" — that task burned three
- * lookups and ended in a human transfer after 191 seconds, and it is
- * recoverable on the ASR side (keyterms, per-turn context) rather than in a
- * prompt. This preset addresses the Sofia/Sophia mechanism and not that one.
- *
- * **Its examples may not name a benchmark entity, and that constraint outlives
- * this preset.** The vivid pairs are the ones the evidence hands you, and
- * writing them into the prompt puts the answer key in context for the very
- * cases the gate measures — "case 51 recovers" then shows only that the
- * mechanism fires when the exact pair is named. So the shipped text teaches
- * with names that occur ZERO times in `data/tau2/domains` (all five domains,
- * 142 MB, checked rather than assumed) and `voice-presets.test.ts` holds the
- * contaminating ones out by name. The measurement belongs in this comment; the
- * illustration does not.
- *
- * Do not confuse that with BOOSTING a name: feeding the agent's own account
- * base to the transcriber (STT keyterms, per-turn context) is ordinary product
- * behaviour, since a real deployment has that data and may query it. What is
- * forbidden is naming a corpus entity in prompt TEXT that ships to every
- * caller.
- *
- * It stays scoped to values the caller has GIVEN or AGREED to. It does not
- * license accepting a near-match on a value nothing has confirmed, which is
- * what `PROMPT_TOOLS`' retry ladder is for — this preset makes that ladder's
- * first rungs specific to a name, which is where it was measured to stall.
- */
-const SMART_MATCHING = `\
-## SMART MATCHING
-- A transcript is approximate, so a NEAR-match on a value you proposed
-  is a MATCH: you ask "Are you Brandon?", the transcript reads "Yes,
-  this is Brendon" — that is a yes. Keep the value you hold and go on.
-- When the caller SPELLS a value, the letters ARE the value: they
-  REPLACE what you heard, exactly as spelled — "M-A-R-T-A" is Marta,
-  never Martha — and every later lookup uses the spelled form.
-- A name a lookup cannot find is a transcription to DOUBT, not a
-  missing record. Before you re-ask or hand off, retry its phonetic
-  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled
-  earlier.
-- Never make the caller repeat what they have confirmed or spelled;
-  asking again produces the same transcript. Ask only when the
-  difference changes WHO or WHAT is meant.`;
 
 /**
  * Write numbers, money, dates, times, phone numbers, emails and addresses as
@@ -385,7 +291,7 @@ const NATO_ALPHABET = `\
  *
  * export default agent({
  *   name: "Pharmacy Line",
- *   voicePresets: ["echoVerification", "smartMatching"],
+ *   voicePresets: ["echoVerification", "natoAlphabet"],
  * });
  * ```
  *
@@ -393,7 +299,6 @@ const NATO_ALPHABET = `\
  */
 export const VOICE_PRESETS = {
   echoVerification: ECHO_VERIFICATION,
-  smartMatching: SMART_MATCHING,
   speechNormalization: SPEECH_NORMALIZATION,
   natoAlphabet: NATO_ALPHABET,
 } as const satisfies Record<VoicePresetName, string>;
@@ -452,7 +357,7 @@ export interface AgentVoicePresets {
    * prompt it sent before the field existed.
    *
    * Each name costs tokens on EVERY model request: `echoVerification` ~190,
-   * `smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+   * `speechNormalization` ~920, `natoAlphabet` ~190. Turn
    * on what the desk needs and nothing else — see {@link VOICE_PRESETS} for the
    * exact text of each and for what it overrides.
    *
@@ -461,7 +366,7 @@ export interface AgentVoicePresets {
    *
    * export default agent({
    *   name: "Claims Intake",
-   *   voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+   *   voicePresets: ["echoVerification", "natoAlphabet"],
    * });
    * ```
    *

@@ -64,10 +64,6 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     // the behaviour these specs were written against, before the lists existed.
     // The lists' own cases live in `pipeline-user-speech.test.ts`, which drives
     // the shipped defaults through `createUserActivity`.
-    phrases: { acknowledgement: [], interruption: [] },
-    // Inert: the table's own cases are in `pipeline-user-speech.test.ts` too.
-    // Recorded rather than a no-op so a spec here can still assert the seam.
-    endpointing: { onUserPartial: vi.fn(), onUtteranceEnded: vi.fn() },
     onInterrupted: vi.fn(),
     log: silentLogger,
     sid: "s1",

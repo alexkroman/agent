@@ -51,7 +51,6 @@ const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -59,25 +58,6 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;

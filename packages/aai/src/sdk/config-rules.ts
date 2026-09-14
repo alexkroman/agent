@@ -18,7 +18,6 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "./endpointing-constants.ts";
-import type { EndpointingRule } from "./endpointing-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { ASSEMBLYAI_STT_KIND, type AssemblyAISttOptions } from "./providers/stt/assemblyai.ts";
 
@@ -168,9 +167,6 @@ export function assertSilencePolicy(
 const PIPELINE_ONLY_TUNING = {
   minBargeInWords: "number",
   interruptionMinDurationMs: "number",
-  acknowledgementPhrases: "phrases",
-  interruptionPhrases: "phrases",
-  endpointingRules: "endpointingRules",
   startSpeakingFloorMs: "number",
   interruptionBackoffMs: "number",
   deadAirCoverMs: "number",
@@ -191,7 +187,7 @@ const PIPELINE_ONLY_TUNING = {
   // declarations rather than dials, and they get
   // their own tags so that a field cannot skip this list and with it
   // `assertPipelineTuning`.
-  "number" | "string" | "boolean" | "phrases" | "endpointingRules"
+  "number" | "string" | "boolean" | "phrases"
 >;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
@@ -215,9 +211,7 @@ export type PipelineTuning = {
           ? boolean
           : (typeof PIPELINE_ONLY_TUNING)[K] extends "string"
             ? string
-            : (typeof PIPELINE_ONLY_TUNING)[K] extends "phrases"
-              ? readonly string[]
-              : readonly EndpointingRule[])
+            : readonly string[])
     | undefined;
 };
 

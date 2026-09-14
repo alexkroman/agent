@@ -34,12 +34,7 @@ import {
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import {
-  BuiltinToolSchema,
-  EndpointingRuleSchema,
-  ToolChoiceSchema,
-  VoicePresetNameSchema,
-} from "./type-schemas.ts";
+import { BuiltinToolSchema, ToolChoiceSchema, VoicePresetNameSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -211,9 +206,6 @@ export const AgentConfigSchema = z.object({
   // also why an endpointing rule's pattern is a SOURCE STRING: a `RegExp` does
   // not survive `JSON.stringify`, and one that silently became `{}` would be a
   // rule that matches nothing with nothing to report it.
-  acknowledgementPhrases: z.array(z.string()).readonly().optional(),
-  interruptionPhrases: z.array(z.string()).readonly().optional(),
-  endpointingRules: z.array(EndpointingRuleSchema).readonly().optional(),
   startSpeakingFloorMs: z.number().int().nonnegative().max(MAX_START_SPEAKING_FLOOR_MS).optional(),
   interruptionBackoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
   deadAirCoverMs: z.number().int().nonnegative().optional(),

@@ -16,8 +16,7 @@ import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
-import { type BargeInPhraseLists, createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
-import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
+import { createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
 import type { FalseInterruptionRecovery } from "./pipeline-recovery.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
@@ -127,9 +126,6 @@ export function createSttEventHandlers(deps: {
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
   /** The two phrase lists — agent-scoped. See `pipeline-barge-in-policy.ts`. */
-  phrases: BargeInPhraseLists;
-  /** The regex-keyed endpointing layer — see `pipeline-endpointing.ts`. */
-  endpointing: EndpointingPolicy;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted: () => void;
   log: Logger;
@@ -172,7 +168,6 @@ export function createSttEventHandlers(deps: {
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
     utteranceDurationMs: () => speechEdges.durationMs(),
-    phrases: deps.phrases,
   });
 
   return {
@@ -208,13 +203,7 @@ export function createSttEventHandlers(deps: {
       // what holds an armed resume back while the user keeps talking, since the
       // watchdog is the only thing that releases one.
       if (words >= 1) speechEdges.speechStarted();
-      // The endpointing rule table is re-read here and nowhere else on the
-      // partial path: this is the moment the caller's in-flight transcript
-      // changes, and a `user` rule is keyed on exactly that. Before the
-      // barge-in branch, so an utterance that interrupts still moves the
-      // window for the turn it is about to start.
-      deps.endpointing.onUserPartial(text);
-      if (!bargeIn.partialInterrupts(words, text)) {
+      if (!bargeIn.partialInterrupts(words)) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
@@ -292,10 +281,6 @@ export function createSttEventHandlers(deps: {
         deps.edgeGate.release();
         callbacks.report({ type: "reply.cancelled" });
       }
-      // The utterance is over, so the user side of the endpointing table goes
-      // back to empty — a window a digit-final transcript bought must not
-      // still be in force for the NEXT utterance.
-      deps.endpointing.onUtteranceEnded();
       // Commit the turn immediately: endpointing (aggregating a disfluent
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.

@@ -6,13 +6,9 @@
 // from. What the handlers DO with a transcript is pipeline-stt-handlers.ts.
 
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
-import { DEFAULT_SILENCE_PROMPT, promptingNote, spelledAloudNote } from "@alexkroman1/aai/internal";
+import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
-import {
-  type BargeInPhraseLists,
-  createAgentSpeakingPredicate,
-} from "./pipeline-barge-in-policy.ts";
-import type { EndpointingPolicy } from "./pipeline-endpointing.ts";
+import { createAgentSpeakingPredicate } from "./pipeline-barge-in-policy.ts";
 import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
@@ -69,10 +65,6 @@ export function createUserActivity(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
-  /** The two phrase lists that sit above both gates — see `sdk/barge-in-phrases.ts`. */
-  phrases: BargeInPhraseLists;
-  /** The regex-keyed endpointing layer — see `pipeline-endpointing.ts`. */
-  endpointing: EndpointingPolicy;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted(): void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
@@ -186,24 +178,13 @@ export function createUserActivity(deps: {
     callbacks,
     speculation: deps.speculation,
     commitUserTurn(text: string): void {
-      // The model's copy carries the annotations and the client's and history's
-      // stay verbatim — see `spelledAloudNote` and `promptingNote` for what
-      // each may CLAIM and the measurement behind it.
-      const notes = [spelledAloudNote(text), promptingNote(text)].filter(
-        (one): one is string => one !== undefined,
-      );
-      const forModel =
-        notes.length === 0 ? text : `${text}\n${notes.map((one) => `[${one}]`).join("\n")}`;
-      // Debug trace (AAI_DEBUG=1): `forModel` is verbatim what the turn prompts
-      // the LLM with, so it stays the ground truth for "did the model see it?".
-      log.debug("Pipeline turn committed", { sid, text: forModel });
+      // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with.
+      log.debug("Pipeline turn committed", { sid, text });
       callbacks.report({ type: "user-transcript.committed", text });
-      deps.runChainedTurn(forModel, "Pipeline turn crashed");
+      deps.runChainedTurn(text, "Pipeline turn crashed");
     },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
-    phrases: deps.phrases,
-    endpointing: deps.endpointing,
     onInterrupted: deps.onInterrupted,
     log,
     sid,

@@ -48,7 +48,6 @@ const AgentConfigSchema: z.ZodObject<{
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
         echoVerification: "echoVerification";
         natoAlphabet: "natoAlphabet";
-        smartMatching: "smartMatching";
         speechNormalization: "speechNormalization";
     }>>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -56,25 +55,6 @@ const AgentConfigSchema: z.ZodObject<{
     silencePrompt: z.ZodOptional<z.ZodString>;
     minBargeInWords: z.ZodOptional<z.ZodNumber>;
     interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    acknowledgementPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    interruptionPhrases: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    endpointingRules: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
-        type: z.ZodLiteral<"assistant">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"user">;
-        regex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>, z.ZodObject<{
-        type: z.ZodLiteral<"both">;
-        assistantRegex: z.ZodString;
-        userRegex: z.ZodString;
-        flags: z.ZodOptional<z.ZodString>;
-        timeoutMs: z.ZodNumber;
-    }, z.core.$strip>], "type">>>>;
     startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
     interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
     deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
@@ -210,21 +190,6 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-interface AssistantEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "assistant";
-}
-
-// @public
-interface BothEndpointingRule extends EndpointingRuleBase {
-    assistantRegex: string;
-    // (undocumented)
-    type: "both";
-    userRegex: string;
-}
-
-// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -340,15 +305,6 @@ interface DialogVoiceConfig {
 }
 
 // @public
-type EndpointingRule = AssistantEndpointingRule | UserEndpointingRule | BothEndpointingRule;
-
-// @public
-interface EndpointingRuleBase {
-    flags?: string | undefined;
-    timeoutMs: number;
-}
-
-// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -444,13 +400,10 @@ export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAg
 
 // @public
 interface PipelineVoiceTuning {
-    acknowledgementPhrases?: readonly string[];
     deadAirCoverMs?: number;
-    endpointingRules?: readonly EndpointingRule[];
     errorPhrase?: string;
     interruptionBackoffMs?: number;
     interruptionMinDurationMs?: number;
-    interruptionPhrases?: readonly string[];
     minBargeInWords?: number;
     preemptiveGeneration?: boolean;
     resumeFalseInterruption?: boolean;
@@ -1272,14 +1225,7 @@ interface UsageLimits {
 }
 
 // @public
-interface UserEndpointingRule extends EndpointingRuleBase {
-    regex: string;
-    // (undocumented)
-    type: "user";
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "smartMatching" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

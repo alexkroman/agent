@@ -568,10 +568,10 @@ describe("buildSystemPrompt with voicePresets", () => {
   });
 
   test("presets are emitted for a toolless session too", () => {
-    const result = buildSystemPrompt(makeConfig({ voicePresets: ["smartMatching"] }), {
+    const result = buildSystemPrompt(makeConfig({ voicePresets: ["echoVerification"] }), {
       hasTools: false,
     });
-    expect(result).toContain(VOICE_PRESETS.smartMatching);
+    expect(result).toContain(VOICE_PRESETS.echoVerification);
     expect(result).not.toContain(PROMPT_TOOLS);
   });
 

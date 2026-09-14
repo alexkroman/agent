@@ -2528,31 +2528,6 @@ lists from those interfaces, so a new one cannot skip either gate.
 
 #### Properties
 
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that NEVER interrupt the agent, however
-many words they carry and however long they last — backchannels. Matched
-against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
-punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
-and `"okay so I need to change my order"` is a turn.
-
-`[]` switches the list off; setting it REPLACES the default list rather
-than adding to it.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
-"mm-hmm", …
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`acknowledgementPhrases`](#acknowledgementphrases-1)
-
 ##### builtinTools?
 
 ```ts
@@ -2622,56 +2597,6 @@ what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
 dialog can reach from inside a tool, because all three happen when no tool
 is running. An UNDECLARED dialog is unchanged. Host-only, like `tools`.
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly EndpointingRule[];
-```
-
-Pipeline mode only. Content-keyed overrides of the end-of-turn silence
-window, evaluated as the HIGHEST-priority endpointing layer: the first
-rule that matches REPLACES the window the STT would otherwise use.
-
-Three kinds — `"assistant"` (tested against the agent's last message),
-`"user"` (tested against the caller's in-flight transcript) and `"both"`
-(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
-`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
-mean the whole thing.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-agent({
-  name: "orders",
-  endpointingRules: [
-    // the agent just asked for something the caller reads out: wait
-    { type: "assistant", regex: "order number", timeoutMs: 2600 },
-    // the caller is mid-number: wait
-    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
-  ],
-});
-```
-
-`[]` switches the table off; setting it REPLACES the default table.
-A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
-and clamped again at run time to this agent's `maxTurnSilenceMs`, because
-a floor above the ceiling is the measured inversion
-`DEFAULT_MIN_TURN_SILENCE_MS` documents.
-
-**Honoured only by an STT provider that can move its endpointing window
-mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
-provider the table is inert and says so once, at warn level.
-
-###### Default Value
-
-`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
-patience after the agent asks for an identifier or while the caller's
-transcript ends in a digit, shorter after a closed yes/no question.
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`endpointingRules`](#endpointingrules-1)
 
 ##### errorPhrase?
 
@@ -2850,35 +2775,6 @@ never gated. Set 0 to disable the gate.
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionMinDurationMs`](#interruptionmindurationms-1)
-
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
-both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
-whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
-entries.
-
-Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
-
-**Note the deliberate asymmetry with the list above — "yes" never
-interrupts and "no" always does.** A caller saying "yes" over the agent is
-agreeing with a sentence still being spoken; one saying "no" is correcting
-it, and a missed correction is the expensive direction.
-
-`[]` switches the list off; setting it REPLACES the default list.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
-
-###### Inherited from
-
-[`PipelineVoiceTuning`](#pipelinevoicetuning).[`interruptionPhrases`](#interruptionphrases-1)
 
 ##### llm?
 
@@ -3609,7 +3505,7 @@ none — an agent that declares nothing here sends exactly the
 prompt it sent before the field existed.
 
 Each name costs tokens on EVERY model request: `echoVerification` ~190,
-`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+`speechNormalization` ~920, `natoAlphabet` ~190. Turn
 on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
 exact text of each and for what it overrides.
 
@@ -3618,7 +3514,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Claims Intake",
-  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 
@@ -4034,7 +3930,7 @@ none — an agent that declares nothing here sends exactly the
 prompt it sent before the field existed.
 
 Each name costs tokens on EVERY model request: `echoVerification` ~190,
-`smartMatching` ~200, `speechNormalization` ~920, `natoAlphabet` ~190. Turn
+`speechNormalization` ~920, `natoAlphabet` ~190. Turn
 on what the desk needs and nothing else — see [VOICE\_PRESETS](#voice_presets) for the
 exact text of each and for what it overrides.
 
@@ -4043,7 +3939,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Claims Intake",
-  voicePresets: ["echoVerification", "smartMatching", "natoAlphabet"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 
@@ -4187,144 +4083,6 @@ failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
 catalog as unproven: a voice the service rejects comes back in-band after
 the socket opens, leaving an agent that connects, reports ready, and never
 speaks.
-
-***
-
-### AssistantEndpointingRule
-
-Match on the AGENT's last message.
-
-The use: the agent just asked for something that is READ OUT — an order id,
-an email, a postcode — so the caller will pause between chunks and the
-default window ends their turn mid-identifier. Or the inverse: the agent
-asked a yes/no question, the answer is one word, and waiting 1600ms for more
-of it is dead air.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### regex
-
-```ts
-regex: string;
-```
-
-Tested against the agent's last message. SUBSTRING semantics — see the module doc.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "assistant";
-```
-
-***
-
-### BothEndpointingRule
-
-Both sides must match.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### assistantRegex
-
-```ts
-assistantRegex: string;
-```
-
-Tested against the agent's last message.
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "both";
-```
-
-##### userRegex
-
-```ts
-userRegex: string;
-```
-
-Tested against the in-flight user transcript.
 
 ***
 
@@ -5715,48 +5473,6 @@ The TTS voice for this phase of the call.
 
 ***
 
-### EndpointingRuleBase
-
-Fields every endpointing rule carries.
-
-#### Extended by
-
-- [`AssistantEndpointingRule`](#assistantendpointingrule)
-- [`BothEndpointingRule`](#bothendpointingrule)
-- [`UserEndpointingRule`](#userendpointingrule)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-***
-
 ### MintCodeOptions
 
 Options for [mintCode](#mintcode).
@@ -5808,27 +5524,6 @@ Pipeline-mode voice-UX tuning, extended by [AgentDef](#agentdef).
 
 #### Properties
 
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that NEVER interrupt the agent, however
-many words they carry and however long they last — backchannels. Matched
-against the WHOLE utterance, normalized (lowercased, apostrophes dropped,
-punctuation and hyphens treated as spaces), so `"okay"` is a backchannel
-and `"okay so I need to change my order"` is a turn.
-
-`[]` switches the list off; setting it REPLACES the default list rather
-than adding to it.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_ACKNOWLEDGEMENT_PHRASES`) — "i understand", "okay", "yes",
-"mm-hmm", …
-
 ##### deadAirCoverMs?
 
 ```ts
@@ -5844,52 +5539,6 @@ disables. The wording is internal and must stay purely declarative — see
 ###### Default Value
 
 `5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly EndpointingRule[];
-```
-
-Pipeline mode only. Content-keyed overrides of the end-of-turn silence
-window, evaluated as the HIGHEST-priority endpointing layer: the first
-rule that matches REPLACES the window the STT would otherwise use.
-
-Three kinds — `"assistant"` (tested against the agent's last message),
-`"user"` (tested against the caller's in-flight transcript) and `"both"`
-(an AND of the two). Patterns are `RegExp` SOURCE STRINGS and matching is
-`RegExp.test`, i.e. SUBSTRING matching: anchor with `^`/`$`/`\b` when you
-mean the whole thing.
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-agent({
-  name: "orders",
-  endpointingRules: [
-    // the agent just asked for something the caller reads out: wait
-    { type: "assistant", regex: "order number", timeoutMs: 2600 },
-    // the caller is mid-number: wait
-    { type: "user", regex: "\\d\\s*$", timeoutMs: 2600 },
-  ],
-});
-```
-
-`[]` switches the table off; setting it REPLACES the default table.
-A rule's `timeoutMs` is capped at 5000 (`MAX_ENDPOINTING_RULE_TIMEOUT_MS`)
-and clamped again at run time to this agent's `maxTurnSilenceMs`, because
-a floor above the ceiling is the measured inversion
-`DEFAULT_MIN_TURN_SILENCE_MS` documents.
-
-**Honoured only by an STT provider that can move its endpointing window
-mid-stream** — today AssemblyAI, via `UpdateConfiguration`. On any other
-provider the table is inert and says so once, at warn level.
-
-###### Default Value
-
-`DEFAULT_ENDPOINTING_RULES` — a retail-shaped set: longer
-patience after the agent asks for an identifier or while the caller's
-transcript ends in a digit, shorter after a closed yes/no question.
 
 ##### errorPhrase?
 
@@ -5939,31 +5588,6 @@ never gated. Set 0 to disable the gate.
 ###### Default Value
 
 `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
-
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
-```
-
-Pipeline mode only. Utterances that ALWAYS interrupt the agent, bypassing
-both `minBargeInWords` and `interruptionMinDurationMs`. Matched as a
-whole-word run ANYWHERE in the utterance, so "no, stop" fires on both
-entries.
-
-Checked BEFORE `acknowledgementPhrases`: "okay stop" interrupts.
-
-**Note the deliberate asymmetry with the list above — "yes" never
-interrupts and "no" always does.** A caller saying "yes" over the agent is
-agreeing with a sentence still being spoken; one saying "no" is correcting
-it, and a missed correction is the expensive direction.
-
-`[]` switches the list off; setting it REPLACES the default list.
-
-###### Default Value
-
-Vapi's published production list
-(`DEFAULT_INTERRUPTION_PHRASES`) — "stop", "wait", "no", "actually", …
 
 ##### minBargeInWords?
 
@@ -8009,74 +7633,6 @@ same sentence, which the calling tool may catch and answer around. An agent
 that wants a softer landing watches `usage.updated` through
 `agent({ events })` and says something before the cap arrives.
 
-***
-
-### UserEndpointingRule
-
-Match on the caller's IN-FLIGHT transcript — the interim, not the committed
-final, because the point is to decide how long to wait before it becomes
-one.
-
-The use: a transcript that currently ends in digits is a caller part-way
-through reading a number, and the gap between "one nine one" and "two two"
-is not the end of their turn.
-
-#### Extends
-
-- [`EndpointingRuleBase`](#endpointingrulebase)
-
-#### Properties
-
-##### flags?
-
-```ts
-optional flags?: string;
-```
-
-`RegExp` flags for this rule's pattern(s).
-
-###### Default Value
-
-`"i"` — a transcript's casing is the ASR's choice, not the
-caller's, so a case-sensitive pattern is almost always a bug here. Pass
-`""` for case-sensitive matching.
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`flags`](#flags-2)
-
-##### regex
-
-```ts
-regex: string;
-```
-
-Tested against the in-flight user transcript. SUBSTRING semantics.
-
-##### timeoutMs
-
-```ts
-timeoutMs: number;
-```
-
-The end-of-turn silence window to use while this rule matches, in ms —
-REPLACING the agent's own endpointing value rather than adding to it.
-
-Clamped to `MAX_ENDPOINTING_RULE_TIMEOUT_MS` (5000) at declaration, and
-again to the session's `maxTurnSilenceMs` when it is applied. (Named
-rather than `{@link}`ed: that constant is `@internal`, so a link to it
-from this public interface is a docs-build error.)
-
-###### Inherited from
-
-[`EndpointingRuleBase`](#endpointingrulebase).[`timeoutMs`](#timeoutms-2)
-
-##### type
-
-```ts
-type: "user";
-```
-
 ## Type Aliases
 
 ### AgentGuardrail
@@ -8604,19 +8160,6 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDef.dialogs](#dialogs).
-
-***
-
-### EndpointingRule
-
-```ts
-type EndpointingRule = 
-  | AssistantEndpointingRule
-  | UserEndpointingRule
-  | BothEndpointingRule;
-```
-
-One entry in [PipelineVoiceTuning.endpointingRules](#endpointingrules-1).
 
 ***
 
@@ -11217,11 +10760,7 @@ Compile-time stage tag; never present at runtime.
 ### VoicePresetName
 
 ```ts
-type VoicePresetName = 
-  | "echoVerification"
-  | "smartMatching"
-  | "speechNormalization"
-  | "natoAlphabet";
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 ```
 
 One of the four opt-in prompt presets — see [VOICE\_PRESETS](#voice_presets) for what
@@ -12927,7 +12466,6 @@ themselves, and even that loses: the native tool wins and the drop is logged
 const VOICE_PRESETS: {
   echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
   natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
-  smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
   speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
 };
 ```
@@ -12964,12 +12502,6 @@ readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value ba
 readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
 ```
 
-##### smartMatching
-
-```ts
-readonly smartMatching: "## SMART MATCHING\n- A transcript is approximate, so a NEAR-match on a value you proposed\n  is a MATCH: you ask \"Are you Brandon?\", the transcript reads \"Yes,\n  this is Brendon\" — that is a yes. Keep the value you hold and go on.\n- When the caller SPELLS a value, the letters ARE the value: they\n  REPLACE what you heard, exactly as spelled — \"M-A-R-T-A\" is Marta,\n  never Martha — and every later lookup uses the spelled form.\n- A name a lookup cannot find is a transcription to DOUBT, not a\n  missing record. Before you re-ask or hand off, retry its phonetic\n  neighbours (Katherine/Kathryn, Clara/Klara) and any form spelled\n  earlier.\n- Never make the caller repeat what they have confirmed or spelled;\n  asking again produces the same transcript. Ask only when the\n  difference changes WHO or WHAT is meant.";
-```
-
 ##### speechNormalization
 
 ```ts
@@ -12985,7 +12517,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Pharmacy Line",
-  voicePresets: ["echoVerification", "smartMatching"],
+  voicePresets: ["echoVerification", "natoAlphabet"],
 });
 ```
 

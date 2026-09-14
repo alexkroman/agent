@@ -54,7 +54,6 @@ and out of every snapshot that did not opt in.
 
 ```ts
 function toAgentConfig(source: AgentConfigSource): {
-  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -67,32 +66,11 @@ function toAgentConfig(source: AgentConfigSource): {
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
-  endpointingRules?: readonly (
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "assistant";
-   }
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "user";
-   }
-     | {
-     assistantRegex: string;
-     flags?: string;
-     timeoutMs: number;
-     type: "both";
-     userRegex: string;
-  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
   interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
-  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -144,11 +122,7 @@ function toAgentConfig(source: AgentConfigSource): {
   usageLimits?: {
      totalTokens?: number;
   };
-  voicePresets?: readonly (
-     | "echoVerification"
-     | "smartMatching"
-     | "speechNormalization"
-    | "natoAlphabet")[];
+  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 };
 ```
 
@@ -167,7 +141,6 @@ the runtime.
 
 ```ts
 {
-  acknowledgementPhrases?: readonly string[];
   builtinTools?: readonly (
      | "web_search"
      | "visit_webpage"
@@ -180,32 +153,11 @@ the runtime.
     | "calculate")[];
   deadAirCoverMs?: number;
   description?: string;
-  endpointingRules?: readonly (
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "assistant";
-   }
-     | {
-     flags?: string;
-     regex: string;
-     timeoutMs: number;
-     type: "user";
-   }
-     | {
-     assistantRegex: string;
-     flags?: string;
-     timeoutMs: number;
-     type: "both";
-     userRegex: string;
-  })[];
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
   interruptionBackoffMs?: number;
   interruptionMinDurationMs?: number;
-  interruptionPhrases?: readonly string[];
   llm?: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -257,18 +209,8 @@ the runtime.
   usageLimits?: {
      totalTokens?: number;
   };
-  voicePresets?: readonly (
-     | "echoVerification"
-     | "smartMatching"
-     | "speechNormalization"
-    | "natoAlphabet")[];
+  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }
-```
-
-##### acknowledgementPhrases?
-
-```ts
-optional acknowledgementPhrases?: readonly string[];
 ```
 
 ##### builtinTools?
@@ -296,31 +238,6 @@ optional deadAirCoverMs?: number;
 
 ```ts
 optional description?: string;
-```
-
-##### endpointingRules?
-
-```ts
-optional endpointingRules?: readonly (
-  | {
-  flags?: string;
-  regex: string;
-  timeoutMs: number;
-  type: "assistant";
-}
-  | {
-  flags?: string;
-  regex: string;
-  timeoutMs: number;
-  type: "user";
-}
-  | {
-  assistantRegex: string;
-  flags?: string;
-  timeoutMs: number;
-  type: "both";
-  userRegex: string;
-})[];
 ```
 
 ##### errorPhrase?
@@ -351,12 +268,6 @@ optional interruptionBackoffMs?: number;
 
 ```ts
 optional interruptionMinDurationMs?: number;
-```
-
-##### interruptionPhrases?
-
-```ts
-optional interruptionPhrases?: readonly string[];
 ```
 
 ##### llm?
@@ -549,11 +460,7 @@ optional toolChoice?:
 ##### voicePresets?
 
 ```ts
-optional voicePresets?: readonly (
-  | "echoVerification"
-  | "smartMatching"
-  | "speechNormalization"
-  | "natoAlphabet")[];
+optional voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 ```
 
 ***
