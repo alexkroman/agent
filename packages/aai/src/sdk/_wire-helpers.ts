@@ -367,7 +367,29 @@ const PROMPTING_PATTERNS: readonly RegExp[] = [
 ];
 
 /** Words that carry no content, so a prompt plus these is still just a prompt. */
-const PROMPTING_FILLER = /\b(?:yeah|yes|no|um+|uh+|er+|ok|okay|so|just|please|sorry|there)\b/g;
+const PROMPTING_FILLER = /\b(?:um+|uh+|er+|so|just|please|sorry|there)\b/g;
+
+/**
+ * Words that ANSWER, so a turn containing one is never a prompt.
+ *
+ * These were in the filler list above, which is the one live defect the first
+ * graded run of this classifier found: measured over 159 committed turns, 42
+ * were annotated and 41 were unambiguous prods, but "Hi, yeah." was the 42nd.
+ * It matches `\bhi\b`, `yeah` was stripped as filler, nothing was left, and the
+ * model was told a turn reading "yeah" was "not an answer" — in a confirmation
+ * exchange that is the answer, and suppressing it is precisely the failure
+ * `promptingNote` exists to fix rather than a milder version of it.
+ *
+ * A bare "yeah" with no greeting was always safe (it matches no prompt pattern
+ * and so never reached the filler); the exposure is only an affirmation carried
+ * in on a greeting, which is ordinary phone speech.
+ *
+ * Blocking rather than counting as residue, because the residue threshold is
+ * two words and one affirmation would still pass it. Over-blocking is the
+ * deliberate direction: "are you still there? no rush" loses its note, which
+ * costs nothing, where mislabelling a "yes" costs the write.
+ */
+const PROMPTING_ANSWER = /\b(?:yeah|yeh|yep|yup|yes|no|nope|nah|sure|correct|right|ok|okay)\b/;
 
 /**
  * A note for the MODEL's copy of a transcript when the caller is prompting
@@ -394,14 +416,18 @@ const PROMPTING_FILLER = /\b(?:yeah|yes|no|um+|uh+|er+|ok|okay|so|just|please|so
  * prompt is not an ANSWER (so the question still stands) and not a REFUSAL (so
  * the pending action is still pending).
  *
- * Conservative by construction: the prompt phrases are stripped along with
- * filler, and a note is offered only when almost nothing is left. "Hello? Yes,
- * go ahead with the exchange" keeps its content and gets no note — labelling a
- * real answer as a prompt would be strictly worse than the failure this fixes.
+ * Conservative by construction, in two independent ways: a turn containing any
+ * word that ANSWERS is refused outright (`PROMPTING_ANSWER`), and of what is
+ * left the prompt phrases are stripped along with filler so a note is offered
+ * only when almost nothing remains. "Hello? Yes, go ahead with the exchange"
+ * is refused on the first test and would have been refused on the second —
+ * labelling a real answer as a prompt is strictly worse than the failure this
+ * fixes, so it is checked twice.
  */
 export function promptingNote(text: string): string | undefined {
   const lower = text.toLowerCase();
   if (!PROMPTING_PATTERNS.some((one) => one.test(lower))) return;
+  if (PROMPTING_ANSWER.test(lower)) return;
   let rest = lower;
   for (const one of PROMPTING_PATTERNS) rest = rest.replace(one, " ");
   rest = rest

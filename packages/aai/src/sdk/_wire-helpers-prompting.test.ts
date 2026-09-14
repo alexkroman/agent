@@ -55,4 +55,40 @@ describe("promptingNote", () => {
     expect(promptingNote("HELLO?!")).toBeDefined();
     expect(promptingNote("hello")).toBeDefined();
   });
+
+  // A greeting carrying an AFFIRMATION is the answer to a confirmation
+  // question, and annotating it says the opposite. `"Hi, yeah."` is not
+  // hypothetical: it is the one false positive in the first graded run of this
+  // classifier, 1 of 42 annotated turns across 159 committed ones. It matters
+  // out of proportion to its rate, because the write this branch is trying to
+  // rescue is gated on exactly such a confirmation — so this case fails toward
+  // the very outcome the note exists to prevent.
+  describe.each([
+    "Hi, yeah.",
+    "Hello, yes",
+    "Hi, no.",
+    "Hey, yeah sure",
+    "Hello? Yes.",
+    "Hi, correct.",
+    "Hello, that's right.",
+    "Hi, ok.",
+  ])("refuses %j — an affirmation ANSWERS", (text) => {
+    it("gets no note", () => {
+      expect(promptingNote(text)).toBeUndefined();
+    });
+  });
+
+  it("still annotates a prod that carries no affirmation", () => {
+    // The guard must not swallow the positives: these are the two commonest
+    // real prods in that run's transcripts (24 of 42 annotated turns).
+    expect(promptingNote("Hello?")).toBeDefined();
+    expect(promptingNote("Hello? Are you still there?")).toBeDefined();
+  });
+
+  it("leaves a BARE affirmation alone, as it always did", () => {
+    // Never at risk — it matches no prompt pattern, so it never reached the
+    // filler. Pinned so the guard is not credited with work it does not do.
+    expect(promptingNote("yeah")).toBeUndefined();
+    expect(promptingNote("yes")).toBeUndefined();
+  });
 });
