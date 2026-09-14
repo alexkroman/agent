@@ -44,7 +44,7 @@
 
 import { MAX_SESSION_STATE_BYTES } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
-import { flush, makeLogger } from "../_test-utils.ts";
+import { flush, makeLogger, sleep, tick } from "../_test-utils.ts";
 import {
   createMemoryStateBackend,
   createSessionStateStore,
@@ -202,6 +202,11 @@ describe("write only what CHANGED", () => {
     view.write("cart", { items: ["first"] }, true);
 
     const flushing = store.flush(SID);
+    // Let the commit pass really START before writing. A flush is COALESCED, so
+    // its pass runs a microtask after the call and reads the dirty set THEN — a
+    // write in the same synchronous block would ride this commit rather than
+    // the next one, which is the collapse working and not this property.
+    await tick();
     // The dirty set is cleared before the await, so this write re-dirties the
     // slot rather than being swallowed by the in-flight commit.
     view.write("cart", { items: ["second"] }, true);
@@ -336,6 +341,120 @@ describe("a failed commit is a DURABILITY failure", () => {
     // Unlike a commit, this one rejects: the caller turns it into a failed
     // session start rather than serving a session with the wrong state.
     await expect(store.hydrate(SID)).rejects.toThrow("connection terminated");
+  });
+});
+
+/**
+ * Overlapping flushes, which are the ORDINARY case rather than an exotic one: a
+ * step's tool calls run concurrently, so each one's `finally` calls `flush` for
+ * the same session, and a hook's `commitSessionState` can arrive on top.
+ *
+ * The backend here is deliberately SLOWEST ON ITS FIRST CALL. That is a
+ * reordering any real backend is free to do, and it is what turns two concurrent
+ * commits into a durable lost update — which is the whole reason the store
+ * coalesces per session instead of committing on demand.
+ */
+describe("commits are COALESCED per session", () => {
+  /** A backend that reorders, and records how much of it ran at once. */
+  function reorderingBackend() {
+    const inner = createMemoryStateBackend();
+    let calls = 0;
+    let live = 0;
+    let peak = 0;
+    const backend: SessionStateBackend = {
+      ...inner,
+      commit: async (sessionId, values) => {
+        calls += 1;
+        live += 1;
+        const nth = calls;
+        peak = Math.max(peak, live);
+        try {
+          // The first commit is the slow one: unserialized, its older snapshot
+          // lands AFTER the newer one that started later.
+          await sleep(nth === 1 ? 30 : 1);
+          await inner.commit(sessionId, values);
+        } finally {
+          live -= 1;
+        }
+      },
+    };
+    return { inner, backend, commits: () => calls, peak: () => peak };
+  }
+
+  test("a flush during a commit takes a TRAILING pass, so the newest value wins", async () => {
+    const g = reorderingBackend();
+    const store = createSessionStateStore({ backend: g.backend });
+    const view = store.viewFor(SID);
+
+    // Two concurrent tool calls on one session: each writes, then flushes.
+    view.write("cart", { items: ["v1"] }, true);
+    const first = store.flush(SID);
+    view.write("cart", { items: ["v2"] }, true);
+    const second = store.flush(SID);
+    await Promise.all([first, second]);
+
+    // THE LOST UPDATE, asserted first because it is the defect: unserialized,
+    // the second tool call's `v2` committed while the first commit was still
+    // open, `v1` landed after it, and the dirty set was already clear — so the
+    // newer value was gone for the rest of the session.
+    await expect(g.inner.load(SID)).resolves.toEqual(new Map([["cart", '{"items":["v2"]}']]));
+    // And the reason it cannot happen: the second flush took a trailing pass.
+    expect(g.peak()).toBe(1);
+  });
+
+  test("the awaited flush still guarantees ITS mutation is durable", async () => {
+    const g = reorderingBackend();
+    const store = createSessionStateStore({ backend: g.backend });
+    const view = store.viewFor(SID);
+
+    view.write("cart", { items: ["v1"] }, true);
+    const first = store.flush(SID);
+    // The second caller's write lands while the first commit is in flight, so
+    // only a pass that STARTS after this call can carry it. That is what the
+    // runner promises, and what the commit point depends on.
+    view.write("cart", { items: ["v2"] }, true);
+    await store.flush(SID);
+
+    await expect(g.inner.load(SID)).resolves.toEqual(new Map([["cart", '{"items":["v2"]}']]));
+    await first;
+  });
+
+  test("a burst of tool-call flushes costs ONE commit, not one each", async () => {
+    const g = reorderingBackend();
+    const store = createSessionStateStore({ backend: g.backend });
+    const view = store.viewFor(SID);
+
+    // Eight concurrent tool calls, each mutating and flushing — the shape a
+    // wide step arrives in, against a pool the run's own writes queue behind.
+    await Promise.all(
+      Array.from({ length: 8 }, (_, i) => {
+        view.write("cart", { items: [`v${i}`] }, true);
+        return store.flush(SID);
+      }),
+    );
+
+    // ONE, which is better than the two a mid-flight arrival costs: the pass is
+    // deferred a microtask, so every write in this synchronous burst is already
+    // on the dirty set when it reads, and the trailing pass finds nothing left
+    // to write and makes no round trip at all.
+    expect(g.commits()).toBe(1);
+    expect(g.peak()).toBe(1);
+    await expect(g.inner.load(SID)).resolves.toEqual(new Map([["cart", '{"items":["v7"]}']]));
+  });
+
+  test("two SESSIONS never wait on each other", async () => {
+    const g = reorderingBackend();
+    const store = createSessionStateStore({ backend: g.backend });
+    store.viewFor("s-a").write("cart", { items: ["a"] }, true);
+    store.viewFor("s-b").write("cart", { items: ["b"] }, true);
+
+    // The runner is per session, so these overlap — a busy session must not
+    // serialize an unrelated one.
+    await Promise.all([store.flush("s-a"), store.flush("s-b")]);
+
+    expect(g.peak()).toBe(2);
+    await expect(g.inner.load("s-a")).resolves.toEqual(new Map([["cart", '{"items":["a"]}']]));
+    await expect(g.inner.load("s-b")).resolves.toEqual(new Map([["cart", '{"items":["b"]}']]));
   });
 });
 

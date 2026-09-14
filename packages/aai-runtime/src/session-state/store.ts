@@ -66,6 +66,7 @@
 
 import type { SlotStore } from "@alexkroman1/aai";
 import { freezeStorable, MAX_SESSION_STATE_BYTES } from "@alexkroman1/aai/host-internal";
+import { type CoalescingRunner, createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { getOrCreate } from "../_get-or-create.ts";
 import type { StateSyncSession } from "../_state-sync.ts";
@@ -193,6 +194,11 @@ type SessionEntry = {
   dirty: Set<string>;
   /** Last committed serialization per slot, so an unchanged value is not rewritten. */
   committed: Map<string, string>;
+  /**
+   * This session's commit runner — at most one round trip in flight, and a
+   * mutation landing during one gets a single trailing commit. See `flush`.
+   */
+  commits: CoalescingRunner<void>;
   /**
    * The `syncState` frame last pushed to this session's client.
    *
@@ -341,6 +347,33 @@ async function commitPending(
 }
 
 /**
+ * One commit pass: serialize what is dirty, clear it, write it.
+ *
+ * Its own function because it is what the entry's coalescing runner runs, and
+ * the runner is the reason it takes no arguments beyond the entry — every
+ * trigger for a session wants the same thing, "commit whatever is dirty NOW",
+ * which is what makes collapsing N of them safe.
+ *
+ * `dirty` is cleared BEFORE the await, so a mutation landing during the round
+ * trip stays dirty and is picked up by the trailing pass the runner starts.
+ */
+async function commitDirty(
+  backend: SessionStateBackend,
+  entry: SessionEntry,
+  sessionId: string,
+  logger: Logger | undefined,
+): Promise<void> {
+  if (entry.dirty.size === 0) return;
+  const pending = new Map<string, string>();
+  for (const key of entry.dirty) {
+    const json = serializeForCommit(entry, key, sessionId, logger);
+    if (json !== undefined) pending.set(key, json);
+  }
+  entry.dirty.clear();
+  if (pending.size > 0) await commitPending(backend, entry, pending, sessionId, logger);
+}
+
+/**
  * Build the store over one backend.
  *
  * ## Shape drift is FAIL-OPEN, and it is specific to redeploy
@@ -370,11 +403,17 @@ export function createSessionStateStore(options: {
   const sessions = new Map<string, SessionEntry>();
 
   const entryFor = (sessionId: string): SessionEntry =>
-    getOrCreate(sessions, sessionId, () => ({
-      values: new Map(),
-      dirty: new Set(),
-      committed: new Map(),
-    }));
+    getOrCreate(sessions, sessionId, () => {
+      // The runner closes over the entry it lives on, so a commit reads the
+      // dirty set as it is when the pass RUNS rather than when it was queued.
+      const entry: SessionEntry = {
+        values: new Map(),
+        dirty: new Set(),
+        committed: new Map(),
+        commits: createCoalescingRunner(() => commitDirty(backend, entry, sessionId, logger)),
+      };
+      return entry;
+    });
 
   return {
     backend,
@@ -420,15 +459,18 @@ export function createSessionStateStore(options: {
     async flush(sessionId) {
       const entry = sessions.get(sessionId);
       if (!entry || entry.dirty.size === 0) return;
-      const pending = new Map<string, string>();
-      for (const key of entry.dirty) {
-        const json = serializeForCommit(entry, key, sessionId, logger);
-        if (json !== undefined) pending.set(key, json);
-      }
-      // Cleared BEFORE the await: a mutation landing during the commit must stay
-      // dirty, and clearing after would drop it.
-      entry.dirty.clear();
-      if (pending.size > 0) await commitPending(backend, entry, pending, sessionId, logger);
+      // COALESCED per session, never a bare commit: a step's tool calls run
+      // CONCURRENTLY, so each one's `finally` reaches this for the SAME session,
+      // and a hook's `commitSessionState` can arrive on top. Overlapping commits
+      // break two things, and the second outlives the burst — the backend gets
+      // two unordered writes to one key, so an older snapshot can land last; and
+      // `entry.committed`, the dedup cache `serializeForCommit` reads, is latched
+      // by whichever AWAIT resolves last rather than whichever WRITE landed last,
+      // after which every later pass skips the key as "unchanged" and the stored
+      // value stays stale for the rest of the session. The runner answers with a
+      // pass reflecting state as of this call or later, so the awaited durability
+      // the commit point depends on survives the collapse.
+      await entry.commits.trigger();
     },
     discard(sessionId) {
       sessions.delete(sessionId);
