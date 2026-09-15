@@ -13,6 +13,7 @@
 import {
   ANTHROPIC_KIND,
   ASSEMBLYAI_LLM_KIND,
+  CEREBRAS_KIND,
   GATEWAY_KIND,
   GOOGLE_KIND,
   GROQ_KIND,
@@ -46,6 +47,10 @@ const EAGER: Record<string, (apiKey: string, modelId: string) => Promise<unknown
   [OPENROUTER_KIND]: async (apiKey, modelId) =>
     (await import("@ai-sdk/openai"))
       .createOpenAI({ apiKey, baseURL: "https://openrouter.ai/api/v1", name: "openrouter" })
+      .chat(modelId),
+  [CEREBRAS_KIND]: async (apiKey, modelId) =>
+    (await import("@ai-sdk/openai"))
+      .createOpenAI({ apiKey, baseURL: "https://api.cerebras.ai/v1", name: "cerebras" })
       .chat(modelId),
   [ASSEMBLYAI_LLM_KIND]: async (apiKey, modelId) =>
     (await import("@ai-sdk/openai"))

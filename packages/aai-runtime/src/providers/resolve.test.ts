@@ -18,6 +18,7 @@ import {
   ANTHROPIC_KIND,
   ASSEMBLYAI_LLM_KIND,
   ASSEMBLYAI_S2S_KIND,
+  CEREBRAS_KIND,
   GATEWAY_KIND,
   GOOGLE_KIND,
   GROQ_KIND,
@@ -114,6 +115,15 @@ const cases: ProviderCase[] = [
     label: "OpenRouter",
     sdkProvider: "openrouter.chat",
     modelId: "meta-llama/llama-3.3-70b-instruct",
+  },
+  {
+    // A BARE model id, unlike the two aggregators either side of it — which is
+    // the one thing about this vendor a call site sees.
+    provider: { kind: CEREBRAS_KIND, options: { model: "qwen-3.8-27b" } },
+    envVar: "CEREBRAS_API_KEY",
+    label: "Cerebras",
+    sdkProvider: "cerebras.chat",
+    modelId: "qwen-3.8-27b",
   },
   {
     provider: { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },

@@ -72,6 +72,11 @@ export {
   type AssemblyAIReasoningEffort,
   assemblyAILlm,
 } from "./llm/assemblyai.ts";
+export {
+  CEREBRAS_BASE_URL,
+  type CerebrasLlmOptions,
+  cerebrasLlm,
+} from "./llm/cerebras.ts";
 export { type GatewayLlmOptions, gatewayLlm } from "./llm/gateway.ts";
 export { type GoogleLlmOptions, googleLlm } from "./llm/google.ts";
 export { type GroqLlmOptions, groqLlm } from "./llm/groq.ts";

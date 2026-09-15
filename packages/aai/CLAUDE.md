@@ -115,7 +115,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, `SessionEvent` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
-| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm`, `assemblyAILlm`); eight of the nine take one shared `ModelOptions` rather than eight byte-identical `{ model: string }` interfaces |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `cerebrasLlm`, `gatewayLlm`, `assemblyAILlm`); nine of the ten take one shared `ModelOptions` rather than nine byte-identical `{ model: string }` interfaces |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), the voice catalog, and `ttsVoiceIds(language?)` — the catalog as the non-empty tuple `z.enum` takes, falling back to the default voice on an empty filter |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openAIS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
@@ -321,6 +321,14 @@ Reference providers shipped today:
     addressed as `"creator/model"`, and neither needs an extra `@ai-sdk/*`
     dependency (`@ai-sdk/openai`'s `.chat()` client repointed, and
     `createGateway` from `ai`). Each module's doc carries the rest.
+  - `cerebrasLlm({ model })` — `CEREBRAS_API_KEY`. Also `@ai-sdk/openai`'s
+    `.chat()` client repointed, so also no extra dependency — but NOT an
+    aggregator: the catalogue is a handful of open-weight models and the ids
+    are BARE (`"qwen-3.8-27b"`), not `"creator/model"`. **The reason to name
+    this vendor is serving LATENCY** — the same `qwen-3.8-27b` answered a
+    complete tool call in ~0.55s here against ~0.95s on a self-hosted vLLM
+    endpoint, and on a voice pipeline that is paid every turn. Its module doc
+    carries the rest.
   - `assemblyAILlm({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via

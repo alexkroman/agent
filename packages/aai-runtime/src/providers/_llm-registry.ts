@@ -21,6 +21,8 @@ import {
   ANTHROPIC_KIND,
   ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_KIND,
+  CEREBRAS_API_KEY_ENV,
+  CEREBRAS_KIND,
   GATEWAY_API_KEY_ENV,
   GATEWAY_KIND,
   GOOGLE_API_KEY_ENV,
@@ -42,6 +44,7 @@ import {
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   type AssemblyAILlmOptions,
+  CEREBRAS_BASE_URL,
   OPENROUTER_BASE_URL,
 } from "@alexkroman1/aai/llm";
 import {
@@ -92,6 +95,7 @@ const PROVIDER_IDS = {
   xai: "xai.responses",
   groq: "groq.chat",
   openrouter: "openrouter.chat",
+  cerebras: "cerebras.chat",
   gateway: "gateway",
   assemblyai: "assemblyai.chat",
 } as const;
@@ -168,6 +172,22 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
           apiKey,
           baseURL: OPENROUTER_BASE_URL,
           name: "openrouter",
+        }).chat(model(d)),
+      ),
+  },
+  [CEREBRAS_KIND]: {
+    envVar: CEREBRAS_API_KEY_ENV,
+    label: "Cerebras",
+    // Cerebras is an OpenAI-compatible chat-completions API, so it reuses
+    // @ai-sdk/openai's chat client pointed at its base URL — the same shape as
+    // OpenRouter above, and for the same reason: no extra @ai-sdk/* install.
+    // Model ids are BARE names ("qwen-3.8-27b"), not "creator/model".
+    create: (apiKey, d) =>
+      lazyModel(PROVIDER_IDS.cerebras, model(d), async () =>
+        (await openAiFactory())({
+          apiKey,
+          baseURL: CEREBRAS_BASE_URL,
+          name: "cerebras",
         }).chat(model(d)),
       ),
   },
