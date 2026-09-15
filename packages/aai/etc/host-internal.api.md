@@ -516,6 +516,12 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export const CEREBRAS_API_KEY_ENV = "CEREBRAS_API_KEY";
+
+// @public (undocumented)
+export const CEREBRAS_KIND: "cerebras";
+
+// @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal

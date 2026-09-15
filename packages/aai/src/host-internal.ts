@@ -132,6 +132,7 @@ export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_KIND,
 } from "./sdk/providers/llm/assemblyai.ts";
+export { CEREBRAS_API_KEY_ENV, CEREBRAS_KIND } from "./sdk/providers/llm/cerebras.ts";
 export { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "./sdk/providers/llm/gateway.ts";
 export { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "./sdk/providers/llm/google.ts";
 export { GROQ_API_KEY_ENV, GROQ_KIND } from "./sdk/providers/llm/groq.ts";

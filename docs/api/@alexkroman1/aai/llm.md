@@ -139,6 +139,47 @@ gateway; [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel) is the id set
 
 ***
 
+### cerebrasLlm()
+
+```ts
+function cerebrasLlm(options: CerebrasLlmOptions): LlmProvider;
+```
+
+Build a Cerebras descriptor.
+
+The API key is resolved host-side from the agent's env
+(`CEREBRAS_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
+#### Parameters
+
+##### options
+
+[`CerebrasLlmOptions`](#cerebrasllmoptions)
+
+#### Returns
+
+[`LlmProvider`](index.md#llmprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { cerebrasLlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: cerebrasLlm({ model: "qwen-3.8-27b" }),
+});
+```
+
+See https://inference-docs.cerebras.ai/api-reference/models for the ids this
+endpoint serves; the list is short and changes, so it is deliberately not
+mirrored as a union here the way the AssemblyAI gateway's catalogue is.
+
+***
+
 ### gatewayLlm()
 
 ```ts
@@ -415,7 +456,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -433,7 +474,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -542,6 +583,54 @@ generated catalog. Defaults to `"us"`.
 
 ***
 
+### CerebrasLlmOptions
+
+Options for [cerebrasLlm](#cerebrasllm).
+
+Empty over [ModelOptions](#modeloptions) on purpose: this vendor is reached by naming
+one model id, and every vendor still gets a NAME for its own options so its
+first vendor-specific setting is an additive field here rather than a
+re-split of the shared interface across every call site.
+
+#### Extends
+
+- [`ModelOptions`](#modeloptions)
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default.
+Names a VARIABLE, not a key.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
+
+##### model
+
+```ts
+model: string;
+```
+
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openRouterLlm`,
+`gatewayLlm`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
+
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
+
+###### Inherited from
+
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
+
+***
+
 ### GatewayLlmOptions
 
 Options for [gatewayLlm](#gatewayllm).
@@ -568,7 +657,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -586,7 +675,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -616,7 +705,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -634,7 +723,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -664,7 +753,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -682,7 +771,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -712,7 +801,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -730,7 +819,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -745,6 +834,7 @@ Options for an LLM factory whose only setting is which model to run.
 #### Extended by
 
 - [`AnthropicLlmOptions`](#anthropicllmoptions)
+- [`CerebrasLlmOptions`](#cerebrasllmoptions)
 - [`GatewayLlmOptions`](#gatewayllmoptions)
 - [`GoogleLlmOptions`](#googlellmoptions)
 - [`GroqLlmOptions`](#groqllmoptions)
@@ -810,7 +900,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -828,7 +918,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -858,7 +948,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -876,7 +966,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ***
 
@@ -906,7 +996,7 @@ Names a VARIABLE, not a key.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-6)
+[`ModelOptions`](#modeloptions).[`apiKeyEnv`](#apikeyenv-7)
 
 ##### model
 
@@ -924,7 +1014,7 @@ from, and an id invented on its behalf fails at the first session.
 
 ###### Inherited from
 
-[`ModelOptions`](#modeloptions).[`model`](#model-6)
+[`ModelOptions`](#modeloptions).[`model`](#model-7)
 
 ## Type Aliases
 
@@ -1031,6 +1121,16 @@ const ASSEMBLYAI_LLM_GATEWAY_URL: "https://llm-gateway.assemblyai.com/v1" = "htt
 ```
 
 US (default) LLM Gateway endpoint.
+
+***
+
+### CEREBRAS\_BASE\_URL
+
+```ts
+const CEREBRAS_BASE_URL: "https://api.cerebras.ai/v1" = "https://api.cerebras.ai/v1";
+```
+
+Cerebras's OpenAI-compatible API endpoint.
 
 ***
 

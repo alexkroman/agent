@@ -78,6 +78,7 @@ each is for.
 | `CARRIER_CODECS` | `@alexkroman1/aai-runtime` |
 | `CARRIER_PARAM` | `@alexkroman1/aai-runtime` |
 | `CARTESIA_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
+| `CEREBRAS_BASE_URL` | `@alexkroman1/aai/llm` |
 | `CHANNEL_POST_TIMEOUT_MS` | `@alexkroman1/aai/channels` |
 | `CLIENT_ARTIFACT_REL` | `@alexkroman1/aai-cli/start` |
 | `CLIENT_CONFIG_METHODS` | `@alexkroman1/aai/protocol` |
@@ -88,6 +89,7 @@ each is for.
 | `CarrierInbound` | `@alexkroman1/aai-runtime` |
 | `CarrierName` | `@alexkroman1/aai-runtime` |
 | `CartesiaTtsOptions` | `@alexkroman1/aai/tts` |
+| `CerebrasLlmOptions` | `@alexkroman1/aai/llm` |
 | `Channel` | `@alexkroman1/aai/channels` |
 | `ChannelDeliveryError` | `@alexkroman1/aai/channels` |
 | `ChannelDescriptor` | `@alexkroman1/aai/channels` |
@@ -669,6 +671,7 @@ each is for.
 | `bytesPerSecond` | `@alexkroman1/aai/step` |
 | `carrierByName` | `@alexkroman1/aai-runtime` |
 | `cartesiaTts` | `@alexkroman1/aai/tts` |
+| `cerebrasLlm` | `@alexkroman1/aai/llm` |
 | `clockTime` | `@alexkroman1/aai` |
 | `commandedBuiltins` | `@alexkroman1/aai/testing` |
 | `completedOutput` | `@alexkroman1/aai-runtime/eval` |
@@ -1000,6 +1003,8 @@ trace or a type error can be traced back to something.
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
 | `CARTESIA_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `CARTESIA_KIND` | `@alexkroman1/aai/host-internal` |
+| `CEREBRAS_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
+| `CEREBRAS_KIND` | `@alexkroman1/aai/host-internal` |
 | `CLIENT_AUDIO_LEAD_MS` | `@alexkroman1/aai/internal` |
 | `CONTAINED_ENV` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `ClientEventDecision` | `@alexkroman1/aai/internal` |

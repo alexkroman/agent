@@ -38,6 +38,16 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
+export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
+
+// @public
+export function cerebrasLlm(options: CerebrasLlmOptions): LlmProvider;
+
+// @public
+export interface CerebrasLlmOptions extends ModelOptions {
+}
+
+// @public
 export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
 
 // @public

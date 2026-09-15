@@ -1234,6 +1234,12 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
+export const CEREBRAS_API_KEY_ENV = "CEREBRAS_API_KEY";
+
+// @public (undocumented)
+export const CEREBRAS_KIND: "cerebras";
+
+// @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal
@@ -4292,6 +4298,16 @@ export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
 
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+
+// @public
+export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
+
+// @public
+export function cerebrasLlm(options: CerebrasLlmOptions): LlmProvider;
+
+// @public
+export interface CerebrasLlmOptions extends ModelOptions {
+}
 
 // @public
 export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;

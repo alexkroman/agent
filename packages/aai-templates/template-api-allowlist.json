@@ -247,7 +247,12 @@
     "transcodeToWav"
   ],
   "@alexkroman1/aai/html": [],
-  "@alexkroman1/aai/llm": ["ProviderCredentialOptions"],
+  "@alexkroman1/aai/llm": [
+    "CEREBRAS_BASE_URL",
+    "CerebrasLlmOptions",
+    "ProviderCredentialOptions",
+    "cerebrasLlm"
+  ],
   "@alexkroman1/aai/s2s": ["ProviderCredentialOptions"],
   "@alexkroman1/aai/step": [
     "MultipartBody",
