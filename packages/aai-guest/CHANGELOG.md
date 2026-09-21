@@ -1,5 +1,12 @@
 # aai-guest
 
+## 0.6.7
+
+### Patch Changes
+
+- Updated dependencies [42be20d]
+  - aai-guest-studio@0.6.7
+
 ## 0.6.6
 
 ### Patch Changes
