@@ -47,6 +47,7 @@ function makeSession(over: Partial<StudioSession> = {}): StudioSession {
     system: "You are a coding agent.",
     model: "fake-1",
     maxSteps: 8,
+    maxOutputTokens: 32_000,
     ...over,
   };
 }
@@ -74,6 +75,9 @@ describe("the studio coding agent's definition", () => {
     expect(def.text).toBe(true);
     expect(def.systemPrompt).toBe("You are a coding agent.");
     expect(def.maxSteps).toBe(8);
+    // Unset would mean the PROVIDER's default, whose truncation silently
+    // drops the step's tool calls since ai@7.0.70 — see studio-limits.ts.
+    expect(def.maxOutputTokens).toBe(32_000);
     expect(def.name).toBe("AAI Studio");
     // The model is host configuration delivered by `studio/session-init`; the
     // KEY is the caller's and must never ride on the definition.

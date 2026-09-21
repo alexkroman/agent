@@ -60,6 +60,7 @@ function declaredToolNames(): string[] {
       system: "s",
       model: "fake-1",
       maxSteps: 8,
+      maxOutputTokens: 32_000,
     },
     {
       loadBundle: async () => ({}),

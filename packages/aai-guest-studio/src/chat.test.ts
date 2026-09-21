@@ -50,6 +50,7 @@ const session: StudioSession = {
   // turn resolves its model from `deps`.
   model: "fake-1",
   maxSteps: 4,
+  maxOutputTokens: 32_000,
   dir: "/nonexistent",
 };
 

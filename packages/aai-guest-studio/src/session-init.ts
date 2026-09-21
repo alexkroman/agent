@@ -59,6 +59,8 @@ export const SessionInitParamsSchema = z.object({
   region: z.literal("eu").optional(),
   // Reaches `stepCountIs()` in studio/chat.ts — must be a positive integer.
   maxSteps: z.number().int().positive(),
+  // Reaches the model call as `maxOutputTokens`; same shape, same reason.
+  maxOutputTokens: z.number().int().positive(),
 });
 
 /**

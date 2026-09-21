@@ -46,6 +46,7 @@ export type AdoptSessionParams = {
   model: string;
   region?: "eu" | undefined;
   maxSteps: number;
+  maxOutputTokens: number;
 };
 
 export type AdoptDeps = {

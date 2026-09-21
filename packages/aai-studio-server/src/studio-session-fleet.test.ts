@@ -29,6 +29,7 @@ const PARAMS: AdoptSessionParams = {
   system: "s",
   model: "m",
   maxSteps: 4,
+  maxOutputTokens: 32_000,
 };
 
 // Typed as the real peer install rather than cast in: the fleet's `adopt` seam

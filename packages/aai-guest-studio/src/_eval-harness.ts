@@ -251,6 +251,7 @@ export function credentialProbe(): ReturnType<typeof createStudioAgent> {
     system: STUDIO_EVAL_PROMPT,
     model: studioEvalModel(),
     maxSteps: DEFAULT_STUDIO_EVAL_STEPS,
+    maxOutputTokens: 32_000,
     dir: path.join(process.cwd(), "does-not-exist"),
   };
   return createStudioAgent(session, {
@@ -374,6 +375,7 @@ async function runStudioCase(run: StudioCaseRun): Promise<void> {
           : shippedStudioPrompt(options.studioPrompt),
       model: studioEvalModel(),
       maxSteps: options?.maxSteps ?? DEFAULT_STUDIO_EVAL_STEPS,
+      maxOutputTokens: 32_000,
     });
     const state = {
       agent: null,

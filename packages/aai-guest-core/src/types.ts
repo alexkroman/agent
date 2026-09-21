@@ -227,6 +227,8 @@ export type StudioSessionParams = {
   model: string;
   region?: "eu" | undefined;
   maxSteps: number;
+  /** Output-token ceiling per model call — see `studio-limits.ts`. */
+  maxOutputTokens: number;
 };
 
 export type StudioSession = StudioSessionParams & { dir: string };
