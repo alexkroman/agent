@@ -51,6 +51,19 @@ const log = createLogger("studio.preview");
 const MAX_PREVIEW_ERROR = 16_000;
 
 /**
+ * The file a deploy cannot proceed without — `aai-cli`'s `AGENT_ENTRY`, named
+ * here rather than imported, because nothing outside `aai-guest` may import
+ * from the CLI (see AGENTS.md, "Dependency flow").
+ *
+ * A copy is safe in a way most copies are not: it is not a default this
+ * package could get subtly wrong, it is the one filename the SDK's build is
+ * written around, and both project kinds go through the same entry. If it
+ * ever moves, the deploy this guards starts failing with the CLI's own
+ * message again rather than doing something worse.
+ */
+const PREVIEW_ENTRY_FILE = "agent.ts";
+
+/**
  * Force this project's preview to redeploy: clear the `previewHash` stamp,
  * then schedule a deploy. Both halves, always — which is the entire reason
  * this is a function.
@@ -195,10 +208,50 @@ export function createPreviewDeployer(
    */
   const localKeys = new TtlCache<string>(LOCAL_KEY_TTL_MS, 1000);
 
+  /**
+   * Clear a `previewError` banner nothing else will ever clear.
+   *
+   * Only a SUCCESSFUL deploy deletes the stamp, so every path that declines to
+   * deploy over a state the user can see owes this — otherwise the pane shows
+   * a failure for code that is no longer what the workspace holds.
+   */
+  async function clearStaleError(
+    scope: string,
+    project: string,
+    previewError: string | undefined,
+  ): Promise<void> {
+    if (previewError === undefined) return;
+    await stampWorkspaceMeta(options.workspaces, scope, project, { previewError: undefined });
+  }
+
   /** One deploy attempt against the workspace's CURRENT files. */
   async function attempt(scope: string, project: string, target: PreviewTarget): Promise<void> {
     const workspace = await getWorkspace(options.workspaces, scope, project);
     if (!workspace) return;
+    // No entry, no deploy — and this is a NORMAL state, not a failure.
+    //
+    // Every edit enqueues a job, and a new project's first edits are the
+    // coding agent scaffolding a tree: it writes `package.json` and its
+    // siblings before `agent.ts` exists. Those jobs each spent a full deploy
+    // round-trip to reach `_cli-common.ts`'s `hasAgent` check and came back
+    // with "No agent.ts found in the current directory. Run `aai init`
+    // first." — which was then stamped as `previewError` and rendered in the
+    // Preview pane, telling a BROWSER user to run a CLI command, for the
+    // seconds until the agent wrote the file. Production did this three times
+    // in five minutes on one new project.
+    //
+    // Deterministic rather than a guess: `AGENT_ENTRY` is a constant, the
+    // worker entry imports `../agent.ts`, and both project kinds go through
+    // the same deploy — so a tree without it cannot build, and declining
+    // costs nothing that could have succeeded.
+    //
+    // No `previewHash` stamp on this path: the deploy that runs once the file
+    // appears must not be skipped as already-deployed.
+    if (workspace.files[PREVIEW_ENTRY_FILE] === undefined) {
+      log.debug("no entry yet, skipping preview deploy", { project });
+      await clearStaleError(scope, project, workspace.previewError);
+      return;
+    }
     const hash = workspace.hash;
     if (workspace.previewHash === hash) {
       // Nothing to deploy — but a stamped failure over ALREADY-DEPLOYED files
@@ -212,9 +265,7 @@ export function createPreviewDeployer(
       // for as long as the project lived, with every later edit that hashed
       // back to this one re-confirming it. Only a SUCCESSFUL deploy deleted
       // the stamp, and this is the one case where success needs no deploy.
-      if (workspace.previewError !== undefined) {
-        await stampWorkspaceMeta(options.workspaces, scope, project, { previewError: undefined });
-      }
+      await clearStaleError(scope, project, workspace.previewError);
       return;
     }
     const slug = workspace.previewSlug ?? previewSlugFor(project);

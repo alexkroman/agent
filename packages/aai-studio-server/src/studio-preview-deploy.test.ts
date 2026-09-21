@@ -248,6 +248,64 @@ describe("createPreviewDeployer", () => {
     expect(await getWorkspace(workspaces, SCOPE, PROJECT)).toEqual(before);
   });
 
+  test("a workspace with no entry is skipped, then deploys when the entry lands", async () => {
+    // A new project's first edits are the coding agent scaffolding a tree, and
+    // `agent.ts` is not the first file it writes. Every one of those edits
+    // enqueued a deploy that could only come back with the CLI's
+    // "No agent.ts found in the current directory. Run `aai init` first." —
+    // stamped as `previewError` and rendered in the Preview pane, telling a
+    // browser user to run a CLI command. Production did it three times in five
+    // minutes on one project.
+    const workspaces = await seededStore({ "package.json": "{}" });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+    expect(deploy).not.toHaveBeenCalled();
+    const skipped = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // Nothing stamped, and `previewHash` above all: a hash here would make the
+    // real deploy below read as already-deployed and never run.
+    expect(skipped?.previewHash).toBeUndefined();
+    expect(skipped?.previewError).toBeUndefined();
+
+    // The agent writes the entry. The very next edit deploys for real.
+    await stampProject(workspaces, {
+      files: { "package.json": "{}", "agent.ts": "// v1" },
+    });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    const after = await previewStamped(workspaces);
+
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(after.previewHash).toBe(after.hash);
+  });
+
+  test("an entry DELETED under a stale previewError clears the banner", async () => {
+    // The mirror of the already-deployed clear above, reached the other way:
+    // declining to deploy leaves a `previewError` that only a SUCCESSFUL
+    // deploy would have removed, so the pane would show a build failure for
+    // code the workspace no longer holds, for as long as the project lived.
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: false, output: "Build failed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
+    });
+
+    await stampProject(workspaces, { files: { "package.json": "{}" } });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
+    });
+    expect(deploy).toHaveBeenCalledTimes(1);
+  });
+
   test("a deleted project deploys nothing and never resurrects", async () => {
     const workspaces = makeStore();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));

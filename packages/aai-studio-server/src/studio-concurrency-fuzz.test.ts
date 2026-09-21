@@ -65,6 +65,21 @@ const SCOPE = "scope";
 const PROJECTS = ["alpha-a1b2c3", "beta-d4e5f6", "gamma-g7h8i9"];
 
 /**
+ * Every fixture here holds the ENTRY file, and the name is load-bearing.
+ *
+ * A workspace without `agent.ts` cannot build, so the deployer declines it
+ * before the deploy — which turns a property over the deploy loop into a
+ * property over nothing, silently and while still passing its safety half.
+ * Two of these seeded `a.ts` and became exactly that: no deploy, so no
+ * archive and no stamp, so only the LIVENESS assertions noticed.
+ *
+ * Named rather than repeated for the same reason the coverage floors above
+ * exist — the failure mode of this file is a generator that quietly stopped
+ * reaching the state it was written for.
+ */
+const ENTRY = "agent.ts";
+
+/**
  * How a deploy ends. Weights mirror the roll thresholds this harness used
  * before: mostly success, with a build error (settled — no redelivery) and a
  * dead sandbox (throws — redelivered) each about one in seven.
@@ -155,7 +170,7 @@ async function runPreviewPipeline(
   const problems: string[] = [];
   const store = createMemoryWorkspaceStore();
   for (const project of PROJECTS) {
-    const seed: Record<string, string> = { "agent.ts": CONTENTS[0] ?? "" };
+    const seed: Record<string, string> = { [ENTRY]: CONTENTS[0] ?? "" };
     await store.put(SCOPE, project, { files: seed, hash: filesHash(seed), updatedAt: 0 }, null);
   }
 
@@ -216,7 +231,7 @@ async function runPreviewPipeline(
       pending.push(
         mutateWorkspace(store, SCOPE, project, (current) => ({
           ...current,
-          files: { ...current.files, "agent.ts": content },
+          files: { ...current.files, [ENTRY]: content },
         })).then(() => {
           deployer.schedule(SCOPE, project, {
             serverUrl: "https://platform.example",
@@ -359,7 +374,7 @@ test("preview queue: a crash-looping job is archived past the cap, never before"
         await store.put(
           SCOPE,
           "alpha-a1b2c3",
-          { files: { "a.ts": "//" }, hash: filesHash({ "a.ts": "//" }), updatedAt: 0 },
+          { files: { [ENTRY]: "//" }, hash: filesHash({ [ENTRY]: "//" }), updatedAt: 0 },
           null,
         );
         const queue = createMemoryPreviewQueue({ now: () => clock });
@@ -421,7 +436,7 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
       await store.put(
         SCOPE,
         "alpha-a1b2c3",
-        { files: { "a.ts": "// v0" }, hash: filesHash({ "a.ts": "// v0" }), updatedAt: 0 },
+        { files: { [ENTRY]: "// v0" }, hash: filesHash({ [ENTRY]: "// v0" }), updatedAt: 0 },
         null,
       );
       const queue = createMemoryPreviewQueue();
@@ -441,7 +456,7 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
       const edit = async (content: string): Promise<void> => {
         await mutateWorkspace(store, SCOPE, "alpha-a1b2c3", (current) => ({
           ...current,
-          files: { ...current.files, "a.ts": content },
+          files: { ...current.files, [ENTRY]: content },
         }));
         deployer.schedule(SCOPE, "alpha-a1b2c3", target);
       };
