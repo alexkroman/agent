@@ -32,6 +32,12 @@
 // plus its refresh token — never the raw AssemblyAI key this gate used to
 // store, which lives server-side against the account.)
 
+// FIRST, above every other import: zod probes for `new Function` when the
+// first object schema is CONSTRUCTED, and `@alexkroman1/aai/protocol` builds
+// four of those at module scope. This page's CSP blocks the probe, and the
+// caught throw is still a reported violation — see zod-jitless.ts, which also
+// explains why this cannot be a call in the body below.
+import "./zod-jitless.ts";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
