@@ -1,0 +1,20 @@
+---
+"aai-guest-studio": patch
+"aai-studio-server": patch
+---
+
+Stop the studio coding agent ending a turn mid-plan.
+
+The agent kept stopping with the work half done, and the only repair was to type "continue". The cause is the AI SDK's loop condition, not the model losing interest: the loop runs "until a finish reason other than tool-calls is returned", and **`stopWhen` can only ADD stop conditions — there is no condition meaning "keep going"**. So one step of prose is mechanically indistinguishable from the agent declaring itself finished.
+
+That is right for an answer and wrong for every other thing a model uses prose for. Reproduced with the repo's scripted-model harness: a turn with `maxSteps: 8`, the wall-clock budget barely touched and **three todos still pending** ended on a single narration of an obstacle — "the page is client-rendered, so I'll use the public menu" — and the next `todo_write` never ran. From the user's side the spinner just stops against a visibly half-marked plan.
+
+**The prompt was making it worse.** `studio-preamble.ts` told the model that ASKING ends the turn — true of all prose, not only questions — and then, two lines later, to "make the most reasonable assumption, say what you assumed, and continue". Said as its own step that instruction ENDS the turn, so the continuation it promises cannot happen; the advice was self-defeating exactly when the model hit something unexpected, which is when it was reached. There is now an "Ending Your Turn" section stating the real rule (a step with no tool call ends the turn, whatever is in it) and the way to comply: put the sentence in the SAME step as the next tool call.
+
+**The mechanism does not depend on the model reading that.** Since the turn is already over by the time a text-only step exists, there is nothing to react to after the fact — the stall has to be unrepresentable BEFORE the step runs. `turn-continue.ts` therefore returns `toolChoice: "required"` from `prepareStep` while the model's own last `todo_write` still shows outstanding items. It costs no expressiveness: text and a tool call in one step are still allowed, so the agent can narrate freely as long as it also keeps working — it just cannot narrate INSTEAD of working.
+
+Three independent releases, because a forced tool call must never be a trap. An empty plan never forces, so a one-step change or a question — which the preamble tells the model to run with no todo list at all — is untouched, and the force only engages once the model has itself declared multi-step work. `todo_write` is always a legal move, so marking the rest completed or cancelled drops the count to zero and the next step is free; the notice says so, because a constraint whose exit is invisible is one a model fights. And there is a cap (`MAX_FORCED_STEPS`, 25 against `MAX_CHAT_STEPS` of 80) plus a stand-down at the soft deadline, since the wrap-up notice asks for a spoken report and forcing a tool call would contradict it. Past all of those the runtime still guarantees a final answer: `forceFinalAnswer` composes LAST and owns `toolChoice` outright on the reserved step, so a forced turn cannot end mute.
+
+The per-step decision moved out of `chat.ts`'s `prepareStep` into `prepareTurnStep`. Three rules now write one key and their ORDER is the behaviour — the hard deadline takes tools away, the wrap-up must not be overridden by a force, and only inside both does the force apply — and as a branch chain in an HTTP handler that also does compaction, that ordering was the one part with no test. Both ordering specs deliberately stub `wrappingUp: false` against a fired deadline, a state the clock cannot produce: with the realistic `true` the stand-down suppresses the force by itself, and both tests passed with the branches reordered. A/B'd — reordering now fails three specs instead of one.
+
+`wrappingUp()` is a time predicate on the budget rather than a flag, so taking the wrap-up notice does not consume it and both readers get the same answer on the step where it matters.

@@ -43,6 +43,17 @@ export type TurnBudget = {
    */
   expired: () => boolean;
   /**
+   * True from the soft deadline onward, whether or not the notice has been
+   * taken yet.
+   *
+   * A time predicate rather than a flag, so it answers the same on every
+   * reader. `chat.ts` uses it to stand DOWN the keep-going force
+   * (`turn-continue.ts`): past this point the agent has been asked to land
+   * what it has and report, and obliging it to call a tool would contradict
+   * the very notice it was just handed.
+   */
+  wrappingUp: () => boolean;
+  /**
    * The wrap-up instruction, returned exactly once, else null. Once only
    * because repeating it every step would crowd the context it is trying to
    * save — and an agent told to hurry on every step stops making progress.
@@ -69,6 +80,7 @@ export function createTurnBudget(
   const stamp = () => `[${Math.round(elapsed() / 60_000)} minutes into this turn]`;
   return {
     expired: () => closing && elapsed() >= hard,
+    wrappingUp: () => elapsed() >= soft,
     takeWrapUpNotice: () => {
       if (warned || elapsed() < soft) return null;
       warned = true;
