@@ -47,6 +47,7 @@ import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
 import type { StudioSession } from "./session.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 import { createTurnBudget } from "./turn-budget.ts";
+import { createKeepGoing, prepareTurnStep } from "./turn-continue.ts";
 import {
   createWorkspaceCheckpointer,
   MUTATING_TOOLS,
@@ -111,6 +112,11 @@ async function runTurn(
   // user waits, and turns were reaching fifteen minutes.
   const budget = createTurnBudget();
 
+  // A bare narration must not be able to end a turn the agent's own plan says
+  // is unfinished — see turn-continue.ts for the loop condition that makes
+  // that possible and the three ways out of the force.
+  const keepGoing = createKeepGoing();
+
   // Persist the conversation as it stands BEFORE the turn runs, so a guest
   // that dies mid-turn still leaves the user's prompt and the history behind
   // it. Without this the settle in `onFinish` was the only writer, and a
@@ -169,19 +175,9 @@ async function runTurn(
       const base = needsCompaction(stepMessages, DEFAULT_COMPACTION, estimate)
         ? await compactMessages(chat.model, stepMessages, DEFAULT_COMPACTION, estimate)
         : stepMessages;
-      // Past the hard deadline the turn gets exactly one more step, with
-      // tools off, so it ends on something the user can read rather than on
-      // whatever tool call happened to be in flight.
-      const final = budget.takeFinalNotice();
-      if (final) {
-        return {
-          messages: [...base, { role: "user" as const, content: final }],
-          toolChoice: "none",
-        };
-      }
-      const wrapUp = budget.takeWrapUpNotice();
-      const next = wrapUp ? [...base, { role: "user" as const, content: wrapUp }] : base;
-      return next === stepMessages ? {} : { messages: next };
+      // The deadline notices and the keep-going force all write `toolChoice`,
+      // and their order is the behaviour — decided in one tested place.
+      return prepareTurnStep({ base, stepMessages, budget, keepGoing });
     },
   });
 

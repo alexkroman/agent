@@ -79,6 +79,22 @@ describe("createTurnBudget", () => {
     expect(b.expired()).toBe(true);
   });
 
+  test("wrappingUp flips at the soft threshold and stays flipped", () => {
+    // It gates the keep-going force in turn-continue.ts, so it has to answer
+    // the same on every reader — a flag consumed by `takeWrapUpNotice` would
+    // report false to the second caller on the very step it matters.
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    expect(b.wrappingUp()).toBe(false);
+    c.advance(SOFT_TURN_MS);
+    expect(b.wrappingUp()).toBe(true);
+    // Taking the notice must not consume the predicate.
+    expect(b.takeWrapUpNotice()).toEqual(expect.any(String));
+    expect(b.wrappingUp()).toBe(true);
+    c.advance(HARD_TURN_MS);
+    expect(b.wrappingUp()).toBe(true);
+  });
+
   test("the hard bound clears the slowest run that actually succeeded", () => {
     // A 578s turn ended shippable; cutting that off would fail work that was
     // nearly done. The bound is for pathology, not for slow-but-working.
