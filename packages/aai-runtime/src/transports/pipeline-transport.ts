@@ -31,6 +31,7 @@ import {
 } from "./pipeline-transport-options.ts";
 import { createTurnBody } from "./pipeline-turn-body.ts";
 import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
+import { createTurnMetrics, withSttMarks } from "./pipeline-turn-metrics.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
@@ -70,6 +71,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // by the turn chain, and the tool set below is built once. See
   // `tool-error-policy.ts` for why the latch's signal is not the turn's.
   const fatalTool = createFatalToolLatch();
+  // Each reply's per-stage marks, reported as `metrics.collected` when it settles.
+  const metrics = createTurnMetrics({ usage, now: opts.heardNow });
 
   const { callbacks, sessionConfig } = opts;
   // The three per-STATE knobs a `dialog()` can move mid-call, over the agent's
@@ -195,6 +198,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     tts: () => providers.tts,
     callbacks,
     guardrails,
+    metrics,
     log,
     sid: opts.sid,
   });
@@ -261,8 +265,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     greeting: sessionConfig.greeting,
     signal: sessionAbort.signal,
     handlers: {
-      onSttPartial: sttEvents.onSttPartial,
-      onSttFinal: sttEvents.onSttFinal,
+      ...withSttMarks(metrics, sttEvents),
       // `lifecycle` is constructed further down (it needs `outcome` and
       // `runReply`), so these two reach it lazily. Both fire only after
       // `providers.open()`, which `lifecycle.start` is what calls.
@@ -357,6 +360,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
     callbacks,
     emitError,
+    onLlmTiming: metrics.onLlm,
     log,
     sid: opts.sid,
   });
@@ -384,6 +388,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // be adopted later by a turn that never spoke the words it was built on.
     speculation.discard("turn-started");
     callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
+    metrics.begin();
 
     // One reply, one floor, measured from the moment the turn took the floor
     // rather than from whenever TTS produced its first frame. It takes the
@@ -417,6 +422,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     } finally {
       // Return to idle unless a newer turn already replaced this one.
       turns.settle(ctl);
+      const collected = metrics.finish(signal.aborted);
+      if (collected) callbacks.report(collected);
       // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
       if (!signal.aborted) nudger.arm();
     }

@@ -19,6 +19,12 @@
  * `_request-trace.ts`, which imports nothing at all so the worker bundle cannot
  * reach the OpenTelemetry graph through it.
  *
+ * METRIC export rides the same gate and the same subpath: the metrics
+ * variables, and the process-wide SINK registry (`registerMetricsSink`) that
+ * both the env-armed OTLP exporter and a host's own reader attach to — an
+ * `OtelMeterLike` is structural, so a self-hoster with a Prometheus
+ * `MeterProvider` passes its meter without this package importing OTel.
+ *
  * Re-exported from `@alexkroman1/aai-runtime/tracing`. This file is not shipped
  * and nothing imports it — it exists so `pnpm check:api-contracts` can extract
  * a report for this capability alone, hash it, and hold it to a committed
@@ -27,9 +33,18 @@
 
 export {
   DEFAULT_SERVICE_NAME,
+  type MetricsContext,
+  type MetricsSink,
+  metricsEndpoint,
   OTEL_ENDPOINT_ENVS,
+  OTEL_METRIC_NAMES,
+  OTEL_METRICS_ENDPOINT_ENVS,
+  OTEL_METRICS_EXPORTER_ENV,
   OTEL_SERVICE_NAME_ENV,
+  type OtelMeterLike,
+  otelMetricsSink,
   type RuntimeTracing,
+  registerMetricsSink,
   startTracing,
   startTracingDetached,
   tracingEndpoint,

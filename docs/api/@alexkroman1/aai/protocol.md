@@ -439,6 +439,29 @@ event(event:
   words: number;
 }
   | {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: {
+     at: number;
+     id: string;
+  };
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -646,6 +669,29 @@ event the stream had already recorded under another.
   \};
   `type`: `"user-turn.exceeded"`;
   `words`: `number`;
+\}
+  \| \{
+  `interrupted`: `boolean`;
+  `latencyMs?`: `number`;
+  `llm?`: \{
+     `durationMs`: `number`;
+     `inputTokens?`: `number`;
+     `outputTokens?`: `number`;
+     `steps`: `number`;
+     `ttftMs?`: `number`;
+  \};
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `stt?`: \{
+     `endpointingMs?`: `number`;
+  \};
+  `tts?`: \{
+     `characters`: `number`;
+     `ttfbMs?`: `number`;
+  \};
+  `type`: `"metrics.collected"`;
 \}
   \| \{
   `messages`: \{
@@ -1243,6 +1289,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
   }, z.core.$strip>;
   type: z.ZodLiteral<"user-turn.exceeded">;
   words: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+  interrupted: z.ZodBoolean;
+  latencyMs: z.ZodOptional<z.ZodNumber>;
+  llm: z.ZodOptional<z.ZodObject<{
+     durationMs: z.ZodNumber;
+     inputTokens: z.ZodOptional<z.ZodNumber>;
+     outputTokens: z.ZodOptional<z.ZodNumber>;
+     steps: z.ZodNumber;
+     ttftMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  stt: z.ZodOptional<z.ZodObject<{
+     endpointingMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  tts: z.ZodOptional<z.ZodObject<{
+     characters: z.ZodNumber;
+     ttfbMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  type: z.ZodLiteral<"metrics.collected">;
 }, z.core.$strip>, z.ZodObject<{
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;

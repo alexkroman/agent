@@ -636,6 +636,29 @@ optional onEvent?: (event:
   words: number;
 }
   | {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: {
+     at: number;
+     id: string;
+  };
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -853,6 +876,29 @@ per turn — which is what `runTextAgent` does.
   \};
   `type`: `"user-turn.exceeded"`;
   `words`: `number`;
+\}
+  \| \{
+  `interrupted`: `boolean`;
+  `latencyMs?`: `number`;
+  `llm?`: \{
+     `durationMs`: `number`;
+     `inputTokens?`: `number`;
+     `outputTokens?`: `number`;
+     `steps`: `number`;
+     `ttftMs?`: `number`;
+  \};
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `stt?`: \{
+     `endpointingMs?`: `number`;
+  \};
+  `tts?`: \{
+     `characters`: `number`;
+     `ttfbMs?`: `number`;
+  \};
+  `type`: `"metrics.collected"`;
 \}
   \| \{
   `messages`: \{

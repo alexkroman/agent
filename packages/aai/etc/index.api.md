@@ -168,6 +168,9 @@ export function clockTime(what?: string): z.ZodString;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function createMetricsCollector(options?: MetricsCollectorOptions): MetricsCollector;
+
+// @public
 export function createSeededRandom(seed: number): RandomSource;
 
 // @public
@@ -486,6 +489,57 @@ export type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+export type MetricsCollectedEvent = Extract<SessionEvent, {
+    type: "metrics.collected";
+}>;
+
+// @public
+export interface MetricsCollector {
+    collect(sample: MetricsSample): void;
+    reset(): void;
+    summary(): MetricsSummary;
+}
+
+// @public
+export interface MetricsCollectorOptions {
+    maxSamples?: number;
+}
+
+// @public
+export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
+
+// @public
+export interface MetricsSummary {
+    interrupted: number;
+    latencyMs?: MetricStat;
+    llmDurationMs?: MetricStat;
+    llmInputTokens: number;
+    // (undocumented)
+    llmOutputTokens: number;
+    // (undocumented)
+    llmSteps: number;
+    llmTtftMs?: MetricStat;
+    replies: number;
+    sttEndpointingMs?: MetricStat;
+    // (undocumented)
+    ttsCharacters: number;
+    ttsTtfbMs?: MetricStat;
+}
+
+// @public
+export interface MetricStat {
+    count: number;
+    // (undocumented)
+    max: number;
+    // (undocumented)
+    mean: number;
+    // (undocumented)
+    min: number;
+    p50: number;
+    p95: number;
+}
 
 // @public
 export function mintCode(prefix: string, options?: MintCodeOptions): string;
@@ -882,6 +936,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{

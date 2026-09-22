@@ -360,7 +360,12 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // only repair: the preamble cannot be spliced onto a fresh request (that
       // is the same request-parity argument that makes adoption legitimate in
       // the first place), so the run is abandoned whole.
-      const trace = createTurnTrace({ log, sid, adopted: useAdopted !== undefined });
+      const trace = createTurnTrace({
+        log,
+        sid,
+        adopted: useAdopted !== undefined,
+        onDone: params.onLlmTiming,
+      });
       const { lateToolCall, spokeBeforeRestart } = await drainEntries(entries, handler, {
         adopted: useAdopted !== undefined,
         signal,

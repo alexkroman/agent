@@ -1153,6 +1153,31 @@ doc and regression-tests one of them, the bundle URL; and
 nothing, so the only tier that sees real microVM behaviour has never gated a
 merge.
 
+## A reply's metrics are ONE frame, and every reader takes it from there
+
+`metrics.collected` is reported once per settled reply by the pipeline
+transport — STT endpointing, LLM TTFT/duration/steps/tokens, TTS TTFB/characters
+and `latencyMs` (committed turn → first audio). `transports/pipeline-turn-metrics.ts`
+assembles it from marks the existing producers already took for their log lines
+(`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`); the log lines stay. Three
+rules, each argued in that module or in `aai`'s `protocol-events-metrics.ts`:
+
+- **A stage that did not happen is ABSENT, never zero** — a greeting has no STT,
+  a refused turn no LLM. A zero averages in as the fast case.
+- **The STT marks are TAKEN by the next `begin()`**, since they happen before the
+  reply they start; a greeting or nudge finds nothing to take.
+- **Tokens are the meter's DELTA across the reply**, so a tool's `ctx.generate`
+  inside it counts.
+
+Readers: the client (it is an ordinary event), `agent({ events })`, and the
+process-wide SINKS in `metrics-sink.ts` (`registerMetricsSink`, exported from
+`/tracing`). The sink registry is `Symbol.for`-keyed for the two-copies reason
+above — the harness's copy starts the exporter, the bundle's records. With a
+collector configured, `startTracing` registers `otelMetricsSink` over a
+`MeterProvider` (`_metrics-otel.ts`); its two peers are loaded SEPARATELY from
+the trace peers and a missing one is a warning, never a throw, because the same
+`OTEL_EXPORTER_OTLP_ENDPOINT` arms both. S2S and text mode emit no frame yet.
+
 ## S2S property test
 
 **A fast-check PROPERTY TEST covers the S2S stack**

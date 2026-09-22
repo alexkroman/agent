@@ -68,6 +68,14 @@ describe("server→client event wire format", () => {
     { type: "guardrail.blocked", direction: "output", replacement: "I can't help with that." },
     { type: "user-turn.exceeded", limit: "words", words: 60, durationMs: 14_200 },
     {
+      type: "metrics.collected",
+      interrupted: false,
+      latencyMs: 910,
+      stt: { endpointingMs: 320 },
+      llm: { ttftMs: 480, durationMs: 1300, steps: 1, inputTokens: 900, outputTokens: 30 },
+      tts: { ttfbMs: 66, characters: 84 },
+    },
+    {
       type: "history.restored",
       messages: [
         { role: "user", content: "two large pepperoni" },

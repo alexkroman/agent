@@ -17,6 +17,7 @@
 import { trace } from "@opentelemetry/api";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
+  metricsEndpoint,
   OTEL_ENDPOINT_ENVS,
   startTracing,
   startTracingDetached,
@@ -101,5 +102,49 @@ describe("the env gate", () => {
     expect(startTracingDetached({})).toBe(undefined);
     await flushMicrotasks();
     expect(registeredIntegrations()).toBeUndefined();
+  });
+});
+
+describe("the metrics gate", () => {
+  test("opens on the generic endpoint or the metrics-specific one", () => {
+    expect(metricsEndpoint({})).toBeUndefined();
+    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe("http://c:4318");
+    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" })).toBe(
+      "http://m:4318",
+    );
+    // The traces-specific variable is for traces only.
+    expect(
+      metricsEndpoint({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://t:4318" }),
+    ).toBeUndefined();
+  });
+
+  test("OTEL_METRICS_EXPORTER=none closes it, whatever the endpoint", () => {
+    expect(
+      metricsEndpoint({
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318",
+        OTEL_METRICS_EXPORTER: "none",
+      }),
+    ).toBeUndefined();
+  });
+
+  test("missing METRICS peers are one warning, and the start still resolves", async () => {
+    // A deployment that installed only the trace peers keeps its traces: the
+    // metrics half answers with the install line and steps aside.
+    vi.doMock("./_metrics-otel.ts", () => {
+      throw new Error("Cannot find package '@opentelemetry/sdk-metrics'");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    onTestFinished(() => {
+      warn.mockRestore();
+      vi.doUnmock("./_metrics-otel.ts");
+      vi.resetModules();
+    });
+    vi.resetModules();
+    const { startTracing: fresh } = await import("./tracing.ts");
+    await expect(
+      fresh({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" }),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/@opentelemetry\/sdk-metrics/);
   });
 });
