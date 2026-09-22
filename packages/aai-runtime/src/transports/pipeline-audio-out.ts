@@ -155,7 +155,12 @@ export function createAudioOut(deps: {
       });
     },
 
-    armFloor: () => speakGate.hold(deps.startSpeakingFloorMs),
+    armFloor: () => {
+      // A new reply's first text restarts the TTS clock: a reply aborted after
+      // sending text but before any audio must not lend its start to this one.
+      ttsTextAtMs = undefined;
+      speakGate.hold(deps.startSpeakingFloorMs);
+    },
     onInterrupted: () => speakGate.hold(deps.interruptionBackoffMs),
     drop: () => speakGate.drop(),
     stop: () => speakGate.stop(),

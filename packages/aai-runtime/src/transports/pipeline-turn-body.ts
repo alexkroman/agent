@@ -17,6 +17,7 @@ import type { PipelineHistory } from "./pipeline-history.ts";
 import type { TurnLlmRunner } from "./pipeline-llm-stream.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
+import type { TurnMetrics } from "./pipeline-turn-metrics.ts";
 import type { TurnOutcome } from "./pipeline-turn-outcome.ts";
 import type { EmitError, SendTtsText } from "./types.ts";
 
@@ -48,6 +49,8 @@ export function createTurnBody(deps: {
   sendTtsText: SendTtsText;
   /** Report a turn-level error (never fatal — a failing turn is not a failing session). */
   emitError: EmitError;
+  /** Per-reply marks — the turn claims the committed utterance it answers. */
+  metrics?: TurnMetrics | undefined;
 }): TurnBody {
   const {
     gate,
@@ -163,6 +166,7 @@ export function createTurnBody(deps: {
     // it through the ordinary handler instead of launching a second request.
     const claimed = speculation.take(userText);
     return runReply("pipeline", async (signal) => {
+      deps.metrics?.claimTurn(userText);
       // A fresh signal for this turn's tools to abort, and no error carried
       // over from the last one.
       fatalTool.reset();

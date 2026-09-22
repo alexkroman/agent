@@ -1164,8 +1164,10 @@ rules, each argued in that module or in `aai`'s `protocol-events-metrics.ts`:
 
 - **A stage that did not happen is ABSENT, never zero** — a greeting has no STT,
   a refused turn no LLM. A zero averages in as the fast case.
-- **The STT marks are TAKEN by the next `begin()`**, since they happen before the
-  reply they start; a greeting or nudge finds nothing to take.
+- **The STT marks are QUEUED per committed text and CLAIMED by the turn that
+  answers that text** — the next reply to start is not always the final's (two
+  finals behind a speaking agent, a turn a reset dropped), and a greeting or
+  nudge answers no final. A partial is forgotten when its utterance closes.
 - **Tokens are the meter's DELTA across the reply**, so a tool's `ctx.generate`
   inside it counts.
 

@@ -21,9 +21,15 @@
  *
  * The STT marks are the exception, because they happen BEFORE the reply they
  * start: the caller's utterance is heard, committed, and only then does a
- * reply begin. So they are held session-side and TAKEN by the next `begin`,
- * which is also what keeps them off a greeting or a silence nudge: nothing
- * committed, nothing to take.
+ * reply begin — possibly several replies later, since a turn committed while
+ * the agent is still speaking waits on the turn chain. So each committed turn
+ * is QUEUED under its own text and CLAIMED by the turn body answering exactly
+ * that text (`claimTurn`). Keyed rather than "whatever is pending", because the
+ * next reply to start is not always the one a final belongs to: two finals
+ * queued behind a speaking agent would otherwise hand the first turn the
+ * second's timing, and a turn dropped by a reset would lend its timing to the
+ * next silence nudge. A greeting, a nudge or an injected prompt answers no
+ * final's text, so it claims nothing.
  *
  * Deliberately no timers and no async: every method is a clock read and an
  * assignment, on paths (each partial, each audio chunk) that run many times a
@@ -50,10 +56,17 @@ export interface LlmTiming {
 export interface TurnMetrics {
   /** A partial transcript carrying words arrived. */
   onPartial(): void;
-  /** The caller's turn was committed. */
-  onFinal(): void;
-  /** A reply took the floor. Takes whatever STT marks are standing. */
+  /** The caller's turn was committed, with the text the turn will answer. */
+  onFinal(text: string): void;
+  /**
+   * The caller's utterance closed — committed, gone quiet with no final, or
+   * reset. A partial before this is not part of the next utterance.
+   */
+  onUtteranceEnded(): void;
+  /** A reply took the floor. */
   begin(): void;
+  /** The open reply answers the committed turn `text`: attach its STT marks. */
+  claimTurn(text: string): void;
   /** One LLM pass settled. A restarted pass overwrites the abandoned one. */
   onLlm(timing: LlmTiming): void;
   /** Text went to TTS. */
@@ -77,6 +90,11 @@ type OpenReply = {
 const whole = (n: number): number => Math.max(0, Math.round(n));
 
 type Tokens = { input: number; output: number };
+
+type CommittedTurn = { text: string; committedAt: number; endpointingMs?: number | undefined };
+
+/** Committed turns held for a claim — far more than a turn chain ever queues. */
+const MAX_PENDING_TURNS = 8;
 
 /**
  * The LLM stage. Tokens are the meter's DELTA across the reply, so a tool's
@@ -104,9 +122,10 @@ export function createTurnMetrics(
   deps: { usage?: UsageMeter | undefined; now?: (() => number) | undefined } = {},
 ): TurnMetrics {
   const now = deps.now ?? Date.now;
-  // Session-side: the utterance in progress, and the turn committed from it.
+  // Session-side: the utterance in progress, and the turns committed from
+  // utterances that no reply has claimed yet, oldest first.
   let lastPartialAt: number | undefined;
-  let pending: { committedAt: number; endpointingMs?: number | undefined } | undefined;
+  const pending: CommittedTurn[] = [];
   let open: OpenReply | undefined;
 
   const tokens = (): Tokens | undefined => {
@@ -118,22 +137,32 @@ export function createTurnMetrics(
     onPartial() {
       lastPartialAt = now();
     },
-    onFinal() {
+    onFinal(text) {
       const at = now();
-      pending = {
+      pending.push({
+        text,
         committedAt: at,
         endpointingMs: lastPartialAt === undefined ? undefined : whole(at - lastPartialAt),
-      };
+      });
+      // Bounded: an entry no reply ever claims (a turn a reset dropped) must
+      // not accumulate for the life of the call.
+      if (pending.length > MAX_PENDING_TURNS) pending.shift();
+      lastPartialAt = undefined;
+    },
+    onUtteranceEnded() {
       lastPartialAt = undefined;
     },
     begin() {
-      open = {
-        committedAt: pending?.committedAt,
-        endpointingMs: pending?.endpointingMs,
-        tokensAtStart: tokens(),
-        ttsChars: 0,
-      };
-      pending = undefined;
+      open = { tokensAtStart: tokens(), ttsChars: 0 };
+    },
+    claimTurn(text) {
+      const at = pending.findIndex((turn) => turn.text === text);
+      if (!open || at < 0) return;
+      // Everything queued BEFORE the match belongs to a turn that was skipped
+      // (reset, superseded) and will never be answered.
+      const [turn] = pending.splice(0, at + 1).slice(-1);
+      open.committedAt = turn?.committedAt;
+      open.endpointingMs = turn?.endpointingMs;
     },
     onLlm(timing) {
       if (open) open.llm = timing;
@@ -184,7 +213,9 @@ export function withSttMarks(metrics: TurnMetrics, handlers: SttHandlers): SttHa
       handlers.onSttPartial(text, meta);
     },
     onSttFinal(text, meta) {
-      if (text.trim()) metrics.onFinal();
+      const trimmed = text.trim();
+      // The same trim the handler commits with, so the claim matches it.
+      if (trimmed) metrics.onFinal(trimmed);
       handlers.onSttFinal(text, meta);
     },
   };

@@ -219,6 +219,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     onInterrupted: audioOut.onInterrupted,
     userTurnLimit: opts.userTurnLimit,
     turnDetection: opts.turnDetection,
+    onUtteranceEnded: metrics.onUtteranceEnded,
     // `providers` is declared below and reached lazily: this fires from an
     // STT event, which only exists once `providers.open()` has run. A provider
     // that cannot end a turn on demand leaves the cap inert, said ONCE per
@@ -445,6 +446,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     usage,
     sendTtsText,
     emitError,
+    metrics,
   });
 
   // Session lifecycle: open/greet/teardown — see
