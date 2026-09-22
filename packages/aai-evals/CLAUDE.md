@@ -161,8 +161,8 @@ LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
 
 **A model-graded judge now exists, and it lives in `aai-runtime/eval`, not
 here.** `judgeCall` (and `judge()` on a `describeEval` case) rules on each
-criterion separately and computes the verdict itself, so a skipped criterion is a
-FAIL rather than a silent pass — see `aai-runtime/TEXT-AGENT-CLAUDE.md`,
+criterion separately and computes the verdict itself, so a skipped criterion is
+a FAIL rather than a silent pass — see `aai-runtime/TEXT-AGENT-CLAUDE.md`,
 "A simulated caller, and a judge". The caution that kept it unbuilt still holds
 and is why it is a separate instrument rather than an assertion here: "did it
 say the right thing" is the noisiest claim available, and the tau2 numbers this
