@@ -1849,12 +1849,13 @@ export default tool({
 });
 ```
 
-Four rules, each the way a subagent disappoints when skipped: you
-receive its FINAL message, so declare `expectedOutput`; its context is isolated,
-so `task` must be a complete brief; `maxSteps` bounds the loop, and a capped run
-is asked for its answer with tools withheld; and say you are looking it up
-before you call. A subagent may name its own `llm` and its own `tools` map; **delegation is one
-level deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it by subagent name.
+Four rules, each the way a subagent disappoints when skipped: you receive its
+FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
+must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
+for its answer with tools withheld; and say you are looking it up before you
+call. A subagent may name its own `llm` and its own `tools` map; **delegation is
+one level deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it
+by subagent name.
 
 ### Personas and `handoff` (`personas()`)
 
