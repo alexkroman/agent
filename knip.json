@@ -143,6 +143,14 @@
         "**/*.test.ts",
         "src/_test-utils.ts"
       ],
+      // SoX's `rec` and `play` — the microphone and speaker `aai console`
+      // spawns (`_console-audio.ts`). A system audio tool, deliberately not a
+      // dependency: nothing else in the CLI needs a sound card, and a missing
+      // one fails that command alone, naming the install command.
+      "ignoreBinaries": [
+        "rec",
+        "play"
+      ],
       // NO `ignoreDependencies` for `workflow`, and the entry that used to sit
       // here is worth a note because it came and went twice. It existed for
       // FIXTURE SOURCE — template literals the workflow specs write into a

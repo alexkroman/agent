@@ -115,6 +115,21 @@ const dev = defineExec({
   },
 });
 
+const consoleCommand = defineExec({
+  meta: {
+    name: "console",
+    description: "Talk to the agent through your microphone and speakers",
+  },
+  args: {
+    verbose: { type: "boolean", description: "Print the runtime's session log to stderr" },
+  },
+  cwd: "agent",
+  async run({ args, cwd, mode }) {
+    const { executeConsole } = await import("./console.ts");
+    return executeConsole({ cwd, verbose: args.verbose, mode });
+  },
+});
+
 const start = defineExec({
   meta: { name: "start", description: "Serve the built agent (production)" },
   args: {
@@ -303,6 +318,7 @@ export const mainCommand = defineCommand({
   subCommands: {
     init,
     dev,
+    console: consoleCommand,
     start,
     test,
     eval: evalCommand,

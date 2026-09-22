@@ -11,7 +11,7 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";
+import type { ClientSink, ReadyConfig, SessionCommand } from "@alexkroman1/aai/protocol";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
@@ -49,6 +49,47 @@ export type SessionStartOptions = {
    * programmatic client that buffers and meters playback itself.
    */
   audioLeadMs?: number;
+};
+
+/**
+ * Per-session options for {@link Runtime.connect}.
+ *
+ * @public
+ */
+export type SessionConnectOptions = Pick<
+  SessionStartOptions,
+  "skipGreeting" | "resumeFrom" | "logContext" | "onSessionEnd" | "audioLeadMs"
+>;
+
+/**
+ * The input half of a session started with {@link Runtime.connect}.
+ *
+ * Input sent while the session is still starting is buffered and replayed once
+ * it is ready; input after the session has ended is dropped.
+ *
+ * @public
+ */
+export type SessionConnection = {
+  /** The session's id — pass it back as `resumeFrom` to resume this conversation. */
+  readonly id: string;
+  /** The audio formats this session speaks — the same values `session.configured` carries. */
+  readonly readyConfig: ReadyConfig;
+  /** One chunk of user audio: PCM16 little-endian mono at `readyConfig.sampleRate`. */
+  sendAudio(pcm16: Uint8Array): void;
+  /**
+   * One client command — `audio_ready`, `cancel`, `reset`, `playback_progress`
+   * or `tool_result`. Validated exactly as a socket frame is; an invalid one is
+   * logged and dropped.
+   */
+  sendCommand(command: SessionCommand): void;
+  /**
+   * Your end went away: stop the session and release it. Idempotent. The
+   * runtime also calls this itself after it closes `sink` — a resume by
+   * another connection, or a session that failed to start.
+   */
+  close(): void;
+  /** Settles once the session has stopped and its cleanup has run. */
+  readonly ended: Promise<void>;
 };
 
 /**
@@ -347,6 +388,46 @@ export type Runtime = AgentRuntime & {
   executeTool: ExecuteTool;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
+  /**
+   * Run a session over your OWN audio I/O — anything that is not a WebSocket.
+   *
+   * `startSession` takes a socket speaking the client protocol; this takes the
+   * two halves of that protocol directly. The session writes to `sink` (events,
+   * and agent audio as PCM16 mono at `readyConfig.ttsSampleRate`) and you write
+   * to the returned {@link SessionConnection} (user audio as PCM16 mono at
+   * `readyConfig.sampleRate`, plus client commands). Everything else a browser
+   * session gets comes with it: the start deadline, input buffered while the
+   * session starts, real-time pacing of agent audio with its barge-in ordering
+   * rules, resume by id, and end-of-session cleanup.
+   *
+   * The session announces itself on `sink` (`session.configured`) before this
+   * returns. Send `{ type: "audio_ready" }` once you can play audio — that is
+   * what releases the greeting — and call `close()` when your end goes away.
+   *
+   * @example
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   * import { createRuntime } from "@alexkroman1/aai-runtime";
+   *
+   * const runtime = createRuntime({ agent: agent({ name: "Desk" }), env: {} });
+   * declare function play(pcm: Uint8Array): void;
+   * declare function flushPlayback(): void;
+   *
+   * const connection = runtime.connect({
+   *   open: true,
+   *   event(e) {
+   *     if (e.type === "reply.cancelled") flushPlayback();
+   *   },
+   *   playAudioChunk: play,
+   * });
+   * connection.sendCommand({ type: "audio_ready" });
+   * // …feed microphone PCM16 at runtime.readyConfig.sampleRate:
+   * connection.sendAudio(new Uint8Array(3200));
+   * connection.close();
+   * await connection.ended;
+   * ```
+   */
+  connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
   /** Create a new voice session for a connected client (lower-level than startSession). */
   createSession(options: {
     id: string;

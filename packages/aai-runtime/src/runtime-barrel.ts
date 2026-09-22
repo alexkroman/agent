@@ -175,6 +175,8 @@ export {
   createRuntime,
   type Runtime,
   type RuntimeOptions,
+  type SessionConnection,
+  type SessionConnectOptions,
   type SessionStartOptions,
 } from "./runtime.ts";
 // The logger a host passes in, and the S2S tuning bag a config can override.

@@ -104,7 +104,10 @@ export function agentEnvWarnings(
   return warnings;
 }
 
-async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
+export async function resolveAgentEnv(
+  root: string,
+  agentDef: AgentDef,
+): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
 
   // Only AssemblyAI's key has a setup flow of its own (it doubles as the

@@ -100,6 +100,36 @@ The three suites failed loudly only because each carries an
 `expect(found.length).toBeGreaterThan(0)` floor under its scan;
 [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) carries the rest.
 
+## A session reaches its client through ONE lifecycle; the socket is an adapter
+
+`session-attach.ts` is the transport-neutral lifecycle of one client
+connection: claim the id (evicting a superseded session on a resume), announce
+`session.configured`, start under the deadline, buffer input while starting and
+replay it once ready, report a failed start, and run end-of-session cleanup
+exactly once. It takes a `ClientSink` for output and returns an
+`AttachedSession` (`sendAudio`, `sendCommand`, `detach`, `ended`) for input.
+The phase machine is still `ws-session-lifecycle.ts`.
+
+**Two adapters sit on it, and a third kind of I/O is a third adapter, never a
+second lifecycle.** `wireSessionSocket` keeps only what a socket has — frame
+parsing, the keepalive ping, close codes, and the `bufferedAmount` guard in
+`ws-client-sink.ts`. `Runtime.connect(sink)` is the PUBLIC one, for a host with
+its own audio I/O (`aai console` is its first consumer). Pacing is
+`paced-client-sink.ts`, wrapped around ANY sink, because its two ordering rules
+(turn-closing events wait behind held audio; a cancel or reset discards it) are
+properties of holding audio back, not of the wire.
+
+**`connect` detaches itself when the RUNTIME closes the sink** (a resume
+takeover, a failed start). A socket adapter learns that from its own close
+event; a caller-owned sink has none, so without it the session would sit
+`ready` with nobody left to end it.
+
+**Telephony still enters as a fake socket**, and that is the known remainder:
+`startTelephonySession` goes through `SessionRuntime`, which the guest's LAZY
+runtime facade implements with `startSession` only — a `connect` there has to
+return a connection synchronously before the runtime exists. Porting the bridge
+means giving that facade a buffered `connect` first.
+
 ## Telephony: a phone call is an ordinary session
 
 `WS /phone` (`telephony/`) runs a carrier's media stream — Twilio Media

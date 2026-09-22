@@ -4,7 +4,7 @@
 
 ```ts
 
-import { ClientSink } from '@alexkroman1/aai/protocol';
+import type { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -16,7 +16,7 @@ import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
-import { ReadyConfig } from '@alexkroman1/aai/protocol';
+import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';

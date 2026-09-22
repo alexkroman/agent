@@ -379,6 +379,8 @@ each is for.
 | `SessionAuthOptions` | `@alexkroman1/aai-runtime` |
 | `SessionCommand` | `@alexkroman1/aai/protocol` |
 | `SessionCommandSchema` | `@alexkroman1/aai/protocol` |
+| `SessionConnectOptions` | `@alexkroman1/aai-runtime` |
+| `SessionConnection` | `@alexkroman1/aai-runtime` |
 | `SessionControlAction` | `@alexkroman1/aai-ui` |
 | `SessionControlButton` | `@alexkroman1/aai-ui` |
 | `SessionControls` | `@alexkroman1/aai-ui` |

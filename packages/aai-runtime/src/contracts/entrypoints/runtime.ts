@@ -20,6 +20,8 @@ export {
   type Runtime,
   type RuntimeOptions,
   rejectingRuntime,
+  type SessionConnection,
+  type SessionConnectOptions,
   type SessionRuntime,
   type SessionStartOptions,
   type SkipGreetingOption,

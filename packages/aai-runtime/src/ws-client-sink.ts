@@ -7,8 +7,8 @@
 import { MAX_CLIENT_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import { createAudioPacer } from "./audio-pacer.ts";
+import { errorMessage } from "@alexkroman1/aai/utils";
+import { createPacedClientSink } from "./paced-client-sink.ts";
 import type { Logger } from "./runtime-config.ts";
 import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
@@ -25,14 +25,10 @@ const WS_CLOSE_NORMAL = 1000;
  * PCM16 binary frames.
  *
  * Audio pacing: TTS synthesis outruns real-time playback, so audio goes out
- * through an {@link createAudioPacer} at a bounded lead rather than the instant
- * a provider frame arrives — otherwise a whole reply lands in the socket buffer
- * at once and a slow link turns that into seconds of invisible queue. The pacer
- * owns two ordering rules that follow from holding audio back: end-of-reply
- * frames are queued behind it (`audio.completed` and `reply.completed` — an early turn
- * boundary truncates the reply client-side, or hands its remaining audio to the
- * next turn), and a `reply.cancelled`/`session.reset` event discards it (the client flushes
- * its own buffer on those, so held audio would arrive as an orphan fragment).
+ * through {@link createPacedClientSink} at a bounded lead rather than the
+ * instant a provider frame arrives — otherwise a whole reply lands in the socket
+ * buffer at once and a slow link turns that into seconds of invisible queue.
+ * The ordering rules that follow from holding audio back are documented there.
  *
  * Audio backpressure: the pacer keeps the socket buffer small in the ordinary
  * case, so `bufferedAmount` past {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of
@@ -48,33 +44,37 @@ export function createClientSink(
   audioLeadMs?: number,
 ): { client: ClientSink; stopPacing: () => void } {
   let closedForBackpressure = false;
-  const pacer = createAudioPacer({
-    sendAudio: (chunk) => safeSend(ws, chunk, log),
-    sampleRate: ttsSampleRate,
-    ...omitUndefined({ leadMs: audioLeadMs }),
-  });
-  const client: ClientSink = {
+  // The socket itself, unpaced: frames and audio go out the moment they are
+  // handed over. Pacing and its ordering rules are `paced-client-sink.ts`'s,
+  // which is the same wrapper every other kind of client sink gets.
+  const raw = {
     get open() {
       return ws.readyState === WS_OPEN;
     },
     event(e) {
-      // Both events tell the client to drop its playback buffer, so whatever
-      // this turn still has queued here is dead audio.
-      if (e.type === "reply.cancelled" || e.type === "session.reset") pacer.clear();
-      // Both of these close out the turn the held audio belongs to, so neither
-      // may overtake it — see the pacer's ordering rules. `audio.completed` is
-      // the stronger case: the playback worklet takes it as "this is all there
-      // is", so an early one truncates the reply. Every other event is
-      // conversation-critical and goes out now — and pays no closure for the
-      // privilege: only a DEFERRED send needs something to defer with, and this
-      // runs per event on a live call.
-      if (e.type === "reply.completed" || e.type === "audio.completed") {
-        const frame = JSON.stringify(e);
-        pacer.pushAfterAudio(() => safeSend(ws, frame, log));
-        return;
-      }
       safeSend(ws, JSON.stringify(e), log);
     },
+    playAudioChunk(chunk) {
+      safeSend(ws, chunk, log);
+    },
+    close(reason) {
+      try {
+        ws.close?.(WS_CLOSE_NORMAL, reason);
+      } catch (err) {
+        log.debug("ws: sink close failed", { error: errorMessage(err) });
+      }
+    },
+  } satisfies ClientSink;
+  const paced = createPacedClientSink(raw, { sampleRate: ttsSampleRate, leadMs: audioLeadMs });
+  const client: ClientSink = {
+    get open() {
+      return raw.open;
+    },
+    event: paced.client.event,
+    // The stalled-link guard runs BEFORE the pacer, as it always has: a chunk
+    // that arrives while the socket is already backed up past the budget is
+    // dropped and the connection closed, rather than queued behind audio the
+    // client is never going to receive.
     playAudioChunk(chunk) {
       const buffered = ws.bufferedAmount;
       if (buffered !== undefined && buffered > MAX_CLIENT_WS_BUFFERED_BYTES) {
@@ -92,15 +92,9 @@ export function createClientSink(
         }
         return;
       }
-      pacer.push(chunk);
+      paced.client.playAudioChunk(chunk);
     },
-    close(reason) {
-      try {
-        ws.close?.(WS_CLOSE_NORMAL, reason);
-      } catch (err) {
-        log.debug("ws: sink close failed", { error: errorMessage(err) });
-      }
-    },
+    close: raw.close,
   };
-  return { client, stopPacing: pacer.stop };
+  return { client, stopPacing: paced.stopPacing };
 }
