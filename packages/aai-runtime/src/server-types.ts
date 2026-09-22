@@ -12,6 +12,7 @@ import type http from "node:http";
 import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
+import type { SessionAuthOptions } from "./session-auth.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createRuntimeServer} needs.
@@ -53,6 +54,8 @@ export type SharedServerOptions = {
   upgrade?: RuntimeServerOptions["upgrade"];
   /** First look at every HTTP request — see {@link RuntimeServerOptions.request}. */
   request?: RuntimeServerOptions["request"];
+  /** Who may open a session — see {@link RuntimeServerOptions.auth}. */
+  auth?: RuntimeServerOptions["auth"];
 };
 
 export type RuntimeServerOptions = {
@@ -153,6 +156,13 @@ export type RuntimeServerOptions = {
    * agent with no phone number was serving it without ever saying so.
    */
   telephony?: TelephonyAccess;
+  /**
+   * Who may open a session on `WS /websocket`: a session ticket check, an
+   * `Origin` allowlist, and resume bound to the identity that opened the
+   * session. Off unless configured — `AAI_SESSION_SECRET` in `env` turns the
+   * built-in ticket check on without this. See `session-auth.ts`.
+   */
+  auth?: SessionAuthOptions | undefined;
 };
 
 /** Handle returned by {@link createRuntimeServer}. */
@@ -223,8 +233,9 @@ export type AgentServer = {
 };
 
 /**
- * Default bind address. Loopback, not every interface: this server has no
- * request authentication of its own, so binding `0.0.0.0` by default put a
+ * Default bind address. Loopback, not every interface: this server
+ * authenticates no one unless `auth` or `AAI_SESSION_SECRET` is set, so
+ * binding `0.0.0.0` by default put a
  * developer's agent — and the provider credentials backing it — in reach of
  * anyone on the same network (a shared office or cafe LAN). Exposing it is now
  * an explicit choice by the caller.

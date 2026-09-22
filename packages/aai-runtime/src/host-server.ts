@@ -96,7 +96,7 @@ const HOST_ONLY = "This server serves host-mode sessions only — connect with ?
  * @public
  */
 export function createHostServer(options: HostServerOptions = {}): AgentServer {
-  const { defaults, env, name = "host", logger = consoleLogger, upgrade, request } = options;
+  const { defaults, env, name = "host", logger = consoleLogger, upgrade, request, auth } = options;
   return createRuntimeServer({
     runtime: rejectingRuntime(HOST_ONLY, logger),
     name,
@@ -113,6 +113,7 @@ export function createHostServer(options: HostServerOptions = {}): AgentServer {
       hostBaseAgent: defaults && ({ name, ...defaults } as AgentDef),
       upgrade,
       request,
+      auth,
     }),
   });
 }

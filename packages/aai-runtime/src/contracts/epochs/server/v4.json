@@ -1,0 +1,33 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "server",
+  "epoch": 4,
+  "sha256": "62233305e6dc9e7692edab6ba9831c775dd9bad6b01e44b7dd7cffe149e9e3bc",
+  "exports": [
+    "AgentEnv",
+    "AgentServer",
+    "AgentServerOptions",
+    "DEFAULT_LISTEN_HOST",
+    "HostCredentialEnv",
+    "HostServerOptions",
+    "HostSessionDefaults",
+    "ProviderEnv",
+    "RuntimeServerOptions",
+    "SESSION_AUTH_PROTOCOL_PREFIX",
+    "SESSION_SECRET_ENV",
+    "SESSION_UNAUTHORIZED_CLOSE_CODE",
+    "SessionAuthOptions",
+    "SessionIdentity",
+    "SessionTokenInput",
+    "SessionVerifier",
+    "SharedServerOptions",
+    "VerifySessionTokenOptions",
+    "createAgentServer",
+    "createHostServer",
+    "createRuntimeServer",
+    "createSessionToken",
+    "requiredProviderEnvVars",
+    "verifySessionToken",
+    "withHostCredentialFallback"
+  ]
+}

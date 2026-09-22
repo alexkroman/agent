@@ -45,11 +45,15 @@ export function rejectingRuntime(message: string, logger: Logger = consoleLogger
  * `/websocket`, host mode off), which had three copies of the same
  * stamp-serialize-send-close. The frame is STAMPED here rather than emitted:
  * these paths have no session, so there is nothing to record it in.
+ *
+ * `closeCode` defaults to 1008 (policy violation); a refused session ticket
+ * passes `SESSION_UNAUTHORIZED_CLOSE_CODE` so a client can tell the two apart.
  */
 export function declineSocket(
   ws: Parameters<typeof safeSend>[0] & { close?: (code?: number) => void },
   message: string,
   logger: Logger,
+  closeCode = 1008,
 ): void {
   safeSend(
     ws,
@@ -58,5 +62,5 @@ export function declineSocket(
     ),
     logger,
   );
-  ws.close?.(1008);
+  ws.close?.(closeCode);
 }

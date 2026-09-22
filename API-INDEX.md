@@ -343,9 +343,12 @@ each is for.
 | `S2sAgentParams` | `@alexkroman1/aai` |
 | `S2sConfig` | `@alexkroman1/aai-runtime` |
 | `S2sProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
+| `SESSION_AUTH_PROTOCOL_PREFIX` | `@alexkroman1/aai-runtime` |
 | `SESSION_COMMAND_TYPES` | `@alexkroman1/aai/protocol` |
 | `SESSION_EVENTS_TOKEN_ENV` | `@alexkroman1/aai-runtime` |
 | `SESSION_EVENT_TYPES` | `@alexkroman1/aai/protocol` |
+| `SESSION_SECRET_ENV` | `@alexkroman1/aai-runtime` |
+| `SESSION_UNAUTHORIZED_CLOSE_CODE` | `@alexkroman1/aai-runtime` |
 | `SLACK_CHANNEL_HANDLER` | `@alexkroman1/aai/channels` |
 | `SLACK_CHANNEL_KIND` | `@alexkroman1/aai/channels` |
 | `STEP_FILE_READ_CONCURRENCY` | `@alexkroman1/aai/step-files` |
@@ -364,6 +367,7 @@ each is for.
 | `ServerSession` | `@alexkroman1/aai-runtime` |
 | `Session` | `@alexkroman1/aai-ui` |
 | `SessionActions` | `@alexkroman1/aai-ui` |
+| `SessionAuthOptions` | `@alexkroman1/aai-runtime` |
 | `SessionCommand` | `@alexkroman1/aai/protocol` |
 | `SessionCommandSchema` | `@alexkroman1/aai/protocol` |
 | `SessionControlAction` | `@alexkroman1/aai-ui` |
@@ -387,6 +391,7 @@ each is for.
 | `SessionEventSchema` | `@alexkroman1/aai/protocol` |
 | `SessionEventStream` | `@alexkroman1/aai-runtime` |
 | `SessionEventType` | `@alexkroman1/aai` |
+| `SessionIdentity` | `@alexkroman1/aai-runtime` |
 | `SessionMode` | `@alexkroman1/aai/manifest` |
 | `SessionRuntime` | `@alexkroman1/aai-runtime` |
 | `SessionSlot` | `@alexkroman1/aai` |
@@ -397,6 +402,8 @@ each is for.
 | `SessionStateDot` | `@alexkroman1/aai-ui` |
 | `SessionStateDotProps` | `@alexkroman1/aai-ui` |
 | `SessionStateStore` | `@alexkroman1/aai-runtime` |
+| `SessionTokenInput` | `@alexkroman1/aai-runtime` |
+| `SessionVerifier` | `@alexkroman1/aai-runtime` |
 | `SessionWebSocket` | `@alexkroman1/aai-runtime` |
 | `Settled` | `@alexkroman1/aai/step` |
 | `SharedAgentParams` | `@alexkroman1/aai` |
@@ -602,6 +609,7 @@ each is for.
 | `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
 | `UserTurnLimit` | `@alexkroman1/aai` |
 | `VOICE_PRESETS` | `@alexkroman1/aai` |
+| `VerifySessionTokenOptions` | `@alexkroman1/aai-runtime` |
 | `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
 | `VoicePresetName` | `@alexkroman1/aai` |
 | `VoiceSessionOptions` | `@alexkroman1/aai-ui` |
@@ -703,6 +711,7 @@ each is for.
 | `createRuntime` | `@alexkroman1/aai-runtime` |
 | `createRuntimeServer` | `@alexkroman1/aai-runtime` |
 | `createSeededRandom` | `@alexkroman1/aai` |
+| `createSessionToken` | `@alexkroman1/aai-runtime` |
 | `createStubSttOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubTtsOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubWorkflows` | `@alexkroman1/aai/testing` |
@@ -970,6 +979,7 @@ each is for.
 | `useWorkflowStream` | `@alexkroman1/aai-ui` |
 | `useWorkflowSubmit` | `@alexkroman1/aai-ui` |
 | `useWorkflows` | `@alexkroman1/aai-ui` |
+| `verifySessionToken` | `@alexkroman1/aai-runtime` |
 | `visitWebpage` | `@alexkroman1/aai/tools` |
 | `walkWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
 | `wavEncodeArgs` | `@alexkroman1/aai/ffmpeg` |

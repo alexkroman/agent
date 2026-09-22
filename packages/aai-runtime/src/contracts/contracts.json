@@ -30,8 +30,8 @@
     "dropped": {}
   },
   "server": {
-    "current": 3,
-    "supported": [1, 2, 3],
+    "current": 4,
+    "supported": [1, 2, 3, 4],
     "dropped": {}
   },
   "session": {

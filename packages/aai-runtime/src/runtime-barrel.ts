@@ -197,6 +197,20 @@ export {
   type SessionRuntime,
   type SharedServerOptions,
 } from "./server.ts";
+// Authenticating `WS /websocket`: minting and checking the session ticket, and
+// the option that turns the gate on. The gate's own machinery stays unexported.
+export {
+  createSessionToken,
+  SESSION_AUTH_PROTOCOL_PREFIX,
+  SESSION_SECRET_ENV,
+  SESSION_UNAUTHORIZED_CLOSE_CODE,
+  type SessionAuthOptions,
+  type SessionIdentity,
+  type SessionTokenInput,
+  type SessionVerifier,
+  type VerifySessionTokenOptions,
+  verifySessionToken,
+} from "./session-auth.ts";
 export type { ServerSession } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
