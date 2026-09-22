@@ -4,20 +4,23 @@
 // a floating 384px dropdown that scrolled itself; unrelated sections never fit
 // that width, so it is laid out as a real page instead.
 //
-// The sections run in the order a project needs them: the CLI round-trip
-// (components/cli-commands.tsx) first, and the delete-project button last. Two subjects have LEFT this pane for panes of
-// their own, and both left for the same reason — a card is the wrong size for
-// them. The carrier webhook URLs went to the API pane (panes/docs.tsx): they
-// document how something CALLS this agent. Secrets went to a pane of their own
-// (panes/secrets.tsx): one textarea of `KEY=value` lines was the whole UI for the
-// piece of project configuration people come back to most.
+// The sections run in the order a project needs them: getting the code out
+// (components/github-card.tsx) first, and the delete-project button last.
+// Three subjects have LEFT this pane. Two left for panes of their own, for the
+// same reason — a card is the wrong size for them. The carrier webhook URLs
+// went to the API pane (panes/docs.tsx): they document how something CALLS
+// this agent. Secrets went to a pane of their own (panes/secrets.tsx): one
+// textarea of `KEY=value` lines was the whole UI for the piece of project
+// configuration people come back to most. The third, the "Work locally" card
+// of `aai pull` commands, left for GOOD: GitHub sync is the one way out of the
+// studio the product points at, and a second, copy-pasted path beside it split
+// the answer to "how do I get this code?" in two.
 //
 // Every section here works from the moment a project exists — no publish, no
 // build — and nothing writes into the conversation: each card reports its own
 // outcome beside the control that did it (see "No studio action writes into
 // the transcript" in the package guide).
 
-import { CliCommands } from "../components/cli-commands.tsx";
 import { GithubCard, type GithubSyncState } from "../components/github-card.tsx";
 import { Card } from "../components/settings-card.tsx";
 import { PaneShell } from "../pane-shell.tsx";
@@ -64,24 +67,9 @@ export function SettingsPane({
         </>
       }
     >
-      {/* Unconditional — pulling a project locally needs no published slug. */}
-      <Card
-        title="Work locally"
-        blurb={
-          <>
-            Pull this project's files with the <code className="font-mono">aai</code> CLI, edit them
-            in your own editor, then <code className="font-mono">aai push</code> to sync them back
-            (or <code className="font-mono">aai publish</code> to sync and ship to production).
-          </>
-        }
-      >
-        <CliCommands project={project} />
-      </Card>
-
-      {/* Between the CLI round-trip and Delete project, because it is the
-          other answer to "get this code out of the studio" — and it renders
-          NOTHING when the platform has no GitHub App, so on a self-hosted
-          deploy the pane looks exactly as it did. */}
+      {/* First, because it is THE answer to "get this code out of the studio"
+          — and it renders NOTHING when the platform has no GitHub App, so on a
+          self-hosted deploy the pane is Delete project alone. */}
       <GithubCard bearer={bearer} project={project} data={data} />
 
       <Card

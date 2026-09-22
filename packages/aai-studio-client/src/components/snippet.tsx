@@ -36,7 +36,8 @@ export function Snippet({ code, label }: { code: string; label: string }) {
  * The narrow sibling of {@link Snippet}: same button, but a `<code>` that wraps
  * on `break-all` instead of a `<pre>` that scrolls, because these are single
  * strings the reader wants to see whole. It was written out twice, in
- * components/cli-commands.tsx and components/phone-card.tsx, byte-identical apart from the aria-label.
+ * components/phone-card.tsx and the since-removed "Work locally" card's CLI
+ * command list, byte-identical apart from the aria-label.
  *
  * Takes the card's {@link UseCopyResult} rather than calling `useCopy` itself: the
  * flash is one-at-a-time per hook instance, so a per-row instance would change

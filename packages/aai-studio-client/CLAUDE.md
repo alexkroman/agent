@@ -160,12 +160,12 @@ so every piece of per-project state resets on a switch with no effect to do it.
     package and no test reads it.
 - **Settings is a PANE, not a dropdown** (`panes/settings.tsx`): it renders full-width
   beside the chat panel like every other pane. It was a floating 384px panel
-  that scrolled itself — three unrelated sections (secrets, the CLI round-trip,
+  that scrolled itself — three unrelated sections (secrets, a CLI round-trip,
   Delete project) never laid out in that width. Nothing on the pane gates on a
   build or a deploy: Delete project has to work before anything has ever been
   published, so Settings is reachable whenever a project is open.
-- **The sections are in a FIXED order**: Work locally, Database, Danger zone —
-  setting up first, destruction last. `panes/settings.test.tsx` asserts the sequence
+- **The sections are in a FIXED order**: Sync to GitHub, Danger zone —
+  getting the code out first, destruction last. `panes/settings.test.tsx` asserts the sequence
   of card titles, so moving one means updating that list — and re-reading any
   copy that names a neighbour's direction, which is the trap this used to carry:
   the Phone card said "Secrets **below**" twice while sitting above it, and then
@@ -616,19 +616,23 @@ a cursor, which a reconnecting stream would have to re-derive anyway.
     the agent the user is iterating on; Production is a deliberate switch, and
     each is disabled until that environment has an agent.
 
-- **The Settings pane is also where the CLI round-trip is discoverable**
-(`components/cli-commands.tsx`, the "Work locally" section): the install / `aai
-login` / `aai pull <project>` / `aai dev` sequence with the project name filled
-  in and one copy button each. It renders whether or not the project has
-  ever been published — pulling a workspace needs no deployed slug. The
-  commands carry **no `--server`**: the CLI targets its own shipped default
-  origin (`DEFAULT_SERVER` in `aai-cli/_agent.ts`), which is the platform
-  the commands were copied from. A studio served from anywhere else (local
-  dev, a preview deploy) needs the flag added by hand — passing it is also
-  what APPROVES a non-default origin for credentialed requests
-  (`resolveServerUrl`), and the client cannot compare its own origin
-  against the CLI's default without importing from aai-cli, which would
-  widen the package boundary.
+- **The studio shows NO `aai pull` commands, and the Settings pane is not
+  where the CLI round-trip is discoverable.** It was: a "Work locally" card
+  (`components/cli-commands.tsx`, deleted) spelled out install / `aai login` /
+  `aai pull <project>` / `aai dev` with the project name filled in and one copy
+  button each. It came off because GitHub sync (`components/github-card.tsx`)
+  is the one way out of the studio the product points at, and a second,
+  copy-pasted path beside it split the answer to "how do I get this code?" in
+  two. `panes/settings.test.tsx` asserts no `aai pull` renders, because a
+  command list is exactly the kind of thing that comes back in a helpful
+  follow-up. The CLI's own `pull` subcommand and the server routes behind it
+  are untouched — this is about what the studio ADVERTISES, not what the
+  platform serves. One argument that card carried is still worth keeping
+  where anyone reintroducing commands would look: they had **no `--server`**,
+  because the CLI targets its own shipped default origin (`DEFAULT_SERVER` in
+  `aai-cli/_agent.ts`), and the client cannot compare its own origin against
+  the CLI's default without importing from aai-cli, which would widen the
+  package boundary.
 - **Unsaved editor work lives ABOVE the editor** (`file-drafts.ts`). The Code
   pane's buffer used to live inside `FileBuffer`, which is mounted
   `key={currentFile}` under a `CodeView` the pane switcher renders as
@@ -1053,7 +1057,7 @@ driven by a
   so neither pane gave anything up: the chat keeps `instant`/`smooth` and the
   Logs tail keeps `instant`/`instant`. Both pass `scrollClassName="overflow-y-auto"`,
   because the default hides the scrollbar and these panes show a native one.
-- `useCopy` / `useFlash` (`components/phone-card.tsx`,
+- `useCopy` / `useFlash` (`components/phone-card.tsx`, and the since-removed
 `components/cli-commands.tsx`) — they were EXTRACTED here and have moved INTO
 `aai-ui`, which had a third copy of the
   flash inside its own URL chips. See "The flash primitive is `aai-ui`'s" in
