@@ -1,5 +1,13 @@
 # aai-guest
 
+## 0.6.8
+
+### Patch Changes
+
+- Updated dependencies [f5c64b5]
+  - aai-guest-core@0.6.7
+  - aai-guest-studio@0.6.8
+
 ## 0.6.7
 
 ### Patch Changes
