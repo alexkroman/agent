@@ -43,6 +43,11 @@ import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveEvalMode } from "./eval-mode.ts";
 import { type EvalSession, type EvalSessionOptions, openEvalSession } from "./session.ts";
+import {
+  type EvalSimulationContext,
+  type EvalSimulationSuiteOptions,
+  simulationContext,
+} from "./simulation-context.ts";
 import { installStubLlm, type StubScript } from "./stub-llm.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
@@ -102,6 +107,20 @@ export type EvalCaseOptions = {
    * try). Without this marker each cost a red live run and got weakened.
    */
   readonly scripted?: boolean;
+  /**
+   * The SIMULATED CALLER's lines when this suite runs without a key — one per
+   * caller turn, for a case that calls `simulate()`. End it with
+   * `{ tool: "end_call", args: { reason } }`; absent, the stub caller says one
+   * line and hangs up. Declared here rather than intersected in so the field
+   * has a page of its own in the reference.
+   */
+  readonly stubCaller?: StubScript;
+  /**
+   * The rulings a keyless `judge()` hands back, one per criterion in order —
+   * missing entries pass. Absent, every criterion passes. Either way the
+   * verdict is marked `scripted`, so nobody reads a wiring check as a grade.
+   */
+  readonly stubJudge?: readonly boolean[];
 };
 
 // `EvalMode` is DECLARED in `_announce.ts`, beside the three functions that
@@ -111,8 +130,12 @@ export type EvalCaseOptions = {
 // not re-exported: their callers name that module directly.
 export type { EvalMode } from "./_announce.ts";
 
-/** What a case body is handed: its own session, and which model it is on. */
-export type EvalTestContext = {
+/**
+ * What a case body is handed: its own session, which model it is on, and — via
+ * {@link EvalSimulationContext} — `simulate()` for a simulated caller against
+ * that session and `judge()` for a model-graded verdict.
+ */
+export type EvalTestContext = EvalSimulationContext & {
   /** Open for this case, closed after it. */
   readonly session: EvalSession;
   /**
@@ -184,9 +207,10 @@ export type EvalTestContext = {
  * hand off to a run had to install that inside the case body, which worked only
  * because the engine publishes nothing when nobody passed one.
  */
-export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
-  readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
-};
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> &
+  EvalSimulationSuiteOptions & {
+    readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+  };
 
 /**
  * Declare one eval case. The session is opened for it and closed after it.
@@ -345,8 +369,9 @@ async function runCase(run: CaseRun): Promise<void> {
           ...(options?.workflowOptions ?? {}),
         })
       : undefined;
+  const { callerLlm: _caller, judgeLlm: _judge, ...sessionOptions } = options ?? {};
   const session = await openEvalSession({
-    ...options,
+    ...sessionOptions,
     agent,
     ...omitUndefined({
       workflows: workflows?.client,
@@ -363,7 +388,14 @@ async function runCase(run: CaseRun): Promise<void> {
       : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
   });
   try {
-    await body({ session, mode, workflows });
+    const simulation = simulationContext({
+      agent,
+      mode,
+      target: session,
+      suite: options ?? {},
+      caseOptions,
+    });
+    await body({ session, mode, workflows, ...simulation });
   } finally {
     await session.close();
     await workflows?.close();

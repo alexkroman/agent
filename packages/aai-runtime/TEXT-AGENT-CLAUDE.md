@@ -372,6 +372,40 @@ inside `evalTest(…)` is an error), and a case body takes a DESTRUCTURED contex
 as jest's `done`, so `async (session) => …` is an error where
 `async ({ session }) => …` is vitest's own fixture shape). Do not "tidy" either.
 
+### A simulated caller, and a judge
+
+`simulateCall(target, { caller, llm })` (`eval/simulate.ts`) has a SECOND model
+play the user — a `persona` and a `goal` — against an `EvalSession` or an
+`EvalTextAgent`, until it calls `end_call` or `maxTurns` runs out.
+`judgeCall(input, { criteria, llm })` (`eval/judge.ts`) has a model rule on each
+criterion over the result. A `describeEval`/`describeTextEval` case gets both as
+`simulate()` and `judge()` on its context (`eval/simulation-context.ts`). Five
+decisions worth not undoing:
+
+- **The caller drives the same `say()`/`send()` a scripted case does.** A
+  simulated call is a list of ordinary `EvalTurn`s, so `turnCalling`,
+  `expectCalled` and the rest read it unchanged; there is no second harness.
+- **`end_call` is the CALLER's tool, offered to the simulating model only.** It
+  has no `execute`, so `generateText` stops on it. A call that hits `maxTurns`
+  reports `endedBy: "max-turns"` rather than passing quietly, because "the
+  caller never got what they came for" is the finding a simulation most often
+  exists to surface. It is not an agent hang-up — the SDK still has none.
+- **The judge is never asked "did it pass".** It returns a ruling per
+  criterion, matched by NUMBER, and `pass` is `every` over them; a criterion it
+  skipped fails with that said. An empty criteria list throws.
+- **Keyless, both are SCRIPTED**, like the agent's own model: `stubCaller` is
+  the caller's lines (ending on `{ tool: "end_call" }`), `stubJudge` the
+  rulings, and a stub verdict carries `scripted: true`. `runJudge`'s flag is
+  in-package so nothing else can label a verdict.
+- **Live, both default to the model the agent is evaluated on**, overridable per
+  suite with `callerLlm`/`judgeLlm`. One key, one bill; a stronger judge is
+  one option away.
+
+Text only, like everything on this subpath: `latencyMs` is committed utterance
+to first reply text, i.e. model and tool time, never endpointing or synthesis.
+Audio simulation (a TTS caller paced into `ServerSession.onAudio`) is level 2
+and not built. `quickstart-agent`'s eval is the worked example.
+
 ## Telling a DEFECT from the instrument, and the five things that were missing
 
 The live tier is a noisy instrument by construction, so the reading that

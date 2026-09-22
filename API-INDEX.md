@@ -85,6 +85,7 @@ each is for.
 | `CLIENT_CONFIG_PATH` | `@alexkroman1/aai/protocol` |
 | `CODING_TOOL_DESCRIPTIONS` | `@alexkroman1/aai/coding-tools` |
 | `CallOptions` | `@alexkroman1/aai/tools` |
+| `CallVerdict` | `@alexkroman1/aai-runtime/eval` |
 | `CarrierCodec` | `@alexkroman1/aai-runtime` |
 | `CarrierInbound` | `@alexkroman1/aai-runtime` |
 | `CarrierName` | `@alexkroman1/aai-runtime` |
@@ -117,6 +118,7 @@ each is for.
 | `ConversationView` | `@alexkroman1/aai-ui` |
 | `ConversationViewProps` | `@alexkroman1/aai-ui` |
 | `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
+| `CriterionVerdict` | `@alexkroman1/aai-runtime/eval` |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
 | `DEFAULT_GUARDRAIL_MAX_RETRIES` | `@alexkroman1/aai` |
 | `DEFAULT_LISTEN_HOST` | `@alexkroman1/aai-runtime` |
@@ -124,6 +126,7 @@ each is for.
 | `DEFAULT_LOG_LINE_BYTES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_PAGE_LINES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_MAX_DELIVERIES` | `@alexkroman1/aai-runtime/testing` |
+| `DEFAULT_MAX_TURNS` | `@alexkroman1/aai-runtime/eval` |
 | `DEFAULT_RETRY_DELAY_MS` | `@alexkroman1/aai/step-errors` |
 | `DEFAULT_RUN_TIMEOUT_MS` | `@alexkroman1/aai-runtime/eval` |
 | `DEFAULT_SERVICE_NAME` | `@alexkroman1/aai-runtime/tracing` |
@@ -154,6 +157,7 @@ each is for.
 | `DialogToolDef` | `@alexkroman1/aai` |
 | `DialogToolResult` | `@alexkroman1/aai` |
 | `DialogVoiceConfig` | `@alexkroman1/aai` |
+| `END_CALL_TOOL` | `@alexkroman1/aai-runtime/eval` |
 | `EVENT_ID_PREFIX` | `@alexkroman1/aai/protocol` |
 | `ElevenLabsSttOptions` | `@alexkroman1/aai/stt` |
 | `EvalCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -163,6 +167,9 @@ each is for.
 | `EvalRunOptions` | `@alexkroman1/aai-runtime/eval` |
 | `EvalSession` | `@alexkroman1/aai-runtime/eval` |
 | `EvalSessionOptions` | `@alexkroman1/aai-runtime/eval` |
+| `EvalSimulationCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `EvalSimulationContext` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `EvalSimulationSuiteOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalSleep` | `@alexkroman1/aai-runtime/eval` |
 | `EvalTest` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -230,6 +237,8 @@ each is for.
 | `InferToolOutput` | `@alexkroman1/aai` |
 | `JournalConflictError` | `@alexkroman1/aai-runtime/testing` |
 | `JournalStore` | `@alexkroman1/aai-runtime/testing` |
+| `JudgeCallOptions` | `@alexkroman1/aai-runtime/eval` |
+| `JudgeInput` | `@alexkroman1/aai-runtime/eval` |
 | `KeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockTimeoutError` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
@@ -402,6 +411,12 @@ each is for.
 | `SharedAgentParams` | `@alexkroman1/aai` |
 | `SharedServerOptions` | `@alexkroman1/aai-runtime` |
 | `SidebarLayout` | `@alexkroman1/aai-ui` |
+| `SimulateCallOptions` | `@alexkroman1/aai-runtime/eval` |
+| `SimulatedCall` | `@alexkroman1/aai-runtime/eval` |
+| `SimulatedCaller` | `@alexkroman1/aai-runtime/eval` |
+| `SimulatedTurn` | `@alexkroman1/aai-runtime/eval` |
+| `SimulationMetrics` | `@alexkroman1/aai-runtime/eval` |
+| `SimulationTarget` | `@alexkroman1/aai-runtime/eval` |
 | `SkipGreetingOption` | `@alexkroman1/aai-runtime` |
 | `SlackChannel` | `@alexkroman1/aai/channels` |
 | `SlackChannelOptions` | `@alexkroman1/aai/channels` |
@@ -786,6 +801,7 @@ each is for.
 | `isToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `isTransientStatus` | `@alexkroman1/aai/step` |
 | `isoDate` | `@alexkroman1/aai` |
+| `judgeCall` | `@alexkroman1/aai-runtime/eval` |
 | `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
 | `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
 | `layerScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
@@ -870,6 +886,7 @@ each is for.
 | `sendToChannelOrFail` | `@alexkroman1/aai/step-errors` |
 | `sessionSlot` | `@alexkroman1/aai` |
 | `shuffled` | `@alexkroman1/aai` |
+| `simulateCall` | `@alexkroman1/aai-runtime/eval` |
 | `slackChannel` | `@alexkroman1/aai/channels` |
 | `slugifyName` | `@alexkroman1/aai/slugify` |
 | `snapshotWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |

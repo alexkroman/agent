@@ -90,4 +90,47 @@ describeEval(agentDef, (test) => {
     // answered the first would fail the case it is supposed to let run.
     { stubReply: ["Nice to meet you, Sam.", "You said your name was Sam."] },
   );
+
+  test(
+    "a simulated caller gets a forecast, and a judge grades the call",
+    async ({ simulate, judge }) => {
+      // A SECOND model plays the caller: it is told who it is and what it
+      // wants, reads each reply, answers it, and hangs up with `end_call` once
+      // it has what it came for. Nobody scripted these lines — which is the
+      // point: the caller that gives its city only when asked is the one a
+      // scripted case never writes.
+      const call = await simulate({
+        persona: "a friendly commuter on a phone, who answers in short sentences",
+        goal: "find out whether to bring an umbrella in Seattle today",
+      });
+
+      // The call ending on the caller's terms is the first thing to know: a
+      // call that ran out of turns usually means the goal was never met.
+      expect(call.endedBy, call.transcript()).toBe("caller");
+      expect(call.metrics.toolCallCounts.get_weather ?? 0).toBeGreaterThan(0);
+
+      // What deterministic readers cannot see — whether the answer MEANT
+      // anything — goes to a model-graded judge, one ruling per criterion.
+      // A judge is a noisy instrument: run it under AAI_EVAL_REPEAT and read
+      // the spread before trusting one verdict.
+      const verdict = await judge(call, [
+        "The agent looked up the weather before answering.",
+        "The agent's answer says whether an umbrella is needed.",
+      ]);
+      expect(verdict.pass, verdict.explain()).toBe(true);
+    },
+    // In a keyless run all three models are scripted: the agent's replies,
+    // the caller's lines (ending on `end_call`) and the judge's rulings. That
+    // checks the loop is wired; it grades nothing, and the verdict says so.
+    {
+      stubReply: [
+        { tool: "get_weather", args: { city: "Seattle" } },
+        "It's raining in Seattle, so bring an umbrella.",
+      ],
+      stubCaller: [
+        "Hi, do I need an umbrella in Seattle today?",
+        { tool: "end_call", args: { reason: "got the forecast" } },
+      ],
+    },
+  );
 });

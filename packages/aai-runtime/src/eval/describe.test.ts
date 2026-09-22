@@ -273,6 +273,33 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
     },
     { stubReply: "still here." },
   );
+
+  test(
+    "simulate() and judge() run on SCRIPTS in a keyless run, and say so",
+    async ({ session, simulate, judge }) => {
+      const call = await simulate(
+        { persona: "a regular", goal: "check the agent is there" },
+        { maxTurns: 4 },
+      );
+      // The stub caller's lines, against the stub agent's reply, until the
+      // scripted hang-up — which is the whole loop, wired end to end.
+      expect(call.turns.map((t) => t.caller)).toEqual(["hello?", "thanks"]);
+      expect(call.turns[0]?.turn.text).toBe("scripted, and only the model is");
+      expect(call.endedBy).toBe("caller");
+      expect(call.endReason).toBe("all set");
+      expect(session.said().length).toBeGreaterThan(call.turns.length);
+
+      const verdict = await judge(call, ["It answered.", "It was polite."]);
+      expect(verdict.scripted).toBe(true);
+      expect(verdict.criteria.map((c) => c.pass)).toEqual([true, false]);
+      expect(verdict.pass).toBe(false);
+    },
+    {
+      stubReply: "scripted, and only the model is",
+      stubCaller: ["hello?", "thanks", { tool: "end_call", args: { reason: "all set" } }],
+      stubJudge: [true, false],
+    },
+  );
 });
 
 /**
