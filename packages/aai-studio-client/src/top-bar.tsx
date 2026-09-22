@@ -121,8 +121,8 @@ export function PublishMenu(props: PublishMenuProps) {
  * The project panes, all peers in the segmented control, every one of them
  * offered from the moment a project exists.
  *
- * Settings joined them rather than staying a dropdown: it holds the CLI
- * round-trip and Delete project, which is more than a floating panel can lay
+ * Settings joined them rather than staying a dropdown: it holds GitHub sync
+ * and Delete project, which is more than a floating panel can lay
  * out. Nothing here gates on a build or a deploy —
  * Delete project has to work before anything has ever been published, and the
  * API pane says what the agent will answer once something is.

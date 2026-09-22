@@ -2,8 +2,8 @@
 // The Secrets pane — the third-party keys this project's agents read as
 // `ctx.env`, as a pane of its own beside the chat panel.
 //
-// It was a card in the Settings pane, wedged between the CLI round-trip and
-// Delete project, and its whole UI was one textarea of `KEY=value` lines: to
+// It was a card in the Settings pane, wedged between the (since-removed) CLI
+// round-trip and Delete project, and its whole UI was one textarea of `KEY=value` lines: to
 // attach a single key you typed a shell assignment into a free-text box, and
 // the only report that anything had happened was the box emptying. Secrets are
 // also the one piece of project configuration a user comes back to — a rotated
