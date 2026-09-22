@@ -1,8 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
-import type http from "node:http";
+import { IncomingMessage } from "node:http";
+import { Socket } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import WebSocket from "ws";
-import { silentLogger } from "./_test-utils.ts";
+import { makeClientSink, silentLogger } from "./_test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 import {
   createSessionToken,
@@ -17,15 +18,13 @@ import {
 const SECRET = "test-secret-with-enough-entropy";
 const T0 = Date.UTC(2026, 0, 1);
 
-/** The two request members the gate reads. */
+/** A real `IncomingMessage` carrying only the two members the gate reads. */
 function fakeRequest(opts: { url?: string; protocol?: string; origin?: string }) {
-  return {
-    url: opts.url ?? "/websocket",
-    headers: {
-      ...(opts.protocol !== undefined ? { "sec-websocket-protocol": opts.protocol } : {}),
-      ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
-    },
-  } as unknown as http.IncomingMessage;
+  const req = new IncomingMessage(new Socket());
+  req.url = opts.url ?? "/websocket";
+  if (opts.protocol !== undefined) req.headers["sec-websocket-protocol"] = opts.protocol;
+  if (opts.origin !== undefined) req.headers.origin = opts.origin;
+  return req;
 }
 
 describe("session tickets", () => {
@@ -208,7 +207,7 @@ describe("createRuntimeServer with auth", () => {
         startSession: (ws, opts) => {
           started.push(opts?.resumeFrom ?? "fresh");
           // What the real runtime does once it has minted the session's id.
-          opts?.onSinkCreated?.(`sess-${started.length}`, {} as never);
+          opts?.onSinkCreated?.(`sess-${started.length}`, makeClientSink());
           ws.send(JSON.stringify({ type: "hello" }));
         },
         shutdown: () => Promise.resolve(),

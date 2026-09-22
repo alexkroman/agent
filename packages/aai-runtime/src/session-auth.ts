@@ -46,6 +46,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import { requestQuery } from "@alexkroman1/aai/internal";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "./runtime-config.ts";
 import { agentGateToken } from "./server-env.ts";
@@ -142,8 +143,7 @@ export function createSessionToken(input: SessionTokenInput): string {
     iat,
     exp: iat + (input.ttlSeconds ?? DEFAULT_TTL_SECONDS),
     jti: randomUUID(),
-    ...(input.sessionId !== undefined ? { sid: input.sessionId } : {}),
-    ...(input.claims !== undefined ? { claims: input.claims } : {}),
+    ...omitUndefined({ sid: input.sessionId, claims: input.claims }),
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${sign(body, input.secret)}`;
@@ -158,16 +158,20 @@ export type VerifySessionTokenOptions = {
 
 function parsePayload(body: string): TicketPayload | undefined {
   try {
-    const value: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (typeof value !== "object" || value === null) return undefined;
-    const p = value as Partial<TicketPayload>;
+    const p: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!isRecord(p)) return undefined;
     if (p.v !== 1 || typeof p.sub !== "string" || p.sub === "") return undefined;
     if (typeof p.iat !== "number" || typeof p.exp !== "number") return undefined;
     if (p.sid !== undefined && typeof p.sid !== "string") return undefined;
-    if (p.claims !== undefined && (typeof p.claims !== "object" || p.claims === null)) {
-      return undefined;
-    }
-    return p as TicketPayload;
+    if (p.claims !== undefined && !isRecord(p.claims)) return undefined;
+    return {
+      v: 1,
+      sub: p.sub,
+      iat: p.iat,
+      exp: p.exp,
+      jti: typeof p.jti === "string" ? p.jti : "",
+      ...omitUndefined({ sid: p.sid, claims: p.claims }),
+    };
   } catch {
     return undefined;
   }
@@ -198,8 +202,7 @@ export function verifySessionToken(
   if (payload.exp <= now || payload.iat > now + CLOCK_SKEW_SECONDS) return undefined;
   return {
     sub: payload.sub,
-    ...(payload.sid !== undefined ? { sessionId: payload.sid } : {}),
-    ...(payload.claims !== undefined ? { claims: payload.claims } : {}),
+    ...omitUndefined({ sessionId: payload.sid, claims: payload.claims }),
   };
 }
 
