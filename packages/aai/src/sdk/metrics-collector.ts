@@ -17,8 +17,11 @@
  *   name: "Concierge",
  *   systemPrompt: "…",
  *   events: {
- *     "metrics.collected": (e) => metrics.collect(e),
- *     "session.ended": () => console.log(metrics.summary()),
+ *     "metrics.collected": (e) => {
+ *       metrics.collect(e);
+ *       const { replies, latencyMs } = metrics.summary();
+ *       if (replies % 20 === 0) console.log("p95 latency (ms)", latencyMs?.p95);
+ *     },
  *   },
  * });
  * ```

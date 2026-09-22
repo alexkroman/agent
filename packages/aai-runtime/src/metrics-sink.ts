@@ -9,11 +9,17 @@
  *
  * ```ts
  * import { createMetricsCollector } from "@alexkroman1/aai";
- * import { otelMetricsSink, registerMetricsSink } from "@alexkroman1/aai-runtime";
- * import { metrics } from "@opentelemetry/api";
+ * import {
+ *   type OtelMeterLike,
+ *   otelMetricsSink,
+ *   registerMetricsSink,
+ * } from "@alexkroman1/aai-runtime/tracing";
  *
- * // Your own MeterProvider — a Prometheus exporter, say — or none at all:
- * registerMetricsSink(otelMetricsSink(metrics.getMeter("my-agent")));
+ * // A meter from your own MeterProvider — a Prometheus exporter, say:
+ * // `metrics.getMeter("my-agent")` from `@opentelemetry/api`.
+ * export function exportTo(meter: OtelMeterLike): void {
+ *   registerMetricsSink(otelMetricsSink(meter));
+ * }
  *
  * // Or keep a summary in-process, for a /stats route:
  * const summary = createMetricsCollector();
