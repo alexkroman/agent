@@ -160,8 +160,21 @@ async function runTurn(
     signal: abort.signal,
     // Checkpoint after any step that touched the filesystem — see
     // createWorkspaceCheckpointer for why this is not left to onFinish.
-    onStepFinish: ({ toolCalls }) => {
+    onStepFinish: ({ toolCalls, finishReason }) => {
       if (toolCalls?.some((call) => MUTATING_TOOLS.has(call.toolName))) checkpointWorkspace();
+      // The silent stop, named. Since ai@7.0.70 a step's tool calls run ONLY
+      // when it finished `stop` or `tool-calls`
+      // (`isToolExecutionAllowedFinishReason`), so any other reason drops
+      // them with no tool result — and no tool result ends the turn. From
+      // outside that is indistinguishable from the agent deciding it was
+      // done, which is exactly the report we could not diagnose: "it just
+      // stops". `length` means the output ceiling (maxOutputTokens, see
+      // studio-limits.ts) was hit mid-call.
+      if (finishReason !== "stop" && finishReason !== "tool-calls") {
+        console.error(
+          `studio chat: step ended ${finishReason} — ${toolCalls?.length ?? 0} tool call(s) dropped unexecuted, turn ends here`,
+        );
+      }
     },
     // Alongside the agent's own step cap, never instead of it.
     stopWhen: [() => budget.expired()],

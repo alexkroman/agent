@@ -36,6 +36,7 @@ const session: StudioSession = {
   system: "sys",
   model: "fake-1",
   maxSteps: 4,
+  maxOutputTokens: 32_000,
   dir: "/workspace",
 };
 

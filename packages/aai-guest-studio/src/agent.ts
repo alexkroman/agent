@@ -116,6 +116,9 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
       ...omitUndefined({ region: session.region }),
     }),
     maxSteps: session.maxSteps,
+    // Unset means the PROVIDER's default, and a step truncated at it has its
+    // tool call silently dropped since ai@7.0.70 — see studio-limits.ts.
+    maxOutputTokens: session.maxOutputTokens,
     builtinTools: STUDIO_BUILTIN_TOOLS,
   });
   // Studio tools last: a web builtin may never shadow `write_file`. (The

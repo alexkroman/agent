@@ -206,6 +206,7 @@ async function makeSession(files: Record<string, string>): Promise<StudioSession
     system: "You are a coding agent.",
     model: "fake-1",
     maxSteps: 4,
+    maxOutputTokens: 32_000,
   });
 }
 
@@ -458,6 +459,7 @@ describe("guest studio chat surface", () => {
         system: "You are a coding agent.",
         model: "fake-1",
         maxSteps: 4,
+        maxOutputTokens: 32_000,
       });
 
       // The install succeeded and re-points at the same tree…

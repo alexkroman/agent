@@ -38,6 +38,7 @@ const params = (over: Partial<StudioSessionParams> = {}): StudioSessionParams =>
   system: "You are a coding agent.",
   model: "fake-1",
   maxSteps: 4,
+  maxOutputTokens: 32_000,
   ...over,
 });
 

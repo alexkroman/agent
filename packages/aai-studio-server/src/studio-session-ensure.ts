@@ -25,7 +25,7 @@ import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox";
 import { SandboxNameTakenError, studioSandboxName } from "aai-server/sandbox";
 import type { WorkspaceStore } from "aai-server/stores";
 import { studioSystemPrompt } from "./prompts/studio-prompt.ts";
-import { MAX_CHAT_STEPS } from "./studio-limits.ts";
+import { MAX_CHAT_STEPS, studioMaxOutputTokens } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import type { PreviewOrigin } from "./studio-preview.ts";
 import { resolveProjectKind } from "./studio-project-kind.ts";
@@ -114,6 +114,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       model: studioLlmModelId(env),
       ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}),
       maxSteps: MAX_CHAT_STEPS,
+      maxOutputTokens: studioMaxOutputTokens(deps.env),
     };
   }
 

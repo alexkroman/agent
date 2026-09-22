@@ -22,6 +22,7 @@ const PARAMS: AdoptSessionParams = {
   system: "You are a coding agent.",
   model: "gpt-5.5",
   maxSteps: 80,
+  maxOutputTokens: 32_000,
 };
 
 describe("adoptPeerSession", () => {

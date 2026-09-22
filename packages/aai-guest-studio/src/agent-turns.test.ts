@@ -48,6 +48,7 @@ const session: StudioSession = {
   system: "You are a coding agent.",
   model: "fake-1",
   maxSteps: 4,
+  maxOutputTokens: 32_000,
   dir: "/nonexistent/studio-agent-turns",
 };
 

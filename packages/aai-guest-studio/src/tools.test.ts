@@ -162,6 +162,7 @@ describe("guest workspace tools", () => {
         system: "s",
         model: "gpt-5.5",
         maxSteps: 8,
+        maxOutputTokens: 32_000,
       },
       {
         loadBundle: async () => ({}),
