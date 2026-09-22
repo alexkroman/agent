@@ -168,7 +168,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // at all — a state or a persona that pins a tool would make every
     // speculation end at the tool boundary and be discarded, with the gate
     // still believing it is free.
-    enabled: preemptiveGeneration && knobs.dialogStep === undefined && personaStep === undefined,
+    // And off under push-to-talk, where no pause is a turn boundary to adopt at.
+    enabled:
+      preemptiveGeneration &&
+      opts.turnDetection !== "manual" &&
+      knobs.dialogStep === undefined &&
+      personaStep === undefined,
     request: llmRequest,
     toolSchemas,
     systemPrompt,
@@ -196,7 +201,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sendTtsText = audioOut.sendTtsText;
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
-  const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
+  const { nudger, recovery, speechEdges, sttEvents, manualTurn } = createUserActivity({
     log,
     sid: opts.sid,
     callbacks,
@@ -209,6 +214,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
     onInterrupted: audioOut.onInterrupted,
     userTurnLimit: opts.userTurnLimit,
+    turnDetection: opts.turnDetection,
     // `providers` is declared below and reached lazily: this fires from an
     // STT event, which only exists once `providers.open()` has run. A provider
     // that cannot end a turn on demand leaves the cap inert, said ONCE per
@@ -220,7 +226,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         if (!warnedTurnLimitInert) {
           warnedTurnLimitInert = true;
           log.warn(
-            `This agent declares userTurnLimit, and the "${opts.stt.name}" STT provider cannot end a turn on demand: the cap is reported (user-turn.exceeded) but cannot cut the turn. The default assemblyAIStt() can.`,
+            `This agent ends turns on demand (userTurnLimit or turnDetection: "manual"), and the "${opts.stt.name}" STT provider cannot end a turn on demand: a cap is reported but cannot cut the turn, and a push-to-talk commit waits out its deadline. The default assemblyAIStt() can.`,
             { sid: opts.sid },
           );
         }
@@ -480,8 +486,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     speechEdges,
     nudger,
     speculation,
+    manualTurn,
+    isBusy: () => turns.inFlight() || heard.pending(),
     abortInFlightTurn,
     runChainedTurn,
     isTerminated: () => terminated,
+    log,
+    sid: opts.sid,
   });
 }

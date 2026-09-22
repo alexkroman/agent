@@ -87,6 +87,9 @@ export type BrowserSession = {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
+    startUserTurn(): void;
+    commitUserTurn(): void;
+    clearUserTurn(): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -355,7 +358,7 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "startUserTurn" | "commitUserTurn" | "clearUserTurn" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
 
 // @public
 export type SessionControlAction = "start" | "toggle" | "restart" | "end";
@@ -578,6 +581,45 @@ export function useFlash<T>(ms?: number): UseFlashResult<T>;
 export type UseFlashResult<T> = {
     readonly value: T | null;
     readonly flash: (value: T) => void;
+};
+
+// @public
+export function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
+
+// @public
+export type UsePushToTalkOptions = {
+    holdKey?: string | false;
+};
+
+// @public
+export type UsePushToTalkResult = {
+    talking: boolean;
+    ready: boolean;
+    press: () => void;
+    release: () => void;
+    cancel: () => void;
+    buttonProps: {
+        onPointerDown: (event: {
+            currentTarget: Element;
+            pointerId: number;
+        }) => void;
+        onPointerUp: () => void;
+        onPointerCancel: () => void;
+        onKeyDown: (event: {
+            key: string;
+            repeat: boolean;
+            preventDefault(): void;
+        }) => void;
+        onKeyUp: (event: {
+            key: string;
+            preventDefault(): void;
+        }) => void;
+        onContextMenu: (event: {
+            preventDefault(): void;
+        }) => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
 };
 
 // @public

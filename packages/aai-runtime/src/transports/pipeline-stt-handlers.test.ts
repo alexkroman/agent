@@ -12,6 +12,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
+import { AUTO_TURN_DETECTION } from "./pipeline-manual-turn.ts";
 import { createSttEventHandlers } from "./pipeline-stt-handlers.ts";
 import { NO_USER_TURN_LIMIT } from "./pipeline-user-turn-limit.ts";
 
@@ -69,6 +70,9 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     // No cap on a user turn — the shipped default. The cap's own cases live in
     // `pipeline-user-turn-limit.test.ts` and drive it through the transport.
     turnLimit: NO_USER_TURN_LIMIT,
+    // The transcriber ends each turn — the shipped default. Push-to-talk's own
+    // cases live in `pipeline-manual-turn.test.ts`.
+    manualTurn: AUTO_TURN_DETECTION,
     log: silentLogger,
     sid: "s1",
     ...overrides,

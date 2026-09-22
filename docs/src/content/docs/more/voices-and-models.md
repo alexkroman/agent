@@ -134,6 +134,7 @@ problem, not before.
 | `interruptionMinDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate. | `500` |
 | `deadAirCoverMs` | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables. | `5000` |
 | `userTurnLimit` | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `user-turn.exceeded` event. | unset (no cap) |
+| `turnDetection` | Who ends a caller turn. `"manual"` is push-to-talk: the client opens and closes each turn (`usePushToTalk()` in `@alexkroman1/aai-ui`), audio outside a held turn is never transcribed, everything said while held is answered as one turn on release, and pressing is what interrupts the agent. | `"auto"` (the transcriber ends a turn on a pause) |
 
 The rest, including the phrases spoken on a provider failure, are in the
 [SDK reference](/agent/reference/).

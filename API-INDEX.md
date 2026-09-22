@@ -590,6 +590,8 @@ each is for.
 | `UseDownloadUrlOptions` | `@alexkroman1/aai-ui` |
 | `UseDownloadUrlResult` | `@alexkroman1/aai-ui` |
 | `UseFlashResult` | `@alexkroman1/aai-ui` |
+| `UsePushToTalkOptions` | `@alexkroman1/aai-ui` |
+| `UsePushToTalkResult` | `@alexkroman1/aai-ui` |
 | `UseSessionControlsResult` | `@alexkroman1/aai-ui` |
 | `UseUserTranscriptResult` | `@alexkroman1/aai-ui` |
 | `UseWorkflowProgressResult` | `@alexkroman1/aai-ui` |
@@ -953,6 +955,7 @@ each is for.
 | `useDownloadUrl` | `@alexkroman1/aai-ui` |
 | `useEvent` | `@alexkroman1/aai-ui` |
 | `useFlash` | `@alexkroman1/aai-ui` |
+| `usePushToTalk` | `@alexkroman1/aai-ui` |
 | `useRunKey` | `@alexkroman1/aai-ui` |
 | `useSession` | `@alexkroman1/aai-ui` |
 | `useSessionActions` | `@alexkroman1/aai-ui` |

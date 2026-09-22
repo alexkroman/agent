@@ -294,6 +294,12 @@ export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"reset">;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_start">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_commit">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_clear">;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"playback_progress">;
     bufferedMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{

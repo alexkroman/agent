@@ -119,6 +119,7 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  turnDetection?: "auto" | "manual";
   usageLimits?: {
      totalTokens?: number;
   };
@@ -210,6 +211,7 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  turnDetection?: "auto" | "manual";
   usageLimits?: {
      totalTokens?: number;
   };
@@ -455,6 +457,12 @@ optional toolChoice?:
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }
+```
+
+##### turnDetection?
+
+```ts
+optional turnDetection?: "auto" | "manual";
 ```
 
 ##### usageLimits?

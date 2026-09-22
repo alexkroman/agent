@@ -84,6 +84,7 @@ function commandedBuiltins(config: {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  turnDetection?: "auto" | "manual";
   usageLimits?: {
      totalTokens?: number;
   };
@@ -333,6 +334,10 @@ readonly `string`[]
 ###### tts.options
 
 `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
+
+###### turnDetection?
+
+`"auto"` \| `"manual"`
 
 ###### usageLimits?
 
@@ -868,6 +873,7 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  turnDetection?: "auto" | "manual";
   usageLimits?: {
      totalTokens?: number;
   };
@@ -994,6 +1000,7 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
+  turnDetection?: "auto" | "manual";
   usageLimits?: {
      totalTokens?: number;
   };
@@ -1241,6 +1248,12 @@ optional toolChoice?:
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }
+```
+
+##### turnDetection?
+
+```ts
+optional turnDetection?: "auto" | "manual";
 ```
 
 ##### usageLimits?

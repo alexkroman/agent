@@ -10,7 +10,7 @@
  *
  * Names stay as they were. The complaint the split answers is that commands and
  * events shared one namespace with one shape — which no longer holds — and
- * renaming these too would be churn on five literals no author ever writes:
+ * renaming these too would be churn on eight literals no author ever writes:
  * the events are what the hook surface makes author-visible, and these are what
  * `aai-ui` sends.
  *
@@ -29,6 +29,16 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
   cmd("audio_ready"),
   cmd("cancel"),
   cmd("reset"),
+  // Push-to-talk — the three edges of a turn the CLIENT ends, honoured only by
+  // an agent declaring `turnDetection: "manual"` (any other agent logs and
+  // ignores them, since its transcriber already owns the turn). `start` opens
+  // the microphone window and interrupts the agent; `commit` closes it and
+  // answers everything heard inside it as one turn; `clear` closes it and
+  // throws that audio away. Bare names, like `cancel`: a turn carries nothing
+  // the server does not already hold.
+  cmd("user_turn_start"),
+  cmd("user_turn_commit"),
+  cmd("user_turn_clear"),
   z.object({
     /**
      * How much forwarded agent audio the client still holds UNPLAYED.

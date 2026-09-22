@@ -592,6 +592,7 @@ export interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    turnDetection?: "auto" | "manual";
     userTurnLimit?: UserTurnLimit;
 }
 
