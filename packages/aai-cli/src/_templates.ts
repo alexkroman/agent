@@ -1,12 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { type Dirent, existsSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isRecord } from "@alexkroman1/aai/utils";
-import { IGNORED_WORKSPACE_DIRS, isLocalOnlyFile } from "@alexkroman1/aai/workspace-files";
+import {
+  IGNORED_WORKSPACE_DIRS,
+  isLocalOnlyFile,
+  layerScaffoldFiles,
+  readScaffoldFiles,
+  writeFileWithParents,
+} from "@alexkroman1/aai/workspace-files";
 import { getMonorepoRoot } from "./_agent.ts";
-import { errorMessage, isEexist, writeJson } from "./_utils.ts";
+import { errorMessage } from "./_utils.ts";
 
 /** The GitHub repo (owner/name) that hosts this project and its templates. */
 const REPO = "alexkroman/agent";
@@ -66,85 +71,6 @@ export async function listTemplates(root = resolveTemplatesDir()): Promise<strin
     .sort();
 }
 
-/** package.json fields merged key-by-key rather than whole. */
-const MERGED_MANIFEST_FIELDS = ["dependencies", "devDependencies", "scripts"] as const;
-
-type Manifest = Record<string, unknown>;
-
-/**
- * Fill a manifest's gaps from the scaffold's, `existing` always winning.
- *
- * The same rule the file layering uses, one level deeper: a top-level field
- * the manifest already declares is left alone, and for the three map fields
- * it is each ENTRY that is left alone. Per-entry matters both ways — a
- * workspace manifest pins its `dependencies` to exact installed versions and
- * must keep them, while a single agent-added `devDependencies` entry must not
- * shadow the whole toolchain block.
- *
- * Returns null when nothing was missing, so the common case writes no file.
- */
-export function mergeScaffoldManifest(existing: Manifest, scaffold: Manifest): Manifest | null {
-  const merged: Manifest = { ...existing };
-  let changed = false;
-  for (const [key, value] of Object.entries(scaffold)) {
-    const mine = merged[key];
-    if (mine === undefined) {
-      merged[key] = value;
-      changed = true;
-      continue;
-    }
-    if (!(MERGED_MANIFEST_FIELDS as readonly string[]).includes(key)) continue;
-    if (!(isRecord(mine) && isRecord(value))) continue;
-    const entries = { ...mine };
-    for (const [dep, spec] of Object.entries(value)) {
-      if (dep in entries) continue;
-      entries[dep] = spec;
-      changed = true;
-    }
-    merged[key] = entries;
-  }
-  return changed ? merged : null;
-}
-
-/**
- * Merge the scaffold's package.json UNDER the one already in `targetDir`.
- *
- * The file-level layering below can only skip a manifest that already exists,
- * and for `aai pull` that manifest is the studio workspace's — which declares
- * its runtime dependencies and nothing else. Toolchain packages are baked into
- * the guest sandbox, so the workspace deliberately never names them (see
- * aai-guest/studio-project-shape.ts); on a laptop nothing bakes them, so
- * `pnpm install` fetched no `vite`, no `@vitejs/plugin-react`, no
- * `@tailwindcss/vite`, and `aai dev` died resolving the vite.config.ts the
- * very same layering had just written. Completing the manifest is the same job
- * as completing the file tree.
- */
-async function layerScaffoldManifest(scaffoldDir: string, targetDir: string): Promise<void> {
-  const target = path.join(targetDir, "package.json");
-  const [mine, theirs] = await Promise.all([
-    readJsonFile(target),
-    readJsonFile(path.join(scaffoldDir, "package.json")),
-  ]);
-  // No manifest of its own means `fs.cp` copied the scaffold's verbatim.
-  if (!(mine && theirs)) return;
-  const merged = mergeScaffoldManifest(mine, theirs);
-  // `writeJson`, which emits byte-identical output (same indent, same trailing
-  // newline) and adds the temp-file + atomic rename every other config this CLI
-  // writes already gets — `_init.ts` writes THIS same file through it.
-  if (merged) await writeJson(target, merged);
-}
-
-/** Parse a JSON file, or null when it is missing or unparseable. */
-async function readJsonFile(file: string): Promise<Manifest | null> {
-  try {
-    const parsed: unknown = JSON.parse(await fs.readFile(file, "utf-8"));
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    // Missing, or mid-edit — leave it for the package manager to report.
-    return null;
-  }
-}
-
 /**
  * Directory holding the base scaffold — the files every project gets
  * underneath its template (package.json, tsconfig, `.gitignore`, …).
@@ -158,130 +84,40 @@ export function scaffoldDir(): string {
 }
 
 /**
- * The project-root `CLAUDE.md` a scaffolded project gets — a POINTER at the
- * guide inside the resolved SDK, not a copy of it.
- *
- * `scaffold/CLAUDE.md` is the authoring guide itself: 2,533 lines and 119k
- * characters, sitting against the working cap `claude-md-limit.test.ts`
- * enforces. It has three consumers, and only one wanted the bytes in a project:
- * `sync-agent-guide.mjs` copies it into the `@alexkroman1/aai` tarball as
- * `AGENT_GUIDE.md`, `studio-prompt.ts` embeds it in the studio system prompt,
- * and — until this file — `fs.cp` wrote all 120KB into every `aai init`
- * directory. That third copy is the one that cannot be right:
- *
- * - **It is stale by design.** The SDK's own shipped skill
- *   (`packages/aai/skills/aai/SKILL.md`) already says so in as many words:
- *   the project copy is "correct on day one, but frozen at scaffold time —
- *   `pnpm update @alexkroman1/aai` moves the SDK and leaves it behind. Prefer
- *   the file above whenever the two disagree." A file whose own publisher
- *   tells agents not to trust it is not carrying its weight.
- * - **An agent pays for it on every session, whether or not it is writing
- *   agent code.** Claude Code loads a project-root `CLAUDE.md` in FULL at
- *   launch and documents a 200-line target; this was 2,533. Splitting it
- *   behind an `@import` would not have helped — imports are expanded at
- *   launch too — which is why the pointer below names the path inside a FENCE,
- *   the documented spelling for "mention, do not import". It is read on
- *   demand, by the agent that needs it, out of the tarball the project
- *   actually resolved.
- *
- * Nothing is lost that was not already duplicated: the guide ships in the SDK
- * beside the `.d.ts` files it describes, which is the copy the skill has
- * pointed at all along. What a project gets instead is the one thing the
- * 120KB could not be — version-matched.
- */
-const PROJECT_GUIDE_POINTER = `# Agent instructions
-
-This is an [aai](${REPO_URL}) voice-agent project. An agent is a directory
-containing \`agent.ts\`; the \`aai\` CLI bundles it and deploys it.
-
-## Read the SDK guide before writing agent code
-
-The complete authoring guide ships inside the installed package:
-
-\`\`\`text
-node_modules/@alexkroman1/aai/AGENT_GUIDE.md
-\`\`\`
-
-Read it with your file tools. It is version-matched by construction — it lives
-in the same tarball as the \`@alexkroman1/aai\` this project resolved, so it
-cannot describe a different release than the one being imported. Prefer it over
-anything remembered about the SDK, and over anything in this file.
-
-The types are the second source of truth: the shipped declarations are in
-\`node_modules/@alexkroman1/aai/dist/\`. When the guide and the types disagree,
-the types are what the compiler enforces.
-
-## Commands
-
-\`\`\`sh
-npm run dev            # Run locally on http://localhost:3000
-npm test               # This project's suite, minus the evals
-npm run test:agent     # Just agent.test.ts, via the CLI
-npm run eval           # Drive a real session against a live model (spends money)
-npm run build          # Bundle the agent
-npm start              # Build, then self-host on http://127.0.0.1:3000
-npm run publish:agent  # Publish to the managed platform
-\`\`\`
-
-The \`aai\` CLI is a devDependency, so it is in \`node_modules/.bin\` rather than
-on \`PATH\`: reach it through these scripts or with \`npx aai <command>\`.
-
-## Project-specific notes
-
-<!-- Add conventions, gotchas and decisions for THIS agent below. -->
-`;
-
-/**
- * Layer the base scaffold (package.json, tsconfig, …) into targetDir
- * WITHOUT overwriting anything already there. Shared by `aai init`
+ * Layer the base scaffold (package.json, tsconfig, `.gitignore`, …) into
+ * targetDir WITHOUT overwriting anything already there. Shared by `aai init`
  * (underneath a template) and `aai pull` (underneath the studio workspace
  * files — the workspace stores source, and the scaffold completes it into a
- * runnable project the same way the guest's `ensureProjectShape` does
- * before an in-sandbox build).
+ * runnable project).
  *
- * package.json is the one file merged rather than skipped — see
- * {@link layerScaffoldManifest}. `CLAUDE.md` is the one file SUBSTITUTED: the
- * scaffold's copy is the authoring guide, and a project gets
- * {@link PROJECT_GUIDE_POINTER} instead.
+ * The rule itself is `layerScaffoldFiles` in the SDK, over file maps, because
+ * this is not its only caller: the studio's GitHub sync commits a workspace to
+ * a repository and must complete it identically, and neither package may
+ * import the other. This function is only the disk half — read what the rule
+ * needs to see, write back what it returns. Only the scaffold's own paths are
+ * read from the target: whether a project already has a given file is the one
+ * thing the rule asks about it, and `package.json`'s content the one thing it
+ * merges.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
-  const dir = scaffoldDir();
-  if (!existsSync(dir)) return;
-  await fs.cp(dir, targetDir, {
-    recursive: true,
-    force: false,
-    errorOnExist: false,
-    // A closure, not the bare function: `fs.cp` passes `dest` as the second
-    // argument, which would land in `scaffold` and match nothing.
-    filter: (src) => scaffoldCopyFilter(src, dir),
-  });
-  await Promise.all([
-    layerScaffoldManifest(dir, targetDir),
-    // `wx` matches the `force: false` above: a project that already has a
-    // CLAUDE.md — a re-run of `aai init --force`, or a studio workspace whose
-    // coding agent wrote one — keeps its own. Only EEXIST is swallowed; a
-    // permission or disk error is the caller's to see, the same as one from
-    // the copy above.
-    fs
-      .writeFile(path.join(targetDir, "CLAUDE.md"), PROJECT_GUIDE_POINTER, { flag: "wx" })
-      .catch((err: unknown) => {
-        if (!isEexist(err)) throw err;
-      }),
-  ]);
-}
-
-/**
- * `templateCopyFilter` plus the scaffold's own `CLAUDE.md`, which is the
- * authoring guide rather than a file a project wants — see
- * {@link PROJECT_GUIDE_POINTER}.
- *
- * Only the scaffold copy filters it. A TEMPLATE's `CLAUDE.md` would be that
- * template's own notes and belongs in the project it seeds, so
- * {@link downloadAndMergeTemplate} keeps using the unfiltered version. Matched
- * on the full path rather than the basename for the same reason.
- */
-export function scaffoldCopyFilter(src: string, scaffold: string = scaffoldDir()): boolean {
-  return templateCopyFilter(src) && path.resolve(src) !== path.join(scaffold, "CLAUDE.md");
+  const scaffold = await readScaffoldFiles(scaffoldDir());
+  const existing: Record<string, string> = {};
+  await Promise.all(
+    [...Object.keys(scaffold), "CLAUDE.md"].map(async (rel) => {
+      try {
+        existing[rel] = await fs.readFile(path.join(targetDir, rel), "utf-8");
+      } catch {
+        // Missing (the common case) — the rule supplies it. An unreadable one
+        // is left for whatever reads it next to report.
+      }
+    }),
+  );
+  const writes = layerScaffoldFiles(existing, scaffold);
+  await Promise.all(
+    Object.entries(writes).map(([rel, content]) =>
+      writeFileWithParents(path.join(targetDir, rel), content),
+    ),
+  );
 }
 
 /**

@@ -47,6 +47,9 @@ const runSync = (
     workspace: workspace({ "agent.ts": "export default 1;" }),
     target,
     project: "demo",
+    // Empty by default, so the push mechanics below are asserted over the
+    // workspace's own files; the layering has its own test.
+    scaffold: {},
     ...overrides,
   });
 
@@ -150,6 +153,42 @@ describe("syncWorkspaceToGithub", () => {
     // blobs were uploading, and discarding their commit silently is the one
     // outcome a sync must never produce.
     expect(patch?.body).toMatchObject({ force: false, sha: FAKE_COMMIT_SHA });
+  });
+
+  test("commits a runnable PROJECT: the scaffold is layered under the workspace", async () => {
+    // The regression: the tree was the workspace verbatim — a stub manifest
+    // with `dependencies: {}` and no scripts, and no `.gitignore` — so a clone
+    // installed nothing and `pnpm dev` was "Command not found".
+    const github = createFakeGithub();
+    await runSync(github, {
+      workspace: workspace({
+        "agent.ts": "export default 1;",
+        "package.json": JSON.stringify({ name: "aai-studio-workspace", dependencies: {} }),
+        ".gitignore": "mine\n",
+      }),
+      scaffold: {
+        "package.json": JSON.stringify({
+          scripts: { dev: "aai dev" },
+          dependencies: { "@alexkroman1/aai-cli": "^17.0.0" },
+        }),
+        ".gitignore": "node_modules/\n",
+        ".env.example": "ASSEMBLYAI_API_KEY=\n",
+        "CLAUDE.md": "# the whole authoring guide\n",
+      },
+    });
+    expect(
+      github
+        .treeEntries()
+        .map((entry) => entry.path)
+        .sort((a, b) => a.localeCompare(b)),
+    ).toEqual([".env.example", ".gitignore", "agent.ts", "CLAUDE.md", "package.json"]);
+    const manifest = JSON.parse(github.blobContent("package.json") ?? "{}");
+    expect(manifest.name).toBe("aai-studio-workspace");
+    expect(manifest.scripts.dev).toBe("aai dev");
+    expect(manifest.dependencies["@alexkroman1/aai-cli"]).toBe("^17.0.0");
+    // The workspace's own files win, and the guide is pointed at, not copied.
+    expect(github.blobContent(".gitignore")).toBe("mine\n");
+    expect(github.blobContent("CLAUDE.md")).toContain("AGENT_GUIDE.md");
   });
 
   test("the tree is written WHOLE — no base_tree, so a delete propagates", async () => {

@@ -13,13 +13,8 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-const {
-  bundledTemplatesDir,
-  downloadAndMergeTemplate,
-  layerScaffold,
-  mergeScaffoldManifest,
-  templateCopyFilter,
-} = await import("./_templates.ts");
+const { bundledTemplatesDir, downloadAndMergeTemplate, layerScaffold, templateCopyFilter } =
+  await import("./_templates.ts");
 
 /** Create a fake templates root with scaffold + two templates, and point resolution at it. */
 async function useFakeRoot(dir: string): Promise<void> {
@@ -294,50 +289,6 @@ describe("downloadAndMergeTemplate", () => {
       await downloadAndMergeTemplate("quickstart-agent", target);
       expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
     });
-  });
-});
-
-describe("mergeScaffoldManifest", () => {
-  test("fills top-level fields the manifest lacks, and keeps the ones it has", () => {
-    const merged = mergeScaffoldManifest(
-      { type: "module", name: "mine" },
-      { type: "commonjs", engines: { node: ">=24" }, packageManager: "pnpm@10" },
-    );
-    expect(merged).toEqual({
-      type: "module",
-      name: "mine",
-      engines: { node: ">=24" },
-      packageManager: "pnpm@10",
-    });
-  });
-
-  test("merges dependency maps per ENTRY, so declared pins survive", () => {
-    // A pulled studio workspace pins exact installed versions; the scaffold's
-    // caret ranges must not clobber them.
-    const merged = mergeScaffoldManifest(
-      { dependencies: { "@alexkroman1/aai": "5.7.1" } },
-      { dependencies: { "@alexkroman1/aai": "^5.7.0", zod: "^4.4.3" } },
-    );
-    expect(merged?.dependencies).toEqual({ "@alexkroman1/aai": "5.7.1", zod: "^4.4.3" });
-  });
-
-  test("one agent-added devDependency does not shadow the whole toolchain block", () => {
-    const merged = mergeScaffoldManifest(
-      { devDependencies: { "some-tool": "^1.0.0" } },
-      { devDependencies: { vite: "^8.1.5", "@vitejs/plugin-react": "^6.0.4" } },
-    );
-    expect(merged?.devDependencies).toEqual({
-      "some-tool": "^1.0.0",
-      vite: "^8.1.5",
-      "@vitejs/plugin-react": "^6.0.4",
-    });
-  });
-
-  test("nothing missing → null, so no file is rewritten", () => {
-    expect(mergeScaffoldManifest({ type: "module" }, { type: "commonjs" })).toBeNull();
-    expect(
-      mergeScaffoldManifest({ dependencies: { zod: "1" } }, { dependencies: { zod: "^4" } }),
-    ).toBeNull();
   });
 });
 

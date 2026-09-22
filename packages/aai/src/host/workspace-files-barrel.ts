@@ -17,6 +17,13 @@
  */
 
 export {
+  layerScaffoldFiles,
+  mergeScaffoldManifest,
+  type PackageManifest,
+  PROJECT_GUIDE_POINTER,
+  readScaffoldFiles,
+} from "./scaffold-layer.ts";
+export {
   decodeWorkspaceText,
   IGNORED_WORKSPACE_DIRS,
   isLocalOnlyFile,

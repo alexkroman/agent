@@ -4,7 +4,7 @@ Agent templates + the project scaffold (private package). Note
 `scaffold/CLAUDE.md` is a PRODUCT artifact — the authoring guide, embedded in
 the studio prompt and shipped in the SDK tarball as `AGENT_GUIDE.md` — not repo
 documentation, and the one file in `scaffold/` a project gets no copy of (see
-`PROJECT_GUIDE_POINTER` in `packages/aai-cli/src/_templates.ts`).
+`PROJECT_GUIDE_POINTER` in `packages/aai/src/host/scaffold-layer.ts`).
 
 ## Templates
 

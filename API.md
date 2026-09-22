@@ -9745,6 +9745,9 @@ export function isLockfile(name: string): boolean;
 export function isPathInside(dir: string, target: string): boolean;
 
 // @public
+export function layerScaffoldFiles(files: Readonly<Record<string, string>>, scaffold: Readonly<Record<string, string>>): Record<string, string>;
+
+// @public
 export const LOCAL_ONLY_FILES: readonly RegExp[];
 
 // @public
@@ -9755,6 +9758,18 @@ export const MAX_WORKSPACE_FILE_BYTES = 256000;
 
 // @public
 export const MAX_WORKSPACE_FILES = 100;
+
+// @public
+export function mergeScaffoldManifest(existing: PackageManifest, scaffold: PackageManifest): PackageManifest | null;
+
+// @public
+export type PackageManifest = Record<string, unknown>;
+
+// @public
+export const PROJECT_GUIDE_POINTER = "# Agent instructions\n\nThis is an [aai](https://github.com/alexkroman/agent) voice-agent project. An agent is a directory\ncontaining `agent.ts`; the `aai` CLI bundles it and deploys it.\n\n## Read the SDK guide before writing agent code\n\nThe complete authoring guide ships inside the installed package:\n\n```text\nnode_modules/@alexkroman1/aai/AGENT_GUIDE.md\n```\n\nRead it with your file tools. It is version-matched by construction \u2014 it lives\nin the same tarball as the `@alexkroman1/aai` this project resolved, so it\ncannot describe a different release than the one being imported. Prefer it over\nanything remembered about the SDK, and over anything in this file.\n\nThe types are the second source of truth: the shipped declarations are in\n`node_modules/@alexkroman1/aai/dist/`. When the guide and the types disagree,\nthe types are what the compiler enforces.\n\n## Commands\n\n```sh\nnpm run dev            # Run locally on http://localhost:3000\nnpm test               # This project's suite, minus the evals\nnpm run test:agent     # Just agent.test.ts, via the CLI\nnpm run eval           # Drive a real session against a live model (spends money)\nnpm run build          # Bundle the agent\nnpm start              # Build, then self-host on http://127.0.0.1:3000\nnpm run publish:agent  # Publish to the managed platform\n```\n\nThe `aai` CLI is a devDependency, so it is in `node_modules/.bin` rather than\non `PATH`: reach it through these scripts or with `npx aai <command>`.\n\n## Project-specific notes\n\n<!-- Add conventions, gotchas and decisions for THIS agent below. -->\n";
+
+// @public
+export function readScaffoldFiles(dir: string): Promise<Record<string, string>>;
 
 // @public
 export function resolveInside(dir: string, rel: string): string;

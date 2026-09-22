@@ -44,7 +44,7 @@ went stale on the project's next `pnpm update`, and Claude Code loads a
 project-root `CLAUDE.md` in full at launch against a documented 200-line target,
 so every session in a user's agent project paid ~30k tokens for guidance its
 publisher told agents not to trust. See `PROJECT_GUIDE_POINTER` in
-`packages/aai-cli/src/_templates.ts`.
+`packages/aai/src/host/scaffold-layer.ts`.
 
 The `prestart`/`start` pair (`aai build --skip-tests` then `aai start`) means
 every scaffolded project self-hosts with `npm start` — no platform account

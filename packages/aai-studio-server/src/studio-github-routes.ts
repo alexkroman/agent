@@ -63,6 +63,7 @@ import {
   syncWorkspaceToGithub,
 } from "./studio-github-sync.ts";
 import type { RefuseFn } from "./studio-route-limits.ts";
+import { loadScaffoldFiles } from "./studio-scaffold.ts";
 import { GithubConnectSchema, GithubCreateRepoSchema, GithubSyncSchema } from "./studio-schemas.ts";
 import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
 
@@ -136,6 +137,7 @@ async function pushToGithub(opts: {
     workspace,
     target: { ...target, branch },
     project,
+    scaffold: await loadScaffoldFiles(),
     ...omitUndefined({ syncedHash: sameTarget ? workspace.githubHash : undefined }),
   });
 
