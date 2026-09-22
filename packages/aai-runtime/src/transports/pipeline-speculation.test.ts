@@ -6,6 +6,7 @@
 import { PREEMPTIVE_CONFIDENCE_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
+import type { Logger } from "../runtime-config.ts";
 import {
   createSpeculationController,
   type SpeculationControllerDeps,
@@ -45,6 +46,25 @@ function fakeStream(prompt: string): FakeStream {
       poisoned = true;
     },
   };
+}
+
+/**
+ * A logger that records the REASON on every "Pipeline speculation discarded"
+ * line. The fuzz (`integration/_pipeline-fuzz-run.ts`) counts each reason off
+ * that exact line and deliberately floors none of them — its note beside the
+ * counters says why — so a discard rule that stops applying has to fail HERE,
+ * where the interleaving is written down rather than drawn.
+ */
+function recordingLog(): { log: Logger; discards: string[] } {
+  const discards: string[] = [];
+  const log: Logger = {
+    ...silentLogger,
+    debug: (msg: string, meta?: unknown) => {
+      if (msg !== "Pipeline speculation discarded") return;
+      discards.push((meta as { reason: string }).reason);
+    },
+  };
+  return { log, discards };
 }
 
 function harness(overrides: Partial<SpeculationControllerDeps> = {}): {
@@ -138,11 +158,15 @@ describe("firing rules", () => {
 
 describe("the confidence sawtooth", () => {
   test("a changed partial ABORTS the live speculation immediately", () => {
-    const a = harness();
+    const r = recordingLog();
+    const a = harness({ log: r.log });
     a.ctl.onPartial("my number is five five five", 1);
     const first = a.started[0];
     a.ctl.onPartial("my number is five five five one", 0);
     expect(first?.abort).toHaveBeenCalledTimes(1);
+    // And logged as the caller REVISING what they said — the reason the fuzz
+    // counts as `speculationDiscarded:superseded`.
+    expect(r.discards).toEqual(["superseded"]);
     // Aborted, not merely dropped: the store no longer holds it either.
     expect(a.ctl.take("my number is five five five")).toBeNull();
   });
@@ -249,10 +273,14 @@ describe("take", () => {
 
 describe("discard", () => {
   test("onFinal aborts a speculation the final cannot match", () => {
-    const a = harness();
+    const r = recordingLog();
+    const a = harness({ log: r.log });
     a.ctl.onPartial("what is my order status", 1);
     a.ctl.onFinal("cancel my order");
     expect(a.started[0]?.abort).toHaveBeenCalledTimes(1);
+    // Logged as the FINAL disagreeing with the speculated text — the reason the
+    // fuzz counts as `speculationDiscarded:mismatch`.
+    expect(r.discards).toEqual(["mismatch"]);
   });
 
   test("onFinal keeps a matching speculation for take()", () => {

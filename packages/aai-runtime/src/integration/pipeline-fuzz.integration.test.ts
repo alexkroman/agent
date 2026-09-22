@@ -187,28 +187,29 @@ describe("pipeline transport — randomized interleaving", () => {
     // Measured over five runs: started 41-68, discarded 38-65.
     expect(count("speculationStarted"), "no speculation ever started").toBeGreaterThan(13);
     expect(count("speculationDiscarded"), "no speculation was ever discarded").toBeGreaterThan(12);
-    // The two rules the recorded confidence sawtooth dictated, each floored on
-    // its own so a policy that stopped applying one is a failure rather than a
-    // shift in the totals. Measured locally: superseded 5-10, mismatch 6-13.
-    //
-    // `superseded` is floored at 0, not under that range, because CI then
-    // produced **1** — the long left tail this file's own harness notes warn
-    // about, since what a walk reaches is correlated WITHIN a run rather than
-    // independent per step. Five local runs are not a range, and the observed
-    // minimum is what a floor has to sit under; a floor above it fails a PR that
-    // changed nothing here (#1268 did not touch this package). What the floor is
-    // FOR survives at 0: catching a rule that stopped applying at all, not
-    // pinning how often it applies.
-    //
-    // `mismatch` has now done exactly that, so it takes the same answer this
-    // comment already prescribed for it: observed at **1** against a floor of
-    // `> 1` (measured range 6-13), on a pre-push run of a branch that touches
-    // nothing in this package's transport. Same generator, same tail, same
-    // remedy — 0, not a lower multiplier. Both counters are now floored at what
-    // a floor is FOR: catching a rule that stopped applying at all, rather than
-    // pinning how often it applies.
-    expect(count("speculationDiscarded:superseded"), "no partial ever revised").toBeGreaterThan(0);
-    expect(count("speculationDiscarded:mismatch"), "no final ever mismatched").toBeGreaterThan(0);
+    // The two rules the recorded confidence sawtooth dictated are COUNTED and
+    // DELIBERATELY NOT FLOORED, on the `resumeMooted` precedent above. Each
+    // WAS floored, and the floor moved down twice before it came off:
+    // `superseded` to `> 0` when CI produced **1** against a measured 5-10 on
+    // a PR that touched nothing here (#1268); `mismatch` to `> 0` when a
+    // pre-push run produced 1 against 6-13 on a branch touching nothing in
+    // this package's transport; and then `superseded` produced **0** on a PR
+    // whose only change to this package was a regenerated guide (#1501).
+    // Zero is the one value a `> N` floor cannot sit under, and this file's
+    // own harness notes say why the tail reaches it: what a walk reaches is
+    // correlated WITHIN a run rather than independent per step. What a floor
+    // is FOR — catching a rule that stopped applying at all — is carried
+    // deterministically by `transports/pipeline-speculation.test.ts` ("a
+    // changed partial ABORTS the live speculation immediately" pins
+    // `superseded`; "onFinal aborts a speculation the final cannot match" pins
+    // `mismatch`), each asserting the REASON off the same log line this suite
+    // counts. The `speculationDiscarded` total above stays floored, so
+    // discarding as a whole still has to happen. What this CAN carry is the
+    // accounting invariant: every reason counted is one discard, and no
+    // discard carries two reasons.
+    expect(
+      count("speculationDiscarded:superseded") + count("speculationDiscarded:mismatch"),
+    ).toBeLessThanOrEqual(count("speculationDiscarded"));
     // ADOPTION is counted and DELIBERATELY NOT floored, on the `resumeMooted`
     // precedent above. It needs the transport IDLE at the instant a confident
     // interim lands, and this harness is busy by construction — a 5 ms
