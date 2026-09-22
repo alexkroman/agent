@@ -165,8 +165,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   build or a deploy: Delete project has to work before anything has ever been
   published, so Settings is reachable whenever a project is open.
 - **The sections are in a FIXED order**: Sync to GitHub, Danger zone —
-  getting the code out first, destruction last. `panes/settings.test.tsx` asserts the sequence
-  of card titles, so moving one means updating that list — and re-reading any
+  getting the code out first, destruction last. `panes/settings.test.tsx`
+  asserts the sequence of card titles, so moving one means updating that list
+  — and re-reading any
   copy that names a neighbour's direction, which is the trap this used to carry:
   the Phone card said "Secrets **below**" twice while sitting above it, and then
   moved panes entirely.
