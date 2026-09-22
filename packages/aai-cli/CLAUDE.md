@@ -6,8 +6,8 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, console, start, test, eval, build, list, pull,
-push, publish, delete, login, secret, logs, workflow, templates.
+Binary: `aai` — subcommands: init, dev, console, start, test, eval, build, list,
+pull, push, publish, delete, login, secret, logs, workflow, templates.
 
 **That list is PINNED to the registry** (`cli.test.ts`, "the subcommand list in
 this package's guide names exactly what `cli.ts` registers"), because it went
