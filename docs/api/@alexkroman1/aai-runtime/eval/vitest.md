@@ -274,7 +274,7 @@ reason: string;
 ### DescribeEvalOptions
 
 ```ts
-type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimulationSuiteOptions & {
   workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 ```
@@ -304,7 +304,7 @@ readonly optional workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 ### DescribeTextEvalOptions
 
 ```ts
-type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
+type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent"> & EvalSimulationSuiteOptions;
 ```
 
 What [describeTextEval](#describetexteval) takes beyond the agent.
@@ -317,7 +317,9 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 type EvalCaseOptions = {
   live?: boolean;
   scripted?: boolean;
+  stubCaller?: StubScript;
   stubGenerate?: StubScript;
+  stubJudge?: readonly boolean[];
   stubReply?: StubScript;
 };
 ```
@@ -353,6 +355,18 @@ first and never trips the busy-unit refusal; a `visit_webpage` at a private
 address is the SSRF screen's own case and a live model sensibly refuses to
 try). Without this marker each cost a red live run and got weakened.
 
+##### stubCaller?
+
+```ts
+readonly optional stubCaller?: StubScript;
+```
+
+The SIMULATED CALLER's lines when this suite runs without a key — one per
+caller turn, for a case that calls `simulate()`. End it with
+`{ tool: "end_call", args: { reason } }`; absent, the stub caller says one
+line and hangs up. Declared here rather than intersected in so the field
+has a page of its own in the reference.
+
 ##### stubGenerate?
 
 ```ts
@@ -369,6 +383,16 @@ script would need element 0 to be the turn's first move and the first
 grader, a planner, a rewriter — is the shape this exists for, and two
 shipped templates' central tools are exactly that. For the schema overload,
 write the object as the JSON string the model would have returned.
+
+##### stubJudge?
+
+```ts
+readonly optional stubJudge?: readonly boolean[];
+```
+
+The rulings a keyless `judge()` hands back, one per criterion in order —
+missing entries pass. Absent, every criterion passes. Either way the
+verdict is marked `scripted`, so nobody reads a wiring check as a grade.
 
 ##### stubReply?
 
@@ -405,6 +429,148 @@ type EvalMode = "live" | "stub";
 ```
 
 How the suite is running, and why.
+
+***
+
+### EvalSimulationCaseOptions
+
+```ts
+type EvalSimulationCaseOptions = {
+  stubCaller?: StubScript;
+  stubJudge?: readonly boolean[];
+};
+```
+
+The per-case scripts a keyless run uses in place of the two models.
+
+#### Properties
+
+##### stubCaller?
+
+```ts
+readonly optional stubCaller?: StubScript;
+```
+
+The simulated caller's lines in a keyless run, one per caller turn. End it
+with `{ tool: "end_call", args: { reason } }`; absent, the stub caller says
+one line and hangs up.
+
+##### stubJudge?
+
+```ts
+readonly optional stubJudge?: readonly boolean[];
+```
+
+The rulings a keyless judge hands back, one per criterion in order —
+missing entries pass. Absent, every criterion passes, marked scripted.
+
+***
+
+### EvalSimulationContext
+
+```ts
+type EvalSimulationContext = {
+  judge: Promise<CallVerdict>;
+  simulate: Promise<SimulatedCall>;
+};
+```
+
+What a case gets for running a simulated caller and grading the result.
+
+#### Methods
+
+##### judge()
+
+```ts
+judge(
+   input: JudgeInput, 
+   criteria: readonly string[], 
+   options?: {
+  context?: string;
+}
+): Promise<CallVerdict>;
+```
+
+Have a model rule on `criteria` over a simulated call, a list of turns, or
+a transcript. See `judgeCall`.
+
+###### Parameters
+
+###### input
+
+[`JudgeInput`](../eval.md#judgeinput)
+
+###### criteria
+
+readonly `string`[]
+
+###### options?
+
+###### context?
+
+`string`
+
+###### Returns
+
+`Promise`\<[`CallVerdict`](../eval.md#callverdict)\>
+
+##### simulate()
+
+```ts
+simulate(caller: SimulatedCaller, options?: {
+  maxTurns?: number;
+}): Promise<SimulatedCall>;
+```
+
+Run a simulated caller against this case's session (or text agent) until
+it hangs up or `maxTurns` runs out. See `simulateCall`.
+
+###### Parameters
+
+###### caller
+
+[`SimulatedCaller`](../eval.md#simulatedcaller)
+
+###### options?
+
+###### maxTurns?
+
+`number`
+
+###### Returns
+
+`Promise`\<[`SimulatedCall`](../eval.md#simulatedcall)\>
+
+***
+
+### EvalSimulationSuiteOptions
+
+```ts
+type EvalSimulationSuiteOptions = {
+  callerLlm?: LlmProvider;
+  judgeLlm?: LlmProvider;
+};
+```
+
+The suite-level model choices for the caller and the judge.
+
+#### Properties
+
+##### callerLlm?
+
+```ts
+readonly optional callerLlm?: LlmProvider;
+```
+
+The model that PLAYS the caller when live. Defaults to the agent's model.
+
+##### judgeLlm?
+
+```ts
+readonly optional judgeLlm?: LlmProvider;
+```
+
+The model that JUDGES when live. Defaults to the agent's model.
 
 ***
 
@@ -452,16 +618,18 @@ project lights up red on a file the SDK told them to write:
 ### EvalTestContext
 
 ```ts
-type EvalTestContext = {
+type EvalTestContext = EvalSimulationContext & {
   mode: EvalMode;
   session: EvalSession;
   workflows: EvalWorkflows | undefined;
 };
 ```
 
-What a case body is handed: its own session, and which model it is on.
+What a case body is handed: its own session, which model it is on, and — via
+[EvalSimulationContext](#evalsimulationcontext) — `simulate()` for a simulated caller against
+that session and `judge()` for a model-graded verdict.
 
-#### Properties
+#### Type Declaration
 
 ##### mode
 
@@ -566,15 +734,16 @@ Declare one text eval case. The conversation is opened and closed for it.
 ### EvalTextTestContext
 
 ```ts
-type EvalTextTestContext = {
+type EvalTextTestContext = EvalSimulationContext & {
   agent: EvalTextAgent;
   mode: EvalMode;
 };
 ```
 
-What a text case body is handed: its own conversation, and the mode.
+What a text case body is handed: its own conversation, the mode, and the
+same `simulate()`/`judge()` pair a voice case gets.
 
-#### Properties
+#### Type Declaration
 
 ##### agent
 
