@@ -18,7 +18,7 @@
  * exactly one.
  */
 
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import type { GithubAppConfig } from "./studio-github-config.ts";
 
 /** A real 2048-bit RSA key, so App JWT signing is exercised rather than faked. */
@@ -103,6 +103,11 @@ export type FakeGithub = {
   calls: GithubCall[];
   /** The tree entries the last `POST /git/trees` carried. */
   treeEntries(): { path: string; sha: string; mode: string }[];
+  /**
+   * The decoded content the last tree committed at `path`, or undefined — read
+   * back through the blob its entry names, the way GitHub would serve it.
+   */
+  blobContent(path: string): string | undefined;
   /** Whether the last `POST /git/trees` named a `base_tree`. */
   treeHadBaseTree(): boolean;
   /** The last request to `path`, or undefined. */
@@ -138,9 +143,18 @@ type FakeContext = {
   accountType: "User" | "Organization";
   /** No commits yet — the Git Data API is closed until one exists. */
   emptyRepo: boolean;
-  /** How many blobs have been uploaded, so each gets a distinct sha. */
-  blobCount: number;
 };
+
+/** The base64 `content` a `POST /git/blobs` carried, or "" when it had none. */
+function blobBase64(body: unknown): string {
+  const content = (body as { content?: unknown } | null)?.content;
+  return typeof content === "string" ? content : "";
+}
+
+/** A blob's sha, derived from its content the way Git derives one. */
+function blobSha(body: unknown): string {
+  return createHash("sha1").update(blobBase64(body)).digest("hex");
+}
 
 const endsWith =
   (suffix: string) =>
@@ -229,11 +243,13 @@ const FAKE_ROUTES: readonly FakeRoute[] = [
     // GitHub's real refusal on a repository with no commits, and the reason
     // the sync bootstraps through the Contents API — a blob is the FIRST
     // write the push makes, so nothing downstream of it was ever reached.
-    reply: (_call, ctx) =>
+    reply: (call, ctx) =>
       ctx.emptyRepo
         ? json({ message: "Git Repository is empty." }, 409)
-        : // A distinct sha per blob, so a tree assertion can tell entries apart.
-          json({ sha: `blob${String(ctx.blobCount++).padStart(36, "0")}` }, 201),
+        : // Content-addressed, as Git's are: distinct files get distinct shas
+          // (so a tree assertion can tell entries apart), and `blobContent`
+          // can map an entry back to the request that uploaded it.
+          json({ sha: blobSha(call.body) }, 201),
   },
   {
     method: "PUT",
@@ -284,7 +300,6 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     ],
     accountType: options.accountType ?? "Organization",
     emptyRepo: options.emptyRepo === true,
-    blobCount: 0,
   };
   let failures = 0;
 
@@ -339,6 +354,16 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     treeEntries: () => {
       const { tree } = treeBody();
       return Array.isArray(tree) ? (tree as { path: string; sha: string; mode: string }[]) : [];
+    },
+    blobContent(path) {
+      const { tree } = treeBody();
+      const entry = Array.isArray(tree)
+        ? (tree as { path: string; sha: string }[]).find((e) => e.path === path)
+        : undefined;
+      const upload = calls.find(
+        (call) => call.path.endsWith("/git/blobs") && blobSha(call.body) === entry?.sha,
+      );
+      return upload ? Buffer.from(blobBase64(upload.body), "base64").toString("utf8") : undefined;
     },
     treeHadBaseTree: () => treeBody().base_tree !== undefined,
     lastCall,

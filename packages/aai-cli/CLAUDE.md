@@ -457,9 +457,11 @@ newly minted slug from that record), and
 `aai pull <project>` materializes a workspace locally, layering the shipped
 scaffold underneath (never overwriting workspace files) so the result runs
 under `aai dev`. **package.json is MERGED rather than skipped**
-(`mergeScaffoldManifest` in `aai-cli/_templates.ts`): the scaffold fills in
-top-level fields the pulled manifest lacks, and for `dependencies` /
-`devDependencies` / `scripts` it fills in per ENTRY. Skip-if-exists was wrong
+(`mergeScaffoldManifest` in `aai/src/host/scaffold-layer.ts`, shared with the
+studio's GitHub sync through `@alexkroman1/aai/workspace-files`): the
+scaffold fills in top-level fields the pulled manifest lacks, and for
+`dependencies` / `devDependencies` / `scripts` it fills in per ENTRY.
+Skip-if-exists was wrong
 here because a studio workspace's manifest declares its runtime deps and NO
 toolchain — correct in the guest, where the toolchain is baked (see
 `ensureProjectShape`), and fatal on a laptop, where `pnpm install` then
@@ -481,7 +483,8 @@ offers to publish.
 **`layerScaffold` SUBSTITUTES one file rather than copying it: `CLAUDE.md`.**
 The scaffold's copy is the 119k-character authoring guide, and a project gets a
 ~30-line pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md` instead
-(`PROJECT_GUIDE_POINTER`, `_templates.ts`, which carries the argument). Two
+(`PROJECT_GUIDE_POINTER` in `aai/src/host/scaffold-layer.ts`, which carries the
+argument). Two
 things made the copy indefensible: it froze at scaffold time, which is the
 staleness `sync-agent-guide.mjs` exists to remove and which the SDK's own
 shipped skill already told agents not to trust; and a project-root `CLAUDE.md`

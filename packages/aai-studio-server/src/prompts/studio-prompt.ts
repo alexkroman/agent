@@ -22,10 +22,10 @@
  */
 
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { createLogger } from "aai-server/logger";
 import { DEFAULT_PROJECT_KIND, type ProjectKind } from "../studio-project-kind.ts";
+import { scaffoldDir } from "../studio-scaffold.ts";
 import { studioPreamble } from "./studio-preamble.ts";
 
 const log = createLogger("studio.prompt");
@@ -89,25 +89,9 @@ export default tool({
 - Semantic elements, alt text, sr-only labels on icon-only buttons; no
   emojis as icons, no decorative filler shapes.`;
 
-/**
- * Locate the scaffold CLAUDE.md through the package graph, the same way
- * `studio-static.ts` finds the built studio client.
- *
- * This was a relative `../aai-templates/...` walk, justified by a comment
- * claiming the dev and built layouts both sit one directory under the package
- * root. They do not: from `dist/` it resolved to
- * `packages/aai-studio-server/src/aai-templates/...`, which does not exist — so
- * production (which runs the bundle) silently served FALLBACK_GUIDE and the
- * coding agent lost its entire SDK reference, with one console.warn as the
- * only signal. The test only exercised the dev layout, so it stayed green.
- *
- * Resolving through a real dependency edge cannot drift with the bundle's
- * location.
- */
+/** The scaffold's authoring guide — see {@link scaffoldDir} for how it is found. */
 export function scaffoldGuidePath(): string {
-  const require = createRequire(import.meta.url);
-  const pkgPath = require.resolve("aai-templates/package.json");
-  return path.join(path.dirname(pkgPath), "scaffold", "CLAUDE.md");
+  return path.join(scaffoldDir(), "CLAUDE.md");
 }
 
 /** One composed prompt per project kind, built on first use. */

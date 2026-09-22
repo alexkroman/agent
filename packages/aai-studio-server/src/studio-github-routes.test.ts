@@ -400,6 +400,26 @@ describe("POST /studio/projects/:project/github/sync", () => {
     });
   });
 
+  test("the repository is a runnable project — the REAL scaffold is layered in", async () => {
+    // Through the route rather than the sync, so the scaffold is the one the
+    // server actually resolves (`studio-scaffold.ts`). A resolution that found
+    // nothing would layer nothing and commit the raw workspace again — the
+    // stub manifest a clone could not install or run.
+    const harness = await studio({ head: "abc123" });
+    await connect(harness);
+    await makeProject(harness);
+    await post(harness.fetch, "/studio/projects/demo/github/sync", { repo: "acme/voice-agent" });
+
+    const paths = harness.github.treeEntries().map((entry) => entry.path);
+    expect(paths).toEqual(
+      expect.arrayContaining([".gitignore", ".env.example", "CLAUDE.md", "package.json"]),
+    );
+    const manifest = JSON.parse(harness.github.blobContent("package.json") ?? "{}");
+    expect(manifest.scripts).toMatchObject({ dev: "aai dev", test: "aai test" });
+    expect(manifest.dependencies).toHaveProperty("@alexkroman1/aai-cli");
+    expect(manifest.devDependencies).toHaveProperty("vite");
+  });
+
   test("a second sync with no edits between is a no-op", async () => {
     const harness = await studio({ head: "abc123" });
     await connect(harness);

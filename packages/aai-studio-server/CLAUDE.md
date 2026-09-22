@@ -985,6 +985,19 @@ and pushes a project's workspace to a branch as ONE commit.
   one outcome a sync must never produce. An empty repository is the COMMON
   case (a user makes one for this), so a 404/409 on the ref read takes the
   `POST /git/refs` path with a parentless commit.
+- **What is committed is a PROJECT: the scaffold is layered under the
+  workspace first.** A workspace carries a stub manifest (no platform packages,
+  no scripts — the guest image bakes them) and no `.gitignore`, and committed
+  verbatim that was a repository nobody could run: `pnpm install` installed
+  nothing, `pnpm dev` was "Command not found", and `npx aai` resolves to an
+  unrelated npm package. The sync now applies `layerScaffoldFiles`
+  (`@alexkroman1/aai/workspace-files`) — the SAME rule `aai pull` applies on
+  disk, so a clone and a pull are one project — over the scaffold
+  `studio-scaffold.ts` resolves through the `aai-templates` package graph.
+  `scaffold` is a REQUIRED parameter of `syncWorkspaceToGithub` so no caller can
+  forget it. The idempotence stamp stays the workspace's own `hash`
+  (`hasGithubChanges` compares it), so a repository synced before this change
+  picks up the scaffold on its next sync that carries an edit.
 - **On a repository with NO COMMITS the Git Data API is CLOSED, and the
   Contents API is the way in.** The parentless-commit path above was
   unreachable for the users it was written for: GitHub refuses

@@ -289,6 +289,8 @@ each is for.
 | `OpenAIS2sVoice` | `@alexkroman1/aai/s2s` |
 | `OpenRouterLlmOptions` | `@alexkroman1/aai/llm` |
 | `OpenerRegistryEntry` | `@alexkroman1/aai-runtime` |
+| `PROJECT_GUIDE_POINTER` | `@alexkroman1/aai/workspace-files` |
+| `PackageManifest` | `@alexkroman1/aai/workspace-files` |
 | `PageConfig` | `@alexkroman1/aai-ui` |
 | `PageHandle` | `@alexkroman1/aai-ui` |
 | `PageMetadata` | `@alexkroman1/aai/html` |
@@ -786,11 +788,13 @@ each is for.
 | `isoDate` | `@alexkroman1/aai` |
 | `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
 | `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
+| `layerScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
 | `lenientParse` | `@alexkroman1/aai/protocol` |
 | `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
 | `mapConcurrent` | `@alexkroman1/aai/step` |
 | `mapSettled` | `@alexkroman1/aai/step` |
 | `mcpToolName` | `@alexkroman1/aai` |
+| `mergeScaffoldManifest` | `@alexkroman1/aai/workspace-files` |
 | `mintCode` | `@alexkroman1/aai` |
 | `mistralLlm` | `@alexkroman1/aai/llm` |
 | `mountClient` | `@alexkroman1/aai-ui` |
@@ -824,6 +828,7 @@ each is for.
 | `pushCapped` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `randomInt` | `@alexkroman1/aai` |
 | `readEventStream` | `@alexkroman1/aai/workflow-api` |
+| `readScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
 | `readUploadToFile` | `@alexkroman1/aai/step-files` |
 | `registerChannelHandler` | `@alexkroman1/aai/channels` |
 | `registerLlmKind` | `@alexkroman1/aai-runtime` |

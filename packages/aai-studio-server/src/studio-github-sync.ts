@@ -48,10 +48,22 @@
  * through it and writes its tree onto that (`initializeRepo`). The tree is
  * still written whole, so that first file is replaced by the sync's own
  * commit a moment later like every other path here.
+ *
+ * **What is committed is a PROJECT, not the workspace's raw source.** A
+ * workspace deliberately carries a stub manifest (no platform packages, no
+ * scripts — the guest image bakes the toolchain) and no `.gitignore`, so
+ * committed verbatim it was a repository nobody could run: `pnpm install`
+ * installed nothing, `pnpm dev` was "Command not found", and `npx aai`
+ * resolves to an unrelated npm package. The scaffold is layered under it with
+ * `layerScaffoldFiles`, the same rule `aai pull` applies on disk, so a clone
+ * and a pull are the same project. The idempotence hash stays the WORKSPACE's:
+ * the layered files are derived from it, and `hasGithubChanges` compares that
+ * hash to decide whether the button reads as stale.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { mapConcurrent } from "@alexkroman1/aai/step";
+import { layerScaffoldFiles } from "@alexkroman1/aai/workspace-files";
 import { type GithubOctokit, githubErrorStatus } from "./studio-github-client.ts";
 import type { StudioWorkspace } from "./studio-workspace.ts";
 
@@ -325,10 +337,18 @@ export async function syncWorkspaceToGithub(opts: {
   target: GithubRepoTarget;
   /** Project name — the commit message's subject. */
   project: string;
+  /**
+   * The scaffold's files (`loadScaffoldFiles`), layered under the workspace
+   * so the branch holds a runnable project. Required rather than defaulted:
+   * a caller that forgets it commits the unrunnable raw workspace, which is
+   * exactly the failure this parameter exists to close.
+   */
+  scaffold: Readonly<Record<string, string>>;
   /** `filesHash` at the last successful sync to this target, if any. */
   syncedHash?: string | undefined;
 }): Promise<GithubSyncResult> {
   const { octokit, workspace, target, project } = opts;
+  const files = { ...workspace.files, ...layerScaffoldFiles(workspace.files, opts.scaffold) };
   const commitUrlFor = (sha: string): string =>
     `https://github.com/${target.owner}/${target.repo}/commit/${sha}`;
 
@@ -361,16 +381,16 @@ export async function syncWorkspaceToGithub(opts: {
   // addressed, so the ones that did land are re-created as themselves.
   let treeSha: string;
   try {
-    treeSha = await writeTree(octokit, target, workspace.files);
+    treeSha = await writeTree(octokit, target, files);
   } catch (err) {
     if (!isEmptyRepoRefusal(err)) throw err;
-    await initializeRepo(octokit, target, project, workspace.files);
+    await initializeRepo(octokit, target, project, files);
     // The bootstrap commit is the parent this sync now builds on — when it
     // landed on the branch we are targeting, which is every sync the routes
     // issue. When it did not, this reads null again and the create-the-ref
     // path below runs exactly as it did before.
     head = await readBranchHead(octokit, target);
-    treeSha = await writeTree(octokit, target, workspace.files);
+    treeSha = await writeTree(octokit, target, files);
   }
 
   let parent = head;
