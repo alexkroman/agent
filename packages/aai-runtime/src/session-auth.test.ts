@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { IncomingMessage } from "node:http";
 import { Socket } from "node:net";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import { makeClientSink, silentLogger } from "./_test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
@@ -14,6 +14,24 @@ import {
   selectSessionProtocol,
   verifySessionToken,
 } from "./session-auth.ts";
+
+/**
+ * `startHostSession` stubbed to what matters here: it opens a session and
+ * reports its id through `startOpts.onSinkCreated`, as the real one does once
+ * the tenant's `config` frame arrives. The real one would dial STT/TTS.
+ */
+const hostStarts = vi.hoisted((): string[] => []);
+vi.mock("./host-mode.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./host-mode.ts")>()),
+  startHostSession: (
+    ws: { send(data: string): void },
+    opts: { startOpts?: import("./runtime-types.ts").SessionStartOptions },
+  ) => {
+    hostStarts.push(opts.startOpts?.resumeFrom ?? "fresh");
+    opts.startOpts?.onSinkCreated?.(`host-${hostStarts.length}`, makeClientSink());
+    ws.send(JSON.stringify({ type: "hello" }));
+  },
+}));
 
 const SECRET = "test-secret-with-enough-entropy";
 const T0 = Date.UTC(2026, 0, 1);
@@ -300,5 +318,24 @@ describe("createRuntimeServer with auth", () => {
     const alice = await dial(`/websocket?sessionId=sess-1&${as("alice")}`);
     expect(alice.frames).toContain(JSON.stringify({ type: "hello" }));
     expect(started).toEqual(["fresh", "sess-1"]);
+  });
+
+  test("a host-mode session is resumable by the identity that opened it", async () => {
+    hostStarts.length = 0;
+    const { runtime } = recordingRuntime();
+    server = createRuntimeServer({
+      runtime,
+      logger: silentLogger,
+      env: { AAI_ALLOW_HOST: "1", AAI_SESSION_SECRET: SECRET },
+    });
+    await server.listen(0);
+    const as = (sub: string) => `token=${createSessionToken({ secret: SECRET, sub })}`;
+
+    await dial(`/websocket?host=1&${as("alice")}`);
+    const mallory = await dial(`/websocket?host=1&sessionId=host-1&${as("mallory")}`);
+    expect(mallory.closeCode).toBe(SESSION_UNAUTHORIZED_CLOSE_CODE);
+    const alice = await dial(`/websocket?host=1&sessionId=host-1&${as("alice")}`);
+    expect(alice.frames).toContain(JSON.stringify({ type: "hello" }));
+    expect(hostStarts).toEqual(["fresh", "host-1"]);
   });
 });

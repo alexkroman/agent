@@ -379,7 +379,8 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
           logger.info(`WS upgrade ${url} (host mode)`);
           startHostSession(session, {
             env,
-            startOpts,
+            // Owner recorded here too, or a host session could never be resumed.
+            startOpts: { ...startOpts, ...sessionGate?.ownership(identity) },
             logger,
             ...omitUndefined({ baseAgent: hostBaseAgent }),
           });

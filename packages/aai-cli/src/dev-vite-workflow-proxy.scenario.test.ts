@@ -30,7 +30,6 @@
 import fs from "node:fs/promises";
 import { createServer as createHttpServer, type Server } from "node:http";
 import path from "node:path";
-import getPort from "get-port";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { describe, expect, test } from "vitest";
 import { viteDevConfig } from "./_dev-vite-config.ts";
@@ -46,12 +45,25 @@ const SOURCE_MODULE_URL = "/workflows/stitch.ts";
  * no marker would be indistinguishable from a served module — both of which are
  * ways this test could pass while the bug is present.
  */
-function startBackend(port: number): Promise<Server> {
+function startBackend(): Promise<Server> {
   const server = createHttpServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json", "x-served-by": "backend" });
     res.end(JSON.stringify({ saw: req.url }));
   });
-  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
+/**
+ * The port a listening server was ASSIGNED. Both servers bind port 0 rather than
+ * a number picked beforehand: a free port chosen and then bound is a race, and
+ * CI lost it (`Port 40783 is already in use`) to a process in the same run.
+ */
+function boundPort(server: Pick<Server, "address"> | null | undefined): number {
+  const address = server?.address();
+  if (address === null || address === undefined || typeof address === "string") {
+    throw new Error("server is not listening");
+  }
+  return address.port;
 }
 
 /** A project shaped like every workflow template: bodies under `workflows/`. */
@@ -88,11 +100,11 @@ type Booted = { origin: string; vite: ViteDevServer };
 async function withBootedProject(run: (booted: Booted) => Promise<void>): Promise<void> {
   await withTempDir(async (dir) => {
     await writeProject(dir);
-    const [vitePort, backendPort] = [await getPort(), await getPort()];
-    const backend = await startBackend(backendPort);
-    const vite = await createViteServer(viteDevConfig(dir, vitePort, backendPort));
+    const backend = await startBackend();
+    const vite = await createViteServer(viteDevConfig(dir, 0, boundPort(backend)));
     try {
       await vite.listen();
+      const vitePort = boundPort(vite.httpServer);
       // The IPv4 literal, not `localhost`: this suite is also the only place the
       // bind host is observable, and dialling a hostname would pass against a
       // server bound to `::1` alone.
