@@ -429,6 +429,16 @@ event(event:
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -626,6 +636,16 @@ event the stream had already recorded under another.
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -1205,6 +1225,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
   }, z.core.$strip>;
   replacement: z.ZodString;
   type: z.ZodLiteral<"guardrail.blocked">;
+}, z.core.$strip>, z.ZodObject<{
+  durationMs: z.ZodNumber;
+  limit: z.ZodEnum<{
+     duration: "duration";
+     words: "words";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"user-turn.exceeded">;
+  words: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;

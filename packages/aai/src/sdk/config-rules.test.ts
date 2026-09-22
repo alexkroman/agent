@@ -298,6 +298,7 @@ describe("toAgentConfig — pipeline voice tuning", () => {
     ["errorPhrase", "Something broke."],
     ["resumeFalseInterruption", false],
     ["preemptiveGeneration", true],
+    ["userTurnLimit", { maxWords: 60 }],
   ])("rejects %s in s2s mode", (field, value) => {
     expect(() => config({ s2s: assemblyAIS2s(), [field]: value })).toThrow(
       new RegExp(`${field} requires pipeline mode`),
@@ -308,6 +309,49 @@ describe("toAgentConfig — pipeline voice tuning", () => {
     expect(() => config({ ...pipelineFields, minBargeInWords: 0 })).toThrow(
       /minBargeInWords[\s\S]*expected number to be >=1/,
     );
+  });
+
+  describe("userTurnLimit", () => {
+    test("carries one cap, the other, or both", () => {
+      expect(config({ ...pipelineFields, userTurnLimit: { maxWords: 60 } }).userTurnLimit).toEqual({
+        maxWords: 60,
+      });
+      expect(
+        config({ ...pipelineFields, userTurnLimit: { maxDurationMs: 20_000 } }).userTurnLimit,
+      ).toEqual({ maxDurationMs: 20_000 });
+      expect(
+        config({ ...pipelineFields, userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 } })
+          .userTurnLimit,
+      ).toEqual({ maxWords: 60, maxDurationMs: 20_000 });
+    });
+
+    test("is absent by default — no cap on a single user turn", () => {
+      expect(config(pipelineFields)).not.toHaveProperty("userTurnLimit");
+    });
+
+    test("refuses a limit that names no cap: `{}` would be a control that never fires", () => {
+      expect(() => config({ ...pipelineFields, userTurnLimit: {} })).toThrow(
+        /userTurnLimit must set maxWords, maxDurationMs, or both/,
+      );
+    });
+
+    test.each([
+      ["maxWords", 0],
+      ["maxWords", -1],
+      ["maxWords", 2.5],
+      ["maxDurationMs", 0],
+      ["maxDurationMs", 1.5],
+    ])("refuses a %s of %s — a cap is a positive integer", (field, value) => {
+      expect(() => config({ ...pipelineFields, userTurnLimit: { [field]: value } })).toThrow(
+        new RegExp(`userTurnLimit[\\s\\S]*${field}`),
+      );
+    });
+
+    test("is refused on a text agent, as every pipeline-only knob is", () => {
+      expect(() =>
+        rawConfig({ name: "chat", text: true, userTurnLimit: { maxWords: 60 } }),
+      ).toThrow(/userTurnLimit requires pipeline mode/);
+    });
   });
 });
 

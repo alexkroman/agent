@@ -626,6 +626,16 @@ optional onEvent?: (event:
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -833,6 +843,16 @@ per turn — which is what `runTextAgent` does.
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{

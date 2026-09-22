@@ -26,12 +26,15 @@ import type { AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 export interface FakeTranscriber {
   readonly params: Record<string, unknown>;
   readonly updateConfigurationCalls: Record<string, unknown>[];
+  /** How many times the adapter asked the service to end the turn now. */
+  forceEndpointCalls: number;
   readonly sentAudio: ArrayBufferLike[];
   on(ev: string, fn: (...args: unknown[]) => void): void;
   connect(): Promise<void>;
   close(): Promise<void>;
   sendAudio(_data: ArrayBufferLike): void;
   updateConfiguration(config: Record<string, unknown>): void;
+  forceEndpoint(): void;
   _fire(ev: string, ...args: unknown[]): void;
 }
 
@@ -40,6 +43,7 @@ function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
   return {
     params,
     updateConfigurationCalls: [],
+    forceEndpointCalls: 0,
     sentAudio: [],
     on(ev, fn) {
       const arr = listeners.get(ev) ?? [];
@@ -57,6 +61,9 @@ function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
     },
     updateConfiguration(config: Record<string, unknown>) {
       this.updateConfigurationCalls.push(config);
+    },
+    forceEndpoint() {
+      this.forceEndpointCalls += 1;
     },
     _fire(ev, ...args) {
       for (const fn of listeners.get(ev) ?? []) fn(...args);

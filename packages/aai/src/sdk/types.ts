@@ -59,7 +59,7 @@ export type { AgentModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
-export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+export type { PipelineVoiceTuning, UserTurnLimit } from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached

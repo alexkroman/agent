@@ -213,6 +213,7 @@ describe("createTransportFactory (pipeline)", () => {
     ["preemptiveGeneration", true],
     ["errorPhrase", ""],
     ["resumeFalseInterruption", false],
+    ["userTurnLimit", { maxWords: 60, maxDurationMs: 20_000 }],
   ])("forwards %s into createPipelineTransport", async (field, value) => {
     const build = vi
       .spyOn(pipelineTransport, "createPipelineTransport")

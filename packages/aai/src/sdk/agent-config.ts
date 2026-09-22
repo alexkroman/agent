@@ -213,6 +213,18 @@ export const AgentConfigSchema = z.object({
   startFailurePhrase: z.string().optional(),
   resumeFalseInterruption: z.boolean().optional(),
   preemptiveGeneration: z.boolean().optional(),
+  // A cap on one user turn, by words and/or elapsed time. REFINED rather than
+  // left as two optionals: `{}` is a limit on nothing, and a control that is
+  // accepted and never fires is the failure this whole layer exists to refuse.
+  userTurnLimit: z
+    .object({
+      maxWords: z.number().int().positive().optional(),
+      maxDurationMs: z.number().int().positive().optional(),
+    })
+    .refine((limit) => limit.maxWords !== undefined || limit.maxDurationMs !== undefined, {
+      message: "userTurnLimit must set maxWords, maxDurationMs, or both",
+    })
+    .optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

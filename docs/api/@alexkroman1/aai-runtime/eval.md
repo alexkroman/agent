@@ -403,6 +403,16 @@ function customEventsIn(events: readonly (
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -603,6 +613,16 @@ readonly (
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -918,6 +938,16 @@ function errorsIn(events: readonly (
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -1141,6 +1171,16 @@ readonly (
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -1622,6 +1662,16 @@ function lastStateIn<T>(events: readonly (
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -1834,6 +1884,16 @@ readonly (
   `type`: `"guardrail.blocked"`;
 \}
   \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -2031,6 +2091,16 @@ function lastStateIn(events: readonly (
   };
   replacement: string;
   type: "guardrail.blocked";
+}
+  | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
 }
   | {
   messages: {
@@ -2237,6 +2307,16 @@ readonly (
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -2701,6 +2781,16 @@ function saidIn(events: readonly (
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -2900,6 +2990,16 @@ readonly (
   `type`: `"guardrail.blocked"`;
 \}
   \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -3097,6 +3197,16 @@ function statesIn<T>(events: readonly (
   };
   replacement: string;
   type: "guardrail.blocked";
+}
+  | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
 }
   | {
   messages: {
@@ -3315,6 +3425,16 @@ readonly (
   `type`: `"guardrail.blocked"`;
 \}
   \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
+\}
+  \| \{
   `messages`: \{
      `content`: `string`;
      `role`: `"assistant"` \| `"user"`;
@@ -3512,6 +3632,16 @@ function statesIn(events: readonly (
   };
   replacement: string;
   type: "guardrail.blocked";
+}
+  | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
 }
   | {
   messages: {
@@ -3722,6 +3852,16 @@ readonly (
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -4025,6 +4165,16 @@ function toolCallsInEvents(events: readonly (
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -4221,6 +4371,16 @@ readonly (
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -4804,6 +4964,19 @@ type EvalSession = {
      type: z.ZodLiteral<"guardrail.blocked">;
    }
      | {
+     durationMs: z.ZodNumber;
+     limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+     }>;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     type: z.ZodLiteral<"user-turn.exceeded">;
+     words: z.ZodNumber;
+   }
+     | {
      messages: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         role: z.ZodEnum<{
@@ -5029,6 +5202,19 @@ events(): readonly (
   type: z.ZodLiteral<"guardrail.blocked">;
 }
   | {
+  durationMs: z.ZodNumber;
+  limit: z.ZodEnum<{
+     duration: "duration";
+     words: "words";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"user-turn.exceeded">;
+  words: z.ZodNumber;
+}
+  | {
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;
      role: z.ZodEnum<{
@@ -5234,6 +5420,19 @@ readonly (
   \}, `z.core.$strip`\>;
   `replacement`: `z.ZodString`;
   `type`: `z.ZodLiteral`\<`"guardrail.blocked"`\>;
+\}
+  \| \{
+  `durationMs`: `z.ZodNumber`;
+  `limit`: `z.ZodEnum`\<\{
+     `duration`: `"duration"`;
+     `words`: `"words"`;
+  \}\>;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `type`: `z.ZodLiteral`\<`"user-turn.exceeded"`\>;
+  `words`: `z.ZodNumber`;
 \}
   \| \{
   `messages`: `z.ZodArray`\<`z.ZodObject`\<\{
@@ -5734,6 +5933,19 @@ type EvalTextAgent = {
      type: z.ZodLiteral<"guardrail.blocked">;
    }
      | {
+     durationMs: z.ZodNumber;
+     limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+     }>;
+     meta: z.ZodObject<{
+        at: z.ZodNumber;
+        id: z.ZodString;
+     }, z.core.$strip>;
+     type: z.ZodLiteral<"user-turn.exceeded">;
+     words: z.ZodNumber;
+   }
+     | {
      messages: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         role: z.ZodEnum<{
@@ -5966,6 +6178,19 @@ events(): readonly (
   type: z.ZodLiteral<"guardrail.blocked">;
 }
   | {
+  durationMs: z.ZodNumber;
+  limit: z.ZodEnum<{
+     duration: "duration";
+     words: "words";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"user-turn.exceeded">;
+  words: z.ZodNumber;
+}
+  | {
   messages: z.ZodArray<z.ZodObject<{
      content: z.ZodString;
      role: z.ZodEnum<{
@@ -6171,6 +6396,19 @@ readonly (
   \}, `z.core.$strip`\>;
   `replacement`: `z.ZodString`;
   `type`: `z.ZodLiteral`\<`"guardrail.blocked"`\>;
+\}
+  \| \{
+  `durationMs`: `z.ZodNumber`;
+  `limit`: `z.ZodEnum`\<\{
+     `duration`: `"duration"`;
+     `words`: `"words"`;
+  \}\>;
+  `meta`: `z.ZodObject`\<\{
+     `at`: `z.ZodNumber`;
+     `id`: `z.ZodString`;
+  \}, `z.core.$strip`\>;
+  `type`: `z.ZodLiteral`\<`"user-turn.exceeded"`\>;
+  `words`: `z.ZodNumber`;
 \}
   \| \{
   `messages`: `z.ZodArray`\<`z.ZodObject`\<\{

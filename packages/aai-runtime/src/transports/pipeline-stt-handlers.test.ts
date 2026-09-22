@@ -13,6 +13,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { createSttEventHandlers } from "./pipeline-stt-handlers.ts";
+import { NO_USER_TURN_LIMIT } from "./pipeline-user-turn-limit.ts";
 
 type Handlers = ReturnType<typeof createSttEventHandlers>;
 type Deps = Parameters<typeof createSttEventHandlers>[0];
@@ -65,6 +66,9 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     // The lists' own cases live in `pipeline-user-speech.test.ts`, which drives
     // the shipped defaults through `createUserActivity`.
     onInterrupted: vi.fn(),
+    // No cap on a user turn — the shipped default. The cap's own cases live in
+    // `pipeline-user-turn-limit.test.ts` and drive it through the transport.
+    turnLimit: NO_USER_TURN_LIMIT,
     log: silentLogger,
     sid: "s1",
     ...overrides,

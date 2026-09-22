@@ -372,6 +372,7 @@
     "TypedDelegateResult",
     "TypedSubagentDef",
     "UsageLimits",
+    "UserTurnLimit",
     "VOICE_PRESETS",
     "VoicePresetName",
     "WaitForOptions",

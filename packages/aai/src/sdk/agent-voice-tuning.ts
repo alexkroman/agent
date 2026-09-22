@@ -152,4 +152,68 @@ export interface PipelineVoiceTuning {
    * and seed showing no reward regression.
    */
   preemptiveGeneration?: boolean;
+  /**
+   * Pipeline mode only. Cap ONE user turn's length — by words heard, by
+   * elapsed time, or both — see {@link UserTurnLimit}.
+   *
+   * @defaultValue unset — no cap on a single user turn's length.
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * export default agent({
+   *   name: "Triage",
+   *   // Answer after 60 words or 20 seconds, whichever the caller reaches first.
+   *   userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 },
+   * });
+   * ```
+   */
+  userTurnLimit?: UserTurnLimit;
+}
+
+/**
+ * A cap on ONE user turn — see {@link PipelineVoiceTuning.userTurnLimit}.
+ *
+ * End-of-turn detection is the STT provider's, and it is driven by SILENCE: a
+ * caller who never pauses never ends a turn, so a monologue holds the floor
+ * for as long as it runs and the agent cannot answer, redirect or hand off
+ * until it stops. This is the bound on that. When the open utterance crosses
+ * either cap the runtime asks the transcriber to END THE TURN NOW, exactly as
+ * a pause would have — the words heard so far commit as the caller's turn, the
+ * agent replies to them, and whatever the caller says next opens the next turn
+ * — and a `user-turn.exceeded` event records that it happened.
+ *
+ * Both members are optional; set one or both. A limit that names neither is
+ * refused at config time rather than accepted as a cap on nothing.
+ *
+ * Two things it is NOT: it is not a barge-in gate (`minBargeInWords` and
+ * `interruptionMinDurationMs` decide whether the caller's speech interrupts a
+ * reply; this decides when the caller's own turn is long enough), and it does
+ * not discard anything the caller says — speech after the cut lands in the
+ * turn that follows.
+ *
+ * The cut is made by the STT provider, so it needs one that can force an end of
+ * turn mid-stream: the default `assemblyAIStt()` can. On a provider that
+ * cannot, the event is still reported and the runtime logs once that the cap
+ * is inert — the same treatment a provider that cannot move its endpointing
+ * window gets.
+ *
+ * @public
+ */
+export interface UserTurnLimit {
+  /**
+   * End the caller's turn once this many words have been heard in it. A
+   * positive integer; counted on the transcriber's interim transcript, so it
+   * is what the transcriber HEARD, exactly as `minBargeInWords` is.
+   */
+  // `| undefined` on both, unlike the scalar knobs beside this interface: the
+  // object crosses the config boundary as a whole, and under
+  // `exactOptionalPropertyTypes` the schema-inferred `{ maxWords?: number |
+  // undefined }` is not assignable to a member typed without it.
+  maxWords?: number | undefined;
+  /**
+   * End the caller's turn once it has run this long, in ms — measured from the
+   * first word the transcriber reported for it. A positive integer.
+   */
+  maxDurationMs?: number | undefined;
 }

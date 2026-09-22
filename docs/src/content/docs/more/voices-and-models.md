@@ -123,9 +123,9 @@ are trying to fix.
 
 ## Tuning the conversation
 
-Four fields on `agent()` decide how a pipeline agent handles pauses and
-interruptions. Reach for them once you have heard a specific problem, not
-before.
+Five fields on `agent()` decide how a pipeline agent handles pauses,
+interruptions and monologues. Reach for them once you have heard a specific
+problem, not before.
 
 | Field | What it decides | Default |
 | --- | --- | --- |
@@ -133,6 +133,7 @@ before.
 | `minBargeInWords` | How many words of caller speech interrupt the agent's reply. `1` interrupts on any word; the default lets "yeah" and "mm-hmm" through. | `2` |
 | `interruptionMinDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate. | `500` |
 | `deadAirCoverMs` | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables. | `5000` |
+| `userTurnLimit` | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `user-turn.exceeded` event. | unset (no cap) |
 
 The rest, including the phrases spoken on a provider failure, are in the
 [SDK reference](/agent/reference/).

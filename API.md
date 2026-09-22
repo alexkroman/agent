@@ -783,6 +783,10 @@ const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -1987,6 +1991,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export interface SttSession {
     // (undocumented)
     close(): Promise<void>;
+    forceEndOfTurn?(): void;
     // (undocumented)
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
@@ -2956,6 +2961,7 @@ export interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
@@ -3232,6 +3238,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -3625,6 +3643,12 @@ export interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 export interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+export interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -4447,6 +4471,10 @@ export const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -4761,11 +4789,12 @@ const PIPELINE_ONLY_TUNING: {
     readonly startFailurePhrase: "string";
     readonly resumeFalseInterruption: "boolean";
     readonly preemptiveGeneration: "boolean";
+    readonly userTurnLimit: "user-turn-limit";
 };
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : readonly string[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -4782,6 +4811,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
@@ -4985,6 +5015,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -5352,6 +5394,12 @@ interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -5958,6 +6006,18 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -7179,6 +7239,10 @@ const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -7526,6 +7590,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
@@ -7793,6 +7858,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -8339,6 +8416,12 @@ interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
@@ -11323,7 +11406,7 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 // @public
 export type TransportEventType = TransportEventBody["type"];
@@ -12074,7 +12157,7 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 export { UPLOAD_CHUNK_BYTES }
 

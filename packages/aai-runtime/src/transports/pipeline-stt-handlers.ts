@@ -22,6 +22,7 @@ import type { SilenceNudger } from "./pipeline-silence.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
 import type { GatedSpeechEdges, SpeechEdgeTracker } from "./pipeline-speech-edges.ts";
 import { scanWords } from "./pipeline-text.ts";
+import type { UserTurnLimiter } from "./pipeline-user-turn-limit.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 /**
@@ -125,13 +126,18 @@ export function createSttEventHandlers(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
-  /** The two phrase lists — agent-scoped. See `pipeline-barge-in-policy.ts`. */
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted: () => void;
+  /**
+   * The cap on one user turn, or `NO_USER_TURN_LIMIT`. Fed every partial's
+   * text and word count; its deadline is armed and cleared by the speaking
+   * edge, not here — see `pipeline-user-turn-limit.ts`.
+   */
+  turnLimit: UserTurnLimiter;
   log: Logger;
   sid: string;
 }): SttEventHandlers {
-  const { speechEdges, recovery, nudger, callbacks, log, agentIsSpeaking } = deps;
+  const { speechEdges, recovery, nudger, callbacks, log, agentIsSpeaking, turnLimit } = deps;
 
   /**
    * Arm false-interruption recovery for the partial-triggered barge-in that is
@@ -181,10 +187,11 @@ export function createSttEventHandlers(deps: {
       nudger.onUserSpeech();
       // Counted once, with a bounded scan: every consumer here is a threshold
       // check — the speaking edge and caption emit need >= 1, the barge-in
-      // gate needs >= minBargeInWords — so the scan stops at
-      // max(minBargeInWords, 1) instead of walking the whole partial,
-      // which grows to full-utterance length as the user keeps speaking.
-      const words = scanWords(text, Math.max(deps.minBargeInWords(), 1));
+      // gate needs >= minBargeInWords, the turn cap needs >= its maxWords —
+      // so the scan stops at the largest of those instead of walking the
+      // whole partial, which grows to full-utterance length as the user keeps
+      // speaking.
+      const words = scanWords(text, Math.max(deps.minBargeInWords(), turnLimit.maxWords, 1));
       // Live captions: forward the interim transcript as-is. The committed turn
       // still arrives via onUserTranscript once the STT final lands. Emitted
       // after any barge-in below, because the client's `cancelled` handler
@@ -202,7 +209,13 @@ export function createSttEventHandlers(deps: {
       // Opens the speaking edge and restarts its idle watchdog — which is also
       // what holds an armed resume back while the user keeps talking, since the
       // watchdog is the only thing that releases one.
-      if (words >= 1) speechEdges.speechStarted();
+      if (words >= 1) {
+        speechEdges.speechStarted();
+        // AFTER the edge opens, so the first partial of an utterance is counted
+        // against a deadline that is already armed rather than one the next
+        // partial arms. Fires at most once per utterance — see the latch.
+        turnLimit.onPartial(text, words);
+      }
       if (!bargeIn.partialInterrupts(words)) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here

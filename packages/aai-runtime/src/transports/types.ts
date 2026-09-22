@@ -64,6 +64,7 @@ export type TransportEventBody = EventsNamed<
   | "speech.stopped"
   | "user-transcript.updated"
   | "user-transcript.committed"
+  | "user-turn.exceeded"
   | "agent-transcript.updated"
   | "agent-transcript.committed"
   | "tool.called"

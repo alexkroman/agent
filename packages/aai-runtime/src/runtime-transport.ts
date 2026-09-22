@@ -226,6 +226,7 @@ export function createTransportFactory(
       ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,
+      userTurnLimit: agentConfig.userTurnLimit,
       minBargeInWords: agentConfig.minBargeInWords,
       interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
       // Not an agent field: the pair the STT stage resolved, so a rule's

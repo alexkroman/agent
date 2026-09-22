@@ -571,6 +571,7 @@ describe("createRuntime — provider resolution seams", () => {
     ["minBargeInWords", { minBargeInWords: 3 }],
     ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
     ["resumeFalseInterruption", { resumeFalseInterruption: false }],
+    ["userTurnLimit", { userTurnLimit: { maxWords: 60 } }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
     // The platform strips stt/llm/tts off
     // the agent object and passes them as options, so validating the agent's

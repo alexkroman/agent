@@ -61,6 +61,7 @@ import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
 import {
   GuardrailBlockedEventSchema,
   UsageUpdatedEventSchema,
+  UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
 
 /**
@@ -377,13 +378,14 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     meta: SessionEventMetaSchema,
     state: z.unknown(),
   }),
-  // The two events about what a session SPENDS and what it REFUSES. Their
+  // The events about what a session SPENDS, REFUSES and CUTS SHORT. Their
   // schemas live in `protocol-events-accounting.ts` — named here rather than
-  // written out because this file is at the source-length cap and those two
+  // written out because this file is at the source-length cap and those
   // carry more argument than schema. Referenced as identifiers so the union
   // stays a literal tuple, which is what `z.discriminatedUnion` narrows over.
   UsageUpdatedEventSchema,
   GuardrailBlockedEventSchema,
+  UserTurnExceededEventSchema,
   /**
    * The conversation this session already had, sent when a RESUME restores one.
    *

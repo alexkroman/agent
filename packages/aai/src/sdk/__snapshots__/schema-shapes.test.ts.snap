@@ -37,6 +37,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "toolChoice",
   "tts",
   "usageLimits",
+  "userTurnLimit",
   "voicePresets",
 ]
 `;
@@ -193,6 +194,13 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "meta",
     "text",
     "type",
+  ],
+  "user-turn.exceeded": [
+    "durationMs",
+    "limit",
+    "meta",
+    "type",
+    "words",
   ],
 }
 `;

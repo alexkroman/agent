@@ -5,6 +5,7 @@
 // (pipeline-speech-edges.ts), and the predicates every one of those is built
 // from. What the handlers DO with a transcript is pipeline-stt-handlers.ts.
 
+import type { UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
@@ -21,6 +22,7 @@ import {
   type SpeculationHooks,
   type SttEventHandlers,
 } from "./pipeline-stt-handlers.ts";
+import { createUserTurnLimiter, type UserTurnLimitKind } from "./pipeline-user-turn-limit.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 // Re-exported: both types are part of this module's own signatures, and a
@@ -67,6 +69,14 @@ export function createUserActivity(deps: {
   interruptionMinDurationMs: () => number;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted(): void;
+  /** Cap one user turn by words and/or time; unset is no cap. See `UserTurnLimit`. */
+  userTurnLimit: UserTurnLimit | undefined;
+  /**
+   * Ask the transcriber to end the caller's turn now — what a crossed cap
+   * does. The transport owns this because only it holds the STT session, and
+   * it is where "this provider cannot" is said once.
+   */
+  forceEndOfTurn(): void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /** Speak one sentence on the transport's own behalf, running no turn. */
@@ -109,13 +119,45 @@ export function createUserActivity(deps: {
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
   const edgeGate = createGatedSpeechEdges({ report: callbacks.report, agentIsSpeaking });
 
+  // The cap on one user turn. Its deadline and its once-per-utterance latch
+  // follow the speaking edge — armed on open, cleared on close — and it reaches
+  // the edge by riding the tracker's callbacks below, so every path that closes
+  // an edge (final, watchdog, reset) clears it without naming it. `speechEdges`
+  // is declared just after and bound late: `durationMs` is read when the cap
+  // fires, never at construction.
+  const turnLimit = createUserTurnLimiter(deps.userTurnLimit, {
+    durationMs: () => speechEdges.durationMs(),
+    onExceeded(limit: UserTurnLimitKind, words: number, durationMs: number): void {
+      log.info("Pipeline user turn limit reached", { sid, limit, words, durationMs });
+      // The record first, then the cut: the transcriber answers the cut with
+      // a final, which commits on the ordinary path — so a reader of the
+      // stream sees the cap fire and then the turn it cut, in that order.
+      callbacks.report({ type: "user-turn.exceeded", limit, words, durationMs });
+      deps.forceEndOfTurn();
+    },
+  });
+  const edgesWithLimit = {
+    onSpeechStarted(): void {
+      edgeGate.onSpeechStarted();
+      turnLimit.onUtteranceStarted();
+    },
+    onSpeechStopped(): void {
+      edgeGate.onSpeechStopped();
+      turnLimit.onUtteranceEnded();
+    },
+    reset(): void {
+      edgeGate.reset();
+      turnLimit.onUtteranceEnded();
+    },
+  };
+
   // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
   // STT transcript stream (see createSpeechEdgeTracker above). `onIdle` — the
   // utterance going quiet with no final — IS the false-interruption recovery
   // signal, the only one the transport can observe; `recovery` is declared
   // below and bound late, so the reference resolves when the watchdog fires
   // rather than at construction.
-  const speechEdges = createSpeechEdgeTracker(edgeGate, {
+  const speechEdges = createSpeechEdgeTracker(edgesWithLimit, {
     idleTimeoutMs: deps.speechIdleTimeoutMs,
     onIdle: () => {
       // The same edge that arms a false-interruption resume also retires any
@@ -186,6 +228,7 @@ export function createUserActivity(deps: {
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
     onInterrupted: deps.onInterrupted,
+    turnLimit,
     log,
     sid,
   });

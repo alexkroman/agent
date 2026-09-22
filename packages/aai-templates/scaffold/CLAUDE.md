@@ -332,6 +332,8 @@ export default agent({
   deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 5000; 0 disables)
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
+  userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
+                    maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `user-turn.exceeded`.
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
   minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
@@ -1428,20 +1430,20 @@ caller answers it and the answer barges in.
 a barge-in turns out to be noise — no user turn ever commits. The wait is not
 configurable: the resume fires once the transcript stream goes quiet with no
 final, so it can never race a real turn the STT is still endpointing.
+`userTurnLimit` (default: no cap) bounds ONE user turn — `{ maxWords }`,
+`{ maxDurationMs }`, or both. End-of-turn is the transcriber's and is driven by
+silence, so a caller who never pauses never ends a turn; past either cap the
+transcriber ends it as a pause would — what was heard commits, the agent answers
+it, the rest opens the next turn. Each cut is a `user-turn.exceeded` event
+(`limit`, `words`, `durationMs`); `{}` is refused. Inert (logged once) on a
+transcriber that cannot end a turn on demand; the default `assemblyAIStt()` can.
 `preemptiveGeneration` (default **`false`**) starts generating the reply as
 soon as transcription is confident the caller has finished, and uses that
-already-running answer if the committed transcript matches. It can shorten the
-pause before the agent speaks, and it is off by default because the measurement
-came back negative: over a tau2-bench retail run, 16 speculations started, 14
-were adopted at a p50 head start of 0.44s, and 5 of those 14 (36%) were poisoned
-after adoption by a tool call — discarded whole, each having burned p50 0.69s
-first. Net **+8ms per caller turn**, for 44% of its LLM requests thrown away.
-What bounds the downside either way is that a speculation never speaks, calls a
-tool, or enters history until the real turn adopts it, so the worst case is a
-wasted request and a turn that behaves exactly as it would with the flag off.
-Set `preemptiveGeneration: true` to opt in — worth trying on a text-heavy agent,
-since 36% poisoned is a tool-calling agent's number, and pointless on a
-tool-heavy one, where a speculation that reaches a tool call is thrown away.
+already-running answer if the committed transcript matches. It is off because
+the measurement came back negative (net **+8ms per caller turn** on a
+tool-calling agent, 44% of LLM requests thrown away). A speculation never
+speaks, calls a tool, or enters history until the real turn adopts it, so the
+worst case is a wasted request; worth trying on a text-heavy agent only.
 
 ## Providers
 
