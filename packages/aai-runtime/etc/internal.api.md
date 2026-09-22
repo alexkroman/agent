@@ -4,7 +4,7 @@
 
 ```ts
 
-import type { ClientSink } from '@alexkroman1/aai/protocol';
+import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -14,9 +14,9 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import { OwnedMap } from '@alexkroman1/aai/internal';
+import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
-import type { ReadyConfig } from '@alexkroman1/aai/protocol';
+import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
@@ -44,6 +44,20 @@ export function applyWorkflowJournalDdl(options: {
     db: Db;
     logger: Logger;
 }): Promise<boolean>;
+
+// @public
+type AttachSessionOptions = {
+    sessions: OwnedMap<string, ServerSession>;
+    createSession: (sessionId: string, client: ClientSink) => ServerSession;
+    readyConfig: ReadyConfig;
+    logContext?: Record<string, string>;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    logger?: Logger;
+    sessionStartTimeoutMs?: number;
+    resumeFrom?: string;
+    closeAfterFailure?: () => void;
+};
 
 // @internal
 export const consoleLogger: Logger;
@@ -688,20 +702,11 @@ export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 export function workflowJournalDdl(schema?: string): string[];
 
 // @public
-type WsSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
-    createSession: (sessionId: string, client: ClientSink) => ServerSession;
-    readyConfig: ReadyConfig;
-    logContext?: Record<string, string>;
+type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     onOpen?: () => void;
     onClose?: () => void;
-    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
-    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
-    logger?: Logger;
     audioLeadMs?: number;
-    sessionStartTimeoutMs?: number;
     keepaliveIntervalMs?: number;
-    resumeFrom?: string;
 };
 
 // (No @packageDocumentation comment for this package)

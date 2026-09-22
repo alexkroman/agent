@@ -15,8 +15,8 @@ import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
-import { createPacedClientSink } from "./paced-client-sink.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { connectSession } from "./runtime-connect.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
@@ -30,14 +30,7 @@ import {
   type TransportSessionOpts,
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
-import type {
-  Runtime,
-  RuntimeOptions,
-  SessionConnection,
-  SessionConnectOptions,
-  SessionStartOptions,
-} from "./runtime-types.ts";
-import { type AttachedSession, attachSession } from "./session-attach.ts";
+import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
@@ -50,8 +43,6 @@ export type {
   AgentRuntime,
   Runtime,
   RuntimeOptions,
-  SessionConnection,
-  SessionConnectOptions,
   SessionStartOptions,
 } from "./runtime-types.ts";
 
@@ -417,59 +408,6 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     });
   }
 
-  function connect(sink: ClientSink, connectOpts?: SessionConnectOptions): SessionConnection {
-    const { resumeFrom, logContext, onSessionEnd } = connectOpts ?? {};
-    const paced = createPacedClientSink(sink, {
-      sampleRate: readyConfig.ttsSampleRate,
-      leadMs: connectOpts?.audioLeadMs,
-    });
-    let attached: AttachedSession | null = null;
-    /**
-     * The far end is gone, whoever decided so. A socket adapter learns this
-     * from its close event; a caller-owned sink has none, so when the RUNTIME
-     * closes the sink — a resume takeover, a failed start — it detaches here
-     * too, or the session would sit "ready" with nobody to end it.
-     */
-    const detach = (reason?: string): void => {
-      paced.stopPacing();
-      attached?.detach(omitUndefined({ reason }));
-    };
-    const client: ClientSink = {
-      get open() {
-        return paced.client.open;
-      },
-      event: paced.client.event,
-      playAudioChunk: paced.client.playAudioChunk,
-      close(reason) {
-        paced.client.close?.(reason);
-        detach(reason);
-      },
-    };
-    attached = attachSession(client, {
-      sessions,
-      createSession: (sid, c) =>
-        createSession({
-          id: sid,
-          agent: agent.name,
-          client: c,
-          skipGreeting: connectOpts?.skipGreeting ?? false,
-          resumed: resumeFrom !== undefined,
-        }),
-      readyConfig,
-      logger,
-      ...omitUndefined({ logContext, onSessionEnd, sessionStartTimeoutMs, resumeFrom }),
-    });
-    const connection = attached;
-    return {
-      id: connection.id,
-      readyConfig,
-      sendAudio: connection.sendAudio,
-      sendCommand: connection.sendCommand,
-      close: () => detach(),
-      ended: connection.ended,
-    };
-  }
-
   function releaseResources(): void {
     sessions.clear();
     sinkMap.clear();
@@ -532,7 +470,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     toolSchemas,
     createSession,
     startSession,
-    connect,
+    connect: (sink, connectOpts) =>
+      connectSession(sink, connectOpts, {
+        sessions,
+        readyConfig,
+        logger,
+        sessionStartTimeoutMs,
+        createSession: (id, client, o) => createSession({ id, agent: agent.name, client, ...o }),
+      }),
     shutdown,
     readyConfig,
     // The event log, exposed for the same reason `workflows` below is: a surface
