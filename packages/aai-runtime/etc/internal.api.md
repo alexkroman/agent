@@ -46,7 +46,7 @@ export function applyWorkflowJournalDdl(options: {
 }): Promise<boolean>;
 
 // @public
-type AttachSessionOptions = {
+export type AttachSessionOptions = {
     sessions: OwnedMap<string, ServerSession>;
     createSession: (sessionId: string, client: ClientSink) => ServerSession;
     readyConfig: ReadyConfig;

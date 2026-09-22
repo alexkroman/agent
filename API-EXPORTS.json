@@ -1232,6 +1232,7 @@
     "withToolsDir"
   ],
   "@alexkroman1/aai-runtime/internal": [
+    "AttachSessionOptions",
     "CONTAINED_ENV",
     "EGRESS_KEEP_ALIVE_MS",
     "JournalConformanceSuite",

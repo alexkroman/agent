@@ -176,6 +176,11 @@ export {
 // The containment rule under the static-asset server, shared because it is
 // SSRF-adjacent and worth one definition rather than one per caller.
 export { isPathInside } from "./server-static.ts";
+// Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
+// shape a host supplies — is contracted, on the root barrel. The socket's
+// options are the transport-neutral lifecycle's plus its own, so that type is
+// named here beside the function whose signature carries it.
+export type { AttachSessionOptions } from "./session-attach.ts";
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
@@ -307,8 +312,6 @@ export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow/ser
 // the part addressing are contracted, on the root barrel; this is what JOINS
 // them, which is a host's job.
 export { createUploadStore } from "./workflow/uploads.ts";
-// Wiring a socket up under a session. `SessionWebSocket` — the minimal socket
-// shape a host supplies — is contracted, on the root barrel.
 export { wireSessionSocket } from "./ws-handler.ts";
 
 /**

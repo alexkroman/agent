@@ -1045,6 +1045,7 @@ trace or a type error can be traced back to something.
 | `ASSEMBLYAI_TTS_HOST` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_TTS_KIND` | `@alexkroman1/aai/host-internal` |
 | `ApiUrlChip` | `@alexkroman1/aai-ui/internal` |
+| `AttachSessionOptions` | `@alexkroman1/aai-runtime/internal` |
 | `BuiltinToolOptions` | `@alexkroman1/aai/host-internal` |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
 | `CARTESIA_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
