@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budget of `no-check` doc fences \u2014 examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
+  "_description": "Per-file budget of `no-check` doc fences — examples this repo SHIPS and compiles nowhere. See scripts/check-doc-examples.mjs. Goal is zero; `--update` lowers an entry and refuses to raise one.",
   "no-check": {
     "docs/src/content/docs/build/state.md": 3,
     "docs/src/content/docs/more/background-jobs.md": 2,
@@ -16,7 +16,7 @@
     "packages/aai-runtime/src/workflow/notify.ts": 1,
     "packages/aai-runtime/src/workflow/replay/divergence.ts": 2,
     "packages/aai-runtime/src/ws-session-lifecycle.ts": 1,
-    "packages/aai-templates/scaffold/CLAUDE.md": 30,
+    "packages/aai-templates/scaffold/CLAUDE.md": 29,
     "packages/aai-ui/README.md": 1,
     "packages/aai-ui/src/_upload-session.ts": 1,
     "packages/aai-ui/src/components/upload-progress.tsx": 1,

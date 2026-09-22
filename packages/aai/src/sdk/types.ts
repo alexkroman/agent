@@ -14,6 +14,7 @@ import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
+import type { Personas } from "./persona.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { SubagentRoster } from "./subagent-roster.ts";
@@ -297,6 +298,8 @@ export interface AgentDef
    * like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
    */
   subagents?: SubagentRoster;
+  /** WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`. */
+  personas?: Personas;
   /**
    * Durable workflows this agent may start, keyed by workflow name.
    *

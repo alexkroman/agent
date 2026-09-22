@@ -34,6 +34,7 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import { openSessionDialogs, type SessionDialogs } from "./runtime-dialogs.ts";
+import { openSessionPersonas, type SessionPersonas } from "./runtime-personas.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import type { SystemPromptResolver } from "./runtime-system-prompt.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
@@ -44,6 +45,8 @@ import { createUsageMeter, type UsageMeter } from "./usage-meter.ts";
 /** What one session is wired with — see this module's header. @internal */
 export interface SessionWiring {
   dialogs: SessionDialogs;
+  /** The roster, bound to this session's prompt and transport — `runtime-personas.ts`. */
+  personas: SessionPersonas;
   emitter: SessionEmitter;
   usage: UsageMeter;
   guardrails: TurnGuardrails;
@@ -87,6 +90,15 @@ export function openSessionWiring(deps: {
     logger,
     ...omitUndefined({ commit }),
   });
+  // The roster, on the SAME per-session prompt the dialogs installed into: its
+  // section is a second keyed suffix, sorted ahead of theirs. Inert for an
+  // agent that declares none — see `runtime-personas.ts`.
+  const personas = openSessionPersonas(agent.personas, sessionId, {
+    prompt: dialogs.prompt,
+    slots,
+    transport: deps.transport,
+    logger,
+  });
   // The one way this session publishes an event: recorded into the retained
   // stream, sent to the client, then announced to the agent's own hooks. Built
   // BEFORE the transport callbacks, because two of them emit directly.
@@ -99,6 +111,9 @@ export function openSessionWiring(deps: {
     // the effect, and `agent({ events })` hooks run after it.
     observe: (event) => {
       dialogs.observe(event);
+      // AFTER the dialogs, so a move that pins a persona is already taken
+      // when the persona section is re-rendered and pushed.
+      personas.observe(event);
     },
     logger,
     ...omitUndefined({ hooks, commit }),
@@ -128,6 +143,7 @@ export function openSessionWiring(deps: {
   });
   return {
     dialogs,
+    personas,
     emitter,
     usage,
     guardrails: createTurnGuardrails({

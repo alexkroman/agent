@@ -265,7 +265,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // Everything one session is wired with before its transport exists — the
     // event emitter and its hooks, the dialogs that address the prompt, the
     // token meter and the guardrails. See `runtime-session-controls.ts`.
-    const { dialogs, emitter, usage, guardrails } = openSessionWiring({
+    const { dialogs, personas, emitter, usage, guardrails } = openSessionWiring({
       agent,
       env,
       sessionId: sessionOpts.id,
@@ -319,7 +319,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
       callbacks,
       guardrails,
       usage,
-      ...omitUndefined({ dialogTurn: dialogs.turnKnobs }),
+      ...omitUndefined({ dialogTurn: dialogs.turnKnobs, personaTurn: personas.turnKnobs }),
     });
 
     core = createSessionCore({

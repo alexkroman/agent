@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "persona",
+  "epoch": 1,
+  "sha256": "aa5329f0348ca8cc94d6cd55b4b0eea901e0b7f8eef401b7e946d434ff0d0197",
+  "exports": [
+    "HANDOFF_TOOL_NAME",
+    "HandoffOptions",
+    "HandoffResult",
+    "PersonaDef",
+    "PersonaPosition",
+    "Personas",
+    "persona",
+    "personas"
+  ]
+}

@@ -210,7 +210,10 @@ each is for.
 | `GoogleLlmOptions` | `@alexkroman1/aai/llm` |
 | `GroqLlmOptions` | `@alexkroman1/aai/llm` |
 | `GuardrailVerdict` | `@alexkroman1/aai` |
+| `HANDOFF_TOOL_NAME` | `@alexkroman1/aai` |
 | `HOST_ONLY_AGENT_FIELDS` | `@alexkroman1/aai/manifest` |
+| `HandoffOptions` | `@alexkroman1/aai` |
+| `HandoffResult` | `@alexkroman1/aai` |
 | `HookRecord` | `@alexkroman1/aai-runtime/testing` |
 | `HostConfig` | `@alexkroman1/aai/protocol` |
 | `HostConfigMessageSchema` | `@alexkroman1/aai/protocol` |
@@ -291,6 +294,9 @@ each is for.
 | `PageMetadata` | `@alexkroman1/aai/html` |
 | `ParsedFeed` | `@alexkroman1/aai/html` |
 | `PcmFormat` | `@alexkroman1/aai/step` |
+| `PersonaDef` | `@alexkroman1/aai` |
+| `PersonaPosition` | `@alexkroman1/aai` |
+| `Personas` | `@alexkroman1/aai` |
 | `PipelineAgentParams` | `@alexkroman1/aai` |
 | `PipelineTuning` | `@alexkroman1/aai/manifest` |
 | `PipelineVoiceTuning` | `@alexkroman1/aai` |
@@ -809,6 +815,8 @@ each is for.
 | `partitionSettled` | `@alexkroman1/aai/step` |
 | `partsOf` | `@alexkroman1/aai-runtime` |
 | `pcmDurationMs` | `@alexkroman1/aai/step` |
+| `persona` | `@alexkroman1/aai` |
+| `personas` | `@alexkroman1/aai` |
 | `pickOne` | `@alexkroman1/aai` |
 | `plural` | `@alexkroman1/aai/utils` |
 | `probeMedia` | `@alexkroman1/aai/ffmpeg` |

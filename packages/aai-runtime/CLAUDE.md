@@ -1384,6 +1384,28 @@ two dialogs compose, what the deadline clock runs from, and which knobs are live
 against which are impossible), the mechanics not worth rediscovering, and the two
 things deliberately not done. This guide is at its cap.
 
+## Personas are wired to a SESSION here
+
+`agent({ personas })` is what makes a roster more than a tool gate:
+`runtime-personas.ts` installs the active persona's section as a second keyed
+prompt suffix (`"active-persona"`, sorting AHEAD of `"dialogs"` — who is
+speaking, then where in their script they are), pushes it to a transport that
+holds its prompt as session state when it CHANGED (re-rendered only on
+`tool.completed` and `state.updated`, the two events a handoff can land under),
+and hands the pipeline the persona's `toolChoice`/`temperature` as a
+`prepareStep` preparer composed between the agent's reset and the dialog
+state's (`transports/pipeline-persona-knobs.ts`). A stale slot — a persona a
+redeploy renamed — answers as the entry persona with a warning rather than a
+throw out of prompt assembly.
+
+**The tool set is deliberately NOT narrowed per step, and that was measured
+rather than chosen.** The AI SDK's `filterActiveTools` applies to the EXECUTION
+set as well as to what the model is sent, so a call naming a hidden tool is a
+`NoSuchToolError` the pipeline reports as an invalid call with no
+`tool.completed` — never the SDK gate's refusal saying who to hand off to. The
+knobs module's doc carries it; the persona eval in `front-desk-agent` is what
+found it.
+
 ## A step's REQUEST is bounded in tokens; the message cap only guards growth
 
 `DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request

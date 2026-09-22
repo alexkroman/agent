@@ -12,6 +12,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-1) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
+| who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
 
 ```ts
@@ -1150,6 +1151,55 @@ declare function findOrder(id: string): Order | ToolFailure;
 const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 // orderTotal("A1") is number | ToolFailure
 ```
+
+***
+
+### persona()
+
+```ts
+function persona(def: PersonaDef): PersonaDef;
+```
+
+Define a persona. An identity function, like [tool](#tool-2) and [subagent](#subagent):
+it exists for the type, for the name to grep for, and so a persona is
+declared at module scope where both the roster and a tool that hands off to
+it can import it.
+
+#### Parameters
+
+##### def
+
+[`PersonaDef`](#personadef)
+
+#### Returns
+
+[`PersonaDef`](#personadef)
+
+***
+
+### personas()
+
+```ts
+function personas(list: readonly PersonaDef[]): Personas;
+```
+
+Declare the roster.
+
+Checked HERE, at module scope, rather than when `agent()` runs — every
+refusal below reaches an author at the declaration, and each is a failure
+with no symptom otherwise: two personas with one name route to whichever the
+lookup finds; a tool two personas both declare is gated by whichever wrapper
+landed last.
+
+#### Parameters
+
+##### list
+
+readonly [`PersonaDef`](#personadef)[]
+
+#### Returns
+
+[`Personas`](#personas-1)
 
 ***
 
@@ -2979,6 +3029,14 @@ The two are not exclusive at the FEATURE level: a `"voice"` agent may
 declare workflows and start them from a tool, and a `"static"` one may
 declare tools it never reaches. This field is only about the surface.
 
+##### personas?
+
+```ts
+optional personas?: Personas;
+```
+
+WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`.
+
 ##### preemptiveGeneration?
 
 ```ts
@@ -3240,7 +3298,7 @@ Subagents the MODEL may hand a task to, published as one `delegate` tool.
 
 The other half of `ctx.delegate`: a tool body naming a subagent is the
 AUTHOR routing in code, a roster is the MODEL routing per turn. Every entry
-needs a [SubagentDef.description](#description-3) — the only thing the router reads —
+needs a [SubagentDef.description](#description-4) — the only thing the router reads —
 and `agent()` refuses one without it. The one field whose declaration MINTS
 A TOOL, so a `tools/delegate.ts` beside a roster is a collision; host-only,
 like `tools`. Worked example and argument: `sdk/subagent-roster.ts`.
@@ -4977,6 +5035,15 @@ agent is supposed to be doing here, in the words the state itself carries.
 Read from the DEEPEST active state node, so a nested state's instruction
 wins over its parent's rather than being merged with it.
 
+##### persona?
+
+```ts
+readonly optional persona?: string;
+```
+
+The persona the active state pins, when it declares one — see
+[DialogStateSpec.persona](#persona-1). Same depth rule as `instruction`.
+
 ##### state
 
 ```ts
@@ -5106,6 +5173,18 @@ A key starting with `@` is a SESSION event instead — see
 [DialogSessionEventName](#dialogsessioneventname). Those are validated against the wire
 vocabulary at declaration and are deliberately kept OUT of the union above:
 an author does not send `@speech.started` by hand, the runtime does.
+
+##### persona?
+
+```ts
+optional persona?: string;
+```
+
+The persona that speaks while the conversation is in this state, by name —
+one of the agent's `personas`. It PINS: `Personas.handoff` to anyone else
+is refused until the dialog moves on, and the pin is a property of the
+position rather than a write, so a resumed session is pinned the same way.
+Checked against the roster by `agent()`.
 
 ##### states?
 
@@ -5296,7 +5375,7 @@ narrow a value it is never handed: the failure check returns before it runs.
 description: string;
 ```
 
-See [ToolDef.description](#description-5) — what the model reads to decide to call it.
+See [ToolDef.description](#description-6) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -5452,6 +5531,19 @@ wins over its parent's rather than being merged with it.
 
 [`DialogPosition`](#dialogposition).[`instruction`](#instruction)
 
+##### persona?
+
+```ts
+readonly optional persona?: string;
+```
+
+The persona the active state pins, when it declares one — see
+[DialogStateSpec.persona](#persona-1). Same depth rule as `instruction`.
+
+###### Inherited from
+
+[`DialogPosition`](#dialogposition).[`persona`](#persona)
+
 ##### result
 
 ```ts
@@ -5520,6 +5612,76 @@ The TTS voice for this phase of the call.
 
 ***
 
+### HandoffOptions
+
+Per-call options for [Personas.handoff](#handoff-1).
+
+#### Properties
+
+##### note?
+
+```ts
+optional note?: string;
+```
+
+What the next persona should know that the transcript does not say — "the
+caller is verified", "wants a refund on invoice 4471". Rendered into the
+new persona's prompt section until the next handoff, so it survives the
+turn that made it rather than living only in one tool result.
+
+***
+
+### HandoffResult
+
+What a handoff returns — the shape a tool hands back as its result so the
+model learns, in the same turn, who is speaking now.
+
+#### Properties
+
+##### from
+
+```ts
+readonly from: string;
+```
+
+The persona that was speaking.
+
+##### handoff
+
+```ts
+readonly handoff: true;
+```
+
+Always `true`: a discriminant a client or a spec can switch on.
+
+##### instruction
+
+```ts
+readonly instruction: string;
+```
+
+What the MODEL should do next, phrased for it: the tool result is the last
+thing it reads before it speaks, and the persona section of its prompt has
+already changed by the time it does.
+
+##### note?
+
+```ts
+readonly optional note?: string;
+```
+
+The note that travelled with it, when one did.
+
+##### to
+
+```ts
+readonly to: string;
+```
+
+The persona speaking now.
+
+***
+
 ### MintCodeOptions
 
 Options for [mintCode](#mintcode).
@@ -5558,6 +5720,238 @@ optional taken?: ReadonlySet<string>;
 
 Codes already issued. A generated code that collides is discarded and
 another drawn, so the caller does not have to loop.
+
+***
+
+### PersonaDef
+
+One persona: a speaker the session can hand the caller to.
+
+Every field but `tools`, `toolChoice` and `temperature` is required, and each
+requirement is a failure with no symptom otherwise: a persona with no
+`description` routes badly and reads as the model being unreliable; one with
+no `systemPrompt` speaks as the agent and nobody can tell it took over.
+
+#### Properties
+
+##### description
+
+```ts
+description: string;
+```
+
+What this persona is FOR, in one line, written for whoever is choosing
+between personas: the `handoff` tool's description is these lines and
+nothing else, so write it as the job ("Invoices, payments and refunds"),
+not the mechanism.
+
+##### name
+
+```ts
+name: string;
+```
+
+What this persona is called — the value of the `handoff` tool's `persona`
+argument, the name a log line carries, and what `position(ctx).name` is.
+
+##### systemPrompt
+
+```ts
+systemPrompt: string;
+```
+
+The instructions in force while this persona is speaking, appended to the
+agent's own prompt under a heading naming the persona. The agent's
+`systemPrompt` stays — this is the section that CHANGES on a handoff.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+The model's sampling temperature while this persona is speaking.
+
+##### toolChoice?
+
+```ts
+optional toolChoice?: ToolChoice;
+```
+
+The model's tool-choice policy while this persona is speaking.
+
+##### tools?
+
+```ts
+optional tools?: Readonly<Record<string, ToolDef>>;
+```
+
+The tools only this persona may call, by the name the model calls them by.
+
+A MAP, like `subagent({ tools })`, because these are declared on the
+persona rather than discovered from `tools/`: the agent's `tools/` files are
+every persona's, and this is the strictly narrower set one persona owns.
+Each name must be unique across the roster and must not collide with a
+`tools/` file — one tool has one owner, or the gate cannot say whose it is.
+
+***
+
+### PersonaPosition
+
+Where a session is, persona-wise — the position [Personas.position](#position-1)
+answers, the shape `DialogPosition` has for a dialog.
+
+#### Properties
+
+##### from?
+
+```ts
+readonly optional from?: string;
+```
+
+Who handed off to it, when a handoff has happened this session.
+
+##### note?
+
+```ts
+readonly optional note?: string;
+```
+
+The [HandoffOptions.note](#note) that came with that handoff.
+
+##### persona
+
+```ts
+readonly persona: PersonaDef;
+```
+
+The persona speaking now.
+
+##### pinnedBy?
+
+```ts
+readonly optional pinnedBy?: {
+  dialog: string;
+  state: string;
+};
+```
+
+The dialog PINNING this persona, when a dialog state declares one. While a
+pin is in force `handoff` to anyone else is refused — the state said who
+speaks here, and the dialog moving is what releases it.
+
+###### dialog
+
+```ts
+readonly dialog: string;
+```
+
+###### state
+
+```ts
+readonly state: string;
+```
+
+***
+
+### Personas
+
+The roster the agent declares and every tool reaches for — what
+[personas](#personas-2) returns.
+
+A HANDLE with methods that take the session, like [Dialog](#dialog), rather than
+a bare array like `agent({ subagents })`: a handoff has to know the whole
+roster to name who it came FROM and to refuse a target that is not on it, and
+a bare array gives a tool body neither.
+
+#### Methods
+
+##### active()
+
+```ts
+active(ctx: SlotHolder): PersonaDef;
+```
+
+The persona speaking now: `position(ctx).persona`.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`PersonaDef`](#personadef)
+
+##### handoff()
+
+```ts
+handoff(
+   ctx: SlotHolder, 
+   to: string | PersonaDef, 
+   options?: HandoffOptions
+): HandoffResult;
+```
+
+Make `to` the speaker from the next model step on.
+
+Synchronous and cheap: one slot write. The prompt section, the pipeline's
+`activeTools` and the gate all READ the slot at the next step, so the same
+turn continues as the new persona — the model is told so through the
+returned [HandoffResult.instruction](#instruction-3), which the calling tool should
+return (or fold into) as its result.
+
+Throws when `to` is not on the roster, or when a dialog state currently
+PINS another persona (see [PersonaPosition.pinnedBy](#pinnedby)). Both are
+authoring mistakes a tool body should not have to defend against; the
+minted `handoff` tool turns them into a `ToolFailure` for the model.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### to
+
+`string` \| [`PersonaDef`](#personadef)
+
+###### options?
+
+[`HandoffOptions`](#handoffoptions)
+
+###### Returns
+
+[`HandoffResult`](#handoffresult)
+
+##### position()
+
+```ts
+position(ctx: SlotHolder): PersonaPosition;
+```
+
+Who is speaking, and how they came to be — see [PersonaPosition](#personaposition).
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+[`PersonaPosition`](#personaposition)
+
+#### Properties
+
+##### list
+
+```ts
+readonly list: readonly PersonaDef[];
+```
+
+The roster, in declaration order. The first entry is the ENTRY persona.
 
 ***
 
@@ -6746,7 +7140,7 @@ The tool body, handed this session's slot value alongside the usual args.
 description: string;
 ```
 
-See [ToolDef.description](#description-5) — what the model reads to decide to call it.
+See [ToolDef.description](#description-6) — what the model reads to decide to call it.
 
 ##### inputSchema?
 
@@ -7362,7 +7756,7 @@ and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`description`](#description-3)
+[`SubagentDef`](#subagentdef).[`description`](#description-4)
 
 ##### expectedOutput?
 
@@ -7534,7 +7928,7 @@ and why an anonymous subagent is not expressible.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`name`](#name-1)
+[`SubagentDef`](#subagentdef).[`name`](#name-2)
 
 ##### schema
 
@@ -7601,7 +7995,7 @@ here; `expectedOutput` is the field that remembers it for them.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`systemPrompt`](#systemprompt-1)
+[`SubagentDef`](#subagentdef).[`systemPrompt`](#systemprompt-2)
 
 ##### temperature?
 
@@ -7613,7 +8007,7 @@ Sampling temperature passed through to the provider.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`temperature`](#temperature-4)
+[`SubagentDef`](#subagentdef).[`temperature`](#temperature-5)
 
 ##### tools?
 
@@ -7631,7 +8025,7 @@ pass — legal, and occasionally what you want.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`tools`](#tools-1)
+[`SubagentDef`](#subagentdef).[`tools`](#tools-2)
 
 ***
 
@@ -9630,7 +10024,7 @@ type SubagentRoster = readonly SubagentDef[];
 The subagents an agent publishes for the MODEL to choose between —
 `agent({ subagents })`.
 
-Every entry needs a [SubagentDef.description](#description-3): it is the only thing the
+Every entry needs a [SubagentDef.description](#description-4): it is the only thing the
 router reads, and `agent()` refuses a roster without one rather than shipping
 an agent that picks off a list of bare names.
 
@@ -12528,6 +12922,16 @@ varies by state is unreachable either way, and n tools cost n schemas in every
 request where this costs one. The deciding reason is smaller: `delegate` is
 also where a shared instruction about HOW to brief a subagent goes, and n
 copies of it is n places for it to drift.
+
+***
+
+### HANDOFF\_TOOL\_NAME
+
+```ts
+const HANDOFF_TOOL_NAME: "handoff" = "handoff";
+```
+
+The name the model hands off by.
 
 ***
 

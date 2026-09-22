@@ -348,6 +348,7 @@ export default agent({
                                              // Declare every key any tool or step reads.
   text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
   events?: SessionEventHandlers;             // observe the session (see "Watching the session")
+  personas?: Personas;                       // see "Personas"
 });
 ```
 
@@ -1811,7 +1812,7 @@ an SDK dependency. `technical-support-agent` is the worked example.
 
 `ctx.generate` is ONE prompt. When answering takes an unknown number of tool
 calls whose intermediate results the conversation has no reason to carry,
-delegate to a **subagent** instead: a second tool loop with its own system
+delegate to a **subagent**: a second tool loop with its own system
 prompt, model, tools and — the whole point — its own context window.
 
 ```ts
@@ -1820,11 +1821,8 @@ import { z } from "zod";
 
 const researcher = subagent({
   name: "researcher",
-  // `systemPrompt`, the same field name `agent()` uses — a subagent is a
-  // field-for-field smaller agent, so nothing about it is spelled differently.
-  systemPrompt:
-    "Research the task with the tools you have. IMPORTANT: your final message " +
-    "is the only thing the caller sees — end with a self-contained summary.",
+  systemPrompt: "Research the task with the tools you have.",
+  expectedOutput: "A self-contained summary — the only thing the caller sees.",
   builtinTools: ["web_search", "visit_webpage"],
   maxSteps: 6,
 });
@@ -1839,37 +1837,45 @@ export default tool({
 });
 ```
 
-Four rules, each of which is how a subagent disappoints when you skip it:
+Four rules, each the way a subagent disappoints when skipped: you receive its
+FINAL message, so declare `expectedOutput`; its context is isolated, so `task`
+must be a complete brief; `maxSteps` bounds the loop, and a capped run is asked
+for its answer with tools withheld; and say you are looking it up before you
+call. A subagent may name its own `llm` and its own `tools` map; **delegation is
+one level deep**. In tests, `stubDelegate` (`@alexkroman1/aai/testing`) fakes it
+by subagent name.
 
-- **Tell it to summarize.** You receive its FINAL message. A subagent that
-  signs off with "Done." has thrown away everything it read.
-- **Write the task as a complete brief.** Its context is isolated — it has not
-  heard the conversation. Anything it needs from the call goes in `task`, or in
-  the optional `context` string.
-- **Give it a budget.** `maxSteps` (default: the framework's) bounds the loop;
-  past it the subagent is asked for its answer with its tools withheld, so a
-  capped run still answers. In a voice session the tool timeout bounds the
-  whole thing, so keep it small.
-- **Say you are looking it up before you call.** A delegated run takes a
-  moment, and a silent line is the worst thing on a phone call.
+### Personas and `handoff` (`personas()`)
 
-Runs are ordinary promises, so several fan out at once — this is the other
-reason to reach for a subagent:
+When the SPEAKER has to change — triage verifies the caller, billing takes over
+with its own instructions and tools, one history — declare a roster of
+**personas**; the first entry answers the call.
 
-```ts no-check
-const runs = await Promise.allSettled(
-  angles.map((angle) => ctx.delegate(researcher, { task: angle })),
-);
+```ts
+import { agent, persona, personas } from "@alexkroman1/aai";
+
+const triage = persona({
+  name: "triage",
+  description: "Answers the phone and picks the desk",
+  systemPrompt: "Bill or fault? Find out, then hand off.",
+});
+const billing = persona({
+  name: "billing",
+  description: "Invoices, payments and refunds",
+  systemPrompt: "You are the billing desk.",
+});
+export const desk = personas([triage, billing]);
+
+export default agent({ name: "Front Desk", personas: desk });
 ```
 
-A subagent may name its own `llm` (a cheaper model for a narrower job) and its
-own `tools` — an explicit map of `tool()` values, which is how you give one
-run a strictly smaller surface than the agent has. **Delegation is one level
-deep**: a subagent's own tools get a `ctx.delegate` that refuses.
-
-In tests, `stubDelegate` from `@alexkroman1/aai/testing` fakes the capability,
-routed by subagent name; `createToolContext()` defaults `delegate` to a
-rejection so an unstubbed run cannot reach a real model.
+The roster mints one `handoff` tool the model routes with, described by each
+persona's `description`. A tool body hands off in code with
+`desk.handoff(ctx, billing, { note })` and returns the result; the same turn
+continues as the new persona. A persona's `tools` (a map) refuse at
+execution while another persona speaks, naming who is and how to hand off.
+`tools/` and `system-prompt.md` hold under every persona; a dialog state pins one
+with `persona`. Example: `front-desk-agent`.
 
 ### A tool that calls an API
 

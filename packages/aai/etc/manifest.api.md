@@ -132,6 +132,7 @@ interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrail
     mcpServers?: McpServers;
     name: string;
     page?: "voice" | "static";
+    personas?: Personas;
     requiredEnv?: readonly string[];
     s2s?: S2sProvider;
     silencePrompt?: string;
@@ -259,6 +260,7 @@ type DialogBargeIn = "default" | "off" | {
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
+    readonly persona?: string;
     readonly state: string;
 }
 
@@ -333,7 +335,21 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
+interface HandoffOptions {
+    note?: string;
+}
+
+// @public
+interface HandoffResult {
+    readonly from: string;
+    readonly handoff: true;
+    readonly instruction: string;
+    readonly note?: string;
+    readonly to: string;
+}
+
+// @public
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -369,6 +385,35 @@ type Message = {
 
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
+
+// @public
+interface PersonaDef {
+    description: string;
+    name: string;
+    systemPrompt: string;
+    temperature?: number;
+    toolChoice?: ToolChoice;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+interface PersonaPosition {
+    readonly from?: string;
+    readonly note?: string;
+    readonly persona: PersonaDef;
+    readonly pinnedBy?: {
+        readonly dialog: string;
+        readonly state: string;
+    };
+}
+
+// @public
+interface Personas {
+    active(ctx: SlotHolder): PersonaDef;
+    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
+    readonly list: readonly PersonaDef[];
+    position(ctx: SlotHolder): PersonaPosition;
+}
 
 // @public
 const PIPELINE_ONLY_TUNING: {
@@ -1021,6 +1066,7 @@ export function withTools<D extends {
     readonly tools: ToolRegistry;
     readonly builtinTools?: readonly string[] | undefined;
     readonly subagents?: readonly unknown[] | undefined;
+    readonly personas?: unknown;
 }>(def: D, registry: ToolRegistry): D;
 
 // @public

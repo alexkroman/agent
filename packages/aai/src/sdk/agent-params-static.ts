@@ -71,6 +71,9 @@ export type WorkflowAppOnlyField =
   // could ever call. A workflow app that wants a subagent delegates from a
   // step's own code, where the choice is the author's anyway.
   | "subagents"
+  // And a roster of personas for the same reason: who is SPEAKING is a
+  // question only a session has, and a workflow app has none.
+  | "personas"
   | "minTurnSilenceMs"
   | "maxTurnSilenceMs"
   | "syncState"
