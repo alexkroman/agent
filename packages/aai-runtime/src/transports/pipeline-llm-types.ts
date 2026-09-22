@@ -68,6 +68,8 @@ export interface ConsumeLlmStreamParams {
   onUsage?: ((usage: LanguageModelUsage) => void) | undefined;
   /** The active dialog state's `toolChoice`/`temperature`, per STEP — see `pipeline-dialog-knobs.ts`. */
   dialogStep?: PrepareStepFunction<ToolSet> | undefined;
+  /** The active PERSONA's tool set and knobs, per STEP — see `pipeline-persona-knobs.ts`. */
+  personaStep?: PrepareStepFunction<ToolSet> | undefined;
   /** Repairs malformed tool-call arguments by re-asking the model. */
   repairToolCall: ToolCallRepairFunction<ToolSet>;
   /** Max LLM tool-call steps for this turn. */
@@ -255,6 +257,7 @@ export type LlmRequest = Pick<
   | "toolChoice"
   | "temperature"
   | "dialogStep"
+  | "personaStep"
   | "repairToolCall"
   | "maxSteps"
   | "contextBudget"

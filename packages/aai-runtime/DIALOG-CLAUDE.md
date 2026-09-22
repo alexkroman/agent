@@ -153,6 +153,17 @@ the dialog actually is instead of firing a transition the conversation has left.
   from `attachSessionState`'s release). A pending `setTimeout` keeps the event loop
   alive and would fire into a session whose slot cache has been swept.
 
+### A state may PIN a persona
+
+`DialogStateSpec.persona` names one of `agent({ personas })`' roster, and
+`Personas.position` answers it for as long as the conversation is in that
+state — a property of the POSITION rather than a write, so a resumed session is
+pinned the same way and `handoff` to anyone else is refused until the dialog
+moves. `agent()` checks the name against the roster at declaration. The bridge
+here does not apply it: `runtime-personas.ts` re-renders the persona section on
+the `state.updated` a move commits, which is what pushes a pin change to a
+transport holding its prompt as session state.
+
 ## Not done
 
 - **A transition cannot run a TOOL, so a state whose exit must also mutate a

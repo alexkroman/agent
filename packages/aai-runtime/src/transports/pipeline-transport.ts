@@ -18,6 +18,7 @@ import { NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
+import { createPersonaStep } from "./pipeline-persona-knobs.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createSessionSignal } from "./pipeline-session-signal.ts";
 import { createPipelineSpeculation } from "./pipeline-speculation.ts";
@@ -77,6 +78,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // `pipeline-dialog-knobs.ts` for why the other two a state may declare cannot
   // reach here at all.
   const knobs = createDialogKnobs(opts.dialogTurn, { minBargeInWords, interruptionMinDurationMs });
+  // One scope up from the dialog's: the active PERSONA's two model knobs, per
+  // step — and deliberately not its tool set; `pipeline-persona-knobs.ts` has
+  // the measurement behind that.
+  const personaStep = createPersonaStep(opts.personaTurn);
   // A THUNK, not the value: this used to capture the string here, which froze
   // the prompt for the length of the call. Every consumer below already
   // re-assembles its request per turn (`startLlmStream` is the one place a
@@ -145,6 +150,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     maxRetries: opts.maxRetries,
     onUsage: usage === undefined ? undefined : (reported) => usage.record(reported),
     dialogStep: knobs.dialogStep,
+    personaStep,
     maxSteps,
     contextBudget,
     log,
@@ -157,11 +163,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // below behaves exactly as it does with the flag off. See
   // pipeline-speculation.ts.
   const speculation = createPipelineSpeculation({
-    // Off whenever a dialog varies the LLM knobs: this constructor decides once,
-    // from the SESSION's `toolChoice`, whether speculating is free at all — a
-    // state that pins a tool would make every speculation end at the tool
-    // boundary and be discarded, with the gate still believing it is free.
-    enabled: preemptiveGeneration && knobs.dialogStep === undefined,
+    // Off whenever a dialog or a persona varies the LLM knobs: this constructor
+    // decides once, from the SESSION's `toolChoice`, whether speculating is free
+    // at all — a state or a persona that pins a tool would make every
+    // speculation end at the tool boundary and be discarded, with the gate
+    // still believing it is free.
+    enabled: preemptiveGeneration && knobs.dialogStep === undefined && personaStep === undefined,
     request: llmRequest,
     toolSchemas,
     systemPrompt,

@@ -12,6 +12,7 @@
  * | conversation order | {@link dialog} — a tool declared `when` simply does not run outside those states |
  * | work that outlives the call | {@link workflow} — journaled, resumable; {@link workflowApp} for an agent whose front door is a form |
  * | a second tool loop | {@link subagent}, reached with `ctx.delegate` |
+ * | who is speaking | {@link personas} — a roster the session hands the caller between, with `handoff` |
  * | the default pipeline, spelled out | {@link assemblyAIPipeline}; {@link assemblyAIS2s} opts into speech-to-speech instead |
  *
  * ```ts
@@ -81,6 +82,23 @@ export * from "./sdk/define.ts";
  */
 export * from "./sdk/dialog.ts";
 export * from "./sdk/generate.ts";
+/**
+ * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and
+ * the one that changes WHO IS SPEAKING: a roster the session hands the caller
+ * between over one history, where `delegate` keeps the speaker and a `dialog`
+ * says where the conversation is. By NAME rather than `export *`: the module
+ * also exports the slot key and the dialog binding, which are `@internal`.
+ */
+export {
+  HANDOFF_TOOL_NAME,
+  type HandoffOptions,
+  type HandoffResult,
+  type PersonaDef,
+  type PersonaPosition,
+  type Personas,
+  persona,
+  personas,
+} from "./sdk/persona.ts";
 /**
  * The other machine: one unit of WORK inside a tool call, where a flow is where
  * a CONVERSATION is. On the root beside it because an author reaching for one

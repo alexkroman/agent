@@ -29,6 +29,7 @@ import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
 import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
+import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type {
@@ -118,6 +119,18 @@ export type BuildTransportArgs = {
    * instead — this file is the one that knows which branch a session took.
    */
   dialogTurn?: DialogTurnSource | undefined;
+  /**
+   * What this session's ACTIVE PERSONA asks of each step, or absent when the
+   * agent declares no roster or one whose personas declare no model knob — see
+   * `runtime-personas.ts`.
+   *
+   * **Only the pipeline branch takes it**, for the reason `dialogTurn` has: a
+   * persona's `toolChoice`/`temperature` are `streamText` request settings, and
+   * the two S2S services assemble their own requests. The persona's PROMPT
+   * section and the execution gate on its tools hold on every transport
+   * regardless; what an S2S session loses is the two knobs, warned about below.
+   */
+  personaTurn?: PersonaTurnSource | undefined;
   /**
    * This session's guardrails, already bound to their context.
    *
@@ -241,9 +254,22 @@ export function createTransportFactory(
       resumeFalseInterruption: agentConfig.resumeFalseInterruption,
       preemptiveGeneration: agentConfig.preemptiveGeneration,
       skipGreeting: sessionOpts.skipGreeting ?? false,
-      ...omitUndefined({ dialogTurn: args.dialogTurn }),
+      ...omitUndefined({ dialogTurn: args.dialogTurn, personaTurn: args.personaTurn }),
       logger,
     });
+  }
+
+  /**
+   * Say so when a persona declares a model knob this session's transport
+   * cannot apply per step — same shape as {@link warnDialogKnobsUnavailable},
+   * and the same reason it is a warning rather than a refusal: the prompt
+   * section and the execution gate still hold, so nothing is unsafe.
+   */
+  function warnPersonaKnobsUnavailable(args: BuildTransportArgs, kind: string): void {
+    if (args.personaTurn === undefined) return;
+    logger.warn(
+      `This agent's personas declare toolChoice/temperature, and the ${kind} transport applies neither per step: that service assembles each request itself. Every persona's prompt section still reaches the model, and another persona's tool still refuses at execution.`,
+    );
   }
 
   /**
@@ -347,9 +373,11 @@ export function createTransportFactory(
       switch (kind) {
         case OPENAI_S2S_KIND:
           warnDialogKnobsUnavailable(args, "OpenAI Realtime");
+          warnPersonaKnobsUnavailable(args, "OpenAI Realtime");
           return buildOpenaiRealtimeTransport(args);
         case ASSEMBLYAI_S2S_KIND:
           warnDialogKnobsUnavailable(args, "AssemblyAI S2S");
+          warnPersonaKnobsUnavailable(args, "AssemblyAI S2S");
           return buildAssemblyS2sTransport(args);
         default: {
           // `kind` is `never` here, which is the point: adding a member to

@@ -745,6 +745,27 @@ It also owns `expectedOutput`, `guardrail`/`maxRetries` and
 `agent({ subagents })` — the ROSTER a MODEL routes over, where
 `ctx.delegate(x, …)` is the author choosing in code.
 
+## Personas and `handoff` (`sdk/persona.ts`)
+
+The fourth machine, and the one that changes WHO IS SPEAKING. `personas([...])`
+declares a roster (the first entry answers the call); `agent({ personas })`
+lowers it into `tools` as every persona's own tools wrapped in a GATE plus one
+minted `handoff` tool the model routes with — the same lowering
+`agent({ subagents })` does, so the sandbox path needs nothing. The active
+persona is a session SLOT (`aai.persona`), written by `Personas.handoff` from a
+tool body or by the minted tool, and read by the gate, by the runtime's prompt
+section and by `Personas.position`. A dialog state may PIN one
+(`DialogStateSpec.persona`), read through the `WeakMap` `agent()` binds.
+
+Three decisions, each argued in the module doc: a persona is not an `AgentDef`
+(the session stays one object; a persona is the part that can change mid-call);
+it is not a dialog state (a position nests and concatenates, a speaker is
+exactly one); and the gate is at EXECUTION with the tools still advertised —
+the AI SDK filters its execution set by `activeTools` too, so hiding a tool
+would have replaced the refusal that names the remedy with a generic error.
+The runtime half is `packages/aai-runtime/CLAUDE.md`, "Personas are wired to a
+SESSION here"; `front-desk-agent` is the worked example.
+
 ## Concurrency primitives (use these, don't hand-roll)
 
 `sdk/invariant.ts` (`/internal`) is the sibling seam for STATE rather than

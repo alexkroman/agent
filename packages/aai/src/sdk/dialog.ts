@@ -63,7 +63,7 @@ import {
   toDialogEventType,
 } from "./_dialog-events.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
-import { toInstruction, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
+import { toInstruction, toPersona, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
 import { dialogRefusalMessage } from "./_dialog-refusal.ts";
 import {
   assertDialogSource,
@@ -318,7 +318,10 @@ export function dialog(
       done: snapshot.status === "done",
       // `exactOptionalPropertyTypes` is on, so an absent instruction has to be
       // ABSENT rather than set to `undefined` (guard-invariants rule 2).
-      ...omitUndefined({ instruction: toInstruction(snapshot.getMeta()) }),
+      ...omitUndefined({
+        instruction: toInstruction(snapshot.getMeta()),
+        persona: toPersona(snapshot.getMeta()),
+      }),
     };
   };
 

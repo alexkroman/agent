@@ -76,8 +76,36 @@ export function toStateMeta(state: DialogStateSpec): Record<string, unknown> | u
     bargeIn: state.bargeIn,
     toolChoice: state.toolChoice,
     temperature: state.temperature,
+    persona: state.persona,
   });
   return Object.keys(meta).length === 0 ? undefined : meta;
+}
+
+/** The persona the active state pins, from the DEEPEST node that names one. */
+export function toPersona(meta: Record<string, unknown>): string | undefined {
+  return deepest(meta, (declared) =>
+    typeof declared.persona === "string" ? declared.persona : undefined,
+  );
+}
+
+/**
+ * Every persona name any state of `machine` pins, for `agent()` to check
+ * against the roster at declaration — a name no persona carries would
+ * otherwise be a pin that throws on the first turn the dialog reaches it.
+ * Walks the machine's own nodes, so it sees the machine form too.
+ */
+export function declaredPersonas(machine: { states: Record<string, unknown> }): Set<string> {
+  const names = new Set<string>();
+  const walk = (states: Record<string, unknown>): void => {
+    for (const node of Object.values(states)) {
+      if (!isRecord(node)) continue;
+      if (isRecord(node.meta) && typeof node.meta.persona === "string")
+        names.add(node.meta.persona);
+      if (isRecord(node.states)) walk(node.states);
+    }
+  };
+  walk(machine.states);
+  return names;
 }
 
 /**

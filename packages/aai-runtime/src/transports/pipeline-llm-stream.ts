@@ -122,27 +122,32 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // Evaluated after each step, and the latch is set during the step's tool
     // execution, so it is already true when the SDK asks.
     stopWhen: [stepCountIs(req.maxSteps + 1), () => req.toolSpeech?.verbatim() !== undefined],
-    // ONE slot, FOUR things to say — see `_prepare-step.ts`. Last writer wins
+    // ONE slot, FIVE things to say — see `_prepare-step.ts`. Last writer wins
     // per key, so the ORDER is `ToolChoice`'s documented scope precedence
-    // (agent → turn → dialog state → forced final step) written out:
+    // (agent → persona → dialog state → forced final step) written out:
     //
     // 1. the context budget, which owns `messages` and shares no key with the
-    //    three below;
+    //    four below;
     // 2. the AGENT-scoped reset, which puts a demanding `toolChoice` back to
     //    `"auto"` after step 0;
-    // 3. the DIALOG STATE's knobs, which beat the agent's for exactly as long
-    //    as the conversation is in that state — so this must come AFTER the
-    //    reset. It used to come before, and the reset then overwrote a state's
-    //    pin with `"auto"` from step 1 on: a state that must call a tool (or
-    //    must not) silently stopped meaning it after the first step of every
-    //    turn, on every agent whose own `toolChoice` demands something;
-    // 4. `forceFinalAnswer`, which owns the same key on the one step the budget
-    //    reserved and must win there over all three.
+    // 3. the active PERSONA's tool set and knobs — who is speaking is broader
+    //    than where in their script they are, so it sits between the agent and
+    //    the dialog state, and it alone owns `activeTools`;
+    // 4. the DIALOG STATE's knobs, which beat the agent's and the persona's for
+    //    exactly as long as the conversation is in that state — so this must
+    //    come AFTER the reset. It used to come before, and the reset then
+    //    overwrote a state's pin with `"auto"` from step 1 on: a state that
+    //    must call a tool (or must not) silently stopped meaning it after the
+    //    first step of every turn, on every agent whose own `toolChoice`
+    //    demands something;
+    // 5. `forceFinalAnswer`, which owns the same key on the one step the budget
+    //    reserved and must win there over all four.
     //
     // Writing any of them straight into the slot deletes the others, silently.
     prepareStep: composePrepareStep(
       req.contextBudget,
       resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
+      req.personaStep,
       req.dialogStep,
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),

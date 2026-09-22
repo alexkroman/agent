@@ -30,6 +30,7 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";
 import type { TurnGuardrails } from "./pipeline-guardrails.ts";
+import type { PersonaTurnSource } from "./pipeline-persona-knobs.ts";
 import type { SkipGreetingOption, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /**
@@ -257,6 +258,14 @@ export interface PipelineTransportOptions {
    * the agent's own value alone.
    */
   dialogTurn?: DialogTurnSource | undefined;
+  /**
+   * What the ACTIVE PERSONA asks of each step — its two model knobs — see
+   * {@link PersonaTurnSource}. Absent for an agent with no roster, and for one
+   * whose personas differ only in prose and tools; present exactly when a
+   * handoff changes something about the REQUEST, which is also what turns
+   * preemptive generation off, as {@link dialogTurn} does.
+   */
+  personaTurn?: PersonaTurnSource | undefined;
   /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */

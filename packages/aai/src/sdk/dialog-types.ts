@@ -46,6 +46,11 @@ export interface DialogPosition {
    * wins over its parent's rather than being merged with it.
    */
   readonly instruction?: string;
+  /**
+   * The persona the active state pins, when it declares one — see
+   * {@link DialogStateSpec.persona}. Same depth rule as `instruction`.
+   */
+  readonly persona?: string;
 }
 
 /**
@@ -346,6 +351,14 @@ export interface DialogStateSpec {
   toolChoice?: ToolChoice;
   /** The model's sampling temperature while this state is active. */
   temperature?: number;
+  /**
+   * The persona that speaks while the conversation is in this state, by name —
+   * one of the agent's `personas`. It PINS: `Personas.handoff` to anyone else
+   * is refused until the dialog moves on, and the pin is a property of the
+   * position rather than a write, so a resumed session is pinned the same way.
+   * Checked against the roster by `agent()`.
+   */
+  persona?: string;
   /** Whether reaching this state ENDS the dialog — XState's `type: "final"`. */
   final?: true;
   /** For a state with `states`: which child it starts in. */
