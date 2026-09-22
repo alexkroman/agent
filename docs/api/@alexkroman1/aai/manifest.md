@@ -122,6 +122,10 @@ function toAgentConfig(source: AgentConfigSource): {
   usageLimits?: {
      totalTokens?: number;
   };
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
+  };
   voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 };
 ```
@@ -208,6 +212,10 @@ the runtime.
   };
   usageLimits?: {
      totalTokens?: number;
+  };
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
   };
   voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }
@@ -454,6 +462,15 @@ optional toolChoice?:
 ```ts
 {
   totalTokens?: number;
+}
+```
+
+##### userTurnLimit?
+
+```ts
+{
+  maxDurationMs?: number;
+  maxWords?: number;
 }
 ```
 

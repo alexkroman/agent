@@ -36,6 +36,7 @@
     "ToolStartMessage",
     "TtsProvider",
     "UsageLimits",
+    "UserTurnLimit",
     "VOICE_PRESETS",
     "VoicePresetName",
     "WaitForOptions",

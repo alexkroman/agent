@@ -337,6 +337,16 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
           // NOTE: snake_case on the wire, like `agent_context` above.
           transcriber.updateConfiguration({ min_turn_silence: bounded });
         },
+        forceEndOfTurn() {
+          if (shell.isClosed()) return;
+          // The service's `ForceEndpoint` frame: it ends the turn it is
+          // building and emits that turn's final at once — the same `Turn`
+          // message a silence window would have produced, so nothing
+          // downstream can tell a forced end from an endpointed one. No
+          // no-op tracking, unlike `updateEndpointing` above: the transport
+          // sends this once per utterance, never per partial.
+          transcriber.forceEndpoint();
+        },
         _transcriber: transcriber,
       };
 

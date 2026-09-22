@@ -63,6 +63,10 @@ export const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -377,11 +381,12 @@ const PIPELINE_ONLY_TUNING: {
     readonly startFailurePhrase: "string";
     readonly resumeFalseInterruption: "boolean";
     readonly preemptiveGeneration: "boolean";
+    readonly userTurnLimit: "user-turn-limit";
 };
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : readonly string[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -398,6 +403,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
@@ -601,6 +607,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -968,6 +986,12 @@ interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public

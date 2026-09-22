@@ -291,6 +291,33 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
   });
 });
 
+describe("assemblyAIStt STT adapter — forceEndOfTurn", () => {
+  test("sends the service's ForceEndpoint, once per call", async () => {
+    // What `userTurnLimit` is applied through: the service ends the turn it
+    // is building and emits that turn's final at once, so the transport
+    // commits on the ordinary path. No no-op skip, unlike `updateEndpointing`
+    // — the transport sends this once per utterance, never per partial.
+    const session = await openSession({});
+    const fake = fakeOf(session);
+
+    session.forceEndOfTurn?.();
+    expect(fake.forceEndpointCalls).toBe(1);
+    session.forceEndOfTurn?.();
+    expect(fake.forceEndpointCalls).toBe(2);
+
+    await session.close();
+  });
+
+  test("a closed session sends nothing", async () => {
+    const session = await openSession({});
+    const fake = fakeOf(session);
+    await session.close();
+
+    session.forceEndOfTurn?.();
+    expect(fake.forceEndpointCalls).toBe(0);
+  });
+});
+
 describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => {
   // At 16 kHz mono PCM16: 20 ms = 320 samples, 50 ms = 800, 100 ms = 1600,
   // 1000 ms = 16000. AssemblyAI streaming rejects frames outside [50, 1000] ms.

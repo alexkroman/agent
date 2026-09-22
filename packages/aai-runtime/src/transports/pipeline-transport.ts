@@ -92,6 +92,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let terminated = false;
+  // Said once per session — see `forceEndOfTurn` in the user-activity wiring.
+  let warnedTurnLimitInert = false;
   let nextReplyId = 0;
   // Invalidation epochs for queued turns and an aborted turn's deferred
   // persistence — see pipeline-turn-gate.ts.
@@ -199,6 +201,26 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     minBargeInWords: knobs.minBargeInWords,
     interruptionMinDurationMs: knobs.interruptionMinDurationMs,
     onInterrupted: audioOut.onInterrupted,
+    userTurnLimit: opts.userTurnLimit,
+    // `providers` is declared below and reached lazily: this fires from an
+    // STT event, which only exists once `providers.open()` has run. A provider
+    // that cannot end a turn on demand leaves the cap inert, said ONCE per
+    // session rather than per utterance — the `updateEndpointing` treatment.
+    forceEndOfTurn: () => {
+      const stt = providers.stt;
+      if (stt === null) return;
+      if (stt.forceEndOfTurn === undefined) {
+        if (!warnedTurnLimitInert) {
+          warnedTurnLimitInert = true;
+          log.warn(
+            `This agent declares userTurnLimit, and the "${opts.stt.name}" STT provider cannot end a turn on demand: the cap is reported (user-turn.exceeded) but cannot cut the turn. The default assemblyAIStt() can.`,
+            { sid: opts.sid },
+          );
+        }
+        return;
+      }
+      stt.forceEndOfTurn();
+    },
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),

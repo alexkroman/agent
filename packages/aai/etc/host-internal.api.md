@@ -65,6 +65,10 @@ const AgentConfigSchema: z.ZodObject<{
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -1269,6 +1273,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export interface SttSession {
     // (undocumented)
     close(): Promise<void>;
+    forceEndOfTurn?(): void;
     // (undocumented)
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;

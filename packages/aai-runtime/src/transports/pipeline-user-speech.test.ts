@@ -265,6 +265,10 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     // statement about the thresholds alone; `phrase-policy` below is where
     // the lists themselves are exercised, against the shipped defaults.
     onInterrupted: vi.fn(),
+    // No cap on a user turn — the shipped default; `pipeline-user-turn-limit.test.ts`
+    // owns the cap.
+    userTurnLimit: undefined,
+    forceEndOfTurn: vi.fn(),
     isTerminated: () => false,
     isSessionActive: () => true,
     isTurnInFlight: () => state.inFlight,

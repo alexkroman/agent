@@ -1,18 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The two session events about what a session SPENDS and what it REFUSES.
+ * The session events about what a session SPENDS, what it REFUSES, and what it
+ * CUTS SHORT.
  *
- * Split out of `protocol-events.ts`, which is at the source-length cap: both
- * carry more argument than schema, and both are additions to a union that reads
- * better as a list of names than as a list of inlined object literals.
+ * Split out of `protocol-events.ts`, which is at the source-length cap: each
+ * carries more argument than schema, and each is an addition to a union that
+ * reads better as a list of names than as a list of inlined object literals.
  * `SessionEventSchema` names them, so they are ordinary members — same
  * envelope, same retained stream, same `agent({ events })` keys.
  *
- * Why they are a pair rather than two unrelated frames: each is the observable
- * half of a control this SDK gained at the same time. `usage.updated` is what
- * `AgentDef.usageLimits` is measured against, and `guardrail.blocked` is what
- * `AgentDef.inputGuardrails`/`outputGuardrails` leave behind. A control with no
- * event is a control nobody can audit.
+ * Why they are a set rather than unrelated frames: each is the observable half
+ * of a CONTROL an agent declares. `usage.updated` is what `AgentDef.usageLimits`
+ * is measured against, `guardrail.blocked` is what
+ * `AgentDef.inputGuardrails`/`outputGuardrails` leave behind, and
+ * `user-turn.exceeded` is what `AgentDef.userTurnLimit` leaves behind. A
+ * control with no event is a control nobody can audit.
  *
  * @module
  */
@@ -93,4 +95,34 @@ export const GuardrailBlockedEventSchema = z.object({
   direction: z.enum(["input", "output"]),
   /** The verdict the guardrail returned, which is also what the agent says. */
   replacement: z.string().max(MAX_TRANSCRIPT_CHARS),
+});
+/**
+ * The caller's turn hit `AgentDef.userTurnLimit` and was ended early — see
+ * `UserTurnLimit`.
+ *
+ * Its own event rather than an `error.reported`, for the reason
+ * `guardrail.blocked` is: the cut is the control WORKING, and an error frame
+ * would put a banner on a screen for a turn that ended exactly as declared.
+ * What it is for is the audit trail — how often callers run into the cap is
+ * the one number that says whether it is set right — and, for a UI, the moment
+ * to show that the agent is answering what it has heard so far.
+ *
+ * The turn's text is NOT carried: it arrives as the `user-transcript.committed`
+ * that follows, once the transcriber has ended the turn, and a second copy
+ * here could disagree with it.
+ *
+ * Emitted once per utterance, at the moment the cap is crossed — BEFORE the
+ * committed transcript, since the commit is the transcriber's answer to the
+ * cut. It is emitted whether or not the provider could make the cut; a
+ * provider that cannot force an end of turn is logged once as inert.
+ */
+export const UserTurnExceededEventSchema = z.object({
+  type: z.literal("user-turn.exceeded"),
+  meta: SessionEventMetaSchema,
+  /** Which cap the utterance crossed. */
+  limit: z.enum(["words", "duration"]),
+  /** Words the transcriber had heard in the turn when the cap fired. */
+  words: z.number().int().nonnegative(),
+  /** How long the turn had run when the cap fired, in ms from its first word. */
+  durationMs: z.number().int().nonnegative(),
 });

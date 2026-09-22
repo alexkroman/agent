@@ -1,9 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The two wire events that make a control auditable: `usage.updated` is what
-// `AgentDef.usageLimits` is measured against, and `guardrail.blocked` is what
-// the two guardrail lists leave behind. A control with no event is a control
-// nobody can audit — so what these schemas admit, and the one field
-// `guardrail.blocked` deliberately does NOT carry, are the claims here.
+// The wire events that make a control auditable: `usage.updated` is what
+// `AgentDef.usageLimits` is measured against, `guardrail.blocked` is what
+// the two guardrail lists leave behind, and `user-turn.exceeded` is what
+// `AgentDef.userTurnLimit` leaves behind. A control with no event is a control
+// nobody can audit — so what these schemas admit, and the fields
+// `guardrail.blocked` and `user-turn.exceeded` deliberately do NOT carry, are
+// the claims here.
 
 import { describe, expect, test } from "vitest";
 import { MAX_TRANSCRIPT_CHARS } from "./constants.ts";
@@ -12,6 +14,7 @@ import { SessionEventSchema } from "./protocol-events.ts";
 import {
   GuardrailBlockedEventSchema,
   UsageUpdatedEventSchema,
+  UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
 
 const META = { id: `${EVENT_ID_PREFIX}01JB2X3Y4Z5A6B7C8D9EFGHJKM`, at: 1_760_000_000_000 };
@@ -144,5 +147,50 @@ describe("guardrail.blocked", () => {
     // guardrail had just saved.
     expect(GuardrailBlockedEventSchema.parse(BLOCKED)).not.toHaveProperty("fatal");
     expect(GuardrailBlockedEventSchema.parse(BLOCKED)).not.toHaveProperty("code");
+  });
+});
+
+const EXCEEDED = {
+  type: "user-turn.exceeded" as const,
+  meta: META,
+  limit: "words" as const,
+  words: 60,
+  durationMs: 14_200,
+};
+
+describe("user-turn.exceeded", () => {
+  test("is a member of the session event union", () => {
+    expect(SessionEventSchema.safeParse(EXCEEDED).success).toBe(true);
+    expect(SessionEventSchema.safeParse({ ...EXCEEDED, limit: "duration" }).success).toBe(true);
+  });
+
+  test("names which cap fired, and only one of the two", () => {
+    expect(UserTurnExceededEventSchema.parse({ ...EXCEEDED, limit: "duration" }).limit).toBe(
+      "duration",
+    );
+    expect(UserTurnExceededEventSchema.safeParse({ ...EXCEEDED, limit: "both" }).success).toBe(
+      false,
+    );
+  });
+
+  test.each(["words", "durationMs"] as const)("%s is a non-negative integer", (field) => {
+    expect(UserTurnExceededEventSchema.safeParse({ ...EXCEEDED, [field]: 0 }).success).toBe(true);
+    expect(UserTurnExceededEventSchema.safeParse({ ...EXCEEDED, [field]: -1 }).success).toBe(false);
+    expect(UserTurnExceededEventSchema.safeParse({ ...EXCEEDED, [field]: 1.5 }).success).toBe(
+      false,
+    );
+  });
+
+  test("does not carry the turn's text — the committed transcript that follows does", () => {
+    // A second copy here could disagree with the one the transcriber commits
+    // once it has ended the turn, and readers would have to choose.
+    expect(
+      UserTurnExceededEventSchema.safeParse({ ...EXCEEDED, text: "hello" }).data,
+    ).not.toHaveProperty("text");
+  });
+
+  test("it is not an error frame — the cut is the control working", () => {
+    expect(UserTurnExceededEventSchema.parse(EXCEEDED)).not.toHaveProperty("fatal");
+    expect(UserTurnExceededEventSchema.parse(EXCEEDED)).not.toHaveProperty("code");
   });
 });

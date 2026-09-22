@@ -592,6 +592,7 @@ each is for.
 | `UseWorkflowSubmitOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
+| `UserTurnLimit` | `@alexkroman1/aai` |
 | `VOICE_PRESETS` | `@alexkroman1/aai` |
 | `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
 | `VoicePresetName` | `@alexkroman1/aai` |

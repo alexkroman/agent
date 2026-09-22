@@ -66,6 +66,7 @@ describe("server→client event wire format", () => {
       steps: 3,
     },
     { type: "guardrail.blocked", direction: "output", replacement: "I can't help with that." },
+    { type: "user-turn.exceeded", limit: "words", words: 60, durationMs: 14_200 },
     {
       type: "history.restored",
       messages: [

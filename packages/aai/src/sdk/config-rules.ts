@@ -13,7 +13,7 @@
 
 import { GUARDRAIL_FIELDS, type GuardrailField } from "./agent-guardrails.ts";
 import { MODEL_TUNING_FIELDS, type ModelTuningField } from "./agent-model-tuning.ts";
-import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import type { PipelineVoiceTuning, UserTurnLimit } from "./agent-voice-tuning.ts";
 import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
@@ -174,6 +174,10 @@ const PIPELINE_ONLY_TUNING = {
   startFailurePhrase: "string",
   resumeFalseInterruption: "boolean",
   preemptiveGeneration: "boolean",
+  // An OBJECT, the one non-scalar knob: `{ maxWords?, maxDurationMs? }`. Its
+  // own tag rather than a fifth scalar, so it cannot skip this list and with
+  // it `assertPipelineTuning` — the same reason the phrase lists got theirs.
+  userTurnLimit: "user-turn-limit",
 } as const satisfies Record<
   keyof PipelineVoiceTuning,
   // The six value shapes a pipeline-only tuning field may have. Written
@@ -187,7 +191,7 @@ const PIPELINE_ONLY_TUNING = {
   // declarations rather than dials, and they get
   // their own tags so that a field cannot skip this list and with it
   // `assertPipelineTuning`.
-  "number" | "string" | "boolean" | "phrases"
+  "number" | "string" | "boolean" | "phrases" | "user-turn-limit"
 >;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
@@ -211,7 +215,9 @@ export type PipelineTuning = {
           ? boolean
           : (typeof PIPELINE_ONLY_TUNING)[K] extends "string"
             ? string
-            : readonly string[])
+            : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit"
+              ? UserTurnLimit
+              : readonly string[])
     | undefined;
 };
 

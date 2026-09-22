@@ -387,6 +387,11 @@ test("text mode accepts only the fields a text agent has", () => {
   expectTypeOf<{
     name: string;
     text: true;
+    userTurnLimit: { maxWords: number };
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    text: true;
     silenceTimeoutMs: number;
   }>().not.toExtend<AgentParams>();
 

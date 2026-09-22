@@ -491,6 +491,18 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     replacement: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;

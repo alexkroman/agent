@@ -206,6 +206,22 @@ export interface SttSession {
    * Today only AssemblyAI has it (`UpdateConfiguration.min_turn_silence`).
    */
   updateEndpointing?(minTurnSilenceMs: number): void;
+  /**
+   * End the current turn NOW, as a pause would have — what `userTurnLimit` is
+   * applied THROUGH.
+   *
+   * The provider answers with the ordinary `final` for the words it has heard
+   * so far, so the transport commits the turn on the same path every other
+   * turn takes, and speech after the cut opens the provider's next turn. A
+   * host-side cut could do neither: it would have to commit an interim and
+   * then reconcile it against a final the provider still owes for the same
+   * utterance.
+   *
+   * Optional for the reason {@link updateEndpointing} is: a provider with no
+   * equivalent omits it, callers use `?.()`, and the transport says once that
+   * the cap is inert. Today only AssemblyAI has it (`ForceEndpoint`).
+   */
+  forceEndOfTurn?(): void;
 }
 
 /** Options the host passes when opening an STT stream. */

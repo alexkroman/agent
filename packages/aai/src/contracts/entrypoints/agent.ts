@@ -142,6 +142,7 @@ export {
   type TextAgentParams,
   type ToolChoice,
   type UsageLimits,
+  type UserTurnLimit,
   VOICE_PRESETS,
   type VoicePresetName,
   workflowApp,

@@ -87,6 +87,10 @@ function commandedBuiltins(config: {
   usageLimits?: {
      totalTokens?: number;
   };
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
+  };
   voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }): BuiltinTool[];
 ```
@@ -337,6 +341,21 @@ readonly `string`[]
 \}
 
 ###### usageLimits.totalTokens?
+
+`number`
+
+###### userTurnLimit?
+
+\{
+  `maxDurationMs?`: `number`;
+  `maxWords?`: `number`;
+\}
+
+###### userTurnLimit.maxDurationMs?
+
+`number`
+
+###### userTurnLimit.maxWords?
 
 `number`
 
@@ -852,6 +871,10 @@ function expectDeployable(def: AgentConfigSource): {
   usageLimits?: {
      totalTokens?: number;
   };
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
+  };
   voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 };
 ```
@@ -973,6 +996,10 @@ The agent under test — an `agent()` definition, or the raw
   };
   usageLimits?: {
      totalTokens?: number;
+  };
+  userTurnLimit?: {
+     maxDurationMs?: number;
+     maxWords?: number;
   };
   voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }
@@ -1221,6 +1248,15 @@ optional toolChoice?:
 ```ts
 {
   totalTokens?: number;
+}
+```
+
+##### userTurnLimit?
+
+```ts
+{
+  maxDurationMs?: number;
+  maxWords?: number;
 }
 ```
 

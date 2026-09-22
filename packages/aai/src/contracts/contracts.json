@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 9,
-    "supported": [1, 2, 3, 9],
+    "current": 10,
+    "supported": [1, 2, 3, 9, 10],
     "dropped": {
       "4": "keyterms, agentContext and the lowConfidence policy are removed. An epoch-4 agent that declared assemblyAIStt({ keyterms }) or agent({ lowConfidence }) no longer compiles, so its frozen example could not either — which is why this is a retire rather than an example somebody owes.",
       "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
@@ -36,8 +36,8 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 4,
-    "supported": [4],
+    "current": 5,
+    "supported": [4, 5],
     "dropped": {
       "1": "DialogStateSpec.keyterms and DialogVoiceConfig.keyterms are removed with the pipeline ASR-steering seam, so an epoch-1 dialog that narrowed the recognizer's vocabulary for a phase no longer compiles.",
       "2": "Same removal one epoch on: the per-state keyterms knob is gone, and epoch 2's example was written around it.",
@@ -119,8 +119,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 8,
-    "supported": [2, 3, 4, 8],
+    "current": 9,
+    "supported": [2, 3, 4, 8, 9],
     "dropped": {
       "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
       "5": "`ToolSchema` and `AgentConfigSchema` reach this subpath, and both lost members with the fast/slow split: the schema's `mutates`/`completes` and the config's `twoTier`. A spec that built either shape with one of those keys no longer compiles — `.strict()` on the config schema makes it a parse failure too.",

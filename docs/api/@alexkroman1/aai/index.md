@@ -3490,6 +3490,33 @@ session emits nothing rather than spending a durable event per model step.
 
 [`AgentModelTuning`](#agentmodeltuning).[`usageLimits`](#usagelimits-1)
 
+##### userTurnLimit?
+
+```ts
+optional userTurnLimit?: UserTurnLimit;
+```
+
+Pipeline mode only. Cap ONE user turn's length — by words heard, by
+elapsed time, or both — see [UserTurnLimit](#userturnlimit-2).
+
+###### Default Value
+
+unset — no cap on a single user turn's length.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Triage",
+  // Answer after 60 words or 20 seconds, whichever the caller reaches first.
+  userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 },
+});
+```
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`userTurnLimit`](#userturnlimit-1)
+
 ##### voicePresets?
 
 ```ts
@@ -4478,6 +4505,16 @@ receive(ctx: SlotHolder, event:
   type: "guardrail.blocked";
 }
   | {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -4707,6 +4744,16 @@ export default agent({
   \};
   `replacement`: `string`;
   `type`: `"guardrail.blocked"`;
+\}
+  \| \{
+  `durationMs`: `number`;
+  `limit`: `"words"` \| `"duration"`;
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `type`: `"user-turn.exceeded"`;
+  `words`: `number`;
 \}
   \| \{
   `messages`: \{
@@ -5710,6 +5757,29 @@ reply that was ready sooner waits.
 
 `0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
 Vapi's own default is 0.4s; see that constant for why this one is not.
+
+##### userTurnLimit?
+
+```ts
+optional userTurnLimit?: UserTurnLimit;
+```
+
+Pipeline mode only. Cap ONE user turn's length — by words heard, by
+elapsed time, or both — see [UserTurnLimit](#userturnlimit-2).
+
+###### Default Value
+
+unset — no cap on a single user turn's length.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Triage",
+  // Answer after 60 words or 20 seconds, whichever the caller reaches first.
+  userTurnLimit: { maxWords: 60, maxDurationMs: 20_000 },
+});
+```
 
 ***
 
@@ -7632,6 +7702,57 @@ a `ctx.generate` or `ctx.delegate` that asks for more is refused with the
 same sentence, which the calling tool may catch and answer around. An agent
 that wants a softer landing watches `usage.updated` through
 `agent({ events })` and says something before the cap arrives.
+
+***
+
+### UserTurnLimit
+
+A cap on ONE user turn — see [PipelineVoiceTuning.userTurnLimit](#userturnlimit).
+
+End-of-turn detection is the STT provider's, and it is driven by SILENCE: a
+caller who never pauses never ends a turn, so a monologue holds the floor
+for as long as it runs and the agent cannot answer, redirect or hand off
+until it stops. This is the bound on that. When the open utterance crosses
+either cap the runtime asks the transcriber to END THE TURN NOW, exactly as
+a pause would have — the words heard so far commit as the caller's turn, the
+agent replies to them, and whatever the caller says next opens the next turn
+— and a `user-turn.exceeded` event records that it happened.
+
+Both members are optional; set one or both. A limit that names neither is
+refused at config time rather than accepted as a cap on nothing.
+
+Two things it is NOT: it is not a barge-in gate (`minBargeInWords` and
+`interruptionMinDurationMs` decide whether the caller's speech interrupts a
+reply; this decides when the caller's own turn is long enough), and it does
+not discard anything the caller says — speech after the cut lands in the
+turn that follows.
+
+The cut is made by the STT provider, so it needs one that can force an end of
+turn mid-stream: the default `assemblyAIStt()` can. On a provider that
+cannot, the event is still reported and the runtime logs once that the cap
+is inert — the same treatment a provider that cannot move its endpointing
+window gets.
+
+#### Properties
+
+##### maxDurationMs?
+
+```ts
+optional maxDurationMs?: number;
+```
+
+End the caller's turn once it has run this long, in ms — measured from the
+first word the transcriber reported for it. A positive integer.
+
+##### maxWords?
+
+```ts
+optional maxWords?: number;
+```
+
+End the caller's turn once this many words have been heard in it. A
+positive integer; counted on the transcriber's interim transcript, so it
+is what the transcriber HEARD, exactly as `minBargeInWords` is.
 
 ## Type Aliases
 

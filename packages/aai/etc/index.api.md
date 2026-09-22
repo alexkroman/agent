@@ -537,6 +537,7 @@ export interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
+    userTurnLimit?: UserTurnLimit;
 }
 
 // @public
@@ -813,6 +814,18 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         output: "output";
     }>;
     replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -1206,6 +1219,12 @@ export interface TypedSubagentDef<T> extends SubagentDef {
 // @public
 export interface UsageLimits {
     totalTokens?: number;
+}
+
+// @public
+export interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
 }
 
 // @public
