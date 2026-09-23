@@ -480,10 +480,10 @@ describe("the per-phase voice knobs", () => {
     expect(bargeInAt(ctx)).toBeUndefined();
   });
 
-  test("verifying pins a low temperature and nothing else", async () => {
+  test("verifying pins no knob — its deadline is the only thing it adds", async () => {
     const ctx = createToolContext();
     await locate(ctx);
-    expect(knobsAt(ctx)).toEqual({ temperature: 0.2 });
+    expect(knobsAt(ctx)).toBeUndefined();
   });
 
   test("dispatching pins the model to the tool that actually sends a truck", async () => {

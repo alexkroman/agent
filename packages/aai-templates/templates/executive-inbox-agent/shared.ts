@@ -395,8 +395,6 @@ const reviewSpec = {
             "Something is waiting on the executive's word. Read it back and hear their " +
             "answer, then call exactly one of accept, edit, ignore or respond. Nothing is " +
             "sent until accept has run.",
-          // Reading a draft back is transcription, not composition.
-          temperature: 0.2,
           on: { SETTLED: "inbox", REDRAFT: "drafting" },
         },
       },

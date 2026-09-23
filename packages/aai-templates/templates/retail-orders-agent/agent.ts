@@ -54,7 +54,7 @@ export default agent({
    * `callFlow` gated tools without this and still would; what the declaration
    * adds is the half no tool can reach — `"@session.timed-out"` carries a call
    * whose caller has hung up into `abandoned`, and `awaitingConfirmation`'s
-   * `temperature` applies to the turn that reads a staged change back. Both
+   * instruction reaches the turn that reads a staged change back. Both
    * happen when no tool is running, which is exactly why neither was
    * expressible before.
    */

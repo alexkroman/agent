@@ -62,7 +62,6 @@ export async function askPlayer(generate: GenerateFn, input: PlayerInput): Promi
     system: PLAYER_SYSTEM,
     prompt: playerPrompt(input),
     schema: playerGuessSchema,
-    temperature: 0.7,
   });
   return object;
 }

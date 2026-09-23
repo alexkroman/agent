@@ -166,8 +166,6 @@ describe("the two owed-speech states forbid every tool, not just the gated one",
     expectDialogOk(await run("record_card", A_CARD, ctx));
     expect(deskFlow.position(ctx).state).toBe("booking.readBack");
     expect(deskFlow.voiceConfig(ctx)?.toolChoice).toBe("none");
-    // And the read-back is the state that also asks for a steady voice.
-    expect(deskFlow.voiceConfig(ctx)?.temperature).toBe(0.2);
 
     // The caller answers; the obligation is discharged and the tools come back.
     expect(

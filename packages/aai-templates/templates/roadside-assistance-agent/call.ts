@@ -18,7 +18,7 @@ import { dialog } from "@alexkroman1/aai";
  * | --- | --- | --- |
  * | `onCall.locating` | a caller who has gone quiet gets re-prompted, and a talkative one does not | `timeout` + a self transition on `@user-transcript.committed` |
  * | `onCall.quiet` | the re-prompt is a different instruction, not a louder one | `instruction` |
- * | `onCall.verifying` | do not invent a policy, and give up after two minutes | `temperature` + `timeout` |
+ * | `onCall.verifying` | do not invent a policy, and give up after two minutes | `instruction` + `timeout` |
  * | `onCall.disclosure` | the fee disclosure is delivered IN FULL | `bargeIn: "off"` |
  * | `onCall.dispatching` | do not promise a truck without sending one | `toolChoice` |
  * | `abandoned` | nothing acts on a call whose caller is gone | `final: true` |
@@ -148,11 +148,6 @@ export const CALL_SPEC = {
             "for: ask for the policy number on their card, or the phone number the plan is " +
             "under, and call lookup_coverage with it. Never tell a caller they are covered " +
             "because it sounds likely — the lookup is the only thing that knows.",
-          // Reading a policy number back and matching it against what the
-          // caller said is transcription, not composition. The low temperature
-          // is aimed at the one failure this phase has: a model that smooths
-          // `RS-8802` into `RS-8002` because it reads better.
-          temperature: 0.2,
           timeout: VERIFICATION_DEADLINE,
           on: { VERIFIED: "disclosure", UNVERIFIED: "disclosure" },
         },

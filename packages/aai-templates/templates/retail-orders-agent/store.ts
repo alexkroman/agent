@@ -154,13 +154,6 @@ const callSpec = {
           on: { STAGED: "awaitingConfirmation" },
         },
         awaitingConfirmation: {
-          // Reading an order number, an item number and a dollar amount back is
-          // TRANSCRIPTION, and the failure it has is a model smoothing
-          // `#W2378156` into something that scans better. This template already
-          // fights that on the way IN — `resolve.ts` is where a spoken order id
-          // is matched against the account — and this is the same problem on
-          // the way out, which nothing was guarding.
-          temperature: 0.2,
           instruction:
             "A change is staged and NOTHING HAS HAPPENED YET. Read the staged sentence " +
             "back — the order, the items, the amounts, where the money goes — and wait " +

@@ -55,10 +55,10 @@ export default agent({
    * would happen: `@session.timed-out` and `@user-transcript.committed` would
    * reach nothing, the two `timeout` deadlines would never be armed, the active
    * state's `instruction` would reach the model only on turns that happened to
-   * call a tool, and `bargeIn`, `toolChoice` and `temperature` would be
-   * declarations nothing read.
+   * call a tool, and `bargeIn` and `toolChoice` would be declarations nothing
+   * read.
    *
-   * The three knobs are a PIPELINE property. On either speech-to-speech
+   * The two knobs are a PIPELINE property. On either speech-to-speech
    * transport the service owns turn-taking and assembles its own requests, so
    * the runtime warns rather than pretending; the instruction, the deadlines
    * and the session events work on every transport.

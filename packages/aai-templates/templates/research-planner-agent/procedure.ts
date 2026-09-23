@@ -240,11 +240,13 @@ export type ActDecision = { kind: "respond"; response: string } | { kind: "plan"
  * a desk that never stops working.
  */
 export function normalizeAct(
-  // `| undefined` on both optionals is what `exactOptionalPropertyTypes`
-  // requires of a parameter that receives a validated schema output: the
-  // schema's own type says "absent", and a caller destructuring one may well
-  // pass an explicit `undefined`.
-  object: { kind: "respond" | "plan"; response?: string | undefined; steps?: string[] | undefined },
+  // `null` is what the schema answers for the half that does not apply; the
+  // optional `undefined` is kept for a caller building one by hand.
+  object: {
+    kind: "respond" | "plan";
+    response?: string | null | undefined;
+    steps?: string[] | null | undefined;
+  },
   fallback: string,
 ): ActDecision {
   const steps = object.steps?.filter((step) => step.trim().length > 0) ?? [];

@@ -152,7 +152,14 @@ describeEval(agentDef, (test) => {
       // cold, "I set the chalice down" is a drop, which is what a live model
       // reached for twice (`game_state_drop`, then no tool at all) while this
       // case blamed the score tool.
+      //
+      // And it has to be REACHABLE. Item locations are the prompt's, so the
+      // chalice is pinned to the Pine Forest there, beside the lantern's "at the
+      // entrance". Unpinned, a live narrator whose game state said "Cave Mouth,
+      // carrying nothing" refused the pickup outright — correctly — and a route
+      // into the cave to find it failed on the puzzles the model invented.
       const turns = await session.sayAll([
+        "I walk into the Pine Forest.",
         "I pick up the golden chalice.",
         "I carry the chalice back to the Cave Mouth.",
         "I set the chalice on the stone pedestal. Award me the points for returning it.",
@@ -183,6 +190,8 @@ describeEval(agentDef, (test) => {
     },
     {
       stubReply: [
+        { tool: "game_state_move", args: { value: "Pine Forest" } },
+        "Pines crowd close, and something gold glints among the roots.",
         { tool: "game_state_take", args: { value: "golden chalice" } },
         "The golden chalice is cool and heavier than it looks.",
         { tool: "game_state_move", args: { value: "Cave Mouth" } },

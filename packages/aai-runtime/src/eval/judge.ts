@@ -219,7 +219,8 @@ export async function runJudge(
     system: JUDGE_SYSTEM,
     prompt: judgePrompt(transcriptOf(input), options),
     schema: VERDICT_SCHEMA,
-    temperature: 0,
+    // No `temperature`: the judge runs on whatever descriptor it is handed, and
+    // the gateway's GPT-5 family — the default — answers one with a 400.
   });
   const summary = isRecord(object) && typeof object.summary === "string" ? object.summary : "";
   return verdictOf(rulingsOf(options.criteria, object), summary, scripted);

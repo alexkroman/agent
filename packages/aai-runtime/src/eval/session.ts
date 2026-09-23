@@ -65,8 +65,8 @@ import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
-import { assertTurnMeasurable, measuredTurn } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { assertTurnMeasurable, measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
+import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
 
 /** How long one turn may take before the harness gives up on it. */
@@ -132,7 +132,11 @@ export type EvalTurn = {
   readonly text: string;
   /** This turn's events, from the committed utterance to the terminator. */
   readonly events: readonly SessionEvent[];
-  /** This turn's tool calls, in call order, each with its result. */
+  /**
+   * This turn's tool calls, in call order, each with its result — minus the
+   * `think` builtin's scratchpad calls (an authored `think` stays). `events`
+   * still carries every call.
+   */
   readonly toolCalls: readonly EvalToolCall[];
   /**
    * The reply ended on its own terms (`reply.completed`) rather than being
@@ -460,14 +464,14 @@ async function openWithFakes(
     if (manual) session.command({ type: "user_turn_commit" });
     await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
     const what = `the reply to ${JSON.stringify(text.slice(0, 60))}`;
-    return measuredTurn(what, events.slice(from), toolNames, "voice");
+    return measuredTurn(what, events.slice(from), toolNames, "voice", options.agent);
   };
 
   return {
     id: sessionId,
     events: () => events,
     said: () => saidIn(events),
-    toolCalls: () => toolCallsInEvents(events),
+    toolCalls: () => measuredToolCalls(events, options.agent),
     say,
     async sayAll(lines) {
       const turns: EvalTurn[] = [];
