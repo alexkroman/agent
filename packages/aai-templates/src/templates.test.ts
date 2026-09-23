@@ -211,9 +211,9 @@ describe("scaffold pnpm-workspace.yaml", () => {
  * It cost a real bug. `scaffold/server.mjs` registered its SIGINT/SIGTERM
  * handler as an "async" listener, so a rejecting `server.close()` became an
  * unhandled rejection — a stack trace on Ctrl-C in every project ever
- * scaffolded. `guard-invariants` rule 23 found it because that gate scans the
- * whole tree; Biome's own `noMisusedPromises` could not, having been told not to
- * look. Removing the exclusion cost exactly one import-order fix.
+ * scaffolded. `guard-invariants` rule 23 (since retired for `pnpm
+ * lint:promises`) found it because that gate scans the whole tree; Biome's own
+ * `noMisusedPromises` could not, having been told not to look. Removing the exclusion cost exactly one import-order fix.
  *
  * Asserted here rather than left to the linter itself for the reason this file
  * exists: a re-added exclusion makes the linter QUIETER, so nothing fails and

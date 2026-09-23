@@ -12,12 +12,15 @@
  */
 
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { flushEffects } from "../_react-test-utils.ts";
 import { DEFAULT_PROGRESS_POLL_MS } from "../use-workflow-progress.ts";
 import { WorkflowProgress } from "./workflow-progress.tsx";
 
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   fetchMock = vi.fn();

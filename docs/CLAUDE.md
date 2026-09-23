@@ -1,3 +1,14 @@
+---
+summary: >-
+  The `aai-docs` workspace: the narrative documentation site, both TypeDoc
+  renderings, the committed markdown reference and the `typescript@6` pin —
+  and the API reports and capability epochs, which answer the same question
+  about the published surface.
+read_when: >-
+  a published signature, doc comment or subpath export changes, or
+  `check:api-report`, `check:api-contracts` or `check:docs-md` fails
+---
+
 # CLAUDE.md — `docs/`
 
 The `aai-docs` workspace — the narrative documentation SITE, the TypeDoc setup

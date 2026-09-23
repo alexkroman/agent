@@ -104,6 +104,7 @@
   },
   "devDependencies": {
     "@ai-sdk/mcp": "catalog:",
+    "@copilotkit/aimock": "^1.42.1",
     "@opentelemetry/api": "catalog:",
     "@opentelemetry/context-async-hooks": "catalog:",
     "@opentelemetry/exporter-metrics-otlp-proto": "catalog:",

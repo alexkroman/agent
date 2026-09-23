@@ -41,6 +41,10 @@ export const TURBO_TASKS = {
     // you are thinking about what to remove, not about what removal strands.
     "check:knip",
     "lint:root",
+    "lint:promises",
+    // Skips with a notice when the binaries are absent, so it costs a laptop
+    // nothing; CI installs them and sets AAI_REQUIRE_WORKFLOW_LINT.
+    "check:workflows",
     "test:coverage",
   ],
   full: [
@@ -56,7 +60,9 @@ export const TURBO_TASKS = {
     "check:knip",
     "check:markdown",
     "check:shell",
+    "check:workflows",
     "lint:root",
+    "lint:promises",
     "test:coverage",
     "check:integration",
     "check:scenario",

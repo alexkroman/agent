@@ -1,3 +1,10 @@
+---
+summary: >-
+  The workflow journal and the replay engine's decisions
+read_when: >-
+  working on the journal, a backend, or the replay engine
+---
+
 # JOURNAL-CLAUDE.md — the durable journal and the replay engine's decisions
 
 A SIBLING of `packages/aai-runtime/CLAUDE.md` rather than a second package

@@ -58,12 +58,19 @@ concurrency:
   # exactly where it is merging fastest.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only by default; a job that writes declares exactly what it writes.
+# Without this block every job got the repository's default token scopes, which
+# is what `zizmor` (`pnpm check:workflows`) reports as excessive-permissions.
+permissions:
+  contents: read
+
 jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -99,6 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -136,6 +144,13 @@ jobs:
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
+      # Pinned, and from PyPI because neither ships a pnpm package that pins a
+      # version — `scripts/check-workflows.mjs` carries the argument. pipx is on
+      # the ubuntu-latest image.
+      - name: Install workflow linters
+        run: |
+          pipx install zizmor==1.30.1
+          pipx install actionlint-py==1.7.12.25
       # The tasks that are NOT rows of the gate table: the turbo tasks, plus
       # the seven root-level scripts turbo cannot own.
       - run: |
@@ -145,6 +160,9 @@ jobs:
           # package — so until this line it was the one source directory in
           # the repo that no lint job touched.
           pnpm run lint:root
+          # The type-aware promise rules Biome cannot evaluate — see
+          # `//#lint:promises` in turbo.json.
+          pnpm run lint:promises
           pnpm run check:syncpack
           # Manifest SHAPE, the other half of syncpack. See `//#check:format`
           # in turbo.json for why `sortExports` has to name `@dev/source`.
@@ -157,6 +175,9 @@ jobs:
           pnpm run check:markdown
           # ubuntu-latest ships shellcheck; the flag makes its absence a failure.
           AAI_REQUIRE_SHELLCHECK=1 pnpm run check:shell
+          # actionlint + zizmor, with zizmor's policy read from the BASE so a PR
+          # cannot relax it and be audited under the relaxed copy.
+          AAI_REQUIRE_WORKFLOW_LINT=1 pnpm run check:workflows --base origin/main
       # EVERY quality gate, DERIVED — the ratchets and the after-build gates,
       # in the table's own order, read out of scripts/check.mjs rather than
       # restated here.
@@ -206,6 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -269,6 +291,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -588,6 +611,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -672,6 +696,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -703,7 +728,38 @@ jobs:
       # `supabase start` applies supabase/migrations on INIT, so a fresh
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).
-      - run: supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket
+      #
+      #
+      # **From public.ecr.aws, not ghcr.io, and retried on a THROTTLE only.**
+      # `setup-cli` points the CLI at ghcr.io (`SUPABASE_INTERNAL_IMAGE_REGISTRY`),
+      # and on 2026-09-23 ghcr.io answered `toomanyrequests` to six consecutive
+      # runs across two PRs, before a test had run: logged in or not, and
+      # through a 15/45/90s retry that left three of ~10 images unpulled. The
+      # Postgres pull in `integration-and-scenario` comes from public.ecr.aws
+      # and passed in the same runs. Supabase publishes the same tags to both.
+      #
+      # The retry stays, because public.ecr.aws throttles anonymous pulls too
+      # (see that job's note): only on a throttle message, with growing delays
+      # because the quota is per unit TIME, and every image that finished
+      # pulling stays cached so each attempt asks for fewer. Any other failure
+      # exits at once — a broken migration has to stay fast and loud.
+      - name: Start the Supabase stack
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/supabase-start.log"
+          for delay in 15 45 90 0; do
+            if supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -qiE 'toomanyrequests|rate exceeded' "$log" || [ "$delay" = 0 ]; then
+              exit 1
+            fi
+            echo "::warning title=Registry throttled supabase start::retrying in ${delay}s"
+            supabase stop --no-backup || true
+            sleep "$delay"
+          done
       # The SAME resolver a developer runs: it shells out to
       # `supabase status -o env`, exports the Supabase trio beside the database
       # URL, and sets AAI_REQUIRE_PG + AAI_REQUIRE_STACK — so a variable that

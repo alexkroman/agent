@@ -1,3 +1,11 @@
+---
+summary: >-
+  The speech boundary both ways, the calendar/zod argument shapes,
+  `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney`
+read_when: >-
+  using or changing an authoring helper a tool body calls
+---
+
 # packages/aai — the small authoring helpers
 
 A SIBLING of `CLAUDE.md`, not a second package guide: Claude Code auto-loads

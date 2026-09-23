@@ -1,3 +1,11 @@
+---
+summary: >-
+  Every gate beyond lint/typecheck/test: what each one checks, the failure it
+  was written for, and the baseline or floor it carries.
+read_when: >-
+  a `check:*` gate fails, or you are adding, loosening or retiring one
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 
@@ -654,6 +662,27 @@ right answer to enforce, and "a threshold nothing enforces reads as a gate".
   no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
   announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
   `check.yml` sets. Floored at the measured script count.
+- **`pnpm check:guide-index`** (`scripts/docs-list.mjs --check`) — every agent
+  guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md` and its
+  `*-CLAUDE.md` siblings) opens with a frontmatter block holding exactly
+  `summary` and `read_when`, and AGENTS.md's three guide tables match what
+  `pnpm sync:guide-index` generates from them. The tables were hand-kept and
+  drifted twice. `pnpm docs:list` prints the same index for a reader. Floored
+  at 30 guides.
+- **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
+  zizmor over `.github/workflows/`, the config agents edit most and which
+  nothing read before GitHub ran it. actionlint type-checks expressions,
+  `needs` and outputs, and runs ShellCheck over every `run:` block (the shell
+  `check:shell` cannot see); zizmor audits template injection, default token
+  scopes and persisted checkout credentials. The first run found 30 zizmor
+  findings and 3 ShellCheck notes, all fixed: every workflow now opens with
+  `permissions: contents: read`, every checkout that does not push sets
+  `persist-credentials: false`, and the two that do carry an inline
+  `# zizmor: ignore[artipacked]` saying why. **CI passes `--base origin/main`,
+  so zizmor's policy (`.github/zizmor.yml`, none today) is read from the base**:
+  a PR that relaxes it is still audited under the policy it is trying to
+  change. Same PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`;
+  `check.yml` installs pinned versions with pipx. Offline audits only.
 - **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
   template, plus the scaffold's `server.mjs`, `global.d.ts` and two configs,
   compiled under the tsconfig `aai init` ships (derived at run time by

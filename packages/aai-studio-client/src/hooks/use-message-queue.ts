@@ -225,7 +225,7 @@ export function useMessageQueue(opts: MessageQueueOptions): MessageQueueApi {
             // suite happens to be executing. The trailing `catch` covers the
             // one path the two arms cannot — `onSettled` itself throwing —
             // which is the `void p.catch(report)` shape this repo asks for and
-            // the reason `guard-invariants` rule 23 exists next door.
+            // the reason `pnpm lint:promises` reports an async listener.
             void Promise.resolve(sendMessage({ text }))
               .then(onSettled, onSettled)
               .catch((err: unknown) => {

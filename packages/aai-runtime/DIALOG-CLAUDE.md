@@ -1,3 +1,10 @@
+---
+summary: >-
+  What each dialog voice knob can and cannot do
+read_when: >-
+  working on `dialog()` or its per-state voice knobs
+---
+
 # Dialogs, wired to a session
 
 Reference for `runtime-dialogs.ts`, `runtime-dialog-knobs.ts` and

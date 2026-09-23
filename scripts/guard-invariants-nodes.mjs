@@ -285,44 +285,6 @@ export function isTimersPromisesSleep(node) {
   );
 }
 
-/**
- * The event-registration methods a listener is handed to.
- *
- * Unlike its ERE twin the order carries no meaning at all — this is a set
- * lookup, where the regex had to be spelled longest-first so a reader checking
- * `addListener` against `addEventListener` did not have to reason about POSIX
- * alternation.
- */
-const LISTENER_REGISTRARS = new Set([
-  "addEventListener",
-  "prependOnceListener",
-  "prependListener",
-  "addListener",
-  "once",
-  "on",
-]);
-
-/**
- * An `async` function handed STRAIGHT to an event registration, as the LISTENER
- * argument.
- *
- * Position rather than a character class is the improvement. The ERE required
- * the event name to hold no comma, which kept a hono handler out
- * (`app.on("GET", "/x", async (c) => ...)`, which the framework really does
- * await) at the cost of missing an options argument after the listener —
- * `signal.addEventListener("abort", async () => {}, { once: true })` is the
- * hazard with a third argument, and was invisible. Asking for the listener to
- * sit at index 1 spares the first and reports the second.
- */
-export function asyncListener(node) {
-  if (node?.type !== "CallExpression") return;
-  const name = propertyName(node.callee);
-  if (name === undefined || !LISTENER_REGISTRARS.has(name)) return;
-  const listener = unwrap(node.arguments[1]);
-  if (!isFunctionExpression(listener) || listener.async !== true) return;
-  return listener;
-}
-
 /** Is `node` a division by a numeric literal — the `w / 2` half of a jitter? */
 const isFractionOf = (node) => {
   const inner = unwrap(node);

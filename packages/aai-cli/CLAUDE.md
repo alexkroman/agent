@@ -1,3 +1,12 @@
+---
+summary: >-
+  Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`),
+  bundling + Vite rules, credential destinations, `aai dev`'s server and host
+  mode, self-hosting (`npm start`)
+read_when: >-
+  changing an `aai` subcommand, the bundler, or where the CLI sends a key
+---
+
 # packages/aai-cli — CLI guide
 
 The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root

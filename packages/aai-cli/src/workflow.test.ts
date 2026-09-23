@@ -12,7 +12,7 @@
  * no project config or API key prompt is needed.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 
 import { getServerInfo } from "./_agent.ts";
 
@@ -56,7 +56,10 @@ vi.mock("./_ui.ts", () => ({ log: mockLog }));
 const { executeWorkflowCancel, executeWorkflowList, executeWorkflowRuns, executeWorkflowShow } =
   await import("./workflow.ts");
 
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

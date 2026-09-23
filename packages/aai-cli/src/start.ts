@@ -57,6 +57,7 @@ import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
+import { stopProjectServer } from "./_stop-server.ts";
 import { log } from "./_ui.ts";
 
 export { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
@@ -224,19 +225,14 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
-      // close() shuts the runtime down too — no separate runtime.shutdown().
-      // Spans the batch processor is holding are flushed with it; `shutdown`
-      // never rejects, so telemetry cannot turn a clean stop into a failed one.
-      server
-        .close()
-        .finally(() => tracing?.shutdown())
-        .then(
-          () => process.exit(0),
-          (error: unknown) => {
-            log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
-            process.exit(1);
-          },
-        );
+      // Close, then flush tracing either way — see `_stop-server.ts`.
+      stopProjectServer(server, tracing).then(
+        () => process.exit(0),
+        (error: unknown) => {
+          log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+          process.exit(1);
+        },
+      );
     });
   }
 

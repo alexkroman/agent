@@ -1,3 +1,13 @@
+---
+summary: >-
+  Vitest conventions, harness declaration, snapshots, teardown, virtual time,
+  coverage, the per-package configs, test env vars, and the property-test
+  rules. The TIER table stays in AGENTS.md — it is needed on every task; this
+  is the detail behind it.
+read_when: >-
+  writing or moving a test, or a test times out, leaks, or skips
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 
@@ -276,6 +286,26 @@ durability spec), `workflow-interleavings/` (shrunk counterexamples frozen as
 `testing/run-workflow.ts` (the author-facing half, published as
 `@alexkroman1/aai-runtime/testing`). Each module doc carries its own argument;
 the next change to `packages/aai-runtime/CLAUDE.md` has to split it first.
+
+## A provider's HTTP path is tested against `@copilotkit/aimock`
+
+Every keyless LLM fake here replaces the `LanguageModel` — `_fake-llm.ts`, the
+`AAI_EVAL_STUB` registry entry, `scriptedTextModel` — so the `@ai-sdk/*`
+client, request serialization, SSE parsing and `repairOpenAiStream` never run
+under them. `aai-runtime/src/llm-provider-http.scenario.test.ts` points a real
+text agent at an aimock server through `llm({ baseUrl })` and asserts what went
+over the wire: the system prompt's role (`developer` for the default gateway
+model — `@ai-sdk/openai`'s choice for a reasoning-model id, visible nowhere
+else), the tool schema, the tool-result message and its id, the retry of a
+503, and that a 401 surfaces as `error.reported` even though the text stream
+just ends. Scenario tier, because it binds a port; no key, no network.
+
+Reach for it when a change touches a provider factory, a fetch wrapper or the
+stream parsing, and keep the scripted models for everything above the
+`LanguageModel` seam. Two things about it to know: its journal REDACTS
+credentials (assert that a header is present, not its value), and fixtures
+match in REGISTRATION order — register a tool-result fixture before the
+tool-call one, or the follow-up request re-matches the question and loops.
 
 ## Vitest config differences per package
 

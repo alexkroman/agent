@@ -79,8 +79,15 @@ console.log(`${agent.name} listening on http://127.0.0.1:${server.port}`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   // close() shuts the runtime down too — no separate runtime.shutdown().
-  process.once(signal, async () => {
-    await server.close();
-    process.exit(0);
+  // A sync listener: an emitter discards what an `async` one returns, so a
+  // failed close would be an unhandled rejection instead of an exit code.
+  process.once(signal, () => {
+    server.close().then(
+      () => process.exit(0),
+      (error) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
   });
 }

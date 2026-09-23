@@ -12,7 +12,7 @@
  * coverage, so the CLI and the studio each carried a subset nothing pinned.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import {
   createWorkflowApiClient,
   WORKFLOW_API_PREFIX,
@@ -44,7 +44,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   fetchMock = vi.fn();

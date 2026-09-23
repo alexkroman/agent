@@ -1,3 +1,13 @@
+---
+summary: >-
+  Browser session, client audio path (capture/playback worklets, pacing,
+  jitter buffer), components, fuzz harnesses, **workflow apps**
+  (`mountPage()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP
+  API the SDK serves)
+read_when: >-
+  working on the browser client, its audio path, or a workflow app's page
+---
+
 # packages/aai-ui — browser client guide
 
 The browser client (`@alexkroman1/aai-ui`): session, audio, React UI. Repo-wide

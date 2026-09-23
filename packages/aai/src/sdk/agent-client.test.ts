@@ -10,11 +10,14 @@
  * superset instead of a second design to keep in step.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createAgentClient } from "./agent-client.ts";
 import { createWorkflowApiClient } from "./workflow-api-client.ts";
 
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   fetchMock = vi.fn(

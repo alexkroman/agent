@@ -1,3 +1,10 @@
+---
+summary: >-
+  The browser playback path
+read_when: >-
+  working on playback, the jitter buffer, or the playback worklet
+---
+
 # packages/aai-ui — playback tuning (sibling of `CLAUDE.md`)
 
 A SIBLING of this package's guide rather than a second one — the shape

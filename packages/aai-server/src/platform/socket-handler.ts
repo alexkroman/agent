@@ -336,8 +336,9 @@ export async function acceptPlatformSocket(
     touch();
     log.debug("platform socket open", { slug });
     // A SYNC listener that hands the async work to the loop, which `void`s its
-    // own promise — `guard-invariants` rule 23: an async function given straight
-    // to `.on` has no call site for its rejection to land in.
+    // own promise — `pnpm lint:promises` (`no-misused-promises`): an async
+    // function given straight to `.on` has no call site for its rejection to
+    // land in.
     ws.on("message", (data: unknown) => {
       touch();
       handle(data);

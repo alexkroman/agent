@@ -32,8 +32,15 @@ await server.listen(port);
 console.log(`Host server listening on ws://127.0.0.1:${port}/websocket?host=1`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, async () => {
-    await server.close();
-    process.exit(0);
+  // A sync listener: an emitter discards what an `async` one returns, so a
+  // failed close would be an unhandled rejection instead of an exit code.
+  process.once(signal, () => {
+    server.close().then(
+      () => process.exit(0),
+      (error) => {
+        console.error(error);
+        process.exit(1);
+      },
+    );
   });
 }

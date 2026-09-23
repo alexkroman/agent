@@ -1,3 +1,12 @@
+---
+summary: >-
+  Why the shared guest core is its own package (the cycle two packages could
+  not express), where `StudioSession` is declared and why, the un-underscored
+  `test-utils.ts`, and how coverage attribution decides where a test lives
+read_when: >-
+  moving code between the three guest packages
+---
+
 # packages/aai-guest-core — shared guest core guide
 
 The five modules both guest modes need (private package). The harness entry and

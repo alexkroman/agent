@@ -117,8 +117,8 @@ const child = spawn("pnpm", args, {
   stdio: "inherit",
   env: { ...process.env, ...env },
 });
-// Sync listeners: an `async` function handed to `.on` is `guard-invariants`
-// rule 23, and there is nothing to await here.
+// Sync listeners: an `async` function handed to `.on` is reported by
+// `pnpm lint:promises`, and there is nothing to await here.
 child.on("error", (err) => {
   console.error(`run-evals: ${err.message}`);
   process.exit(1);

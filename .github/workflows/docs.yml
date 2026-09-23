@@ -5,10 +5,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# Read-only at the top; the Pages scopes belong to the one job that deploys,
+# so the build job (which runs the whole toolchain) never holds them.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time; let an in-flight deploy finish rather than cancelling
 concurrency:
@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -33,6 +35,9 @@ jobs:
 
   deploy:
     needs: build
+    permissions:
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment:
       name: github-pages

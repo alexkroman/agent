@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The TIMING rules — 3, 4, 19, 21, 23 and 31 — and the repo's first NODE rules.
+ * The TIMING rules — 3, 4, 19, 21 and 31 — and the repo's first NODE rules.
  *
- * They are grouped because they are the same question asked six ways ("how is
+ * They are grouped because they are the same question asked five ways ("how is
  * this code waiting?") and because they share a failure history: this file used
  * to open by saying "all of them are substring guards over a language with
  * syntax, and every gap found in this gate has been in one of them." That
@@ -47,13 +47,19 @@
  * sample while blind to the shape the code is written in. A node rule's samples
  * are source the spec parses, so they are written the way the code is written.
  *
- * Rule IDs are STABLE: 6 stays retired, 15 stays reserved, and 26 and 30 remain
- * in `-rules-workflow.mjs` where an earlier split put them.
+ * Rule IDs are STABLE: 6, 10 and 23 stay retired, 15 stays reserved, and 26 and
+ * 30 remain in `-rules-workflow.mjs` where an earlier split put them.
+ *
+ * Rule 23 (an `async` function handed to an event registration) is retired
+ * because `pnpm lint:promises` supersedes it. It existed because Biome's
+ * `noMisusedPromises` cannot see a listener whose type comes from `node:` or
+ * `lib.dom`; oxlint's type-aware `no-misused-promises` can, reads the TYPE
+ * rather than a method name, and also covers the floating half this rule had to
+ * leave out. See `packages/aai-gates/CLAUDE.md`.
  */
 
 import { walk } from "./_ast-scan.mjs";
 import {
-  asyncListener,
   callOfMember,
   isCallOfMember,
   isJitteredWindow,
@@ -300,68 +306,6 @@ export const TIMING_RULES = [
       "This rule spent its whole life as a line pattern that could not see\n" +
       "`await expect` with `.poll(` on the next line, and reported 0 over two\n" +
       "live occurrences. It is a node rule now.",
-  },
-  {
-    id: 23,
-    key: "rule23_asyncEventListener",
-    label: "async function as an event listener",
-    // Here rather than in `-rules-state.mjs` because the family question is the
-    // one this module asks — "how is this code waiting?" — with the answer
-    // "it isn't, and neither is anyone else". Rule 21 already established that
-    // a rule belongs here when the REMEDY is a different way of handing off an
-    // async result, even when the hazard is not the wait itself.
-    match: (node) => asyncListener(node) !== undefined,
-    paths: SOURCE_PATHSPECS,
-    samples: {
-      matches: [
-        'ws.on("message", async (raw) => { await handle(raw); });',
-        'signal.addEventListener("abort", async () => { await drain(); });',
-        'emitter.once("open", async function reconnect() { await dial(); });',
-        "target.addListener(EVENTS.data, async (chunk) => { await write(chunk); });",
-        // A listener with an OPTIONS argument after it — the hazard with a
-        // third argument, which the event-name character class could not reach.
-        'signal.addEventListener("abort", async () => { await drain(); }, { once: true });',
-      ],
-      ignores: [
-        // The remedy: a sync listener that hands the promise somewhere.
-        'ws.on("message", (raw) => { void handle(raw).catch(report); });',
-        'signal.addEventListener("abort", () => controller.abort());',
-        'emitter.on("data", onData);',
-        // `once` as the node:events HELPER, which awaits and is the correct
-        // spelling. It is a bare call, not a registration on an object.
-        'const [chunk] = await once(stream, "data");',
-        // A hono handler: the framework awaits it, and the `async` sits in the
-        // THIRD argument position rather than the listener's.
-        'app.on("GET", "/health", async (c) => c.text("ok"));',
-      ],
-    },
-    remedy:
-      "Keep the listener SYNCHRONOUS and hand the promise to something that\n" +
-      "observes it:\n" +
-      "\n" +
-      '  emitter.on("data", (chunk) => { void handle(chunk).catch(report); });\n' +
-      "\n" +
-      "or wrap the whole body in try/catch so the listener cannot reject at all.\n" +
-      "\n" +
-      "An `async` listener returns a promise to the emitter, and an emitter\n" +
-      "DISCARDS what a listener returns. So a throw inside it does not fail the\n" +
-      "operation it belongs to — it becomes an unhandled rejection with no\n" +
-      "session, no request and no turn attached to it, which on the platform is\n" +
-      "a whole-process crash rather than one degraded session. That is not\n" +
-      "hypothetical here: it is the shape of the cartesia-js TTS bug in\n" +
-      "packages/aai/CHANGELOG.md, where a socket error with no `error` listener\n" +
-      "bound took down the host.\n" +
-      "\n" +
-      "Biome's `noMisusedPromises` is ON and does NOT cover this. Measured: it\n" +
-      "reports an async callback passed to a locally-declared `() => void`\n" +
-      "parameter, and reports nothing for `EventEmitter.on` or\n" +
-      "`AbortSignal.addEventListener`, whose types come from `@types/node` and\n" +
-      "`lib.dom`. The same blind spot hides every floating promise returned by a\n" +
-      "`node:` builtin (`writeFile`, `pipeline`, `finished`, `setTimeout` from\n" +
-      "node:timers/promises). This rule closes the half a scan can see; the\n" +
-      "other half is a documented limitation in AGENTS.md, because the\n" +
-      "floating-call form is indistinguishable from an arrow expression body\n" +
-      "that legitimately RETURNS the promise.",
   },
   {
     id: 31,

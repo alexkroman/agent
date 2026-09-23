@@ -1,3 +1,10 @@
+---
+summary: >-
+  The platform database schema
+read_when: >-
+  writing a migration or changing a platform table
+---
+
 # packages/aai-server — the platform tables' write budget and their retention
 
 A SIBLING of `packages/aai-server/CLAUDE.md`, for the reason

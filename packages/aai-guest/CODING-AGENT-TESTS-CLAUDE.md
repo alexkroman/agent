@@ -1,3 +1,13 @@
+---
+summary: >-
+  Testing the studio coding agent: the agent-level unit spec through
+  `runTextAgent`, and the agent's own EVAL — what is real in a case, the one
+  thing that is not (the system prompt), and why it lives in `aai-guest`
+  rather than `aai-evals`
+read_when: >-
+  testing or evaluating the studio coding agent
+---
+
 # packages/aai-guest — testing the studio coding agent
 
 How the studio's coding agent is tested, all five tiers of it. A SIBLING of

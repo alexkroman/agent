@@ -1,3 +1,13 @@
+---
+summary: >-
+  The studio starter eval: its five modules and why they are in that package
+  rather than in `aai-evals`, the five tool-output regexes and what would
+  retire them, the second in-process eval in `aai-guest`, and the opt-in
+  template behaviour contract
+read_when: >-
+  working on the starter eval or a template's behaviour contract
+---
+
 # The studio starter eval
 
 Reference for the eval that drives this package's own product surface. The

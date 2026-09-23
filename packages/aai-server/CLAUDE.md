@@ -1,3 +1,11 @@
+---
+summary: >-
+  Platform: sandboxes + Modal backends, stateless server, security
+  architecture, auth, telephony, durable-workflow routes, stores/locks
+read_when: >-
+  working on the platform server, its auth, stores, or a route a guest calls
+---
+
 # packages/aai-server — platform guide
 
 The agent service plus the shared platform core (private package). Repo-wide

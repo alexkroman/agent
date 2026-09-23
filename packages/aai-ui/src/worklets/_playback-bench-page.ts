@@ -275,7 +275,7 @@ const blobUrl = (src) => URL.createObjectURL(new Blob([src], { type: "applicatio
 
 let last = null;
 // This listener's ENTIRE body is a try/catch/finally, so it cannot reject and
-// guard-invariants rule 23's hazard does not apply. Kept as-is rather than
+// the async-listener hazard (no-misused-promises) does not apply. Kept as-is rather than
 // inverted into void run().catch(report) because the finally block re-enables the
 // buttons and reads better attached to the click that disabled them.
 //

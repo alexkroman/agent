@@ -101,8 +101,8 @@ const extensionOf = (file) => {
  *
  * There is deliberately NO parent pointer or node stack. A draft carried one on
  * the guess that a rule would need to ask where a node sits, and not one of the
- * six does — rule 23 asks which ARGUMENT a listener is, which is a question
- * about the call it already matched, and rule 3 walks its own arguments. A
+ * rules does — rule 3 walks its own arguments, and the retired rule 23 asked
+ * which ARGUMENT a listener was, a question about the call it already matched. A
  * threaded stack is state every visit has to maintain for a caller that does
  * not exist; the shape of a rule that needed one would say what it should hold.
  */

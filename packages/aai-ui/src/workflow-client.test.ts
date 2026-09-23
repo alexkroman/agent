@@ -18,10 +18,13 @@
  * `use-workflow-run.test.ts`.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createWorkflowApi } from "./workflow-client.ts";
 
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   fetchMock = vi.fn(async () => new Response(JSON.stringify({ workflows: [] }), { status: 200 }));

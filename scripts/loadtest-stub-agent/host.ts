@@ -54,7 +54,7 @@ console.log(`stub agent listening on http://127.0.0.1:${server.port}`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   // Synchronous, so a rejecting close is a non-zero exit rather than an
-  // unhandled rejection — the rule `guard-invariants` rule 23 enforces.
+  // unhandled rejection — what `pnpm lint:promises` enforces.
   process.once(signal, () => {
     server.close().then(
       () => process.exit(0),

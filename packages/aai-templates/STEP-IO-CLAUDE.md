@@ -1,3 +1,10 @@
+---
+summary: >-
+  A template's step I/O
+read_when: >-
+  writing a workflow step in a template
+---
+
 <!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: the guide is
 at its 120,000-character cap, and this is the reference account behind its
 section "A step can authenticate now, so no template's I/O is a fixture" —

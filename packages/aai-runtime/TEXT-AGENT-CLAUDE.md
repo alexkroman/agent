@@ -1,3 +1,10 @@
+---
+summary: >-
+  Text mode
+read_when: >-
+  working on text mode or the `/eval` surface
+---
+
 # TEXT-AGENT-CLAUDE.md — driving an agent from text, and the eval surface
 
 A sibling of `CLAUDE.md` rather than a section in it, for the reason that guide

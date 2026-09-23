@@ -284,8 +284,8 @@ export function spawnCommand(
         held += chunk.length;
       };
       const read = (): string => Buffer.concat(chunks).toString().slice(0, MAX_OUTPUT_BYTES);
-      // Sync listeners: an `async` function handed to `.on` is `guard-invariants`
-      // rule 23, and there is nothing to await here anyway.
+      // Sync listeners: an `async` function handed to `.on` is reported by
+      // `pnpm lint:promises`, and there is nothing to await here anyway.
       child.stdout.on("data", collect);
       child.stderr.on("data", collect);
       // `error` fires for a spawn that never started AND for the abort, and both

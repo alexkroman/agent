@@ -1,3 +1,10 @@
+---
+summary: >-
+  Studio front-end: panes, composer queue, CSP, preview probing
+read_when: >-
+  working on the studio's browser UI
+---
+
 # packages/aai-studio-client — studio front-end guide
 
 The studio's React front-end (private package). The server it talks to over

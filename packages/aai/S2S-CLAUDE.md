@@ -1,3 +1,11 @@
+---
+summary: >-
+  S2S wire-level: the one sample rate, tool-call captions, in-band errors,
+  `endSession`, abandoning a handshake
+read_when: >-
+  working on the speech-to-speech transport's wire protocol
+---
+
 # packages/aai — S2S mode
 
 A SIBLING of `CLAUDE.md`, read on demand. That guide was AT its 120,000-char
