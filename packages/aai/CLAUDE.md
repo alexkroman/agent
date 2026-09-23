@@ -1,3 +1,13 @@
+---
+summary: >-
+  SDK layout (`sdk/` vs `host/`), subpath exports, session modes,
+  STT/LLM/TTS/S2S providers, voices, `ctx.generate`, what persistence a tool
+  gets, the concurrency primitives, session slots, the canonical agent-config
+  schema, data flow, the defaults/magic-numbers table
+read_when: >-
+  working in `packages/aai/`, or on anything an `agent.ts` imports
+---
+
 # packages/aai — SDK guide
 
 The shared core SDK (`@alexkroman1/aai`). Repo-wide commands, conventions,

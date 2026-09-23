@@ -1,3 +1,11 @@
+---
+summary: >-
+  Every numeric default an `agent()` field carries — the value, where it is
+  applied, and the measurement behind it
+read_when: >-
+  changing a default, or asking why a number is what it is
+---
+
 # The SDK's defaults and magic numbers
 
 Every numeric default an `agent()` field carries, where it is applied, and the

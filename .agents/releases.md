@@ -1,3 +1,10 @@
+---
+summary: >-
+  The fixed release group, what arms a deploy, and how to write a changeset.
+read_when: >-
+  writing a changeset, or a change has to ship (or must not)
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 

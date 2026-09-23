@@ -1,3 +1,12 @@
+---
+summary: >-
+  The required check job, `pnpm check`, turbo strict env mode, task `inputs`,
+  and the cache paths.
+read_when: >-
+  touching `turbo.json` or `.github/workflows/check.yml`, or CI disagrees with
+  a local run
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 

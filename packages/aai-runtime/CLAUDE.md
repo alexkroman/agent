@@ -1,3 +1,11 @@
+---
+summary: >-
+  The host runtime: why it is its own package, the one-way dependency on the
+  SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam
+read_when: >-
+  working on sessions, transports, providers or workflows on the host side
+---
+
 # aai-runtime
 
 `@alexkroman1/aai-runtime` — the host runtime. It is what actually runs an

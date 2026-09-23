@@ -1,3 +1,12 @@
+---
+summary: >-
+  The pnpm catalog, manifest shape and format checks, what a published
+  manifest owes, the 24-hour release-age quarantine, action SHA pinning, and
+  the artifact size budget.
+read_when: >-
+  adding, bumping or removing a dependency, or editing a `package.json`
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 

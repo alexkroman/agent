@@ -1,3 +1,11 @@
+---
+summary: >-
+  The meta-gate suite: what a gate spec may share, adding a `guard-invariants`
+  rule, `check.yml`'s push list and concurrency group
+read_when: >-
+  adding a gate spec or a `guard-invariants` rule
+---
+
 # aai-gates
 
 The repo's **meta-gate suite**: the tests that hold `scripts/check-*.mjs`,

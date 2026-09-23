@@ -1,3 +1,10 @@
+---
+summary: >-
+  Porting a framework's example to a voice agent
+read_when: >-
+  porting another framework's example, or editing a ported template
+---
+
 <!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: the guide is
 at its 120,000-character cap, and these are reference accounts for someone
 already inside one of the ported templates. The tables that say which template

@@ -33,15 +33,19 @@ history, the shape of a config. What stayed is what an agent has to know before
 it can act at all.
 
 Nothing was deleted. If a package guide cites a heading you cannot find here,
-it is in one of these:
+it is in one of these. **`pnpm docs:list` prints every guide in the repo with
+one line on what it covers and one on when to read it** — cheaper than opening
+them to find out:
 
+<!-- guide-index:references -->
 | Reference | Covers |
 | --- | --- |
-| [`.agents/ratchets.md`](.agents/ratchets.md) | Every gate beyond lint/typecheck/test: what each one checks, the failure it was written for, and the baseline or floor it carries. |
-| [`.agents/testing.md`](.agents/testing.md) | Vitest conventions, harness declaration, snapshots, teardown, virtual time, coverage, the per-package configs, test env vars, and the property-test rules. The TIER table stays in AGENTS.md — it is needed on every task; this is the detail behind it. |
-| [`.agents/ci.md`](.agents/ci.md) | The required check job, `pnpm check`, turbo strict env mode, task `inputs`, and the cache paths. Read before touching `turbo.json` or `.github/workflows/check.yml`. |
+| [`.agents/ci.md`](.agents/ci.md) | The required check job, `pnpm check`, turbo strict env mode, task `inputs`, and the cache paths. |
 | [`.agents/dependencies.md`](.agents/dependencies.md) | The pnpm catalog, manifest shape and format checks, what a published manifest owes, the 24-hour release-age quarantine, action SHA pinning, and the artifact size budget. |
+| [`.agents/ratchets.md`](.agents/ratchets.md) | Every gate beyond lint/typecheck/test: what each one checks, the failure it was written for, and the baseline or floor it carries. |
 | [`.agents/releases.md`](.agents/releases.md) | The fixed release group, what arms a deploy, and how to write a changeset. |
+| [`.agents/testing.md`](.agents/testing.md) | Vitest conventions, harness declaration, snapshots, teardown, virtual time, coverage, the per-package configs, test env vars, and the property-test rules. The TIER table stays in AGENTS.md — it is needed on every task; this is the detail behind it. |
+<!-- /guide-index:references -->
 
 Add to the reference that owns the surface, not to this file. The test for
 which one a section belongs in is the one above: would an agent need it before
@@ -58,6 +62,7 @@ pnpm lint:fix            # Auto-fix lint issues
 pnpm check:konsistent    # Structural conventions (konsistent.json)
 pnpm check:local         # Fast pre-commit gate (single turbo invocation, max parallelism)
 pnpm check:affected      # Only check packages affected by changes since main
+pnpm docs:list           # Every agent guide: what it covers, when to read it
 ```
 
 **Never type `turbo run <task>` across the workspace directly** — the six
@@ -236,21 +241,23 @@ in that package's own `CLAUDE.md`, which Claude Code loads when you work in
 that directory — go there first, and put new package-specific rules there
 rather than here:
 
+<!-- guide-index:packages -->
 | Guide | Covers |
 | --- | --- |
-| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.generate`, what persistence a tool gets, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
-| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`mountPage()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode, self-hosting (`npm start`) |
-| `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
-| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
+| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels, and what being a LIBRARY excludes. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and `aai-studio-server` the starter eval |
+| `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
 | `packages/aai-guest-core/CLAUDE.md` | Why the shared guest core is its own package (the cycle two packages could not express), where `StudioSession` is declared and why, the un-underscored `test-utils.ts`, and how coverage attribution decides where a test lives |
 | `packages/aai-guest-studio/CLAUDE.md` | The studio package boundary: what came with it, the two paths that deliberately reach out (`toolchain/`, the scaffold drift gate), and where the session scratch directory now lands |
+| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
+| `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
 | `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, security architecture, auth, telephony, durable-workflow routes, stores/locks |
-| `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
+| `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
-| `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
-| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels, and what being a LIBRARY excludes. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and `aai-studio-server` the starter eval |
+| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`mountPage()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
+| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.generate`, what persistence a tool gets, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
+<!-- /guide-index:packages -->
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
 `aai-docs` workspace — the narrative documentation SITE (Astro + Starlight
@@ -259,36 +266,41 @@ and the `typescript@6` pin — **and, because they answer three versions of one
 question, the API REPORTS and the capability EPOCHS as well.**
 See "The published surface is described by three committed artifacts".
 
-Fifteen files sit outside the table for a different reason — SIBLINGS of their
+Some files sit outside the table for a different reason — SIBLINGS of their
 package's guide rather than second package guides:
 
+<!-- guide-index:siblings -->
 | Sibling | Covers |
 | --- | --- |
-| `packages/aai/AUTHORING-HELPERS-CLAUDE.md` | The speech boundary both ways, the calendar/zod argument shapes, `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney` |
-| `packages/aai/DEFAULTS-CLAUDE.md` | Every numeric default an `agent()` field carries — the value, where it is applied, and the measurement behind it |
-| `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
+| `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md` | Testing the studio coding agent: the agent-level unit spec through `runTextAgent`, and the agent's own EVAL — what is real in a case, the one thing that is not (the system prompt), and why it lives in `aai-guest` rather than `aai-evals` |
 | `packages/aai-runtime/DIALOG-CLAUDE.md` | What each dialog voice knob can and cannot do |
 | `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal and the replay engine's decisions |
 | `packages/aai-runtime/TEXT-AGENT-CLAUDE.md` | Text mode |
 | `packages/aai-runtime/TOOL-OUTCOMES-CLAUDE.md` | What a settled tool call leaves in `ctx.messages` (the four producers, the two silent traps) and what a thrown one becomes (`onError`'s four guard rules) |
-| `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md` | Testing the studio coding agent: the agent-level unit spec through `runTextAgent`, and the agent's own EVAL — what is real in a case, the one thing that is not (the system prompt), and why it lives in `aai-guest` rather than `aai-evals` |
 | `packages/aai-server/MODAL-CLAUDE.md` | Modal sandboxes and backends |
 | `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |
 | `packages/aai-server/SCHEMA-CLAUDE.md` | The platform database schema |
 | `packages/aai-server/TRACING-CLAUDE.md` | Platform tracing |
+| `packages/aai-studio-server/SSE-CLAUDE.md` | The studio's two long-lived event streams: shutdown, timeouts and heartbeats for the only long-lived responses the combined deployment serves |
 | `packages/aai-studio-server/STARTER-EVAL-CLAUDE.md` | The studio starter eval: its five modules and why they are in that package rather than in `aai-evals`, the five tool-output regexes and what would retire them, the second in-process eval in `aai-guest`, and the opt-in template behaviour contract |
+| `packages/aai-templates/FFMPEG-CLAUDE.md` | `call-audit-workflow` as the reference use of `@alexkroman1/aai/ffmpeg`, and what cutting a recording at human boundaries takes |
 | `packages/aai-templates/PORTS-CLAUDE.md` | Porting a framework's example to a voice agent |
 | `packages/aai-templates/STEP-IO-CLAUDE.md` | A template's step I/O |
 | `packages/aai-ui/PLAYBACK-CLAUDE.md` | The browser playback path |
+| `packages/aai/AUTHORING-HELPERS-CLAUDE.md` | The speech boundary both ways, the calendar/zod argument shapes, `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney` |
+| `packages/aai/DEFAULTS-CLAUDE.md` | Every numeric default an `agent()` field carries — the value, where it is applied, and the measurement behind it |
+| `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
+<!-- /guide-index:siblings -->
 
-**The list is CHECKED, and it had drifted** — four of these were missing from
-the prose roster that stood here, because `claude-md-limit.test.ts` globbed
-`*/CLAUDE.md` and never saw a sibling at all while `check:claude-md`'s pathspec
-(`*CLAUDE.md`) always did. The spec globs `*/*-CLAUDE.md` too now, so its
-"the root guide points at every package guide" assertion covers these, and a new
-sibling that nobody lists here fails. That matters more than it sounds: a
-sibling is exactly where a section pushed out of a full guide LANDS, so it is
-the file most likely to appear next and the one least likely to get written down.
+**All three tables are GENERATED, from each guide's own frontmatter** — a
+`summary` (the row's text) and a `read_when`. Hand-kept, they drifted: four
+siblings were once missing, and this paragraph's lead-in said "Fifteen files"
+over a table of sixteen when the switch landed. A new guide opens with that
+block and `pnpm sync:guide-index` rewrites the rows between the markers;
+`check:guide-index` fails on a guide with no header or a stale table. That
+matters most for a sibling, which is where a section pushed out of a full guide
+LANDS — the file most likely to appear next and least likely to get written
+down.
 
 konsistent permits them (`workspace-package-layout` requires a `CLAUDE.md` and
 forbids nothing else), but Claude Code auto-loads only `CLAUDE.md`, so a sibling

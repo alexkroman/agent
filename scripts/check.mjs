@@ -174,6 +174,12 @@ const GATES = [
     why: "A CLAUDE.md past ~150k characters is silently truncated in an agent's context, so the guide is half-absent with nothing saying so.",
   },
   {
+    script: "check:guide-index",
+    phase: "ratchets",
+    fatal: false,
+    why: "AGENTS.md's three guide tables are GENERATED from each guide's `summary`/`read_when` frontmatter, because the hand-kept ones drifted (a table of sixteen introduced as \"Fifteen files\"). Fails on a guide with no header or a stale table. Pure fs, no build.",
+  },
+  {
     script: "check:guest-toolchain",
     phase: "ratchets",
     fatal: false,

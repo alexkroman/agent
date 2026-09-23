@@ -1,3 +1,12 @@
+---
+summary: >-
+  The guest harness: one binary / three modes, user-shipped runtime, dev-prod
+  parity, agent guests as servers, guest network access + SSRF, credential
+  separation
+read_when: >-
+  changing what runs inside a sandbox, or what a guest may reach
+---
+
 # packages/aai-guest — guest harness guide
 
 The Node entrypoint that runs the complete agent inside each Modal Sandbox

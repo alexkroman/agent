@@ -1,3 +1,13 @@
+---
+summary: >-
+  Vitest conventions, harness declaration, snapshots, teardown, virtual time,
+  coverage, the per-package configs, test env vars, and the property-test
+  rules. The TIER table stays in AGENTS.md — it is needed on every task; this
+  is the detail behind it.
+read_when: >-
+  writing or moving a test, or a test times out, leaks, or skips
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 

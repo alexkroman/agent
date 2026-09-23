@@ -1,3 +1,11 @@
+---
+summary: >-
+  Every gate beyond lint/typecheck/test: what each one checks, the failure it
+  was written for, and the baseline or floor it carries.
+read_when: >-
+  a `check:*` gate fails, or you are adding, loosening or retiring one
+---
+
 <!-- Moved out of AGENTS.md so it is read ON DEMAND rather than loaded into
 every task's context. AGENTS.md's "Detailed references" table points here. -->
 
@@ -651,6 +659,13 @@ right answer to enforce, and "a threshold nothing enforces reads as a gate".
   no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
   announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
   `check.yml` sets. Floored at the measured script count.
+- **`pnpm check:guide-index`** (`scripts/docs-list.mjs --check`) — every agent
+  guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md` and its
+  `*-CLAUDE.md` siblings) opens with a frontmatter block holding exactly
+  `summary` and `read_when`, and AGENTS.md's three guide tables match what
+  `pnpm sync:guide-index` generates from them. The tables were hand-kept and
+  drifted twice. `pnpm docs:list` prints the same index for a reader. Floored
+  at 30 guides.
 - **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
   zizmor over `.github/workflows/`, the config agents edit most and which
   nothing read before GitHub ran it. actionlint type-checks expressions,

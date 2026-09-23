@@ -1,3 +1,13 @@
+---
+summary: >-
+  Eval tier: recorded assertions, the spread report, why it does not gate, the
+  two levels, and what being a LIBRARY excludes. It is not the only package
+  with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and
+  `aai-studio-server` the starter eval
+read_when: >-
+  writing or running a live eval
+---
+
 # packages/aai-evals — the behaviour eval tier
 
 The repo's eval FRAMEWORK — a recording runner, a spread report, an assertion

@@ -1,3 +1,12 @@
+---
+summary: >-
+  The studio package boundary: what came with it, the two paths that
+  deliberately reach out (`toolchain/`, the scaffold drift gate), and where
+  the session scratch directory now lands
+read_when: >-
+  working on the studio coding agent as it runs in a guest
+---
+
 # packages/aai-guest-studio — studio coding agent guide
 
 The browser studio's coding agent, as it runs inside a guest sandbox (private

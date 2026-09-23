@@ -1,3 +1,10 @@
+---
+summary: >-
+  The platform session socket
+read_when: >-
+  working on the multiplexed guest-to-platform socket
+---
+
 # The guest→platform socket
 
 Reference for ONE wire, whose two ends live in two packages:

@@ -1,3 +1,10 @@
+---
+summary: >-
+  Modal sandboxes and backends
+read_when: >-
+  touching `modal_image.py`, `modal_deploy.py` or a sandbox backend
+---
+
 # packages/aai-server — images and sandbox backends
 
 A SIBLING of `packages/aai-server/CLAUDE.md`, not a second package guide.

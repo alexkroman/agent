@@ -1,3 +1,10 @@
+---
+summary: >-
+  Platform tracing
+read_when: >-
+  adding or changing a span on the platform
+---
+
 # Tracing — OTLP span export
 
 A sibling of `CLAUDE.md` rather than a section in it, for the reason the guide

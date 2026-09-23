@@ -1,3 +1,12 @@
+---
+summary: >-
+  What a settled tool call leaves in `ctx.messages` (the four producers, the
+  two silent traps) and what a thrown one becomes (`onError`'s four guard
+  rules)
+read_when: >-
+  changing how a tool result or a tool error is recorded
+---
+
 # TOOL-OUTCOMES-CLAUDE.md — a tool call's result, and what a throw becomes
 
 A SIBLING of `packages/aai-runtime/CLAUDE.md` rather than a second package
