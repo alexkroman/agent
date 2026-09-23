@@ -10,11 +10,16 @@
  * part of it the words did not already settle.
  */
 import { describe, expect, test } from "vitest";
-import { createAgentSpeakingPredicate, createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
+import {
+  createAgentSpeakingPredicate,
+  createAudioOnLinePredicate,
+  createBargeInPolicy,
+} from "./pipeline-barge-in-policy.ts";
 
 function makePolicy(
   overrides: {
     agentIsSpeaking?: boolean;
+    openedOverSpeech?: boolean;
     minBargeInWords?: number;
     interruptionMinDurationMs?: number;
     utteranceDurationMs?: number;
@@ -22,6 +27,7 @@ function makePolicy(
 ) {
   return createBargeInPolicy({
     agentIsSpeaking: () => overrides.agentIsSpeaking ?? true,
+    utteranceOpenedOverSpeech: () => overrides.openedOverSpeech ?? true,
     minBargeInWords: () => overrides.minBargeInWords ?? 2,
     interruptionMinDurationMs: () => overrides.interruptionMinDurationMs ?? 0,
     utteranceDurationMs: () => overrides.utteranceDurationMs ?? 0,
@@ -97,6 +103,22 @@ describe("step 3: the two thresholds", () => {
   });
 });
 
+describe("an utterance that began into silence", () => {
+  test("cannot barge in, by interim or by final, however long it runs", () => {
+    // The caller started first; the reply began speaking after. The measured
+    // case is a re-prompt into a tool chain's silence replacing the answer.
+    const policy = makePolicy({ openedOverSpeech: false, utteranceDurationMs: 5000 });
+    expect(policy.partialInterrupts(12)).toBe(false);
+    expect(policy.finalInterrupts("hello are you still there")).toBe(false);
+  });
+
+  test("one that began over the agent's speech still can", () => {
+    const policy = makePolicy({ openedOverSpeech: true });
+    expect(policy.partialInterrupts(3)).toBe(true);
+    expect(policy.finalInterrupts("wait stop please")).toBe(true);
+  });
+});
+
 describe("createAgentSpeakingPredicate", () => {
   const predicate = (state: {
     playback?: boolean;
@@ -126,5 +148,40 @@ describe("createAgentSpeakingPredicate", () => {
     // holding phrase aborted the real reply being generated behind it.
     expect(predicate({ inFlight: true, spoke: true, recordable: false })).toBe(false);
     expect(predicate({ playback: true, recordable: false })).toBe(false);
+  });
+});
+
+describe("createAudioOnLinePredicate", () => {
+  const predicate = (state: { playback?: boolean; inFlight?: boolean; spoke?: boolean }) =>
+    createAudioOnLinePredicate({
+      isPlaybackPending: () => state.playback ?? false,
+      isTurnInFlight: () => state.inFlight ?? false,
+      hasTurnSpoken: () => state.spoke ?? false,
+    })();
+
+  test("FILLER is on the line, so the edge gate holds for it", () => {
+    // It takes no recordable term at all: a holding phrase is audio the host
+    // is still playing, and releasing `speech_started` over it made the client
+    // flush it with no `cancelled` behind — 30.1s in 9 benchmark calls.
+    expect(predicate({ inFlight: true, spoke: true })).toBe(true);
+    expect(predicate({ playback: true })).toBe(true);
+  });
+
+  test("an unspoken turn is not on the line", () => {
+    expect(predicate({ inFlight: true, spoke: false })).toBe(false);
+  });
+
+  test("is true whenever the barge-in predicate is — the gate can never under-hold", () => {
+    // All 16 combinations of the four inputs, as bits of `n`.
+    for (let n = 0; n < 16; n++) {
+      const deps = {
+        isPlaybackPending: () => (n & 1) !== 0,
+        isTurnInFlight: () => (n & 2) !== 0,
+        hasTurnSpoken: () => (n & 4) !== 0,
+        hasSpokenRecordable: () => (n & 8) !== 0,
+      };
+      const speaking = createAgentSpeakingPredicate(deps)();
+      expect(!speaking || createAudioOnLinePredicate(deps)()).toBe(true);
+    }
   });
 });

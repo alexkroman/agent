@@ -9,7 +9,10 @@ import type { TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
-import { createAgentSpeakingPredicate } from "./pipeline-barge-in-policy.ts";
+import {
+  createAgentSpeakingPredicate,
+  createAudioOnLinePredicate,
+} from "./pipeline-barge-in-policy.ts";
 import { createManualTurn, type ManualTurn } from "./pipeline-manual-turn.ts";
 import {
   createFalseInterruptionRecovery,
@@ -138,14 +141,19 @@ export function createUserActivity(deps: {
     deps.isTurnInFlight() ||
     deps.isPlaybackPending() ||
     (manualTurn.enabled && manualTurn.isOpen());
-  // Does the agent HAVE the floor? One definition, two readers — see
-  // createAgentSpeakingPredicate for why that matters and what each term of it
-  // is for.
+  // Does the agent HAVE the floor (real speech, for barge-in), and is any
+  // agent audio on the line (filler included, for the edge gate)? See
+  // createAudioOnLinePredicate for why the two readers differ by exactly the
+  // filler term.
   const agentIsSpeaking = createAgentSpeakingPredicate(deps);
+  const audioOnLine = createAudioOnLinePredicate(deps);
 
-  // Hold `speech_started` back while the agent has the floor, so the event
+  // Hold `speech_started` back while agent audio is on the line, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
-  const edgeGate = createGatedSpeechEdges({ report: callbacks.report, agentIsSpeaking });
+  const edgeGate = createGatedSpeechEdges({
+    report: callbacks.report,
+    agentIsSpeaking: audioOnLine,
+  });
 
   // The cap on one user turn. Its deadline and its once-per-utterance latch
   // follow the speaking edge — armed on open, cleared on close — and it reaches
@@ -167,17 +175,24 @@ export function createUserActivity(deps: {
       else deps.forceEndOfTurn();
     },
   });
+  // Whether the agent had the floor when the open utterance began, sampled on
+  // the edge's opening and never after: only an utterance that started over
+  // the agent's speech can barge in (see createBargeInPolicy, step 1).
+  let utteranceOpenedOverSpeech = false;
   const edgesWithLimit = {
     onSpeechStarted(): void {
+      utteranceOpenedOverSpeech = agentIsSpeaking();
       edgeGate.onSpeechStarted();
       turnLimit.onUtteranceStarted();
     },
     onSpeechStopped(): void {
+      utteranceOpenedOverSpeech = false;
       edgeGate.onSpeechStopped();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
     },
     reset(): void {
+      utteranceOpenedOverSpeech = false;
       edgeGate.reset();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
@@ -243,6 +258,8 @@ export function createUserActivity(deps: {
     isResumeTurnInFlight: deps.isResumeTurnInFlight,
     hasTurnSpoken: deps.hasTurnSpoken,
     agentIsSpeaking,
+    audioOnLine,
+    utteranceOpenedOverSpeech: () => utteranceOpenedOverSpeech,
     hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
