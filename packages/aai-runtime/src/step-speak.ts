@@ -69,6 +69,7 @@ import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import WebSocket from "ws";
 import { base64ToUint8 } from "./_base64.ts";
 import { PROVIDER_WS_OPTIONS } from "./_ws.ts";
+import { withWalkSignal } from "./workflow/run-context.ts";
 
 /** The frames this exchange reads. See `providers/tts/assemblyai-frames.ts`. */
 type TtsFrame = {
@@ -164,6 +165,23 @@ function readFrame(
 }
 
 /**
+ * What an aborted synthesis rejects with: the signal's OWN `reason`, never a
+ * fresh error wrapping it — the same value an aborted `fetch` rejects with.
+ *
+ * Identity is load-bearing. `attemptLoop` (`workflow/replay/step.ts`) tells a
+ * cancelled walk from a failed step by `err === signal.reason`, so a wrapped
+ * abort read as the step's own failure: retried, or journaled `failed` over a
+ * run somebody stopped. Only a non-`Error` reason (`abort("why")`) is wrapped,
+ * since a step must throw an `Error` and a primitive has no identity to keep.
+ */
+function abortError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error
+    ? reason
+    : new Error(`stepSpeak: synthesis aborted (${String(reason)})`);
+}
+
+/**
  * Synthesize one utterance and resolve its raw PCM16.
  *
  * The published implementation of {@link SpeechSynthesizer}, exported so
@@ -183,6 +201,18 @@ export const speakOverWebSocket: SpeechSynthesizer = (request) =>
       return;
     }
 
+    // The step's own signal (its deadline, folded in by `sdk/step-speak.ts`)
+    // plus the WALK's, read from the run context exactly as `stepFetch` does —
+    // so cancelling a run stops a synthesis it has no further use for instead
+    // of leaving a billed socket open until the deadline.
+    const signal = withWalkSignal(request.signal);
+    // Before the socket, not after: `new WebSocket` DIALS, so a check placed
+    // below it opened (and billed the handshake of) a connection only to
+    // terminate it a line later.
+    if (signal.aborted) {
+      reject(abortError(signal));
+      return;
+    }
     const frames: Uint8Array[] = [];
     // Raw key, not `Bearer` — see the module doc.
     const ws = new WebSocket(url, {
@@ -203,7 +233,7 @@ export const speakOverWebSocket: SpeechSynthesizer = (request) =>
     const finish = (outcome: { pcm: Uint8Array } | { error: Error }): void => {
       if (settled) return;
       settled = true;
-      request.signal.removeEventListener("abort", onAbort);
+      signal.removeEventListener("abort", onAbort);
       ws.removeAllListeners();
       // A polite `Terminate` only where the socket can still carry one; a
       // failed exchange is not worth waiting on a frame for.
@@ -217,14 +247,8 @@ export const speakOverWebSocket: SpeechSynthesizer = (request) =>
       else reject(outcome.error);
     };
 
-    const onAbort = (): void =>
-      finish({ error: new Error(`stepSpeak: synthesis aborted (${request.signal.reason})`) });
-
-    if (request.signal.aborted) {
-      onAbort();
-      return;
-    }
-    request.signal.addEventListener("abort", onAbort, { once: true });
+    const onAbort = (): void => finish({ error: abortError(signal) });
+    signal.addEventListener("abort", onAbort, { once: true });
 
     ws.on("open", () => {
       // Together, and in this order: `Generate` only BUFFERS — the service

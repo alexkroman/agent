@@ -160,3 +160,37 @@ export function withStepContext<T>(
   if (!outer) return fn();
   return storage.run({ ...outer, step }, fn);
 }
+
+/**
+ * The caller's signal, COMBINED with the walk's.
+ *
+ * The engine hands a step body no `AbortSignal` — deliberately, because the
+ * step helpers are reached from inside a step's own helpers and a parameter
+ * would have to be threaded through every one of them (see `RunContext["step"]`).
+ * So the walk's signal is read out of the run context at the two places a
+ * step's outbound I/O already goes through: `stepFetch`'s dispatcher and
+ * `stepSpeak`'s socket.
+ *
+ * What it buys is that a CANCEL reaches a step's I/O. Without it a cancelled run
+ * — or a delivery whose caller hung up — went on uploading a recording (or
+ * synthesizing, billed, for up to `STEP_SPEAK_TIMEOUT_MS`) nobody was waiting
+ * for, and `attemptLoop`'s abort arm could only unwind once the request it
+ * could not see had finished.
+ *
+ * `AbortSignal.any` rather than replacing either: a caller's own deadline still
+ * fires first, and sources are held weakly so there is no unlink bookkeeping.
+ * Whichever source fires, the composite's `reason` IS that source's reason, so
+ * `attemptLoop`'s `err === signal.reason` test still recognises a cancel.
+ * Outside a run — a step called directly from a spec — there is no walk and the
+ * caller's signal passes through untouched.
+ *
+ * @internal
+ */
+export function withWalkSignal(callerSignal: AbortSignal): AbortSignal;
+/** A caller that passed no signal gets the walk's alone, or none. @internal */
+export function withWalkSignal(callerSignal: AbortSignal | undefined): AbortSignal | undefined;
+export function withWalkSignal(callerSignal: AbortSignal | undefined): AbortSignal | undefined {
+  const walk = currentRun()?.step?.signal;
+  if (!walk) return callerSignal;
+  return callerSignal ? AbortSignal.any([callerSignal, walk]) : walk;
+}
