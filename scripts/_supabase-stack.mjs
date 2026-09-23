@@ -72,12 +72,11 @@ export function readSupabaseStack() {
     const why = notFound ? "no `supabase` CLI on PATH" : "the command failed";
     return { why: `could not read \`supabase status -o env\` (${why})` };
   }
-  const values = new Map(
-    run.stdout
-      .split("\n")
-      .map((line) => LINE.exec(line.trim()))
-      .filter((m) => m !== null)
-      .map((m) => [m[1], m[2]]),
-  );
+  /** @type {Map<string, string>} */
+  const values = new Map();
+  for (const line of run.stdout.split("\n")) {
+    const [, key, value] = LINE.exec(line.trim()) ?? [];
+    if (key !== undefined && value !== undefined) values.set(key, value);
+  }
   return { values, source: "supabase status -o env" };
 }

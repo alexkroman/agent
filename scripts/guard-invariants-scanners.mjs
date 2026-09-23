@@ -72,8 +72,8 @@ export function scanUnpinnedActions() {
     const lines = source.split("\n");
     lines.forEach((text, index) => {
       const match = /^\s*(?:-\s*)?uses:\s*(\S+)/.exec(text);
-      if (match === null) return;
-      const spec = match[1];
+      const spec = match?.[1];
+      if (spec === undefined) return;
       // A local action (`./.github/actions/x`) or a docker ref has no SHA to pin.
       if (spec.startsWith("./") || spec.startsWith("docker://")) return;
       const ref = spec.split("@")[1];
@@ -263,7 +263,7 @@ function declaredGuestRoutes() {
     );
   }
   const routes = new Set(
-    [...block[1].matchAll(/^\s*[A-Za-z][A-Za-z0-9]*:\s*"([^"]+)",/gm)].map((m) => m[1]),
+    [...(block[1] ?? "").matchAll(/^\s*[A-Za-z][A-Za-z0-9]*:\s*"([^"]+)",/gm)].map((m) => m[1]),
   );
   if (routes.size === 0) {
     throw new Error("guard-invariants rule 12: GUEST_ROUTES parsed to zero routes.");
@@ -324,8 +324,9 @@ export function scanTemplateEscapingImports() {
     const lines = source.split("\n");
     lines.forEach((text, index) => {
       const match = /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)["']/.exec(text);
-      if (match === null) return;
-      if (importEscapesTemplate(file, match[1])) {
+      const specifier = match?.[1];
+      if (specifier === undefined) return;
+      if (importEscapesTemplate(file, specifier)) {
         found.push({ file, line: index + 1, text: text.trim() });
       }
     });
@@ -394,7 +395,7 @@ export function fixtureDirs() {
     const parts = file.split("/");
     // Skip the filename; a candidate is a DIRECTORY on the path.
     for (let i = 1; i < parts.length - 1; i++) {
-      if (FIXTURE_DIR_SEGMENT.test(parts[i])) dirs.add(parts.slice(0, i + 1).join("/"));
+      if (FIXTURE_DIR_SEGMENT.test(parts[i] ?? "")) dirs.add(parts.slice(0, i + 1).join("/"));
     }
   }
   return [...dirs].sort();
@@ -432,6 +433,7 @@ export function scanUnreadFixtureDirs() {
     const source = readRepoFile(file);
     if (source === undefined) continue;
     for (const [, specifier] of source.matchAll(/["'`]([^"'`\n]*fixtures[^"'`\n]*)["'`]/gi)) {
+      if (specifier === undefined) continue;
       const resolved = resolveAgainstFile(file, specifier);
       // Record every ancestor too: `join(here, "fixtures/a/b.json")` reads the
       // directory, not only that one file.

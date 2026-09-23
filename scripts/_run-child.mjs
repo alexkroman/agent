@@ -43,7 +43,9 @@ const STOP_SIGNALS = ["SIGINT", "SIGTERM"];
  *   stop exits with (0 for "the user asked", non-zero for "this did not finish").
  */
 export function runChild(command, options) {
-  const child = spawn(command[0], command.slice(1), {
+  const [program, ...args] = command;
+  if (program === undefined) throw new Error(`${options.label}: no command to run`);
+  const child = spawn(program, args, {
     stdio: "inherit",
     env: { ...process.env, ...options.env },
     shell: process.platform === "win32",

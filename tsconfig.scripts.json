@@ -17,8 +17,8 @@
   // has paid for repeatedly.
   //
   // It is a SECOND program rather than a widening of `tsconfig.tools.json`
-  // because it needs three relaxations that must not reach the `.ts` files
-  // there. See `compilerOptions` below.
+  // because it needs one relaxation that must not reach the `.ts` files there.
+  // See `compilerOptions` below.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "incremental": true,
@@ -30,28 +30,23 @@
     // and never checked.
     "checkJs": true,
 
-    // The three relaxations, each measured. Under the inherited settings this
-    // program reports 849 errors; under these, 166 — and the 683 that go away
-    // are all artifacts of checking annotation-free JavaScript, not findings.
+    // The one relaxation, measured. Under the inherited settings this program
+    // reported 849 errors when it was added, 500 of them this flag's.
     //
-    // `noImplicitAny`: 500 of the 849 are TS7006/TS7031 on parameters. Every
-    // one is "this JS function has no JSDoc", which is true of all of it and is
-    // not a defect. Requiring annotations here would mean hand-writing types
-    // for 80 scripts before the compiler could report a single real mistake.
+    // `noImplicitAny`: TS7006/TS7031 on parameters. Every one is "this JS
+    // function has no JSDoc", which is true of all of it and is not a defect.
+    // Requiring annotations here would mean hand-writing types for 80 scripts
+    // before the compiler could report a single real mistake.
     "noImplicitAny": false,
-    // `noUncheckedIndexedAccess`: the hits are `match[1]` after a null-checked
-    // `exec`, `starts[mid]` inside a binary search, `parsed.errors[0]` after a
-    // length check — provably safe, and in JS there is no `!` and no type
-    // annotation to narrow with, so the only remedies available are a runtime
-    // guard on a branch that cannot happen or a cast. Casts are what
-    // `check:hatches` counts.
-    "noUncheckedIndexedAccess": false,
-    // `useUnknownInCatchVariables`: 21 sites reading `err.message` / `err.code`
-    // off a caught value. Correct in TypeScript, where the narrowing is one
-    // line; in JSDoc-less JS it costs a helper per catch to say what these
-    // scripts already say by crashing.
-    "useUnknownInCatchVariables": false,
-
+    // `noUncheckedIndexedAccess` and `useUnknownInCatchVariables` used to be
+    // relaxed too, on the argument that JS has no `!` and no one-line
+    // narrowing. Both are ON now: turning them on found 32 and 26 sites, and
+    // every one had a plain-JS fix that is not a cast — destructuring with a
+    // default or an `=== undefined` check for an index, `instanceof Error`
+    // (plus `"code" in err`) for a caught value. None was a live bug; the two
+    // nearest were `runChild` spawning `command[0]` unchecked and
+    // `generateCapabilityReports` reading `configs[0]` for an empty list, both
+    // of which crashed with a TypeError instead of saying what was wrong.
     // Same purpose as `tsconfig.tools.json`'s `paths` and the same reason:
     // `examples/` is deliberately not a workspace member, so it has no
     // `node_modules` and its manifest pins the PUBLISHED packages. Mapping to

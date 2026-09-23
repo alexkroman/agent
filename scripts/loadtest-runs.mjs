@@ -162,7 +162,7 @@ await Promise.all(
         starts.push(result.startedMs);
         bump(statuses, result.error ? `${result.status}: ${result.error}` : result.status);
       } catch (err) {
-        bump(errors, String(err?.message ?? err).slice(0, 120));
+        bump(errors, (err instanceof Error ? err.message : String(err)).slice(0, 120));
       }
     }
   }),

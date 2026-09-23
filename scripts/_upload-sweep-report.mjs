@@ -94,7 +94,7 @@ export function reportTable(results, fileBytes) {
   ];
   const keys = ["label", "ok", "wall", "range", "rate", "part", "claims", "retry", "fail", "reset"];
   const widths = keys.map((key, i) =>
-    Math.max(header[i].length, ...rows.map((row) => row[key].length)),
+    Math.max(header[i]?.length ?? 0, ...rows.map((row) => row[key].length)),
   );
   const line = (cells) => `| ${cells.map((c, i) => c.padEnd(widths[i])).join(" | ")} |`;
   console.log(`\n${line(header)}`);

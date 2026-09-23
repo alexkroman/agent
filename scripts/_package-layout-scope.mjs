@@ -55,7 +55,7 @@ export const PRODUCT_TREES = {
 export function isAllowedOutsideSrc(file) {
   const [, pkg, ...rest] = file.split("/");
   if (pkg === undefined || rest.length === 0) return false;
-  if (rest.length === 1 && ROOT_CONFIGS.has(rest[0])) return true;
+  if (rest.length === 1 && ROOT_CONFIGS.has(rest[0] ?? "")) return true;
   const trees = PRODUCT_TREES[pkg] ?? [];
   return trees.includes(rest[0]);
 }

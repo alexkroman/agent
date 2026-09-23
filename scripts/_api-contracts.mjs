@@ -236,7 +236,9 @@ export function generateCapabilityReports(pkg, names = capabilities(pkg)) {
         reportDir,
       ),
     }));
-    const compilerState = CompilerState.create(configs[0].config, {
+    const [first] = configs;
+    if (first === undefined) return new Map();
+    const compilerState = CompilerState.create(first.config, {
       additionalEntryPoints: configs.slice(1).map((item) => item.config.mainEntryPointFilePath),
     });
 

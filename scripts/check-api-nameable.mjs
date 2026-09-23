@@ -212,7 +212,7 @@ const unnameable = new Map();
 const counts = new Map([["unnameable", unnameable]]);
 
 for (const file of reports) {
-  const pkg = file.split("/")[1];
+  const [, pkg = ""] = file.split("/");
   const found = forgottenNames(readFileSync(join(ROOT, file), "utf8"), file).filter(
     (name) => !nameable.get(pkg)?.has(name),
   );

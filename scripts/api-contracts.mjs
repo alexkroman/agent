@@ -162,7 +162,8 @@ function resolveTarget(target) {
     .filter((pkg) => left === undefined || pkg.key === left)
     .filter((pkg) => capabilities(pkg).includes(right))
     .map((pkg) => ({ pkg, capability: right }));
-  if (matches.length === 1) return matches[0];
+  const [only] = matches;
+  if (matches.length === 1 && only !== undefined) return only;
   const known = packages
     .flatMap((pkg) => capabilities(pkg).map((capability) => capabilityId(pkg, capability)))
     .join(", ");

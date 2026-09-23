@@ -91,7 +91,11 @@ export function rehash(packages, reason) {
     const table = readTable(pkg);
     const reports = generateCapabilityReports(pkg);
     for (const capability of capabilities(pkg)) {
-      const epoch = table[capability].current;
+      const contract = table[capability];
+      // `capabilities()` and the table are checked against each other by the
+      // gate itself; a capability with no row has no epoch to re-hash yet.
+      if (contract === undefined) continue;
+      const epoch = contract.current;
       if (rehashOne(pkg, capability, epoch, reports.get(capability))) {
         rewritten.push(`${capabilityId(pkg, capability)}@${epoch}`);
       }

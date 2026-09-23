@@ -269,7 +269,10 @@ function parseJsonc(path) {
   try {
     return JSON.parse(text);
   } catch (err) {
-    throw new Error(`failed to parse ${path}: ${err.message}`, { cause: err });
+    throw new Error(
+      `failed to parse ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
   }
 }
 

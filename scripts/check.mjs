@@ -306,6 +306,7 @@ const GATE_SELECTIONS = {
  * that only exists under `aai dev` fails `check:scenario`). Naming them is the
  * difference between choosing to skip a gate and forgetting it exists.
  */
+/** @type {[name: string, what: string][]} */
 const NOT_RUN_BY_LOCAL = [
   ["check:attw", "published export types"],
   ["check:dedupe", "duplicate versions in the lockfile — it resolves, so it needs a registry"],

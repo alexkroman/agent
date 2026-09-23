@@ -91,14 +91,15 @@ export function packWorkspaceSdk(guestRoot) {
     const before = new Set(readdirSync(dest));
     run("pnpm", ["pack", "--pack-destination", dest], { cwd: dir, quiet: true });
     const made = readdirSync(dest).filter((f) => f.endsWith(".tgz") && !before.has(f));
-    if (made.length !== 1) {
+    const [tarball] = made;
+    if (made.length !== 1 || tarball === undefined) {
       throw new Error(
         `pnpm pack in ${path.relative(REPO_ROOT, dir)} produced ${made.length} tarballs, expected 1`,
       );
     }
     // POSIX join, not `path.join`: this path is consumed inside the LINUX image,
     // and on Windows `path.join` would emit backslashes into a docker build arg.
-    specs.push(posix.join(guestRoot, SDK_TARBALL_DIR, made[0]));
+    specs.push(posix.join(guestRoot, SDK_TARBALL_DIR, tarball));
   }
   return specs;
 }

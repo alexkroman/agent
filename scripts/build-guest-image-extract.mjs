@@ -55,27 +55,27 @@ export function read(file) {
  */
 export function extractString(file, name) {
   const src = read(file);
-  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*"([^"]+)"`).exec(src);
-  if (!match) {
+  const value = new RegExp(`(?:export )?const ${name}\\s*=\\s*"([^"]+)"`).exec(src)?.[1];
+  if (value === undefined) {
     throw new Error(
       `${name} is no longer declared as a string literal in ${path.relative(REPO_ROOT, file)} — ` +
         "update the extractor in scripts/build-guest-image.mjs",
     );
   }
-  return match[1];
+  return value;
 }
 
 /** Pull one `export const NAME = [...] as const` string array out of a module. */
 export function extractStringArray(file, name) {
   const src = read(file);
-  const match = new RegExp(`(?:export )?const ${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(src);
-  if (!match) {
+  const list = new RegExp(`(?:export )?const ${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(src)?.[1];
+  if (list === undefined) {
     throw new Error(
       `${name} is no longer declared as an array literal in ${path.relative(REPO_ROOT, file)} — ` +
         "update the extractor in scripts/build-guest-image.mjs",
     );
   }
-  const items = [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const items = [...list.matchAll(/"([^"]+)"/g)].flatMap(([, item]) => item ?? []);
   if (items.length === 0) {
     throw new Error(`${name} in ${path.relative(REPO_ROOT, file)} parsed as empty`);
   }

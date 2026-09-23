@@ -89,9 +89,11 @@ function diagnose(config) {
   try {
     return execFileSync(tsc, args, { cwd: REPO_ROOT, encoding: "utf-8", stdio: "pipe" });
   } catch (err) {
-    const stdout = String(err.stdout ?? "");
-    const stderr = String(err.stderr ?? "");
-    const spawnFailure = err.stdout === undefined && err.stderr === undefined ? String(err) : "";
+    const out = err instanceof Error && "stdout" in err ? err.stdout : undefined;
+    const errOut = err instanceof Error && "stderr" in err ? err.stderr : undefined;
+    const stdout = String(out ?? "");
+    const stderr = String(errOut ?? "");
+    const spawnFailure = out === undefined && errOut === undefined ? String(err) : "";
     return [stdout, stderr, spawnFailure].filter((part) => part.trim() !== "").join("\n");
   }
 }

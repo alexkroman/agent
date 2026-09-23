@@ -85,13 +85,17 @@ const workspace = (() => {
   try {
     text = readFileSync(workspacePath, "utf8");
   } catch (err) {
-    console.error(`sync-scaffold-versions: failed to read ${workspacePath}: ${err.message}`);
+    console.error(
+      `sync-scaffold-versions: failed to read ${workspacePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     process.exit(1);
   }
   try {
     return parseYaml(text) ?? {};
   } catch (err) {
-    console.error(`sync-scaffold-versions: failed to parse ${workspacePath}: ${err.message}`);
+    console.error(
+      `sync-scaffold-versions: failed to parse ${workspacePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     process.exit(1);
   }
 })();
@@ -218,7 +222,9 @@ if (changed) {
   try {
     writeFileSync(scaffoldPath, `${JSON.stringify(scaffold, null, 2)}\n`);
   } catch (err) {
-    console.error(`sync-scaffold-versions: failed to write ${scaffoldPath}: ${err.message}`);
+    console.error(
+      `sync-scaffold-versions: failed to write ${scaffoldPath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     process.exit(1);
   }
   console.log("Scaffold package.json updated.");

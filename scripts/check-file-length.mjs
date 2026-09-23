@@ -119,7 +119,7 @@ let allowlist;
 try {
   allowlist = readJson(join(ROOT, "scripts", "file-length-allowlist.json"));
 } catch (err) {
-  console.error(`check-file-length: ${err.message}`);
+  console.error(`check-file-length: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 }
 

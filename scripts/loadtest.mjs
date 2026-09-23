@@ -89,7 +89,7 @@ async function drive(once) {
       } catch (err) {
         // Truncated: an error carrying a whole stack would make the report
         // unreadable, and the shape is what distinguishes one failure from another.
-        const key = String(err?.message ?? err).slice(0, 80);
+        const key = (err instanceof Error ? err.message : String(err)).slice(0, 80);
         errors.set(key, (errors.get(key) ?? 0) + 1);
       }
     }

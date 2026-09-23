@@ -89,7 +89,7 @@ function loadEnvFile() {
     process.loadEnvFile(file);
     return { note: "loaded .env (shell variables still win)" };
   } catch (err) {
-    return { why: `could not read .env: ${err.message}` };
+    return { why: `could not read .env: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
