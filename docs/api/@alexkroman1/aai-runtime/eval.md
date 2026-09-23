@@ -3126,7 +3126,9 @@ The agent's committed reply, joined — what the caller was told.
 readonly toolCalls: readonly EvalToolCall[];
 ```
 
-This turn's tool calls, in call order, each with its result.
+This turn's tool calls, in call order, each with its result — minus the
+`think` builtin's scratchpad calls (an authored `think` stays). `events`
+still carries every call.
 
 ***
 
