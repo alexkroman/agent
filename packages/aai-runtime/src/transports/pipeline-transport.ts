@@ -35,6 +35,7 @@ import { createTurnMetrics, withSttMarks } from "./pipeline-turn-metrics.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
+import { createForceEndOfTurn } from "./pipeline-user-turn-limit.ts";
 import { resolveSystemPrompt, type Transport } from "./types.ts";
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
@@ -100,8 +101,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let terminated = false;
-  // Said once per session — see `forceEndOfTurn` in the user-activity wiring.
-  let warnedTurnLimitInert = false;
   let nextReplyId = 0;
   // Invalidation epochs for queued turns and an aborted turn's deferred
   // persistence — see pipeline-turn-gate.ts.
@@ -220,25 +219,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     userTurnLimit: opts.userTurnLimit,
     turnDetection: opts.turnDetection,
     onUtteranceEnded: metrics.onUtteranceEnded,
-    // `providers` is declared below and reached lazily: this fires from an
-    // STT event, which only exists once `providers.open()` has run. A provider
-    // that cannot end a turn on demand leaves the cap inert, said ONCE per
-    // session rather than per utterance — the `updateEndpointing` treatment.
-    forceEndOfTurn: () => {
-      const stt = providers.stt;
-      if (stt === null) return;
-      if (stt.forceEndOfTurn === undefined) {
-        if (!warnedTurnLimitInert) {
-          warnedTurnLimitInert = true;
-          log.warn(
-            `This agent ends turns on demand (userTurnLimit or turnDetection: "manual"), and the "${opts.stt.name}" STT provider cannot end a turn on demand: a cap is reported but cannot cut the turn, and a push-to-talk commit waits out its deadline. The default assemblyAIStt() can.`,
-            { sid: opts.sid },
-          );
-        }
-        return;
-      }
-      stt.forceEndOfTurn();
-    },
+    // `providers` is reached lazily: this fires from an STT event, which only
+    // exists once `providers.open()` has run.
+    forceEndOfTurn: createForceEndOfTurn({
+      stt: () => providers.stt,
+      sttName: opts.stt.name,
+      log,
+      sid: opts.sid,
+    }),
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
