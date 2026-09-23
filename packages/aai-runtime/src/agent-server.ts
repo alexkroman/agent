@@ -200,8 +200,9 @@ export interface AgentServerOptions extends SharedServerOptions {
  * run their own tools.
  *
  * {@link AgentServer.listen} binds loopback by default; pass `"0.0.0.0"` to
- * expose it deliberately (this server has no request authentication of its
- * own). {@link AgentServer.close} shuts the runtime down too.
+ * expose it deliberately (sessions are open to anyone who can reach the port
+ * unless `auth` or `AAI_SESSION_SECRET` is set — see `SessionAuthOptions`).
+ * {@link AgentServer.close} shuts the runtime down too.
  *
  * @example
  * ```ts

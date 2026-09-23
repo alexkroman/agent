@@ -203,6 +203,9 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
+export function createSessionToken(input: SessionTokenInput): string;
+
+// @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
 
 // @public
@@ -603,6 +606,7 @@ export type RuntimeServerOptions = {
     request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
     page?: "voice" | "static";
     telephony?: TelephonyAccess;
+    auth?: SessionAuthOptions | undefined;
 };
 
 // @public
@@ -632,7 +636,23 @@ export type ServerSession = {
 };
 
 // @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
+
+// @public
+export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
+
+// @public
+export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
+
+// @public
+export type SessionAuthOptions = {
+    secret?: string | undefined;
+    verify?: SessionVerifier | undefined;
+    allowedOrigins?: readonly string[] | undefined;
+};
 
 // @public
 export type SessionEventPage = {
@@ -650,6 +670,13 @@ export type SessionEventStream = {
     discard(sessionId: string): void;
     clear(): void;
     readonly durable: boolean;
+};
+
+// @public
+export type SessionIdentity = {
+    sub: string;
+    sessionId?: string;
+    claims?: Record<string, unknown>;
 };
 
 // @public
@@ -692,6 +719,16 @@ export type SessionStateStore = {
 };
 
 // @public
+export type SessionTokenInput = SessionIdentity & {
+    secret: string;
+    ttlSeconds?: number;
+    now?: number;
+};
+
+// @public
+export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
+
+// @public
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -716,6 +753,7 @@ export type SharedServerOptions = {
     logger?: Logger | undefined;
     upgrade?: RuntimeServerOptions["upgrade"];
     request?: RuntimeServerOptions["request"];
+    auth?: RuntimeServerOptions["auth"];
 };
 
 // @public
@@ -931,6 +969,15 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
+
+// @public
+export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
+
+// @public
+export type VerifySessionTokenOptions = {
+    secret: string;
+    now?: number;
+};
 
 // @public
 export type WdkAdapter = {

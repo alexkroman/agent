@@ -26,6 +26,7 @@ import { consoleLogger } from "./runtime-config.ts";
 import { agentGateToken } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, WORKFLOW_CALLBACK_ROUTES } from "./server-routes.ts";
 import { serveStatic } from "./server-static.ts";
+import { admitSessionUpgrade, resolveSessionGate, selectSessionProtocol } from "./session-auth.ts";
 import { declineSocket } from "./session-decline.ts";
 import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 import { enabledCarriers, handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
@@ -44,8 +45,9 @@ export type {
 } from "./server-types.ts";
 
 /**
- * Default bind address. Loopback, not every interface: this server has no
- * request authentication of its own, so binding `0.0.0.0` by default put a
+ * Default bind address. Loopback, not every interface: this server
+ * authenticates no one unless `auth` or `AAI_SESSION_SECRET` is set, so
+ * binding `0.0.0.0` by default put a
  * developer's agent — and the provider credentials backing it — in reach of
  * anyone on the same network (a shared office or cafe LAN). Exposing it is now
  * an explicit choice by the caller.
@@ -98,8 +100,8 @@ const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
  * Serves `GET /health`, `GET /client-config` (name/greeting for the browser
  * client), static client assets when `clientDir` is set, and voice sessions
  * on `WS /websocket`. {@link AgentServer.listen} binds loopback by default;
- * pass `"0.0.0.0"` to expose it deliberately (the server has no request
- * authentication of its own).
+ * pass `"0.0.0.0"` to expose it deliberately (sessions are open unless `auth`
+ * or `AAI_SESSION_SECRET` is set — see `SessionAuthOptions`).
  *
  * @example
  * ```ts
@@ -297,7 +299,16 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   httpServer.headersTimeout = SERVER_HEADERS_TIMEOUT_MS;
   httpServer.keepAliveTimeout = SERVER_KEEPALIVE_TIMEOUT_MS;
 
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
+  // Resolved once: the gate holds the session-owner map a resume is checked
+  // against, so a per-upgrade rebuild would forget every owner. See `session-auth.ts`.
+  const sessionGate = resolveSessionGate(options.auth, env, logger);
+
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_WS_PAYLOAD_BYTES,
+    // Never echo an `aai.auth.<ticket>` subprotocol back — see `selectSessionProtocol`.
+    handleProtocols: selectSessionProtocol,
+  });
 
   httpServer.on("upgrade", (req, socket, head) => {
     // Node removes its own socket error listener before emitting `upgrade`;
@@ -352,32 +363,40 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     }
 
     const wantsHost = requestQuery(req.url).has("host");
+    const startOpts = parseWsUpgradeParams(req.url ?? "");
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      const startOpts = parseWsUpgradeParams(req.url ?? "");
-      const session = asSessionWebSocket(ws);
+    // The gate runs BEFORE the handshake; with none configured this is the bare
+    // `wss.handleUpgrade` it replaced. See `session-auth.ts`.
+    admitSessionUpgrade(
+      sessionGate,
+      { req, socket, head, wss, url, resumeFrom: startOpts.resumeFrom, logger },
+      (ws, identity) => {
+        const session = asSessionWebSocket(ws);
 
-      // Host mode: defer startSession until the first `config` frame supplies
-      // the per-connection agent. Requires `env` (for gating + secrets).
-      if (wantsHost && env && isHostAllowed(env)) {
-        logger.info(`WS upgrade ${url} (host mode)`);
-        startHostSession(session, {
-          env,
-          startOpts,
-          logger,
-          ...omitUndefined({ baseAgent: hostBaseAgent }),
-        });
-        return;
-      }
-      if (wantsHost) {
-        logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
-        declineSocket(ws, "host mode is not enabled on this server", logger);
-        return;
-      }
+        // Host mode: defer startSession until the first `config` frame supplies
+        // the per-connection agent. Requires `env` (for gating + secrets).
+        if (wantsHost && env && isHostAllowed(env)) {
+          logger.info(`WS upgrade ${url} (host mode)`);
+          startHostSession(session, {
+            env,
+            // Owner recorded here too, or a host session could never be resumed.
+            startOpts: { ...startOpts, ...sessionGate?.ownership(identity) },
+            logger,
+            ...omitUndefined({ baseAgent: hostBaseAgent }),
+          });
+          return;
+        }
+        if (wantsHost) {
+          logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
+          declineSocket(ws, "host mode is not enabled on this server", logger);
+          return;
+        }
 
-      logger.info(`WS upgrade ${url}${startOpts.skipGreeting ? " (resume)" : ""}`);
-      runtime.startSession(session, startOpts);
-    });
+        logger.info(`WS upgrade ${url}${startOpts.skipGreeting ? " (resume)" : ""}`);
+        // Remember who opened it, so only they may resume it.
+        runtime.startSession(session, { ...startOpts, ...sessionGate?.ownership(identity) });
+      },
+    );
   });
 
   // Post-listen server errors have no promise to reject into (listen()'s
