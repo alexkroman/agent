@@ -170,8 +170,15 @@ export async function executeConsole(opts: {
   log.success(`Talking to ${agentDef.name}. Press Ctrl-C to hang up.`);
   log.info("Use headphones: without echo cancellation the agent hears itself and interrupts.");
 
-  const untilQuit = opts.untilQuit ?? signalled();
-  await Promise.race([untilQuit, ended, connection.ended]);
+  const quit = opts.untilQuit === undefined ? signalled() : undefined;
+  try {
+    await Promise.race([opts.untilQuit ?? quit?.signal, ended, connection.ended]);
+  } finally {
+    // Off on EVERY exit from the wait, not only a signalled one. Left installed
+    // after the session ends on its own, they would swallow the Ctrl-C a
+    // developer presses while teardown below is still draining.
+    quit?.dispose();
+  }
 
   capture.stop();
   connection.close();
@@ -191,15 +198,20 @@ export async function executeConsole(opts: {
   return ok({ sessionId: connection.id });
 }
 
-/** The first SIGINT or SIGTERM. */
-function signalled(): Promise<void> {
-  return new Promise((resolve) => {
+/** The first SIGINT or SIGTERM, and a way to stop listening for it. */
+function signalled(): { signal: Promise<void>; dispose: () => void } {
+  let dispose: () => void = () => undefined;
+  const signal = new Promise<void>((resolve) => {
     const done = (): void => {
+      dispose();
+      resolve();
+    };
+    dispose = () => {
       process.off("SIGINT", done);
       process.off("SIGTERM", done);
-      resolve();
     };
     process.on("SIGINT", done);
     process.on("SIGTERM", done);
   });
+  return { signal, dispose };
 }

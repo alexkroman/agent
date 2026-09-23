@@ -79,6 +79,14 @@ function startPlayback(sampleRate: number, onError: (err: Error) => void): Conso
       stdio: ["pipe", "ignore", "ignore"],
     });
     next.on("error", (err) => onError(spawnError("play", err)));
+    // A speaker that dies on its own — the device refused the rate, or was
+    // unplugged — ends the console exactly as a dead microphone does. The
+    // player we killed ourselves (a flush or a stop) is no longer `child`, or
+    // is stopped, so its exit is expected and says nothing.
+    next.on("exit", (code) => {
+      if (stopped || next !== child) return;
+      onError(new Error(`the speaker process exited${code === null ? "" : ` with code ${code}`}`));
+    });
     // A write racing a flush's kill lands on a closed pipe; that is the flush
     // working, not a failure worth reporting.
     next.stdin?.on("error", () => undefined);
@@ -92,8 +100,9 @@ function startPlayback(sampleRate: number, onError: (err: Error) => void): Conso
     },
     flush() {
       if (stopped) return;
-      kill(child);
+      const old = child;
       child = open();
+      kill(old);
     },
     stop() {
       stopped = true;

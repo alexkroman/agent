@@ -98,6 +98,23 @@ describe("soxAudio", () => {
     capture.stop();
   });
 
+  test("a speaker that dies on its own is reported; one we flushed or stopped is not", () => {
+    const onError = vi.fn();
+    const player = soxAudio.startPlayback(24_000, onError);
+    player.flush();
+    children[0]?.child.emit("exit", null);
+    expect(onError).not.toHaveBeenCalled();
+
+    children[1]?.child.emit("exit", 1);
+    expect(onError).toHaveBeenCalledWith(new Error("the speaker process exited with code 1"));
+
+    const quiet = vi.fn();
+    const stopped = soxAudio.startPlayback(24_000, quiet);
+    stopped.stop();
+    children[2]?.child.emit("exit", null);
+    expect(quiet).not.toHaveBeenCalled();
+  });
+
   test("playback writes to `play`, and flush replaces the process", () => {
     const player = soxAudio.startPlayback(24_000, vi.fn());
     const first = children[0];

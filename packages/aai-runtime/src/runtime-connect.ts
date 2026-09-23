@@ -68,20 +68,40 @@ export function connectSession(
   attached = attachSession(client, {
     sessions: deps.sessions,
     readyConfig,
-    createSession: (id, c) =>
-      deps.createSession(id, c, {
+    createSession: (id, c) => {
+      const session = deps.createSession(id, c, {
         skipGreeting: skipGreeting ?? false,
         // A resume is what makes a history restore worth a round trip, and the
         // caller's own `resumeFrom` is the honest signal — the same rule the
         // socket path follows with its `?sessionId=`.
         resumed: resumeFrom !== undefined,
-      }),
+      });
+      // A session stopped from OUTSIDE — `runtime.shutdown()` stops every live
+      // session directly — ends this connection too. Without it `ended` never
+      // settles, `onSessionEnd` never fires and the pacer's timer outlives the
+      // runtime, because nothing else tells a caller-owned sink it is over.
+      // `stop()` is idempotent, so the one `detach` then runs again is a no-op.
+      const stop = session.stop.bind(session);
+      session.stop = async () => {
+        try {
+          await stop();
+        } finally {
+          detach("session stopped");
+        }
+      };
+      return session;
+    },
     ...omitUndefined({
       logger: deps.logger,
       sessionStartTimeoutMs: deps.sessionStartTimeoutMs,
       logContext,
-      onSessionEnd,
       resumeFrom,
+    }),
+    // The CALLER's sink, not the pacing wrapper around it: the sink is the
+    // identity token `onSessionEnd` documents, and the wrapper is one the
+    // caller has never seen and so could never compare against.
+    ...omitUndefined({
+      onSessionEnd: onSessionEnd && ((id: string) => onSessionEnd(id, sink)),
     }),
   });
   const connection = attached;

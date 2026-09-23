@@ -100,7 +100,8 @@ describe("runtime.connect", () => {
   test("close() stops the session, and `ended` settles after its cleanup", async () => {
     const { runtime, stt } = setup();
     const onSessionEnd = vi.fn();
-    const connection = runtime.connect(makeClientSink(), { onSessionEnd });
+    const sink = makeClientSink();
+    const connection = runtime.connect(sink, { onSessionEnd });
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
 
     connection.close();
@@ -108,7 +109,7 @@ describe("runtime.connect", () => {
     await connection.ended;
 
     expect(onSessionEnd).toHaveBeenCalledTimes(1);
-    expect(onSessionEnd).toHaveBeenCalledWith(connection.id, expect.anything());
+    expect(onSessionEnd).toHaveBeenCalledWith(connection.id, sink);
     expect(stt.last()?.closed.value).toBe(true);
   });
 
@@ -140,6 +141,20 @@ describe("runtime.connect", () => {
     await one.ended;
     two.close();
     await two.ended;
+  });
+
+  test("runtime.shutdown() ends a connected session and settles `ended`", async () => {
+    const { runtime, stt } = setup();
+    const onSessionEnd = vi.fn();
+    const sink = makeClientSink();
+    const connection = runtime.connect(sink, { onSessionEnd });
+    await vi.waitFor(() => expect(stt.last()).toBeDefined());
+
+    await runtime.shutdown();
+    await connection.ended;
+
+    expect(onSessionEnd).toHaveBeenCalledWith(connection.id, sink);
+    expect(stt.last()?.closed.value).toBe(true);
   });
 
   test("an invalid command is dropped, not thrown", () => {

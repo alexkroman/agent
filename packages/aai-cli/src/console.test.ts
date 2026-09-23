@@ -141,6 +141,21 @@ describe("executeConsole", () => {
     expect(await run).toMatchObject({ ok: false, code: "audio_device", error: "install sox" });
   });
 
+  test("with no quit promise, the signal listeners come off when the session ends", async () => {
+    const before = process.listenerCount("SIGINT");
+    const beforeTerm = process.listenerCount("SIGTERM");
+    const { audio } = fakeAudio();
+    const run = executeConsole({ cwd: "/p", audio, mode: "json" });
+    await vi.waitFor(() => expect(state.sink).toBeDefined());
+    expect(process.listenerCount("SIGINT")).toBe(before + 1);
+
+    state.sink?.close?.("session resumed by another connection");
+    await run;
+
+    expect(process.listenerCount("SIGINT")).toBe(before);
+    expect(process.listenerCount("SIGTERM")).toBe(beforeTerm);
+  });
+
   test("a workflow app is refused before any device opens", async () => {
     state.page = "static";
     const { audio } = fakeAudio();
