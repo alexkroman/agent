@@ -205,10 +205,11 @@ harness and the specs reach by relative import. `EvalSessionOptions.generate`
 is `HostEvalSessionOptions` (`openEvalSessionWithSeams`) the same way. The
 fields every entry point shares are ONE `HostAgentOptions` that
 `RuntimeOptions`, `TextAgentOptions` and both eval bags extend; `env` and `llm`
-are not in it because their types differ per entry point. The forwarding check (`agent-server-forwarding.ts`) also
-holds the fields `AgentServerOptions` now DECLARES (`agent: AgentDef`,
-`journal?: JournalStore`, rather than `RuntimeOptions["…"]`) assignable to
-what they are forwarded to — `TypeDrift`, beside `ForwardingGap`.
+are not in it because their types differ per entry point. The forwarding
+check (`agent-server-forwarding.ts`) also holds the fields `AgentServerOptions`
+now DECLARES (`agent: AgentDef`, `journal?: JournalStore`, rather than
+`RuntimeOptions["…"]`) assignable to what they are forwarded to — `TypeDrift`,
+beside `ForwardingGap`.
 
 **`auth` stays a server FIELD, and not a use of the `upgrade` hook.** The hook
 answers synchronously, so an async ticket check cannot decide there; a claimed

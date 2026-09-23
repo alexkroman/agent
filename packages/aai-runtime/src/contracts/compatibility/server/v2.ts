@@ -4,10 +4,12 @@
  *
  * MOUNTING the agent's HTTP and WebSocket surface beside a host's own — the
  * two claim hooks, over a runtime the host built itself — written the way a
- * host authored it at epoch 2. `v1.ts` is the other half, the three front doors
- * and the credential brand; this deliberately does not repeat them, because a
- * capability with two retained epochs is allowed to split its surface between
- * them and coverage is measured over the union
+ * host authored it at epoch 2. `v1.ts` was the other half — the three front
+ * doors and the credential brand — and was dropped when the brand's minting
+ * half moved to `/internal`, so the caller-agent door and `ProviderEnv` it
+ * carried, which epochs 2 and 3 still promise, are frozen at the bottom of
+ * this file instead: a capability with two retained epochs splits its surface
+ * between them and coverage is measured over the union
  * (`api-contracts-gate.test.ts`). It must keep compiling for as long as epoch 2
  * is advertised as supported.
  *
@@ -39,8 +41,12 @@ import { agent } from "@alexkroman1/aai";
 import {
   type AgentEnv,
   type AgentServer,
+  createHostServer,
   createRuntimeServer,
   DEFAULT_LISTEN_HOST,
+  type HostServerOptions,
+  type HostSessionDefaults,
+  type ProviderEnv,
   type RuntimeServerOptions,
   type SessionRuntime,
   type SharedServerOptions,
@@ -146,3 +152,26 @@ export async function serve(
 export function boundPort(server: AgentServer): number | undefined {
   return server.port;
 }
+
+/**
+ * ── EDIT: the caller-agent door, in the same process. ──────────────────
+ *
+ * Each `?host=1` connection brings its own prompt, tools and — normally — its
+ * own credentials. `defaults` is operator policy that stands for every tenant;
+ * it cannot carry a `systemPrompt` or `tools`, because those belong to the
+ * caller. No `env` here on purpose: anything set there is a house account any
+ * unauthenticated caller can spend.
+ */
+export async function serveCallerAgents(port: number): Promise<AgentServer> {
+  const defaults: HostSessionDefaults = { maxSteps: 4 };
+  const options: HostServerOptions = { ...shared, defaults, name: "host" };
+  const server = createHostServer(options);
+  await server.listen(port, DEFAULT_LISTEN_HOST);
+  return server;
+}
+
+/**
+ * Credentials a provider opener may resolve from without becoming `ctx.env`.
+ * The agent's own env satisfies it; a host-fallback env does too.
+ */
+export const providerEnv: ProviderEnv = agentEnv;

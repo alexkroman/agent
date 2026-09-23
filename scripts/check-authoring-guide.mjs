@@ -113,6 +113,14 @@ const UNDOCUMENTED_CAPABILITIES = {
     "case can collect lines and assert on them. Nothing else in it is written from an " +
     "`agent.ts` — an agent author never sizes a log buffer — and its own documentation is " +
     "`packages/aai-runtime/CLAUDE.md`.",
+  "aai-runtime:providers":
+    "the HOST provider-registry surface — `registerSttKind`/`registerTtsKind`/`registerLlmKind`, " +
+    "`resolveLlm` and the opener contracts a custom speech provider is written against. It " +
+    "reaches the example-facing set the same way `aai-runtime:logging` does: " +
+    "`@alexkroman1/aai-runtime/eval` re-publishes the `Stt*`/`Tts*` opener types because " +
+    "`createStubSttOpener`/`createStubTtsOpener` return them. An `agent.ts` names a provider " +
+    "DESCRIPTOR from `@alexkroman1/aai/stt`/`tts`/`llm`, which the guide covers, and never " +
+    "implements an opener; its own documentation is `packages/aai-runtime/CLAUDE.md`.",
   "aai-runtime:runtime":
     "the host embedding surface — `createRuntime`, `Runtime`, `SessionRuntime`. It reaches " +
     "the example-facing set through exactly one name, `RunCodeExecutor`, which " +
