@@ -374,10 +374,12 @@ export function indexFile(sections, owners) {
     };
   };
 
+  /** @type {Map<string, Map<string, ReturnType<typeof describe>>>} */
   const bySection = new Map(AUDIENCES.map(({ key }) => [key, new Map()]));
+  const sectionOf = (key) => bySection.get(key) ?? new Map();
   for (const [name, specifiers] of publics) {
     const row = describe(name, specifiers);
-    bySection.get(audienceOf(row.specifiers[0])).set(name, row);
+    sectionOf(audienceOf(row.specifiers[0] ?? "")).set(name, row);
   }
   const internalRows = new Map(
     [...internals].map(([name, specs]) => [name, describe(name, specs)]),
@@ -406,12 +408,12 @@ export function indexFile(sections, owners) {
     "",
     ...AUDIENCES.map(
       ({ key, heading }) =>
-        `- [${heading}](#${heading.toLowerCase().replaceAll(" ", "-")}) — ${bySection.get(key).size} names`,
+        `- [${heading}](#${heading.toLowerCase().replaceAll(" ", "-")}) — ${sectionOf(key).size} names`,
     ),
     `- [Framework internals](#framework-internals) — ${internalRows.size} names`,
   ];
   for (const { key, heading, blurb } of AUDIENCES) {
-    out.push("", `## ${heading}`, "", blurb, "", ...table(bySection.get(key)));
+    out.push("", `## ${heading}`, "", blurb, "", ...table(sectionOf(key)));
   }
   out.push(
     "",

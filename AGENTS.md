@@ -422,8 +422,8 @@ latter's union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
 **No real COLLISION is left, and the last two are worth remembering.** The
 smaller was `StartOptions`: `/workflow-api`'s `{ key, notify }` for starting a
 run, and `aai-cli/start`'s project-server options — now `ProjectServerOptions`.
-The larger was `SessionCore` — one word for the two sides of one wire, neither reference page
-naming the other, and both halves declared in a file called
+The larger was `SessionCore` — one word for the two sides of one wire, neither
+reference page naming the other, and both halves declared in a file called
 `session-core-types.ts`:
 
 | Name | `aai-runtime` (root) | `aai-ui` (root) |
