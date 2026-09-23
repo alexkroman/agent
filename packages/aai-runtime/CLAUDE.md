@@ -1576,6 +1576,13 @@ history as well as what reaches `onDelta` — filler is audible, so it moves the
 heard POSITION, and is never recordable. The TTS coalescer flushes when that
 flag flips so no batched send ever mixes the two.
 
+**The GREETING follows the same rule** — it is a fixed line spoken as a reply
+of its own, and `createLineReply` (`transports/pipeline-lines.ts`) writes its
+history once PLAYBACK is over — not when synthesis is, which is faster than
+real time — so a barge-in anywhere in the line records the heard prefix through
+`persistInterruptedTurn`. It used to push the whole line up front, so a caller
+who cut it off after two words left a record saying all of it was delivered.
+
 **Not covered: a barge-in during the TTS drain.** `runTurn` has already
 committed the full text by then, so that case keeps `buildTailResumePrompt` as
 its only mitigation (which this change makes word-truthful). Fixing it means

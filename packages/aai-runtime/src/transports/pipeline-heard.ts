@@ -60,6 +60,8 @@ type PlaybackClock = {
   reset(): void;
   /** True while the client may still be playing already-forwarded audio. */
   pending(): boolean;
+  /** Ms until {@link pending} turns false — graced as `pending` is, so they agree. */
+  playoutMs(): number;
   /**
    * Estimated ms of forwarded audio the client has not played yet. Ungraced —
    * unlike {@link pending} — because its consumer (the heard cursor) wants
@@ -111,6 +113,9 @@ function createPlaybackClock(sampleRateHz: number, now: () => number): PlaybackC
     },
     pending() {
       return now() < endsAtMs + PIPELINE_PLAYBACK_GRACE_MS;
+    },
+    playoutMs() {
+      return endsAtMs === 0 ? 0 : Math.max(0, endsAtMs + PIPELINE_PLAYBACK_GRACE_MS - now());
     },
     remainingMs() {
       return Math.max(0, endsAtMs - now());
@@ -332,6 +337,8 @@ export interface HeardTracker {
   spokeRecordable(): boolean;
   /** True while the client may still be playing already-forwarded audio. */
   pending(): boolean;
+  /** Ms until {@link pending} turns false — see `PlaybackClock.playoutMs`. */
+  playoutMs(): number;
   /**
    * The reply is being cut right now: LATCH the heard position, then restart
    * the playback clock (every abort path ends with the client flushing its
@@ -470,6 +477,7 @@ export function createHeardTracker(opts: {
       latched = null;
     },
     pending: clock.pending,
+    playoutMs: clock.playoutMs,
     cut(): void {
       latched = position();
       clock.reset();

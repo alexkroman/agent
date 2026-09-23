@@ -10,6 +10,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
 import { makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
+import { partialTranscripts } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 useVirtualTime();
@@ -65,6 +66,25 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
         recovery: "turn-failed",
       });
     });
+    await t.stop();
+  });
+
+  test("captions the phrase ONCE — a final, with no interim copy ahead of it", async () => {
+    // It used to go to TTS with the interim published and then be committed, so
+    // the client received the same sentence twice, final second — the bug the
+    // greeting's spec pins, fixed for one fixed line of three until
+    // `pipeline-lines.ts` gave all three the same send.
+    const { opts, stt, callbacks } = makeOpts({ llm: failingLlm() });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("are you there?");
+
+    await vi.waitFor(() => {
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+    });
+    expect(
+      partialTranscripts(callbacks).filter((text) => text.includes("Sorry, I had a problem")),
+    ).toEqual([]);
     await t.stop();
   });
 

@@ -468,7 +468,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       audioOut.stop();
     },
     abortInFlightTurn,
+    heard,
     sendTtsText,
+    drainTts,
     runReply,
     logTurnCrash,
   });
