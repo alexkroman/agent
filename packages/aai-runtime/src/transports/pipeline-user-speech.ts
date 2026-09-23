@@ -76,6 +76,8 @@ export function createUserActivity(deps: {
   userTurnLimit: UserTurnLimit | undefined;
   /** Who ends the caller's turn — see `AgentDef.turnDetection`. Unset is `"auto"`. */
   turnDetection: "auto" | "manual" | undefined;
+  /** The utterance closed, by any path — see `TurnMetrics.onUtteranceEnded`. */
+  onUtteranceEnded?: (() => void) | undefined;
   /**
    * Ask the transcriber to end the caller's turn now — what a crossed cap
    * does. The transport owns this because only it holds the STT session, and
@@ -173,10 +175,12 @@ export function createUserActivity(deps: {
     onSpeechStopped(): void {
       edgeGate.onSpeechStopped();
       turnLimit.onUtteranceEnded();
+      deps.onUtteranceEnded?.();
     },
     reset(): void {
       edgeGate.reset();
       turnLimit.onUtteranceEnded();
+      deps.onUtteranceEnded?.();
     },
   };
 

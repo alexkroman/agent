@@ -744,6 +744,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;

@@ -63,6 +63,7 @@ import {
   UsageUpdatedEventSchema,
   UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
+import { MetricsCollectedEventSchema } from "./protocol-events-metrics.ts";
 
 /**
  * The event ENVELOPE — `EVENT_ID_PREFIX`, `SessionEventMetaSchema` and
@@ -386,6 +387,8 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   UsageUpdatedEventSchema,
   GuardrailBlockedEventSchema,
   UserTurnExceededEventSchema,
+  // What one reply cost, stage by stage — `protocol-events-metrics.ts`.
+  MetricsCollectedEventSchema,
   /**
    * The conversation this session already had, sent when a RESUME restores one.
    *

@@ -29,6 +29,7 @@ import type { FatalToolLatch } from "../tool-error-policy.ts";
 import type { ToolSpeechController } from "../tool-messages-runner.ts";
 import type { ContextBudgetPreparer } from "./pipeline-context-budget.ts";
 import type { StreamPart } from "./pipeline-stream-parts.ts";
+import type { LlmTiming } from "./pipeline-turn-metrics.ts";
 import type { EmitError, SendTtsText, SystemPromptOption, TransportCallbacks } from "./types.ts";
 
 /** Parameters for {@link consumeLlmStream}, threading session state explicitly. */
@@ -111,6 +112,8 @@ export interface ConsumeLlmStreamParams {
   emitError: EmitError;
   log: Logger;
   sid: string;
+  /** Each pass's timing, for the reply's `metrics.collected` frame. */
+  onLlmTiming?: ((timing: LlmTiming) => void) | undefined;
   /** The turn's abort signal (turn cancellation / barge-in / session end). */
   signal: AbortSignal;
   /** Receives each assistant text delta (accumulated into the transcript). */

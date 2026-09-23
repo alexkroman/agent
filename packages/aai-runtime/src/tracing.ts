@@ -80,11 +80,35 @@
 
 import { setRequestTraceAdopter } from "./_request-trace.ts";
 
+// The process-wide metrics sinks, on the same subpath as the exporter that
+// fills one — see `metrics-sink.ts`.
+export {
+  type MetricsContext,
+  type MetricsSink,
+  OTEL_METRIC_NAMES,
+  type OtelMeterLike,
+  otelMetricsSink,
+  registerMetricsSink,
+} from "./metrics-sink.ts";
+
 /** The standard variables that name a collector. Either one arms this. */
 export const OTEL_ENDPOINT_ENVS = [
   "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
 ] as const;
+
+/**
+ * The standard variables that name a METRICS collector. Either one arms metric
+ * export — the generic one arms traces and metrics together, which is what an
+ * operator pointing everything at one collector expects.
+ */
+export const OTEL_METRICS_ENDPOINT_ENVS = [
+  "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+] as const;
+
+/** The standard switch: `none` turns metric export off whatever the endpoint. */
+export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
 
 /** The standard variable naming this service on every exported span. */
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
@@ -151,7 +175,63 @@ export function tracingEndpoint(env: NodeJS.ProcessEnv = process.env): string | 
 export async function startTracing(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RuntimeTracing | undefined> {
-  if (!tracingEndpoint(env)) return undefined;
+  const serviceName = env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME;
+  const handles: RuntimeTracing[] = [];
+  if (tracingEndpoint(env)) handles.push(await startSpanExport(serviceName));
+  if (metricsEndpoint(env)) {
+    const metrics = await startMetricExport(env, serviceName);
+    if (metrics) handles.push(metrics);
+  }
+  if (handles.length === 0) return undefined;
+  const all = (pick: (h: RuntimeTracing) => Promise<void>) => async () => {
+    await Promise.all(handles.map(pick));
+  };
+  return { forceFlush: all((h) => h.forceFlush()), shutdown: all((h) => h.shutdown()) };
+}
+
+/**
+ * The collector this environment names for METRICS, or `undefined`.
+ *
+ * `OTEL_METRICS_EXPORTER=none` closes it, which is the standard spelling for
+ * "traces, but not metrics" when both share `OTEL_EXPORTER_OTLP_ENDPOINT`.
+ */
+export function metricsEndpoint(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (env[OTEL_METRICS_EXPORTER_ENV]?.trim().toLowerCase() === "none") return undefined;
+  for (const name of OTEL_METRICS_ENDPOINT_ENVS) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Metric export: the per-reply `metrics.collected` measurements as OTLP
+ * histograms and counters — see `_metrics-otel.ts` and `metrics-sink.ts`.
+ *
+ * A missing metrics peer is a LOG LINE and `undefined`, never a throw: it
+ * arrives on the same endpoint variable as traces, so a deployment that
+ * installed only the trace peers must keep its traces (`_metrics-otel.ts`).
+ */
+async function startMetricExport(
+  env: NodeJS.ProcessEnv,
+  serviceName: string,
+): Promise<RuntimeTracing | undefined> {
+  try {
+    const otel = await import("./_metrics-otel.ts");
+    const peers = await otel.loadOtelMetricPeers();
+    return otel.startMetricsOtel(peers, serviceName, env);
+  } catch {
+    console.warn(
+      "An OTLP collector is configured, but metric export needs two more optional peers: " +
+        "`npm i @opentelemetry/sdk-metrics @opentelemetry/exporter-metrics-otlp-proto`, " +
+        "or set OTEL_METRICS_EXPORTER=none. Traces are unaffected.",
+    );
+    return undefined;
+  }
+}
+
+/** Span export — the half this module started as. */
+async function startSpanExport(serviceName: string): Promise<RuntimeTracing> {
   const otel = await orInstallLine(() => import("./_tracing-otel.ts"));
   // The PEERS are loaded through a second gated await rather than by that
   // module's own top level, because they are the half that a self-hoster can
@@ -160,10 +240,7 @@ export async function startTracing(
   // The service name is resolved HERE and passed down, so the OTel module
   // imports nothing from this one — see `TracingHandle` there for why a
   // cycle is not merely a lint failure.
-  const handle = otel.startTracingOtel(
-    peers,
-    env[OTEL_SERVICE_NAME_ENV]?.trim() || DEFAULT_SERVICE_NAME,
-  );
+  const handle = otel.startTracingOtel(peers, serviceName);
   setRequestTraceAdopter(handle.adoptRequestTrace);
   return handle;
 }

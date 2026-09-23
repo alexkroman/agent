@@ -32,6 +32,7 @@
 import type { AgentDef, AgentSessionContext } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { recordSessionMetrics } from "./metrics-sink.ts";
 import type { Logger } from "./runtime-config.ts";
 import { openSessionDialogs, type SessionDialogs } from "./runtime-dialogs.ts";
 import { openSessionPersonas, type SessionPersonas } from "./runtime-personas.ts";
@@ -114,6 +115,11 @@ export function openSessionWiring(deps: {
       // AFTER the dialogs, so a move that pins a persona is already taken
       // when the persona section is re-rendered and pushed.
       personas.observe(event);
+      // The process-wide readers — an OTLP exporter, a host's own summary.
+      // See `metrics-sink.ts`; a no-op loop until something registers.
+      if (event.type === "metrics.collected") {
+        recordSessionMetrics(event, { agent: agent.name, sessionId });
+      }
     },
     logger,
     ...omitUndefined({ hooks, commit }),

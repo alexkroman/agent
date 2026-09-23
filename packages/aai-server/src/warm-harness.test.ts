@@ -185,6 +185,20 @@ describe("agentBootEnv", () => {
     ).toMatchObject({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://c:4318/v1/traces" });
   });
 
+  // And the metrics-specific one, with the switch that turns metrics off: a
+  // guest reads both (`metricsEndpoint` in aai-runtime's `tracing.ts`).
+  it("is armed by the metrics-specific endpoint, and forwards the metrics switch", () => {
+    expect(
+      agentBootEnv(boot, {
+        OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://c:4318/v1/metrics",
+        OTEL_METRICS_EXPORTER: "otlp",
+      }),
+    ).toMatchObject({
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://c:4318/v1/metrics",
+      OTEL_METRICS_EXPORTER: "otlp",
+    });
+  });
+
   // The pairing with the guest's own reader is asserted only by these literals
   // and its own, because this package may not import guest source — the
   // boundary `konsistent` enforces. That is a weaker guarantee than the two

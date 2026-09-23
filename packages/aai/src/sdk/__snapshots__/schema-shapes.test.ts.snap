@@ -136,6 +136,15 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "toolCalls",
     "type",
   ],
+  "metrics.collected": [
+    "interrupted",
+    "latencyMs",
+    "llm",
+    "meta",
+    "stt",
+    "tts",
+    "type",
+  ],
   "reply.cancelled": [
     "meta",
     "type",

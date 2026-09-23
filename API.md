@@ -2596,6 +2596,9 @@ export function clockTime(what?: string): z.ZodString;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function createMetricsCollector(options?: MetricsCollectorOptions): MetricsCollector;
+
+// @public
 export function createSeededRandom(seed: number): RandomSource;
 
 // @public
@@ -2914,6 +2917,57 @@ export type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+export type MetricsCollectedEvent = Extract<SessionEvent, {
+    type: "metrics.collected";
+}>;
+
+// @public
+export interface MetricsCollector {
+    collect(sample: MetricsSample): void;
+    reset(): void;
+    summary(): MetricsSummary;
+}
+
+// @public
+export interface MetricsCollectorOptions {
+    maxSamples?: number;
+}
+
+// @public
+export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
+
+// @public
+export interface MetricsSummary {
+    interrupted: number;
+    latencyMs?: MetricStat;
+    llmDurationMs?: MetricStat;
+    llmInputTokens: number;
+    // (undocumented)
+    llmOutputTokens: number;
+    // (undocumented)
+    llmSteps: number;
+    llmTtftMs?: MetricStat;
+    replies: number;
+    sttEndpointingMs?: MetricStat;
+    // (undocumented)
+    ttsCharacters: number;
+    ttsTtfbMs?: MetricStat;
+}
+
+// @public
+export interface MetricStat {
+    count: number;
+    // (undocumented)
+    max: number;
+    // (undocumented)
+    mean: number;
+    // (undocumented)
+    min: number;
+    p50: number;
+    p95: number;
+}
 
 // @public
 export function mintCode(prefix: string, options?: MintCodeOptions): string;
@@ -3310,6 +3364,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -5139,6 +5215,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -6136,6 +6234,28 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -8038,6 +8158,28 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }>;
     words: z.ZodNumber;
     durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"history.restored">;
     meta: z.ZodObject<{
@@ -11816,7 +11958,7 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 // @public
 export type TransportEventType = TransportEventBody["type"];
@@ -12590,7 +12732,7 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 export { UPLOAD_CHUNK_BYTES }
 
@@ -12942,14 +13084,75 @@ export type WorkflowTestStep = {
 ## `@alexkroman1/aai-runtime/tracing`
 
 ```ts
+import type { MetricsCollectedEvent } from '@alexkroman1/aai';
+
 // @public
 export const DEFAULT_SERVICE_NAME = "aai-agent";
+
+// @public
+export interface MetricsContext {
+    // (undocumented)
+    agent: string;
+    // (undocumented)
+    sessionId: string;
+}
+
+// @public
+export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
+
+// @public
+export interface MetricsSink {
+    // (undocumented)
+    record(event: MetricsCollectedEvent, context: MetricsContext): void;
+}
 
 // @public
 export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
 
 // @public
+export const OTEL_METRIC_NAMES: {
+    readonly replies: "aai.replies";
+    readonly latency: "aai.reply.latency";
+    readonly sttEndpointing: "aai.stt.endpointing_delay";
+    readonly llmTtft: "aai.llm.time_to_first_token";
+    readonly llmDuration: "aai.llm.duration";
+    readonly llmTokens: "aai.llm.tokens";
+    readonly ttsTtfb: "aai.tts.time_to_first_byte";
+    readonly ttsCharacters: "aai.tts.characters";
+};
+
+// @public
+export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+// @public
+export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
+
+// @public
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
+
+// @public
+export interface OtelMeterLike {
+    // (undocumented)
+    createCounter(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        add(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+    // (undocumented)
+    createHistogram(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        record(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+}
+
+// @public
+export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
+
+// @public
+export function registerMetricsSink(sink: MetricsSink): () => void;
 
 // @public
 export type RuntimeTracing = {

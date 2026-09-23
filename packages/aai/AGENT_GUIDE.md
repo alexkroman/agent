@@ -360,7 +360,8 @@ export default agent({
                                              // missing key fails at `aai push` instead of mid-call.
                                              // Declare every key any tool or step reads.
   text?: true;                               // text-only agent: no STT, no TTS, `llm` is the one stage
-  events?: SessionEventHandlers;             // observe the session (see "Watching the session")
+  events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
+                                             // reply's latency/tokens: createMetricsCollector()
   personas?: Personas;                       // see "Personas"
 });
 ```
@@ -371,8 +372,8 @@ export default agent({
 > through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through
 > the AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
 
-Minimal agent — a cascaded pipeline, which is what you should build unless
-the user asks for the speech-to-speech API:
+Minimal agent — a cascaded pipeline, what to build unless the user asks
+for speech-to-speech:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -384,8 +385,7 @@ export default agent({
 
 No provider fields means the default all-AssemblyAI pipeline: all three
 stages bill to the one key a published agent is guaranteed to have. Pick
-its voice with the `voice` field — this is the normal way to choose a
-voice:
+its voice with the `voice` field:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -396,9 +396,8 @@ export default agent({
 });
 ```
 
-Swap a single stage by declaring just that field — everything you leave
-unset stays on the default. `llm` accepts the gateway model id as a plain
-string:
+Swap one stage by declaring just that field; the rest stay default.
+`llm` accepts the gateway model id as a plain string:
 
 ```ts
 import { agent } from "@alexkroman1/aai";

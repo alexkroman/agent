@@ -31,6 +31,7 @@ import type { Logger } from "../runtime-config.ts";
 import { createSpeechGate, type SpeechGate, type TurnGuardrails } from "./pipeline-guardrails.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import { createSpeakGate } from "./pipeline-speak-gate.ts";
+import type { TurnMetrics } from "./pipeline-turn-metrics.ts";
 import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { SendTtsOptions, TransportCallbacks } from "./types.ts";
 
@@ -72,6 +73,8 @@ export function createAudioOut(deps: {
   callbacks: Pick<TransportCallbacks, "report" | "onAudioChunk">;
   /** This session's output guardrail, or the no-op set. */
   guardrails: TurnGuardrails;
+  /** Where the TTS marks land for the reply's `metrics.collected` frame. */
+  metrics?: TurnMetrics | undefined;
   log: Logger;
   sid: string;
 }): AudioOut {
@@ -105,6 +108,7 @@ export function createAudioOut(deps: {
   function sendTtsTextNow(text: string, opts?: SendTtsOptions): void {
     turns.openAudioGate();
     ttsTextAtMs ??= Date.now();
+    deps.metrics?.onTtsText(text);
     // ASCII-fold typographic quotes for the engine; length-preserving, so the
     // heard cursor below still indexes the same positions (normalizeSpeechText).
     deps.tts()?.sendText(normalizeSpeechText(text));
@@ -132,7 +136,9 @@ export function createAudioOut(deps: {
         // the caller's ear), which put it at 0.7-1.8s; measured directly it is
         // ~66ms, so synthesis is not where a voice turn's latency lives.
         if (ttsTextAtMs !== undefined) {
-          log.info("TTS first audio", { sid: deps.sid, afterTextMs: Date.now() - ttsTextAtMs });
+          const afterTextMs = Date.now() - ttsTextAtMs;
+          log.info("TTS first audio", { sid: deps.sid, afterTextMs });
+          deps.metrics?.onFirstAudio(afterTextMs);
           ttsTextAtMs = undefined;
         }
         turns.markSpoke();
@@ -149,7 +155,12 @@ export function createAudioOut(deps: {
       });
     },
 
-    armFloor: () => speakGate.hold(deps.startSpeakingFloorMs),
+    armFloor: () => {
+      // A new reply's first text restarts the TTS clock: a reply aborted after
+      // sending text but before any audio must not lend its start to this one.
+      ttsTextAtMs = undefined;
+      speakGate.hold(deps.startSpeakingFloorMs);
+    },
     onInterrupted: () => speakGate.hold(deps.interruptionBackoffMs),
     drop: () => speakGate.drop(),
     stop: () => speakGate.stop(),

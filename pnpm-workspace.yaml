@@ -8,8 +8,10 @@ catalog:
   '@hono/zod-validator': ^0.9.1
   '@opentelemetry/api': ^1.9.1
   '@opentelemetry/context-async-hooks': ^2.11.0
+  '@opentelemetry/exporter-metrics-otlp-proto': ^0.222.0
   '@opentelemetry/exporter-trace-otlp-proto': ^0.222.0
   '@opentelemetry/resources': ^2.11.0
+  '@opentelemetry/sdk-metrics': ^2.11.0
   '@opentelemetry/sdk-trace-base': ^2.11.0
   '@tailwindcss/vite': ^4.3.3
   '@testing-library/dom': ^10.4.1

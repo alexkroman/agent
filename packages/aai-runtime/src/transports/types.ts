@@ -65,6 +65,7 @@ export type TransportEventBody = EventsNamed<
   | "user-transcript.updated"
   | "user-transcript.committed"
   | "user-turn.exceeded"
+  | "metrics.collected"
   | "agent-transcript.updated"
   | "agent-transcript.committed"
   | "tool.called"

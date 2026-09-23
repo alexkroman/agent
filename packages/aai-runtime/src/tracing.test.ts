@@ -17,6 +17,7 @@
 import { trace } from "@opentelemetry/api";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
+  metricsEndpoint,
   OTEL_ENDPOINT_ENVS,
   startTracing,
   startTracingDetached,
@@ -68,7 +69,15 @@ describe("the env gate", () => {
     // An unhandled rejection here would reach `installCrashGuards` and exit the
     // guest at boot — telemetry taking the agent down with it. The failure has
     // to be a log line, so this drives the path that produces one.
-    expect(startTracingDetached({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe(undefined);
+    // Metrics OFF: the generic endpoint arms both halves, and this spec returns
+    // once SPANS register — a metrics start still in flight would outlive it,
+    // leaking a MeterProvider into whichever spec runs next.
+    expect(
+      startTracingDetached({
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318",
+        OTEL_METRICS_EXPORTER: "none",
+      }),
+    ).toBe(undefined);
     // Let the dynamic import and the provider construction settle, then tear
     // the globals down — this really did start an exporter.
     await vi.waitFor(() => expect(registeredIntegrations()).toHaveLength(1));
@@ -101,5 +110,52 @@ describe("the env gate", () => {
     expect(startTracingDetached({})).toBe(undefined);
     await flushMicrotasks();
     expect(registeredIntegrations()).toBeUndefined();
+  });
+});
+
+describe("the metrics gate", () => {
+  test("opens on the generic endpoint or the metrics-specific one", () => {
+    expect(metricsEndpoint({})).toBeUndefined();
+    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe("http://c:4318");
+    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" })).toBe(
+      "http://m:4318",
+    );
+    // The traces-specific variable is for traces only.
+    expect(
+      metricsEndpoint({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://t:4318" }),
+    ).toBeUndefined();
+  });
+
+  test("OTEL_METRICS_EXPORTER=none closes it, whatever the endpoint", () => {
+    expect(
+      metricsEndpoint({
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318",
+        OTEL_METRICS_EXPORTER: "none",
+      }),
+    ).toBeUndefined();
+  });
+
+  test("missing METRICS peers are one warning, and the start still resolves", async () => {
+    // A deployment that installed only the trace peers keeps its traces: the
+    // metrics half answers with the install line and steps aside.
+    vi.doMock("./_metrics-otel.ts", () => {
+      throw new Error("Cannot find package '@opentelemetry/sdk-metrics'");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    onTestFinished(() => {
+      warn.mockRestore();
+      vi.doUnmock("./_metrics-otel.ts");
+      vi.resetModules();
+    });
+    vi.resetModules();
+    const { startTracing: fresh } = await import("./tracing.ts");
+    await expect(
+      fresh({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" }),
+    ).resolves.toBeUndefined();
+    // Only OUR line is counted: a spy on the global also sees whatever else the
+    // process warns about while the module graph loads (coverage runs do).
+    const ours = warn.mock.calls.filter((call) => /metric export needs/.test(String(call[0])));
+    expect(ours).toHaveLength(1);
+    expect(String(ours[0]?.[0])).toMatch(/@opentelemetry\/sdk-metrics/);
   });
 });

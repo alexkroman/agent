@@ -190,7 +190,9 @@ function otelBootEnv(serverEnv: NodeJS.ProcessEnv): Record<string, string> {
   // stray `OTEL_SERVICE_NAME` alone would be a key that is present and
   // useless — the shape the three URL keys above are omitted to avoid.
   const armed =
-    forwarded.OTEL_EXPORTER_OTLP_ENDPOINT ?? forwarded.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+    forwarded.OTEL_EXPORTER_OTLP_ENDPOINT ??
+    forwarded.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ??
+    forwarded.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT;
   return armed ? forwarded : {};
 }
 
@@ -206,6 +208,9 @@ export const OTEL_GUEST_ENV_KEYS = [
   "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
   "OTEL_EXPORTER_OTLP_HEADERS",
   "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+  "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+  "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+  "OTEL_METRICS_EXPORTER",
   "OTEL_EXPORTER_OTLP_PROTOCOL",
   "OTEL_SERVICE_NAME",
 ] as const;

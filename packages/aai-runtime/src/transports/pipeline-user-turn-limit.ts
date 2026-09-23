@@ -35,7 +35,9 @@
  */
 
 import type { UserTurnLimit } from "@alexkroman1/aai";
+import type { SttSession } from "@alexkroman1/aai/host-internal";
 import { createRestartableTimer } from "../_timer.ts";
+import type { Logger } from "../runtime-config.ts";
 import { scanWords } from "./pipeline-text.ts";
 
 /** Which cap an utterance crossed — the `limit` field of `user-turn.exceeded`. */
@@ -126,5 +128,38 @@ export function createUserTurnLimiter(
       fired = false;
       lastText = "";
     },
+  };
+}
+
+/**
+ * End the caller's turn on demand — what a crossed `userTurnLimit` and a
+ * push-to-talk commit (`turnDetection: "manual"`) both ask for.
+ *
+ * A provider that cannot end a turn on demand leaves both inert, and that is
+ * said ONCE per session rather than per utterance — the `updateEndpointing`
+ * treatment. Moved out of `pipeline-transport.ts` at its source-length cap;
+ * the transport owns the STT session and hands it over lazily.
+ */
+export function createForceEndOfTurn(deps: {
+  stt: () => Pick<SttSession, "forceEndOfTurn"> | null | undefined;
+  sttName: string;
+  log: Logger;
+  sid: string;
+}): () => void {
+  let warned = false;
+  return () => {
+    const stt = deps.stt();
+    if (!stt) return;
+    if (stt.forceEndOfTurn === undefined) {
+      if (!warned) {
+        warned = true;
+        deps.log.warn(
+          `This agent ends turns on demand (userTurnLimit or turnDetection: "manual"), and the "${deps.sttName}" STT provider cannot end a turn on demand: a cap is reported but cannot cut the turn, and a push-to-talk commit waits out its deadline. The default assemblyAIStt() can.`,
+          { sid: deps.sid },
+        );
+      }
+      return;
+    }
+    stt.forceEndOfTurn();
   };
 }

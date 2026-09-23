@@ -284,6 +284,14 @@ each is for.
 | `Message` | `@alexkroman1/aai` |
 | `MessageList` | `@alexkroman1/aai-ui` |
 | `MessageListProps` | `@alexkroman1/aai-ui` |
+| `MetricStat` | `@alexkroman1/aai` |
+| `MetricsCollectedEvent` | `@alexkroman1/aai` |
+| `MetricsCollector` | `@alexkroman1/aai` |
+| `MetricsCollectorOptions` | `@alexkroman1/aai` |
+| `MetricsContext` | `@alexkroman1/aai-runtime/tracing` |
+| `MetricsSample` | `@alexkroman1/aai` |
+| `MetricsSink` | `@alexkroman1/aai-runtime/tracing` |
+| `MetricsSummary` | `@alexkroman1/aai` |
 | `MintCodeOptions` | `@alexkroman1/aai` |
 | `MistralLlmOptions` | `@alexkroman1/aai/llm` |
 | `ModelOptions` | `@alexkroman1/aai/llm` |
@@ -292,12 +300,16 @@ each is for.
 | `NumberField` | `@alexkroman1/aai-ui` |
 | `OPENROUTER_BASE_URL` | `@alexkroman1/aai/llm` |
 | `OTEL_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
+| `OTEL_METRICS_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
+| `OTEL_METRICS_EXPORTER_ENV` | `@alexkroman1/aai-runtime/tracing` |
+| `OTEL_METRIC_NAMES` | `@alexkroman1/aai-runtime/tracing` |
 | `OTEL_SERVICE_NAME_ENV` | `@alexkroman1/aai-runtime/tracing` |
 | `OpenAILlmOptions` | `@alexkroman1/aai/llm` |
 | `OpenAIS2sOptions` | `@alexkroman1/aai/s2s` |
 | `OpenAIS2sVoice` | `@alexkroman1/aai/s2s` |
 | `OpenRouterLlmOptions` | `@alexkroman1/aai/llm` |
 | `OpenerRegistryEntry` | `@alexkroman1/aai-runtime` |
+| `OtelMeterLike` | `@alexkroman1/aai-runtime/tracing` |
 | `PROJECT_GUIDE_POINTER` | `@alexkroman1/aai/workspace-files` |
 | `PackageManifest` | `@alexkroman1/aai/workspace-files` |
 | `PageConfig` | `@alexkroman1/aai-ui` |
@@ -722,6 +734,7 @@ each is for.
 | `createLogBuffer` | `@alexkroman1/aai-runtime` |
 | `createMemoryKeyStore` | `@alexkroman1/aai-runtime` |
 | `createMemoryUploadBackend` | `@alexkroman1/aai-runtime` |
+| `createMetricsCollector` | `@alexkroman1/aai` |
 | `createPostgresDb` | `@alexkroman1/aai-runtime` |
 | `createPostgresKeyStore` | `@alexkroman1/aai-runtime` |
 | `createProgressStream` | `@alexkroman1/aai/testing` |
@@ -824,6 +837,7 @@ each is for.
 | `mapSettled` | `@alexkroman1/aai/step` |
 | `mcpToolName` | `@alexkroman1/aai` |
 | `mergeScaffoldManifest` | `@alexkroman1/aai/workspace-files` |
+| `metricsEndpoint` | `@alexkroman1/aai-runtime/tracing` |
 | `mintCode` | `@alexkroman1/aai` |
 | `mistralLlm` | `@alexkroman1/aai/llm` |
 | `mountClient` | `@alexkroman1/aai-ui` |
@@ -839,6 +853,7 @@ each is for.
 | `openEvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
 | `openRouterLlm` | `@alexkroman1/aai/llm` |
 | `orFail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
+| `otelMetricsSink` | `@alexkroman1/aai-runtime/tracing` |
 | `pageMetadata` | `@alexkroman1/aai/html` |
 | `parseFeed` | `@alexkroman1/aai/html` |
 | `parseSchemaInput` | `@alexkroman1/aai/testing` |
@@ -861,6 +876,7 @@ each is for.
 | `readUploadToFile` | `@alexkroman1/aai/step-files` |
 | `registerChannelHandler` | `@alexkroman1/aai/channels` |
 | `registerLlmKind` | `@alexkroman1/aai-runtime` |
+| `registerMetricsSink` | `@alexkroman1/aai-runtime/tracing` |
 | `registerSttKind` | `@alexkroman1/aai-runtime` |
 | `registerTtsKind` | `@alexkroman1/aai-runtime` |
 | `registeredChannelKindNames` | `@alexkroman1/aai/channels` |

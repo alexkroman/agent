@@ -25,6 +25,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../runtime-config.ts";
+import type { LlmTiming } from "./pipeline-turn-metrics.ts";
 
 /** Per-turn timing recorder — see {@link createTurnTrace}. */
 export interface TurnTrace {
@@ -76,15 +77,21 @@ export function createTurnTrace(deps: {
   sid: string;
   adopted: boolean;
   now?: (() => number) | undefined;
+  /** The same numbers, for the reply's `metrics.collected` frame. */
+  onDone?: ((timing: LlmTiming) => void) | undefined;
 }): TurnTrace {
   const now = deps.now ?? Date.now;
   const startedAt = now();
   let firstPartMs: number | undefined;
   let firstToolMs: number | undefined;
+  // Counted off the stream rather than taken from the caller, whose `steps` is
+  // a MESSAGE count (a tool step contributes two).
+  let finishedSteps = 0;
   let finished = false;
 
   return {
     onPart(kind: string): void {
+      if (kind === "finish-step") finishedSteps++;
       if (!isModelPart(kind)) return;
       firstPartMs ??= now() - startedAt;
       if (kind === "tool-call") firstToolMs ??= now() - startedAt;
@@ -92,6 +99,8 @@ export function createTurnTrace(deps: {
     done({ steps, aborted }): void {
       if (finished) return;
       finished = true;
+      const totalMs = now() - startedAt;
+      deps.onDone?.({ firstPartMs, totalMs, steps: finishedSteps });
       deps.log.info("LLM turn", {
         sid: deps.sid,
         adopted: deps.adopted,
@@ -100,7 +109,7 @@ export function createTurnTrace(deps: {
         // animal from one that produced its first part instantly, and a zero
         // would average in as if it were the fast case.
         ...omitUndefined({ firstPartMs, firstToolMs }),
-        totalMs: now() - startedAt,
+        totalMs,
         steps,
         ...(aborted ? { aborted: true } : {}),
       });

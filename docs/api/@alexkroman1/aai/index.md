@@ -314,6 +314,26 @@ a bare `lock()` leaves to the caller's `finally`.
 
 ***
 
+### createMetricsCollector()
+
+```ts
+function createMetricsCollector(options?: MetricsCollectorOptions): MetricsCollector;
+```
+
+Create a collector — see this module's doc for an example.
+
+#### Parameters
+
+##### options?
+
+[`MetricsCollectorOptions`](#metricscollectoroptions)
+
+#### Returns
+
+[`MetricsCollector`](#metricscollector)
+
+***
+
 ### createSeededRandom()
 
 ```ts
@@ -4617,6 +4637,29 @@ receive(ctx: SlotHolder, event:
   words: number;
 }
   | {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: {
+     at: number;
+     id: string;
+  };
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+}
+  | {
   messages: {
      content: string;
      role: "assistant" | "user";
@@ -4856,6 +4899,29 @@ export default agent({
   \};
   `type`: `"user-turn.exceeded"`;
   `words`: `number`;
+\}
+  \| \{
+  `interrupted`: `boolean`;
+  `latencyMs?`: `number`;
+  `llm?`: \{
+     `durationMs`: `number`;
+     `inputTokens?`: `number`;
+     `outputTokens?`: `number`;
+     `steps`: `number`;
+     `ttftMs?`: `number`;
+  \};
+  `meta`: \{
+     `at`: `number`;
+     `id`: `string`;
+  \};
+  `stt?`: \{
+     `endpointingMs?`: `number`;
+  \};
+  `tts?`: \{
+     `characters`: `number`;
+     `ttfbMs?`: `number`;
+  \};
+  `type`: `"metrics.collected"`;
 \}
   \| \{
   `messages`: \{
@@ -5723,6 +5789,215 @@ readonly to: string;
 ```
 
 The persona speaking now.
+
+***
+
+### MetricsCollector
+
+A running summary of `metrics.collected` frames — see
+[createMetricsCollector](#createmetricscollector).
+
+#### Methods
+
+##### collect()
+
+```ts
+collect(sample: MetricsSample): void;
+```
+
+Fold in one reply's metrics.
+
+###### Parameters
+
+###### sample
+
+[`MetricsSample`](#metricssample)
+
+###### Returns
+
+`void`
+
+##### reset()
+
+```ts
+reset(): void;
+```
+
+Forget everything collected.
+
+###### Returns
+
+`void`
+
+##### summary()
+
+```ts
+summary(): MetricsSummary;
+```
+
+The summary so far. A fresh object each call; safe to keep.
+
+###### Returns
+
+[`MetricsSummary`](#metricssummary)
+
+***
+
+### MetricsCollectorOptions
+
+Options for [createMetricsCollector](#createmetricscollector).
+
+#### Properties
+
+##### maxSamples?
+
+```ts
+optional maxSamples?: number;
+```
+
+How many recent samples per measurement the percentiles are computed
+over. Default 1000.
+
+***
+
+### MetricsSummary
+
+Everything collected so far. A stat is absent until its first sample,
+never a row of zeroes.
+
+#### Properties
+
+##### interrupted
+
+```ts
+interrupted: number;
+```
+
+Of those, how many were cut short.
+
+##### latencyMs?
+
+```ts
+optional latencyMs?: MetricStat;
+```
+
+Committed caller turn → first reply audio.
+
+##### llmDurationMs?
+
+```ts
+optional llmDurationMs?: MetricStat;
+```
+
+Request → the stream settling.
+
+##### llmInputTokens
+
+```ts
+llmInputTokens: number;
+```
+
+Totals — sums, not distributions.
+
+##### llmOutputTokens
+
+```ts
+llmOutputTokens: number;
+```
+
+##### llmSteps
+
+```ts
+llmSteps: number;
+```
+
+##### llmTtftMs?
+
+```ts
+optional llmTtftMs?: MetricStat;
+```
+
+Request → the model's first content part.
+
+##### replies
+
+```ts
+replies: number;
+```
+
+Replies collected.
+
+##### sttEndpointingMs?
+
+```ts
+optional sttEndpointingMs?: MetricStat;
+```
+
+Last partial with words → committed final.
+
+##### ttsCharacters
+
+```ts
+ttsCharacters: number;
+```
+
+##### ttsTtfbMs?
+
+```ts
+optional ttsTtfbMs?: MetricStat;
+```
+
+First text into TTS → its first audio.
+
+***
+
+### MetricStat
+
+One measurement's distribution. Durations are milliseconds.
+
+#### Properties
+
+##### count
+
+```ts
+count: number;
+```
+
+Samples collected.
+
+##### max
+
+```ts
+max: number;
+```
+
+##### mean
+
+```ts
+mean: number;
+```
+
+##### min
+
+```ts
+min: number;
+```
+
+##### p50
+
+```ts
+p50: number;
+```
+
+Median of the most recent window — see the module doc.
+
+##### p95
+
+```ts
+p95: number;
+```
+
+95th percentile of the most recent window.
 
 ***
 
@@ -9322,6 +9597,34 @@ optional toolName?: string;
 
 The name the MODEL calls it by (the registry key), so a tool matching on it
 uses the same string it would put in `ctx.messages`' own tool schemas.
+
+***
+
+### MetricsCollectedEvent
+
+```ts
+type MetricsCollectedEvent = Extract<SessionEvent, {
+  type: "metrics.collected";
+}>;
+```
+
+One `metrics.collected` frame, envelope included — what an
+`events: { "metrics.collected" }` hook receives.
+
+Declared here, off the session event union, rather than beside its schema:
+the schema lives on the non-authoring `/protocol` surface, and this is the
+name an author annotates a handler with.
+
+***
+
+### MetricsSample
+
+```ts
+type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
+```
+
+What [MetricsCollector.collect](#collect) reads off one frame — the event
+without its envelope, so a hook's event and a transport's body both fit.
 
 ***
 

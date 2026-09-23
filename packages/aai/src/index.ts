@@ -83,6 +83,11 @@ export * from "./sdk/define.ts";
 export * from "./sdk/dialog.ts";
 export * from "./sdk/generate.ts";
 /**
+ * Per-reply metrics, folded — what an `events: { "metrics.collected" }` hook
+ * hands its frames to, and `MetricsCollectedEvent`, the frame itself.
+ */
+export * from "./sdk/metrics-collector.ts";
+/**
  * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and
  * the one that changes WHO IS SPEAKING: a roster the session hands the caller
  * between over one history, where `delegate` keeps the speaker and a `dialog`
