@@ -39,7 +39,12 @@ dependencies are in it. Two things stay OUT, and both are load-bearing:
   pairing and only fails a specifier that is devDependencies-ONLY.
 - **`docs`'s TypeScript**, pinned to the 6.x line because TypeDoc needs the JS
   compiler API TS 7 does not ship. It uses the named `typedoc` catalog so the
-  split is a declaration rather than a stray literal.
+  split is a declaration rather than a stray literal. The same catalog carries a
+  second entry, `typescript-6: npm:typescript@~6.0.0`, which the ROOT declares
+  for the capability-contract probe (`scripts/_api-contracts-compat.mjs`): the
+  root's own `typescript` is the 7.x the repo builds with, so the 6.x compiler
+  API is only reachable there under another name. It resolves to the same
+  6.0.3 `docs/` does.
 
 **syncpack still runs, and is what stops a package BYPASSING the catalog.**
 syncpack 15 reads the catalog natively and reports a literal range on a

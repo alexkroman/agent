@@ -31,12 +31,88 @@
  * stricter one still counts. Imports from other packages resolve to their
  * CURRENT `dist`, on both sides.
  *
+ * **Method members are compared as PROPERTIES.** TypeScript compares a
+ * method-shorthand member (`send(x: string): void`) BIVARIANTLY even under
+ * `strictFunctionTypes`, so a method parameter narrowed from `string | number`
+ * to `string` passed both directions of the type probe and could ship as a
+ * revision. Before anything is compiled, both rollups have every method
+ * signature (interface, type literal, `declare class`, nested ones included)
+ * rewritten to a property of function type: one signature as an arrow
+ * (`send: (x: string) => void;`), an overload set as a call-signature literal
+ * in declaration order (`on: { (e: "a"): void; (e: "b"): void };`, which
+ * TypeScript relates exactly as it relates the overloaded method), `?` and
+ * modifiers (`static`, `abstract`, `protected`) kept, type parameters and a
+ * `this` parameter carried in. A literal opens a scope with no polymorphic
+ * `this` TYPE, so an overload set returning `this` becomes an intersection of
+ * arrows instead. A function type is not a method, so its parameters are
+ * checked contravariantly. The rewrite is the same on both sides, so an
+ * unchanged method still has identical closures. Two consequences:
+ * - **One idiom stays a method**: a generic signature that intersects its own
+ *   type parameter with a type applied to it (`label: L & Literal<L>`). Two
+ *   such signatures cannot be related strictly even when identical —
+ *   TypeScript infers one's `L` as the other's whole `L & Literal<L>` and then
+ *   cannot prove the deferred conditional — so rewriting them made an
+ *   unchanged `WorkflowContext.step` read as a break, and replaying the
+ *   recorded revisions of `agent@13`, `dialog@7`, `step@3` and `tool@5` turned
+ *   all four unprovable. Those groups keep method bivariance (a blind spot).
+ * - A rollup class overriding a method of a base class from ANOTHER package
+ *   now declares a property over a method (TS2425), which is reported — the
+ *   safe direction, and no rollup does it today (every extended base is
+ *   `Error`).
+ *
+ * **A class's constructor gets the same treatment.** Construct signatures from
+ * a class declaration are also related bivariantly, so `typeof Old = New`
+ * passes a narrowed constructor parameter; each class is additionally probed
+ * with its constructor's parameters as a function type (`__Ctor`), checked
+ * contravariantly.
+ *
+ * **A one-sided `any` is UNPROVEN, not compatible.** `any` is assignable both
+ * ways, so a position that is `any` on one side and anything else on the other
+ * passes every assignability check whatever changed there. Each probed pair is
+ * walked in parallel (members, call and construct signatures' parameters and
+ * returns, index signatures, a shared generic's type arguments) and every such
+ * position is reported by path. The finding makes the result incompatible and
+ * is also listed in `unproven`, so the gate says "not provably compatible"
+ * rather than "the probe found a break": it may be harmless (a return loosened
+ * to `any` breaks no caller), but the probe cannot say so, and saying nothing
+ * was the old behaviour. An `any` on BOTH sides (`DefaultToolResult`, an
+ * intentional escape hatch) is unchanged and not reported, and neither is an
+ * unresolved name (the checker's error type, also `any` to it): its diagnostic
+ * already fails the probe. The walk only reads a generic that neither rollup
+ * declares (`Array`, `Record`, a sibling package's type) through its type
+ * arguments — its members are those arguments substituted into one
+ * declaration, and walking them reports the `any`s lib wrote.
+ *
+ * **Which TypeScript.** The repo builds with `typescript@7`, which ships no
+ * in-process compiler API: its root export is `lib/version.cjs`, and the
+ * `typescript/unstable/sync` client it does ship drives the native `tsgo`
+ * binary as a SUBPROCESS (verified: it can check a virtual program in ~0.4s).
+ * That is ruled out twice here — the API is explicitly unstable, and a
+ * subprocess would move `api-contracts-compat.test.ts` out of the unit tier,
+ * which `aai-gates` does not have. So the CHECKER is `typescript-6` (the root's
+ * alias of the `typedoc` catalog's `typescript@~6.0`, the same compiler `docs`
+ * pins for TypeDoc): the last release with the JS compiler API, and the one
+ * TypeScript shipped as the bridge to 7.0, whose type-checking semantics it is
+ * meant to match. The PARSER stays
+ * api-extractor's bundled TypeScript (5.9.3 at this writing): the rollups are
+ * its output, and the node-walking helpers this shares with
+ * `_api-contracts-hash.mjs` read that instance's `SyntaxKind`s. The two meet
+ * only as TEXT — nothing crosses from one AST to the other. What the mismatch
+ * leaves is a 7.x-only checker change (a bug fix, a new strictness) that 6.0
+ * does not share; it would reach this gate one release late, and `pnpm
+ * typecheck` on the frozen examples still runs 7.x over every retained epoch.
+ *
  * Known blind spots, which is why `--bump --retain` still exists:
- * - method-shorthand members are compared BIVARIANTLY by TypeScript, so a
- *   method parameter moving to a sub- or super-type is invisible (a
- *   property-style function member is checked strictly);
- * - `any` is assignable both ways, so a type that is or contains `any`
- *   proves nothing about that position;
+ * - `any` NESTED inside a union (`string | any` collapses to `any` and is
+ *   caught; `Foo<any> | undefined` is walked only through its non-nullable
+ *   half) and positions the walk does not pair (union members, overloads
+ *   whose counts differ) can still hide an `any`;
+ * - a generic method in the `L & Literal<L>` idiom above is still compared
+ *   bivariantly, and a class's constructor OVERLOADS are probed through the
+ *   last one only (`infer` reads the last signature);
+ * - generic overloads are related with their type parameters erased, as
+ *   TypeScript relates any two overload sets, so a change expressed only
+ *   through an overload's type parameter can pass;
  * - a type from ANOTHER package is the same current type on both sides, so a
  *   break there is that package's capability to report, not this one's;
  * - behaviour (a default's value, what a function does) is never checked;
@@ -47,23 +123,31 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-
+import { oneSidedAny, probedPairs } from "./_api-contracts-compat-any.mjs";
+import { methodsAsProperties } from "./_api-contracts-compat-methods.mjs";
 import { referencedNames } from "./_api-contracts-hash.mjs";
 import { compareNames, declarationNames } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
 const extractorRequire = createRequire(require.resolve("@microsoft/api-extractor/package.json"));
+/** The PARSER: the TypeScript that wrote the rollups (see the header). */
 const ts = extractorRequire("typescript");
+/** The CHECKER: the 6.x line, the last with a JS compiler API (see the header). */
+const checkerTs = require("typescript-6");
 
 const OPTIONS = {
   strict: true,
   exactOptionalPropertyTypes: true,
-  target: ts.ScriptTarget.ESNext,
-  module: ts.ModuleKind.Preserve,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  target: checkerTs.ScriptTarget.ESNext,
+  module: checkerTs.ModuleKind.Preserve,
+  moduleResolution: checkerTs.ModuleResolutionKind.Bundler,
   skipLibCheck: true,
   noEmit: true,
   allowImportingTsExtensions: true,
+  // TypeScript 6 stopped auto-including every visible `@types` package (its
+  // default `types` is `[]`), and the rollups name `NodeJS.*` — which the 5.9
+  // checker this replaced found only because `@types/node` was visible.
+  types: ["node"],
 };
 
 /** Real files parsed once per process — lib and `dist` declarations dominate the cost. */
@@ -217,6 +301,16 @@ const WIDEN =
   "T extends boolean ? boolean : T extends bigint ? bigint : " +
   "T extends (...args: never) => unknown ? T : T extends object ? { [K in keyof T]: __Widen<T[K]> } : T;";
 
+/**
+ * A class's constructor parameters as a FUNCTION type. TypeScript relates the
+ * construct signatures of a class declaration bivariantly, like methods, so
+ * `typeof Old = New` passes a narrowed constructor parameter; a function type
+ * built from the same parameters is checked contravariantly. `infer` reads the
+ * LAST overload only (see the header's blind spots).
+ */
+const CTOR =
+  "type __Ctor<C> = C extends abstract new (...args: infer A) => unknown ? (...args: A) => void : never;";
+
 /** The probe for one exported name, as source text in the OLD module's scope. */
 function probeFor(entry, index) {
   const lines = [];
@@ -235,6 +329,13 @@ function probeFor(entry, index) {
   if (entry.value || entry.klass) {
     const target = entry.isConst ? `__Widen<typeof ${name}>` : `typeof ${name}`;
     lines.push(`export const __value${index}: ${target} = __N.${name};`);
+  }
+  if (entry.klass) {
+    lines.push(
+      `export function __ctor${index}(n: __Ctor<typeof __N.${name}>): void {`,
+      `  const o: __Ctor<typeof ${name}> = n; void o;`,
+      "}",
+    );
   }
   return lines.join("\n");
 }
@@ -273,7 +374,7 @@ function planProbes(oldBody, newBody) {
 
 /** A compiler host over two virtual modules, reading everything else from disk (cached). */
 function virtualHost(virtual, probeDir) {
-  const host = ts.createCompilerHost(OPTIONS, true);
+  const host = checkerTs.createCompilerHost(OPTIONS, true);
   const readReal = host.readFile.bind(host);
   const realDirectoryExists = host.directoryExists?.bind(host) ?? existsSync;
   host.fileExists = (path) => virtual.has(path) || existsSync(path);
@@ -281,10 +382,13 @@ function virtualHost(virtual, probeDir) {
   host.directoryExists = (path) => path === probeDir || realDirectoryExists(path);
   host.getSourceFile = (path, languageVersion) => {
     const text = virtual.get(path);
-    if (text !== undefined) return ts.createSourceFile(path, text, languageVersion, true);
-    const key = `${path}\0${languageVersion}`;
+    if (text !== undefined) return checkerTs.createSourceFile(path, text, languageVersion, true);
+    const key = `${path}\0${JSON.stringify(languageVersion)}`;
     if (!parsed.has(key) && existsSync(path)) {
-      parsed.set(key, ts.createSourceFile(path, readFileSync(path, "utf8"), languageVersion));
+      parsed.set(
+        key,
+        checkerTs.createSourceFile(path, readFileSync(path, "utf8"), languageVersion),
+      );
     }
     return parsed.get(key);
   };
@@ -293,7 +397,7 @@ function virtualHost(virtual, probeDir) {
 
 /** One diagnostic, shortened, with the probe modules' absolute paths taken out. */
 function describeDiagnostic(diagnostic, probeDir) {
-  return ts
+  return checkerTs
     .flattenDiagnosticMessageText(diagnostic.messageText, "\n")
     .split("\n")
     .slice(0, 3)
@@ -315,15 +419,21 @@ function locate(diagnostic, isOld, spans) {
  * `dir` is where the two virtual modules pretend to live, so their own
  * imports (`zod`, `react`, a sibling package) resolve from that package.
  *
- * @returns {{ compatible: boolean, problems: string[], added: string[] }}
+ * `unproven` is the subset of `problems` that is not a failed check but a
+ * position the probe cannot decide (a one-sided `any`); a result whose every
+ * problem is one of those is "not provably compatible" rather than a break.
+ *
+ * @returns {{ compatible: boolean, problems: string[], unproven: string[], added: string[] }}
  */
 export function probeCompatibility({ oldBody, newBody, dir }) {
-  const { problems, probes, added } = planProbes(oldBody, newBody);
+  const before = methodsAsProperties(oldBody);
+  const after = methodsAsProperties(newBody);
+  const { problems, probes, added } = planProbes(before, after);
   const probeDir = join(dir, ".api-contracts-probe");
   const oldPath = join(probeDir, "old.ts");
   const newPath = join(probeDir, "new.ts");
   const spans = [];
-  let oldText = `${asModule(oldBody)}\n\nimport * as __N from "./new.ts";\n${WIDEN}\n`;
+  let oldText = `${asModule(before)}\n\nimport * as __N from "./new.ts";\n${WIDEN}\n${CTOR}\n`;
   for (const probe of probes) {
     const start = oldText.length;
     oldText += `${probe.text}\n`;
@@ -331,9 +441,9 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
   }
   const virtual = new Map([
     [oldPath, oldText],
-    [newPath, asModule(newBody)],
+    [newPath, asModule(after)],
   ]);
-  const program = ts.createProgram({
+  const program = checkerTs.createProgram({
     rootNames: [oldPath, newPath],
     options: OPTIONS,
     host: virtualHost(virtual, probeDir),
@@ -350,6 +460,20 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
       );
     }
   }
-  const unique = [...new Set(problems)];
-  return { compatible: unique.length === 0, problems: unique, added };
+  const checker = program.getTypeChecker();
+  const unproven = [];
+  for (const pair of probedPairs(checker, program.getSourceFile(oldPath), probes)) {
+    for (const position of oneSidedAny(checker, pair.before, pair.after)) {
+      unproven.push(
+        `${pair.name}: ${position} — \`any\` is assignable both ways, so nothing about that position is proven`,
+      );
+    }
+  }
+  const unique = [...new Set([...problems, ...unproven])];
+  return {
+    compatible: unique.length === 0,
+    problems: unique,
+    unproven: [...new Set(unproven)],
+    added,
+  };
 }

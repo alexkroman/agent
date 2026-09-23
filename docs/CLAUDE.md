@@ -400,11 +400,44 @@ for nothing.
 Additive changes pass (optional member, optional parameter, new export, widened
 parameter, narrowed return); a removed export, a required member, a changed or
 narrowed/widened union, an added required parameter, a return that provides less
-or a stricter generic constraint fails, and needs `--bump`. **Its blind spots**,
-which are why `--retain` still exists: method-shorthand members compare
-BIVARIANTLY, so a method parameter moving to a sub- or supertype is invisible; a
-type that is or contains `any` proves nothing; a type from ANOTHER package is the
-same current type on both sides (its own package's capability reports it); and
+or a stricter generic constraint fails, and needs `--bump`.
+
+**Methods and constructors are compared STRICTLY.** TypeScript relates a
+method-shorthand member, and a class's constructor, BIVARIANTLY even under
+`strictFunctionTypes`, so a narrowed method parameter used to pass both
+directions. The probe rewrites every method in both rollups to a property of
+function type first (an overload set as a call-signature literal, which
+TypeScript relates as it relates the overloads) and probes each class's
+constructor parameters as a function type. One idiom is left a method: a
+generic signature intersecting its own type parameter with a type applied to
+it (`label: L & Literal<L>`), which TypeScript cannot relate strictly even to
+an identical twin — rewriting it made four recorded revisions (`agent@13`,
+`dialog@7`, `step@3`, `tool@5`, replayed from their commits) unprovable.
+
+**A one-sided `any` is UNPROVEN.** `any` is assignable both ways, so a position
+that is `any` on one side only makes every check there vacuous. The probe walks
+each probed pair and reports every such position by path; the verdict is
+"not provably compatible" (a `--bump`, not a revision) rather than "the probe
+found a break", since a return loosened to `any` may break nobody. An `any` on
+both sides is unchanged and passes.
+
+**The checker is TypeScript 6, not the 7 the repo builds with.** TS 7 ships no
+in-process compiler API — `typescript`'s root export is `lib/version.cjs`, and
+`typescript/unstable/*` drives the native binary as a subprocess, which is
+explicitly unstable and would push the probe's spec out of the unit tier. So the
+root declares `typescript-6` (the `typedoc` catalog's `npm:typescript@~6.0`,
+the same 6.0.3 `docs/` already resolves, so nothing new cleared quarantine),
+the last compiler with the JS API and the release meant to match 7.0's checking
+semantics; the rollups are still PARSED by api-extractor's bundled 5.9, which
+wrote them, and the two meet only as text. The residual risk is a 7.x-only
+checker change reaching this gate late, and `pnpm typecheck` still runs 7.x over
+every retained epoch's frozen example.
+
+**Its blind spots**, which are why `--retain` still exists: the
+`L & Literal<L>` methods above; generic overloads are related with their type
+parameters erased, as TypeScript relates overloads; an `any` inside a union or
+an unpaired position can still hide; a type from ANOTHER package is the same
+current type on both sides (its own package's capability reports it); and
 behaviour is never checked. The safe-direction miss: a CHANGED generic
 conditional or `as`-remapped type is reported incompatible even when it is not,
 because two separate declarations of one are unrelated to the checker (an
