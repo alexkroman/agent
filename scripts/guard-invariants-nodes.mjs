@@ -94,6 +94,26 @@ export function isConstantAssertion(node) {
   return reachesExpect && isBooleanLiteral(call.arguments?.[0]);
 }
 
+/**
+ * Rule 34: a `vi.mock(…)` / `vi.doMock(…)` call — a module replaced wholesale
+ * because the code under test offered no seam to hand a fake through.
+ *
+ * Structural rather than a grep for the same reason rule 33 is: the phrase
+ * appears in doc comments across the test helpers (`_test-utils.ts` documents
+ * its stubs as "for use inside `vi.mock` factories"), and a comment is no node.
+ * `vi.mocked(fn)` is NOT an occurrence — it is a type-level cast over a mock
+ * that already exists, and `check:hatches` records that the repo removed casts
+ * by adopting it — so the property must be exactly `mock` or `doMock`.
+ */
+export function isModuleMock(node) {
+  const call = unwrap(node);
+  if (call?.type !== "CallExpression") return false;
+  const callee = unwrap(call.callee);
+  if (!isIdent(callee?.object, "vi")) return false;
+  const name = propertyName(callee);
+  return name === "mock" || name === "doMock";
+}
+
 /** Is `node` the identifier `name`? */
 export const isIdent = (node, name) => {
   const inner = unwrap(node);

@@ -136,6 +136,18 @@ const GATES = [
     why: "The mechanical half of AGENTS.md. Every rule used to live only as prose in that file, which is enforcement exactly as long as a reviewer remembers it.",
   },
   { script: "check:file-length", phase: "ratchets", fatal: false },
+  {
+    script: "check:duplication",
+    phase: "ratchets",
+    fatal: false,
+    why: "A bug fixed in one copy of a block and not the other is churn nothing points at. Four sync gates exist for copies somebody noticed; this finds the ones nobody did. jscpd, per-file baseline, only ratchets down. ~10s, pure fs.",
+  },
+  {
+    script: "check:guest-contract",
+    phase: "ratchets",
+    fatal: false,
+    why: "An agent sandbox runs the harness PINNED at deploy time, so the platform is routinely newer than the guest it spawns — and CI builds both ends from one commit, so no test can see them disagree. GUEST_CONTRACT_VERSION was bumped by memory; this ties it to the surface it versions (boot env keys, /manage/*, the bundle handshake) and makes every change record a reason. Pure parse, no build.",
+  },
   { script: "check:package-layout", phase: "ratchets", fatal: false },
   {
     script: "check:test-assertions",

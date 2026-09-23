@@ -494,9 +494,11 @@ package in is creating `contracts/entrypoints/` inside it** — the package set 
 discovered from the tree, for the reason the entry points and the capabilities
 are, and its authoring subpaths are then everything it publishes with types
 MINUS a deny-list of the non-authoring ones (`NON_AUTHORING_SUBPATHS` in
-`scripts/_api-contracts-tree.mjs`, which exempts `aai`'s `/protocol`,
-`/manifest`, `/slugify`, `/workspace-files`, `/internal`, `/host-internal` and
-`/experimental` with a reason each).
+`scripts/_api-contracts-tree.mjs`, which exempts `aai`'s `/manifest`,
+`/slugify`, `/workspace-files`, `/internal`, `/host-internal` and
+`/experimental` with a reason each). `/protocol` used to be on that list and is
+now the `aai:protocol` capability — see "Published", "promised" and
+"documented" below for why.
 
 **`@alexkroman1/aai/experimental` is the lane that keeps inert knobs OFF the
 contracted surface.** A new, unmeasured feature ships there first — deny-listed
@@ -642,9 +644,9 @@ These properties are load-bearing:
   gone name WARNS). A name in either list satisfies either finding, so
   exporting a forgotten type from a non-authoring subpath is progress rather
   than a new failure. The remedy is an owner: select the name in the capability
-  it belongs to. `/protocol` is NOT contracted — that would make every
-  `/protocol` export authoring surface and pull it into the template-coverage
-  ratchet — so the session event VOCABULARY (`SessionEventSchema`,
+  it belongs to. `/protocol` WAS uncontracted when this moved (it is the
+  `aai:protocol` capability now, exempt from template coverage through
+  `UNEXEMPLIFIED_SUBPATHS`), so the session event VOCABULARY (`SessionEventSchema`,
   `SessionEvent`, `SessionEventBody`, the derived `SessionEventMap`) moved OFF
   it to the root barrel and is owned by `aai:events`; every other capability now
   names an event through that map (`SessionEvent<"tool.called">`) and records
@@ -798,9 +800,18 @@ defaults IN: `package.json#exports` (published), `contracts/entrypoints/`
 disagreement is a decision owed out loud rather than a bug to patch quietly.
 
 `@alexkroman1/aai/protocol` opens its reference page with "the published wire
-contract … for building custom clients or servers" while
-`NON_AUTHORING_SUBPATHS` deny-lists it from the contract system, so no epoch
-covers its 32 names. `/manifest` is the same and reaches further — three
+contract … for building custom clients or servers", and it was deny-listed from
+the contract system anyway, as "not something an agent declares". True, and
+beside the point: the two ends of that wire ship on DIFFERENT schedules — a
+deployed agent runs the SDK pinned in its bundle, the browser runs whatever
+`aai-ui` the page loaded — so a renamed field breaks sessions between a new
+client and an old agent while every build compiles. That is the drift epochs
+exist for, so it is the `aai:protocol` capability now, and deny-listed only from
+`UNEXEMPLIFIED_SUBPATHS` (a template has nothing honest to demonstrate with it).
+`ClientConfigResponse` stays owned by `aai:workflow-api`, which already selected
+it. Contracting it surfaced one inconsistency on day one: `RestoredToolCall` was
+tagged `@internal` while the schema it is inferred from, on the same wire, was
+not. `/manifest` is still deny-listed and reaches further — three
 template `agent.test.ts` files import `toAgentConfig` from it, a subpath
 `scaffold/CLAUDE.md` never mentions. Inversely `@alexkroman1/aai-runtime` is
 fully contracted — its whole root barrel, twelve capabilities, frozen starters

@@ -155,7 +155,14 @@ export const RestoredToolCallSchema = z.object({
   afterMessageIndex: z.number().int().min(-1),
 });
 
-/** One tool call as a resume reports it. @internal */
+/**
+ * One tool call as a resume reports it.
+ *
+ * Public for the reason its schema is: it rides the wire inside
+ * `history.restored`, so a custom client reads exactly this shape. It was tagged
+ * `@internal` while the schema it is inferred from was not, which went unseen
+ * until `/protocol` joined the contract system.
+ */
 export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
 
 /**

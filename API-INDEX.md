@@ -19,9 +19,9 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 423 names
-- [Browser client](#browser-client) — 138 names
+- [Browser client](#browser-client) — 137 names
 - [Testing and evals](#testing-and-evals) — 214 names
-- [Hosting and tooling](#hosting-and-tooling) — 254 names
+- [Hosting and tooling](#hosting-and-tooling) — 255 names
 - [Framework internals](#framework-internals) — 305 names
 
 ## Agent authoring
@@ -478,7 +478,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `SessionControlsLabels` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | The five words `SessionControls` renders, every one overridable. |
 | `SessionError` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Error reported by the voice session. |
 | `SessionErrorBanner`, `SessionErrorBannerProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The announced banner for a failed session: the error's message and code, or nothing at all when the session is fine. |
-| `SessionErrorCode` | type | `@alexkroman1/aai-ui` (also `@alexkroman1/aai/protocol`) | `aai-ui:session` | Error codes for categorizing session errors on the wire. |
 | `SessionSnapshot` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Immutable snapshot of the session state. |
 | `SessionStateDot`, `SessionStateDotProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The live session state as a coloured dot and a word, on its own narrow subscription. |
 | `SidebarLayout` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A two-column layout with a fixed-width sidebar and a flexible main area. |
@@ -772,12 +771,12 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `CARRIER_CODECS` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Every carrier this build can serve, keyed by its `?carrier=` value. |
 | `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Query parameter naming the carrier — see `carrierByName`. |
 | `CLIENT_ARTIFACT_REL` | const | `@alexkroman1/aai-cli/start` |  | Where `aai build` leaves the built browser client, relative to the root. |
-| `CLIENT_CONFIG_METHODS` | const | `@alexkroman1/aai/protocol` |  | The only method the endpoint answers — read by the host's route dispatch, so this is the value and not a description of it. |
-| `CLIENT_CONFIG_PATH` | const | `@alexkroman1/aai/protocol` |  | Relative path of the client-config endpoint under an agent's base URL. |
+| `CLIENT_CONFIG_METHODS` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The only method the endpoint answers — read by the host's route dispatch, so this is the value and not a description of it. |
+| `CLIENT_CONFIG_PATH` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Relative path of the client-config endpoint under an agent's base URL. |
 | `CarrierCodec` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Translates between a carrier's JSON frames and the two things a session needs. |
 | `CarrierInbound` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | One inbound carrier frame, reduced to what a session needs. |
 | `CarrierName` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | A carrier name this build can serve. |
-| `ClientSink` | interface | `@alexkroman1/aai/protocol` |  | Typed interface for pushing session events to a connected client. |
+| `ClientSink` | interface | `@alexkroman1/aai/protocol` | `aai:protocol` | Typed interface for pushing session events to a connected client. |
 | `CloseableDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | A `Db` whose underlying connection pool the caller owns and must close. |
 | `DEFAULT_LISTEN_HOST` | const | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Default bind address. |
 | `DEFAULT_LOG_BUFFER_LINES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | 2,000 lines: enough that a boot plus a few turns fits, small enough that the whole ring serialises well under the platform's response budget even with every … |
@@ -786,13 +785,13 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `DEFAULT_SERVICE_NAME` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | What a span says it came from when the operator did not say. |
 | `DEFAULT_START_PORT` | const | `@alexkroman1/aai-cli/start` |  | The port `aai start` binds when neither an argument nor `PORT` says otherwise. |
 | `DEFAULT_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | How many runs a keyed or keyless lookup returns when the caller names no limit. |
-| `EVENT_ID_PREFIX` | const | `@alexkroman1/aai/protocol` |  | The prefix every session-event id carries, so an id names its own kind. |
+| `EVENT_ID_PREFIX` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The prefix every session-event id carries, so an id names its own kind. |
 | `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Executes a named tool with parsed arguments and returns its string result. |
 | `GlobalConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
 | `HOST_ONLY_AGENT_FIELDS` | const | `@alexkroman1/aai/manifest` |  | `AgentDef` fields that must never cross the serialization boundary — the single deny-list `toAgentConfig` strips. |
-| `HostConfig` | type | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection. |
-| `HostConfigMessageSchema` | const | `@alexkroman1/aai/protocol` |  | The host-mode handshake frame: the first inbound message on a host-mode WebSocket connection, carrying the `HostConfigSchema` payload. |
-| `HostConfigSchema` | const | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection: the caller (e.g. an external evaluation harness) supplies the system prompt, optional greeting, … |
+| `HostConfig` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | Host-provided agent configuration for a host-mode connection. |
+| `HostConfigMessageSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The host-mode handshake frame: the first inbound message on a host-mode WebSocket connection, carrying the `HostConfigSchema` payload. |
+| `HostConfigSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Host-provided agent configuration for a host-mode connection: the caller (e.g. an external evaluation harness) supplies the system prompt, optional greeting, … |
 | `HostCredentialEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | An env record that may carry host/shell provider credentials. |
 | `HostOnlyAgentField` | type | `@alexkroman1/aai/manifest` |  | A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). |
 | `HostServerOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createHostServer`. |
@@ -842,34 +841,35 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ProjectServerOptions` | interface | `@alexkroman1/aai-cli/start` |  | Options for `createProjectServer` and `executeStart`. |
 | `ProviderDescriptorSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ProviderEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Env acceptable for provider-credential resolution (STT/TTS/LLM openers, `ctx.generate`): the agent's own env or a host-fallback env. |
-| `ReadyConfig` | type | `@alexkroman1/aai/protocol` |  | Protocol-level session config returned to the client on connect. |
-| `ReadyConfigSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `ReadyConfig`. |
+| `ReadyConfig` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | Protocol-level session config returned to the client on connect. |
+| `ReadyConfigSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `ReadyConfig`. |
 | `ReservedDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | One connection held out of the pool for the caller's exclusive use, so SESSION-scoped state — advisory locks, `SET` — survives across statements. |
 | `ResolvedMcpServer` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | One MCP server with its credential already resolved out of the agent env. |
-| `RestoredToolCall` | type · `@internal` | `@alexkroman1/aai/protocol` |  |  |
-| `RestoredToolCallSchema` | const | `@alexkroman1/aai/protocol` |  | One tool call as a RESUME reports it — see `history.restored`. |
+| `RestoredToolCall` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | One tool call as a resume reports it. |
+| `RestoredToolCallSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | One tool call as a RESUME reports it — see `history.restored`. |
 | `RunCodeExecutor` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:runtime` | In-sandbox executor backing the run_code builtin (see createRunCode). |
 | `Runtime`, `RuntimeOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The agent runtime returned by `createRuntime`. |
 | `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createRuntimeServer`. |
 | `RuntimeTracing` | type | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | A started tracer. |
 | `S2sConfig` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Speech-to-Speech (S2S) endpoint configuration. |
 | `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | `Sec-WebSocket-Protocol` entry prefix a ticket travels under. |
-| `SESSION_COMMAND_TYPES` | const | `@alexkroman1/aai/protocol` |  | The set of recognised client→server command `type` values — pass to `lenientParse` so a known-but-invalid message warns instead of being silently dropped as an … |
+| `SESSION_COMMAND_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The set of recognised client→server command `type` values — pass to `lenientParse` so a known-but-invalid message warns instead of being silently dropped as an … |
 | `SESSION_EVENTS_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Env var holding the bearer this route requires. |
-| `SESSION_EVENT_TYPES` | const | `@alexkroman1/aai/protocol` |  | Every event name, as a set — for `lenientParse`'s known-types argument. |
+| `SESSION_EVENT_TYPES` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Every event name, as a set — for `lenientParse`'s known-types argument. |
 | `SESSION_SECRET_ENV` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The env variable that turns the built-in ticket check on. |
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
 | `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |
 | `ServerSession` | type | `@alexkroman1/aai-runtime` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
 | `ServerUpgradeHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every WebSocket upgrade. |
 | `SessionAuth`, `SessionAuthOptions` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who may open a session on a server — `auth` on `createAgentServer`, `createRuntimeServer` and `createHostServer`. |
-| `SessionCommand` | type | `@alexkroman1/aai/protocol` |  | **Client→server** text messages (binary frames carry raw PCM16 audio). |
-| `SessionCommandSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `SessionCommand`. |
+| `SessionCommand` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | **Client→server** text messages (binary frames carry raw PCM16 audio). |
+| `SessionCommandSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `SessionCommand`. |
 | `SessionConnectOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options for `connectSession`. |
 | `SessionConnection` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The input half of a session started with `connectSession`. |
-| `SessionErrorCodeSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for session error codes. |
-| `SessionEventMeta` | type | `@alexkroman1/aai/protocol` |  | The envelope every session event carries. |
-| `SessionEventMetaSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `SessionEventMeta`. |
+| `SessionErrorCode` | type | `@alexkroman1/aai/protocol` (also `@alexkroman1/aai-ui`) | `aai:protocol` | Error codes for categorizing session errors on the wire. |
+| `SessionErrorCodeSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for session error codes. |
+| `SessionEventMeta` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | The envelope every session event carries. |
+| `SessionEventMetaSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `SessionEventMeta`. |
 | `SessionEventPage` | type | `@alexkroman1/aai-runtime` |  | One page of a stream read. |
 | `SessionEventStream` | type | `@alexkroman1/aai-runtime` |  | The runtime's view of every session's event stream. |
 | `SessionIdentity` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who a verified ticket says the caller is. |
@@ -938,8 +938,8 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `assertPipelineTuning` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `assertSilencePolicy` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `buildClient`, `BuildClientOptions` | function · `@internal` | `@alexkroman1/aai-cli/client-bundler` |  |  |
-| `buildClientConfig` | function | `@alexkroman1/aai/protocol` |  | Build the `GET /client-config` response body from an agent-shaped config. |
-| `buildReadyConfig` | function | `@alexkroman1/aai/protocol` |  | Build the protocol-level session config (the `config` frame's audio fields) from the session's input/output sample rates — used by every session mode, pipeline … |
+| `buildClientConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the `GET /client-config` response body from an agent-shaped config. |
+| `buildReadyConfig` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Build the protocol-level session config (the `config` frame's audio fields) from the session's input/output sample rates — used by every session mode, pipeline … |
 | `buildWorker`, `BuildWorkerOptions` | function · `@internal` | `@alexkroman1/aai-cli/worker-bundler` |  |  |
 | `carrierByName` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | The codec for a `?carrier=` value. |
 | `connectSession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Run a session over your OWN audio I/O — anything that is not a WebSocket. |
@@ -967,7 +967,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `isLockfile` | function | `@alexkroman1/aai/workspace-files` |  | True when `name` is a package-manager lockfile. |
 | `isPathInside` | function | `@alexkroman1/aai/workspace-files` |  | Is `target` the directory `dir` itself, or something under it? |
 | `layerScaffoldFiles` | function | `@alexkroman1/aai/workspace-files` |  | The files layering `scaffold` under `files` adds or changes — and ONLY those, so a caller writing to disk touches nothing it does not have to, and one building … |
-| `lenientParse` | function | `@alexkroman1/aai/protocol` |  | Two-phase message parse: tries the strict schema first, then falls back to the envelope to distinguish unknown-but-valid types (safe to ignore during rolling … |
+| `lenientParse` | function | `@alexkroman1/aai/protocol` | `aai:protocol` | Two-phase message parse: tries the strict schema first, then falls back to the envelope to distinguish unknown-but-valid types (safe to ignore during rolling … |
 | `loadBuiltAgent` | function | `@alexkroman1/aai-cli/start` |  | Load the built agent, or fail saying what to run. |
 | `mergeScaffoldManifest` | function | `@alexkroman1/aai/workspace-files` |  | Fill a manifest's gaps from the scaffold's, `existing` always winning. |
 | `metricsEndpoint` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The collector this environment names for METRICS, or `undefined`. |
