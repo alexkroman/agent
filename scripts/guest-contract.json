@@ -1,0 +1,46 @@
+{
+  "_description": "The deployed-guest contract GUEST_CONTRACT_VERSION versions: the exec-env keys agentBootEnv writes, the /manage/* surface, and the harness<->bundle handshake types. Written by `node scripts/check-guest-contract.mjs --record|--revise \"<reason>\"`; history is append-only. See the header of scripts/check-guest-contract.mjs.",
+  "version": 4,
+  "sha256": "95b7bf5e70972cde7fc8223451cdf96fcf728ae1e547ebbdb50c3f248d8030e4",
+  "surface": {
+    "bootEnv": [
+      "AAI_AGENT_ENV_PATH",
+      "AAI_BUNDLE_PATH",
+      "AAI_BUNDLE_SHA256",
+      "AAI_BUNDLE_URL",
+      "AAI_DEBUG",
+      "AAI_GUEST_IDLE_EXIT_MS",
+      "AAI_GUEST_MODE",
+      "AAI_GUEST_PORT",
+      "AAI_GUEST_TOKEN",
+      "AAI_PLATFORM_BASE_URL",
+      "AAI_PUBLIC_BASE_URL",
+      "AAI_UPLOAD_BROKER_URL",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "OTEL_EXPORTER_OTLP_HEADERS",
+      "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+      "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+      "OTEL_METRICS_EXPORTER",
+      "OTEL_SERVICE_NAME"
+    ],
+    "manage": {
+      "paths": ["/manage/drain", "/manage/logs", "/manage/status"],
+      "responseKeys": ["activeSessions", "contractVersion", "draining", "error", "ok"]
+    },
+    "types": {
+      "GuestRuntime": "type GuestRuntime={startSession(ws:unknown,opts:unknown):void;shutdown():Promise<void>;workflows?:unknown;deliverWorkflow?:unknown;};",
+      "CreateGuestRuntime": "type CreateGuestRuntime=(opts:{env:Record<string,string>;runCode?:(code:string)=>Promise<string|{error:string}>;publicUrl?:string;})=>GuestRuntime;"
+    }
+  },
+  "history": [
+    {
+      "version": 4,
+      "revision": 0,
+      "sha256": "95b7bf5e70972cde7fc8223451cdf96fcf728ae1e547ebbdb50c3f248d8030e4",
+      "reason": "Baseline. v1-v4 predate this record; their history is the GUEST_CONTRACT_VERSION doc comment in packages/aai-guest-core/src/limits.ts."
+    }
+  ]
+}

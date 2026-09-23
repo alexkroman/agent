@@ -6018,7 +6018,7 @@ export const ReadyConfigSchema: z.ZodObject<{
     ttsSampleRate: z.ZodNumber;
 }, z.core.$strip>;
 
-// @internal
+// @public
 export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
 
 // @public

@@ -743,3 +743,9 @@ than `spyOn(console, …)` (see "Every line goes through `logger.ts`" in
 `packages/aai-server/CLAUDE.md`). What remains is the same job elsewhere:
 `aai-studio-server` and `aai-cli` still write to `console.*` in places, and the
 SDK publishes a `Logger` either could take.
+
+**The other half is COUNTED now: `guard-invariants` rule 34** baselines every
+`vi.mock`/`vi.doMock` per test file (134 across 74 files when it landed, the
+heaviest in `aai-cli`'s dev-server suites). Each one marks a unit with no seam
+to hand a fake through; the list is the to-do list, and `pnpm debt:report`
+prints it beside the other ledgers.

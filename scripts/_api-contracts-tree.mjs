@@ -63,7 +63,6 @@ export const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
  */
 const NON_AUTHORING_SUBPATHS = {
   aai: {
-    "./protocol": "the wire format both ends of a session derive, not something an agent declares",
     "./manifest": "the config schema the CLI, the server and the runtime pass between them",
     "./slugify": "how a human name becomes a slug, for the CLI, the platform and the studio",
     "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
@@ -102,6 +101,13 @@ const NON_AUTHORING_SUBPATHS = {
  * hard failure rather than a silent hole.
  */
 const UNEXEMPLIFIED_SUBPATHS = {
+  aai: {
+    "/protocol":
+      "the session WIRE format — contracted because a browser client and a deployed agent " +
+      "ship on different schedules, so a break here is version drift between two builds that " +
+      "each compile. Its consumer is a custom client or a self-hosted server, never an " +
+      "`agent.ts`, so a template has nothing honest to demonstrate with it.",
+  },
   "aai-runtime": {
     ".":
       "the host embedding surface — `createRuntime`/`createAgentServer` and the transports. " +
@@ -135,8 +141,11 @@ export const rel = (path) => relative(ROOT, path);
  *
  * A formatter failure is not fatal: the raw JSON is still correct and the lint
  * gate will say so in its own words, which is a better error than this one.
+ *
+ * Exported for `check-guest-contract.mjs`, which writes a record of the same
+ * kind into `scripts/` and hit the same collapse-the-array disagreement.
  */
-const writeJson = (path, value) => {
+export const writeJson = (path, value) => {
   mkdirSync(dirname(path), { recursive: true });
   const raw = `${JSON.stringify(value, null, 2)}\n`;
   let formatted = raw;
