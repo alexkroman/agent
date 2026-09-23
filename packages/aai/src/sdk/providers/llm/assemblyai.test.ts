@@ -67,10 +67,17 @@ describe("readAssemblyAILlmProviderOptions", () => {
     });
   });
 
-  it("drops a value outside either vocabulary, and anything else in the bag", () => {
+  it("drops a region outside its vocabulary, a non-string effort, and anything else in the bag", () => {
     expect(
       readAssemblyAILlmProviderOptions({ region: "asia", reasoningEffort: 3, extra: true }),
     ).toEqual({});
+    expect(readAssemblyAILlmProviderOptions({ reasoningEffort: "" })).toEqual({});
     expect(readAssemblyAILlmProviderOptions(undefined)).toEqual({});
+  });
+
+  it("forwards an effort this release has not heard of, the type being open", () => {
+    expect(readAssemblyAILlmProviderOptions({ reasoningEffort: "xhigh" })).toEqual({
+      reasoningEffort: "xhigh",
+    });
   });
 });

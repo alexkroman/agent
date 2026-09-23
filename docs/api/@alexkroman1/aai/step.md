@@ -2734,11 +2734,16 @@ The step's own name, as `ctx.step` was given it.
 type TranscribeProgress = 
   | {
   done: false;
-  status: string;
+  status:   | "queued"
+     | "processing"
+     | string & {
+   };
 }
   | {
   done: true;
-  status: string;
+  status:   | "completed"
+     | string & {
+   };
   transcript: Transcript;
 };
 ```
@@ -2909,6 +2914,8 @@ type Transcript = {
   text: string;
 };
 ```
+
+**`Sealed`**
 
 A finished transcript, as [stepTranscribePoll](#steptranscribepoll) answers with one.
 

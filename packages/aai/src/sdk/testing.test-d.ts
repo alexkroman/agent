@@ -11,10 +11,15 @@
  * counted by nothing — the same argument `_session-slot-caps.test-d.ts` makes.
  */
 import { expectTypeOf, test } from "vitest";
+import { z } from "zod";
 import type { ToolContextOverrides } from "./_testing-context.ts";
+import { createToolContext } from "./_testing-context.ts";
+import { tool } from "./define.ts";
 import type { StubDelegateScript } from "./testing-delegate.ts";
+import type { DeployedConfig } from "./testing-deployable.ts";
 import type { StubGenerateScript } from "./testing-generate.ts";
 import type { ScriptedToolContextOptions } from "./testing-scripted.ts";
+import { runTool } from "./testing-tools.ts";
 import type { ToolContext } from "./types.ts";
 
 test("a script names its shape: one `reply`, or a table of `routes`", () => {
@@ -64,4 +69,32 @@ test("the overrides NAME every ToolContext field, and no other", () => {
   type Own = Exclude<keyof ToolContextOverrides, "model" | "desk">;
   expectTypeOf<Exclude<keyof ToolContext, Own>>().toEqualTypeOf<never>();
   expectTypeOf<Exclude<Own, keyof ToolContext>>().toEqualTypeOf<never>();
+});
+
+test("runTool handed the TOOL is typed end to end; by name it answers unknown", async () => {
+  const addItem = tool({
+    description: "Add an item",
+    inputSchema: z.object({ item: z.string() }),
+    execute: async ({ item }) => ({ added: item, count: 1 }),
+  });
+  const ctx = createToolContext();
+  expectTypeOf(await runTool(addItem, { item: "apple" }, ctx)).toEqualTypeOf<{
+    added: string;
+    count: number;
+  }>();
+  // The context may stand in for the arguments, as in the name form.
+  expectTypeOf(runTool(addItem, ctx)).resolves.toEqualTypeOf<{ added: string; count: number }>();
+  // The arguments are checked against what `execute` takes.
+  expectTypeOf<{ item: number }>().not.toExtend<Parameters<typeof runTool<typeof addItem>>[1]>();
+  // Matched on `execute` alone: a bare object with one is a tool too.
+  const bare = { execute: (args: { n: number }) => args.n * 2 };
+  expectTypeOf(await runTool(bare, { n: 2 })).toEqualTypeOf<number>();
+  // The name form is unchanged.
+  expectTypeOf(runTool({ tools: { add_item: addItem } }, "add_item", ctx)).resolves.toBeUnknown();
+});
+
+test("expectDeployable's config names only what the specs read — not the config schema", () => {
+  expectTypeOf<DeployedConfig["mode"]>().toEqualTypeOf<"pipeline" | "s2s" | "text">();
+  expectTypeOf<DeployedConfig["name"]>().toEqualTypeOf<string>();
+  expectTypeOf<DeployedConfig["systemPrompt"]>().toEqualTypeOf<string>();
 });

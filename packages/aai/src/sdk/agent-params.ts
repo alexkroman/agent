@@ -20,9 +20,9 @@
 
 import type { StaticAgentParamsCore } from "./agent-params-static.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
+import type { AssemblyAIGatewayModel, LlmSpec } from "./providers/llm/llm.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
-import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
 
 /** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
@@ -262,17 +262,13 @@ export type PipelineAgentParams = SharedAgentParams &
      * A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
      * autocomplete and a typo a gateway 400 at the first live session.
      *
-     * The `string & Record<never, never>` arm keeps it a WIDENING: the catalog
+     * The `string & {}` arm of {@link LlmSpec} keeps it a WIDENING: the catalog
      * is a snapshot of a service that ships models faster than this package
      * releases, so every id that compiled before still compiles — see
      * {@link AssemblyAITtsVoice}, which is autocomplete over its catalog for
      * exactly the same reason and with the same non-guarantee.
      */
-    llm?:
-      | LlmProvider
-      | AssemblyAIGatewayModel
-      | `${string}/${string}`
-      | (string & Record<never, never>);
+    llm?: LlmSpec;
     s2s?: undefined;
     text?: undefined;
     /** See {@link AgentDef.page}. A pipeline agent's front door is a mic. */
@@ -394,11 +390,7 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony">
    * shorthand would come to autocomplete on a voice agent and not on a text
    * one.
    */
-  llm?:
-    | LlmProvider
-    | AssemblyAIGatewayModel
-    | `${string}/${string}`
-    | (string & Record<never, never>);
+  llm?: LlmSpec;
   stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
   tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
   s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";

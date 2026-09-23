@@ -5,6 +5,7 @@ import {
   createToolContext,
   expectDialogOk,
   runGuardrail,
+  runTool,
   type ScriptedToolContext,
   type StubDelegateRoute,
   type StubGenerateRoute,
@@ -13,8 +14,8 @@ import {
   toolRunner,
 } from "@alexkroman1/aai/testing";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-
 import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
 import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
 import {
@@ -28,6 +29,20 @@ import {
   readTool,
   searchTool,
 } from "./shared.ts";
+import startPlan from "./tools/start_plan.ts";
+
+/**
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 /**
  * The web, faked at the SDK's own seam.
@@ -361,9 +376,7 @@ describe("start_plan", () => {
     const { ctx } = scriptedDesk({
       steps: ["Check prices", "Compare hotels", "Book"],
     });
-    const result = (await run("start_plan", { objective: "a weekend in Lisbon" }, ctx)) as {
-      steps: string[];
-    };
+    const result = ok(await runTool(startPlan, { objective: "a weekend in Lisbon" }, ctx));
     expect(result.steps).toHaveLength(3);
 
     const state = stateOf(ctx);

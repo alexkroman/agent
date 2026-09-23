@@ -21,7 +21,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
    * Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded
    * to the SDK unchanged, which allows opt-in to future models.
    */
-  model?: "nova-3" | "nova-2" | string;
+  model?: "nova-3" | "nova-2" | (string & {});
   /**
    * BCP-47 language code for transcription. Examples: `"en"`, `"es"`, `"fr"`,
    * `"de"`.

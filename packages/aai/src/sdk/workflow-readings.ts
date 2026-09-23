@@ -17,9 +17,7 @@
  * every published subpath still resolves them where it did.
  */
 
-import type { InferSchemaOutput } from "./schema.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
-import type { WorkflowBody, WorkflowDef } from "./workflow.ts";
 // Type-only, so the cycle with `workflow-run.ts` (which names `WorkflowClient`
 // in its own docs) is erased rather than real. `WorkflowRunOf` composes the
 // snapshot with a def's output type, which is what moved this import here with
@@ -70,8 +68,18 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * one taking the open `Record<string, unknown>`, and the conditional silently
  * fell to `never`. It is the same contravariance `AnyWorkflowDef` was
  * written for, reached by the other route, and it is why the test below matches
- * `run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
- * parameter type.
+ * `run` as `(input: never, ctx: never) => infer R` — `never` is assignable to
+ * every parameter type.
+ *
+ * ## It matches a SHAPE, not a named declaration
+ *
+ * Both readings test `run`'s signature structurally rather than naming
+ * `WorkflowDef`, `WorkflowBody` or `WorkflowContext`. A reading answers the
+ * same type either way — `WorkflowDef.run` IS `(input: InferSchemaOutput<P>,
+ * ctx: WorkflowContext) => …` — but a reading that names the declaration
+ * carries it (and everything `WorkflowContext` reaches) into the contract of
+ * every capability that publishes the reading, so a new member on the context
+ * a body receives moved a PAGE's type.
  *
  * `unknown extends O` is how "declared nothing" is told from "declared a
  * schema": a def with no output schema still HAS the optional property in its
@@ -89,8 +97,8 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * @public
  */
 export type WorkflowOutputOf<D> = D extends {
-  run: WorkflowBody<never, infer R>;
-  output?: StandardSchemaV1<unknown, infer O> | undefined;
+  readonly run: (input: never, ctx: never) => infer R;
+  readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 }
   ? Awaited<unknown extends O ? R : O>
   : never;
@@ -100,13 +108,17 @@ export type WorkflowOutputOf<D> = D extends {
  * exactly what the body's parameter should be.
  *
  * **The reason it exists is that nothing checks a hand-written parameter.**
- * {@link WorkflowBody} takes its input as a function PARAMETER, so it is
+ * `WorkflowBody` takes its input as a function PARAMETER, so it is
  * contravariant: a body declaring a WIDER shape than the schema produces is
  * assignable, and a body declaring the same shape with a field's optionality or
  * a default's type subtly different is assignable too. Both compile. A
  * `z.number().default(5)` against a body that writes `input.limit ?? 3` is the
  * sharp version — the schema guarantees `limit` is present, the `??` is dead,
  * and the two numbers disagree with nothing to report it.
+ *
+ * It reads the parameter `WorkflowDef.run` declares, which IS the schema's
+ * output (`InferSchemaOutput<P>`), by matching `run`'s shape — see
+ * {@link WorkflowOutputOf} for why a reading matches a shape.
  *
  * Two details a restated shape gets wrong by hand, both of which this gets
  * right for free. A zod `.optional()` infers a property that may be PRESENT AND
@@ -144,8 +156,11 @@ export type WorkflowOutputOf<D> = D extends {
  *
  * @public
  */
-export type WorkflowInputOf<D> =
-  D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowInputOf<D> = D extends {
+  readonly run: (input: infer I, ctx: never) => unknown;
+}
+  ? I
+  : never;
 
 /**
  * A run of `D`, with its output already typed — `WorkflowRunSnapshot` and

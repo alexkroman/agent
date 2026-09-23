@@ -95,10 +95,10 @@ export interface ChannelDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export interface ChannelHandler {
-    readonly advice: (options: Record<string, unknown>, detail: string) => string;
+export interface ChannelHandler<O = Record<string, unknown>> {
+    readonly advice: (options: O, detail: string) => string;
     readonly kind: string;
-    readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+    readonly render: (message: ChannelMessage, options: O) => ChannelPayload;
 }
 
 // @public
@@ -142,6 +142,9 @@ export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
 export function registerChannelHandler(handler: ChannelHandler): void;
+
+// @public
+export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];
@@ -191,6 +194,9 @@ type AnyWorkflowDef<R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
+
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public (undocumented)
 export const BASH_TIMEOUT_MAX_MS: number;
@@ -263,7 +269,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -299,6 +305,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type Message = {
@@ -409,7 +418,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -1215,13 +1224,16 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
+// @public
 type AssemblyAILlmProviderOptions = {
     readonly region?: "us" | "eu";
     readonly reasoningEffort?: AssemblyAIReasoningEffort;
 };
 
 // @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -1231,10 +1243,10 @@ interface AssemblyAISttOptions extends ProviderCredentialOptions {
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
+    model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }
 
@@ -1252,10 +1264,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @internal
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
@@ -1329,7 +1338,7 @@ export const DEEPGRAM_KIND: "deepgram";
 interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
-    model?: "nova-3" | "nova-2" | string;
+    model?: "nova-3" | "nova-2" | (string & {});
 }
 
 // @internal
@@ -1454,7 +1463,7 @@ export function gatewayModelIds(opts?: {
     eu?: boolean;
 }): KnownGatewayModel[];
 
-// @public
+// @public (undocumented)
 export type GatewayModelInfo = {
     readonly tools: boolean;
     readonly stream: boolean;
@@ -1481,7 +1490,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -1517,7 +1526,13 @@ export function isUniversal35Pro(model: string): boolean;
 export const KNOWN_LLM_PROVIDERS: readonly ["assemblyai", "anthropic", "cerebras", "gateway", "google", "groq", "mistral", "openai", "openrouter", "xai"];
 
 // @public
-type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+export type KnownGatewayModel = KnownLiterals<AssemblyAIGatewayModel>;
+
+// @public
+type KnownLiterals<T extends string> = T extends unknown ? string extends T ? never : T : never;
+
+// @internal
+export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -1534,6 +1549,12 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmProviderName = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai" | (string & {});
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
@@ -2057,7 +2078,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -2568,10 +2589,10 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
 
 // @public
-export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
@@ -2602,10 +2623,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public
-export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 interface AssemblyAITtsVoiceInfo {
@@ -2837,7 +2855,7 @@ export type GenerateObjectResult<T> = {
 export type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -2920,9 +2938,6 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
 export type KnownTurnDetectionMode = "auto" | "manual";
 
 // @public
@@ -2943,6 +2958,9 @@ type LlmDescriptorOptions = {
 export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 export const MCP_SERVER_KEY_RE: RegExp;
@@ -2977,7 +2995,7 @@ export type Message = {
 // @public
 export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
-// @public
+// @public @sealed
 export interface MetricsCollector {
     collect(sample: MetricsSample): void;
     reset(): void;
@@ -2992,7 +3010,7 @@ export interface MetricsCollectorOptions {
 // @public
 export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
 
-// @public
+// @public @sealed
 export interface MetricsSummary {
     interrupted: number;
     latencyMs?: MetricStat;
@@ -3088,7 +3106,7 @@ export function pickOne<T>(items: readonly T[], random?: RandomSource): T | unde
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
@@ -3678,7 +3696,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -3712,7 +3730,7 @@ export type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
@@ -3942,12 +3960,14 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
@@ -4489,7 +4509,7 @@ export const WS_OPEN = 1;
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL: AssemblyAIGatewayModel;
 
 // @public
-export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 export type AssemblyAILlmProviderOptions = {
@@ -4498,13 +4518,7 @@ export type AssemblyAILlmProviderOptions = {
 };
 
 // @public
-export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-// @public
-export type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
-export type KnownLlmProvider = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai";
+export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
 // @public
 export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
@@ -4531,7 +4545,10 @@ export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
 };
 
 // @public
-export type LlmProviderName = KnownLlmProvider | (string & {});
+export type LlmProviderName = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai" | (string & {});
+
+// @public
+export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 export interface ProviderCredentialOptions {
@@ -4748,6 +4765,9 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
 // @internal
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
@@ -4869,7 +4889,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -4928,6 +4948,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type McpServerConfig = {
@@ -5391,7 +5414,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -6336,13 +6359,13 @@ export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
-    model?: string;
+    model?: "gpt-realtime-2" | "gpt-realtime" | (string & {});
     url?: string;
     voice?: OpenAIS2sVoice;
 }
 
 // @public
-export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse" | (string & {});
 
 // @public
 export interface ProviderCredentialOptions {
@@ -6381,6 +6404,9 @@ type AnyWorkflowDef<R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
+
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
@@ -6437,7 +6463,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -6473,6 +6499,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 export function mapConcurrent<T, R>(items: readonly T[], width: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
@@ -6797,7 +6826,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -6929,10 +6958,10 @@ export class TranscribeError extends Error {
 // @public
 export type TranscribeProgress = {
     done: false;
-    status: string;
+    status: "queued" | "processing" | (string & {});
 } | {
     done: true;
-    status: string;
+    status: "completed" | (string & {});
     transcript: Transcript;
 };
 
@@ -6957,7 +6986,7 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
     label?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type Transcript = {
     id: string;
     text: string;
@@ -7297,10 +7326,10 @@ export function toStepError(cause: unknown, message?: string): Error;
 // @public
 type TranscribeProgress = {
     done: false;
-    status: string;
+    status: "queued" | "processing" | (string & {});
 } | {
     done: true;
-    status: string;
+    status: "completed" | (string & {});
     transcript: Transcript;
 };
 
@@ -7325,7 +7354,7 @@ type TranscribeSyncOptions = TranscribeRequestOptions & {
     label?: string | undefined;
 };
 
-// @public
+// @public @sealed
 type Transcript = {
     id: string;
     text: string;
@@ -7408,10 +7437,10 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
+    model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }
 
@@ -7425,7 +7454,7 @@ export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
-    model?: "nova-3" | "nova-2" | string;
+    model?: "nova-3" | "nova-2" | (string & {});
 }
 
 // @public
@@ -7471,106 +7500,6 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 import { z } from 'zod';
 
 // @public
-type AgentConfig = z.infer<typeof AgentConfigSchema>;
-
-// @internal
-const AgentConfigSchema: z.ZodObject<{
-    name: z.ZodString;
-    description: z.ZodOptional<z.ZodString>;
-    systemPrompt: z.ZodDefault<z.ZodString>;
-    greeting: z.ZodDefault<z.ZodString>;
-    sttPrompt: z.ZodOptional<z.ZodString>;
-    maxSteps: z.ZodOptional<z.ZodNumber>;
-    temperature: z.ZodOptional<z.ZodNumber>;
-    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
-    maxRetries: z.ZodOptional<z.ZodNumber>;
-    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
-    usageLimits: z.ZodOptional<z.ZodObject<{
-        totalTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
-        auto: "auto";
-        none: "none";
-        required: "required";
-    }>, z.ZodObject<{
-        type: z.ZodLiteral<"tool">;
-        toolName: z.ZodString;
-    }, z.core.$strip>]>>;
-    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        calculate: "calculate";
-        fetch_json: "fetch_json";
-        get_page_design: "get_page_design";
-        recall: "recall";
-        remember: "remember";
-        run_code: "run_code";
-        think: "think";
-        visit_webpage: "visit_webpage";
-        web_search: "web_search";
-    }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
-    errorPhrase: z.ZodOptional<z.ZodString>;
-    startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
-    stt: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    s2s: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
-    mode: z.ZodOptional<z.ZodEnum<{
-        pipeline: "pipeline";
-        s2s: "s2s";
-        text: "text";
-    }>>;
-    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-        url: z.ZodURL;
-        tokenEnv: z.ZodOptional<z.ZodString>;
-        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
-    }, z.core.$strict>>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
-    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        telnyx: "telnyx";
-        twilio: "twilio";
-    }>>>]>>;
-}, z.core.$strip>;
-
-// @public
-type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
-    systemPrompt?: AgentSystemPrompt;
-} & {
-    [K in HostOnlyAgentField]?: unknown;
-};
-
-// @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
@@ -7591,6 +7520,9 @@ type AnyWorkflowDef<R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
 };
+
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -7640,6 +7572,31 @@ export function deployedAgent<D extends ToolBearingAgent & {
     readonly systemPrompt: AgentSystemPrompt;
 }>(authored: D, project: ProjectFiles): D;
 
+// @public @sealed
+export interface DeployedConfig {
+    readonly builtinTools?: readonly BuiltinTool[] | undefined;
+    readonly llm?: DeployedStage | undefined;
+    readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
+    readonly mode: "pipeline" | "s2s" | "text";
+    readonly name: string;
+    readonly requiredEnv?: readonly string[] | undefined;
+    readonly s2s?: DeployedStage | undefined;
+    readonly stt?: DeployedStage | undefined;
+    readonly systemPrompt: string;
+    readonly text?: true | undefined;
+    readonly tts?: DeployedStage | undefined;
+    readonly turnDetection?: string | undefined;
+    readonly usageLimits?: {
+        readonly totalTokens?: number | undefined;
+    } | undefined;
+}
+
+// @public @sealed
+export interface DeployedStage {
+    readonly kind: string;
+    readonly options?: Readonly<Record<string, unknown>> | undefined;
+}
+
 // @public
 interface DialogPosition {
     readonly done: boolean;
@@ -7672,7 +7629,12 @@ export function eventsOf<E extends {
 }>[];
 
 // @public
-export function expectDeployable(def: AgentConfigSource): AgentConfig;
+export function expectDeployable<const D extends {
+    readonly name: unknown;
+    readonly stt?: unknown;
+    readonly llm?: unknown;
+    readonly tts?: unknown;
+}>(def: D): DeployedConfig;
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
@@ -7681,7 +7643,10 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
-export function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
+export function expectPromptBuiltinsDeclared(def: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly builtinTools?: readonly BuiltinTool[] | undefined;
+}): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -7709,7 +7674,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -7723,12 +7688,6 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
-
-// @public
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
-
-// @public
-type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -7755,6 +7714,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type Message = {
@@ -7827,6 +7789,11 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 } | {
     status: "cancelled";
 });
+
+// @public
+export function runTool<T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
 
 // @public
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
@@ -8202,7 +8169,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -8505,6 +8472,9 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
+// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
@@ -8550,7 +8520,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -8607,6 +8577,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type Message = {
@@ -8889,7 +8862,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -9139,7 +9112,7 @@ export function webSearch<T = UntypedJsonBody>(query: string | ({
 
 ```ts
 // @public
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoice;
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -9152,7 +9125,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
 
 // @public
 export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
@@ -9168,10 +9141,7 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-export type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 export interface AssemblyAITtsVoiceInfo {
@@ -9225,6 +9195,9 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 // @public
 export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
+
+// @public
+export function ttsVoiceInfo(voice: AssemblyAITtsVoice): AssemblyAITtsVoiceInfo | undefined;
 ```
 
 ## `@alexkroman1/aai/utils`
@@ -9323,7 +9296,7 @@ export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Pr
 ```ts
 import { z } from 'zod';
 
-// @public
+// @public @sealed
 export type AgentClient = WorkflowApi & {
     config(): Promise<ClientConfigResponse>;
     readonly baseUrl: string;
@@ -9521,60 +9494,29 @@ export type WakeUpOptions = {
     correlationIds?: string[];
 };
 
-// @public
+// @public @sealed
 export type WorkflowApi = {
-    list(options?: {
-        signal?: AbortSignal;
-    }): Promise<WorkflowSummary[]>;
+    list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
     upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    start(workflow: string, input?: unknown, options?: {
-        key?: string;
-        signal?: AbortSignal;
-    }): Promise<string>;
-    startAndWait(workflow: string, input?: unknown, options?: {
-        key?: string;
-        wait?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot>;
-    get(runId: string, options?: {
-        wait?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot | undefined>;
-    find(workflow: string, key: string, options?: {
-        limit?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot[]>;
-    recent(workflow: string, options?: {
-        limit?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot[]>;
-    cancel(runId: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<boolean>;
+    start(workflow: string, input?: unknown, options?: WorkflowStartOptions): Promise<string>;
+    startAndWait(workflow: string, input?: unknown, options?: WorkflowStartAndWaitOptions): Promise<WorkflowRunSnapshot>;
+    get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
+    find(workflow: string, key: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
-    streamOutput(runId: string, options?: {
-        namespace?: string;
-        startIndex?: number;
-        signal?: AbortSignal;
-    }): Promise<Response>;
-    follow(runId: string, options?: {
-        signal?: AbortSignal;
-    }): AsyncIterable<WorkflowRunSnapshot>;
-    followOutput(runId: string, options?: {
-        namespace?: string;
-        fromIndex?: number;
-        signal?: AbortSignal;
-    }): AsyncIterable<unknown>;
-    wake(runId: string, options?: WakeUpOptions & {
-        signal?: AbortSignal;
-    }): Promise<number>;
+    streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
+    follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
+    followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
+    wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<UploadInfo>;
-    download(id: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<Blob>;
+    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+    download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
+};
+
+// @public
+export type WorkflowApiCallOptions = {
+    signal?: AbortSignal;
 };
 
 // @public
@@ -9634,12 +9576,27 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowFollowOutputOptions = {
+    namespace?: string;
+    fromIndex?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowGetOptions = {
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 export type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
@@ -9648,6 +9605,12 @@ export type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+};
+
+// @public
+export type WorkflowRunListOptions = {
+    limit?: number;
+    signal?: AbortSignal;
 };
 
 // @public
@@ -9674,6 +9637,26 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowStartAndWaitOptions = {
+    key?: string;
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStartOptions = {
+    key?: string;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStreamOutputOptions = {
+    namespace?: string;
+    startIndex?: number;
+    signal?: AbortSignal;
+};
 
 // @public
 export type WorkflowSummary = {

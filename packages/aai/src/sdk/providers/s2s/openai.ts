@@ -29,7 +29,15 @@ export const OPENAI_S2S_KIND = "openai-realtime" as const;
  */
 export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
 
-/** Voice ids the OpenAI Realtime API accepts for TTS. */
+/**
+ * A voice id for the OpenAI Realtime API — one it accepted when this release
+ * was cut, or any other string.
+ *
+ * OPEN, like every vendor vocabulary here: the voice list is OpenAI's and
+ * grows between this package's releases, so a voice shipped next week must
+ * still compile. The literals are autocomplete, not a guard; an id the API
+ * does not know is refused by the API.
+ */
 export type OpenAIS2sVoice =
   | "alloy"
   | "ash"
@@ -40,12 +48,16 @@ export type OpenAIS2sVoice =
   | "marin"
   | "sage"
   | "shimmer"
-  | "verse";
+  | "verse"
+  | (string & {});
 
 /** Options for {@link openAIS2s}. */
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
-  /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime-2"`). */
-  model?: string;
+  /**
+   * Realtime model identifier. Default applied by the host (currently
+   * `"gpt-realtime-2"`). Open: the literals autocomplete, any other id compiles.
+   */
+  model?: "gpt-realtime-2" | "gpt-realtime" | (string & {});
   /** TTS voice. Default applied by the host (currently `"alloy"`). */
   voice?: OpenAIS2sVoice;
   /** Override the WebSocket base URL (testing/proxy). */

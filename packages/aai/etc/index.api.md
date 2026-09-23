@@ -110,10 +110,10 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
 
 // @public
-export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
@@ -144,10 +144,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public
-export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 interface AssemblyAITtsVoiceInfo {
@@ -379,7 +376,7 @@ export type GenerateObjectResult<T> = {
 export type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -462,9 +459,6 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
 export type KnownTurnDetectionMode = "auto" | "manual";
 
 // @public
@@ -485,6 +479,9 @@ type LlmDescriptorOptions = {
 export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 export const MCP_SERVER_KEY_RE: RegExp;
@@ -519,7 +516,7 @@ export type Message = {
 // @public
 export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
-// @public
+// @public @sealed
 export interface MetricsCollector {
     collect(sample: MetricsSample): void;
     reset(): void;
@@ -534,7 +531,7 @@ export interface MetricsCollectorOptions {
 // @public
 export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
 
-// @public
+// @public @sealed
 export interface MetricsSummary {
     interrupted: number;
     latencyMs?: MetricStat;
@@ -630,7 +627,7 @@ export function pickOne<T>(items: readonly T[], random?: RandomSource): T | unde
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
@@ -1220,7 +1217,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
@@ -1254,7 +1251,7 @@ export type TelephonyCarrier = "twilio" | "telnyx";
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
@@ -1484,12 +1481,14 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public

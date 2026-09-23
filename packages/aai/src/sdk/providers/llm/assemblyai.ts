@@ -104,11 +104,23 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string = "https://llm-gateway.eu.ass
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL: AssemblyAIGatewayModel = "gpt-5.6-luna";
 
 /**
- * Reasoning effort accepted by the gateway's GPT-5-family models, including
- * the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the
- * original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
+ * Reasoning effort forwarded to a gateway model — one of the levels the
+ * GPT-5 family accepts, or any other string. The literals include the two off
+ * switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the original
+ * `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
+ *
+ * OPEN, like the model id it is paired with: which levels a model accepts is
+ * the gateway's to decide and moves with its models (the Gemini ids refuse
+ * `"none"` outright), so a level this release has not heard of is forwarded
+ * rather than refused at compile time, and a rejected one is the gateway's 400.
  */
-export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+export type AssemblyAIReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | (string & {});
 
 /**
  * Gateway models that REJECT a tool-carrying request unless reasoning is
@@ -155,15 +167,6 @@ export function assemblyAIReasoningEffort(
   return explicit ?? (TOOLS_REQUIRE_NO_REASONING.has(model) ? "none" : undefined);
 }
 
-/** Every {@link AssemblyAIReasoningEffort}, as a runtime list. */
-const REASONING_EFFORTS = [
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-] as const satisfies readonly AssemblyAIReasoningEffort[];
-
 /** Every gateway region `AssemblyAILlmProviderOptions.region` names. */
 const GATEWAY_REGIONS = ["us", "eu"] as const satisfies readonly NonNullable<
   AssemblyAILlmProviderOptions["region"]
@@ -176,10 +179,11 @@ const GATEWAY_REGIONS = ["us", "eu"] as const satisfies readonly NonNullable<
  * A descriptor crosses the CLI → server → guest boundary as data, so its
  * `providerOptions` is a `Record<string, unknown>` by the time anything reads
  * it, and `llm()`'s narrowing is a claim about the author's source rather than
- * about the bag in hand. A value outside either vocabulary is dropped — the
- * same answer as absent (`region` defaults to `"us"`, `reasoningEffort` to the
- * model's own) — which is what the runtime did with one before, only now the
- * type says so.
+ * about the bag in hand. A `region` outside its vocabulary is dropped — the
+ * same answer as absent (`"us"`) — which is what the runtime did with one
+ * before, only now the type says so. `reasoningEffort` is OPEN (see
+ * {@link AssemblyAIReasoningEffort}), so any non-empty string is kept and
+ * forwarded; a non-string or empty one is dropped, leaving the model's own.
  *
  * @internal
  */
@@ -191,8 +195,6 @@ export function readAssemblyAILlmProviderOptions(
   return omitUndefined({
     region: typeof region === "string" && isKnown(GATEWAY_REGIONS, region) ? region : undefined,
     reasoningEffort:
-      typeof reasoningEffort === "string" && isKnown(REASONING_EFFORTS, reasoningEffort)
-        ? reasoningEffort
-        : undefined,
+      typeof reasoningEffort === "string" && reasoningEffort !== "" ? reasoningEffort : undefined,
   });
 }

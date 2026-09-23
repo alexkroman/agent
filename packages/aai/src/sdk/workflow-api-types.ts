@@ -70,6 +70,71 @@ export type WorkflowApiClientOptions = {
 };
 
 /**
+ * What every {@link WorkflowApi} call takes: an abort signal, and nothing else.
+ *
+ * @public
+ */
+export type WorkflowApiCallOptions = { signal?: AbortSignal };
+
+/**
+ * {@link WorkflowApi.start}'s options — a correlation `key` and a signal.
+ *
+ * **Not `StartOptions`**, which is the same verb one side over:
+ * `ctx.workflows.start` takes `{ key, notify }` from a TOOL, where `notify`
+ * has a session to speak into. A caller outside the agent has none, so this
+ * one carries `signal` where that one carries `notify`; the two share only
+ * `key`, and its meaning.
+ *
+ * @public
+ */
+export type WorkflowStartOptions = { key?: string; signal?: AbortSignal };
+
+/**
+ * {@link WorkflowApi.startAndWait}'s options: {@link WorkflowStartOptions} plus
+ * the `wait` budget, clamped to `MAX_WORKFLOW_WAIT_MS` at both ends.
+ *
+ * @public
+ */
+export type WorkflowStartAndWaitOptions = { key?: string; wait?: number; signal?: AbortSignal };
+
+/**
+ * {@link WorkflowApi.get}'s options: an optional `wait` for the run to settle.
+ *
+ * @public
+ */
+export type WorkflowGetOptions = { wait?: number; signal?: AbortSignal };
+
+/**
+ * {@link WorkflowApi.find} and {@link WorkflowApi.recent}'s options: how many
+ * runs to answer.
+ *
+ * @public
+ */
+export type WorkflowRunListOptions = { limit?: number; signal?: AbortSignal };
+
+/**
+ * {@link WorkflowApi.streamOutput}'s options: which channel, from which chunk.
+ *
+ * @public
+ */
+export type WorkflowStreamOutputOptions = {
+  namespace?: string;
+  startIndex?: number;
+  signal?: AbortSignal;
+};
+
+/**
+ * {@link WorkflowApi.followOutput}'s options: which channel, from which chunk.
+ *
+ * @public
+ */
+export type WorkflowFollowOutputOptions = {
+  namespace?: string;
+  fromIndex?: number;
+  signal?: AbortSignal;
+};
+
+/**
  * The calls the API offers — one method per route, and nothing beyond them.
  *
  * The width is the constraint: a route needing more than a tool can do is the
@@ -77,11 +142,12 @@ export type WorkflowApiClientOptions = {
  * into an engine with reads of its own: this surface dispatches, it does not
  * query.
  *
+ * @sealed
  * @public
  */
 export type WorkflowApi = {
   /** Declared workflows: name, description, and the input schema to render. */
-  list(options?: { signal?: AbortSignal }): Promise<WorkflowSummary[]>;
+  list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
   /**
    * Store a file and resolve the handle a run input carries.
    *
@@ -111,11 +177,7 @@ export type WorkflowApi = {
    * when the caller might be gone before the run finishes and you would rather
    * look it up than remember the id.
    */
-  start(
-    workflow: string,
-    input?: unknown,
-    options?: { key?: string; signal?: AbortSignal },
-  ): Promise<string>;
+  start(workflow: string, input?: unknown, options?: WorkflowStartOptions): Promise<string>;
   /**
    * Start a run and resolve the FINISHED one — the synchronous call.
    *
@@ -132,7 +194,7 @@ export type WorkflowApi = {
   startAndWait(
     workflow: string,
     input?: unknown,
-    options?: { key?: string; wait?: number; signal?: AbortSignal },
+    options?: WorkflowStartAndWaitOptions,
   ): Promise<WorkflowRunSnapshot>;
   /**
    * Read a run's state. Resolves undefined for an unknown id.
@@ -144,15 +206,12 @@ export type WorkflowApi = {
    * `useWorkflowRun<R>` in the browser client, or a cast at the one place a
    * script reads `output`.
    */
-  get(
-    runId: string,
-    options?: { wait?: number; signal?: AbortSignal },
-  ): Promise<WorkflowRunSnapshot | undefined>;
+  get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
   /** Runs of `workflow` started with `key`, newest first. */
   find(
     workflow: string,
     key: string,
-    options?: { limit?: number; signal?: AbortSignal },
+    options?: WorkflowRunListOptions,
   ): Promise<WorkflowRunSnapshot[]>;
   /**
    * Runs of `workflow`, newest first, whatever key they carry.
@@ -162,16 +221,13 @@ export type WorkflowApi = {
    * its own `runId`). Two methods rather than one nullable key, so a caller
    * meaning "this user's runs" cannot silently widen to every user's.
    */
-  recent(
-    workflow: string,
-    options?: { limit?: number; signal?: AbortSignal },
-  ): Promise<WorkflowRunSnapshot[]>;
+  recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
   /**
    * Stop a run, resolving whether this call is what ended it. A run that had
    * already finished answers false rather than failing — two tabs pressing Stop
    * is ordinary.
    */
-  cancel(runId: string, options?: { signal?: AbortSignal }): Promise<boolean>;
+  cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
   /**
    * Open a server-sent-event stream of one run's state.
    *
@@ -194,10 +250,7 @@ export type WorkflowApi = {
    * (negative counts back from the end) is for a reader resuming from a known
    * position.
    */
-  streamOutput(
-    runId: string,
-    options?: { namespace?: string; startIndex?: number; signal?: AbortSignal },
-  ): Promise<Response>;
+  streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
   /**
    * Every snapshot of a run, until it settles — the call `watch` is the raw
    * material for.
@@ -220,7 +273,7 @@ export type WorkflowApi = {
    * the route fails here with its own sentence, and a caller who wants to poll
    * instead is the caller {@link WorkflowApi.watch} exists for.
    */
-  follow(runId: string, options?: { signal?: AbortSignal }): AsyncIterable<WorkflowRunSnapshot>;
+  follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
   /**
    * Everything a run WRITES, in order, until it settles.
    *
@@ -239,10 +292,7 @@ export type WorkflowApi = {
    * "last N" form is left on {@link WorkflowApi.streamOutput} because it names
    * no position a re-open could resume from.
    */
-  followOutput(
-    runId: string,
-    options?: { namespace?: string; fromIndex?: number; signal?: AbortSignal },
-  ): AsyncIterable<unknown>;
+  followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
   /**
    * End a run's `sleep()` early, resolving how many pending sleeps were
    * interrupted.
@@ -263,7 +313,7 @@ export type WorkflowApi = {
    * caller can do with that answer that it could not do with a rejection it never
    * had to make a round trip for.
    */
-  wake(runId: string, options?: WakeUpOptions & { signal?: AbortSignal }): Promise<number>;
+  wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
   /**
    * Store a file under an id YOU chose, so a run can start before it is all in.
    *
@@ -288,7 +338,7 @@ export type WorkflowApi = {
    * on — a `size` that stopped growing means only that nothing arrived recently,
    * which a slow link and a dead client both produce.
    */
-  uploadInfo(id: string, options?: { signal?: AbortSignal }): Promise<UploadInfo>;
+  uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
   /**
    * Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
    * a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`
@@ -296,5 +346,5 @@ export type WorkflowApi = {
    * here does and neither `<audio src>` nor `<a href>` can send one;
    * `downloadUpload` carries the rest.
    */
-  download(id: string, options?: { signal?: AbortSignal }): Promise<Blob>;
+  download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
 };

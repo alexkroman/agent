@@ -68,7 +68,7 @@ export function agentConfigWarnings(config: {
  * An `llm({ provider })` the runtime has no built-in entry for, carrying no
  * `baseUrl` to reach it by.
  *
- * `provider` is OPEN in the type (`KnownLlmProvider | (string & {})`), because
+ * `provider` is OPEN in the type (`"assemblyai" | … | (string & {})`), because
  * a vendor this release has not heard of is legal twice over: with a `baseUrl`
  * it resolves as an OpenAI-compatible endpoint, and a host may have registered
  * the name with `registerLlmKind`. What neither covers is a TYPO of a known

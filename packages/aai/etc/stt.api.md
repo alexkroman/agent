@@ -18,10 +18,10 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
+    model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }
 
@@ -35,7 +35,7 @@ export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
-    model?: "nova-3" | "nova-2" | string;
+    model?: "nova-3" | "nova-2" | (string & {});
 }
 
 // @public

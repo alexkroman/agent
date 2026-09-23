@@ -92,7 +92,17 @@ export type { UploadInfo, UploadRange } from "./step-uploads.ts";
 // The call set and its options are declared in `workflow-api-types.ts` — see that
 // module for why. They are re-exported here, so `@alexkroman1/aai/workflow-api`
 // stays the one import path for the whole surface.
-export type { WorkflowApi, WorkflowApiClientOptions } from "./workflow-api-types.ts";
+export type {
+  WorkflowApi,
+  WorkflowApiCallOptions,
+  WorkflowApiClientOptions,
+  WorkflowFollowOutputOptions,
+  WorkflowGetOptions,
+  WorkflowRunListOptions,
+  WorkflowStartAndWaitOptions,
+  WorkflowStartOptions,
+  WorkflowStreamOutputOptions,
+} from "./workflow-api-types.ts";
 // One import path for the whole surface. NAMED, not `type *` — that also
 // re-exports `uploadFile`, putting an `@internal` name on a public subpath.
 export type {

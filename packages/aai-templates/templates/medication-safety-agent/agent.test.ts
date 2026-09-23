@@ -1,20 +1,15 @@
-import {
-  type InferToolInput,
-  type InferToolOutput,
-  isToolFailure,
-  type ToolFailure,
-} from "@alexkroman1/aai";
+import { type InferToolInput, isToolFailure, type ToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
+  runTool,
   toolInputIssues,
-  toolRunner,
 } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
-import type CheckDrugInteraction from "./tools/check_drug_interaction.ts";
-import type MedicationLookup from "./tools/medication_lookup.ts";
+import CheckDrugInteraction from "./tools/check_drug_interaction.ts";
+import MedicationLookup from "./tools/medication_lookup.ts";
 
 /**
  * Only the NETWORK half of `fda.ts` is faked.
@@ -38,43 +33,43 @@ const label = vi.mocked(fetchFdaLabel);
 import agentDef from "virtual:aai/agent";
 
 /**
+ * The two tools, reached through their OWN input types.
+ *
  * Every tool here takes arguments and none of them touches session state, so no
  * call passes a context: `runTool` builds a fresh one per call, which is a
  * distinct session — right for a stateless tool, and never what two calls
  * sharing state want.
- */
-const run = toolRunner(agentDef);
-
-/**
- * The two tools, reached through their OWN input types.
  *
- * `run` takes `Record<string, unknown>`, so `run("medication_lookup", { drug:
- * "advil" })` compiles and fails at run time as a schema rejection — in the one
+ * By NAME, `runTool` takes `Record<string, unknown>`, so a call with `{ drug:
+ * "advil" }` compiles and fails at run time as a schema rejection — in the one
  * spec that is supposed to be the worked example of calling this tool.
  * `InferToolInput` reads the argument type off the tool's `execute`, which is
  * the zod schema the tool really declares, so a renamed or retyped field breaks
  * the BUILD here and the two files cannot drift apart quietly.
  *
- * The imports are TYPE-only, deliberately: the defs under test still come from
- * `agentDef`, which is what a deploy resolves, and nothing here re-registers a
- * tool module by importing it.
+ * Handed the tool FILE's default export — the very object `agentDef` registers
+ * under that name — `runTool` types the result as the tool's own return, so a
+ * spec reading a field needs no cast.
  */
-const lookUp = (args: InferToolInput<typeof MedicationLookup>) => run("medication_lookup", args);
+const lookUp = (args: InferToolInput<typeof MedicationLookup>) => runTool(MedicationLookup, args);
 const check = (args: InferToolInput<typeof CheckDrugInteraction>) =>
-  run("check_drug_interaction", args);
+  runTool(CheckDrugInteraction, args);
 
 /**
- * What `check_drug_interaction` answers when it did NOT refuse.
+ * What a tool answered when it did NOT refuse, or a throw quoting the refusal.
  *
- * `run` is typed `unknown` — the registry lookup is by string — so reading a
- * field off the answer needs an assertion either way. `InferToolOutput` makes
- * it an assertion about the tool's OWN return type rather than a shape retyped
- * beside it, so renaming `interactions_found` reddens here instead of quietly
- * comparing `undefined`. The SDK's `expectToolOk` is deliberately not used: it
- * unwraps a `dialog()` envelope and throws for a plain `tool()`, which both of
- * these are.
+ * Typed by what it is handed — the tool's OWN return type, through `runTool` —
+ * so renaming `interactions_found` reddens here instead of quietly comparing
+ * `undefined`, and this only subtracts the failure arm. The SDK's
+ * `expectToolOk` is deliberately not used: it unwraps a `dialog()` envelope and
+ * throws for a plain `tool()`, which both of these are.
  */
-type CheckResult = Exclude<InferToolOutput<typeof CheckDrugInteraction>, ToolFailure>;
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },
@@ -208,7 +203,7 @@ describe("check_drug_interaction", () => {
     label.mockImplementation(async (name: string) =>
       name.includes("ibuprofen") ? IBUPROFEN : WARFARIN,
     );
-    const result = (await check({ drugs: ["ibuprofen", "warfarin"] })) as CheckResult;
+    const result = ok(await check({ drugs: ["ibuprofen", "warfarin"] }));
     expect(result.interactions_found).toBe(1);
     expect(result.interactions[0]).toMatchObject({ drug: "ibuprofen", mentions: "warfarin" });
   });
@@ -239,7 +234,7 @@ describe("check_drug_interaction", () => {
 
   test("two drugs with no cross-mention are reported as such, with the caveat", async () => {
     label.mockResolvedValue(WARFARIN);
-    const result = (await check({ drugs: ["warfarin", "aspirin"] })) as CheckResult;
+    const result = ok(await check({ drugs: ["warfarin", "aspirin"] }));
     expect(result.interactions_found).toBe(0);
     // The caveat is the point of the zero case: "no cross-mention" is not
     // "safe", and this tool must never be read as saying it was.

@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 423 names
+- [Agent authoring](#agent-authoring) — 429 names
 - [Browser client](#browser-client) — 138 names
-- [Testing and evals](#testing-and-evals) — 214 names
+- [Testing and evals](#testing-and-evals) — 216 names
 - [Hosting and tooling](#hosting-and-tooling) — 254 names
-- [Framework internals](#framework-internals) — 305 names
+- [Framework internals](#framework-internals) — 307 names
 
 ## Agent authoring
 
@@ -48,12 +48,11 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `AgentVoicePresets` | interface | `@alexkroman1/aai` | `aai:agent` | The opt-in prompt presets, extended by `AgentDef`. |
 | `AnyDialog` | type | `@alexkroman1/aai` | `aai:dialog` | Any dialog, whatever its machine and event union — what `AgentDef.dialogs` holds. |
 | `AnyWorkflowDef` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Any workflow definition, for a signature that only needs its OUTPUT type. |
-| `AssemblyAIGatewayModel` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | A model id on AssemblyAI's LLM Gateway — one of `KnownGatewayModel`, or any other string. |
+| `AssemblyAIGatewayModel` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this catalog was generated, or any other string. |
 | `AssemblyAILlmProviderOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | `providerOptions` for `provider: "assemblyai"`. |
-| `AssemblyAIReasoningEffort` | type | `@alexkroman1/aai/llm` | `aai:llm` | Reasoning effort accepted by the gateway's GPT-5-family models, including the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the original … |
+| `AssemblyAIReasoningEffort` | type | `@alexkroman1/aai/llm` | `aai:llm` | Reasoning effort forwarded to a gateway model — one of the levels the GPT-5 family accepts, or any other string. |
 | `AssemblyAITtsLanguage` | type | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code for a language the AssemblyAI voice catalog speaks. |
 | `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | A voice id from `ASSEMBLYAI_TTS_VOICES`. |
-| `AssemblyAITtsVoiceId` | type | `@alexkroman1/aai/tts` | `aai:tts` | The voice ids this release's catalog carries. |
 | `AssemblyAITtsVoiceInfo` | interface | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about one voice: the language it speaks and the accent it speaks with. |
 | `BASH_TIMEOUT_MAX_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
 | `BASH_TIMEOUT_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Default and maximum wall-clock for one `bash` command. |
@@ -122,13 +121,12 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `InferToolOutput` | type | `@alexkroman1/aai` | `aai:tool` | The result type a tool's `execute` returns (awaited, so a sync and an `async` body infer alike). |
 | `KeyedLock`, `KeyedLockOptions` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` |  |
 | `KeyedLockTimeoutError` | class | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Thrown when an acquire deadline lapses before the key came free. |
-| `KnownGatewayModel` | type | `@alexkroman1/aai/llm` | `aai:llm` | An id the gateway advertised when this catalog was generated — the autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other string. |
-| `KnownLlmProvider` | type | `@alexkroman1/aai/llm` | `aai:llm` | The providers the runtime resolves with no registration — the autocomplete half of `LlmProviderName`. |
 | `KnownTurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | The turn-detection modes this release implements — the autocomplete half of `TurnDetectionMode`. |
 | `KnownVoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | One of the opt-in prompt presets THIS release ships — see `VOICE_PRESETS` for what each one says and what it costs. |
 | `LlmDescriptorOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | What an `LlmProvider` descriptor's `options` carry — the one shape `llm()` writes and the host resolver reads. |
 | `LlmProvider` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | Descriptor for an LLM provider. |
-| `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name — one of `KnownLlmProvider`, or any other string. |
+| `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name. |
+| `LlmSpec` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`, `ctx.generate({ llm })`: a descriptor from `llm`, or a model-id string. |
 | `MCP_SERVER_KEY_RE` | const | `@alexkroman1/aai` | `aai:agent` | The grammar for a server KEY — the name an author gives one server, and the first segment of every tool name it contributes. |
 | `MCP_TOOL_NAME_MAX` | const | `@alexkroman1/aai` | `aai:agent` | Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the strictest this SDK routes to, and therefore the one that decides. |
 | `MCP_TOOL_PREFIX` | const | `@alexkroman1/aai` | `aai:agent` | The prefix every MCP-derived tool name carries. |
@@ -145,7 +143,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | The per-REQUEST knobs every model loop this runtime runs takes — the agent's own conversational loop and a `SubagentDef`'s delegated one alike. |
 | `MultipartBody` | type | `@alexkroman1/aai/step` | `aai:step` | A ready-to-send multipart body, as `multipartBody` returns it. |
 | `MultipartPart` | type | `@alexkroman1/aai/step` | `aai:step` | One file part, as `multipartBody` takes it. |
-| `OpenAIS2sVoice` | type | `@alexkroman1/aai/s2s` | `aai:s2s` | Voice ids the OpenAI Realtime API accepts for TTS. |
+| `OpenAIS2sVoice` | type | `@alexkroman1/aai/s2s` | `aai:s2s` | A voice id for the OpenAI Realtime API — one it accepted when this release was cut, or any other string. |
 | `PageMetadata` | type | `@alexkroman1/aai/html` | `aai:html` | The three things a scraper reads off a page's `<head>`. |
 | `ParsedFeed` | type | `@alexkroman1/aai/html` | `aai:html` | A parsed RSS/Atom/RDF feed. |
 | `PcmFormat` | type | `@alexkroman1/aai/step` | `aai:step` | How to read the samples handed to `encodeWav`. |
@@ -197,7 +195,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StandardSchemaIssue` | interface | `@alexkroman1/aai` |  | One validation issue in a failed Standard Schema result. |
 | `StandardSchemaResult` | type | `@alexkroman1/aai` |  | A successful or failed Standard Schema validation. |
 | `StandardSchemaV1` | interface | `@alexkroman1/aai` |  | The [Standard Schema](https://standardschema.dev) V1 interface, inlined as the spec recommends (it is a types-only contract). |
-| `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start`. |
+| `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a TOOL. |
 | `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` and `SessionSlot.projection` are, and what `agent({ syncState })` takes. |
 | `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Workflow-app params: `page: "static"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
 | `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
@@ -271,17 +269,24 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `WavEncodeOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
 | `WavFormat` | type | `@alexkroman1/aai/step` | `aai:step` | A WAV's `fmt ` chunk plus where its samples actually live. |
 | `WorkflowApi` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | The calls the API offers — one method per route, and nothing beyond them. |
+| `WorkflowApiCallOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | What every `WorkflowApi` call takes: an abort signal, and nothing else. |
 | `WorkflowApiClientOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | What a client needs to know: which agent, on whose authority, and for how long. |
 | `WorkflowBody` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A workflow body: an ordinary async function of its input and a `WorkflowContext`. |
 | `WorkflowClient` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Start and inspect workflow runs. |
 | `WorkflowContext` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | The handle a workflow body receives as its second argument. |
 | `WorkflowDef` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Definition of one durable workflow: its schema, its description, and the function that is its body. |
+| `WorkflowFollowOutputOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.followOutput`'s options: which channel, from which chunk. |
+| `WorkflowGetOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.get`'s options: an optional `wait` for the run to settle. |
 | `WorkflowInputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's INPUT type — what its declared schema parses to, which is exactly what the body's parameter should be. |
 | `WorkflowOutputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's OUTPUT type, for a page that polls its runs. |
 | `WorkflowRunBase` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Fields every `WorkflowRunSnapshot` member carries, whatever its status. |
+| `WorkflowRunListOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.find` and `WorkflowApi.recent`'s options: how many runs to answer. |
 | `WorkflowRunOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`) | `aai:workflow-api` | A run of `D`, with its output already typed — `WorkflowRunSnapshot` and `WorkflowOutputOf` composed. |
 | `WorkflowRunSnapshot` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run's observable state, as `WorkflowClient.get` returns it. |
 | `WorkflowRunStatus` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Lifecycle of one workflow run. |
+| `WorkflowStartAndWaitOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.startAndWait`'s options: `WorkflowStartOptions` plus the `wait` budget, clamped to `MAX_WORKFLOW_WAIT_MS` at both ends. |
+| `WorkflowStartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.start`'s options — a correlation `key` and a signal. |
+| `WorkflowStreamOutputOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.streamOutput`'s options: which channel, from which chunk. |
 | `WorkflowSummary` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | One declared workflow, as `GET /workflows` lists it. |
 | `WriteUploadOptions` | type | `@alexkroman1/aai/step` | `aai:uploads` | Options for `stepWriteUpload`. |
 | `addDays` | function | `@alexkroman1/aai` | `aai:calendar` | `iso` plus `days`, as another `YYYY-MM-DD`. |
@@ -418,6 +423,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `toolFailure` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Build a `ToolFailure` — the failure a tool `execute` RETURNS when the model should see it and recover. |
 | `transcodeToWav`, `TranscodeToWavOptions` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Re-encode anything ffmpeg can read into linear-PCM WAV bytes. |
 | `ttsVoiceIds` | function | `@alexkroman1/aai/tts` | `aai:tts` | The catalog's voice ids, optionally only those speaking `language`, as the non-empty tuple a `z.enum` takes. |
+| `ttsVoiceInfo` | function | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about `voice` — its language and accent — or `undefined` for a voice this release's catalog does not list. |
 | `visitWebpage` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Fetch a page and return its content as clean text. |
 | `wavEncodeArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The encoder half of a linear-PCM WAV argv — no input, no output. |
 | `wavHeader` | function | `@alexkroman1/aai/step` | `aai:step` | The WAV header for a payload of `byteLength` bytes, and nothing else. |
@@ -564,6 +570,8 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `DEFAULT_MAX_DELIVERIES` | const | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | How many deliveries one run may take before the driver gives up. |
 | `DEFAULT_MAX_TURNS` | const | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | How many caller turns a simulation may take unless told otherwise. |
 | `DEFAULT_RUN_TIMEOUT_MS` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | How long one run may take before the harness gives up on it. |
+| `DeployedConfig` | interface | `@alexkroman1/aai/testing` | `aai:testing` | What `expectDeployable` hands back: the RESOLVED config a deploy carries, narrowed to the fields a starter spec asserts on. |
+| `DeployedStage` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One provider stage of a `DeployedConfig` — the descriptor as it will be deployed: its `kind`, and its `options` exactly as serialized. |
 | `DeterminismKind` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The three reads, which is also the reserved half of the journal's key space. |
 | `END_CALL_TOOL` | const | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | The name of the caller-side hang-up tool. |
 | `EvalCaseOptions` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a case gets to say about how it should be run. |
@@ -727,7 +735,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `runCodeOutput` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What every `run_code` call in `calls` PRINTED, joined with newlines — the results as the model was handed them, verbatim. |
 | `runGuardrail` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run `def`'s guardrail over one answer and return its verdict. |
 | `runTextAgent`, `RunTextAgentOptions` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | Run one turn of `def` against `script`, and hand back what it did. |
-| `runTool` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run a tool by the name the model calls it by. |
+| `runTool` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run a tool — the tool DEF itself, or by the name the model calls it by. |
 | `runWorkflow`, `RunWorkflowOptions` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | Start `def` with `input` and drive it until it finishes or parks. |
 | `saidIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The committed agent replies in `events`, in order — what the caller was told. |
 | `schemaInputIssues` | function | `@alexkroman1/aai/testing` | `aai:testing` | The issues `schema` found in `value`, or `undefined` when it accepted it. |
@@ -1087,12 +1095,14 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
-| `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  | The AssemblyAI LLM Gateway model catalog. |
+| `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `InvariantDetail` | type | `@alexkroman1/aai/internal` |  | Extra context for a violation, built ONLY when one happens. |
 | `InvariantViolation` | class | `@alexkroman1/aai/internal` |  | A broken invariant. |
 | `JournalConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `JournalStore` CONFORMANCE suite, loaded on demand. |
 | `KNOWN_LLM_PROVIDERS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `KnownGatewayModel` | type | `@alexkroman1/aai/host-internal` |  | The ids this catalog was generated with — the literal half of `AssemblyAIGatewayModel`, derived rather than listed twice. |
+| `KnownLlmProvider` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents memory abuse via `ctx.send`. |
