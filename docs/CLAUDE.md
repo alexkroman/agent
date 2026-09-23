@@ -157,7 +157,8 @@ dead ends).
 
 Both cover the same surface from the built `dist/*.d.ts`: all of `aai` and
 `aai-ui`, and **four of `aai-runtime`'s subpaths** — `/eval`,
-`/eval/vitest`, `/eval/simulate` and `/testing`. **The line is the READER, not the package.**
+`/eval/vitest`, `/eval/simulate` and `/testing`. **The line is the READER, not
+the package.**
 Everything rendered is what somebody writing an `agent.ts` imports, its evals
 and its workflow specs included; what is left out is what somebody EMBEDDING an
 agent imports (`aai-runtime`'s root barrel, ~220 exports, whose rendering beside

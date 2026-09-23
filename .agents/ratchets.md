@@ -334,7 +334,8 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   capabilities is three epochs per change. It opened at 35 names in `aai` and
   5 in `aai-runtime`, and stands at 26 and 4 now: the session event vocabulary
   (`aai:events`), the Standard Schema types (`aai:standard-schema`), dialog's
-  event-name helpers and `ClientConfigResponseSchema` got owners. The gate also fails a branch that grew any capability by
+  event-name helpers and `ClientConfigResponseSchema` got owners. The gate
+  also fails a branch that grew any capability by
   more than one epoch or one revision against the merge-base. That half is a
   property of a BRANCH, the same exception `check:deploy-changeset` is, and it
   clears the same bar: without a base it SAYS it did not run (every tree check

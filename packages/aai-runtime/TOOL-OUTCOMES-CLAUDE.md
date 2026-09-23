@@ -197,7 +197,8 @@ eats it. `SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`
 `transports/pipeline-tool-messages.test.ts` runs a real `slot.updateTool` and
 `dialog.tool` through a turn. A dialog REFUSAL is a returned `ToolFailure`, so it
 takes the tool's `messages.failed` line. On a GATED tool there is one thing extra
-to know, and it is on `DialogToolDef`'s doc: the handler runs after the gated call has unwound,
+to know, and it is on `DialogToolDef`'s doc: the handler runs after the gated
+call has unwound,
 which is past `send`/`sendFrom`, so what it returns reaches the model as a bare
 failure or string rather than inside a `DialogToolResult`, and the dialog stays
 where it was — the same answer a returned `ToolFailure` gets, for the same
