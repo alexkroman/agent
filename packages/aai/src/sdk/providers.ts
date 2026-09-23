@@ -90,10 +90,35 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 /**
+ * What an {@link LlmProvider} descriptor's `options` carry — the one shape
+ * `llm()` writes and the host resolver reads.
+ *
+ * Declared ONCE, here, because it used to be declared twice: the descriptor
+ * carried `Record<string, unknown>` and the runtime re-declared this shape and
+ * read it through an unchecked cast, so a field renamed on one side compiled on
+ * both. A type alias rather than an interface so it stays assignable to
+ * `Record<string, unknown>` (an interface has no implicit index signature).
+ *
+ * `providerOptions` is the per-provider settings bag; `llm()` narrows it per
+ * provider (see `LlmOptions`), and the resolver validates the fields it
+ * consumes rather than trusting a type the wire does not carry.
+ */
+export type LlmDescriptorOptions = {
+  /** The provider's own model id. */
+  readonly model: string;
+  /** Replaces the provider's endpoint; must include the version path. */
+  readonly baseUrl?: string;
+  /** Env var holding this stage's credential — see {@link ProviderCredentialOptions}. */
+  readonly apiKeyEnv?: string;
+  /** Provider-specific settings, forwarded per the provider's entry. */
+  readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+/**
  * Descriptor for an LLM provider. Returned by factories like
  * `llm({ provider: "anthropic", ... })` from `@alexkroman1/aai/llm`.
  */
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
   /** Compile-time stage tag; never present at runtime. */
   readonly __stage?: "llm";
 };

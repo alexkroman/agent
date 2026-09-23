@@ -114,7 +114,7 @@ export function installStubLlm(script: StubScript): StubLlm {
     create: () => createFakeLanguageModel({ steps, repeatLast: true }),
   });
   return {
-    llm: { kind, options: {} },
+    llm: { kind, options: { model: kind } },
     env: { [STUB_LLM_API_KEY_ENV]: "eval-stub-llm" },
     release,
   };

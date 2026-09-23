@@ -10821,7 +10821,7 @@ anybody asks of this type.
 ### LlmProvider
 
 ```ts
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
   __stage?: "llm";
 };
 ```

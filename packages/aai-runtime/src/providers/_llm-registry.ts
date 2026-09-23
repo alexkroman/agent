@@ -29,22 +29,24 @@
  * `registerLlmKind` (which mutates {@link LLM_REGISTRY} in place).
  */
 
-import { omitUndefined } from "@alexkroman1/aai";
+import { isRecord, omitUndefined } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
+  readAssemblyAILlmProviderOptions,
 } from "@alexkroman1/aai/host-internal";
 import {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  type AssemblyAILlmProviderOptions,
   type KnownLlmProvider,
+  type LlmDescriptorOptions,
   type LlmProvider,
 } from "@alexkroman1/aai/llm";
 import {
   createGateway,
   defaultSettingsMiddleware,
+  type JSONValue,
   type LanguageModel,
   type LanguageModelMiddleware,
   wrapLanguageModel,
@@ -53,7 +55,7 @@ import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { mergeRequestBody } from "./_request-body-extras.ts";
-import { options, pickEndpoint } from "./_utils.ts";
+import { pickEndpoint } from "./_utils.ts";
 
 /** One registry entry per LLM provider — adding a provider is one entry here. */
 export type LlmRegistryEntry = {
@@ -62,24 +64,36 @@ export type LlmRegistryEntry = {
   readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
 };
 
-/** The AI SDK's `providerOptions` setting, as `defaultSettingsMiddleware` types it. */
-type ProviderOptionsSetting = NonNullable<
-  Parameters<typeof defaultSettingsMiddleware>[0]["settings"]["providerOptions"]
->;
-
-/** What an `llm()` descriptor's options carry, as the resolver reads them. */
-type LlmDescriptorOptions = {
-  model: string;
-  baseUrl?: string;
-  providerOptions?: Record<string, unknown>;
-};
-
 function opts(descriptor: LlmProvider): LlmDescriptorOptions {
-  return options<LlmDescriptorOptions>(descriptor);
+  return descriptor.options;
 }
 
 function model(descriptor: LlmProvider): string {
   return opts(descriptor).model;
+}
+
+/** The AI SDK's JSON object, which `providerOptions[key]` must be. */
+type JsonObject = { [key: string]: JSONValue | undefined };
+
+/**
+ * Whether `value` is plain JSON — the check that stands where a cast to the AI
+ * SDK's `providerOptions` type used to. A descriptor's `providerOptions` is
+ * typed `Record<string, unknown>` because it is authored per vendor, and the
+ * one thing every vendor's settings share is that they survived a JSON
+ * round-trip on the way here.
+ */
+function isJsonValue(value: unknown): value is JSONValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  if (!isRecord(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  return Object.values(value).every((entry) => entry === undefined || isJsonValue(entry));
 }
 
 /**
@@ -98,10 +112,17 @@ function withProviderOptions(
 ): LanguageModel {
   const providerOptions = opts(descriptor).providerOptions;
   if (providerOptions === undefined || typeof lm === "string") return lm;
+  if (!isJsonObject(providerOptions)) {
+    throw new TypeError(
+      `llm({ provider: "${descriptor.kind}" }): providerOptions must be JSON — a descriptor ` +
+        "crosses the CLI → server → guest boundary as data, so a function, class instance or " +
+        "non-finite number in it cannot reach the client.",
+    );
+  }
   return wrapLanguageModel({
     model: lm,
     middleware: defaultSettingsMiddleware({
-      settings: { providerOptions: { [key]: providerOptions } as ProviderOptionsSetting },
+      settings: { providerOptions: { [key]: providerOptions } },
     }),
   });
 }
@@ -302,7 +323,7 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     label: "AssemblyAI",
     create: (apiKey, d) => {
       const { baseUrl } = opts(d);
-      const own = (opts(d).providerOptions ?? {}) as AssemblyAILlmProviderOptions;
+      const own = readAssemblyAILlmProviderOptions(opts(d).providerOptions);
       // An explicit baseUrl WINS over `region` — the rule `pickEndpoint`
       // owns, shared with the STT opener's `streamingUrl`. Unlike that one this
       // stage has a US default of its own to fall back to.
@@ -361,15 +382,15 @@ export function compatibleEnvVar(provider: string): string {
  * OpenAI-compatible chat entry at that URL. `undefined` means nothing can
  * resolve it, which `resolveLlm` reports naming what is supported.
  */
-export function llmEntryFor(descriptor: LlmProvider): LlmRegistryEntry | undefined {
-  const registered = LLM_REGISTRY[descriptor.kind];
+export function llmEntryFor(descriptor: object): LlmRegistryEntry | undefined {
+  // `object`, read by `isRecord` rather than typed as an `LlmProvider`: the
+  // deploy preflight hands this a config parsed off the wire, and a guard is a
+  // check where a cast of that value to a descriptor would only be a claim.
+  if (!isRecord(descriptor) || typeof descriptor.kind !== "string") return undefined;
+  const { kind } = descriptor;
+  const registered = LLM_REGISTRY[kind];
   if (registered !== undefined) return registered;
-  const baseUrl = (descriptor.options as { baseUrl?: unknown } | undefined)?.baseUrl;
+  const baseUrl = isRecord(descriptor.options) ? descriptor.options.baseUrl : undefined;
   if (typeof baseUrl !== "string" || baseUrl === "") return undefined;
-  return openAiCompatible(
-    descriptor.kind,
-    compatibleEnvVar(descriptor.kind),
-    `${descriptor.kind} (OpenAI-compatible)`,
-    baseUrl,
-  );
+  return openAiCompatible(kind, compatibleEnvVar(kind), `${kind} (OpenAI-compatible)`, baseUrl);
 }

@@ -394,7 +394,7 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
   if (agent.llm !== undefined) {
-    const entry = llmEntryFor(agent.llm as LlmProvider);
+    const entry = llmEntryFor(agent.llm);
     add(entry === undefined ? descriptorEnvVar(agent.llm) : envVarOf(entry, agent.llm));
   }
 

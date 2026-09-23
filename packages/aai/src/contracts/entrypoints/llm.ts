@@ -35,6 +35,7 @@ export {
   type AssemblyAIReasoningEffort,
   type KnownGatewayModel,
   type KnownLlmProvider,
+  type LlmDescriptorOptions,
   type LlmOptions,
   type LlmProvider,
   type LlmProviderName,

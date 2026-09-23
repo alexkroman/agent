@@ -44,11 +44,16 @@ describe("resolveEvalMode", () => {
     // The agent wants Anthropic; the case overrides the model with one this
     // machine has a key for. Reading the mode off the agent alone announced
     // SCRIPTED while holding the key the run would really have used.
-    const anthropicAgent = agent({ name: "Override", llm: { kind: "anthropic", options: {} } });
+    const anthropicAgent = agent({
+      name: "Override",
+      llm: { kind: "anthropic", options: { model: "stub" } },
+    });
     const env = { ASSEMBLYAI_API_KEY: "k" };
     expect(resolveEvalMode(anthropicAgent, env).mode).toBe("stub");
     expect(
-      resolveEvalMode(anthropicAgent, env, { llm: { kind: "assemblyai", options: {} } }).mode,
+      resolveEvalMode(anthropicAgent, env, {
+        llm: { kind: "assemblyai", options: { model: "stub" } },
+      }).mode,
     ).toBe("live");
   });
 
@@ -57,7 +62,7 @@ describe("resolveEvalMode", () => {
       agent({ name: "Override" }),
       {},
       {
-        llm: { kind: "anthropic", options: {} },
+        llm: { kind: "anthropic", options: { model: "stub" } },
       },
     );
     expect(mode).toBe("stub");

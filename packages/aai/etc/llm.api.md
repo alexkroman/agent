@@ -29,6 +29,14 @@ export type KnownLlmProvider = "assemblyai" | "anthropic" | "cerebras" | "gatewa
 export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
 
 // @public
+export type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
 export interface LlmOptions<P extends LlmProviderName = LlmProviderName> extends ProviderCredentialOptions {
     readonly baseUrl?: string;
     readonly model: P extends "assemblyai" ? AssemblyAIGatewayModel : string;
@@ -37,7 +45,7 @@ export interface LlmOptions<P extends LlmProviderName = LlmProviderName> extends
 }
 
 // @public
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 

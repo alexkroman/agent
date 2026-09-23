@@ -18,7 +18,9 @@
  * resolver and `stepGenerate`, which dials the gateway itself.
  */
 
-import type { AssemblyAIGatewayModel } from "./llm.ts";
+import { isKnown } from "../../is-known.ts";
+import { omitUndefined } from "../../omit-undefined.ts";
+import type { AssemblyAIGatewayModel, AssemblyAILlmProviderOptions } from "./llm.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_LLM_KIND = "assemblyai";
@@ -151,4 +153,46 @@ export function assemblyAIReasoningEffort(
   explicit: AssemblyAIReasoningEffort | undefined,
 ): AssemblyAIReasoningEffort | undefined {
   return explicit ?? (TOOLS_REQUIRE_NO_REASONING.has(model) ? "none" : undefined);
+}
+
+/** Every {@link AssemblyAIReasoningEffort}, as a runtime list. */
+const REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+] as const satisfies readonly AssemblyAIReasoningEffort[];
+
+/** Every gateway region `AssemblyAILlmProviderOptions.region` names. */
+const GATEWAY_REGIONS = ["us", "eu"] as const satisfies readonly NonNullable<
+  AssemblyAILlmProviderOptions["region"]
+>[];
+
+/**
+ * Read the two fields an AssemblyAI descriptor's `providerOptions` means, by
+ * VALUE rather than by cast.
+ *
+ * A descriptor crosses the CLI → server → guest boundary as data, so its
+ * `providerOptions` is a `Record<string, unknown>` by the time anything reads
+ * it, and `llm()`'s narrowing is a claim about the author's source rather than
+ * about the bag in hand. A value outside either vocabulary is dropped — the
+ * same answer as absent (`region` defaults to `"us"`, `reasoningEffort` to the
+ * model's own) — which is what the runtime did with one before, only now the
+ * type says so.
+ *
+ * @internal
+ */
+export function readAssemblyAILlmProviderOptions(
+  bag: Readonly<Record<string, unknown>> | undefined,
+): AssemblyAILlmProviderOptions {
+  const region = bag?.region;
+  const reasoningEffort = bag?.reasoningEffort;
+  return omitUndefined({
+    region: typeof region === "string" && isKnown(GATEWAY_REGIONS, region) ? region : undefined,
+    reasoningEffort:
+      typeof reasoningEffort === "string" && isKnown(REASONING_EFFORTS, reasoningEffort)
+        ? reasoningEffort
+        : undefined,
+  });
 }

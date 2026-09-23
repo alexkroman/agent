@@ -185,7 +185,7 @@ describeEval(stubSuiteAgent, (test) => {
       });
       try {
         const generate = createGenerateFn({
-          llm: { kind: "eval-spec-schema", options: {} },
+          llm: { kind: "eval-spec-schema", options: { model: "stub" } },
           env: { EVAL_SPEC_SCHEMA_KEY: "k" },
         });
         const answer = await generate({
@@ -258,7 +258,7 @@ describeEval(stubSuiteAgent, (test) => {
       // implemented" in a scripted run, and it read as the agent being broken.
       const { createGenerateFn } = await import("../generate.ts");
       const generate = createGenerateFn({
-        llm: { kind: "eval-spec-generate", options: {} },
+        llm: { kind: "eval-spec-generate", options: { model: "stub" } },
         env: { EVAL_SPEC_GENERATE_KEY: "k" },
       });
       const release = registerLlmKind("eval-spec-generate", {

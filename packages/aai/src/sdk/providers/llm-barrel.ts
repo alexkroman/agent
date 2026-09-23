@@ -53,7 +53,11 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place.
-export type { LlmProvider, ProviderCredentialOptions } from "../providers.ts";
+export type {
+  LlmDescriptorOptions,
+  LlmProvider,
+  ProviderCredentialOptions,
+} from "../providers.ts";
 export {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   type AssemblyAIReasoningEffort,

@@ -3,7 +3,7 @@
   "capability": "llm",
   "epoch": 9,
   "rule": 2,
-  "sha256": "b659a052cf9dfb594bed03caee2be10151f42e18d6a3d6275ed69037e8d73e22",
+  "sha256": "c3c13890f5462408a4bb78b8b2fa2fd42872a3e0efcac4e86d824234dd981cb8",
   "exports": [
     "ASSEMBLYAI_LLM_DEFAULT_MODEL",
     "AssemblyAIGatewayModel",
@@ -11,10 +11,11 @@
     "AssemblyAIReasoningEffort",
     "KnownGatewayModel",
     "KnownLlmProvider",
+    "LlmDescriptorOptions",
     "LlmOptions",
     "LlmProvider",
     "LlmProviderName",
     "llm"
   ],
-  "rollup": "842cb0f1cad7321156e2c0a329ea82762d4bfd8ec572b0ae70a51a2e11c3efe8"
+  "rollup": "f82cf59a3fd48902aeefeea47a949565a3a77fa68d79c2681b6c8bede2942805"
 }

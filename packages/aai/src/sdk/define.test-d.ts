@@ -4,6 +4,7 @@ import { z } from "zod";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
 import type { InlineToolsMisuse } from "./agent-params.ts";
+import type { TurnDetectionMode } from "./agent-voice-tuning.ts";
 import {
   type AgentParams,
   agent,
@@ -13,6 +14,7 @@ import {
 } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { SessionEventType } from "./session-event-map.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
@@ -20,6 +22,7 @@ import { type SubagentDef, subagent } from "./subagent.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
+import type { VoicePresetName } from "./voice-presets.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -608,4 +611,26 @@ test("subagent() rejects maxRetries and takes maxRevisions", () => {
   // The tuning knobs a subagent does take are still there.
   expectTypeOf<SubagentDef>().toHaveProperty("temperature");
   expectTypeOf<SubagentDef>().toHaveProperty("maxOutputTokens");
+});
+
+/**
+ * The OPEN vocabularies — `Known | (string & {})` — must stay open without
+ * collapsing to `string`. A plain `| string` absorbs the known half, and with
+ * it the autocomplete the union exists for; the `& {}` is what keeps both.
+ */
+test("open unions admit any string and keep their known half", () => {
+  expectTypeOf<TurnDetectionMode>().not.toEqualTypeOf<string>();
+  expectTypeOf<VoicePresetName>().not.toEqualTypeOf<string>();
+  expectTypeOf<AssemblyAIGatewayModel>().not.toEqualTypeOf<string>();
+  expectTypeOf<"auto">().toExtend<TurnDetectionMode>();
+  expectTypeOf<"semantic-v2">().toExtend<TurnDetectionMode>();
+  expectTypeOf<"a-preset-from-later">().toExtend<VoicePresetName>();
+  expectTypeOf<"a-model-from-later">().toExtend<AssemblyAIGatewayModel>();
+});
+
+test("SessionEventType is closed: a misspelled event is not one", () => {
+  expectTypeOf<"tool.called">().toExtend<SessionEventType>();
+  expectTypeOf<"tool.call">().not.toExtend<SessionEventType>();
+  expectTypeOf<"reply.complete">().not.toExtend<SessionEventType>();
+  expectTypeOf<string>().not.toExtend<SessionEventType>();
 });

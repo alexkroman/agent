@@ -243,6 +243,7 @@ each is for.
 | `LOCAL_ONLY_FILES` | `@alexkroman1/aai/workspace-files` |
 | `LOCKFILES` | `@alexkroman1/aai/workspace-files` |
 | `LOG_LINE_TRUNCATED` | `@alexkroman1/aai-runtime` |
+| `LlmDescriptorOptions` | `@alexkroman1/aai/llm` |
 | `LlmOptions` | `@alexkroman1/aai/llm` |
 | `LlmProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
 | `LlmProviderName` | `@alexkroman1/aai/llm` |
@@ -1327,6 +1328,7 @@ trace or a type error can be traced back to something.
 | `publishUploadReader` | `@alexkroman1/aai/host-internal` |
 | `publishWorkflowWebhookUrl` | `@alexkroman1/aai-runtime/internal` |
 | `queueNameKind` | `@alexkroman1/aai-runtime/internal` |
+| `readAssemblyAILlmProviderOptions` | `@alexkroman1/aai/host-internal` |
 | `rejectingWorkflows` | `@alexkroman1/aai/internal` |
 | `requestPath` | `@alexkroman1/aai/internal` |
 | `requestQuery` | `@alexkroman1/aai/internal` |

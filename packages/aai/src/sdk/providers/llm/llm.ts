@@ -30,6 +30,7 @@ import {
   ASSEMBLYAI_LLM_KIND,
   type AssemblyAIReasoningEffort,
   assemblyAIReasoningEffort,
+  readAssemblyAILlmProviderOptions,
 } from "./assemblyai.ts";
 import type { KnownGatewayModel } from "./shared/gateway-models.ts";
 
@@ -174,9 +175,9 @@ export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): Ll
     // See TOOLS_REQUIRE_NO_REASONING: for these models, leaving reasoning on
     // the server-side default is a 500 on every tool-calling turn, so the
     // descriptor carries "none" unless the author named an effort themselves.
-    const own = (providerOptions ?? {}) as AssemblyAILlmProviderOptions;
-    const reasoningEffort = assemblyAIReasoningEffort(model, own.reasoningEffort);
-    const filled = { ...own, ...omitUndefined({ reasoningEffort }) };
+    const explicit = readAssemblyAILlmProviderOptions(providerOptions).reasoningEffort;
+    const reasoningEffort = assemblyAIReasoningEffort(model, explicit);
+    const filled = { ...providerOptions, ...omitUndefined({ reasoningEffort }) };
     providerOptions = Object.keys(filled).length === 0 ? undefined : filled;
   }
   return {
@@ -196,7 +197,9 @@ export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): Ll
 
 /**
  * The names {@link KnownLlmProvider} spells, as a runtime list — what the
- * unknown-provider config warning and the host registry's totality test read.
+ * unknown-provider config warning reads. `llm.test.ts` holds it EQUAL to the
+ * union (the `satisfies` below proves only a subset); the host registry is
+ * held total against the union itself, by its own `satisfies Record<…>`.
  *
  * @internal
  */

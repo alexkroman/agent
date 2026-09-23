@@ -63,9 +63,9 @@ describe("llmProviderEnvVar", () => {
     // vendor's key is worse than naming none, so the honest answer for a kind
     // with no registry entry and no override is the empty string its caller
     // reads as "no credential to ask for".
-    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: { apiKeyEnv: "X_KEY" } })).toBe(
-      "X_KEY",
-    );
-    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: {} })).toBe("");
+    expect(
+      llmProviderEnvVar({ kind: "not-a-vendor", options: { model: "m", apiKeyEnv: "X_KEY" } }),
+    ).toBe("X_KEY");
+    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: { model: "m" } })).toBe("");
   });
 });

@@ -10,6 +10,7 @@ import {
   ASSEMBLYAI_LLM_KIND,
   type AssemblyAIReasoningEffort,
   assemblyAIReasoningEffort,
+  readAssemblyAILlmProviderOptions,
 } from "./assemblyai.ts";
 
 describe("assemblyAIReasoningEffort", () => {
@@ -55,5 +56,21 @@ describe("gateway constants", () => {
     }
     expect(new URL(ASSEMBLYAI_LLM_GATEWAY_EU_URL).hostname).toMatch(/\.eu\./);
     expect(new URL(ASSEMBLYAI_LLM_GATEWAY_URL).hostname).not.toMatch(/\.eu\./);
+  });
+});
+
+describe("readAssemblyAILlmProviderOptions", () => {
+  it("reads the two fields it knows, by value", () => {
+    expect(readAssemblyAILlmProviderOptions({ region: "eu", reasoningEffort: "low" })).toEqual({
+      region: "eu",
+      reasoningEffort: "low",
+    });
+  });
+
+  it("drops a value outside either vocabulary, and anything else in the bag", () => {
+    expect(
+      readAssemblyAILlmProviderOptions({ region: "asia", reasoningEffort: 3, extra: true }),
+    ).toEqual({});
+    expect(readAssemblyAILlmProviderOptions(undefined)).toEqual({});
   });
 });

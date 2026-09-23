@@ -49,8 +49,10 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
  * `session` capability — `user-turn.exceeded` and `metrics.collected` each cost
  * one — for a change this package did not make. The exclusions are declared once,
  * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
- * (with the reason each is there), so a new event is reportable by default and
- * `handleReport` publishes it unless it grows a `case`.
+ * (with the reason each is there), so a new event is reportable by default — and
+ * `handleReport` in `session-core.ts` then fails to COMPILE until it is
+ * classified: every name here has its own `case`, either acted on or listed as
+ * forwarded, and the `default` is `satisfies never`.
  *
  * @public
  */

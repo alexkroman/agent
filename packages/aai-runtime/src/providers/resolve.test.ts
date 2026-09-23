@@ -139,6 +139,16 @@ const cases: ProviderCase[] = [
  */
 const unsubscribe: Unsubscribe = () => undefined;
 
+/**
+ * An AssemblyAI descriptor as the resolver receives one off the wire — through
+ * a JSON round-trip, so a bag `llm()` would never build (no `model`) reaches it
+ * the way an older bundle or a hand-built config does, without a cast claiming
+ * it is well-formed.
+ */
+function wireLlm(options: Record<string, unknown>): LlmProvider {
+  return JSON.parse(JSON.stringify({ kind: ASSEMBLYAI_LLM_KIND, options }));
+}
+
 function stubSttSession(): SttSession {
   return {
     sendAudio: () => undefined,
@@ -187,8 +197,25 @@ describe("resolveLlm", () => {
     });
   }
 
+  it("forwards JSON providerOptions to a native client, and refuses a non-JSON bag", () => {
+    const withOptions = (providerOptions: Record<string, unknown>): LlmProvider => ({
+      kind: "anthropic",
+      options: { model: "claude-sonnet-4-6", providerOptions },
+    });
+    const env = { ANTHROPIC_API_KEY: "fake-key" };
+    expect(() =>
+      resolveLlm(withOptions({ thinking: { type: "enabled", budgetTokens: 1024 } }), env),
+    ).not.toThrow();
+    expect(() => resolveLlm(withOptions({ onChunk: () => undefined }), env)).toThrowError(
+      /providerOptions must be JSON/,
+    );
+    expect(() => resolveLlm(withOptions({ at: new Date(0) }), env)).toThrowError(
+      /providerOptions must be JSON/,
+    );
+  });
+
   it("throws a useful error for an unknown kind, listing supported kinds", () => {
-    const bogus = { kind: "claude-direct", options: {} } as unknown as LlmProvider;
+    const bogus: LlmProvider = { kind: "claude-direct", options: { model: "m" } };
     expect(() => resolveLlm(bogus, {})).toThrow(/Unknown LLM provider kind: "claude-direct"/);
     expect(() => resolveLlm(bogus, {})).toThrow(
       /anthropic.*openai.*google.*mistral.*xai.*groq.*openrouter.*gateway.*assemblyai/,
@@ -268,10 +295,7 @@ describe("resolveLlm", () => {
     });
 
     it("defaults to ASSEMBLYAI_LLM_DEFAULT_MODEL when the descriptor names no model", () => {
-      const model = resolveLlm(
-        { kind: ASSEMBLYAI_LLM_KIND, options: {} },
-        { ASSEMBLYAI_API_KEY: "fake-key" },
-      );
+      const model = resolveLlm(wireLlm({}), { ASSEMBLYAI_API_KEY: "fake-key" });
       expect(model).toMatchObject({ modelId: ASSEMBLYAI_LLM_DEFAULT_MODEL });
     });
 
@@ -284,10 +308,9 @@ describe("resolveLlm", () => {
       options: Record<string, unknown>,
       tools?: readonly unknown[],
     ): Promise<string> {
-      const model = resolveLlm(
-        { kind: ASSEMBLYAI_LLM_KIND, options },
-        { ASSEMBLYAI_API_KEY: "fake-key" },
-      ) as unknown as { doGenerate: (opts: unknown) => Promise<unknown> };
+      const model = resolveLlm(wireLlm(options), { ASSEMBLYAI_API_KEY: "fake-key" }) as unknown as {
+        doGenerate: (opts: unknown) => Promise<unknown>;
+      };
       let body = "";
       const fakeFetch = async (_input: unknown, init?: { body?: unknown }): Promise<Response> => {
         body = String(init?.body ?? "");

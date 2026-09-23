@@ -713,19 +713,24 @@ back to the host's `process.env`.
   cannot close it — `typescript@7` ships no compiler API. `guard-invariants`
   rule 23 covers the listener half; the measurements are in
   `packages/aai-templates/CLAUDE.md`.
-- **Type-level tests**: six `.test-d.ts` files — four in `aai`
-  (`sdk/define.test-d.ts`, `sdk/env-types.test-d.ts`, `sdk/dialog.test-d.ts`,
-  `sdk/workflow-types.test-d.ts`), one in `aai-ui` (`hooks.test-d.ts` — the four
-  generic hooks a custom client is written against) and one in `aai-runtime`
-  (`providers/providers.test-d.ts`). Most subpath exports are still uncovered,
-  and **the two newest files each have a blind spot a template hit on day 1**:
-  each pins only the shape its own fixtures use — see "A `sendFrom` goes BELOW
-  `execute`" and "A body that names `WorkflowInputOf` obliges the DEF to carry a
-  type" in `packages/aai-templates/CLAUDE.md`. (Their RUNTIME export
-  lists are pinned — see `sdk/exports.test.ts` — which is a different
-  guarantee.) `hooks.test-d.ts` pins the deliberate
-  `any`s (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes,
-  because tightening one to `unknown` is a breaking change for every untyped
+- **Type-level tests**: eleven `.test-d.ts` files — eight in `aai`
+  (`sdk/define.test-d.ts`, `sdk/define-agent-groups.test-d.ts`,
+  `sdk/_session-slot-caps.test-d.ts`, `sdk/env-types.test-d.ts`,
+  `sdk/dialog.test-d.ts`, `sdk/testing.test-d.ts`,
+  `sdk/workflow-types.test-d.ts`, `sdk/providers/llm/llm.test-d.ts`), one in
+  `aai-ui` (`hooks.test-d.ts` — the four generic hooks a custom client is
+  written against, and the `BrowserSession` seal) and two in `aai-runtime`
+  (`providers/providers.test-d.ts`, `runtime.test-d.ts` — the `Runtime` seal).
+  Each package's are the `aai-types` / `aai-ui-types` / `aai-runtime-types`
+  vitest projects. Most subpath exports are still uncovered, and
+  **`dialog.test-d.ts` and `workflow-types.test-d.ts` each have a blind spot a
+  template hit on day 1**: each pins only the shape its own fixtures use — see
+  "A `sendFrom` goes BELOW `execute`" and "A body that names `WorkflowInputOf`
+  obliges the DEF to carry a type" in `packages/aai-templates/CLAUDE.md`.
+  (Their RUNTIME export lists are pinned — see `sdk/exports.test.ts` — which is
+  a different guarantee.) `hooks.test-d.ts` pins the deliberate `any`s
+  (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes, because
+  tightening one to `unknown` is a breaking change for every untyped
   client and should fail here rather than in a user's build.
 
 ### Open testability work

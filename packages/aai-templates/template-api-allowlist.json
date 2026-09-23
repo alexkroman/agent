@@ -292,7 +292,12 @@
     "transcodeToWav"
   ],
   "@alexkroman1/aai/html": [],
-  "@alexkroman1/aai/llm": ["KnownGatewayModel", "LlmProviderName", "ProviderCredentialOptions"],
+  "@alexkroman1/aai/llm": [
+    "KnownGatewayModel",
+    "LlmDescriptorOptions",
+    "LlmProviderName",
+    "ProviderCredentialOptions"
+  ],
   "@alexkroman1/aai/s2s": ["ProviderCredentialOptions"],
   "@alexkroman1/aai/step": [
     "MultipartBody",

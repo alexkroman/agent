@@ -442,6 +442,15 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
+type AssemblyAILlmProviderOptions = {
+    readonly region?: "us" | "eu";
+    readonly reasoningEffort?: AssemblyAIReasoningEffort;
+};
+
+// @public
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+
+// @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     formatTurns?: boolean;
@@ -741,7 +750,15 @@ type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -890,6 +907,9 @@ export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
 type RandomSource = () => number;
+
+// @internal
+export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;

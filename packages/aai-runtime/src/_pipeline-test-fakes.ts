@@ -379,7 +379,7 @@ export function registerFakeProviders(fakes: {
     env,
     stt: fakes.stt ? { kind: FAKE_STT_KIND, options: {} } : undefined,
     tts: fakes.tts ? { kind: FAKE_TTS_KIND, options: {} } : undefined,
-    llm: fakes.llm ? { kind: FAKE_LLM_KIND, options: {} } : undefined,
+    llm: fakes.llm ? { kind: FAKE_LLM_KIND, options: { model: "fake-llm" } } : undefined,
     unregister(): void {
       for (const fn of undo.reverse()) fn();
     },

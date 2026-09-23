@@ -13,6 +13,7 @@
  */
 
 import { KNOWN_TURN_DETECTION_MODES } from "./agent-voice-tuning.ts";
+import { isKnown } from "./is-known.ts";
 import { isRecord } from "./is-record.ts";
 import { KNOWN_LLM_PROVIDERS } from "./providers/llm/llm.ts";
 import {
@@ -77,7 +78,7 @@ export function agentConfigWarnings(config: {
 function unknownLlmProviderWarning(descriptor: unknown): string | undefined {
   if (!isRecord(descriptor) || typeof descriptor.kind !== "string") return undefined;
   const { kind } = descriptor;
-  if ((KNOWN_LLM_PROVIDERS as readonly string[]).includes(kind)) return undefined;
+  if (isKnown(KNOWN_LLM_PROVIDERS, kind)) return undefined;
   if (isRecord(descriptor.options) && typeof descriptor.options.baseUrl === "string") {
     return undefined;
   }
@@ -96,12 +97,13 @@ function unknownLlmProviderWarning(descriptor: unknown): string | undefined {
  */
 function unknownVoicePresetWarnings(presets: unknown): string[] {
   if (!Array.isArray(presets)) return [];
-  const known = VOICE_PRESET_NAMES as readonly string[];
   return presets
-    .filter((name): name is string => typeof name === "string" && !known.includes(name))
+    .filter(
+      (name): name is string => typeof name === "string" && !isKnown(VOICE_PRESET_NAMES, name),
+    )
     .map(
       (name) =>
-        `Voice preset "${name}" is not one this SDK knows (${known.join(", ")}), so it adds ` +
+        `Voice preset "${name}" is not one this SDK knows (${VOICE_PRESET_NAMES.join(", ")}), so it adds ` +
         "nothing to the prompt. Check the spelling, or upgrade @alexkroman1/aai.",
     );
 }
@@ -113,7 +115,7 @@ function unknownVoicePresetWarnings(presets: unknown): string[] {
  */
 function unknownTurnDetectionWarning(mode: unknown): string | undefined {
   if (typeof mode !== "string") return undefined;
-  if ((KNOWN_TURN_DETECTION_MODES as readonly string[]).includes(mode)) return undefined;
+  if (isKnown(KNOWN_TURN_DETECTION_MODES, mode)) return undefined;
   return (
     `turnDetection "${mode}" is not a mode this SDK implements ` +
     `(${KNOWN_TURN_DETECTION_MODES.join(", ")}); the session runs with "auto".`

@@ -50,7 +50,7 @@ const EAGER: Record<string, (apiKey: string, modelId: string) => Promise<unknown
 };
 
 function descriptor(kind: string, model: string): LlmProvider {
-  return { kind, options: { model } } as LlmProvider;
+  return { kind, options: { model } };
 }
 
 describe("the deferred model matches its eager twin", () => {

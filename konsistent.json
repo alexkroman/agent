@@ -1683,6 +1683,7 @@
         "!packages/aai/src/sdk/*.test.ts",
         "!packages/aai/src/sdk/**/*.test.ts",
         "!packages/aai/src/sdk/*.test-d.ts",
+        "!packages/aai/src/sdk/**/*.test-d.ts",
         "!packages/aai/src/sdk/*-test-utils.ts"
       ],
       "mustNot": {

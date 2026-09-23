@@ -1,17 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 /** Unit tests for the one LLM descriptor factory, `llm()`. */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "./assemblyai.ts";
-import { llm } from "./llm.ts";
+import { KNOWN_LLM_PROVIDERS, type KnownLlmProvider, llm } from "./llm.ts";
 
 // Mirrors the module-private TOOLS_REQUIRE_NO_REASONING. Duplicated rather
 // than exported: the set is an implementation detail of the factory, and the
 // spec only needs to know which side of it the default falls on.
 const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"];
 
-const effortOf = (d: ReturnType<typeof llm>): unknown =>
-  (d.options.providerOptions as { reasoningEffort?: unknown } | undefined)?.reasoningEffort;
+const effortOf = (d: ReturnType<typeof llm>): unknown => d.options.providerOptions?.reasoningEffort;
 
 describe("llm()", () => {
   it("puts the provider on `kind` and the model in `options`", () => {
@@ -80,5 +79,18 @@ describe("llm()", () => {
         model: "gpt-5.6-luna",
       });
     });
+  });
+});
+
+describe("KNOWN_LLM_PROVIDERS", () => {
+  it("is the whole KnownLlmProvider union, so the list and the type cannot drift", () => {
+    // `satisfies readonly KnownLlmProvider[]` on the tuple only proves it is a
+    // SUBSET: a provider added to the union and not the list would compile and
+    // then be warned about as unknown by `aai build`. Equality closes it.
+    expectTypeOf<(typeof KNOWN_LLM_PROVIDERS)[number]>().toEqualTypeOf<KnownLlmProvider>();
+  });
+
+  it("names each provider once", () => {
+    expect(new Set(KNOWN_LLM_PROVIDERS).size).toBe(KNOWN_LLM_PROVIDERS.length);
   });
 });

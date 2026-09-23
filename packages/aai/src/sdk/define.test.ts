@@ -123,8 +123,7 @@ describe("agent()", () => {
     // elapses. Pinned as a test because the symptom of losing it is seconds of
     // silence rather than an error.
     const { llm: stage } = assemblyAIPipeline();
-    const effort = (d: typeof stage) =>
-      (d.options.providerOptions as { reasoningEffort?: string } | undefined)?.reasoningEffort;
+    const effort = (d: typeof stage) => d.options.providerOptions?.reasoningEffort;
     // This pin and the model pin below are ONE fact: the value has to be one
     // the id accepts, and the families disagree — `"none"` here reaches 0
     // reasoning tokens, a Gemini id answers 400 to it. See

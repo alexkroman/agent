@@ -195,7 +195,7 @@ class DispatchSession {
       await this.initAudio();
       this.openSocket(token);
     } catch (err) {
-      this.ui.showError(String(err?.message || err), "start_failed");
+      this.ui.showError(err instanceof Error ? err.message : String(err), "start_failed");
       this.setState("idle");
       this.started = false;
     }
@@ -366,7 +366,7 @@ class DispatchSession {
         try {
           result = await tool.execute(msg.arguments ?? {}, this.toolCtx());
         } catch (err) {
-          result = { error: String(err?.message || err) };
+          result = { error: err instanceof Error ? err.message : String(err) };
         }
       }
       this.pendingTools.push({ callId: msg.call_id, result: JSON.stringify(result) });

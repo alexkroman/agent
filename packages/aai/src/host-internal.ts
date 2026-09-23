@@ -116,8 +116,9 @@ export { defaultProviders } from "./sdk/providers/_default-providers.ts";
 /**
  * The LLM stage's host half: the AssemblyAI kind, key variable and gateway
  * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in
- * the runtime's resolver table alone), and the known-provider list the
- * runtime's registry is held total against. Every OTHER provider's key
+ * the runtime's resolver table alone), the validating reader for an
+ * AssemblyAI descriptor's `providerOptions`, and the known-provider list (held
+ * equal to `KnownLlmProvider` by `llm.test.ts`). Every OTHER provider's key
  * variable and base URL lives in that table (`aai-runtime`'s
  * `providers/_llm-registry.ts`), beside the client it configures.
  */
@@ -126,6 +127,7 @@ export {
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
+  readAssemblyAILlmProviderOptions,
 } from "./sdk/providers/llm/assemblyai.ts";
 export { KNOWN_LLM_PROVIDERS } from "./sdk/providers/llm/llm.ts";
 export { normalizeLlm } from "./sdk/providers/llm/shared/from-string.ts";
