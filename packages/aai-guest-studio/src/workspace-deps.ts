@@ -158,8 +158,10 @@ export async function ensureWorkspaceDependencies(
           ["install", "--omit=dev"],
           opts.budgetMs ?? NPM_TIMEOUT_MS,
         );
-        return result.signal
-          ? `killed by ${result.signal} after ${opts.budgetMs ?? NPM_TIMEOUT_MS}ms`
+        // `timedOut` too, not only `signal`: an npm that exits on SIGTERM
+        // reports no signal, and was still cut off mid-install.
+        return result.timedOut || result.signal
+          ? `killed by ${result.signal ?? "SIGTERM"} after ${opts.budgetMs ?? NPM_TIMEOUT_MS}ms`
           : result.stdout.trim();
       },
       { timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS },

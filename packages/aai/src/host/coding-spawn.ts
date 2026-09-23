@@ -35,9 +35,37 @@ export type SpawnCappedResult = {
   exitCode: number | null;
   /** Set when the child was killed — usually the wall-clock timeout. */
   signal: NodeJS.Signals | null;
+  /**
+   * Whether the wall-clock deadline fired. Its own fact rather than inferred
+   * from `signal`: a child that TRAPS SIGTERM and exits on its own reports
+   * `signal: null`, and one that exits 0 in the grace window reports
+   * `exitCode: 0`, and both were still cut off.
+   */
+  timedOut: boolean;
   stdout: string;
   stderr: string;
 };
+
+/**
+ * How long a timed-out child's process group gets to exit on SIGTERM before it
+ * is SIGKILLed. Long enough for a test runner or package manager to flush and
+ * clean up; a child still alive after it is not going to exit on its own.
+ */
+export const KILL_GRACE_MS = 2000;
+
+/**
+ * How long after the child EXITS its output pipes may stay open before the
+ * runner stops waiting for them.
+ *
+ * `close` waits for every holder of the child's stdout/stderr, and a command
+ * that backgrounds something (`npm run dev &`, `sleep 60 &`) hands the pipes to
+ * a process that may never exit. Settling on `close` alone made that call last
+ * as long as the background job — past the deadline, since the deadline only
+ * watches the direct child. Anything the child itself wrote is already in the
+ * pipe by the time it exits, so this window only ever loses output a
+ * BACKGROUND process writes later.
+ */
+export const EXIT_DRAIN_MS = 500;
 
 /** Keep the tail of `text`, marking the elision — errors print last. */
 export const keepTail = (text: string, cap: number): string =>
@@ -64,11 +92,31 @@ export type RunCappedOptions = {
 
 /**
  * Run one child process, capturing capped output tails. Rejects only when the
- * process could not be spawned; a killed child RESOLVES with `signal` set so
- * the caller picks the failure shape its own output contract needs.
+ * process could not be spawned; a killed child RESOLVES with `signal` and
+ * `timedOut` set so the caller picks the failure shape its own output contract
+ * needs.
  *
  * With `combineStreams`, stderr interleaves into `stdout` in arrival order and
  * `stderr` comes back empty.
+ *
+ * ## The deadline kills the whole process GROUP, and escalates
+ *
+ * This used to be Node's `timeout:` spawn option, which sends ONE SIGTERM to
+ * the direct child and nothing else. Two commands the `bash` tool is handed
+ * routinely beat that, both reproduced:
+ *
+ * - `trap '' TERM; sleep 4` under a 300ms deadline ran the full 4s and came
+ *   back `code 0, signal null`, so the model was told it succeeded.
+ * - `sleep 5 & echo started` exited in 6ms and settled at ~5000ms, because the
+ *   background job held the pipes open — and the deadline never fired at all,
+ *   the direct child having already exited.
+ *
+ * So on POSIX the child leads its own process group (`detached`), the deadline
+ * signals the GROUP — grandchildren included — with SIGTERM and then SIGKILL
+ * after {@link KILL_GRACE_MS}, and the promise settles at `exit` plus at most
+ * {@link EXIT_DRAIN_MS} rather than waiting on every pipe holder. A group that
+ * is still alive when THIS process exits is SIGKILLed on the way out, because
+ * `detached` also takes the child out of the terminal's Ctrl-C.
  */
 export function runCapped(
   cmd: string,
@@ -79,11 +127,42 @@ export function runCapped(
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       ...omitUndefined({ env: opts.env }),
-      timeout: opts.timeoutMs,
+      detached: GROUP_KILL,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    let drain: ReturnType<typeof setTimeout> | undefined;
+    const group = trackGroup(child.pid);
+
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      killTree(child, "SIGTERM");
+      escalation = setTimeout(() => killTree(child, "SIGKILL"), KILL_GRACE_MS);
+    }, opts.timeoutMs);
+
+    const settle = (exitCode: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      clearTimeout(escalation);
+      clearTimeout(drain);
+      // A timed-out command's stragglers are part of what was cut off: the
+      // direct child may have exited on SIGTERM while a grandchild that ignores
+      // it still holds the pipes, and settling cancels the escalation that
+      // would have reached it.
+      if (timedOut) killTree(child, "SIGKILL");
+      group.settled();
+      // Stop reading pipes a background job may still hold; its later output
+      // is not this command's.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      resolve({ exitCode, signal, timedOut, stdout, stderr });
+    };
+
     child.stdout.on("data", (chunk: Buffer) => {
       stdout = keepTail(stdout + chunk.toString(), opts.cap);
     });
@@ -91,11 +170,87 @@ export function runCapped(
       if (opts.combineStreams) stdout = keepTail(stdout + chunk.toString(), opts.cap);
       else stderr = keepTail(stderr + chunk.toString(), opts.cap);
     });
-    child.on("error", reject);
-    child.on("close", (exitCode, signal) => {
-      resolve({ exitCode, signal, stdout, stderr });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      clearTimeout(escalation);
+      group.settled();
+      reject(err);
     });
+    child.on("exit", (exitCode, signal) => {
+      // An ordinary command's background jobs are left running — that is what
+      // `&` asked for — and only the wait for their pipes is bounded.
+      drain = setTimeout(() => settle(exitCode, signal), EXIT_DRAIN_MS);
+    });
+    child.on("close", (exitCode, signal) => settle(exitCode, signal));
   });
+}
+
+/** POSIX only: Windows has no process groups to signal with `kill(-pid)`. */
+const GROUP_KILL = process.platform !== "win32";
+
+/** Signal the child's whole process group, or just the child where there is none. */
+function killTree(
+  child: { pid?: number | undefined; kill(signal: NodeJS.Signals): boolean },
+  signal: NodeJS.Signals,
+): void {
+  if (GROUP_KILL && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // ESRCH: the group is already gone. Fall through to the direct child,
+      // which is a no-op for an exited one.
+    }
+  }
+  child.kill(signal);
+}
+
+/**
+ * Groups that may still be running, SIGKILLed if this process exits first —
+ * the stand-in for the Ctrl-C a `detached` group no longer receives from the
+ * terminal (`aai dev` exits through `process.exit` on SIGINT, so `exit` fires).
+ * One listener for the module, installed on first use, rather than one per
+ * spawn.
+ *
+ * A group is forgotten once it is EMPTY, not once its command settles: a
+ * backgrounded job outlives the command that started it, and is exactly what
+ * the terminal's Ctrl-C used to reach.
+ */
+const liveGroups = new Set<number>();
+let exitHookInstalled = false;
+
+const groupAlive = (pgid: number): boolean => {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+function trackGroup(pid: number | undefined): { settled(): void } {
+  if (!GROUP_KILL || pid === undefined) return { settled: () => undefined };
+  for (const id of liveGroups) if (!groupAlive(id)) liveGroups.delete(id);
+  liveGroups.add(pid);
+  if (!exitHookInstalled) {
+    exitHookInstalled = true;
+    process.once("exit", () => {
+      for (const id of liveGroups) {
+        try {
+          process.kill(-id, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+    });
+  }
+  return {
+    settled: () => {
+      if (!groupAlive(pid)) liveGroups.delete(pid);
+    },
+  };
 }
 
 /**
@@ -108,7 +263,8 @@ export function runCapped(
  * printed nothing, which it then believes.
  */
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string {
-  return result.signal
-    ? `${result.stdout}\n[killed by ${result.signal} after ${timeoutMs}ms]`
-    : result.stdout;
+  if (result.timedOut) {
+    return `${result.stdout}\n[killed by ${result.signal ?? "SIGTERM"} after ${timeoutMs}ms]`;
+  }
+  return result.signal ? `${result.stdout}\n[killed by ${result.signal}]` : result.stdout;
 }

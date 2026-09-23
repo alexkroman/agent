@@ -148,7 +148,7 @@ describe("ensureWorkspaceDependencies", () => {
 
   test("a killed install names the signal rather than reporting silence", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
-    runNpmMock.mockResolvedValue(npmResult({ signal: "SIGTERM", stdout: "" }));
+    runNpmMock.mockResolvedValue(npmResult({ signal: "SIGTERM", timedOut: true, stdout: "" }));
 
     await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toContain("SIGTERM");
   });

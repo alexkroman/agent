@@ -205,8 +205,12 @@ export async function deployWorkspaceDir(
         cap: CLI_OUTPUT_CAP,
       },
     );
-    if (result.signal) {
-      throw new Error(`aai deploy killed by ${result.signal} after ${DEPLOY_TIMEOUT_MS}ms`);
+    // `timedOut` too: a deploy that exits on SIGTERM reports no signal, and
+    // its JSON line — if any — describes a deploy that was cut off.
+    if (result.timedOut || result.signal) {
+      throw new Error(
+        `aai deploy killed by ${result.signal ?? "SIGTERM"} after ${DEPLOY_TIMEOUT_MS}ms`,
+      );
     }
   } catch (err) {
     return failed(`aai deploy failed to run: ${errorMessage(err)}`);

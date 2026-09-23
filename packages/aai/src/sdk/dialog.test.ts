@@ -256,6 +256,47 @@ describe("tool gating", () => {
 });
 
 describe("tool transitions", () => {
+  /**
+   * The gate is read before the body's await and the event is sent after it.
+   * A sibling tool in the same step moving the dialog in between used to have
+   * the event applied from wherever the sibling left it, so a tool gated on
+   * `open` could move the dialog out of `skipped`.
+   */
+  test("a sibling that moves the dialog mid-body stops the event from being sent", async () => {
+    const machine = setup({
+      types: {} as { events: { type: "GO" } | { type: "SKIP" } },
+    }).createMachine({
+      id: "race",
+      initial: "open",
+      states: {
+        open: { on: { GO: "done", SKIP: "skipped" } },
+        skipped: { on: { GO: "bypassed" } },
+        done: { type: "final" },
+        bypassed: { type: "final" },
+      },
+    });
+    const flow = dialog("race", machine);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const go = flow.tool({
+      description: "Go",
+      when: "open",
+      send: { type: "GO" },
+      execute: async () => {
+        await gate;
+        return "went";
+      },
+    });
+    const ctx = createToolContext();
+    const pending = runToolDef(go, ctx);
+    flow.send(ctx, { type: "SKIP" });
+    release();
+    expect(await pending).toMatchObject({ state: "skipped", result: "went" });
+    expect(flow.position(ctx).state).toBe("skipped");
+  });
+
   test("a ToolFailure from the body does NOT advance the dialog", async () => {
     const claim = dialog("claim", claimMachine());
     const verify = claim.tool({

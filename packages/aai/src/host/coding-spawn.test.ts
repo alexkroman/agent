@@ -15,7 +15,13 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { keepTail, outputWithKillNote, runCapped } from "./coding-spawn.ts";
+import {
+  EXIT_DRAIN_MS,
+  KILL_GRACE_MS,
+  keepTail,
+  outputWithKillNote,
+  runCapped,
+} from "./coding-spawn.ts";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));
@@ -30,18 +36,29 @@ function installChild() {
   const data = new Map<string, (chunk: Buffer) => void>();
   const events = new Map<string, (...args: unknown[]) => void>();
   const calls: { cmd: string; args: string[]; options: Record<string, unknown> }[] = [];
+  const kills: string[] = [];
+  const destroyed: string[] = [];
   const stream = (name: string) => ({
     on(event: string, cb: (chunk: Buffer) => void) {
       if (event === "data") data.set(name, cb);
       return this;
     },
+    destroy() {
+      destroyed.push(name);
+    },
   });
+  // No `pid`: the runner then signals the child itself rather than a process
+  // group, which is the only half a fake can observe.
   const child = {
     stdout: stream("stdout"),
     stderr: stream("stderr"),
     on(event: string, cb: (...args: unknown[]) => void) {
       events.set(event, cb);
       return child;
+    },
+    kill(signal: string) {
+      kills.push(signal);
+      return true;
     },
   };
   spawnMock.mockImplementation((cmd: string, args: string[], options: Record<string, unknown>) => {
@@ -52,7 +69,11 @@ function installChild() {
     get call() {
       return calls.at(-1);
     },
+    kills,
+    destroyed,
     emit: (name: "stdout" | "stderr", text: string) => data.get(name)?.(Buffer.from(text)),
+    exit: (exitCode: number | null, signal: string | null = null) =>
+      events.get("exit")?.(exitCode, signal),
     close: (exitCode: number | null, signal: string | null = null) =>
       events.get("close")?.(exitCode, signal),
     fail: (err: Error) => events.get("error")?.(err),
@@ -76,12 +97,16 @@ describe("runCapped", () => {
       options: {
         cwd: "/work",
         env: { PATH: "/usr/bin" },
-        timeout: 5000,
+        // Its own process group on POSIX, so the deadline can reach
+        // grandchildren — see `runCapped`'s doc.
+        detached: process.platform !== "win32",
         // Never a pipe: an open stdin the parent never writes lets a child
         // like a bare `cat` block until the deadline instead of seeing EOF.
         stdio: ["ignore", "pipe", "pipe"],
       },
     });
+    // The deadline is the runner's own timer, not Node's one-shot `timeout:`.
+    expect(Object.hasOwn(child.call?.options ?? {}, "timeout")).toBe(false);
   });
 
   test("omits `env` entirely when the caller named none, rather than passing undefined", async () => {
@@ -141,6 +166,60 @@ describe("runCapped", () => {
     });
   });
 
+  test("the deadline sends SIGTERM, then SIGKILL after the grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = installChild();
+      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
+      vi.advanceTimersByTime(100);
+      expect(child.kills).toEqual(["SIGTERM"]);
+      vi.advanceTimersByTime(KILL_GRACE_MS);
+      expect(child.kills).toEqual(["SIGTERM", "SIGKILL"]);
+      child.close(null, "SIGKILL");
+      await expect(run).resolves.toMatchObject({ timedOut: true, signal: "SIGKILL" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * A child that TRAPS SIGTERM and exits cleanly reports `signal: null` and
+   * `exitCode: 0`, and it was still cut off — which is why `timedOut` is its
+   * own field rather than read off `signal`.
+   */
+  test("a child that exits cleanly after the deadline is still reported as timed out", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = installChild();
+      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 100, cap: 100 });
+      vi.advanceTimersByTime(100);
+      child.close(0, null);
+      const result = await run;
+      expect(result).toMatchObject({ exitCode: 0, signal: null, timedOut: true });
+      expect(outputWithKillNote(result, 100)).toContain("[killed by SIGTERM after 100ms]");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("settles shortly after EXIT when something else still holds the pipes", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = installChild();
+      const run = runCapped("bash", [], { cwd: "/work", timeoutMs: 60_000, cap: 100 });
+      child.emit("stdout", "started\n");
+      child.exit(0);
+      vi.advanceTimersByTime(EXIT_DRAIN_MS);
+      await expect(run).resolves.toMatchObject({ exitCode: 0, stdout: "started\n" });
+      // No `close` ever came: the runner stopped reading pipes a background
+      // job still holds, and killed nothing — `&` asked for it to keep running.
+      expect(child.destroyed).toEqual(["stdout", "stderr"]);
+      expect(child.kills).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("rejects only when the process could not be spawned at all", async () => {
     const child = installChild();
     const run = runCapped("nope", [], { cwd: "/work", timeoutMs: 10, cap: 10 });
@@ -158,11 +237,23 @@ describe("keepTail", () => {
 });
 
 describe("outputWithKillNote", () => {
-  const result = { exitCode: null, signal: null, stdout: "out", stderr: "" } as const;
+  const result = {
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    stdout: "out",
+    stderr: "",
+  } as const;
 
   test("annotates a kill, because a killed command otherwise reads as a quiet one", () => {
-    expect(outputWithKillNote({ ...result, signal: "SIGKILL" }, 250)).toBe(
+    expect(outputWithKillNote({ ...result, signal: "SIGKILL", timedOut: true }, 250)).toBe(
       "out\n[killed by SIGKILL after 250ms]",
+    );
+  });
+
+  test("names a kill that was NOT the deadline without claiming it was", () => {
+    expect(outputWithKillNote({ ...result, signal: "SIGKILL" }, 250)).toBe(
+      "out\n[killed by SIGKILL]",
     );
   });
 

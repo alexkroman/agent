@@ -17,7 +17,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createToolContext } from "../sdk/_testing-context.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import { keepTail, outputWithKillNote, runCapped } from "./coding-spawn.ts";
+import { sleep } from "../sdk/sleep.ts";
+import {
+  EXIT_DRAIN_MS,
+  KILL_GRACE_MS,
+  keepTail,
+  outputWithKillNote,
+  runCapped,
+} from "./coding-spawn.ts";
 import { createCodingTools } from "./coding-tools.ts";
 
 let dir: string;
@@ -87,10 +94,61 @@ describe("runCapped", () => {
       cap: 1000,
     });
     expect(result.signal).not.toBeNull();
+    expect(result.timedOut).toBe(true);
     expect(outputWithKillNote(result, 200)).toContain("[killed by SIGTERM after 200ms]");
     // An un-killed result is handed back untouched — the note is not a
     // decoration every output gets.
-    expect(outputWithKillNote({ ...result, signal: null, stdout: "fine" }, 200)).toBe("fine");
+    expect(
+      outputWithKillNote({ ...result, signal: null, timedOut: false, stdout: "fine" }, 200),
+    ).toBe("fine");
+  });
+
+  /**
+   * Node's `timeout:` option sent ONE SIGTERM to the direct child. A command
+   * that traps it ran to completion past its deadline and came back
+   * `code 0, signal null` — reported to the model as a success.
+   */
+  test("a child that ignores SIGTERM is SIGKILLed after the grace period", async () => {
+    const started = performance.now();
+    const result = await runCapped("bash", ["-c", "trap '' TERM; sleep 30"], {
+      cwd: dir,
+      timeoutMs: 200,
+      cap: 1000,
+    });
+    expect(performance.now() - started).toBeLessThan(200 + KILL_GRACE_MS + 3000);
+    expect(result.timedOut).toBe(true);
+    expect(result.signal).toBe("SIGKILL");
+    expect(outputWithKillNote(result, 200)).toContain("[killed by SIGKILL after 200ms]");
+  });
+
+  /**
+   * `close` waits for every holder of the pipes, so a backgrounded job made
+   * the call last as long as it did — and the deadline never fired, the direct
+   * child having already exited.
+   */
+  test("a backgrounded job does not hold the call open after the command exits", async () => {
+    const started = performance.now();
+    const result = await runCapped("bash", ["-c", "sleep 30 & echo started"], {
+      cwd: dir,
+      timeoutMs: 10_000,
+      cap: 1000,
+    });
+    expect(performance.now() - started).toBeLessThan(EXIT_DRAIN_MS + 3000);
+    expect(result.exitCode).toBe(0);
+    expect(result.timedOut).toBe(false);
+    expect(result.stdout.trim()).toBe("started");
+  });
+
+  test("the deadline reaches grandchildren, not only the direct child", async () => {
+    const marker = path.join(dir, "grandchild-survived");
+    const result = await runCapped("bash", ["-c", `(sleep 1; touch ${marker}) & sleep 30`], {
+      cwd: dir,
+      timeoutMs: 200,
+      cap: 1000,
+    });
+    expect(result.timedOut).toBe(true);
+    await sleep(1500);
+    await expect(import("node:fs/promises").then((fs) => fs.access(marker))).rejects.toThrow();
   });
 
   test("rejects when the command cannot be spawned at all", async () => {

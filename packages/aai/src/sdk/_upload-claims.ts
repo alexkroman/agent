@@ -43,14 +43,6 @@ export type Claimer = {
    * record it is about to change.
    */
   drain(): Promise<void>;
-  /**
-   * The first claim that failed, or `undefined`.
-   *
-   * For the fan-out's own error path: a failing claim ABORTS every window in
-   * flight, so what `mapConcurrent` then reports is that abort rather than its
-   * cause, and raising it would name the symptom.
-   */
-  failure(): unknown;
 };
 
 /**
@@ -132,9 +124,6 @@ export function createClaimer(opts: {
     landed(offset: number): void {
       pending.push(offset);
       void runner.trigger().catch(note);
-    },
-    failure(): unknown {
-      return failure;
     },
     async drain(): Promise<void> {
       // `trigger()` promises a run that reflects state as of this call or later, so
