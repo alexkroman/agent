@@ -117,7 +117,8 @@ describe("withToolsDir", () => {
     // What the model was offered on the first request — the schema list a
     // hand-written map is the usual way to be missing from.
     const offered = model.calls[0]?.tools as { name: string }[] | undefined;
-    expect(offered?.map((t) => t.name)).toEqual(["roll_die"]);
+    // `think` rides along as the default builtin.
+    expect(offered?.map((t) => t.name)).toEqual(["roll_die", "think"]);
     // …and what came back on the second: the file's own `execute` ran
     // in-process, and its value is in the prompt the model reads next.
     const prompt = (model.calls[1]?.prompt ?? []) as PromptMessage[];

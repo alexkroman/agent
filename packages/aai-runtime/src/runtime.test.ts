@@ -440,7 +440,7 @@ describe("executeToolCall", () => {
 });
 
 describe("createRuntime sandbox mode", () => {
-  test("uses provided executeTool and adds no builtins by default", async () => {
+  test("uses provided executeTool and adds only the default `think`", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
@@ -453,10 +453,9 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: mockToolSchemas,
     });
 
-    // Relay/host-mode path. DEFAULT_BUILTIN_TOOLS is empty, so an agent that
-    // sets no `builtinTools` gets exactly the tools it declared — nothing is
-    // appended behind its back.
-    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool"]);
+    // Relay/host-mode path. An agent that sets no `builtinTools` gets the
+    // tools it declared plus DEFAULT_BUILTIN_TOOLS — `think`, and nothing else.
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool", "think"]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).

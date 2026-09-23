@@ -135,8 +135,19 @@ describe("expectPromptBuiltinsDeclared", () => {
 
   test("declaring none reads as 'none', not as an empty join", () => {
     expect(() =>
-      expectPromptBuiltinsDeclared(agent({ name: "Coda", systemPrompt: "Call run_code." })),
+      expectPromptBuiltinsDeclared(
+        agent({ name: "Coda", systemPrompt: "Call run_code.", builtinTools: [] }),
+      ),
     ).toThrow(/declares none/);
+  });
+
+  test("an unset `builtinTools` reports the default surface, not 'none'", () => {
+    // The scan reads snake_case tokens only, so `think` is never COMMANDED —
+    // but an unset field is what a deploy serves as `["think"]`, and saying
+    // "declares none" there would be false.
+    expect(() =>
+      expectPromptBuiltinsDeclared(agent({ name: "Coda", systemPrompt: "Call run_code." })),
+    ).toThrow(/declares think —/);
   });
 
   test("a prompt commanding no builtin FAILS, pointing at the unapplied-prompt cause", () => {

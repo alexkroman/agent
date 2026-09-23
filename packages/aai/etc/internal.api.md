@@ -84,7 +84,7 @@ export type Db = {
 export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly [];
+export const DEFAULT_BUILTIN_TOOLS: readonly ["think"];
 
 // @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";

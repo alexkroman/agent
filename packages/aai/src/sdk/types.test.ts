@@ -28,13 +28,14 @@ describe("constants", () => {
    *
    * The only other assertion on this constant is
    * `expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS])` in `runtime.test.ts`,
-   * which is vacuously true for an empty array — so nothing checked the default
-   * at all, and three separate docs (including the scaffold guide shipped to
-   * users) went on describing a four-tool "cognitive set" default long after it
-   * was removed. An agent that opts into no built-ins must get none.
+   * which was vacuously true while the list was empty — so nothing checked the
+   * default at all, and three separate docs (including the scaffold guide
+   * shipped to users) went on describing a four-tool "cognitive set" default
+   * long after it was removed. The default is `think` alone; every other
+   * built-in is opt-in by name.
    */
-  test("DEFAULT_BUILTIN_TOOLS is empty — built-ins are opt-in by name", () => {
-    expect(DEFAULT_BUILTIN_TOOLS).toEqual([]);
+  test("DEFAULT_BUILTIN_TOOLS is exactly `think` — the rest are opt-in by name", () => {
+    expect(DEFAULT_BUILTIN_TOOLS).toEqual(["think"]);
     expect(agent({ name: "t" }).builtinTools).toBeUndefined();
   });
 });

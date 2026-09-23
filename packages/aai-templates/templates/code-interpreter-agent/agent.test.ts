@@ -39,8 +39,8 @@ describe("code-interpreter-agent template", () => {
   test("run_code survives into the config a deploy carries", () => {
     // The template's whole capability, asserted on the CONFIG rather than the
     // def because that is what a deploy ships. `DEFAULT_BUILTIN_TOOLS` is
-    // EMPTY — a builtin is something an agent asks for, never something it has
-    // to notice and switch off — so a dropped `builtinTools` is not a degraded
+    // `think` alone — every other builtin is something an agent asks for — so
+    // a dropped `builtinTools` is not a degraded
     // Coda, it is an agent whose prompt forbids mental arithmetic and leaves it
     // nothing else to do. Adding builtins beside it is fine; losing this one is
     // the regression.

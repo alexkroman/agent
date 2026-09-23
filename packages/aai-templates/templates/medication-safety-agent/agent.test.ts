@@ -127,10 +127,9 @@ describe("medication-safety-agent template", () => {
     const builtins = expectDeployable(agentDef).builtinTools ?? [];
 
     // Asserted on the CONFIG rather than the def because that is what a deploy
-    // ships, and because `DEFAULT_BUILTIN_TOOLS` is empty: a builtin is
-    // something an agent asks for, never something it has to notice and switch
-    // off. So a dropped entry is not a quieter Dr. Sage — it is the same one
-    // with a prompt rule addressed to nothing. Adding builtins beside these
+    // ships, and because setting `builtinTools` REPLACES the default: nothing
+    // but `think` comes back on its own. So a dropped entry is not a quieter
+    // Dr. Sage — it is the same one with a prompt rule addressed to nothing. Adding builtins beside these
     // three is an ordinary edit; losing one is the regression.
     //
     // `run_code` is the arithmetic rule's only mechanism (a BMI or a

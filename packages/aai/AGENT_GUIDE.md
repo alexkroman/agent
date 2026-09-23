@@ -2026,10 +2026,9 @@ the tool simply never reached the model.
 
 ## Built-in tools
 
-Enable via `builtinTools` in `agent()`. **When `builtinTools` is omitted, none
-are enabled** — omitting the field and passing `[]` mean the same thing. Name
-the ones you want; a built-in is something an agent asks for rather than
-something it has to notice and switch off.
+Enable via `builtinTools` in `agent()`. **Omitted, only `think` is on**; the
+rest are opt-in. Setting the field REPLACES the default: list `"think"` to keep
+it, `[]` for none.
 
 | Tool | Description | Params |
 | --- | --- | --- |
