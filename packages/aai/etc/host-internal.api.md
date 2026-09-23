@@ -567,7 +567,7 @@ interface DeepgramSttOptions extends ProviderCredentialOptions {
 }
 
 // @internal
-export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
+export const DEFAULT_DEAD_AIR_COVER_MS = 2400;
 
 // @internal
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;

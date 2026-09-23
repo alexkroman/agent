@@ -2628,7 +2628,7 @@ disables. The wording is internal and must stay purely declarative — see
 
 ###### Default Value
 
-`5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
+`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
 
 ###### Inherited from
 
@@ -6298,7 +6298,7 @@ disables. The wording is internal and must stay purely declarative — see
 
 ###### Default Value
 
-`5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
+`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
 
 ##### errorPhrase?
 
