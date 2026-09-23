@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 429 names
+- [Agent authoring](#agent-authoring) — 430 names
 - [Browser client](#browser-client) — 138 names
 - [Testing and evals](#testing-and-evals) — 216 names
-- [Hosting and tooling](#hosting-and-tooling) — 254 names
-- [Framework internals](#framework-internals) — 307 names
+- [Hosting and tooling](#hosting-and-tooling) — 231 names
+- [Framework internals](#framework-internals) — 326 names
 
 ## Agent authoring
 
@@ -70,6 +70,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ChannelSection` | interface | `@alexkroman1/aai/channels` | `aai:channels` | One block of a message: a titled chunk, optionally linked, with prose and bullets under it. |
 | `ClientConfigResponse` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | Parsed body of `GET /client-config`. |
 | `ClientConfigResponseSchema` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`) | `aai:workflow-api` | Body of `GET /client-config`. |
+| `ClientEventMap` | interface | `@alexkroman1/aai` | `aai:events` | The agent's OWN custom events — what `ctx.send(event, data)` pushes to the browser — keyed by event name, and EMPTY until the agent declares some. |
+| `ClientEventSender` | type | `@alexkroman1/aai` | `aai:events` | What `ctx.send` is: push one custom event to the connected browser client, typed by `ClientEventMap`. |
 | `CodingToolName` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | Every tool `createCodingTools` can build, by the name the model calls. |
 | `CodingToolsOptions` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | What `createCodingTools` takes. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/stt` | `aai:stt` | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
@@ -121,8 +123,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `InferToolOutput` | type | `@alexkroman1/aai` | `aai:tool` | The result type a tool's `execute` returns (awaited, so a sync and an `async` body infer alike). |
 | `KeyedLock`, `KeyedLockOptions` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` |  |
 | `KeyedLockTimeoutError` | class | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Thrown when an acquire deadline lapses before the key came free. |
-| `KnownTurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | The turn-detection modes this release implements — the autocomplete half of `TurnDetectionMode`. |
-| `KnownVoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | One of the opt-in prompt presets THIS release ships — see `VOICE_PRESETS` for what each one says and what it costs. |
 | `LlmDescriptorOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | What an `LlmProvider` descriptor's `options` carry — the one shape `llm()` writes and the host resolver reads. |
 | `LlmProvider` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | Descriptor for an LLM provider. |
 | `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name. |
@@ -220,7 +220,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TRANSCRIBE_UPLOAD_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Deadline for the upload leg. |
 | `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/step` | `aai:transcribe` | How much of a stored upload one outbound window carries. |
 | `TelephonyAccess` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about `WS /phone`. |
-| `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent. |
+| `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent — `"twilio"` or `"telnyx"`, the two this release ships a codec for, or any other string. |
 | `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run in a status nothing will change again. |
 | `TextAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Text-mode params: `text: true`, optionally an `llm`, and nothing else from the audio half of the agent shape. |
 | `ToolChoice` | type | `@alexkroman1/aai` | `aai:agent` | How the LLM should select tools. |
@@ -235,6 +235,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ToolMessageCondition` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | One test a tool call's ARGUMENTS must pass for the message carrying it to be eligible. |
 | `ToolMessages` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | A tool's messages in NORMALIZED form — what a `ToolSchema` carries and what the runtime reads. |
 | `ToolMessagesInput` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | What an author writes for `tool({ messages })` — every kind also accepts the shorthands, because the common declaration is one string. |
+| `ToolSet` | type | `@alexkroman1/aai` | `aai:tool` | A map of tools by the name the model calls them by — the shape every field that DECLARES a set of tools takes: `AgentDef.tools` (what `tools/` lowers to), … |
 | `ToolStartMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | Spoken as the tool call BEGINS. |
 | `TranscribeError` | class | `@alexkroman1/aai/step` | `aai:transcribe` | A failure from either endpoint, carrying what the caller needs to classify it. |
 | `TranscribeProgress` | type | `@alexkroman1/aai/step` | `aai:transcribe` | Where a submitted job has got to. |
@@ -243,7 +244,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TranscribeSyncOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `stepTranscribeSync` accepts. |
 | `Transcript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | A finished transcript, as `stepTranscribePoll` answers with one. |
 | `TtsProvider` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | Descriptor for a TTS provider. |
-| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — one of `KnownTurnDetectionMode`, or any other string. |
+| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — `"auto"` or `"manual"`, the two this release implements (see `PipelineVoiceTuning.turnDetection`), or any other string. |
 | `TypedDelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
 | `TypedSubagentDef` | interface | `@alexkroman1/aai` | `aai:subagent` | Define a subagent. |
 | `UnsupportedRecordingError` | class | `@alexkroman1/aai/step` | `aai:step` | A recording `parseWav` will not read. |
@@ -261,7 +262,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `UsageLimits` | interface | `@alexkroman1/aai` | `aai:agent` | The token budget a session may spend before the runtime stops it. |
 | `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `PipelineVoiceTuning.userTurnLimit`. |
 | `VOICE_PRESETS` | const | `@alexkroman1/aai` | `aai:agent` | The shipped text of every preset, keyed by the name `agent({ voicePresets })` takes. |
-| `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of `KnownVoicePresetName`, or any other string. |
+| `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of the opt-in prompt presets THIS release ships (see `VOICE_PRESETS` for what each one says and what it costs), or any other string. |
 | `WAV_HEADER_BYTES` | const | `@alexkroman1/aai/step` | `aai:step` | Bytes of WAV header `encodeWav` writes — `RIFF`, `fmt `, and `data`. |
 | `WaitForOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-wait options, for a wait that carries a DEADLINE. |
 | `WaitForSchemaOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | A wait that carries a schema and NO deadline — `ctx.waitFor(token, { schema })`. |
@@ -778,13 +779,12 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `AgentRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Common interface for agent runtimes. |
 | `AgentServer`, `AgentServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Handle returned by `createRuntimeServer`. |
 | `CARRIER_CODECS` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Every carrier this build can serve, keyed by its `?carrier=` value. |
-| `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Query parameter naming the carrier — see `carrierByName`. |
 | `CLIENT_ARTIFACT_REL` | const | `@alexkroman1/aai-cli/start` |  | Where `aai build` leaves the built browser client, relative to the root. |
 | `CLIENT_CONFIG_METHODS` | const | `@alexkroman1/aai/protocol` |  | The only method the endpoint answers — read by the host's route dispatch, so this is the value and not a description of it. |
 | `CLIENT_CONFIG_PATH` | const | `@alexkroman1/aai/protocol` |  | Relative path of the client-config endpoint under an agent's base URL. |
 | `CarrierCodec` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Translates between a carrier's JSON frames and the two things a session needs. |
 | `CarrierInbound` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | One inbound carrier frame, reduced to what a session needs. |
-| `CarrierName` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | A carrier name this build can serve. |
+| `CarrierName` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | A carrier's name — the `?carrier=` value, and what a `telephony` declaration lists. |
 | `ClientSink` | interface | `@alexkroman1/aai/protocol` |  | Typed interface for pushing session events to a connected client. |
 | `CloseableDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | A `Db` whose underlying connection pool the caller owns and must close. |
 | `DEFAULT_LISTEN_HOST` | const | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Default bind address. |
@@ -798,27 +798,26 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Executes a named tool with parsed arguments and returns its string result. |
 | `GlobalConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
 | `HOST_ONLY_AGENT_FIELDS` | const | `@alexkroman1/aai/manifest` |  | `AgentDef` fields that must never cross the serialization boundary — the single deny-list `toAgentConfig` strips. |
+| `HostAgentOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/testing`) | `aai-runtime:runtime` | What every entry point that runs an agent definition takes — see the module doc for why `env` and `llm` are declared by each rather than here. |
 | `HostConfig` | type | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection. |
 | `HostConfigMessageSchema` | const | `@alexkroman1/aai/protocol` |  | The host-mode handshake frame: the first inbound message on a host-mode WebSocket connection, carrying the `HostConfigSchema` payload. |
 | `HostConfigSchema` | const | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection: the caller (e.g. an external evaluation harness) supplies the system prompt, optional greeting, … |
-| `HostCredentialEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | An env record that may carry host/shell provider credentials. |
 | `HostOnlyAgentField` | type | `@alexkroman1/aai/manifest` |  | A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). |
 | `HostServerOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createHostServer`. |
 | `HostSessionDefaults` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Session settings every tenant inherits, minus the four the handshake owns. |
-| `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` |  |
 | `IGNORED_WORKSPACE_DIRS` | const | `@alexkroman1/aai/workspace-files` |  | Directories never walked — never listed, grepped, or synced. |
 | `LOCAL_ONLY_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Files that exist only on a developer's machine and must never reach a workspace row: secrets (`.env` rides the secret routes) and lockfiles. |
 | `LOCKFILES` | const | `@alexkroman1/aai/workspace-files` |  | Package-manager lockfiles — a resolved tree, not source. |
 | `LOG_LINE_TRUNCATED` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Appended to a line cut at `LogBufferOptions.maxLineBytes`. |
 | `LlmRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per LLM provider — adding a provider is one entry here. |
-| `LogBuffer`, `LogBufferOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` |  |
+| `LogBuffer`, `LogBufferOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | The ring `createLogBuffer` returns. |
 | `LogContext` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Structured context attached to a log line. |
 | `LogFn` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | A single log method: message plus optional structured context. |
 | `LogLevel` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Log severity levels a `Logger` implements. |
 | `LogLine` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One captured line. |
 | `LogPage` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One read. |
 | `LogStream` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Which of a process's two streams a line came from. |
-| `Logger` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Structured logger interface. |
+| `Logger` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Structured logger interface. |
 | `MAX_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Ceiling on `FindOptions.limit`, so one lookup cannot scan a whole history. |
 | `MAX_WORKFLOW_INPUT_BYTES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Largest `POST /workflows/runs` body. |
 | `MAX_WORKSPACE_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Max files in one workspace. |
@@ -868,7 +867,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SESSION_SECRET_ENV` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The env variable that turns the built-in ticket check on. |
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
 | `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |
-| `ServerSession` | type | `@alexkroman1/aai-runtime` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
 | `ServerUpgradeHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every WebSocket upgrade. |
 | `SessionAuth`, `SessionAuthOptions` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who may open a session on a server — `auth` on `createAgentServer`, `createRuntimeServer` and `createHostServer`. |
 | `SessionCommand` | type | `@alexkroman1/aai/protocol` |  | **Client→server** text messages (binary frames carry raw PCM16 audio). |
@@ -884,23 +882,18 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SessionMode` | type | `@alexkroman1/aai/manifest` |  | Session mode derived from which provider fields are set. |
 | `SessionRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The session-facing slice of a runtime — all `createRuntimeServer` needs. |
 | `SessionStartOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options passed to `AgentRuntime.startSession`. |
-| `SessionStateBackend` | type | `@alexkroman1/aai-runtime` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
-| `SessionStateStore` | type | `@alexkroman1/aai-runtime` |  | The runtime's view of the store. |
 | `SessionTokenInput` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Input to `createSessionToken`. |
 | `SessionVerifier` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | A caller's own ticket check — a JWT from your IdP, an API key lookup. |
 | `SessionWebSocket` | type | `@alexkroman1/aai-runtime` |  | Minimal WebSocket interface accepted by `AgentRuntime.startSession`. |
 | `SharedServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The options every front door over `createRuntimeServer` passes straight through — a logger and the two request hooks. |
 | `SkipGreetingOption` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Whether to suppress a session's opening greeting: the answer, or a THUNK that knows it later. |
 | `StartResult` | interface | `@alexkroman1/aai-cli/start` |  | What `executeStart` answers, for `--json` and for tests. |
-| `StateSyncSession` | type | `@alexkroman1/aai-runtime` |  | The per-session state this decision reads and writes. |
-| `StoredSessionEvent` | type | `@alexkroman1/aai-runtime` |  | One retained session event: its index in the session's log, and its JSON. |
-| `SttError` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Error raised by an STT provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
-| `SttEvents` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` |  |
-| `SttOpenOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Options the host passes when opening an STT stream. |
-| `SttOpener` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side openable STT provider — produced by `resolveStt(descriptor)`. |
-| `SttSession` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side handle to one open STT provider stream (pipeline mode). |
-| `SttTurnMeta` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Provider-reported detail about the turn a transcript belongs to. |
-| `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Path `createRuntimeServer` serves carrier media streams on. |
+| `SttError` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Error raised by an STT provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
+| `SttEvents` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` |  |
+| `SttOpenOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Options the host passes when opening an STT stream. |
+| `SttOpener` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Host-side openable STT provider — produced by `resolveStt(descriptor)`. |
+| `SttSession` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Host-side handle to one open STT provider stream (pipeline mode). |
+| `SttTurnMeta` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Provider-reported detail about the turn a transcript belongs to. |
 | `TELEPHONY_SAMPLE_RATE` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Sample rate every phone carrier streams at. |
 | `TelephonyBridgeOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Options for `createTelephonyBridge`. |
 | `TextAgent` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:text` | A text agent bound to one conversation — see `createTextAgent`. |
@@ -911,33 +904,24 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ToolRegistry` | type | `@alexkroman1/aai/manifest` |  | A checked set of tools, keyed by the name the model calls. |
 | `ToolSchema` | type | `@alexkroman1/aai/manifest` |  | A tool declaration in wire form: name, description, and JSON Schema parameters — the serializable counterpart of `ToolDef`. |
 | `ToolSchemaSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
-| `TransportEventBody` | type | `@alexkroman1/aai-runtime` |  | One reportable event, envelope-free — the session stamps `meta` when it emits. |
-| `TransportEventType` | type | `@alexkroman1/aai-runtime` |  | What a transport may report: everything in the session event vocabulary except the events only the session itself can be the source of. |
-| `TtsError` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Error raised by a TTS provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
-| `TtsEvents` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Events emitted by an open `TtsSession`. |
-| `TtsOpenOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Options the host passes when opening a TTS stream. |
-| `TtsOpener` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side openable TTS provider — produced by `resolveTts(descriptor)`. |
-| `TtsSession` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side handle to one open TTS provider stream (pipeline mode). |
-| `TtsWordTiming` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One synthesized word and where its audio sits in the current turn. |
+| `TtsError` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Error raised by a TTS provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
+| `TtsEvents` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Events emitted by an open `TtsSession`. |
+| `TtsOpenOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Options the host passes when opening a TTS stream. |
+| `TtsOpener` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Host-side openable TTS provider — produced by `resolveTts(descriptor)`. |
+| `TtsSession` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Host-side handle to one open TTS provider stream (pipeline mode). |
+| `TtsWordTiming` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | One synthesized word and where its audio sits in the current turn. |
 | `TypecheckResult` | type · `@internal` | `@alexkroman1/aai-cli/typecheck` |  |  |
-| `UPLOADS_TABLE` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The table one row per upload lives in. |
 | `UPLOAD_KEY_PREFIX` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Where one deployment's upload objects live, under whichever bucket it uses. |
 | `UPLOAD_STORAGE_BUCKET_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key naming the bucket within it. |
 | `UPLOAD_STORAGE_KEY_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key holding the service key for `UPLOAD_STORAGE_URL_ENV`. |
 | `UPLOAD_STORAGE_URL_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key naming the Storage origin uploads are written to. |
-| `Unsubscribe` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Unsubscribe callback returned by `.on()` event subscriptions. |
-| `UploadBackend` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The byte operations the upload store performs, and only those. |
+| `Unsubscribe` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:providers` | Unsubscribe callback returned by `.on()` event subscriptions. |
 | `UploadMeta` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | What an uploader declares about the file it is sending. |
 | `UploadPart` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | One window of an upload, and the object holding it. |
-| `UploadStore` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The store, as the API routes and `stepReadUpload` use it. |
 | `UploadTooLargeError` | class | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Raised by an upload store's `create` when the body ran past its cap. |
 | `UploadsUnavailableError` | class | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Raised by every method of the store a deployment with no upload backend gets. |
 | `WORKFLOW_API_PREFIX` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Path prefix every route lives under, relative to the agent's own base URL. |
 | `WORKFLOW_API_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Env var holding the bearer this API requires. |
-| `WdkAdapter` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | The slice of the Workflow DevKit this client touches. |
-| `WdkRunRecord` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | A WDK run record, narrowed to the fields a snapshot is built from. |
-| `WdkStreamOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | What `WdkAdapter.readStream` passes through to WDK. |
-| `WorkflowClientOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | What a client needs to serve `ctx.workflows`. |
 | `WorkflowKeyStore` | type | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | The index, as the client uses it. |
 | `WorkspaceSnapshot` | type | `@alexkroman1/aai/workspace-files` |  |  |
 | `WorkspaceWalkOptions` | type | `@alexkroman1/aai/workspace-files` |  | Options shared by the walk and the snapshot. |
@@ -953,10 +937,8 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `connectSession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Run a session over your OWN audio I/O — anything that is not a WebSocket. |
 | `createAgentServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server running one agent — the self-hosting entry point, and the same server `aai dev` runs. |
 | `createHostServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create a multi-tenant host server: an HTTP + WebSocket server whose voice sessions run agents supplied by their callers. |
-| `createHttpUploadBackend` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | `UploadBackend` over Supabase Storage's REST API. |
 | `createLogBuffer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:logging` |  |
 | `createMemoryKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in this process's memory, for `aai dev`. |
-| `createMemoryUploadBackend` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | An in-memory `UploadBackend`, for specs and for a platform with no bucket. |
 | `createPostgresDb`, `CreatePostgresDbOptions` | function | `@alexkroman1/aai-runtime` | `aai-runtime:db` | Create a `Db` backed by a Postgres connection pool. |
 | `createPostgresKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in the workflow database. |
 | `createProjectServer` | function | `@alexkroman1/aai-cli/start` |  | Build this project's `AgentServer` WITHOUT binding a socket. |
@@ -981,15 +963,12 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `metricsEndpoint` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The collector this environment names for METRICS, or `undefined`. |
 | `normalizeToolMessages` | function | `@alexkroman1/aai/manifest` |  | Author input → the wire shape, dropping every kind the tool did not declare. |
 | `otelMetricsSink` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | A sink recording each frame onto OpenTelemetry instruments of `meter`. |
-| `partKey` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Where one upload's objects live, under a prefix the deployment owns. |
-| `partsOf` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | A stored boundary list, whatever the driver handed back. |
 | `readScaffoldFiles` | function | `@alexkroman1/aai/workspace-files` |  | Read a scaffold directory into the map `layerScaffoldFiles` takes, or `{}` when it is missing. |
 | `registerLlmKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register an LLM kind. |
 | `registerMetricsSink` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | Add a sink for every session in this process. |
 | `registerSttKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register an STT kind, returning an unregister function. |
 | `registerTtsKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register a TTS kind. |
 | `rejectingRuntime` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | A `SessionRuntime` that turns every session away with a protocol error and closes, instead of accepting a socket it cannot answer. |
-| `requiredProviderEnvVars` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The provider credentials an agent actually needs, derived from the same registries that resolve them. |
 | `resolveInside` | function | `@alexkroman1/aai/workspace-files` |  | Resolve a workspace-relative path, refusing one that escapes the root. |
 | `resolveKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | Build the key store an embedder holding a `Db` should use: that database, or memory. |
 | `resolveLlm` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Resolve an `LlmProvider` descriptor into a Vercel AI SDK `LanguageModel`. |
@@ -1009,7 +988,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `updateProjectConfig` | function | `@alexkroman1/aai-cli/project-config` |  | Merge `patch` into the existing project config rather than replacing the file — a publish recording its `slug` must not drop the studio link fields a pull … |
 | `verifySessionToken`, `VerifySessionTokenOptions` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Check a ticket minted by `createSessionToken`: the signature, then the expiry. |
 | `walkWorkspaceFiles` | function | `@alexkroman1/aai/workspace-files` |  | Workspace-relative paths of every non-ignored file under `dir`, sorted. |
-| `withHostCredentialFallback` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Return `env` with any missing provider credential filled in from `hostEnv` (defaults to `process.env`). |
 | `withMcpTools` | function | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Connect every server the agent declares and attach what they publish. |
 | `withSystemPrompt` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `withTools` | function | `@alexkroman1/aai/manifest` |  | Attach a registry to an agent definition, returning the def the runtime runs. |
@@ -1044,6 +1022,7 @@ trace or a type error can be traced back to something.
 | `AttachSessionOptions` | type | `@alexkroman1/aai-runtime/internal` |  | Options for `attachSession`. |
 | `BuiltinToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for creating built-in tool definitions. |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime/internal` |  | Query parameter naming the carrier — see `carrierByName`. |
 | `CARTESIA_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Cartesia API key. |
 | `CARTESIA_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `CLIENT_AUDIO_LEAD_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1097,6 +1076,8 @@ trace or a type error can be traced back to something.
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `HostCredentialEnv` | type | `@alexkroman1/aai/host-internal` |  | An env record that may carry host/shell provider credentials. |
+| `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `InvariantDetail` | type | `@alexkroman1/aai/internal` |  | Extra context for a violation, built ONLY when one happens. |
 | `InvariantViolation` | class | `@alexkroman1/aai/internal` |  | A broken invariant. |
 | `JournalConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `JournalStore` CONFORMANCE suite, loaded on demand. |
@@ -1154,6 +1135,7 @@ trace or a type error can be traced back to something.
 | `PlatformReplyFrame` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PlatformRoute` | type | `@alexkroman1/aai-runtime/internal` |  | One of `PLATFORM_ROUTES`. |
 | `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
+| `ProviderEnvVarsQuery` | type | `@alexkroman1/aai-runtime/internal` |  | What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor slots and its front door. |
 | `RESERVED_SLUGS` | const | `@alexkroman1/aai/internal` |  | Slugs that collide with top-level platform routes and can never be claimed by an agent. |
 | `RETRYABLE_STATUS` | const | `@alexkroman1/aai/host-internal` |  | Statuses that mean "come back", as opposed to "no". |
 | `RIME_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Rime API key. |
@@ -1184,18 +1166,24 @@ trace or a type error can be traced back to something.
 | `STT_FRAME_TARGET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ServerRoute` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `ServerSession` | type | `@alexkroman1/aai-runtime/internal` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
 | `SessionProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `SessionStateBackend` | type | `@alexkroman1/aai-runtime/internal` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
 | `SessionStateConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `SessionStateBackend` CONFORMANCE suite, loaded on demand. |
+| `SessionStateStore` | type | `@alexkroman1/aai-runtime/internal` |  | The runtime's view of the store. |
 | `SessionUrlChips` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `SleepTimerOptions` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  | One child-process runner for every tool that shells out. |
 | `SpeechSynthesizer` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StateSyncSession` | type | `@alexkroman1/aai-runtime/internal` |  | The per-session state this decision reads and writes. |
 | `StepDelegateFn` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepInfoReader` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepReporter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepWebhookMinter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StoredSessionEvent` | type | `@alexkroman1/aai-runtime/internal` |  | One retained session event: its index in the session's log, and its JSON. |
 | `TAIL_RESUME_MIN_UNHEARD_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `TELEPHONY_CARRIERS` | const | `@alexkroman1/aai/internal` |  | The same names as a VALUE, for the two readers that need the list at run time: `AgentConfigSchema`, which validates them because the declaration crosses the … |
+| `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime/internal` |  | Path `createRuntimeServer` serves carrier media streams on. |
 | `TERMINAL_WORKFLOW_STATUSES` | const | `@alexkroman1/aai/internal` |  | Statuses nothing will change again. |
 | `TOOL_EXECUTION_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Wall-clock budget (ms) for one tool `execute` call before it is aborted. |
 | `TOOL_RESULT_TRUNCATION_MARKER` | const | `@alexkroman1/aai/internal` |  | Appended to a tool result the framework trimmed at `MAX_TOOL_RESULT_CHARS`, so a model reading it can tell the record is incomplete rather than answering from … |
@@ -1208,6 +1196,9 @@ trace or a type error can be traced back to something.
 | `ToolDefRecord` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtin tool definitions, keyed by tool name. |
 | `ToolMessageBase` | type | `@alexkroman1/aai/host-internal` |  | The two fields every message kind carries, as one type for the selector to be generic over (`tool-messages-select.ts`). |
 | `TraceParent` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `TransportEventBody` | type | `@alexkroman1/aai-runtime/internal` |  | One reportable event, envelope-free — the session stamps `meta` when it emits. |
+| `TransportEventType` | type | `@alexkroman1/aai-runtime/internal` |  | What a transport may report: everything in the session event vocabulary except the events only the session itself can be the source of. |
+| `UPLOADS_TABLE` | const | `@alexkroman1/aai-runtime/internal` |  | The table one row per upload lives in. |
 | `UPLOADS_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `UPLOAD_CHUNK_BYTES` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | How much of an upload one stored row (or one write) holds. |
 | `UPLOAD_CLAIM_BATCH` | const | `@alexkroman1/aai/host-internal` |  | How many landed offsets one claim may name. |
@@ -1216,7 +1207,9 @@ trace or a type error can be traced back to something.
 | `UPLOAD_TOKEN_RE` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | What a caller-chosen upload id may contain. |
 | `UiUrlChip` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `UploadAccess` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `UploadBackend` | type | `@alexkroman1/aai-runtime/internal` |  | The byte operations the upload store performs, and only those. |
 | `UploadReader` | type | `@alexkroman1/aai/host-internal` |  | The half of an upload store a step needs: metadata, and a byte range. |
+| `UploadStore` | type | `@alexkroman1/aai-runtime/internal` |  | The store, as the API routes and `stepReadUpload` use it. |
 | `UploadWriteMeta` | type | `@alexkroman1/aai/host-internal` |  | What an uploader may declare about a file it is storing. |
 | `UploadWriter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `UsageMeter` | interface · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1246,7 +1239,9 @@ trace or a type error can be traced back to something.
 | `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `createHttpUploadBackend` | function | `@alexkroman1/aai-runtime/internal` |  | `UploadBackend` over Supabase Storage's REST API. |
 | `createMemoryJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createMemoryUploadBackend` | function | `@alexkroman1/aai-runtime/internal` |  | An in-memory `UploadBackend`, for specs and for a platform with no bucket. |
 | `createOwnedMap` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createPlatformJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createPlatformQueueSend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1256,8 +1251,6 @@ trace or a type error can be traced back to something.
 | `createPostgresStateBackend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionEventStream` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionStateStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
-| `createSttError` | function | `@alexkroman1/aai/host-internal` |  | Build an `SttError` with a typed `code`. |
-| `createTtsError` | function | `@alexkroman1/aai/host-internal` |  | Build a `TtsError` with a typed `code`. |
 | `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `decideClientEvent` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `defaultProviders` | function | `@alexkroman1/aai/host-internal` |  | The default providers for the pipeline stages a config leaves unset: each missing stage of the `stt`/`llm`/`tts` triple is filled from the all-AssemblyAI … |
@@ -1287,6 +1280,8 @@ trace or a type error can be traced back to something.
 | `parsePlatformFrame` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `parseTraceparent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `parseWsUpgradeParams` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `partKey` | function | `@alexkroman1/aai-runtime/internal` |  | Where one upload's objects live, under a prefix the deployment owns. |
+| `partsOf` | function | `@alexkroman1/aai-runtime/internal` |  | A stored boundary list, whatever the driver handed back. |
 | `pinnedFetch` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `planDelayedLadder` | function | `@alexkroman1/aai/host-internal` |  | The ladder this call gets: one line per DISTINCT `afterMs`, ascending. |
 | `platformSocketUrl` | function | `@alexkroman1/aai-runtime/internal` |  | `<base>/platform-socket` with a WebSocket scheme. |
@@ -1304,6 +1299,7 @@ trace or a type error can be traced back to something.
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `requiredProviderEnvVars` | function | `@alexkroman1/aai-runtime/internal` |  | The provider credentials an agent actually needs, derived from the same registries that resolve them. |
 | `resolveAllBuiltins` | function | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Resolve all builtin tools in one pass, returning defs, schemas, and guidance. |
 | `resolveAssemblyAISttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveAssemblyAITtsLanguage` | function | `@alexkroman1/aai/host-internal` |  | Translate an ISO 639-1 code to the service's `language` value. |
@@ -1328,4 +1324,5 @@ trace or a type error can be traced back to something.
 | `toToolJsonSchema` | function | `@alexkroman1/aai/host-internal` |  | Convert a Standard Schema to the JSON Schema shape providers expect. |
 | `traceIdOf` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `wireSessionSocket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `withHostCredentialFallback` | function | `@alexkroman1/aai-runtime/internal` |  | Return `env` with any missing provider credential filled in from `hostEnv` (defaults to `process.env`). |
 | `workflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
