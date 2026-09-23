@@ -6,23 +6,26 @@
  * CORS is the browser-facing studio surface's opt-in, never a platform route's.
  */
 
-import type { ServerResponse } from "node:http";
-import { describe, expect, test } from "vitest";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
+import { describe, expect, test, vi } from "vitest";
 import { writeJson } from "./http.ts";
 
-/** The two calls `writeJson` makes, recorded — no socket involved. */
+/**
+ * A real `ServerResponse` on an unconnected socket, with the two calls
+ * `writeJson` makes recorded and stubbed — nothing is written anywhere.
+ */
 function fakeResponse() {
   const calls: { head?: [number, Record<string, string>]; end?: string } = {};
-  const res = {
-    writeHead(status: number, headers: Record<string, string>) {
-      calls.head = [status, headers];
-      return this;
-    },
-    end(chunk: string) {
-      calls.end = chunk;
-      return this;
-    },
-  } as unknown as ServerResponse;
+  const res = new ServerResponse(new IncomingMessage(new Socket()));
+  vi.spyOn(res, "writeHead").mockImplementation((status, headers) => {
+    calls.head = [status, headers as Record<string, string>];
+    return res;
+  });
+  vi.spyOn(res, "end").mockImplementation((chunk?: unknown) => {
+    calls.end = chunk as string;
+    return res;
+  });
   return { res, calls };
 }
 
