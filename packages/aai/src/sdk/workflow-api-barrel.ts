@@ -149,7 +149,14 @@ export {
   type UploadRange,
   type UploadRef,
   type WorkflowApi,
+  type WorkflowApiCallOptions,
   type WorkflowApiClientOptions,
+  type WorkflowFollowOutputOptions,
+  type WorkflowGetOptions,
+  type WorkflowRunListOptions,
+  type WorkflowStartAndWaitOptions,
+  type WorkflowStartOptions,
+  type WorkflowStreamOutputOptions,
 } from "./workflow-api-client.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
 export type {

@@ -1,5 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import type { SttProvider } from "@alexkroman1/aai/stt";
+import type { TtsProvider } from "@alexkroman1/aai/tts";
+import { expectTypeOf, test } from "vitest";
 import type {
   SttEvents,
   SttOpener,
@@ -8,11 +12,7 @@ import type {
   TtsEvents,
   TtsSession,
   Unsubscribe,
-} from "@alexkroman1/aai/host-internal";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
-import { expectTypeOf, test } from "vitest";
+} from "./openers.ts";
 
 type Descriptor = { kind: string; options: Record<string, unknown> };
 

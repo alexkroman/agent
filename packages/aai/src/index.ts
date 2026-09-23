@@ -146,13 +146,16 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  * LLM Gateway on the key every agent already has), so `llm: "some-model"`
  * autocompletes the gateway's ids. Autocomplete, not a guard: the known half is
  * GENERATED from what `/v1/models` advertises and the type is OPEN
- * (`KnownGatewayModel | (string & {})`), so a model shipped after this release
+ * (`"gpt-5" | … | (string & {})`), so a model shipped after this release
  * still compiles and still runs.
  *
  * `@alexkroman1/aai/llm` keeps it too — that is where an explicit
- * `llm({ provider: "assemblyai", model })` stage is written.
+ * `llm({ provider: "assemblyai", model })` stage is written. `LlmSpec` is the
+ * whole type of that `llm` field (and of `subagent({ llm })` and
+ * `ctx.generate({ llm })`), here for the same reason: a helper that forwards
+ * one names it.
  */
-export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/llm.ts";
+export type { AssemblyAIGatewayModel, LlmSpec } from "./sdk/providers/llm/llm.ts";
 /**
  * S2S is opt-in now that the pipeline is the default mode, so the opt-in
  * descriptor lives next to `agent()` too.
@@ -292,6 +295,8 @@ export type {
   ToolInputSchema,
 } from "./sdk/schema.ts";
 export {
+  type ClientEventMap,
+  type ClientEventSender,
   type EventMapOf,
   SESSION_SOURCED_EVENT_TYPES,
   type SessionEvent,

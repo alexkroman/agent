@@ -116,10 +116,15 @@ Names a VARIABLE, not a key.
 ##### model?
 
 ```ts
-optional model?: string;
+optional model?: 
+  | string & {
+}
+  | "gpt-realtime-2"
+  | "gpt-realtime";
 ```
 
-Realtime model identifier. Default applied by the host (currently `"gpt-realtime-2"`).
+Realtime model identifier. Default applied by the host (currently
+`"gpt-realtime-2"`). Open: the literals autocomplete, any other id compiles.
 
 ##### url?
 
@@ -152,10 +157,18 @@ type OpenAIS2sVoice =
   | "marin"
   | "sage"
   | "shimmer"
-  | "verse";
+  | "verse"
+  | string & {
+};
 ```
 
-Voice ids the OpenAI Realtime API accepts for TTS.
+A voice id for the OpenAI Realtime API — one it accepted when this release
+was cut, or any other string.
+
+OPEN, like every vendor vocabulary here: the voice list is OpenAI's and
+grows between this package's releases, so a voice shipped next week must
+still compile. The literals are autocomplete, not a guard; an id the API
+does not know is refused by the API.
 
 ## References
 

@@ -2,15 +2,10 @@
 
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
-  createSttError,
   isUniversal35Pro,
   resolveAssemblyAISttSettings,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_FRAME_FLOOR_MS,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
 } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
@@ -28,6 +23,13 @@ import {
   pickEndpoint,
   requireApiKey,
 } from "../_utils.ts";
+import {
+  createSttError,
+  type SttEvents,
+  type SttOpener,
+  type SttOpenOptions,
+  type SttSession,
+} from "../openers.ts";
 import { isCommittingTurn } from "./_assemblyai-turn.ts";
 
 export interface AssemblyAISession extends SttSession {

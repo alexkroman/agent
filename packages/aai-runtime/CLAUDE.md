@@ -189,15 +189,27 @@ push-to-talk added three required methods and broke every hand-written double.
 A DOUBLE implements the unsealed slice a consumer takes (`SessionRuntime` for
 `createRuntimeServer`), never the sealed handle. Methods that would widen a
 sealed handle become free functions over it (`connectSession`) or a sub-handle.
+A handle that is only ever received (`AgentServer`, `TextAgent`, `EvalSession`
+and the rest) is tagged `@sealed` in its TSDoc instead, so the probe compares it
+like a value and a new member is a revision. `EvalTurn` is not: a
+`SimulationTarget` a caller implements returns one.
 
-**`RuntimeOptions.generate` is gone from the public type.** It was an
-`@internal` member of a public type — reachable anyway, since API Extractor
-reads the tag at the declaration. It is `HostRuntimeOptions` now, consumed by
-`createRuntimeWithSeams` (`runtime.ts`), which only `eval/session.ts` reaches
-by relative import. The forwarding check (`agent-server-forwarding.ts`) also
-holds the fields `AgentServerOptions` now DECLARES (`agent: AgentDef`,
-`journal?: JournalStore`, rather than `RuntimeOptions["…"]`) assignable to
-what they are forwarded to — `TypeDrift`, beside `ForwardingGap`.
+**The seams are gone from the public types.** `RuntimeOptions.generate` went
+first, then the other `@internal` members — the two S2S socket factories,
+`s2sConfig`, `sessionStartTimeoutMs`, the relay `executeTool`/`toolSchemas`/
+`onToolResult` and `toolGuidance` — each reachable anyway, since API Extractor
+reads the tag at the declaration. They are `HostRuntimeOptions`, and
+`Runtime.executeTool`/`.toolSchemas`/`.createSession` are `HostRuntime`; both
+come from `createRuntimeWithSeams` (`runtime.ts`), which host mode, the eval
+harness and the specs reach by relative import. `EvalSessionOptions.generate`
+is `HostEvalSessionOptions` (`openEvalSessionWithSeams`) the same way. The
+fields every entry point shares are ONE `HostAgentOptions` that
+`RuntimeOptions`, `TextAgentOptions` and both eval bags extend; `env` and `llm`
+are not in it because their types differ per entry point. The forwarding
+check (`agent-server-forwarding.ts`) also holds the fields `AgentServerOptions`
+now DECLARES (`agent: AgentDef`, `journal?: JournalStore`, rather than
+`RuntimeOptions["…"]`) assignable to what they are forwarded to — `TypeDrift`,
+beside `ForwardingGap`.
 
 **`auth` stays a server FIELD, and not a use of the `upgrade` hook.** The hook
 answers synchronously, so an async ticket check cannot decide there; a claimed
@@ -231,13 +243,12 @@ carrying a new template, never an edit to a frozen one.
 
 **A template does not exercise every contracted name, and that is not a hole in
 the gate.** The epoch hash covers the capability's REPORT, which carries every
-name the entrypoint selects — so a signature change on `partKey` moves
-`uploads`'s hash and demands a classification whether or not any template
+name the entrypoint selects — so a signature change on `twilioCodec` moves
+`telephony`'s hash and demands a classification whether or not any template
 mentions it. Classification coverage is every name; what the rest lack is a
 compile-time exercise. The gap is deliberate and per name:
 `createRuntimeServer`/`createHostServer` are a different artifact from the bootstrap
 (embedding into an existing runtime, and a multi-tenant host-mode server);
-`partKey`/`partsOf` would need a `delete` that `UploadBackend` does not have;
 `telnyxCodec`/`twilioCodec` are the shipped carriers a third-carrier template
 exists to be an alternative to. Contorting a starter to touch all of them is how
 these files became catalogues the first time. Where a name's absence is a
@@ -273,7 +284,9 @@ honest, since they are the cross-package consumers the seam exists for.
 konsistent's `runtime-opener-contract-on-root-barrel` is what refuses the
 tidy-up — it names the three registrars, `resolveLlm` and the six opener types,
 each with the module it must be re-exported FROM, and its description carries
-the argument.
+the argument. The types are DECLARED here now (`providers/openers.ts`), not in
+the SDK: nothing there used them, and a capability naming another package's
+type hashes none of it.
 
 ### `ServerSession` is what `SessionCore` became, and the collision is closed
 
@@ -300,10 +313,9 @@ because nothing publishes it.
 **Which is why the rename was affordable at all**, and it INVERTS the old "do not
 rename either half" advice. That advice held while both sides were contracted; an
 unpublished name has no epoch, no frozen example and no semver promise, so
-renaming the runtime halves cost a sweep rather than an epoch a side. The one
-name that IS contracted here is `ServerSession` itself, on the `session`
-capability, so that half went through the epoch mechanism like any other
-signature move.
+renaming the runtime halves cost a sweep rather than an epoch a side.
+`ServerSession` itself has since followed them to `/internal`: nothing published
+could hand one out.
 
 ### The root barrel is the CONTRACTED surface, and nothing else
 
@@ -345,14 +357,13 @@ to 0.
   something that was. All three went with the code that named them, so a name
   arriving here now owes an importer.
 
-Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
-deliberately on different pages and each clause says so: `ServerSession` on the
-barrel and `createSessionCore` on `/internal`, `SessionStateBackend` against
-`createPostgresStateBackend`, `UploadStore` against `createUploadStore`,
-`WorkflowClientOptions` against `createWorkflowClient`. (There was a fourth,
-`SweepSkip` against `claimPoolPresenceAndSweep`; the queue-lock sweep went with
-the DevKit's world.) That asymmetry is a finding, not a shape to copy — see
-"What writing the templates found" below.
+A contracted TYPE whose CONSTRUCTOR is not is a finding, not a shape to copy,
+and the four there were are gone the same way: `ServerSession`,
+`SessionStateBackend`/`SessionStateStore` and the upload store left the
+contracts for `/internal` (no public signature takes or returns one), and
+`WdkAdapter`/`WorkflowClientOptions` left every subpath, since
+`createWorkflowClient` is unexported. The rule for the next one: a type no
+published function accepts or returns is not a contract.
 
 **Making one of them public is not a re-export.** The `@internal` tag comes OFF
 at the declaration site and the name joins a capability under
@@ -546,13 +557,11 @@ says so rather than implying otherwise.
 `uploadBroker` came with the three above; the remaining absences are now
 DECISIONS, each with a reason at its deny-list entry rather than in this guide.
 `name` and `greeting` are derived, which is the whole point.
-And of `RuntimeOptions`' twenty, the fourteen unreachable ones are the testing
-and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
-`createOpenaiRealtimeWebSocket`, `runCode`, `fetch`, `onToolResult`,
-`toolGuidance` — `@internal` or platform-harness only), the provider triple
-`stt`/`llm`/`tts` (which the agent declares), and the three tuning numbers
-(`s2sConfig`, `sessionStartTimeoutMs`, `shutdownTimeoutMs`). Forward one of those
-when somebody needs it, not before.
+The unreachable `RuntimeOptions` members are the sandbox seams (`runCode`,
+`fetch`, `workflows`), the provider triple `stt`/`llm`/`tts` (which the agent
+declares), and two tuning numbers (`shutdownTimeoutMs`, `toolTimeoutMs`); the
+testing seams are `HostRuntimeOptions` and not members at all. Forward one when
+somebody needs it, not before.
 
 ## A session may install more than one prompt SUFFIX, and the slot is KEYED
 

@@ -9,7 +9,7 @@
  * timeline, and none of it knows about the playback clock or a reply.
  */
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
+import type { TtsWordTiming } from "../providers/openers.ts";
 
 /**
  * One lowercase ASCII letter or digit.

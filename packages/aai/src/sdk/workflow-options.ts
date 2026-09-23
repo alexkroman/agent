@@ -7,7 +7,13 @@
  * serves it — and re-exported from it, so an author's import path is unchanged.
  */
 
-/** Per-run options for `WorkflowClient.start`. */
+/**
+ * Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a
+ * TOOL. A caller OUTSIDE the agent (a page, a script) starts a run through
+ * `WorkflowApi.start`, whose options are `WorkflowStartOptions`: the same
+ * `key`, and a `signal` where this carries `notify`, which needs a session to
+ * speak into.
+ */
 export type StartOptions = {
   /**
    * A caller's own handle on this run, for looking it up again later with

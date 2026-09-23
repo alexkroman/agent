@@ -35,17 +35,7 @@ export const AgentConfigSchema: z.ZodObject<{
         type: z.ZodLiteral<"tool">;
         toolName: z.ZodString;
     }, z.core.$strip>]>>;
-    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        calculate: "calculate";
-        fetch_json: "fetch_json";
-        get_page_design: "get_page_design";
-        recall: "recall";
-        remember: "remember";
-        run_code: "run_code";
-        think: "think";
-        visit_webpage: "visit_webpage";
-        web_search: "web_search";
-    }>>>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -96,10 +86,7 @@ export const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
-    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        telnyx: "telnyx";
-        twilio: "twilio";
-    }>>>]>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -117,6 +104,8 @@ export function agentConfigWarnings(config: {
     llm?: unknown;
     voicePresets?: unknown;
     turnDetection?: unknown;
+    builtinTools?: unknown;
+    telephony?: unknown;
 }): string[];
 
 // @public
@@ -143,7 +132,7 @@ interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrail
     telephony?: TelephonyAccess;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+    tools: ToolSet;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -172,7 +161,7 @@ interface AgentObservation {
     syncState?: StateProjection | readonly StateProjection[];
 }
 
-// @public
+// @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -202,6 +191,9 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
 // @internal
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
@@ -209,7 +201,14 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
 type DelegateFn = {
@@ -224,14 +223,14 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
 }
 
-// @public
+// @public @sealed
 interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -259,7 +258,7 @@ interface DialogGate<R, E> {
     when: string | readonly string[];
 }
 
-// @public
+// @public @sealed
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -280,7 +279,7 @@ interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P,
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
-// @public
+// @public @sealed
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
@@ -323,13 +322,13 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -343,7 +342,7 @@ interface HandoffOptions {
     note?: string;
 }
 
-// @public
+// @public @sealed
 interface HandoffResult {
     readonly from: string;
     readonly handoff: true;
@@ -361,12 +360,6 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
-type KnownTurnDetectionMode = "auto" | "manual";
-
-// @public
-type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
-
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -382,6 +375,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type McpServerConfig = {
@@ -412,32 +408,32 @@ interface ModelTuning {
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
 
 // @public
-interface PersonaDef {
+interface PersonaDef<N extends string = string> {
     description: string;
-    name: string;
+    name: N;
     systemPrompt: string;
     temperature?: number;
     toolChoice?: ToolChoice;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
-// @public
-interface PersonaPosition {
+// @public @sealed
+interface PersonaPosition<N extends string = string> {
     readonly from?: string;
     readonly note?: string;
-    readonly persona: PersonaDef;
+    readonly persona: PersonaDef<N>;
     readonly pinnedBy?: {
         readonly dialog: string;
         readonly state: string;
     };
 }
 
-// @public
-interface Personas {
-    active(ctx: SlotHolder): PersonaDef;
-    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
-    readonly list: readonly PersonaDef[];
-    position(ctx: SlotHolder): PersonaPosition;
+// @public @sealed
+interface Personas<N extends string = string> {
+    active(ctx: SlotHolder): PersonaDef<N>;
+    handoff(ctx: SlotHolder, to: PersonaDef<N> | N, options?: HandoffOptions): HandoffResult;
+    readonly list: readonly PersonaDef<N>[];
+    position(ctx: SlotHolder): PersonaPosition<N>;
 }
 
 // @public
@@ -503,7 +499,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
-// @public
+// @public @sealed
 type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
@@ -845,14 +841,14 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -871,7 +867,7 @@ interface SubagentToolCall {
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
-type TelephonyCarrier = "twilio" | "telnyx";
+type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
@@ -892,7 +888,7 @@ export type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -900,7 +896,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -1056,6 +1052,9 @@ export const ToolSchemaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
+
+// @public
 export type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1068,7 +1067,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+type TurnDetectionMode = "auto" | "manual" | (string & {});
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {
@@ -1093,7 +1092,7 @@ interface UserTurnLimit {
 }
 
 // @public
-type VoicePresetName = KnownVoicePresetName | (string & {});
+type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet" | (string & {});
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

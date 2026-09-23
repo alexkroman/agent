@@ -21,8 +21,23 @@
  * all, and the only way to see it was to read the boot line.
  */
 
-/** A phone carrier that can open a media stream against an agent. */
-export type TelephonyCarrier = "twilio" | "telnyx";
+/**
+ * A phone carrier that can open a media stream against an agent — `"twilio"`
+ * or `"telnyx"`, the two this release ships a codec for, or any other string.
+ *
+ * OPEN, like `VoicePresetName`: the known carriers are written inline as the
+ * autocomplete half, so a declaration naming a carrier a later release adds
+ * still compiles and deploys against this one. The runtime serves only the
+ * carriers it ships a codec for and DROPS the rest (`enabledCarriers`), so an
+ * unknown name mounts nothing — which is why `aai build` / `aai dev` warn about
+ * it (`agentConfigWarnings`) rather than the type refusing it. Inline rather
+ * than an exported closed `Known…` half, so a carrier added here is a
+ * compatible change to this type; code that must be TOTAL over the shipped
+ * carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
+ *
+ * @public
+ */
+export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 /**
  * The same names as a VALUE, for the two readers that need the list at run time:
@@ -34,14 +49,11 @@ export type TelephonyCarrier = "twilio" | "telnyx";
  * to be `(typeof TELEPHONY_CARRIERS)[number]` — because this array is INTERNAL
  * (`@alexkroman1/aai/internal`) and the type is public, and TypeDoc treats a
  * published type referencing an unpublished value as a warning, which the docs
- * build treats as an error. `satisfies` catches a name that is not a carrier;
- * what it cannot catch is a carrier MISSING from the list, so
- * `define.test-d.ts` pins the two as equal.
+ * build treats as an error. It is the CLOSED set — the carriers this build
+ * ships a codec for — and `define.test-d.ts` pins it equal to the known half
+ * written inline in the open {@link TelephonyCarrier}.
  */
-export const TELEPHONY_CARRIERS = [
-  "twilio",
-  "telnyx",
-] as const satisfies readonly TelephonyCarrier[];
+export const TELEPHONY_CARRIERS = ["twilio", "telnyx"] as const;
 
 /**
  * What an agent declares about `WS /phone`.

@@ -8,7 +8,6 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   KNOWN_TURN_DETECTION_MODES,
-  type KnownTurnDetectionMode,
   type PipelineVoiceTuning,
   type TurnDetectionMode,
   type UserTurnLimit,
@@ -20,10 +19,11 @@ describe("KNOWN_TURN_DETECTION_MODES", () => {
     expect(new Set(KNOWN_TURN_DETECTION_MODES).size).toBe(KNOWN_TURN_DETECTION_MODES.length);
   });
 
-  test("is the whole KnownTurnDetectionMode union, so the two cannot drift", () => {
+  test("is exactly the known half written inline in TurnDetectionMode, so the two cannot drift", () => {
     expectTypeOf<
-      (typeof KNOWN_TURN_DETECTION_MODES)[number]
-    >().toEqualTypeOf<KnownTurnDetectionMode>();
+      (typeof KNOWN_TURN_DETECTION_MODES)[number] | (string & {})
+    >().toEqualTypeOf<TurnDetectionMode>();
+    expectTypeOf<(typeof KNOWN_TURN_DETECTION_MODES)[number]>().toEqualTypeOf<"auto" | "manual">();
   });
 });
 

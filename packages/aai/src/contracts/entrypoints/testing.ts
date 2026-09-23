@@ -61,6 +61,8 @@ export {
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,
+  type DeployedConfig,
+  type DeployedStage,
   deployedAgent,
   dialogRefusalPattern,
   dialogResultSchema,

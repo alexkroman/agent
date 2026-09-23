@@ -170,6 +170,14 @@ describe("rejected — a real break still needs `--bump`", () => {
       "Wrap",
     ],
     ["a changed generic conditional", edit("? R : never", "? Promise<R> : never"), "OutputOf"],
+    // Mutually assignable, so it passed until removed members were walked for:
+    // an object literal naming `retries` is an excess-property error.
+    ["a removed OPTIONAL member", edit("    retries?: number;\n", ""), "ToolOptions"],
+    [
+      "a member dropped from a parameter's type (new-to-old accepts it)",
+      edit("tool(options: ToolOptions)", 'tool(options: Omit<ToolOptions, "name">)'),
+      "tool",
+    ],
   ])("%s", (_label, next, name) => {
     const result = probe(next);
     expect(result.compatible).toBe(false);
@@ -184,6 +192,37 @@ describe("rejected — a real break still needs `--bump`", () => {
     const result = probe(from("b"), from("a"));
     expect(result.compatible).toBe(false);
     expect(result.problems.join("\n")).toContain("Thing");
+  });
+});
+
+describe("an UNCHANGED declaration is one declaration, even where it is only reached", () => {
+  // Two separately declared copies of a generic conditional are unrelated to
+  // the checker, so before unchanged declarations were shared, the options
+  // type below failed the probe of `slot` as soon as `slot` itself moved.
+  const SLOT = `type Guard<R> = [R] extends [PromiseLike<unknown>] ? "sync only" : unknown;
+
+// @public
+export interface SlotOptions<T, After = void> {
+    after?: ((draft: T) => After) & Guard<After>;
+}
+
+// @public
+export function slot<T, After = void>(create: () => T, options?: SlotOptions<T, After>): T;
+`;
+
+  test("a changed signature reaching an unchanged conditional still probes compatible", () => {
+    const next = SLOT.replace(
+      "options?: SlotOptions<T, After>)",
+      "options?: SlotOptions<T, After>, key?: string)",
+    );
+    const result = probe(next, SLOT);
+    expect(result.problems).toEqual([]);
+    expect(result.compatible).toBe(true);
+  });
+
+  test("the reached declaration CHANGING is still a break", () => {
+    const next = SLOT.replace('? "sync only" : unknown', '? "sync only" : never');
+    expect(probe(next, SLOT).compatible).toBe(false);
   });
 });
 

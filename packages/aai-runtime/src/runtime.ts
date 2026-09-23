@@ -30,6 +30,7 @@ import {
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
 import type {
+  HostRuntime,
   HostRuntimeOptions,
   Runtime,
   RuntimeOptions,
@@ -84,13 +85,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 }
 
 /**
- * {@link createRuntime} plus the host-only seams of `HostRuntimeOptions`.
- * Reached by relative import from this package's own eval harness; never
- * re-exported.
+ * {@link createRuntime} plus the host-only seams of `HostRuntimeOptions`, and
+ * the lower-level handles of `HostRuntime` on what it returns. Reached by
+ * relative import from this package's own host mode, eval harness and specs;
+ * never re-exported.
  *
  * @internal
  */
-export function createRuntimeWithSeams(options: HostRuntimeOptions): Runtime {
+export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime {
   const {
     agent,
     env,
@@ -486,7 +488,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): Runtime {
     // engine, so there is nothing here to re-walk a run with, and answering a
     // delivery from someone else's client would be a guess.
     deliverWorkflow: builtWorkflows?.execute,
-  } satisfies Omit<Runtime, typeof runtimeBrand> as Runtime;
+  } satisfies Omit<HostRuntime, typeof runtimeBrand> as HostRuntime;
   registerConnector(runtime, {
     sessions,
     readyConfig,

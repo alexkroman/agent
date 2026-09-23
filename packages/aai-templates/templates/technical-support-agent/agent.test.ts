@@ -1,13 +1,9 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type {
-  InferToolInput,
-  InferToolOutput,
-  TelephonyAccess,
-  TelephonyCarrier,
-} from "@alexkroman1/aai";
+import type { InferToolInput, TelephonyAccess, TelephonyCarrier } from "@alexkroman1/aai";
 import {
   createToolContext,
+  runTool,
   type StubGenerateRoute,
   stubGenerate,
   type TestToolContext,
@@ -25,10 +21,11 @@ import {
   REWRITE_SYSTEM,
 } from "./prompts.ts";
 import { ASKED_CAP, supportProjection, supportSlot, supportView } from "./shared.ts";
-/** TYPE-only, so nothing here re-registers a tool module: the defs under test
- *  still come from `agentDef`, which is what a deploy resolves. */
-import type AnswerQuestion from "./tools/answer_question.ts";
-import type LogTicket from "./tools/log_ticket.ts";
+/** The tool FILES themselves: a file's default export is the very object
+ *  `agentDef` registers under its name, and handing it to `runTool` is what
+ *  types the call's arguments and its result. */
+import AnswerQuestion from "./tools/answer_question.ts";
+import LogTicket from "./tools/log_ticket.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -132,33 +129,24 @@ function supportContext(script: Script): TestToolContext {
 }
 
 /**
- * What `answer_question` really answers, from the tool's OWN return type.
- *
- * `run` is typed `unknown` — the registry lookup is by string — so reading a
- * field off an answer needs an assertion either way. `InferToolOutput` makes it
- * an assertion about the TOOL rather than a shape retyped beside it, so
- * renaming `answersTheQuestion` reddens here instead of quietly comparing
- * `undefined`. The tool has three legal outcomes, so each case `Extract`s the
- * arm it is about.
- *
- * The SDK's `expectToolOk` is deliberately not used: it unwraps a `dialog()`
- * envelope and throws for a plain `tool()`, which all three of these are.
- */
-type Lookup = Exclude<InferToolOutput<typeof AnswerQuestion>, ToolFailure>;
-type Graded = Extract<Lookup, { answer: string }>;
-type Withheld = Extract<Lookup, { answer: null }>;
-
-/**
  * The value a tool answered, or a failure at the CALL.
  *
  * A plain tool answers its own value or a `ToolFailure`, so a bare cast hands a
  * refusal's `{ error }` to the assertions and dies a few lines later reading
  * `undefined` off it. `isToolFailure` is the SDK's own predicate for that
  * envelope; what is local is only the sentence.
+ *
+ * TYPED by what it is handed: `runTool(theTool, …)` answers the tool's OWN
+ * return type, so renaming `answersTheQuestion` reddens here instead of quietly
+ * comparing `undefined`, and this only subtracts the failure arm. The SDK's
+ * `expectToolOk` is deliberately not used: it unwraps a `dialog()` envelope and
+ * throws for a plain `tool()`, which all three of these are.
  */
-function answered<T>(result: unknown): T {
+function answered<T>(result: T): Exclude<T, ToolFailure> {
   if (isToolFailure(result)) throw new Error(`the tool refused: ${result.error}`);
-  return result as T;
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
 }
 
 /** Node names without the per-call suffix, for sequence assertions. */
@@ -320,7 +308,10 @@ describe("answer_question", () => {
       relevant: (id) => id === "D8",
       answers: ["Area outages are on the status page, and rebooting will not help."],
     });
-    const result = answered<Graded>(await run("answer_question", asks("is there an outage"), ctx));
+    const result = answered(await runTool(AnswerQuestion, asks("is there an outage"), ctx));
+    // `answer_question` has two legal outcomes past a refusal; this case is
+    // about the graded one, and the null check is what narrows to it.
+    if (result.answer === null) throw new Error(`expected a graded answer, got ${result.guidance}`);
 
     expect(result.answer).toContain("status page");
     expect(result.sources).toEqual(["Checking for an outage in your area"]);
@@ -335,9 +326,7 @@ describe("answer_question", () => {
 
   test("with nothing grounded it returns no answer and points at the ticket", async () => {
     const ctx = supportContext({ relevant: () => false });
-    const result = answered<Withheld>(
-      await run("answer_question", asks("do you sell phones"), ctx),
-    );
+    const result = answered(await runTool(AnswerQuestion, asks("do you sell phones"), ctx));
     expect(result.answer).toBeNull();
     expect(result.guidance).toContain("log_ticket");
   });
@@ -397,9 +386,7 @@ describe("log_ticket", () => {
       question: "landline install",
       callback: "07700 900123",
     };
-    const logged = answered<Exclude<InferToolOutput<typeof LogTicket>, ToolFailure>>(
-      await run("log_ticket", args, ctx),
-    );
+    const logged = answered(await runTool(LogTicket, args, ctx));
     expect(logged.reference).toBe("TCK4001");
 
     const state = supportSlot.get(ctx);

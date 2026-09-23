@@ -56,11 +56,11 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import type { TtsSession, Unsubscribe } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
+import type { TtsSession, Unsubscribe } from "../providers/openers.ts";
 import { createPipelineHistory, type PipelineHistory } from "../transports/pipeline-history.ts";
 import type { PipelineProviderSessions } from "../transports/pipeline-providers.ts";
 import { createTurnGate } from "../transports/pipeline-turn-gate.ts";

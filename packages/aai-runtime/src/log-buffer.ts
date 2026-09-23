@@ -60,6 +60,11 @@ export type LogPage = {
   dropped: number;
 };
 
+/**
+ * The ring {@link createLogBuffer} returns.
+ *
+ * @sealed
+ */
 export type LogBuffer = {
   /**
    * Add whatever a stream just produced. Split on `\n`; a trailing fragment is

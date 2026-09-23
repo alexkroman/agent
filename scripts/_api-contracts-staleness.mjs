@@ -13,6 +13,7 @@
 import { existsSync } from "node:fs";
 
 import { baseEpoch, branchState } from "./_api-contracts-base.mjs";
+import { probeCompatibility } from "./_api-contracts-compat.mjs";
 import { branchGrowth } from "./_api-contracts-epochs.mjs";
 import { HASH_RULE } from "./_api-contracts-hash.mjs";
 import { verdict } from "./_api-contracts-mint.mjs";
@@ -63,6 +64,35 @@ function checkRollup(pkg, capability, current, committed, fail) {
     return false;
   }
   return true;
+}
+
+/**
+ * The pinned rollup still COMPILES against today's tree: it probes compatible
+ * against itself.
+ *
+ * A rollup imports its sibling packages by specifier, and those resolve to
+ * their CURRENT `dist` — so when `@alexkroman1/aai/protocol` stopped exporting
+ * `SessionEvent`, five `aai-runtime` rollups stopped compiling with no change
+ * of their own, and nothing noticed: the hash was taken from today's report and
+ * still matched. The first moved hash in any of them would have been probed
+ * against a baseline full of errors and read as a break nobody made. So the
+ * check asks every current epoch's rollup the probe's own question, with itself
+ * as the new side, and fails loudly on the first sign of rot.
+ */
+function checkRollupCompiles(pkg, capability, current, fail) {
+  const body = readRollup(pkg, capability, current);
+  if (body === undefined) return;
+  const probe = probeCompatibility({ oldBody: body, newBody: body, dir: pkg.dir });
+  if (probe.compatible) return;
+  fail(
+    `${rel(rollupPath(pkg, capability, current))} no longer compiles against the current tree ` +
+      `(it does not probe compatible with ITSELF):\n    ${probe.problems.slice(0, 6).join("\n    ")}\n` +
+      "  Something it imports moved (a sibling package's export, usually). RE-PIN it: edit the " +
+      "rollup as little as it takes to compile — the import's new source, never the declarations — " +
+      `then set \`rollup\` in ${rel(epochPath(pkg, capability, current))} to the new text's sha256 ` +
+      "(the file minus its trailing newline). The capability's `sha256` does not move: it is taken " +
+      "from today's report, not from the rollup.",
+  );
 }
 
 /** What a stale capability's message says to do, by verdict. */
@@ -129,6 +159,7 @@ export function checkEpochs(pkg, table, reports) {
     if (!existsSync(path)) continue; // checkInventory already reported it.
     const committed = readEpoch(pkg, capability, current);
     if (!checkRollup(pkg, capability, current, committed, fail)) continue;
+    checkRollupCompiles(pkg, capability, current, fail);
     if (committed.sha256 === generated.sha256) continue;
 
     fail(staleMessage(pkg, capability, contract, committed, generated));

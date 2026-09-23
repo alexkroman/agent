@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "providers",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "e2ed38510a1432fd44531a37c1b5493d088fa543ddd27fdd2ae7f5b4eba06ed5",
+  "exports": [
+    "LlmRegistryEntry",
+    "OpenerRegistryEntry",
+    "S2sConfig",
+    "SttError",
+    "SttEvents",
+    "SttOpenOptions",
+    "SttOpener",
+    "SttSession",
+    "SttTurnMeta",
+    "TtsError",
+    "TtsEvents",
+    "TtsOpenOptions",
+    "TtsOpener",
+    "TtsSession",
+    "TtsWordTiming",
+    "Unsubscribe",
+    "createToolCallRepair",
+    "registerLlmKind",
+    "registerSttKind",
+    "registerTtsKind",
+    "resolveLlm",
+    "salvageJson"
+  ],
+  "rollup": "9cb3b0156ae0d5bbba48b06da43cc94d17256087164fe24dfec44d9e213d9c35"
+}

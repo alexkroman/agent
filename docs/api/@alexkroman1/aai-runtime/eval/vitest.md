@@ -459,6 +459,8 @@ type EvalTestContext = {
 };
 ```
 
+**`Sealed`**
+
 What a case body is handed: its own session, which model it is on, and the
 workflow app behind it.
 
@@ -577,6 +579,8 @@ type EvalTextTestContext = {
 };
 ```
 
+**`Sealed`**
+
 What a text case body is handed: its own conversation and the mode. A
 simulated caller is `evalSimulation({ target: agent, … })` on
 `@alexkroman1/aai-runtime/eval/simulate`, as for a voice case.
@@ -665,6 +669,8 @@ type EvalWorkflowTestContext = {
   mode: EvalMode;
 };
 ```
+
+**`Sealed`**
 
 What a workflow case body is handed.
 

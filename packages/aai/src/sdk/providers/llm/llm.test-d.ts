@@ -12,15 +12,36 @@
 
 import { expectTypeOf, test } from "vitest";
 import type { LlmDescriptorOptions, LlmProvider } from "../../providers.ts";
-import type { AssemblyAILlmProviderOptions, LlmOptions } from "./llm.ts";
-import { llm } from "./llm.ts";
+import type {
+  AssemblyAIGatewayModel,
+  AssemblyAILlmProviderOptions,
+  KnownLlmProvider,
+  LlmOptions,
+  LlmProviderName,
+} from "./llm.ts";
+import { type KNOWN_LLM_PROVIDERS, llm } from "./llm.ts";
+import type { KnownGatewayModel } from "./shared/gateway-models.ts";
 
 test('provider "assemblyai" narrows providerOptions and refuses an unknown region', () => {
   type Opts = NonNullable<LlmOptions<"assemblyai">["providerOptions"]>;
   expectTypeOf<Opts>().toEqualTypeOf<AssemblyAILlmProviderOptions>();
   expectTypeOf<{ region: "eu"; reasoningEffort: "none" }>().toExtend<Opts>();
   expectTypeOf<{ region: "asia" }>().not.toExtend<Opts>();
-  expectTypeOf<{ reasoningEffort: "extreme" }>().not.toExtend<Opts>();
+  // `reasoningEffort` is OPEN: a level the gateway adds later still compiles.
+  expectTypeOf<{ reasoningEffort: "xhigh" }>().toExtend<Opts>();
+  expectTypeOf<{ reasoningEffort: 3 }>().not.toExtend<Opts>();
+});
+
+test("the open vocabularies spell their literals inline, and the closed halves derive from them", () => {
+  // Open: any string is a legal provider / gateway model.
+  expectTypeOf<"together-ai">().toExtend<LlmProviderName>();
+  expectTypeOf<"a-model-shipped-next-week">().toExtend<AssemblyAIGatewayModel>();
+  // The derived closed halves hold the literals and nothing else.
+  expectTypeOf<KnownLlmProvider>().toEqualTypeOf<(typeof KNOWN_LLM_PROVIDERS)[number]>();
+  expectTypeOf<"together-ai">().not.toExtend<KnownLlmProvider>();
+  expectTypeOf<"gpt-5.6-luna">().toExtend<KnownGatewayModel>();
+  expectTypeOf<"a-model-shipped-next-week">().not.toExtend<KnownGatewayModel>();
+  expectTypeOf<string>().not.toExtend<KnownGatewayModel>();
 });
 
 test("any other provider accepts any providerOptions record", () => {

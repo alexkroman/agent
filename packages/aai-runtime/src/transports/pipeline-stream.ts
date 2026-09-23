@@ -9,13 +9,13 @@
 // generation gave it a second consumer.
 
 import type { Message } from "@alexkroman1/aai";
-import type { TtsSession, Unsubscribe } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
   PIPELINE_FLUSH_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
 import type { ModelMessage } from "ai";
 import pTimeout from "p-timeout";
+import type { TtsSession, Unsubscribe } from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { EmitError, SendTtsOptions, SendTtsText } from "./types.ts";
 

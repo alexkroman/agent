@@ -23,6 +23,22 @@ import { nearestNames } from "../../_nearest-names.ts";
 import { isRecord } from "../../is-record.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { ProviderCredentialOptions, TtsProvider } from "../../providers.ts";
+import {
+  ASSEMBLYAI_TTS_DEFAULT_VOICE,
+  ASSEMBLYAI_TTS_VOICES,
+  type AssemblyAITtsVoice,
+  ttsVoiceInfo,
+} from "../tts-voices.ts";
+
+// The voice CATALOG lives in its own module (the file-length cap); re-exported
+// here so every import path that named it before still resolves.
+export {
+  ASSEMBLYAI_TTS_DEFAULT_VOICE,
+  ASSEMBLYAI_TTS_VOICES,
+  type AssemblyAITtsVoice,
+  type AssemblyAITtsVoiceInfo,
+  ttsVoiceInfo,
+} from "../tts-voices.ts";
 
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_TTS_KIND = "assemblyai" as const;
@@ -32,106 +48,6 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 /** Production streaming-TTS host. */
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
-
-/**
- * Default voice when `assemblyAITts()` is called with no `voice` — a
- * US-accented English voice, since most agents face US callers (it was
- * `"vera"` for a while, which put a UK accent on every agent that never
- * chose). Pick from {@link ASSEMBLYAI_TTS_VOICES} to change it; every voice
- * in the catalog speaks exactly one language, so changing `language`
- * generally means changing `voice` too.
- */
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId = "jane";
-
-/**
- * What the catalog records about one voice: the language it speaks and the
- * accent it speaks with.
- *
- * A named interface rather than an inferred `as const` shape, because the
- * inferred one put every row into the rolled-up `.d.ts` — 16 voices as 64
- * lines of `readonly language: "en"; readonly accent: "US"` — and so into the
- * `aai:tts` contract hash. Re-accenting a voice is a catalog refresh, not an
- * API change, and it was forcing an epoch classification.
- *
- * The IDS stay literal ({@link AssemblyAITtsVoiceId}), because those are the
- * half an author types and the half autocomplete exists for; a voice arriving
- * or leaving really is a change to what may be written. That is the split:
- * which voices exist is contract, what each one sounds like is data.
- */
-export interface AssemblyAITtsVoiceInfo {
-  /** ISO 639-1 code of the language this voice speaks. */
-  readonly language: AssemblyAITtsLanguage;
-  /** Accent tag as the service publishes it, e.g. `"US"`, `"UK"`, `"FR"`. */
-  readonly accent: string;
-}
-
-/**
- * The voice ids this release's catalog carries.
- *
- * Spelled out rather than derived with `keyof typeof`, so that annotating the
- * map below does not cost the literals — see {@link AssemblyAITtsVoiceInfo}.
- */
-export type AssemblyAITtsVoiceId =
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-  | "estelle";
-
-/**
- * The voice catalog — voice id → the language it speaks and its accent.
- * The accent is descriptive metadata for choosing a voice, not a settable
- * option: {@link AssemblyAITtsOptions} has no `accent` field.
- *
- * A constant rather than a sentence in a doc comment, because a wrong voice
- * id is a *silent* failure: it is a free-form string the service rejects
- * in-band after the socket opens, so the agent connects, reports ready, and
- * never speaks — the same shape as the unmapped-`language` bug below, and
- * nothing upstream of a live session catches it.
- *
- * It is a constant for a second reason, learned the hard way. The list this
- * replaced lived in a doc comment and was simply wrong — it carried ten names
- * (`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
- * that are in no published catalog, while omitting most of the real ones. A
- * list nobody can check drifts into fiction, and here the fiction is
- * indistinguishable, at authoring time, from a working agent.
- *
- * Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
- *
- * Anything that shows an author their choices — the scaffold guide, a picker
- * — should read this rather than restate it. A partial list is what sends
- * someone guessing, which is the failure being prevented.
- */
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>> =
-  {
-    alba: { language: "en", accent: "US" },
-    anna: { language: "en", accent: "US" },
-    charles: { language: "en", accent: "US" },
-    eve: { language: "en", accent: "US" },
-    george: { language: "en", accent: "US" },
-    jane: { language: "en", accent: "US" },
-    jean: { language: "en", accent: "US" },
-    mary: { language: "en", accent: "US" },
-    michael: { language: "en", accent: "US" },
-    paul: { language: "en", accent: "UK" },
-    vera: { language: "en", accent: "UK" },
-    giovanni: { language: "it", accent: "IT" },
-    lola: { language: "es", accent: "ES" },
-    juergen: { language: "de", accent: "DE" },
-    rafael: { language: "pt", accent: "PT" },
-    estelle: { language: "fr", accent: "FR" },
-  };
 
 /**
  * Voices the service still accepts but has scheduled for removal.
@@ -170,34 +86,6 @@ export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
   "victor",
   "winter",
 ] as const;
-
-/**
- * A voice id from {@link ASSEMBLYAI_TTS_VOICES}.
- *
- * The `(string & {})` arm is deliberate: the catalog is the service's, not
- * ours, so a voice added after this release must still compile, and so must
- * a deprecated one an existing agent already names. It keeps the current
- * names visible at the call site without turning a stale SDK into a build
- * failure.
- *
- * **So this type is AUTOCOMPLETE, not a guard, and there is no runtime assert
- * to pair with it** the way `assertAssemblyAITtsLanguage` pairs with
- * {@link AssemblyAITtsLanguage}. The two are not the same job: the language
- * map is a TRANSLATION this SDK owns (an ISO code the service has never heard
- * of, rendered as a name it accepts), so a code outside it cannot be sent at
- * all and rejecting it is a fact about this package. The voice catalog is the
- * SERVICE's, and a snapshot of it goes stale between releases — an assert
- * would refuse a voice AssemblyAI shipped last week, which is the same
- * silent-mute failure from the other side. Read the catalog; do not expect the
- * compiler to check you did.
- */
-export type AssemblyAITtsVoice =
-  | AssemblyAITtsVoiceId
-  // `string & Record<never, never>` is the `string & {}` trick without the
-  // banned empty-object type: it is still `string`, but being an
-  // intersection stops the union collapsing to `string`, which is what keeps
-  // the literals above visible at the call site.
-  | (string & Record<never, never>);
 
 /**
  * ISO 639-1 code → the `language` query-param value the service accepts.
@@ -311,7 +199,7 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
  */
 function assertVoiceSpeaks(language: string, voice: unknown): void {
   if (typeof voice !== "string") return;
-  const known = ASSEMBLYAI_TTS_VOICES[voice as keyof typeof ASSEMBLYAI_TTS_VOICES];
+  const known = ttsVoiceInfo(voice);
   if (known === undefined || known.language === language) return;
   const speakers = Object.entries(ASSEMBLYAI_TTS_VOICES)
     .filter(([, meta]) => meta.language === language)
@@ -350,7 +238,7 @@ export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined 
   if (kind !== ASSEMBLYAI_TTS_KIND || !isRecord(options)) return undefined;
   const { voice } = options;
   if (typeof voice !== "string" || voice === "") return undefined;
-  if (voice in ASSEMBLYAI_TTS_VOICES) return undefined;
+  if (ttsVoiceInfo(voice) !== undefined) return undefined;
   const deprecated: readonly string[] = ASSEMBLYAI_TTS_DEPRECATED_VOICES;
   if (deprecated.includes(voice)) {
     return `AssemblyAI voice "${voice}" still works but is scheduled for removal — pick a current one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;

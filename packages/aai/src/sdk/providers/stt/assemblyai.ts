@@ -48,7 +48,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
    * Pro Real-Time). Arbitrary strings are forwarded to the SDK unchanged.
    */
-  model?: "universal-3-5-pro" | string;
+  model?: "universal-3-5-pro" | (string & {});
   /**
    * EU data-residency — routes both streaming and sync transcription to
    * AssemblyAI's EU endpoints (`streaming.eu.assemblyai.com` /
@@ -95,7 +95,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * parameter. Defaults to `"near-field"` to suppress background noise for
    * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
    */
-  voiceFocus?: "near-field" | "far-field" | "off" | string;
+  voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
   /**
    * How aggressively Voice Focus suppresses background audio, sent as the
    * `voice_focus_threshold` connection parameter (0-1, higher is more

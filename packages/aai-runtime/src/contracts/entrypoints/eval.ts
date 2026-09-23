@@ -29,10 +29,12 @@
 // capability's — it is on the root barrel, and a name belongs to exactly one
 // contract or a change to it bumps two epochs. Claiming it here would also read
 // as MOVING it, which on the runtime's export list is a removal.
-// The two types the options above NAME and this capability did not carry, so a
-// signature change to either moved no epoch. `HostGenerateFn` is
-// `EvalSessionOptions.generate`; `EvalWorkflowEngineOptions` is what
-// `EvalWorkflowsOptions` indexes for `speech` and `stepFetch`.
+// `EvalWorkflowEngineOptions` is what `EvalWorkflowsOptions` indexes for `speech`
+// and `stepFetch`. `HostGenerateFn` was `EvalSessionOptions.generate`, a field
+// that is host-only now; the name stays because a retained epoch's frozen case
+// imports it. (`HostAgentOptions`, which both option bags extend, is the
+// `runtime` capability's — see `RunCodeExecutor` above for why a name is owned
+// once.)
 export type {
   EvalWorkflowEngineOptions,
   HostGenerateFn,

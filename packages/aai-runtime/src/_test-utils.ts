@@ -19,7 +19,7 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { ServerSession } from "./session-core.ts";
@@ -522,7 +522,7 @@ export function createFixtureSession(agent: AgentDef, options?: { env?: Record<s
   );
 
   const client = makeTrackingClient();
-  const executor = createRuntime({
+  const executor = createRuntimeWithSeams({
     // This helper replays the AssemblyAI S2S protocol (it spies the S2S
     // transport seam), so pin the agent to S2S mode — the descriptor the
     // pipeline-by-default flip requires — unless it declared providers.

@@ -1,0 +1,33 @@
+// @public
+export const UPLOAD_KEY_PREFIX = "uploads";
+
+// @public
+export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
+
+// @public
+export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
+
+// @public
+export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
+
+// @public
+export type UploadMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+// @public
+export type UploadPart = {
+    at: number;
+    bytes: number;
+};
+
+// @public
+export class UploadsUnavailableError extends Error {
+    constructor(message: string);
+}
+
+// @public
+export class UploadTooLargeError extends Error {
+    constructor(limit: number);
+}

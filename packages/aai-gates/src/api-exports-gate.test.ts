@@ -88,6 +88,8 @@ describe("API-EXPORTS.json", () => {
     // now import `virtual:aai/agent` and never see one.
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("ToolModules");
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
+      "DeployedConfig",
+      "DeployedStage",
       "ProjectFiles",
       "RecordedSleep",
       "RecordedStep",

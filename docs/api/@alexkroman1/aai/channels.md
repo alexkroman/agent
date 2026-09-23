@@ -204,6 +204,8 @@ A workflow trigger, which takes flat variables and not Block Kit.
 
 ### registerChannelHandler()
 
+#### Call Signature
+
 ```ts
 function registerChannelHandler(handler: ChannelHandler): void;
 ```
@@ -225,13 +227,50 @@ lazily beside the first call.
 Re-registering a kind REPLACES it, which is what makes a shipped channel
 overridable — and is why the tag is the identity rather than the value.
 
-#### Parameters
+**A handler typed on its own options (`ChannelHandler<MyOptions>`) is
+registered WITH the function that narrows the raw record into them**, which
+runs before each `render` and `advice` — so both are handed a checked value,
+and a journaled descriptor with a bad field fails naming it. The overload
+makes the narrowing required: nothing else checks that what a journal hands
+back is a `MyOptions`.
 
-##### handler
+##### Parameters
+
+###### handler
 
 [`ChannelHandler`](#channelhandler)
 
-#### Returns
+##### Returns
+
+`void`
+
+#### Call Signature
+
+```ts
+function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
+```
+
+Register a channel kind whose `render`/`advice` read their OWN options type,
+narrowed from the descriptor's raw options by `options` (throwing a sentence
+naming the field that is wrong).
+
+##### Type Parameters
+
+###### O
+
+`O`
+
+##### Parameters
+
+###### handler
+
+[`ChannelHandler`](#channelhandler)\<`O`\>
+
+###### options
+
+(`raw`: `Record`\<`string`, `unknown`\>) => `O`
+
+##### Returns
 
 `void`
 
@@ -587,18 +626,31 @@ touches no shared file — which is the whole reason this interface is public
 rather than an internal shape inside `send.ts`, where it started with Slack's
 option-narrowing spelled out beside the dispatch table.
 
-`render` and `advice` are handed the descriptor's RAW options, because a
-descriptor round-trips through a durable run's journal and arrives as
-whatever was written there. Narrowing them is the kind's own job and the
-reason it owns this function: a cast here would fail as `POST undefined`
-rather than naming the field that is missing.
+The descriptor's options arrive RAW, because a descriptor round-trips
+through a durable run's journal and arrives as whatever was written there.
+Narrowing them is the kind's own job and the reason it owns this value: a
+cast would fail as `POST undefined` rather than naming the field that is
+missing. `O` is what that narrowing produces: register a
+`ChannelHandler<MyOptions>` together with the function that narrows the raw
+record into `MyOptions` (see `registerChannelHandler`) and `render`/`advice`
+are handed its answer, typed; leave `O` at its default and they are handed
+the raw record to narrow themselves.
+
+#### Type Parameters
+
+##### O
+
+`O` = `Record`\<`string`, `unknown`\>
+
+The options `render` and `advice` read, as `options` narrows
+  them. Defaults to the raw record.
 
 #### Properties
 
 ##### advice
 
 ```ts
-readonly advice: (options: Record<string, unknown>, detail: string) => string;
+readonly advice: (options: O, detail: string) => string;
 ```
 
 What to tell an author when the platform refuses a post.
@@ -607,7 +659,7 @@ What to tell an author when the platform refuses a post.
 
 ###### options
 
-`Record`\<`string`, `unknown`\>
+`O`
 
 ###### detail
 
@@ -628,7 +680,7 @@ The `kind` tag its descriptors carry, e.g. `"slack"`.
 ##### render
 
 ```ts
-readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+readonly render: (message: ChannelMessage, options: O) => ChannelPayload;
 ```
 
 Turn a message into this platform's request.
@@ -641,7 +693,7 @@ Turn a message into this platform's request.
 
 ###### options
 
-`Record`\<`string`, `unknown`\>
+`O`
 
 ###### Returns
 

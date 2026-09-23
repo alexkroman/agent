@@ -162,12 +162,7 @@ function collectEdits(statement, sourceFile, edits) {
     : false;
   const walk = (node) => {
     if (hasParameters(node)) renameParameters(node, sourceFile, edits);
-    if (
-      !isConst &&
-      ts.isLiteralTypeNode(node) &&
-      ts.isStringLiteral(node.literal) &&
-      node.literal.text.length > LONG_STRING
-    ) {
+    if (!isConst && isMessageLiteral(node)) {
       edits.push({ start: node.getStart(sourceFile), end: node.getEnd(), to: "string" });
       return;
     }
@@ -175,6 +170,18 @@ function collectEdits(statement, sourceFile, edits) {
   };
   walk(statement);
 }
+
+/**
+ * A string literal TYPE long enough to be a sentence rather than a shape — in
+ * practice a misuse diagnostic (`"a tool is declared by its FILE, not here …"`)
+ * whose wording is prose, not contract. Exported because the compatibility
+ * probe has to read these the same way the hash does, or a reworded message
+ * the hash forgives would still probe as a break.
+ */
+export const isMessageLiteral = (node) =>
+  ts.isLiteralTypeNode(node) &&
+  ts.isStringLiteral(node.literal) &&
+  node.literal.text.length > LONG_STRING;
 
 function applyEdits(text, edits) {
   edits.sort((a, b) => b.start - a.start);

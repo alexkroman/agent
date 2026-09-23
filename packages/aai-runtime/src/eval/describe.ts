@@ -37,7 +37,7 @@ import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveEvalMode } from "./eval-mode.ts";
-import { type EvalSession, type EvalSessionOptions, openEvalSession } from "./session.ts";
+import { type EvalSession, type EvalSessionOptions, openEvalSessionWithSeams } from "./session.ts";
 import { installStubLlm, type StubScript } from "./stub-llm.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
@@ -113,6 +113,8 @@ export type { EvalMode } from "./_announce.ts";
  * A simulated caller and a model-graded judge are NOT on it: a case that wants
  * them builds the pair from `session` and `mode` with `evalSimulation` on
  * `@alexkroman1/aai-runtime/eval/simulate`, a surface versioned on its own.
+ *
+ * @sealed
  */
 export type EvalTestContext = {
   /** Open for this case, closed after it. */
@@ -333,7 +335,7 @@ async function runCase(run: CaseRun): Promise<void> {
           ...(options?.workflowOptions ?? {}),
         })
       : undefined;
-  const session = await openEvalSession({
+  const session = await openEvalSessionWithSeams({
     ...options,
     agent,
     ...omitUndefined({

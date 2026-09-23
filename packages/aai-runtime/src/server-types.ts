@@ -9,10 +9,11 @@
  */
 
 import type http from "node:http";
-import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 import type { SessionAuth } from "./session-auth.ts";
+import type { CarrierName } from "./telephony/carriers.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createRuntimeServer} needs.
@@ -159,7 +160,7 @@ export type RuntimeServerOptions = {
    * for a static agent because it is off for EVERY agent that does not declare
    * a carrier — see `telephony` below.)
    */
-  page?: "voice" | "static";
+  page?: NonNullable<AgentDef["page"]>;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — see
    * `AgentDef.telephony`. Defaults to NONE: the route refuses every upgrade
@@ -175,7 +176,7 @@ export type RuntimeServerOptions = {
    * from OUTSIDE the deployment, by a carrier following a phone number, and an
    * agent with no phone number was serving it without ever saying so.
    */
-  telephony?: TelephonyAccess;
+  telephony?: boolean | readonly CarrierName[];
   /**
    * Who may open a session on `WS /websocket`: a session ticket check, an
    * `Origin` allowlist, and resume bound to the identity that opened the
@@ -195,7 +196,11 @@ export type RuntimeServerOptions = {
   auth?: SessionAuth | undefined;
 };
 
-/** Handle returned by {@link createRuntimeServer}. */
+/**
+ * Handle returned by {@link createRuntimeServer}.
+ *
+ * @sealed
+ */
 export type AgentServer = {
   /**
    * Start listening. `host` defaults to {@link DEFAULT_LISTEN_HOST} (loopback)

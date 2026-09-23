@@ -14,6 +14,7 @@
 
 import type { GenerateFn } from "./generate.ts";
 import type { RandomSource } from "./random.ts";
+import type { ClientEventSender } from "./session-event-map.ts";
 import type { SlotStore } from "./session-state.ts";
 import type { DelegateFn } from "./subagent.ts";
 import type { Message } from "./types.ts";
@@ -67,6 +68,7 @@ import type { WorkflowClient } from "./workflow.ts";
  * });
  * ```
  *
+ * @sealed
  * @public
  */
 export type ToolContext = {
@@ -146,8 +148,16 @@ export type ToolContext = {
    * events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
    * serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
    * dropped (with a warning log), not thrown.
+   *
+   * **Typed by {@link ClientEventMap}.** An event name the agent declared there
+   * (by module augmentation) must be sent with that payload — a wrong shape is
+   * a compile error here rather than a client handler reading `undefined`. Any
+   * other name still takes `unknown`, so the map is opt-in per event.
+   *
+   * See {@link ClientEventSender} for the signature, and for why it is one
+   * conditional signature rather than a typed overload.
    */
-  send(event: string, data: unknown): void;
+  send: ClientEventSender;
   /**
    * Cooperative cancellation signal. Aborts when the turn that issued this
    * tool call is cancelled (barge-in, reset, or session stop), and also when

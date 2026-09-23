@@ -37,8 +37,8 @@
  */
 
 import type { MetricsCollectedEvent } from "@alexkroman1/aai";
-import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { SttTurnMeta } from "../providers/openers.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 
 /** The frame this module builds, as the transport reports it. */

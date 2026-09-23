@@ -100,14 +100,9 @@ import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_HOST,
   assemblyAITtsLanguageCodes,
-  createTtsError,
   resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,
   TTS_RECONNECT_TIMEOUT_MS,
-  type TtsEvents,
-  type TtsOpener,
-  type TtsOpenOptions,
-  type TtsSession,
 } from "@alexkroman1/aai/host-internal";
 import type { AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
 import { errorMessage } from "@alexkroman1/aai/utils";
@@ -122,6 +117,13 @@ import {
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
+import {
+  createTtsError,
+  type TtsEvents,
+  type TtsOpener,
+  type TtsOpenOptions,
+  type TtsSession,
+} from "../openers.ts";
 import { createCancelBarrier } from "./assemblyai-cancel.ts";
 import { type AssemblyAITtsMessage, handleMessage } from "./assemblyai-frames.ts";
 import { splitSegment } from "./assemblyai-segment.ts";

@@ -3,7 +3,7 @@
   "capability": "tool",
   "epoch": 5,
   "rule": 2,
-  "sha256": "6b4a69e95f34fc438d969314a014df1599580159c897d122845800dba0f69571",
+  "sha256": "3c4edbba59ec6406dc8f18d843200e2c432b6e33f20424b8d9ec2b933bf4b520",
   "exports": [
     "DefaultToolResult",
     "InferSchemaOutput",
@@ -21,6 +21,7 @@
     "ToolMessageCondition",
     "ToolMessages",
     "ToolMessagesInput",
+    "ToolSet",
     "ToolStartMessage",
     "failable",
     "isToolFailure",
@@ -30,7 +31,7 @@
     "toolFailure"
   ],
   "rollup": "2976e3bb2f94220cad2af268e01619aa4833adb6abf5abe57107a7d0b20a7423",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -43,6 +44,12 @@
       "rule": 2,
       "sha256": "6b4a69e95f34fc438d969314a014df1599580159c897d122845800dba0f69571",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "3c4edbba59ec6406dc8f18d843200e2c432b6e33f20424b8d9ec2b933bf4b520",
+      "reason": "additive (checked): +ToolSet"
     }
   ]
 }

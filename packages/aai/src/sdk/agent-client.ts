@@ -52,6 +52,7 @@ export type { ClientConfigResponse } from "./client-config.ts";
  * An intersection rather than a redeclaration — the workflow half must not be
  * describable twice.
  *
+ * @sealed
  * @public
  */
 export type AgentClient = WorkflowApi & {

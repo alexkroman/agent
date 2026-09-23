@@ -11,7 +11,7 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 
 describe("SDK integration: AgentDef → tool execution", () => {
   test("AgentDef + tools + executeToolCall round-trip", async () => {
@@ -29,7 +29,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     const result = await exec.executeTool("greet", { name: "Alice" }, "s1", []);
     expect(result).toBe("Hello, Alice!");
   });
@@ -54,7 +54,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent,
       env: { API_KEY: "sk-test-123", ASSEMBLYAI_API_KEY: "test" },
     });
@@ -77,7 +77,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("1");
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("2");
     expect(await exec.executeTool("increment", {}, "session-b", [])).toBe("1");
@@ -91,7 +91,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       maxSteps: 5,
       tools: {},
     };
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     const result = await exec.executeTool("nonexistent", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ error: "Unknown tool: nonexistent" });
   });
@@ -111,7 +111,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     expect(await exec.executeTool("typed", { count: 5 }, "s1", [])).toBe("10");
     const err = await exec.executeTool("typed", { count: "not a number" }, "s1", []);
     expect(err).toContain("error");
@@ -149,7 +149,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     expect(await exec.executeTool("custom", {}, "s1", [])).toBe("custom result");
     // run_code is registered as a builtin, but in the self-hosted path (no
     // sandbox) it must NOT execute on the host — it only runs inside the guest
@@ -180,7 +180,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       },
     };
 
-    const exec = createRuntime({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
+    const exec = createRuntimeWithSeams({ agent, env: { ASSEMBLYAI_API_KEY: "test" } });
     const result = await exec.executeTool("count_msgs", {}, "s1", [
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },

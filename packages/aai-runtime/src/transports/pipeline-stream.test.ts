@@ -3,13 +3,10 @@
 // `streamText` specs moved to pipeline-llm-stream.test.ts with the code; the
 // turn-level behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
-import {
-  PIPELINE_FLUSH_TIMEOUT_MS,
-  type TtsEvents,
-  type TtsSession,
-} from "@alexkroman1/aai/host-internal";
+import { PIPELINE_FLUSH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
+import type { TtsEvents, TtsSession } from "../providers/openers.ts";
 import { createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
 import type { SendTtsText } from "./types.ts";
 

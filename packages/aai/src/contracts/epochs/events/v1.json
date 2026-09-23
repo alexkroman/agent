@@ -3,8 +3,10 @@
   "capability": "events",
   "epoch": 1,
   "rule": 2,
-  "sha256": "0774d9997f98e91583565b8f97e482e1be219b6e3760f5a581ca242779cb8f84",
+  "sha256": "f6eac5430c97ea74244747f641ff817981f91dfe379cf216e05470b7a7d5e5f0",
   "exports": [
+    "ClientEventMap",
+    "ClientEventSender",
     "EventMapOf",
     "SESSION_SOURCED_EVENT_TYPES",
     "SessionEvent",
@@ -16,5 +18,20 @@
     "SessionEventType",
     "SessionSourcedEventType"
   ],
-  "rollup": "8d004127f1801a88ba334cec1843df2c13325c23325105ec43677c0b96973902"
+  "rollup": "8d004127f1801a88ba334cec1843df2c13325c23325105ec43677c0b96973902",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "0774d9997f98e91583565b8f97e482e1be219b6e3760f5a581ca242779cb8f84",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "f6eac5430c97ea74244747f641ff817981f91dfe379cf216e05470b7a7d5e5f0",
+      "reason": "additive (checked): +ClientEventMap, +ClientEventSender"
+    }
+  ]
 }

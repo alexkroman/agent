@@ -1,13 +1,14 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createSeededRandom, type InferToolInput, type InferToolOutput } from "@alexkroman1/aai";
+import { createSeededRandom, type InferToolInput } from "@alexkroman1/aai";
 import {
   createToolContext,
   parseToolInput,
+  runTool,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
-import { isToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   calculateTotal,
@@ -25,10 +26,24 @@ import {
 // were a second copy of each tool's return shape, kept current by nobody — a
 // field renamed in `tools/` left the cast describing a value that no longer
 // existed and the spec still compiled.
-import type addPizza from "./tools/add_pizza.ts";
-import type placeOrder from "./tools/place_order.ts";
-import type removePizza from "./tools/remove_pizza.ts";
-import type updatePizza from "./tools/update_pizza.ts";
+import addPizza from "./tools/add_pizza.ts";
+import placeOrder from "./tools/place_order.ts";
+import removePizza from "./tools/remove_pizza.ts";
+import updatePizza from "./tools/update_pizza.ts";
+import viewOrder from "./tools/view_order.ts";
+
+/**
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -136,30 +151,26 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(await run("place_order", ctx)).toEqual({ error: "Cannot place an empty order." });
 
     // Add two pizzas — IDs increment
-    const first = (await run(
-      "add_pizza",
+    const first = await runTool(
+      addPizza,
       { size: "large", crust: "thin", toppings: ["pepperoni"], quantity: 1 },
       ctx,
-    )) as InferToolOutput<typeof addPizza>;
+    );
     expect(first.added.id).toBe(1);
     expect(first.itemCount).toBe(1);
     expect(first.orderTotal).toBe("$16.49");
 
-    const second = (await run(
-      "add_pizza",
+    const second = await runTool(
+      addPizza,
       { size: "small", crust: "stuffed", toppings: [], quantity: 2 },
       ctx,
-    )) as InferToolOutput<typeof addPizza>;
+    );
     expect(second.added.id).toBe(2);
     expect(second.itemCount).toBe(2);
 
     // Update only the provided fields. Each mutating tool answers
     // `… | ToolFailure`, so the spec narrows the way a forwarding caller does.
-    const updated = (await run(
-      "update_pizza",
-      { pizza_id: 2, quantity: 1 },
-      ctx,
-    )) as InferToolOutput<typeof updatePizza>;
+    const updated = await runTool(updatePizza, { pizza_id: 2, quantity: 1 }, ctx);
     if (isToolFailure(updated)) throw new Error(updated.error);
     expect(updated.updated).toMatchObject({ id: 2, size: "small", crust: "stuffed", quantity: 1 });
     expect(await run("update_pizza", { pizza_id: 99, quantity: 1 }, ctx)).toEqual({
@@ -167,9 +178,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
     });
 
     // Remove the first pizza
-    const removed = (await run("remove_pizza", { pizza_id: 1 }, ctx)) as InferToolOutput<
-      typeof removePizza
-    >;
+    const removed = await runTool(removePizza, { pizza_id: 1 }, ctx);
     if (isToolFailure(removed)) throw new Error(removed.error);
     expect(removed.removed.id).toBe(1);
     expect(removed.itemCount).toBe(1);
@@ -179,7 +188,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
     // Name + place the order
     await run("set_customer_name", { name: "Alex" }, ctx);
-    const placed = (await run("place_order", ctx)) as InferToolOutput<typeof placeOrder>;
+    const placed = await runTool(placeOrder, ctx);
     if (isToolFailure(placed)) throw new Error(placed.error);
     expect(placed.customerName).toBe("Alex");
     expect(placed.pizzas).toBe(1);
@@ -200,7 +209,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
     const place = async (seed?: number) => {
       const ctx = customer(seed);
       await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
-      const placed = (await run("place_order", ctx)) as InferToolOutput<typeof placeOrder>;
+      const placed = await runTool(placeOrder, ctx);
       if (isToolFailure(placed)) throw new Error(placed.error);
       return placed.orderNumber;
     };
@@ -234,16 +243,15 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(await run("view_order", secondCall)).toEqual({ message: "The order is empty." });
 
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, secondCall);
-    const placedB = (await run("place_order", secondCall)) as {
-      customerName: string;
-      pizzas: number;
-    };
+    const placedB = ok(await runTool(placeOrder, secondCall));
     // The second context never sees the first's customer name or pizzas.
     expect(placedB.customerName).toBe("Guest");
     expect(placedB.pizzas).toBe(1);
 
     // And the first context's cart survives the second's checkout untouched.
-    const viewA = (await run("view_order", firstCall)) as { pizzas: unknown[] };
+    const viewA = await runTool(viewOrder, firstCall);
+    // `view_order` answers a sentence for an empty cart; this one is not empty.
+    if (!("pizzas" in viewA)) throw new Error(`expected a cart, got: ${viewA.message}`);
     expect(viewA.pizzas).toHaveLength(1);
   });
 });

@@ -88,6 +88,14 @@ export {
 // above it, because the shorter of the two decides and a client value above the
 // server's reaps nothing — see `HTTP_KEEP_ALIVE_TIMEOUT_MS` there.
 export { EGRESS_KEEP_ALIVE_MS } from "./_egress-fetch.ts";
+// The cache in front of both backends, and the shapes around it. They were the
+// `session-state` capability's, on the argument that a host might implement a
+// backend of its own; but no public option TAKES one — `createRuntime` selects
+// a backend from the boot env and nothing on the root barrel accepts a store —
+// so the contract promised epochs on a seam no embedder can reach.
+// `aai-server`'s session-state handler implements `SessionStateBackend`; the
+// other three are what the store's and the backend's own signatures name.
+export type { StateSyncSession } from "./_state-sync.ts";
 /**
  * The W3C trace-context parser, so the two sides of the platform hop agree.
  *
@@ -153,6 +161,16 @@ export {
   type PlatformReplyFrame,
   parsePlatformFrame,
 } from "./platform-socket-frames.ts";
+export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
+// The CLI's two credential helpers. `withHostCredentialFallback` fills a
+// provider key from the host shell for `aai dev`/`aai console`/`npm start`;
+// `requiredProviderEnvVars` is the deploy preflight's derivation. Both were on
+// the root barrel, where no embedder signature named them and the second one's
+// parameter was a structural bag the CLI shapes around a bundle's JSON config
+// rather than anything a host writes. `HostCredentialEnv`, the brand the first
+// one returns, is the SDK's and is named from `@alexkroman1/aai/host-internal`.
+export { withHostCredentialFallback } from "./providers/host-env.ts";
+export { requiredProviderEnvVars } from "./providers/resolve.ts";
 // The console-backed `Logger` the CLI, the guest and the platform's own logger
 // all start from. The `Logger` TYPE — the thing a host implements — is
 // contracted, on the root barrel.
@@ -181,6 +199,13 @@ export { isPathInside } from "./server-static.ts";
 // options are the transport-neutral lifecycle's plus its own, so that type is
 // named here beside the function whose signature carries it.
 export type { AttachSessionOptions } from "./session-attach.ts";
+// The SERVER session one socket bridges, for `aai-server`'s `ws.scenario.test.ts`,
+// which drives the platform's socket handler against a stand-in session. It was
+// the `session` capability's, where nothing published could hand one out: the
+// constructor is `createSessionCore`, which is unexported, and the one method
+// that returned one (`Runtime.createSession`) was a testing seam. The two
+// `TransportEvent*` types are what its `report` takes, so they travel with it.
+export type { ServerSession } from "./session-core.ts";
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
@@ -208,13 +233,21 @@ export {
   // platform creates and the tables this backend queries can disagree.
   sessionStateDdl,
 } from "./session-state/backends/postgres.ts";
-// The cache in front of both backends. `SessionStateBackend` and
-// `SessionStateStore` — the shapes a host implementing a backend of its own has
-// to name — are contracted, on the root barrel.
-export { createSessionStateStore } from "./session-state/store.ts";
+export {
+  createSessionStateStore,
+  type SessionStateBackend,
+  type SessionStateStore,
+  type StoredSessionEvent,
+} from "./session-state/store.ts";
+// The route `createRuntimeServer` serves carriers on and the query key naming
+// one, for the CLI's preflight, which prints the webhook a carrier is pointed at.
+// An embedder bridging a call itself chooses its own path, so neither is part of
+// the `telephony` contract.
+export { CARRIER_PARAM, TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
 export { executeToolCall } from "./tool-executor.ts";
+export type { TransportEventBody, TransportEventType } from "./transports/types.ts";
 // The session-scoped token meter. `RuntimeOptions.usage`,
 // `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,
 // so a framework caller on this subpath that holds a meter — or reads a
@@ -308,10 +341,22 @@ export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow/queue-dispatch.ts
 // in order to publish a minter over it. What it fills is the step slot a workflow
 // BODY reads through `stepWebhookUrl`.
 export { handleWorkflowRequest, publishWorkflowWebhookUrl } from "./workflow/serve.ts";
-// Standing an upload store up. The store TYPE, the two blob implementations and
-// the part addressing are contracted, on the root barrel; this is what JOINS
-// them, which is a host's job.
-export { createUploadStore } from "./workflow/uploads.ts";
+// The upload store, its two blob backends, the part addressing and the table.
+// `aai-server` is the importer — its byte route, its record handlers and the
+// store conformance suite. They were the `uploads` capability's, and no public
+// signature takes or returns any of them: an embedder is handed a store by
+// `createRuntimeServer`, never builds one, so the contract covered plumbing.
+export {
+  createHttpUploadBackend,
+  createMemoryUploadBackend,
+  createUploadStore,
+  type HttpUploadBackendOptions,
+  partKey,
+  partsOf,
+  UPLOADS_TABLE,
+  type UploadBackend,
+  type UploadStore,
+} from "./workflow/uploads.ts";
 export { wireSessionSocket } from "./ws-handler.ts";
 
 /**

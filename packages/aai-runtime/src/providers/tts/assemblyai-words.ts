@@ -23,8 +23,8 @@
  * exactly the error a character-proportional cut cannot model.
  */
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { TtsWordTiming } from "../openers.ts";
 
 /** One raw word object as it may appear on the wire. */
 type RawWord = Record<string, unknown>;

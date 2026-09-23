@@ -19,8 +19,8 @@ import {
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
-  withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
+import { withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import pTimeout from "p-timeout";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { soxAudio } from "./_console-audio.ts";

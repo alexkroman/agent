@@ -6,6 +6,7 @@ import { ChannelDeliveryError } from "./shared/channel-types.ts";
 import {
   CHANNEL_POST_TIMEOUT_MS,
   explainChannelFailure,
+  registerChannelHandler,
   renderChannelPayload,
   sendToChannel,
 } from "./shared/send.ts";
@@ -263,6 +264,33 @@ describe("a descriptor that is not one", () => {
   test("refuses a Slack descriptor with no webhook url", () => {
     expect(() => renderChannelPayload({ kind: "slack", options: {} }, MESSAGE)).toThrow(
       /needs a string `webhookUrl`/,
+    );
+  });
+});
+
+describe("a handler typed on its own options", () => {
+  test("is handed what its narrowing answered, for render and advice alike", () => {
+    registerChannelHandler<{ readonly room: string }>(
+      {
+        kind: "test-pager",
+        render: (message, { room }) => ({
+          url: `https://pager.test/${room}`,
+          body: { text: message.text },
+        }),
+        advice: ({ room }, detail) => `room ${room}: ${detail}`,
+      },
+      (raw) => {
+        if (typeof raw.room !== "string") throw new Error("test-pager: `room` must be a string");
+        return { room: raw.room };
+      },
+    );
+    const channel = { kind: "test-pager", options: { room: "ops" } };
+    expect(renderChannelPayload(channel, MESSAGE).url).toBe("https://pager.test/ops");
+    expect(explainChannelFailure(channel, "busy")).toBe("room ops: busy");
+    // The narrowing runs on every call, so a journaled descriptor with a bad
+    // field fails naming it rather than posting to `undefined`.
+    expect(() => renderChannelPayload({ kind: "test-pager", options: {} }, MESSAGE)).toThrow(
+      /`room` must be a string/,
     );
   });
 });

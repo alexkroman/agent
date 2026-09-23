@@ -123,8 +123,6 @@ export {
   agent,
   assemblyAIPipeline,
   type BuiltinTool,
-  type KnownTurnDetectionMode,
-  type KnownVoicePresetName,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,

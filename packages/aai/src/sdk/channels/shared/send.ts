@@ -65,10 +65,42 @@ const CHANNEL_KINDS = new Map<string, ChannelHandler>();
  * Re-registering a kind REPLACES it, which is what makes a shipped channel
  * overridable — and is why the tag is the identity rather than the value.
  *
+ * **A handler typed on its own options (`ChannelHandler<MyOptions>`) is
+ * registered WITH the function that narrows the raw record into them**, which
+ * runs before each `render` and `advice` — so both are handed a checked value,
+ * and a journaled descriptor with a bad field fails naming it. The overload
+ * makes the narrowing required: nothing else checks that what a journal hands
+ * back is a `MyOptions`.
+ *
  * @public
  */
-export function registerChannelHandler(handler: ChannelHandler): void {
-  CHANNEL_KINDS.set(handler.kind, handler);
+export function registerChannelHandler(handler: ChannelHandler): void;
+/**
+ * Register a channel kind whose `render`/`advice` read their OWN options type,
+ * narrowed from the descriptor's raw options by `options` (throwing a sentence
+ * naming the field that is wrong).
+ *
+ * @public
+ */
+export function registerChannelHandler<O>(
+  handler: ChannelHandler<O>,
+  options: (raw: Record<string, unknown>) => O,
+): void;
+export function registerChannelHandler<O>(
+  handler: ChannelHandler<O>,
+  options?: (raw: Record<string, unknown>) => O,
+): void {
+  if (options === undefined) {
+    // The first overload: `O` is the raw record, so the handler is stored as is.
+    const raw: unknown = handler;
+    CHANNEL_KINDS.set(handler.kind, raw as ChannelHandler);
+    return;
+  }
+  CHANNEL_KINDS.set(handler.kind, {
+    kind: handler.kind,
+    render: (message, raw) => handler.render(message, options(raw)),
+    advice: (raw, detail) => handler.advice(options(raw), detail),
+  });
 }
 
 /** The tags {@link sendToChannel} can dispatch, in registration order. */

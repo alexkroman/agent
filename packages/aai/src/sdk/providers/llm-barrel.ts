@@ -34,10 +34,18 @@
  * `provider` is OPEN ({@link LlmProviderName}): a provider this release does
  * not know resolves as an OpenAI-compatible endpoint when the descriptor
  * carries a `baseUrl`. {@link AssemblyAIGatewayModel} is open the same way —
- * the generated {@link KnownGatewayModel} snapshot is autocomplete, not a
- * guard; the capability CATALOG behind it (which model streams, calls tools,
- * serves the EU) is on `@alexkroman1/aai/host-internal`, since its readers
- * are the studio's model selection and this repo's own gate.
+ * its generated id literals are autocomplete, not a guard; the capability
+ * CATALOG behind them (which model streams, calls tools, serves the EU) is on
+ * `@alexkroman1/aai/host-internal`, since its readers are the studio's model
+ * selection and this repo's own gate.
+ *
+ * Both open types spell their literals INLINE, and neither closed half
+ * (`KnownLlmProvider`, `KnownGatewayModel`) is exported here: a closed union an
+ * author can import changes what it accepts on every regeneration, so the
+ * compatibility probe could never prove one compatible. Written into the open
+ * type, a regenerated catalog or a new built-in provider is a REVISION of
+ * this capability, not an epoch. The closed halves are on
+ * `@alexkroman1/aai/host-internal`, for the host's own totality checks.
  *
  * ## The descriptor type is on the ROOT barrel TOO
  *
@@ -65,9 +73,8 @@ export {
 export {
   type AssemblyAIGatewayModel,
   type AssemblyAILlmProviderOptions,
-  type KnownLlmProvider,
   type LlmOptions,
   type LlmProviderName,
+  type LlmSpec,
   llm,
 } from "./llm/llm.ts";
-export type { KnownGatewayModel } from "./llm/shared/gateway-models.ts";

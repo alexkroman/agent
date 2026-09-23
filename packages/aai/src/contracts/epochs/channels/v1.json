@@ -3,7 +3,7 @@
   "capability": "channels",
   "epoch": 1,
   "rule": 2,
-  "sha256": "d5d27e9b57e6ef13808e0679c7ade47476444eaf00ab2051957e3bb818ab8160",
+  "sha256": "bdde10381707e8d959b8773ce4fb78e9ea4664cf8c8542052fa27a0d6c4ce8c3",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -30,5 +30,20 @@
     "sendToChannel",
     "slackChannel"
   ],
-  "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba"
+  "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "d5d27e9b57e6ef13808e0679c7ade47476444eaf00ab2051957e3bb818ab8160",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "bdde10381707e8d959b8773ce4fb78e9ea4664cf8c8542052fa27a0d6c4ce8c3",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

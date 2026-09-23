@@ -22,12 +22,12 @@
  * RECOGNIZES, which makes it how to test whether a new one is real.
  */
 
-import type { TtsEvents } from "@alexkroman1/aai/host-internal";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import type WebSocket from "ws";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import type { SessionShell } from "../_utils.ts";
+import type { TtsEvents } from "../openers.ts";
 import type { CancelBarrier } from "./assemblyai-cancel.ts";
 import type { SynthesisAck } from "./assemblyai-turn.ts";
 

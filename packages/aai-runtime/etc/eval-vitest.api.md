@@ -6,8 +6,6 @@
 
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
@@ -61,7 +59,7 @@ type EvalRunOptions = StartOptions & {
     readonly timeoutMs?: number | undefined;
 };
 
-// @public
+// @public @sealed
 type EvalSession = {
     readonly id: string;
     say(text: string): Promise<EvalTurn>;
@@ -73,19 +71,12 @@ type EvalSession = {
 };
 
 // @public
-type EvalSessionOptions = {
-    readonly agent: AgentDef;
+interface EvalSessionOptions extends HostAgentOptions {
     readonly env?: Record<string, string>;
-    readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
-    readonly runCode?: RunCodeExecutor;
-    readonly fetch?: typeof globalThis.fetch;
-    readonly toolTimeoutMs?: number;
-    readonly generate?: HostGenerateFn;
-    readonly workflows?: WorkflowClient | undefined;
+    // (undocumented)
     readonly turnTimeoutMs?: number;
-    readonly logger?: Logger;
-};
+}
 
 // @public
 type EvalSleep = {
@@ -96,14 +87,14 @@ type EvalSleep = {
 // @public
 export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
-// @public
+// @public @sealed
 export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
 };
 
-// @public
+// @public @sealed
 type EvalTextAgent = {
     readonly id: string;
     send(text: string): Promise<EvalTurn>;
@@ -115,23 +106,16 @@ type EvalTextAgent = {
 };
 
 // @public
-type EvalTextAgentOptions = {
-    readonly agent: AgentDef;
+interface EvalTextAgentOptions extends HostAgentOptions {
     readonly env?: Record<string, string>;
-    readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
-    readonly runCode?: RunCodeExecutor;
-    readonly fetch?: typeof globalThis.fetch;
-    readonly toolTimeoutMs?: number;
-    readonly workflows?: WorkflowClient | undefined;
     readonly turnTimeoutMs?: number;
-    readonly logger?: Logger;
-};
+}
 
 // @public
 export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
-// @public
+// @public @sealed
 export type EvalTextTestContext = {
     readonly agent: EvalTextAgent;
     readonly mode: EvalMode;
@@ -171,7 +155,7 @@ type EvalWorkflowEngineOptions = {
     readonly speech?: SpeechSynthesizer | undefined;
 };
 
-// @public
+// @public @sealed
 type EvalWorkflowRun<R = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -187,7 +171,7 @@ type EvalWorkflowRun<R = unknown> = {
     readonly snapshot: WorkflowRunSnapshot<R>;
 };
 
-// @public
+// @public @sealed
 type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
@@ -218,17 +202,22 @@ type EvalWorkflowsOptions = {
 // @public
 export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
 
-// @public
+// @public @sealed
 export type EvalWorkflowTestContext = {
     readonly app: EvalWorkflows;
     readonly mode: EvalMode;
 };
 
 // @public
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
-    signal?: AbortSignal | undefined;
-    onUsage?: ((usage: StepUsage) => void) | undefined;
-}) => Promise<GenerateResult>;
+interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
 
 // @public
 type LogContext = Record<string, unknown>;
@@ -237,10 +226,16 @@ type LogContext = Record<string, unknown>;
 type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
-
-// @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
 
 // @public
 export function resolveEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>,
@@ -256,16 +251,6 @@ export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string
     mode: EvalMode;
     reason: string;
 };
-
-// @public
-interface StepUsage {
-    // (undocumented)
-    inputTokens?: number | undefined;
-    // (undocumented)
-    outputTokens?: number | undefined;
-    // (undocumented)
-    totalTokens?: number | undefined;
-}
 
 // @public
 type StubScript = string | readonly (string | StubStep)[];

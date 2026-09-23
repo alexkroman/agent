@@ -341,8 +341,11 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   property of a BRANCH, the same exception `check:deploy-changeset` is, and it
   clears the same bar: without a base it SAYS it did not run (every tree check
   still does) rather than printing a checkmark over it. CI checks out full
-  history, so there it always runs. The mechanism is
-  `docs/CLAUDE.md`'s "The authoring surface is versioned in epochs".
+  history, so there it always runs. It also fails any CURRENT epoch whose
+  pinned rollup no longer probes compatible with ITSELF — a rollup imports its
+  siblings' current `dist`, so an export moving elsewhere rots it with no
+  change of its own (five `aai-runtime` rollups had, unnoticed). The mechanism
+  is `docs/CLAUDE.md`'s "The authoring surface is versioned in epochs".
 - **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
   50% per-file statement floor over what `test:coverage` wrote, because the
   `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module

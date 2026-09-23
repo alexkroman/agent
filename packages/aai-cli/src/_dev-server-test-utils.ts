@@ -200,11 +200,6 @@ export function aaiRuntimeModule(): Record<string, unknown> {
   return {
     createRuntime: mockCreateRuntime,
     createRuntimeServer: mockCreateServer,
-    requiredProviderEnvVars: mockRequiredProviderEnvVars,
-    // The dev server applies the self-hosted credential fallback when building
-    // `env`; identity here keeps these tests focused on wiring. The helper's
-    // own behavior is covered in aai/host/providers/host-env.test.ts.
-    withHostCredentialFallback: (env: Record<string, string>) => env,
     // `viteDevConfig` uses this as a proxy KEY, so it has to be a string here
     // or the config these specs build has a hole in it. Spelled out rather
     // than imported: this module IS the factory for the
@@ -252,6 +247,12 @@ export function aaiRuntimeModule(): Record<string, unknown> {
 export function aaiRuntimeInternalModule(): Record<string, unknown> {
   return {
     publishStepEnv: vi.fn(),
+    // Both keyed HERE since they left the root barrel for `/internal`.
+    requiredProviderEnvVars: mockRequiredProviderEnvVars,
+    // The dev server applies the self-hosted credential fallback when building
+    // `env`; identity here keeps these tests focused on wiring. The helper's
+    // own behavior is covered in aai-runtime's providers/host-env.test.ts.
+    withHostCredentialFallback: (env: Record<string, string>) => env,
     // The console-backed logger the dev server hands the runtime in human
     // mode (see createDevLogger); these specs only need it to exist.
     consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

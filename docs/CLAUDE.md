@@ -410,19 +410,21 @@ and the new one as two modules plus a generated probe in the OLD module's
 scope. Per name the epoch exported: it must still be exported; a TYPE must be
 MUTUALLY assignable (old to new and new to old, under the old declaration's own
 type parameters — an author both builds these and receives them, and the rollup
-does not say which); a VALUE must be assignable new-to-old (every old call still
-type-checks; a const's literal values are widened first, matching the hash). It
-runs under `strict` + `exactOptionalPropertyTypes`, the stricter of the settings
-a consumer might use. Proven, `--update` records revision `r+1` of the SAME
-epoch with an automatic reason (`additive (checked): +Foo`) — the epoch number
+does not say which — unless it is tagged `@sealed`, below); a VALUE must be
+assignable new-to-old (every old call still type-checks; a const's literal
+values are widened first, matching the hash). It runs under `strict` +
+`exactOptionalPropertyTypes`, the stricter of the settings a consumer might
+use. Proven, `--update` records revision `r+1` of the SAME epoch with an
+automatic reason (`additive (checked): +Foo`) — the epoch number
 and its rollup do not move, and every revision is proven against the epoch's
 ORIGINAL rollup, so a chain of compatible steps cannot walk away from it.
 `--bump` REFUSES a change the probe proved compatible — it would mint an epoch
 for nothing.
 Additive changes pass (optional member, optional parameter, new export, widened
-parameter, narrowed return); a removed export, a required member, a changed or
-narrowed/widened union, an added required parameter, a return that provides less
-or a stricter generic constraint fails, and needs `--bump`.
+parameter, narrowed return); a removed export, a required member, a REMOVED
+member (optional or not), a changed or narrowed/widened union, an added required
+parameter, a return that provides less or a stricter generic constraint fails,
+and needs `--bump`.
 
 **Methods and constructors are compared STRICTLY.** TypeScript relates a
 method-shorthand member, and a class's constructor, BIVARIANTLY even under
@@ -443,6 +445,95 @@ each probed pair and reports every such position by path; the verdict is
 found a break", since a return loosened to `any` may break nobody. An `any` on
 both sides is unchanged and passes.
 
+**A removed member is a BREAK even when it was optional**, and assignability
+cannot see it go: `{ name: string }` and `{ name: string; generate?: Fn }` are
+assignable both ways, yet every author passing `generate` in an object literal
+hits an excess-property error and every reader of it a missing property. The
+same paired walk reports each member the old side of an object position has
+and the new side lacks (a new string index signature excepted). Before it,
+`EvalSessionOptions` losing `generate` probed as a revision of `eval@7` while
+two retained frozen examples passing it stopped compiling.
+
+**Five things are made to AGREE before either side is compiled**
+(`scripts/_api-contracts-compat-rewrite.mjs`), each because two separately
+compiled modules disagree about something a consumer's program has once:
+
+- **A same-named `unique symbol` is ONE symbol.** `declare const runtimeBrand:
+  unique symbol` was two symbols, so every branded type (`Runtime`,
+  `SessionAuth`, `BrowserSession`) was unrelated to its own twin and even an
+  added OPTIONAL member probed as a break ("Property '[sessionAuthBrand]' is
+  missing"). Both sides now import each brand the two share by name from one
+  generated module. A RENAMED brand is two names and still a break, and so is a
+  removed brand member.
+- **`@sealed` means "an author only RECEIVES this"**, and a sealed type is
+  probed like a value: new-to-old only, so gaining a required member is a
+  revision and losing one is still a break (the one-sided-`any` rule still
+  applies). Every OTHER probe sees the sealed type unchanged — they compare
+  against a masked copy of the new rollup where each sealed declaration aliases
+  the old one — because a position that takes it back
+  (`connectSession(runtime: Runtime)`) is holding the value the SDK handed over,
+  which is the new one; without the mask, the handle's own change failed every
+  function accepting it. The tag is read off the rollup, where API Extractor
+  writes the TSDoc modifier onto the release-tag line (`// @public @sealed`,
+  from `@sealed` in the declaration's doc comment in source), on EITHER side —
+  adding the tag is the claim, and it shows in the `etc/*.api.md` diff. The hash
+  strips comments, so tagging moves no capability (a hash spec pins that).
+  **Tag** what only the SDK constructs and an author holds, reads or passes
+  back: a branded handle (`Runtime`, `SessionAuth`, `BrowserSession`), a result
+  or `ctx` object the SDK builds. **Never tag** anything an author constructs,
+  spreads, returns, passes IN as their own value or implements — config and
+  options objects, a `ToolDef`, a provider an author may write, a callback's
+  parameter they must satisfy: there a new required member IS the break, and the
+  tag would ship it as a revision.
+- **A misuse-message literal reads as one marker type.** The hash reads a
+  string literal type over 80 characters as `string` (`isMessageLiteral` in
+  `_api-contracts-hash.mjs`), but the probe compared the literals, so rewording
+  one of `agent-params.ts`'s misuse diagnostics was a revision to the hash and a
+  break to the probe. Both rollups now read such a literal — and a TEMPLATE
+  literal type with that much literal text, the `${K}`-interpolated messages —
+  as `__AaiMisuse`, a `unique symbol` type shared by both. Not `string`, which
+  would hide a field that used to accept any string becoming FORBIDDEN. A
+  template misuse type still moves the hash (the hash rule is unchanged); the
+  probe is what now lets it land as a revision. `const` literals are skipped,
+  as the hash skips them.
+
+- **A declaration ANOTHER capability of the package owns is ONE declaration**,
+  taken from the NEW rollup on both sides. The hash reads it by name (rule 2);
+  the rollup inlines its body, so its owner's changes — `SubagentDef` trading
+  `maxRetries` for a misuse field, reached from `agent` through
+  `ToolContext.delegate` — read as a break of every capability that only
+  REACHES it ("Two different types with this name exist, but they are
+  unrelated"). Against today's tree that was ten `aai` capabilities with
+  unmoved hashes, so the first moved hash in any of them would have been a
+  `--bump`. Closure identity reads the shared name as a leaf, as the hash does.
+  NEW rather than old because the new rollup's declarations were written
+  against the new copy; an OLD declaration that relied on something the new
+  copy dropped then fails to compile, which surfaces as a break (safe). **The
+  blind spot**: a change to that type which breaks only THIS capability's use
+  of it passes here — its owner's probe and the frozen examples are what see it.
+- **A declaration whose closure is byte-identical on both sides is ONE
+  declaration** too, the same move for a name only REACHED. Closure identity
+  already passed an unchanged name that is itself probed, but a generic
+  conditional reached INSIDE a changed signature was still two unrelated
+  declarations: `sessionSlot`'s unchanged `SessionSlotOptions<T>` (its `after`
+  reads `RejectThenable<After>`) failed the moment the `@sealed` `SessionSlot`
+  it returns gained `snapshot`. Equal text reaching equal text is the same type,
+  and a name reaching anything that changed has a changed closure and stays
+  two, so nothing is hidden. Never for the self-probe below.
+
+**Every current epoch's rollup must probe compatible with ITSELF**, checked on
+every `check:api-contracts` run (`scripts/_api-contracts-staleness.mjs`). A
+rollup imports its sibling packages by specifier, resolved to their CURRENT
+`dist`, so when `SessionEvent` moved off `@alexkroman1/aai/protocol` five
+`aai-runtime` rollups (`runtime@5`, `server@5`, `telephony@1`,
+`eval-simulate@1`, `eval-assert@1`) stopped compiling with no change of their
+own — and nothing noticed, because the hash comes from today's report. The first
+moved hash in any of them would have been probed against a baseline full of
+errors. The remedy is a RE-PIN, which is how those five were fixed: edit the
+rollup as little as compiling takes (the import's source, never a declaration)
+and set `rollup` in its `v<N>.json` to the new text's sha256 (the file minus its
+trailing newline). The capability `sha256` does not move. It costs ~5s per run.
+
 **The checker is TypeScript 6, not the 7 the repo builds with.** TS 7 ships no
 in-process compiler API — `typescript`'s root export is `lib/version.cjs`, and
 `typescript/unstable/*` drives the native binary as a subprocess, which is
@@ -459,8 +550,10 @@ every retained epoch's frozen example.
 `L & Literal<L>` methods above; generic overloads are related with their type
 parameters erased, as TypeScript relates overloads; an `any` inside a union or
 an unpaired position can still hide; a type from ANOTHER package is the same
-current type on both sides (its own package's capability reports it); and
-behaviour is never checked. The safe-direction miss: a CHANGED generic
+current type on both sides (its own package's capability reports it);
+another capability's type is judged only by ITS probe (above); a `@sealed` tag
+is TRUSTED (a type an author does build, tagged anyway, lands a break as a
+revision); and behaviour is never checked. The safe-direction miss: a CHANGED generic
 conditional or `as`-remapped type is reported incompatible even when it is not,
 because two separate declarations of one are unrelated to the checker (an
 UNCHANGED one passes by closure identity). `packages/aai-gates/src/
@@ -1043,20 +1136,22 @@ not a defect in these comments — do not "fix" them by deleting links.
 
 ## What writing the `aai-runtime` epoch templates found
 
-Four things the surface cannot currently demonstrate about itself. None is a bug;
-each is a decision worth making rather than inheriting.
+Four things the surface could not demonstrate about itself. Three are RESOLVED
+the same way — by taking the half a template could not use OFF the contracted
+surface rather than adding the half it lacked — and the fourth still stands.
 
-- **`uploads` publishes a store TYPE and two blob implementations with no
-  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
-  are `@internal`, so they are on `/internal` and the template has to take the
-  store as a parameter. Honest for an embedder handed one by
-  `createRuntimeServer`, and it means the capability cannot show its own
-  end-to-end wiring.
-- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  contracted and `createWorkflowClient` is on `/internal`, so a template can
-  assemble the bag and not hand it to anything. Its `logger` field is required
-  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
-  on `/internal` too — only the `Logger` type is contracted.
+- **`uploads` published a store TYPE and two blob implementations with no
+  contracted way to join them** (`createUploadStore` and `resolveUploadBlobs`
+  were `@internal`). Resolved: `UploadStore`, `UploadBackend`, both backends,
+  `UPLOADS_TABLE`, `partKey` and `partsOf` are on `/internal` now, and the
+  capability is what an embedder actually writes against — the `UPLOAD_*`
+  constants, `UploadMeta`/`UploadPart` and the two errors.
+- **`workflow` was the same shape one level up**: `WorkflowClientOptions` was
+  contracted and `createWorkflowClient` was not, so a template could assemble
+  the bag and not hand it to anything. Resolved the same way — the capability is
+  the constants and `ensureWorkflowJournalSchema`. `Logger` is an INTERFACE on
+  the `logging` capability now, so a host's own logger satisfies it without
+  reaching for `/internal`'s `consoleLogger`.
 
   It once reached a second epoch for a reason worth knowing, because it is the
   SIBLING version of the `TextTurnResult` hazard below: the export list did not
@@ -1064,12 +1159,11 @@ each is a decision worth making rather than inheriting.
   `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
   now rather than `/workflow-api`, since the prefix is the server's half of that
   API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
-  host — sees nothing. The numbering has been reset since, so the hazard is the
-  durable part, not the version it landed at.
-- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
-  the honest template is fifty lines of skeleton and anything in the wild will either
-  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
-  `aai` publishes `createToolContext` — would remove the incentive to launder it.
+  host — sees nothing. The hazard is the durable part, not the version.
+- **`WdkAdapter` was nine methods with no partial-implementation affordance.**
+  Resolved by removal: it, `WdkRunRecord` and `WdkStreamOptions` are internal to
+  the workflow engine and exported by no subpath, so there is no skeleton for a
+  host to write and nothing to launder with a cast.
 - **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
   capability's contract hash moves when the `ai` package's `StreamTextResult`
   moves. An upstream minor can force an epoch classification here with no change

@@ -30,6 +30,15 @@
  * for by name. Setting the field replaces the default rather than extending
  * it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
  *
+ * OPEN, like `VoicePresetName`: the names above are written inline as the
+ * autocomplete half, and any other string compiles, so an agent naming a
+ * builtin a later release adds still builds against this one. The runtime
+ * resolves only the names it ships and skips the rest, so an unknown name is a
+ * tool that silently never appears — which is why `aai build` / `aai dev` warn
+ * about it (`agentConfigWarnings`) rather than the type refusing it. Inline
+ * rather than an exported closed `Known…` half, so a builtin added here is a
+ * compatible change to this type.
+ *
  * @public
  */
 export type BuiltinTool =
@@ -41,4 +50,5 @@ export type BuiltinTool =
   | "think"
   | "remember"
   | "recall"
-  | "calculate";
+  | "calculate"
+  | (string & {});

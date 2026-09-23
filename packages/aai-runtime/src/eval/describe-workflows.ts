@@ -70,7 +70,11 @@ export type EvalWorkflowCaseOptions = {
   readonly live?: boolean;
 };
 
-/** What a workflow case body is handed. */
+/**
+ * What a workflow case body is handed.
+ *
+ * @sealed
+ */
 export type EvalWorkflowTestContext = {
   /** Opened for this case, closed after it. */
   readonly app: EvalWorkflows;

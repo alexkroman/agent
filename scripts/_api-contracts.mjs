@@ -267,9 +267,12 @@ export function generateCapabilityReports(pkg, names = capabilities(pkg)) {
       if (body === "") {
         throw new Error(`The ${capabilityId(pkg, capability)} capability rolled up to nothing.`);
       }
-      const { hashable, unowned } = analyzeBody(body, foreignNames.get(capability) ?? new Set());
+      const foreign = foreignNames.get(capability) ?? new Set();
+      const { hashable, unowned } = analyzeBody(body, foreign);
       reports.set(capability, {
         body,
+        // The compat probe shares these declarations across both sides.
+        foreign,
         hashable,
         unowned,
         exports: collectExports(text, label)

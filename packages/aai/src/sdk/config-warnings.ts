@@ -23,6 +23,8 @@ import {
 } from "./providers/tts/assemblyai.ts";
 import { CARTESIA_DEFAULT_VOICE, CARTESIA_KIND } from "./providers/tts/cartesia.ts";
 import { RIME_DEFAULT_VOICE, RIME_KIND } from "./providers/tts/rime.ts";
+import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
+import { BuiltinToolSchema } from "./type-schemas.ts";
 import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
 
 /**
@@ -52,6 +54,8 @@ export function agentConfigWarnings(config: {
   llm?: unknown;
   voicePresets?: unknown;
   turnDetection?: unknown;
+  builtinTools?: unknown;
+  telephony?: unknown;
 }): string[] {
   return [
     assemblyAIVoiceWarning(config.tts),
@@ -61,6 +65,8 @@ export function agentConfigWarnings(config: {
     unknownLlmProviderWarning(config.llm),
     ...unknownVoicePresetWarnings(config.voicePresets),
     unknownTurnDetectionWarning(config.turnDetection),
+    ...unknownBuiltinToolWarnings(config.builtinTools),
+    ...unknownTelephonyCarrierWarnings(config.telephony),
   ].filter((warning): warning is string => warning !== undefined);
 }
 
@@ -68,7 +74,7 @@ export function agentConfigWarnings(config: {
  * An `llm({ provider })` the runtime has no built-in entry for, carrying no
  * `baseUrl` to reach it by.
  *
- * `provider` is OPEN in the type (`KnownLlmProvider | (string & {})`), because
+ * `provider` is OPEN in the type (`"assemblyai" | … | (string & {})`), because
  * a vendor this release has not heard of is legal twice over: with a `baseUrl`
  * it resolves as an OpenAI-compatible endpoint, and a host may have registered
  * the name with `registerLlmKind`. What neither covers is a TYPO of a known
@@ -105,6 +111,44 @@ function unknownVoicePresetWarnings(presets: unknown): string[] {
       (name) =>
         `Voice preset "${name}" is not one this SDK knows (${VOICE_PRESET_NAMES.join(", ")}), so it adds ` +
         "nothing to the prompt. Check the spelling, or upgrade @alexkroman1/aai.",
+    );
+}
+
+/**
+ * A `builtinTools` entry this release ships no builtin for. `BuiltinTool` is
+ * open so a builtin added later compiles and deploys against an older SDK; the
+ * runtime resolves only the names it ships and skips the rest, so an unknown
+ * one is a tool the model silently never sees.
+ */
+function unknownBuiltinToolWarnings(names: unknown): string[] {
+  if (!Array.isArray(names)) return [];
+  const known = BuiltinToolSchema.options;
+  return names
+    .filter((name): name is string => typeof name === "string" && !isKnown(known, name))
+    .map(
+      (name) =>
+        `Builtin tool "${name}" is not one this SDK ships (${known.join(", ")}), so the model ` +
+        "will never be offered it. Check the spelling, or upgrade @alexkroman1/aai.",
+    );
+}
+
+/**
+ * A `telephony` carrier this release ships no codec for. `TelephonyCarrier` is
+ * open so a carrier added later compiles and deploys against an older SDK; the
+ * runtime DROPS a carrier it has no codec for (the others keep answering), so
+ * an unknown one is a phone route that is never mounted.
+ */
+function unknownTelephonyCarrierWarnings(access: unknown): string[] {
+  if (!Array.isArray(access)) return [];
+  return access
+    .filter(
+      (name): name is string => typeof name === "string" && !isKnown(TELEPHONY_CARRIERS, name),
+    )
+    .map(
+      (name) =>
+        `Telephony carrier "${name}" is not one this SDK ships a codec for ` +
+        `(${TELEPHONY_CARRIERS.join(", ")}), so no phone route is served for it. Check the ` +
+        "spelling, or upgrade @alexkroman1/aai.",
     );
 }
 

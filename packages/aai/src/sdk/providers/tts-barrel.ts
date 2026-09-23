@@ -69,9 +69,9 @@ export {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceId,
   type AssemblyAITtsVoiceInfo,
   assemblyAITts,
+  ttsVoiceInfo,
 } from "./tts/assemblyai.ts";
 export { CARTESIA_DEFAULT_VOICE, type CartesiaTtsOptions, cartesiaTts } from "./tts/cartesia.ts";
 export { RIME_DEFAULT_VOICE, type RimeTtsOptions, rimeTts } from "./tts/rime.ts";

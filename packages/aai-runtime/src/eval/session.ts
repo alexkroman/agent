@@ -53,17 +53,17 @@
  */
 
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
-import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
+import type { HostAgentOptions } from "../host-agent-options.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime.ts";
-import { type Logger, silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable, measuredTurn } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
@@ -148,7 +148,11 @@ export type EvalTurn = {
   readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
-/** One live eval session. */
+/**
+ * One live eval session.
+ *
+ * @sealed
+ */
 export type EvalSession = {
   /**
    * This session's id — what its tools read as `ctx.sessionId`.
@@ -203,79 +207,62 @@ export type EvalSession = {
   close(): Promise<void>;
 };
 
-/** What {@link openEvalSession} takes. */
-export type EvalSessionOptions = {
-  /** The agent under eval — an ordinary `agent()` definition. */
-  readonly agent: AgentDef;
+/**
+ * What {@link openEvalSession} takes.
+ *
+ * The fields every way of running an agent shares are {@link HostAgentOptions};
+ * what they mean HERE:
+ *
+ * - `providerEnv` defaults to {@link EvalSessionOptions.env} with any credential
+ *   it does not carry filled in from this machine's own environment — the trust
+ *   decision `aai dev` makes, and right here for the same reason: an eval runs
+ *   on the developer's box against their own key. A value in `env` always wins.
+ * - `runCode` backs the `run_code` builtin. Without one it permanently refuses,
+ *   as it does off-platform. What that COSTS was measured on the three tutor
+ *   templates: their headline feature was unevaluable, because the agent calls
+ *   `run_code`, reads "only available in the sandboxed runtime", and then does
+ *   the arithmetic in its head — so a case could assert the CALL and never the
+ *   answer. An eval on a developer's own machine may supply an executor; a
+ *   deployed agent still cannot.
+ * - `fetch` keeps a case off the network — a scripted `visit_webpage` really
+ *   visits.
+ * - `toolTimeoutMs` defaults to the session's own 30s; a tool that outruns it
+ *   otherwise measures the deadline instead of the agent.
+ * - `workflows`: without one, a workflow-declaring agent gets the client the
+ *   runtime builds over the real engine, and every `start()` through it throws —
+ *   a body imported through a test runner was never through the compiler's
+ *   transform. Build one with `openEvalWorkflows({ agent })` and pass its
+ *   `client`; `describeEval` does that for you. The engine under it is not
+ *   durable — no journal, no replay, no retry. See `eval/workflow-engine.ts`
+ *   before writing a claim about a run.
+ * - `logger` defaults to silent. Pass `consoleLogger` when diagnosing a case.
+ */
+export interface EvalSessionOptions extends HostAgentOptions {
   /**
    * The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
    * empty: a tool that needs a value gets it here, and nothing is inherited
    * implicitly.
    */
   readonly env?: Record<string, string>;
-  /**
-   * Where provider credentials are resolved from. Defaults to
-   * {@link EvalSessionOptions.env} with any credential it does not carry filled
-   * in from this machine's own environment — the same trust decision
-   * `withHostCredentialFallback` makes explicit for `aai dev`, and right here
-   * for the same reason: an eval runs on the developer's box against their own
-   * key. A value passed in `env` always wins over the shell.
-   */
-  readonly providerEnv?: ProviderEnv;
   /** Override the LLM the case runs on. Defaults to the agent's own. */
   readonly llm?: LlmProvider;
-  /**
-   * Backs the `run_code` builtin.
-   *
-   * Without one the builtin is registered and permanently refuses, exactly as it
-   * does off-platform — the Modal container is the security boundary and nothing
-   * here pretends otherwise. What that COSTS was measured on the three tutor
-   * templates: their headline feature was unevaluable, because the agent calls
-   * `run_code`, reads "only available in the sandboxed runtime", and then does
-   * the arithmetic in its head — so a case could asserted the CALL and never the
-   * answer. An eval on a developer's own machine may supply an executor; a
-   * deployed agent still cannot.
-   */
-  readonly runCode?: RunCodeExecutor;
-  /**
-   * The `fetch` the builtin web tools use. Pass one to keep a case off the
-   * network — a scripted `visit_webpage` really visits.
-   */
-  readonly fetch?: typeof globalThis.fetch;
-  /**
-   * Per-tool-call deadline. Defaults to the session's own (30s, a voice-turn
-   * budget). A tool whose work legitimately outruns that — a graded retrieval
-   * loop making eleven model calls, measured at 22-30s — cannot otherwise be
-   * evaluated at all: the executor answers a timeout and the case measures the
-   * deadline instead of the agent.
-   */
-  readonly toolTimeoutMs?: number;
-  /**
-   * What tool code calls as `ctx.generate`. Absent, it is the agent's own LLM.
-   *
-   * `describeEval`'s `stubGenerate` builds one of these; the reason it must be
-   * separate from the turn's script is in `RuntimeOptions.generate`.
-   */
-  readonly generate?: HostGenerateFn;
-  /**
-   * `ctx.workflows` for this session — what a tool that starts a durable run
-   * calls.
-   *
-   * Without one, a workflow-declaring agent gets the client the runtime builds
-   * over the Workflow DevKit, and every `start()` through it throws: the
-   * compiler's transform never ran on a body imported through a test runner, so
-   * `def.run.workflowId` is absent and there is nothing for the adapter to
-   * start. That is a tool an eval cannot execute at all, which is the gap this
-   * closes. Build one with `openEvalWorkflows({ agent })` and pass its `client`;
-   * `describeEval` does that for you.
-   *
-   * The engine under it is not durable — no journal, no replay, no retry. See
-   * `eval/workflow-engine.ts` before writing a claim about a run.
-   */
-  readonly workflows?: WorkflowClient | undefined;
   readonly turnTimeoutMs?: number;
-  /** Defaults to silent. Pass `consoleLogger` when diagnosing a case. */
-  readonly logger?: Logger;
+}
+
+/**
+ * {@link EvalSessionOptions} plus the host-only `generate` seam.
+ *
+ * `generate` was a public field — what tool code calls as `ctx.generate` —
+ * whose one caller is `describeEval`'s `stubGenerate`, in this package; the
+ * reason it must be separate from the turn's script is in
+ * `HostRuntimeOptions.generate`. Reached through
+ * {@link openEvalSessionWithSeams} by a relative import, never re-exported.
+ *
+ * @internal
+ */
+export type HostEvalSessionOptions = EvalSessionOptions & {
+  /** What tool code calls as `ctx.generate`. Absent, it is the agent's own LLM. */
+  readonly generate?: HostGenerateFn;
 };
 
 /**
@@ -291,6 +278,18 @@ export type EvalSessionOptions = {
  *   evaluate a configuration nobody deployed.
  */
 export async function openEvalSession(options: EvalSessionOptions): Promise<EvalSession> {
+  return openEvalSessionWithSeams(options);
+}
+
+/**
+ * {@link openEvalSession} plus the host-only seam of
+ * {@link HostEvalSessionOptions}. `describeEval` is the caller.
+ *
+ * @internal
+ */
+export async function openEvalSessionWithSeams(
+  options: HostEvalSessionOptions,
+): Promise<EvalSession> {
   if (options.agent.s2s !== undefined) {
     throw new Error(
       `Agent "${options.agent.name}" declares an s2s provider, which owns the whole ` +
@@ -316,7 +315,7 @@ export async function openEvalSession(options: EvalSessionOptions): Promise<Eval
 }
 
 async function openWithFakes(
-  options: EvalSessionOptions,
+  options: HostEvalSessionOptions,
   fake: StubSpeechProviders,
 ): Promise<EvalSession> {
   const events: SessionEvent[] = [];

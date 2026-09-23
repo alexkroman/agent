@@ -19,13 +19,13 @@ export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 
 // @public
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
-    model?: string;
+    model?: "gpt-realtime-2" | "gpt-realtime" | (string & {});
     url?: string;
     voice?: OpenAIS2sVoice;
 }
 
 // @public
-export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
+export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse" | (string & {});
 
 // @public
 export interface ProviderCredentialOptions {

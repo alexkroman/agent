@@ -33,8 +33,12 @@ import {
 } from "./speak-gate-constants.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
-import { TELEPHONY_CARRIERS } from "./telephony-config.ts";
-import { BuiltinToolSchema, ToolChoiceSchema, VoicePresetNameSchema } from "./type-schemas.ts";
+import {
+  BuiltinToolNameSchema,
+  TelephonyCarrierNameSchema,
+  ToolChoiceSchema,
+  VoicePresetNameSchema,
+} from "./type-schemas.ts";
 import type { Message } from "./types.ts";
 
 /** Per-call options for an {@link ExecuteTool} invocation. */
@@ -188,7 +192,10 @@ export const AgentConfigSchema = z.object({
   resetToolChoice: z.boolean().optional(),
   usageLimits: z.object({ totalTokens: z.number().int().positive().optional() }).optional(),
   toolChoice: ToolChoiceSchema.optional(),
-  builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
+  // OPEN, like `voicePresets` below: an unknown builtin is ACCEPTED (a newer
+  // builtin still deploys on an older runtime, which resolves only the names it
+  // ships and skips the rest) and WARNED about by `agentConfigWarnings`.
+  builtinTools: z.array(BuiltinToolNameSchema).readonly().optional(),
   // Serializable like `builtinTools` beside it and for the same reason: it is a
   // DECLARATION of what the agent has switched on, the runtime that assembles
   // the prompt may be in a guest sandbox, and `buildSystemPrompt` reads it off
@@ -264,11 +271,13 @@ export const AgentConfigSchema = z.object({
    * consumer of a stored config (the studio's preview, a deploy's validation)
    * can see which front doors this agent has without running it.
    *
-   * The names are VALIDATED rather than trusted — the carrier list crosses the
-   * boundary, and a config carrying a carrier no build ships a codec for would
-   * otherwise become a route that mounts and answers nothing.
+   * The names are OPEN, like `voicePresets`: `TelephonyCarrier` accepts any
+   * string so a carrier a later SDK ships still deploys on this one. A name
+   * this build has no codec for is ACCEPTED, DROPPED by the runtime's
+   * `enabledCarriers` (it mounts nothing, and the carriers this build knows
+   * keep answering), and WARNED about at build time by `agentConfigWarnings`.
    */
-  telephony: z.union([z.boolean(), z.array(z.enum(TELEPHONY_CARRIERS)).readonly()]).optional(),
+  telephony: z.union([z.boolean(), z.array(TelephonyCarrierNameSchema).readonly()]).optional(),
 });
 
 /**

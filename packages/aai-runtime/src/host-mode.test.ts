@@ -17,7 +17,8 @@ import {
   withHostCredentials,
 } from "./host-mode.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
-import type { Runtime, RuntimeOptions, runtimeBrand } from "./runtime.ts";
+import type { Runtime, runtimeBrand } from "./runtime.ts";
+import type { HostRuntimeOptions } from "./runtime-types.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -40,7 +41,7 @@ function hostConfigFrame(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-function makeFakeRuntime(o: RuntimeOptions): {
+function makeFakeRuntime(): {
   runtime: Runtime;
   startSession: ReturnType<typeof vi.fn>;
 } {
@@ -49,9 +50,6 @@ function makeFakeRuntime(o: RuntimeOptions): {
     startSession,
     shutdown: vi.fn(() => Promise.resolve()),
     readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
-    executeTool: o.executeTool ?? (() => Promise.resolve("")),
-    toolSchemas: o.toolSchemas ?? [],
-    createSession: vi.fn(),
   };
   // Every member but the seal is CHECKED above; the one cast left is the brand,
   // the same shape `createRuntime` itself uses.
@@ -215,7 +213,7 @@ describe("buildHostAgent", () => {
 describe("startHostSession (deferred host handshake)", () => {
   test("first config.host frame builds a host runtime from the block and starts the session", async () => {
     const ws = openMockWs();
-    let captured: RuntimeOptions | undefined;
+    let captured: HostRuntimeOptions | undefined;
     let startSession: ReturnType<typeof vi.fn> = vi.fn();
 
     startHostSession(asSessionWs(ws), {
@@ -224,7 +222,7 @@ describe("startHostSession (deferred host handshake)", () => {
       logger: silentLogger,
       createRuntime: (o) => {
         captured = o;
-        const fake = makeFakeRuntime(o);
+        const fake = makeFakeRuntime();
         startSession = fake.startSession;
         return fake.runtime;
       },
@@ -272,8 +270,8 @@ describe("startHostSession (deferred host handshake)", () => {
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger: silentLogger,
-        createRuntime: (o) => {
-          const fake = makeFakeRuntime(o);
+        createRuntime: () => {
+          const fake = makeFakeRuntime();
           startSession = fake.startSession;
           return fake.runtime;
         },
@@ -368,7 +366,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     test("accepts a frame that declares the supported rate", async () => {
       const ws = openMockWs();
-      const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
+      const createRuntime = vi.fn((_o: HostRuntimeOptions) => makeFakeRuntime().runtime);
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
@@ -384,7 +382,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     test("accepts a frame that declares no rates — that means 'tell me what to use'", async () => {
       const ws = openMockWs();
-      const createRuntime = vi.fn((o: RuntimeOptions) => makeFakeRuntime(o).runtime);
+      const createRuntime = vi.fn((_o: HostRuntimeOptions) => makeFakeRuntime().runtime);
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "k" },
@@ -402,14 +400,14 @@ describe("startHostSession (deferred host handshake)", () => {
 
     test("leaves a pipeline agent's requested rates alone — they are negotiable there", async () => {
       const ws = openMockWs();
-      let captured: RuntimeOptions | undefined;
+      let captured: HostRuntimeOptions | undefined;
 
       startHostSession(asSessionWs(ws), {
         env: { AAI_ALLOW_HOST: "1" },
         logger: silentLogger,
         createRuntime: (o) => {
           captured = o;
-          return makeFakeRuntime(o).runtime;
+          return makeFakeRuntime().runtime;
         },
       });
       ws.simulateMessage(hostConfigFrame());
@@ -444,14 +442,14 @@ describe("startHostSession (deferred host handshake)", () => {
     // The multi-tenant shape: the server holds only the gate, so the session
     // can only run on a key the caller brought.
     const ws = openMockWs();
-    let captured: RuntimeOptions | undefined;
+    let captured: HostRuntimeOptions | undefined;
 
     startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "1", ASSEMBLYAI_API_KEY: "operator" },
       logger: silentLogger,
       createRuntime: (o) => {
         captured = o;
-        return makeFakeRuntime(o).runtime;
+        return makeFakeRuntime().runtime;
       },
     });
 
@@ -515,8 +513,8 @@ describe("startHostSession (deferred host handshake)", () => {
       env: envGate.promise,
       allowHost: true,
       logger: silentLogger,
-      createRuntime: (o) => {
-        const fake = makeFakeRuntime(o);
+      createRuntime: () => {
+        const fake = makeFakeRuntime();
         startSession = fake.startSession;
         return fake.runtime;
       },
@@ -560,8 +558,8 @@ describe("startHostSession (deferred host handshake)", () => {
     startHostSession(asSessionWs(ws), {
       env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
-      createRuntime: (o) => {
-        const fake = makeFakeRuntime(o);
+      createRuntime: () => {
+        const fake = makeFakeRuntime();
         shutdown = fake.runtime.shutdown as ReturnType<typeof vi.fn>;
         return fake.runtime;
       },

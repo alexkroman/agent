@@ -3,8 +3,9 @@
  * Capability contract: `server`.
  *
  * Serving an agent over HTTP and a WebSocket: the three entry points a
- * self-hosted deployment picks between, and the credential fallback that lets a
- * container pass a provider key without it becoming `ctx.env`. WHO may open a
+ * self-hosted deployment picks between and the env types they take. The
+ * credential fallback and the preflight derivation (`withHostCredentialFallback`,
+ * `requiredProviderEnvVars`) are the CLI's, on `/internal`. WHO may open a
  * session is the `auth` capability's (`/auth`); the options here name its
  * opaque `SessionAuth` handle and nothing behind it.
  *
@@ -22,14 +23,11 @@ export {
   createHostServer,
   createRuntimeServer,
   DEFAULT_LISTEN_HOST,
-  type HostCredentialEnv,
   type HostServerOptions,
   type HostSessionDefaults,
   type ProviderEnv,
   type RuntimeServerOptions,
-  requiredProviderEnvVars,
   type ServerRequestHook,
   type ServerUpgradeHook,
   type SharedServerOptions,
-  withHostCredentialFallback,
 } from "../../runtime-barrel.ts";

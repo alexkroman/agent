@@ -110,7 +110,7 @@ function openOpener(signal: AbortSignal): Promise<unknown> {
 }
 
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
-  session: import("@alexkroman1/aai/host-internal").SttSession;
+  session: import("../openers.ts").SttSession;
   ws: FakeWSInstance;
   controller: AbortController;
 }> {
