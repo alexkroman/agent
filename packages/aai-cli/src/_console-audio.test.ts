@@ -38,6 +38,8 @@ vi.mock("node:child_process", () => ({
 
 const { missingSoxMessage, soxAudio } = await import("./_console-audio.ts");
 
+const RAW_PCM16_ARGS = ["-t", "raw", "-b", "16", "-e", "signed-integer", "-c", "1", "-L"];
+
 beforeEach(() => {
   children.length = 0;
 });
@@ -115,23 +117,38 @@ describe("soxAudio", () => {
     expect(quiet).not.toHaveBeenCalled();
   });
 
+  test("`play` reads a real pipe, not Node's socketpair", () => {
+    // SoX takes an idle SOCKET stdin for end of input and exits 0 the first
+    // time the agent stops talking; bash's process substitution is a pipe.
+    soxAudio.startPlayback(24_000, vi.fn());
+    const [flag, script, argv0, ...args] = children[0]?.args ?? [];
+    expect(children[0]?.cmd).toBe("bash");
+    expect([flag, script, argv0]).toEqual(["-c", 'exec play "$@" < <(exec cat)', "play"]);
+    expect(args).toEqual(["-q", ...RAW_PCM16_ARGS, "-r", "24000", "-"]);
+  });
+
+  test("a `play` bash cannot find is the missing-SoX message, not an exit code", () => {
+    const onError = vi.fn();
+    soxAudio.startPlayback(24_000, onError);
+    children[0]?.child.emit("exit", 127);
+    expect(onError).toHaveBeenCalledWith(new Error(missingSoxMessage("play")));
+  });
+
   test("playback writes to `play`, and flush replaces the process", () => {
     const player = soxAudio.startPlayback(24_000, vi.fn());
     const first = children[0];
-    expect(first?.cmd).toBe("play");
-    expect(first?.args).toContain("24000");
 
     const write = vi.spyOn(first?.child.stdin as PassThrough, "write");
     player.write(new Uint8Array([9, 9]));
     expect(write).toHaveBeenCalled();
 
+    // SIGKILL: SoX traps SIGTERM and ignores it while blocked on an idle pipe.
     player.flush();
-    expect(first?.child.kill).toHaveBeenCalled();
+    expect(first?.child.kill).toHaveBeenCalledWith("SIGKILL");
     expect(children).toHaveLength(2);
-    expect(children[1]?.cmd).toBe("play");
 
     player.stop();
-    expect(children[1]?.child.kill).toHaveBeenCalled();
+    expect(children[1]?.child.kill).toHaveBeenCalledWith("SIGKILL");
     player.write(new Uint8Array([1]));
     player.flush();
     expect(children).toHaveLength(2);

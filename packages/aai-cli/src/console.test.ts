@@ -56,11 +56,15 @@ const { executeConsole, terminalPrinter } = await import("./console.ts");
 /** A quit the user never asks for — the session has to end it. */
 const never = (): Promise<void> => new Promise(() => undefined);
 
+/** A microphone that delivers as soon as it opens, as a real one does. */
 function fakeAudio() {
   const capture = { stop: vi.fn() };
   const player = { write: vi.fn(), flush: vi.fn(), stop: vi.fn() };
   const audio: ConsoleAudio = {
-    startCapture: vi.fn(() => capture),
+    startCapture: vi.fn((_rate, onChunk) => {
+      queueMicrotask(() => onChunk(new Uint8Array(2)));
+      return capture;
+    }),
     startPlayback: vi.fn(() => player),
   };
   return { audio, capture, player };
@@ -97,6 +101,35 @@ describe("executeConsole", () => {
     expect(capture.stop).toHaveBeenCalled();
     expect(player.stop).toHaveBeenCalled();
     expect(state.shutdown).toHaveBeenCalled();
+  });
+
+  test("the speaker opens only once the microphone is delivering", async () => {
+    // A Bluetooth headset changes its output rate when its mic opens, and SoX
+    // fixes its rate at open — a speaker opened first plays at half speed.
+    const { audio, player } = fakeAudio();
+    const order: string[] = [];
+    vi.mocked(audio.startCapture).mockImplementation((_rate, onChunk) => {
+      order.push("mic opened");
+      queueMicrotask(() => {
+        order.push("mic delivered");
+        onChunk(new Uint8Array(2));
+      });
+      return { stop: vi.fn() };
+    });
+    vi.mocked(audio.startPlayback).mockImplementation(() => {
+      order.push("speaker opened");
+      return player;
+    });
+    let quit!: () => void;
+    const untilQuit = new Promise<void>((resolve) => {
+      quit = resolve;
+    });
+
+    const run = executeConsole({ cwd: "/p", audio, untilQuit, mode: "json" });
+    await vi.waitFor(() => expect(audio.startPlayback).toHaveBeenCalled());
+    expect(order).toEqual(["mic opened", "mic delivered", "speaker opened"]);
+    quit();
+    await run;
   });
 
   test("a fatal session error ends the console as a failure", async () => {

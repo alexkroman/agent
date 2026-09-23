@@ -20,6 +20,7 @@ import {
   type Logger,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
+import pTimeout from "p-timeout";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { soxAudio } from "./_console-audio.ts";
 import {
@@ -44,6 +45,13 @@ type ConsoleData = { sessionId: string };
  * the device is audio a barge-in has to kill the player to discard.
  */
 const CONSOLE_AUDIO_LEAD_MS = 400;
+
+/**
+ * How long to wait for the microphone's first bytes before opening the speaker
+ * anyway, in ms. Measured on AirPods: 0.74 s. Past this the speaker opens
+ * regardless — a slow mic is a possibly-wrong rate, a hang is certainly wrong.
+ */
+const MIC_OPEN_TIMEOUT_MS = 3000;
 
 /** The runtime's own lines go to stderr, and its chatty ones only when asked. */
 function consoleRuntimeLogger(verbose: boolean): Logger {
@@ -139,6 +147,32 @@ export async function executeConsole(opts: {
     endNow();
   };
 
+  // The MICROPHONE opens first, and the speaker only once it is delivering.
+  // Opening a Bluetooth headset's mic drops it from its 48 kHz stereo profile
+  // into the low-rate headset one, and SoX fixes its output rate when it opens
+  // the device — so a speaker opened first keeps resampling for 48 kHz into a
+  // device now running at 24: every word at half speed, an octave down.
+  // Measured on AirPods: 9.72 s to play a 4.56 s greeting speaker-first,
+  // 4.69 s mic-first. Audio before the connection exists is dropped; the
+  // greeting waits on `audio_ready` below, so nobody has spoken yet.
+  let forward: (bytes: Uint8Array) => void = () => undefined;
+  let micOpened: () => void = () => undefined;
+  const micReady = new Promise<void>((resolve) => {
+    micOpened = resolve;
+  });
+  const capture = audio.startCapture(
+    sampleRate,
+    (bytes) => {
+      micOpened();
+      forward(bytes);
+    },
+    onDeviceError,
+  );
+  await pTimeout(Promise.race([micReady, ended]), {
+    milliseconds: MIC_OPEN_TIMEOUT_MS,
+    fallback: () => undefined,
+  });
+
   const player = audio.startPlayback(ttsSampleRate, onDeviceError);
   const out = opts.mode === "json" ? process.stderr : process.stdout;
   const print = terminalPrinter((line) => out.write(`${line}\n`));
@@ -161,8 +195,7 @@ export async function executeConsole(opts: {
     audioLeadMs: CONSOLE_AUDIO_LEAD_MS,
     logContext: { transport: "console" },
   });
-  const feed = createSampleAligner(connection);
-  const capture = audio.startCapture(sampleRate, feed, onDeviceError);
+  forward = createSampleAligner(connection);
   // The microphone is live and the speaker is open, which is exactly what the
   // browser client means by `audio_ready` — and it is what releases the greeting.
   connection.sendCommand({ type: "audio_ready" });
