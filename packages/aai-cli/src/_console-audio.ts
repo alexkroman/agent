@@ -30,9 +30,32 @@ function spawnError(binary: string, err: NodeJS.ErrnoException): Error {
   return err.code === "ENOENT" ? new Error(missingSoxMessage(binary)) : err;
 }
 
-function kill(child: ChildProcess): void {
-  if (child.exitCode === null && !child.killed) child.kill();
+function kill(child: ChildProcess, signal?: NodeJS.Signals): void {
+  if (child.exitCode === null && !child.killed) child.kill(signal);
 }
+
+/**
+ * Spawn `play` so that its stdin is a real PIPE.
+ *
+ * libuv backs `stdio: "pipe"` with a socketpair, and SoX treats a socket stdin
+ * with no bytes ready as end of input: the moment the device drains — the end
+ * of the greeting, i.e. the first time the agent stops talking — `play` exits
+ * 0 with its stdin still open. Measured on macOS with SoX 14.4.2: a 100 ms gap
+ * is enough. A shell pipe does not do it, so bash puts one in between.
+ * The `exec` makes the PID we hold `play` itself, so kills and exit codes
+ * are its own; the `cat` exits on EOF once Node closes the socket at exit.
+ *
+ * Windows keeps the direct spawn: it has no bash, and its stdio pipes are
+ * named pipes rather than sockets.
+ */
+function spawnPlay(args: string[]): ChildProcess {
+  const stdio: ["pipe", "ignore", "ignore"] = ["pipe", "ignore", "ignore"];
+  if (process.platform === "win32") return spawn("play", args, { stdio });
+  return spawn("bash", ["-c", 'exec play "$@" < <(exec cat)', "play", ...args], { stdio });
+}
+
+/** bash's exit status for a command it could not find — the spawn's ENOENT, one shell down. */
+const COMMAND_NOT_FOUND = 127;
 
 /** Open the default microphone. */
 function startCapture(
@@ -69,15 +92,17 @@ function startCapture(
  * to empty what SoX and the device already hold: there is no "discard buffer"
  * verb on a pipe. The respawn costs a few tens of ms of device open, paid only
  * on a barge-in, when the agent has just stopped talking anyway.
+ *
+ * The kill is a SIGKILL. SoX traps SIGTERM and only looks at the flag
+ * between reads, so a `play` blocked on an idle pipe — every moment the agent
+ * is not talking — ignores it and outlives the console.
  */
 function startPlayback(sampleRate: number, onError: (err: Error) => void): ConsolePlayer {
   let stopped = false;
   let child = open();
 
   function open(): ChildProcess {
-    const next = spawn("play", ["-q", ...RAW_PCM16, "-r", String(sampleRate), "-"], {
-      stdio: ["pipe", "ignore", "ignore"],
-    });
+    const next = spawnPlay(["-q", ...RAW_PCM16, "-r", String(sampleRate), "-"]);
     next.on("error", (err) => onError(spawnError("play", err)));
     // A speaker that dies on its own — the device refused the rate, or was
     // unplugged — ends the console exactly as a dead microphone does. The
@@ -85,6 +110,7 @@ function startPlayback(sampleRate: number, onError: (err: Error) => void): Conso
     // is stopped, so its exit is expected and says nothing.
     next.on("exit", (code) => {
       if (stopped || next !== child) return;
+      if (code === COMMAND_NOT_FOUND) return onError(new Error(missingSoxMessage("play")));
       onError(new Error(`the speaker process exited${code === null ? "" : ` with code ${code}`}`));
     });
     // A write racing a flush's kill lands on a closed pipe; that is the flush
@@ -102,12 +128,12 @@ function startPlayback(sampleRate: number, onError: (err: Error) => void): Conso
       if (stopped) return;
       const old = child;
       child = open();
-      kill(old);
+      kill(old, "SIGKILL");
     },
     stop() {
       stopped = true;
       child.stdin?.end();
-      kill(child);
+      kill(child, "SIGKILL");
     },
   };
 }
