@@ -36,6 +36,17 @@ export type HookRecord = {
 };
 
 // @public
+export interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
 export class JournalConflictError extends Error {
     constructor(message: string);
     static is(value: unknown): value is JournalConflictError;
@@ -73,10 +84,16 @@ type LogContext = Record<string, unknown>;
 type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
-
-// @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
 
 // @public
 export type ResumableRun = {
@@ -165,19 +182,12 @@ export type StepEntry = {
 };
 
 // @public
-export interface TextAgentOptions {
-    agent: AgentDef;
+export interface TextAgentOptions extends HostAgentOptions {
     db?: Db | undefined;
     env?: AgentEnv;
-    fetch?: typeof globalThis.fetch;
-    logger?: Logger;
     model?: LanguageModel;
     onEvent?: (event: SessionEvent) => void;
-    providerEnv?: ProviderEnv;
-    runCode?: RunCodeExecutor;
     sessionId?: string;
-    toolTimeoutMs?: number;
-    workflows?: WorkflowClient | undefined;
 }
 
 // @public

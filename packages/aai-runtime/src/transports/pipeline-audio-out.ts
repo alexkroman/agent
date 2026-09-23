@@ -24,9 +24,9 @@
  * which is where a turn's lifecycle lives.
  */
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { normalizeSpeechText } from "@alexkroman1/aai/internal";
 import { pcm16ToBytes } from "../_pcm.ts";
+import type { TtsWordTiming } from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createSpeechGate, type SpeechGate, type TurnGuardrails } from "./pipeline-guardrails.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";

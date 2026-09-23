@@ -28,10 +28,11 @@ import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/uti
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
-import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
+import { createRuntimeWithSeams, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2sConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { usesAssemblyS2s } from "./runtime-transport.ts";
+import type { HostRuntimeOptions, Runtime } from "./runtime-types.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
@@ -131,7 +132,7 @@ export function withHostCredentials(
  * Synthesize an {@link AgentDef} from a host block. Host tools are relayed to
  * the client rather than executed in-process, so the agent carries no real
  * `ToolDef`s — the tool schemas are supplied to the runtime separately via
- * {@link RuntimeOptions.toolSchemas}.
+ * {@link HostRuntimeOptions.toolSchemas}.
  *
  * When a `baseAgent` (the server's deployed agent) is provided, its provider
  * config (`stt`/`llm`/`tts` and other pipeline settings) is inherited so the
@@ -198,8 +199,12 @@ export type StartHostSessionOptions = {
   handshakeTimeoutMs?: number;
   /** Per-tool relay timeout (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms). */
   relayTimeoutMs?: number;
-  /** Injectable runtime factory (test seam). Defaults to {@link createRuntime}. */
-  createRuntime?: (options: RuntimeOptions) => ReturnType<typeof createRuntime>;
+  /**
+   * Injectable runtime factory (test seam). Defaults to
+   * {@link createRuntimeWithSeams}: a relay runtime is built from the host-only
+   * seams (`executeTool`, `toolSchemas`, `onToolResult`, `s2sConfig`).
+   */
+  createRuntime?: (options: HostRuntimeOptions) => Runtime;
   /**
    * Whether this connection may use host mode, overriding the `AAI_ALLOW_HOST`
    * env gate.
@@ -315,7 +320,7 @@ function s2sConfigFromHandshake(msg: {
  */
 export function startHostSession(ws: SessionWebSocket, options: StartHostSessionOptions): void {
   const log = options.logger ?? consoleLogger;
-  const makeRuntime = options.createRuntime ?? createRuntime;
+  const makeRuntime = options.createRuntime ?? createRuntimeWithSeams;
   let settled = false;
 
   const handshakeTimer = setTimeout(() => {
@@ -376,7 +381,7 @@ export function startHostSession(ws: SessionWebSocket, options: StartHostSession
       timeoutMs: options.relayTimeoutMs,
     });
 
-    let runtime: ReturnType<typeof createRuntime>;
+    let runtime: Runtime;
     try {
       runtime = makeRuntime({
         agent: hostAgent,

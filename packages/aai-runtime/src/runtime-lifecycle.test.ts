@@ -27,7 +27,7 @@ import {
   silentLogger,
   tick,
 } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks } from "./s2s.ts";
 import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
@@ -50,7 +50,7 @@ describe("createRuntime shutdown", () => {
     const mockHandle = makeMockHandle();
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent: makeAgent(), env: {}, logger: silentLogger });
     runtime.startSession(asSessionWebSocket(openMockWs()));
 
     await vi.waitFor(() => {
@@ -74,7 +74,7 @@ describe("createRuntime shutdown", () => {
     // BOUND, not passed as a literal: the warn IS the behaviour under test, and
     // an unbound logger left `connectSpy` as the only assertion.
     const logger = makeLogger();
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger });
+    const runtime = createRuntimeWithSeams({ agent: makeAgent(), env: {}, logger });
     runtime.startSession(asSessionWebSocket(openMockWs()));
 
     await vi.waitFor(() => {
@@ -104,7 +104,7 @@ describe("createRuntime shutdown", () => {
     });
 
     const logger = makeLogger();
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: {},
       logger,
@@ -149,7 +149,7 @@ describe("createRuntime shutdown", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {} });
+    const runtime = createRuntimeWithSeams({ agent, env: {} });
 
     await runtime.executeTool("increment", {}, "s1", []);
     await runtime.executeTool("increment", {}, "s1", []);
@@ -162,7 +162,7 @@ describe("createRuntime shutdown", () => {
 describe("createRuntime createSession", () => {
   test("createSession returns a Session object", () => {
     const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {} });
+    const runtime = createRuntimeWithSeams({ agent, env: {} });
     const client = makeClientSink();
     const session = runtime.createSession({
       id: "test-session",
@@ -192,7 +192,7 @@ describe("createRuntime createSession", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
 
     const oldClient = makeClientSink();
     const oldSession = runtime.createSession({
@@ -231,7 +231,7 @@ describe("createRuntime createSession", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
     const client = makeClientSink();
     runtime.createSession({ id: "s1", agent: agent.name, client });
 
@@ -277,7 +277,7 @@ describe("createRuntime createSession", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
     const client = makeClientSink();
     runtime.createSession({ id: "s-unserializable", agent: agent.name, client });
 
@@ -300,7 +300,7 @@ describe("createRuntime createSession", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
 
     const oldSession = runtime.createSession({
       id: "resume-2",
@@ -334,7 +334,7 @@ describe("createRuntime createSession", () => {
           },
         },
       });
-      const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+      const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
 
       const session = runtime.createSession({
         id: "expire-1",
@@ -368,7 +368,7 @@ describe("createRuntime createSession", () => {
     const tts = createFakeTtsProvider();
     const llm = createFakeLanguageModel({ script: [] });
     const fakes = registerFakeProviders({ stt, tts, llm });
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({ greeting: "Hello there." }),
       env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
       logger: silentLogger,
@@ -407,7 +407,7 @@ describe("createRuntime startSession", () => {
   test("startSession forwards resumeFrom, logContext and the open/close hooks", async () => {
     vi.spyOn(_internals, "connectS2s").mockResolvedValue(makeMockHandle());
     const logger = makeLogger();
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger });
+    const runtime = createRuntimeWithSeams({ agent: makeAgent(), env: {}, logger });
     // CONNECTING, so the `open` listener has to actually fire — the old version
     // asserted only that SOME listener had been registered.
     const ws = new MockWebSocket("ws://test");
@@ -445,7 +445,7 @@ describe("createRuntime startSession", () => {
 
   test("startSession with no options mints a fresh session id", async () => {
     vi.spyOn(_internals, "connectS2s").mockResolvedValue(makeMockHandle());
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent: makeAgent(), env: {}, logger: silentLogger });
     const ws = new MockWebSocket("ws://test");
 
     runtime.startSession(asSessionWebSocket(ws));
@@ -470,7 +470,7 @@ describe("createRuntime with custom options", () => {
       () => new Promise<never>(() => undefined),
     );
     const logger = makeLogger();
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: {},
       logger,
@@ -498,7 +498,7 @@ describe("createRuntime with custom options", () => {
     // `MockWebSocket` opens on the next microtask: one built earlier opens
     // before `connectS2s` has its listener on and the handshake never completes.
     const createWebSocket = vi.fn(() => new MockWebSocket("wss://fake"));
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: { ASSEMBLYAI_API_KEY: "sk-custom" },
       logger: silentLogger,
@@ -531,7 +531,7 @@ describe("createRuntime with custom options", () => {
         },
       },
     });
-    const runtime = createRuntime({ agent, env: {} });
+    const runtime = createRuntimeWithSeams({ agent, env: {} });
     const result = await runtime.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ ready: true });
   });
@@ -546,7 +546,7 @@ describe("Runtime — session routing", () => {
     // credential comes from — runs exactly as it does for a real provider.
     const fakes = registerFakeProviders({ stt, tts, llm: createFakeLanguageModel({ script: [] }) });
 
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
       logger: silentLogger,
@@ -586,7 +586,7 @@ describe("Runtime — session routing", () => {
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const createWebSocket = vi.fn();
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: { ASSEMBLYAI_API_KEY: "s2s-key" },
       logger: silentLogger,
@@ -636,7 +636,7 @@ describe("Runtime — session routing", () => {
       },
     );
 
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({ s2s: openAIS2s({ model: "gpt-realtime" }) }),
       env: { OPENAI_API_KEY: "sk-test" },
       logger: silentLogger,
@@ -669,7 +669,7 @@ describe("Runtime — session routing", () => {
   });
 
   test("createSession throws on unknown s2s provider kind", () => {
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({
         // Bypass typing for this test — descriptor with unrecognized kind:
         s2s: { kind: "made-up-provider", options: {} } as unknown as S2sProvider,

@@ -13,7 +13,7 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import { dialog, type SessionEventHandlers } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 
 const SID = "s-1";
 
@@ -24,7 +24,7 @@ function runtimeWith(events: SessionEventHandlers) {
     },
     events,
   });
-  return createRuntime({
+  return createRuntimeWithSeams({
     agent,
     env: { MY_KEY: "v" },
     logger: silentLogger,
@@ -97,7 +97,7 @@ describe("agent({ events }) through the runtime", () => {
       },
       events: { "*": (e) => seen.push(e.type) },
     });
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent, env: {}, logger: silentLogger });
     const client = makeClientSink();
     runtime.createSession({ id: SID, agent: "a", client });
 
@@ -123,7 +123,7 @@ describe("agent({ events }) through the runtime", () => {
   });
 
   test("an agent that declares no handlers still records", async () => {
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({ agent: makeAgent(), env: {}, logger: silentLogger });
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
     session.report({ type: "speech.started" });
@@ -146,7 +146,7 @@ describe("agent({ events }) through the runtime", () => {
       },
     });
     const at: string[] = [];
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({
         dialogs: [intake],
         // `SessionEventContext` IS a `SlotHolder`, which is what lets a handler

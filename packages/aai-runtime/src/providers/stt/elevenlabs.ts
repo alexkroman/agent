@@ -13,13 +13,8 @@
  */
 
 import {
-  createSttError,
   ELEVENLABS_API_KEY_ENV,
   resolveElevenLabsSttSettings,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
 } from "@alexkroman1/aai/host-internal";
 import type { ElevenLabsSttOptions } from "@alexkroman1/aai/stt";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
@@ -41,6 +36,13 @@ import {
   type Pcm16Rate,
   requireApiKey,
 } from "../_utils.ts";
+import {
+  createSttError,
+  type SttEvents,
+  type SttOpener,
+  type SttOpenOptions,
+  type SttSession,
+} from "../openers.ts";
 
 /** Map a numeric sample rate to the SDK's `AudioFormat` enum. */
 const AUDIO_FORMATS: Record<Pcm16Rate, AudioFormat> = {

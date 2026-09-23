@@ -35,8 +35,8 @@
  */
 
 import type { UserTurnLimit } from "@alexkroman1/aai";
-import type { SttSession } from "@alexkroman1/aai/host-internal";
 import { createRestartableTimer } from "../_timer.ts";
+import type { SttSession } from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 import { scanWords } from "./pipeline-text.ts";
 

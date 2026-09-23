@@ -24,6 +24,9 @@
  * @module
  */
 
+import type { SttProvider } from "@alexkroman1/aai/stt";
+import type { TtsProvider } from "@alexkroman1/aai/tts";
+import { createNanoEvents } from "nanoevents";
 // The two DESCRIPTOR types stay on the authoring subpaths: they are what a
 // factory returns, which is an agent author's concern. The opener contract the
 // fakes implement is re-exported from this package's root barrel, beside the
@@ -38,10 +41,7 @@ import type {
   TtsOpener,
   TtsOpenOptions,
   TtsSession,
-} from "@alexkroman1/aai/host-internal";
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
-import { createNanoEvents } from "nanoevents";
+} from "../providers/openers.ts";
 import { registerSttKind, registerTtsKind } from "../providers/resolve.ts";
 
 /** The env var the fake stages resolve their (unused) credential from. */

@@ -117,7 +117,11 @@ export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
 /** What a span says it came from when the operator did not say. */
 export const DEFAULT_SERVICE_NAME = "aai-agent";
 
-/** A started tracer. */
+/**
+ * A started tracer.
+ *
+ * @sealed
+ */
 export type RuntimeTracing = {
   /** Push whatever is buffered. Never rejects. */
   forceFlush: () => Promise<void>;

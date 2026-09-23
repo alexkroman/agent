@@ -13,14 +13,12 @@
 
 export {
   CARRIER_CODECS,
-  CARRIER_PARAM,
   type CarrierCodec,
   type CarrierInbound,
   type CarrierName,
   carrierByName,
   createTelephonyBridge,
   startTelephonySession,
-  TELEPHONY_PATH,
   TELEPHONY_SAMPLE_RATE,
   type TelephonyBridgeOptions,
   telnyxCodec,

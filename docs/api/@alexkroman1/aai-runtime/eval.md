@@ -165,7 +165,7 @@ One fake STT stage, and the last stream it opened.
 
 #### Returns
 
-`SttOpener` & \{
+[`SttOpener`](#sttopener) & \{
   `last`: [`StubSttSession`](#stubsttsession) \| `undefined`;
 \}
 
@@ -189,7 +189,7 @@ One fake TTS stage, and the last stream it opened.
 
 #### Returns
 
-`TtsOpener` & \{
+[`TtsOpener`](#ttsopener) & \{
   `last`: [`StubTtsSession`](#stubttssession) \| `undefined`;
 \}
 
@@ -1504,6 +1504,617 @@ readonly [`EvalTurn`](#evalturn)[]
 
 ## Interfaces
 
+### EvalSessionOptions
+
+What [openEvalSession](#openevalsession) takes.
+
+The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
+what they mean HERE:
+
+- `providerEnv` defaults to [EvalSessionOptions.env](#env) with any credential
+  it does not carry filled in from this machine's own environment — the trust
+  decision `aai dev` makes, and right here for the same reason: an eval runs
+  on the developer's box against their own key. A value in `env` always wins.
+- `runCode` backs the `run_code` builtin. Without one it permanently refuses,
+  as it does off-platform. What that COSTS was measured on the three tutor
+  templates: their headline feature was unevaluable, because the agent calls
+  `run_code`, reads "only available in the sandboxed runtime", and then does
+  the arithmetic in its head — so a case could assert the CALL and never the
+  answer. An eval on a developer's own machine may supply an executor; a
+  deployed agent still cannot.
+- `fetch` keeps a case off the network — a scripted `visit_webpage` really
+  visits.
+- `toolTimeoutMs` defaults to the session's own 30s; a tool that outruns it
+  otherwise measures the deadline instead of the agent.
+- `workflows`: without one, a workflow-declaring agent gets the client the
+  runtime builds over the real engine, and every `start()` through it throws —
+  a body imported through a test runner was never through the compiler's
+  transform. Build one with `openEvalWorkflows({ agent })` and pass its
+  `client`; `describeEval` does that for you. The engine under it is not
+  durable — no journal, no replay, no retry. See `eval/workflow-engine.ts`
+  before writing a claim about a run.
+- `logger` defaults to silent. Pass `consoleLogger` when diagnosing a case.
+
+#### Extends
+
+- [`HostAgentOptions`](#hostagentoptions)
+
+#### Properties
+
+##### agent
+
+```ts
+agent: AgentDef;
+```
+
+The agent to run — an ordinary `agent()` definition.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`agent`](#agent-2)
+
+##### env?
+
+```ts
+readonly optional env?: Record<string, string>;
+```
+
+The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
+empty: a tool that needs a value gets it here, and nothing is inherited
+implicitly.
+
+##### fetch?
+
+```ts
+optional fetch?: {
+  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+};
+```
+
+The `fetch` the builtin web tools use (web_search, visit_webpage,
+get_page_design, fetch_json). Defaults to an SSRF-screened fetch. Pass one
+to keep a spec or an eval case off the network.
+
+###### Call Signature
+
+```ts
+(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`RequestInfo` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Call Signature
+
+```ts
+(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`string` \| `Request` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`fetch`](#fetch-2)
+
+##### llm?
+
+```ts
+readonly optional llm?: LlmProvider;
+```
+
+Override the LLM the case runs on. Defaults to the agent's own.
+
+##### logger?
+
+```ts
+optional logger?: Logger;
+```
+
+Structured logger. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`logger`](#logger-2)
+
+##### providerEnv?
+
+```ts
+optional providerEnv?: ProviderEnv;
+```
+
+Where provider credentials (STT/TTS/LLM) are resolved from, when that is
+not the agent's own env.
+
+Exists so a host can let shell-exported credentials reach the provider
+resolvers without also placing them in `ctx.env`, where agent tool code
+could read them and come to depend on host-level variables that do not
+exist in production. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`providerEnv`](#providerenv-2)
+
+##### runCode?
+
+```ts
+optional runCode?: RunCodeExecutor;
+```
+
+In-sandbox executor for the `run_code` builtin. Without one the builtin is
+registered and permanently refuses, exactly as it does off-platform — the
+Modal container is the security boundary and nothing here pretends
+otherwise.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`runCode`](#runcode-2)
+
+##### toolTimeoutMs?
+
+```ts
+optional toolTimeoutMs?: number;
+```
+
+Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
+which is a VOICE-turn budget: a caller waiting on speech has left by then.
+A tool whose work legitimately outruns it — a graded retrieval loop making
+eleven model calls, measured at 22-30s — needs this raised, and that is the
+caller's trade to make.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`toolTimeoutMs`](#tooltimeoutms-2)
+
+##### turnTimeoutMs?
+
+```ts
+readonly optional turnTimeoutMs?: number;
+```
+
+##### workflows?
+
+```ts
+optional workflows?: WorkflowClient;
+```
+
+`ctx.workflows`, supplied rather than built — what a tool that starts a
+durable run calls.
+
+Absent, a workflow-declaring agent gets the client the runtime assembles
+itself, which is what every deployment wants. An eval supplies the
+in-process client `openEvalWorkflows` builds, because a `"use workflow"`
+body imported through a test runner was never through the compiler's
+transform and the real engine cannot start it.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`workflows`](#workflows-2)
+
+***
+
+### EvalTextAgentOptions
+
+What [openEvalTextAgent](#openevaltextagent) takes.
+
+The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
+here `agent` must declare `text: true`, and the rest mean what they mean on
+`EvalSessionOptions`: `providerEnv` defaults to `env` with any credential it
+does not carry filled in from this machine's own environment (a value in
+`env` always wins over the shell), `runCode` absent makes the builtin refuse
+exactly as it does off-platform, `fetch` keeps a case off the network,
+`toolTimeoutMs` defaults to the executor's 30s voice-turn budget — which a
+text agent whose tools type-check a workspace or install packages will
+outrun — and `logger` defaults to silent.
+
+#### Extends
+
+- [`HostAgentOptions`](#hostagentoptions)
+
+#### Properties
+
+##### agent
+
+```ts
+agent: AgentDef;
+```
+
+The agent to run — an ordinary `agent()` definition.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`agent`](#agent-2)
+
+##### env?
+
+```ts
+readonly optional env?: Record<string, string>;
+```
+
+The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
+empty: a tool that needs a value gets it here, and nothing is inherited
+implicitly.
+
+##### fetch?
+
+```ts
+optional fetch?: {
+  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+};
+```
+
+The `fetch` the builtin web tools use (web_search, visit_webpage,
+get_page_design, fetch_json). Defaults to an SSRF-screened fetch. Pass one
+to keep a spec or an eval case off the network.
+
+###### Call Signature
+
+```ts
+(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`RequestInfo` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Call Signature
+
+```ts
+(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`string` \| `Request` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`fetch`](#fetch-2)
+
+##### llm?
+
+```ts
+readonly optional llm?: LlmProvider;
+```
+
+Override the LLM the case runs on. Defaults to the agent's own.
+
+A DESCRIPTOR rather than a resolved `LanguageModel`, and it is spread onto
+the definition rather than passed as `createTextAgent`'s `model`, so the
+override reaches `ctx.generate` and `ctx.delegate` as well as the turns —
+see the module doc on why that is what makes the keyless fallback honest.
+
+##### logger?
+
+```ts
+optional logger?: Logger;
+```
+
+Structured logger. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`logger`](#logger-2)
+
+##### providerEnv?
+
+```ts
+optional providerEnv?: ProviderEnv;
+```
+
+Where provider credentials (STT/TTS/LLM) are resolved from, when that is
+not the agent's own env.
+
+Exists so a host can let shell-exported credentials reach the provider
+resolvers without also placing them in `ctx.env`, where agent tool code
+could read them and come to depend on host-level variables that do not
+exist in production. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`providerEnv`](#providerenv-2)
+
+##### runCode?
+
+```ts
+optional runCode?: RunCodeExecutor;
+```
+
+In-sandbox executor for the `run_code` builtin. Without one the builtin is
+registered and permanently refuses, exactly as it does off-platform — the
+Modal container is the security boundary and nothing here pretends
+otherwise.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`runCode`](#runcode-2)
+
+##### toolTimeoutMs?
+
+```ts
+optional toolTimeoutMs?: number;
+```
+
+Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
+which is a VOICE-turn budget: a caller waiting on speech has left by then.
+A tool whose work legitimately outruns it — a graded retrieval loop making
+eleven model calls, measured at 22-30s — needs this raised, and that is the
+caller's trade to make.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`toolTimeoutMs`](#tooltimeoutms-2)
+
+##### turnTimeoutMs?
+
+```ts
+readonly optional turnTimeoutMs?: number;
+```
+
+How long one turn may take before it is cancelled. Defaults to 90s.
+
+##### workflows?
+
+```ts
+optional workflows?: WorkflowClient;
+```
+
+`ctx.workflows`, supplied rather than built — what a tool that starts a
+durable run calls.
+
+Absent, a workflow-declaring agent gets the client the runtime assembles
+itself, which is what every deployment wants. An eval supplies the
+in-process client `openEvalWorkflows` builds, because a `"use workflow"`
+body imported through a test runner was never through the compiler's
+transform and the real engine cannot start it.
+
+###### Inherited from
+
+[`HostAgentOptions`](#hostagentoptions).[`workflows`](#workflows-2)
+
+***
+
+### HostAgentOptions
+
+What every entry point that runs an agent definition takes — see the module
+doc for why `env` and `llm` are declared by each rather than here.
+
+#### Extended by
+
+- [`EvalSessionOptions`](#evalsessionoptions)
+- [`EvalTextAgentOptions`](#evaltextagentoptions)
+- [`TextAgentOptions`](testing.md#textagentoptions)
+
+#### Properties
+
+##### agent
+
+```ts
+agent: AgentDef;
+```
+
+The agent to run — an ordinary `agent()` definition.
+
+##### fetch?
+
+```ts
+optional fetch?: {
+  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+};
+```
+
+The `fetch` the builtin web tools use (web_search, visit_webpage,
+get_page_design, fetch_json). Defaults to an SSRF-screened fetch. Pass one
+to keep a spec or an eval case off the network.
+
+###### Call Signature
+
+```ts
+(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`RequestInfo` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Call Signature
+
+```ts
+(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`string` \| `Request` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+##### logger?
+
+```ts
+optional logger?: Logger;
+```
+
+Structured logger. Each entry point documents its own default.
+
+##### providerEnv?
+
+```ts
+optional providerEnv?: ProviderEnv;
+```
+
+Where provider credentials (STT/TTS/LLM) are resolved from, when that is
+not the agent's own env.
+
+Exists so a host can let shell-exported credentials reach the provider
+resolvers without also placing them in `ctx.env`, where agent tool code
+could read them and come to depend on host-level variables that do not
+exist in production. Each entry point documents its own default.
+
+##### runCode?
+
+```ts
+optional runCode?: RunCodeExecutor;
+```
+
+In-sandbox executor for the `run_code` builtin. Without one the builtin is
+registered and permanently refuses, exactly as it does off-platform — the
+Modal container is the security boundary and nothing here pretends
+otherwise.
+
+##### toolTimeoutMs?
+
+```ts
+optional toolTimeoutMs?: number;
+```
+
+Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
+which is a VOICE-turn budget: a caller waiting on speech has left by then.
+A tool whose work legitimately outruns it — a graded retrieval loop making
+eleven model calls, measured at 22-30s — needs this raised, and that is the
+caller's trade to make.
+
+##### workflows?
+
+```ts
+optional workflows?: WorkflowClient;
+```
+
+`ctx.workflows`, supplied rather than built — what a tool that starts a
+durable run calls.
+
+Absent, a workflow-declaring agent gets the client the runtime assembles
+itself, which is what every deployment wants. An eval supplies the
+in-process client `openEvalWorkflows` builds, because a `"use workflow"`
+body imported through a test runner was never through the compiler's
+transform and the real engine cannot start it.
+
+***
+
+### Logger
+
+Structured logger interface. Used by tests to suppress output and by
+consumers to plug in custom logging backends.
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { createRuntime, type Logger } from "@alexkroman1/aai-runtime";
+declare const myBackend: { log(level: string, message: string, ctx?: object): void };
+
+const myLogger: Logger = {
+  info: (message, ctx) => myBackend.log("info", message, ctx),
+  warn: (message, ctx) => myBackend.log("warn", message, ctx),
+  error: (message, ctx) => myBackend.log("error", message, ctx),
+  debug: (message, ctx) => myBackend.log("debug", message, ctx),
+};
+createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
+```
+
+#### Properties
+
+##### debug
+
+```ts
+debug: LogFn;
+```
+
+##### error
+
+```ts
+error: LogFn;
+```
+
+##### info
+
+```ts
+info: LogFn;
+```
+
+##### warn
+
+```ts
+warn: LogFn;
+```
+
+***
+
 ### StepUsage
 
 What one completed step reported.
@@ -1539,6 +2150,428 @@ optional outputTokens?: number;
 optional totalTokens?: number;
 ```
 
+***
+
+### SttError
+
+Error raised by an STT provider stream, with a typed `code` naming the
+failure phase: connecting, authenticating, or mid-stream.
+
+#### Extends
+
+- `Error`
+
+#### Properties
+
+##### code
+
+```ts
+readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+```
+
+***
+
+### SttOpener
+
+Host-side openable STT provider — produced by `resolveStt(descriptor)`.
+Part of the host-only opener layer, never constructed by an AGENT.
+
+Not `@internal`: it is the parameter of `registerSttKind` on
+`@alexkroman1/aai-runtime`, which is how a HOST application substitutes a
+fake speech stage (the behaviour eval tier's level-1 target does exactly
+that). It is deliberately absent from `@alexkroman1/aai/stt`, where the rest
+of the opener-layer types live — an agent author picks a descriptor and never
+writes one of these.
+
+#### Methods
+
+##### open()
+
+```ts
+open(options: SttOpenOptions): Promise<SttSession>;
+```
+
+###### Parameters
+
+###### options
+
+[`SttOpenOptions`](#sttopenoptions)
+
+###### Returns
+
+`Promise`\<[`SttSession`](#sttsession)\>
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+***
+
+### SttOpenOptions
+
+Options the host passes when opening an STT stream.
+
+#### Properties
+
+##### apiKey
+
+```ts
+apiKey: string;
+```
+
+Provider API key, resolved from the agent's env.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+Capture sample rate of the inbound PCM, in Hz.
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+##### sttPrompt?
+
+```ts
+optional sttPrompt?: string;
+```
+
+***
+
+### SttSession
+
+Host-side handle to one open STT provider stream (pipeline mode). Produced
+by the host's provider resolver at session start; user code never
+constructs one.
+
+#### Methods
+
+##### close()
+
+```ts
+close(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### forceEndOfTurn()?
+
+```ts
+optional forceEndOfTurn(): void;
+```
+
+End the current turn NOW, as a pause would have — what `userTurnLimit` is
+applied THROUGH.
+
+The provider answers with the ordinary `final` for the words it has heard
+so far, so the transport commits the turn on the same path every other
+turn takes, and speech after the cut opens the provider's next turn. A
+host-side cut could do neither: it would have to commit an interim and
+then reconcile it against a final the provider still owes for the same
+utterance.
+
+Optional for the reason [updateEndpointing](#updateendpointing) is: a provider with no
+equivalent omits it, callers use `?.()`, and the transport says once that
+the cap is inert. Today only AssemblyAI has it (`ForceEndpoint`).
+
+###### Returns
+
+`void`
+
+##### on()
+
+```ts
+on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+```
+
+###### Type Parameters
+
+###### E
+
+`E` *extends* keyof [`SttEvents`](#sttevents)
+
+###### Parameters
+
+###### event
+
+`E`
+
+###### fn
+
+[`SttEvents`](#sttevents)\[`E`\]
+
+###### Returns
+
+[`Unsubscribe`](#unsubscribe)
+
+##### sendAudio()
+
+```ts
+sendAudio(pcm: Int16Array): void;
+```
+
+Push one PCM16 audio frame from the client into the transcriber.
+
+###### Parameters
+
+###### pcm
+
+`Int16Array`
+
+###### Returns
+
+`void`
+
+##### updateEndpointing()?
+
+```ts
+optional updateEndpointing(minTurnSilenceMs: number): void;
+```
+
+Move the end-of-turn silence window mid-stream, in ms — what the
+regex-keyed endpointing rule table is applied THROUGH.
+
+The window is the STT's decision, not the transport's (a host-side hold on
+a committed final could only ever lengthen the wait, and would lengthen it
+AFTER the provider had already split the utterance), so a provider that
+cannot be re-configured mid-stream cannot honour the table at all.
+
+Optional for exactly that reason: a provider with no equivalent omits it,
+callers use `?.()`, and the transport says once that the rules are inert.
+Today only AssemblyAI has it (`UpdateConfiguration.min_turn_silence`).
+
+###### Parameters
+
+###### minTurnSilenceMs
+
+`number`
+
+###### Returns
+
+`void`
+
+***
+
+### TtsError
+
+Error raised by a TTS provider stream, with a typed `code` naming the
+failure phase: connecting, authenticating, or mid-stream.
+
+#### Extends
+
+- `Error`
+
+#### Properties
+
+##### code
+
+```ts
+readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+```
+
+***
+
+### TtsOpener
+
+Host-side openable TTS provider — produced by `resolveTts(descriptor)`.
+Part of the host-only opener layer, never constructed by an AGENT. See
+[SttOpener](#sttopener) for why it carries no `@internal` tag.
+
+#### Methods
+
+##### open()
+
+```ts
+open(options: TtsOpenOptions): Promise<TtsSession>;
+```
+
+###### Parameters
+
+###### options
+
+[`TtsOpenOptions`](#ttsopenoptions)
+
+###### Returns
+
+`Promise`\<[`TtsSession`](#ttssession)\>
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+***
+
+### TtsOpenOptions
+
+Options the host passes when opening a TTS stream.
+
+#### Properties
+
+##### apiKey
+
+```ts
+apiKey: string;
+```
+
+Provider API key, resolved from the agent's env.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+Playback sample rate of the synthesized PCM, in Hz.
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+Aborts the open (and the session) when the voice session ends.
+
+***
+
+### TtsSession
+
+Host-side handle to one open TTS provider stream (pipeline mode). Produced
+by the host's provider resolver at session start; user code never
+constructs one.
+
+#### Methods
+
+##### cancel()
+
+```ts
+cancel(): void;
+```
+
+Interrupt immediately (barge-in). Emits `done` synchronously.
+
+###### Returns
+
+`void`
+
+##### close()
+
+```ts
+close(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### flush()
+
+```ts
+flush(): void;
+```
+
+Signal "no more text this turn". Emits `done` when fully synthesized.
+
+###### Returns
+
+`void`
+
+##### on()
+
+```ts
+on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+```
+
+###### Type Parameters
+
+###### E
+
+`E` *extends* keyof [`TtsEvents`](#ttsevents)
+
+###### Parameters
+
+###### event
+
+`E`
+
+###### fn
+
+[`TtsEvents`](#ttsevents)\[`E`\]
+
+###### Returns
+
+[`Unsubscribe`](#unsubscribe)
+
+##### sendText()
+
+```ts
+sendText(text: string): void;
+```
+
+Push text deltas from the LLM. Provider may synthesize as chunks arrive.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+***
+
+### TtsWordTiming
+
+One synthesized word and where its audio sits in the current turn.
+
+Offsets are milliseconds into THIS TURN's synthesized audio (the first
+sample the provider produced for the turn is 0), not into the session, so
+they line up with the transport's per-reply audio accounting. Providers that
+report per-socket or per-flush clocks are rebased by their own adapter before
+the event is emitted.
+
+#### Properties
+
+##### endMs
+
+```ts
+readonly endMs: number;
+```
+
+End offset of the word's audio, ms into the turn.
+
+##### startMs
+
+```ts
+readonly startMs: number;
+```
+
+Start offset of the word's audio, ms into the turn.
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The word as the provider synthesized it (may be normalized: "$5.00" → "five dollars").
+
 ## Type Aliases
 
 ### EvalCredentials
@@ -1563,7 +2596,7 @@ readonly env: ProviderEnv;
 ```
 
 The provider credentials the host environment carries, ready to hand to
-[EvalSessionOptions.providerEnv](#providerenv). Only provider-credential names are
+[EvalSessionOptions.providerEnv](#providerenv-2). Only provider-credential names are
 copied, so no unrelated host variable can reach the agent.
 
 ##### missing
@@ -1658,6 +2691,8 @@ type EvalSession = {
   toolCalls: readonly EvalToolCall[];
 };
 ```
+
+**`Sealed`**
 
 One live eval session.
 
@@ -1787,152 +2822,6 @@ asserting "the run it started is this conversation's" needs both halves.
 
 ***
 
-### EvalSessionOptions
-
-```ts
-type EvalSessionOptions = {
-  agent: AgentDef;
-  env?: Record<string, string>;
-  fetch?: typeof globalThis.fetch;
-  generate?: HostGenerateFn;
-  llm?: LlmProvider;
-  logger?: Logger;
-  providerEnv?: ProviderEnv;
-  runCode?: RunCodeExecutor;
-  toolTimeoutMs?: number;
-  turnTimeoutMs?: number;
-  workflows?: WorkflowClient;
-};
-```
-
-What [openEvalSession](#openevalsession) takes.
-
-#### Properties
-
-##### agent
-
-```ts
-readonly agent: AgentDef;
-```
-
-The agent under eval — an ordinary `agent()` definition.
-
-##### env?
-
-```ts
-readonly optional env?: Record<string, string>;
-```
-
-The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
-empty: a tool that needs a value gets it here, and nothing is inherited
-implicitly.
-
-##### fetch?
-
-```ts
-readonly optional fetch?: typeof globalThis.fetch;
-```
-
-The `fetch` the builtin web tools use. Pass one to keep a case off the
-network — a scripted `visit_webpage` really visits.
-
-##### generate?
-
-```ts
-readonly optional generate?: HostGenerateFn;
-```
-
-What tool code calls as `ctx.generate`. Absent, it is the agent's own LLM.
-
-`describeEval`'s `stubGenerate` builds one of these; the reason it must be
-separate from the turn's script is in `RuntimeOptions.generate`.
-
-##### llm?
-
-```ts
-readonly optional llm?: LlmProvider;
-```
-
-Override the LLM the case runs on. Defaults to the agent's own.
-
-##### logger?
-
-```ts
-readonly optional logger?: Logger;
-```
-
-Defaults to silent. Pass `consoleLogger` when diagnosing a case.
-
-##### providerEnv?
-
-```ts
-readonly optional providerEnv?: ProviderEnv;
-```
-
-Where provider credentials are resolved from. Defaults to
-[EvalSessionOptions.env](#env-1) with any credential it does not carry filled
-in from this machine's own environment — the same trust decision
-`withHostCredentialFallback` makes explicit for `aai dev`, and right here
-for the same reason: an eval runs on the developer's box against their own
-key. A value passed in `env` always wins over the shell.
-
-##### runCode?
-
-```ts
-readonly optional runCode?: RunCodeExecutor;
-```
-
-Backs the `run_code` builtin.
-
-Without one the builtin is registered and permanently refuses, exactly as it
-does off-platform — the Modal container is the security boundary and nothing
-here pretends otherwise. What that COSTS was measured on the three tutor
-templates: their headline feature was unevaluable, because the agent calls
-`run_code`, reads "only available in the sandboxed runtime", and then does
-the arithmetic in its head — so a case could asserted the CALL and never the
-answer. An eval on a developer's own machine may supply an executor; a
-deployed agent still cannot.
-
-##### toolTimeoutMs?
-
-```ts
-readonly optional toolTimeoutMs?: number;
-```
-
-Per-tool-call deadline. Defaults to the session's own (30s, a voice-turn
-budget). A tool whose work legitimately outruns that — a graded retrieval
-loop making eleven model calls, measured at 22-30s — cannot otherwise be
-evaluated at all: the executor answers a timeout and the case measures the
-deadline instead of the agent.
-
-##### turnTimeoutMs?
-
-```ts
-readonly optional turnTimeoutMs?: number;
-```
-
-##### workflows?
-
-```ts
-readonly optional workflows?: WorkflowClient;
-```
-
-`ctx.workflows` for this session — what a tool that starts a durable run
-calls.
-
-Without one, a workflow-declaring agent gets the client the runtime builds
-over the Workflow DevKit, and every `start()` through it throws: the
-compiler's transform never ran on a body imported through a test runner, so
-`def.run.workflowId` is absent and there is nothing for the adapter to
-start. That is a tool an eval cannot execute at all, which is the gap this
-closes. Build one with `openEvalWorkflows({ agent })` and pass its `client`;
-`describeEval` does that for you.
-
-The engine under it is not durable — no journal, no replay, no retry. See
-`eval/workflow-engine.ts` before writing a claim about a run.
-
-***
-
 ### EvalSleep
 
 ```ts
@@ -1988,6 +2877,8 @@ type EvalTextAgent = {
   toolCalls: readonly EvalToolCall[];
 };
 ```
+
+**`Sealed`**
 
 One live eval conversation with a text agent.
 
@@ -2124,127 +3015,6 @@ This conversation's id — what its tools read as `ctx.sessionId`.
 Exposed for the reason `EvalSession.id` is: it is what a tool
 CORRELATES a durable run with, so a case asserting "the run it started is
 this conversation's" needs both halves.
-
-***
-
-### EvalTextAgentOptions
-
-```ts
-type EvalTextAgentOptions = {
-  agent: AgentDef;
-  env?: Record<string, string>;
-  fetch?: typeof globalThis.fetch;
-  llm?: LlmProvider;
-  logger?: Logger;
-  providerEnv?: ProviderEnv;
-  runCode?: RunCodeExecutor;
-  toolTimeoutMs?: number;
-  turnTimeoutMs?: number;
-  workflows?: WorkflowClient;
-};
-```
-
-What [openEvalTextAgent](#openevaltextagent) takes.
-
-#### Properties
-
-##### agent
-
-```ts
-readonly agent: AgentDef;
-```
-
-The agent under eval. Must declare `text: true`.
-
-##### env?
-
-```ts
-readonly optional env?: Record<string, string>;
-```
-
-The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
-empty: a tool that needs a value gets it here, and nothing is inherited
-implicitly.
-
-##### fetch?
-
-```ts
-readonly optional fetch?: typeof globalThis.fetch;
-```
-
-The `fetch` the builtin web tools use. Pass one to keep a case off the
-network — a scripted `visit_webpage` really visits.
-
-##### llm?
-
-```ts
-readonly optional llm?: LlmProvider;
-```
-
-Override the LLM the case runs on. Defaults to the agent's own.
-
-A DESCRIPTOR rather than a resolved `LanguageModel`, and it is spread onto
-the definition rather than passed as `createTextAgent`'s `model`, so the
-override reaches `ctx.generate` and `ctx.delegate` as well as the turns —
-see the module doc on why that is what makes the keyless fallback honest.
-
-##### logger?
-
-```ts
-readonly optional logger?: Logger;
-```
-
-Defaults to silent. Pass `consoleLogger` when diagnosing a case.
-
-##### providerEnv?
-
-```ts
-readonly optional providerEnv?: ProviderEnv;
-```
-
-Where provider credentials are resolved from. Defaults to
-[EvalTextAgentOptions.env](#env-2) with any credential it does not carry
-filled in from this machine's own environment — the same trust decision
-`openEvalSession` makes, for the same reason: an eval runs on the
-developer's box against their own key. A value passed in `env` always wins
-over the shell.
-
-##### runCode?
-
-```ts
-readonly optional runCode?: RunCodeExecutor;
-```
-
-Backs the `run_code` builtin. Without one the builtin is registered and
-permanently refuses, exactly as it does off-platform — the Modal container
-is the security boundary and nothing here pretends otherwise.
-
-##### toolTimeoutMs?
-
-```ts
-readonly optional toolTimeoutMs?: number;
-```
-
-Per-tool-call deadline. Defaults to the executor's own (30s, a voice-turn
-budget), which a text agent whose tools type-check a workspace or install
-packages will outrun — and then the case measures the deadline instead of
-the agent.
-
-##### turnTimeoutMs?
-
-```ts
-readonly optional turnTimeoutMs?: number;
-```
-
-How long one turn may take before it is cancelled. Defaults to 90s.
-
-##### workflows?
-
-```ts
-readonly optional workflows?: WorkflowClient;
-```
-
-`ctx.workflows` for this conversation — what a tool that starts a run calls.
 
 ***
 
@@ -2506,6 +3276,8 @@ type EvalWorkflowRun<R = unknown> = {
 };
 ```
 
+**`Sealed`**
+
 What one eval run did.
 
 #### Type Parameters
@@ -2635,6 +3407,8 @@ type EvalWorkflows = {
   settleAll: Promise<readonly EvalWorkflowRun<unknown>[]>;
 };
 ```
+
+**`Sealed`**
 
 One open eval workflow app.
 
@@ -2840,7 +3614,7 @@ a gate of the case's own, and nothing here can open one. So the shape is
 `release(); await app.settleAll();`. A run started WHILE this drains is
 drained too, and `timeoutMs` bounds each run rather than the set. See
 `eval/_workflow-drain.ts` for the whole argument, including what
-[EvalWorkflows.close](#close-2) does when this is not called.
+[EvalWorkflows.close](#close-4) does when this is not called.
 
 ###### Parameters
 
@@ -3037,33 +3811,6 @@ A single log method: message plus optional structured context.
 
 ***
 
-### Logger
-
-```ts
-type Logger = Record<LogLevel, LogFn>;
-```
-
-Structured logger interface. Used by tests to suppress output and by
-consumers to plug in custom logging backends.
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { createRuntime, type Logger } from "@alexkroman1/aai-runtime";
-declare const myBackend: { log(level: string, message: string, ctx?: object): void };
-
-const myLogger: Logger = {
-  info: (message, ctx) => myBackend.log("info", message, ctx),
-  warn: (message, ctx) => myBackend.log("warn", message, ctx),
-  error: (message, ctx) => myBackend.log("error", message, ctx),
-  debug: (message, ctx) => myBackend.log("debug", message, ctx),
-};
-createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
-```
-
-***
-
 ### LogLevel
 
 ```ts
@@ -3099,6 +3846,135 @@ In-sandbox executor backing the run_code builtin (see createRunCode).
   \| \{
   `error`: `string`;
 \}\>
+
+***
+
+### SttEvents
+
+```ts
+type SttEvents = {
+  error: (err: SttError) => void;
+  final: (text: string, meta?: SttTurnMeta) => void;
+  partial: (text: string, meta?: SttTurnMeta) => void;
+};
+```
+
+#### Properties
+
+##### error
+
+```ts
+error: (err: SttError) => void;
+```
+
+Terminal error. The session is expected to end after this fires.
+
+###### Parameters
+
+###### err
+
+[`SttError`](#stterror)
+
+###### Returns
+
+`void`
+
+##### final
+
+```ts
+final: (text: string, meta?: SttTurnMeta) => void;
+```
+
+End-of-turn final transcript; cue to run the LLM.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### meta?
+
+[`SttTurnMeta`](#sttturnmeta)
+
+###### Returns
+
+`void`
+
+##### partial
+
+```ts
+partial: (text: string, meta?: SttTurnMeta) => void;
+```
+
+Interim transcript; drives barge-in detection.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### meta?
+
+[`SttTurnMeta`](#sttturnmeta)
+
+###### Returns
+
+`void`
+
+***
+
+### SttTurnMeta
+
+```ts
+type SttTurnMeta = {
+  endOfTurnConfidence?: number;
+};
+```
+
+Provider-reported detail about the turn a transcript belongs to.
+
+Optional throughout: every field is something a given provider may not
+report, and a consumer must treat `undefined` as "no opinion" rather than
+as a low value. Passed alongside the text rather than folded into it so
+that a provider gaining a signal does not change any existing call site.
+
+#### Properties
+
+##### endOfTurnConfidence?
+
+```ts
+optional endOfTurnConfidence?: number;
+```
+
+The service's confidence that the user's turn has ENDED, 0..1, as of this
+transcript. AssemblyAI reports it per interim turn
+(`end_of_turn_confidence`); providers that do not report it omit it.
+
+It rises as an utterance settles and resets when the caller resumes, so a
+dictated identifier produces a sawtooth rather than a ramp — observed on
+a spoken phone number: `0, 0.25, 0` across revisions of the same prefix,
+then `0 → 0.25 → 0.4 → 0.55 → 0.7 → 0.8 → 0.95 → 1` once the full number
+had landed. That shape is why it is worth having: the silence-window
+knobs (`min_turn_silence`) decide end-of-turn on elapsed time alone and
+cannot tell "paused between digits" from "finished", which is the
+mechanism that truncates a spelled identifier mid-entity.
+
+One policy reads it today: PREEMPTIVE GENERATION
+(`AgentDef.preemptiveGeneration`, OFF by default), which starts a
+speculative LLM stream from an interim whose confidence clears
+`PREEMPTIVE_CONFIDENCE_THRESHOLD`. The sawtooth above is not
+background for that policy — it DICTATED two of its rules, and both are
+only defensible while the trace stays here. (1) A partial whose normalized
+text differs from the live speculation's prompt aborts it immediately, so a
+false peak partway through a dictated identifier dies on the next digit
+instead of being billed in full. (2) An identical text at rising confidence
+never re-fires, which is what the terminal `0.95 → 1` re-emission above
+would otherwise cost on every completed utterance. Endpointing itself is
+still time-based and unchanged; a confidence-aware endpointing or barge-in
+policy remains unbuilt, and this field is still what would let one be
+measured against the current one rather than guessed at.
 
 ***
 
@@ -3329,6 +4205,119 @@ readonly spoken: readonly string[];
 ```
 
 Every text chunk the pipeline handed to TTS, in order.
+
+***
+
+### TtsEvents
+
+```ts
+type TtsEvents = {
+  audio: (pcm: Int16Array) => void;
+  done: () => void;
+  error: (err: TtsError) => void;
+  words: (words: readonly TtsWordTiming[]) => void;
+};
+```
+
+Events emitted by an open [TtsSession](#ttssession).
+
+#### Properties
+
+##### audio
+
+```ts
+audio: (pcm: Int16Array) => void;
+```
+
+One PCM16 audio chunk. Orchestrator forwards to the client.
+
+###### Parameters
+
+###### pcm
+
+`Int16Array`
+
+###### Returns
+
+`void`
+
+##### done
+
+```ts
+done: () => void;
+```
+
+Synthesis drained after flush() or cancel(). Emitted exactly once per
+turn, and never after `cancel()` for the cancelled turn: `cancel()` must
+clear any pending done timers/frames so a stale `done` cannot leak into
+the next turn's flush-wait (the event carries no turn id, so the
+pipeline transport cannot filter it — see pipeline-transport.ts).
+
+###### Returns
+
+`void`
+
+##### error
+
+```ts
+error: (err: TtsError) => void;
+```
+
+Terminal error. The session is expected to end after this fires.
+
+###### Parameters
+
+###### err
+
+[`TtsError`](#ttserror)
+
+###### Returns
+
+`void`
+
+##### words
+
+```ts
+words: (words: readonly TtsWordTiming[]) => void;
+```
+
+Word timings for audio this turn has produced, when the provider reports
+them. Required in the type but OPTIONAL in practice: every adapter builds
+a `createNanoEvents<TtsEvents>()` emitter, so a provider with no timings
+simply never emits it, and a consumer must treat their absence as the
+ordinary case (the pipeline transport falls back to a proportional
+estimate). Whether a given reply has timings is a RUNTIME fact — a
+provider may report them for some segments and not others — so there is no
+capability flag to check.
+
+**Carries no turn id**, exactly like [TtsEvents.done](#done): the transport
+cannot filter a stale one itself and gates the event on its own turn state
+(the audio gate in `pipeline-transport.ts`). An adapter must not emit
+timings for a cancelled turn.
+
+###### Parameters
+
+###### words
+
+readonly [`TtsWordTiming`](#ttswordtiming)[]
+
+###### Returns
+
+`void`
+
+***
+
+### Unsubscribe
+
+```ts
+type Unsubscribe = () => void;
+```
+
+Unsubscribe callback returned by `.on()` event subscriptions.
+
+#### Returns
+
+`void`
 
 ***
 

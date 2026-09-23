@@ -34,7 +34,11 @@
 
 import { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import { plural } from "@alexkroman1/aai/utils";
-import { CARRIER_PARAM, requiredProviderEnvVars, TELEPHONY_PATH } from "@alexkroman1/aai-runtime";
+import {
+  CARRIER_PARAM,
+  requiredProviderEnvVars,
+  TELEPHONY_PATH,
+} from "@alexkroman1/aai-runtime/internal";
 
 /**
  * A carrier this build ships a codec for — the CLOSED set. `TelephonyCarrier` is

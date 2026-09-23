@@ -6,8 +6,7 @@
  * `createRuntime` implementation. All imports here are type-only.
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
-import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { AgentEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
@@ -16,7 +15,8 @@ import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "./generate.ts";
-import type { Logger, S2sConfig } from "./runtime-config.ts";
+import type { HostAgentOptions } from "./host-agent-options.ts";
+import type { S2sConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { ServerSession } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
@@ -68,6 +68,8 @@ export type SessionConnectOptions = Pick<
  * it is ready; input after the session has ended is dropped.
  *
  * @public
+ *
+ * @sealed
  */
 export type SessionConnection = {
   /** The session's id — pass it back as `resumeFrom` to resume this conversation. */
@@ -148,12 +150,21 @@ export type AgentRuntime = {
 /**
  * Configuration for {@link createRuntime}.
  *
- * Configures the agent, environment, database, logging, and S2S connection.
+ * Configures the agent, environment, database, logging and provider triple;
+ * the fields every way of running an agent shares are {@link HostAgentOptions}.
+ * `providerEnv` defaults to {@link RuntimeOptions.env}, `logger` to the
+ * console, and `runCode` is supplied only by the platform's guest harness.
+ *
+ * The testing and relay SEAMS — a WebSocket factory per S2S transport, a relay
+ * `executeTool`/`toolSchemas` pair with its `onToolResult`, the sandbox's
+ * `toolGuidance`, and the S2S endpoint and start deadline — are not here. They
+ * were `@internal` members of this public type, reachable anyway because API
+ * Extractor reads the tag at the declaration; they are `HostRuntimeOptions`
+ * now, the move `generate` made first.
  *
  * @public
  */
-export type RuntimeOptions = {
-  agent: AgentDef;
+export interface RuntimeOptions extends HostAgentOptions {
   /**
    * The agent's own env — what tool code sees as `ctx.env`. Typed
    * `AgentEnv`: a `withHostCredentialFallback` result (which may carry
@@ -161,17 +172,6 @@ export type RuntimeOptions = {
    * {@link RuntimeOptions.providerEnv} instead.
    */
   env: AgentEnv;
-  /**
-   * Environment used to resolve provider credentials (STT/TTS/LLM).
-   * Defaults to {@link RuntimeOptions.env}.
-   *
-   * Exists so a self-hosted caller can let shell-exported credentials reach
-   * the provider resolvers without also placing them in `ctx.env`, where agent
-   * tool code could read them and come to depend on host-level variables that
-   * do not exist in production. The platform passes neither — it resolves
-   * everything from the agent's own stored env.
-   */
-  providerEnv?: ProviderEnv | undefined;
   /**
    * SQL database backing the runtime's OWN two stores: session-slot storage
    * (`createRuntimeSessionState`) and the workflow run journal plus its
@@ -183,26 +183,6 @@ export type RuntimeOptions = {
    * process memory and a restart forgets them.
    */
   db?: Db | undefined;
-  /**
-   * `ctx.workflows` for this runtime, supplied rather than built.
-   *
-   * Defaults to the client `buildWorkflowClient` assembles over the Workflow
-   * DevKit, which is what every deployment wants. It is overridable for the one
-   * caller that has no DevKit to assemble over: an EVAL drives a
-   * `"use workflow"` body imported through a test runner, where the compiler's
-   * transform never ran, so `def.run.workflowId` is absent and the real adapter
-   * cannot start anything. `openEvalSession` passes the in-process client
-   * `openEvalWorkflows` builds (`eval/workflows.ts`) so a tool that calls
-   * `ctx.workflows.start` runs at all.
-   *
-   * A seam rather than a flag, and the same shape as `createWebSocket` beside
-   * it: what is replaced is the ENGINE under the client, so everything above it
-   * — the schema validation, the name mapping, the correlation-key index, the
-   * snapshot union — is the code a deployment runs.
-   *
-   * @internal
-   */
-  workflows?: WorkflowClient | undefined;
   /**
    * Where this runtime's durable runs live, when nothing more durable wins.
    *
@@ -245,16 +225,6 @@ export type RuntimeOptions = {
    */
   journal?: JournalStore | undefined;
   /**
-   * Custom WebSocket factory for the S2S connection (testing seam).
-   * @internal
-   */
-  createWebSocket?: CreateS2sWebSocket | undefined;
-  /**
-   * Custom WebSocket factory for the OpenAI Realtime connection (testing seam).
-   * @internal
-   */
-  createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
-  /**
    * The base URL this agent is reachable at from OUTSIDE — origin plus, on the
    * managed platform, the agent's slug (`https://<platform>/<slug>`).
    *
@@ -272,8 +242,53 @@ export type RuntimeOptions = {
    * fails weeks later, at them.
    */
   publicUrl?: string | undefined;
-  /** Structured logger for runtime and session logs. Defaults to the console. */
-  logger?: Logger | undefined;
+  /**
+   * Maximum time in milliseconds to wait for sessions to stop during
+   * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
+   */
+  shutdownTimeoutMs?: number | undefined;
+  /**
+   * STT provider descriptor ({@link SttProvider}). Must be set together with
+   * `llm` and `tts` to route sessions through the pipeline path; leave all
+   * three unset to fall back to the agent's own provider fields (which
+   * default to the all-AssemblyAI pipeline when the agent declares none).
+   */
+  stt?: SttProvider | undefined;
+  /** LLM provider descriptor, from a factory like `llm({ provider: "anthropic", ... })`. */
+  llm?: LlmProvider | undefined;
+  /** TTS provider descriptor ({@link TtsProvider}). */
+  tts?: TtsProvider | undefined;
+}
+
+/**
+ * The runtime's HOST-ONLY options — {@link RuntimeOptions} plus the seams no
+ * embedder is promised: the two S2S WebSocket factories, the S2S endpoint
+ * and start deadline, the relay tool pair (`executeTool` + `toolSchemas`, and
+ * `onToolResult` settling it) that host mode and the sandbox run on, the
+ * sandbox's `toolGuidance`, and `generate`.
+ *
+ * Not exported from any published subpath. `generate` was a public
+ * `RuntimeOptions` member tagged `@internal`, which is the shape the root
+ * barrel's zero-`@internal` ratchet exists to refuse: API Extractor reads the
+ * tag at the declaration and the member stayed in every embedder's
+ * autocomplete, and the rest followed it. Their callers are this package's
+ * own — host mode (`host-mode.ts`), the eval harness (`eval/session.ts`) and
+ * the specs — each reaching `createRuntimeWithSeams` by a relative import, so
+ * the seams keep working and nothing outside the package can name them.
+ *
+ * @internal
+ */
+export type HostRuntimeOptions = RuntimeOptions & {
+  /**
+   * Custom WebSocket factory for the S2S connection (testing seam).
+   * @internal
+   */
+  createWebSocket?: CreateS2sWebSocket | undefined;
+  /**
+   * Custom WebSocket factory for the OpenAI Realtime connection (testing seam).
+   * @internal
+   */
+  createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
   /** S2S endpoint URL and audio sample rates. Defaults to `DEFAULT_S2S_CONFIG`. */
   s2sConfig?: S2sConfig | undefined;
   /**
@@ -282,16 +297,11 @@ export type RuntimeOptions = {
    */
   sessionStartTimeoutMs?: number | undefined;
   /**
-   * Maximum time in milliseconds to wait for sessions to stop during
-   * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
-   */
-  shutdownTimeoutMs?: number | undefined;
-  /**
    * Override tool execution. When provided, `createRuntime` skips building
    * in-process tool definitions and uses this function instead. Used by the
    * platform sandbox to RPC tool calls to the isolate.
    *
-   * **Paired with {@link RuntimeOptions.toolSchemas}, and `createRuntime` THROWS
+   * **Paired with {@link HostRuntimeOptions.toolSchemas}, and `createRuntime` THROWS
    * on half a pair** — see `setupTools` in `runtime-tools.ts` for what the old
    * silent fallback cost.
    *
@@ -319,65 +329,6 @@ export type RuntimeOptions = {
     | undefined;
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
-  /**
-   * Override the fetch implementation used by built-in tools (web_search,
-   * visit_webpage, get_page_design, fetch_json). Defaults to `builtinFetch()`:
-   * SSRF-screened unless the spawner declared a real container around the
-   * process (`AAI_SANDBOX_CONTAINED=1`), in which case the sandbox is the
-   * boundary and the screen is skipped. Override only in tests.
-   */
-  fetch?: typeof globalThis.fetch | undefined;
-  /**
-   * In-sandbox executor for the `run_code` builtin. Only the platform's
-   * guest harness provides one — it runs inside the Modal sandbox, which is
-   * the security boundary. Without it, run_code refuses to evaluate code in
-   * this process (the self-hosted guard).
-   */
-  runCode?: ((code: string) => Promise<string | { error: string }>) | undefined;
-  /**
-   * Per-tool-call deadline for this runtime's sessions. Defaults to
-   * `TOOL_EXECUTION_TIMEOUT_MS` (30s), which is a VOICE-turn budget: a caller
-   * waiting on speech has left by then.
-   *
-   * It is an option because that budget is not universal, and the tool executor
-   * has always accepted one — `text-agent.ts` passes `toolTimeoutMs` and the
-   * SESSION path passed nothing, so a session's 30s was unreachable from any
-   * caller. A `technical-support-agent`-shaped tool (a graded retrieval loop, up to eleven
-   * sequential model calls, measured at 22-30s against ~10x gateway variance)
-   * therefore times out in a way its author cannot fix from the agent
-   * definition. Raising it trades a voice-turn promise for a tool that finishes;
-   * that is the caller's trade to make, not this file's.
-   */
-  toolTimeoutMs?: number | undefined;
-  /**
-   * STT provider descriptor ({@link SttProvider}). Must be set together with
-   * `llm` and `tts` to route sessions through the pipeline path; leave all
-   * three unset to fall back to the agent's own provider fields (which
-   * default to the all-AssemblyAI pipeline when the agent declares none).
-   */
-  stt?: SttProvider | undefined;
-  /** LLM provider descriptor, from a factory like `llm({ provider: "anthropic", ... })`. */
-  llm?: LlmProvider | undefined;
-  /** TTS provider descriptor ({@link TtsProvider}). */
-  tts?: TtsProvider | undefined;
-};
-
-/**
- * The runtime's HOST-ONLY options — {@link RuntimeOptions} plus the seams no
- * embedder is promised.
- *
- * Not exported from any published subpath. `generate` was a public
- * `RuntimeOptions` member tagged `@internal`, which is the shape the root
- * barrel's zero-`@internal` ratchet exists to refuse: API Extractor reads the
- * tag at the declaration and the member stayed in every embedder's
- * autocomplete. Its one caller is this package's own eval harness
- * (`eval/session.ts`), which reaches `createRuntimeWithSeams` by a relative
- * import — so the seam keeps working and nothing outside the package can name
- * it.
- *
- * @internal
- */
-export type HostRuntimeOptions = RuntimeOptions & {
   /**
    * Override what tool code calls as `ctx.generate`.
    *
@@ -409,11 +360,9 @@ export declare const runtimeBrand: unique symbol;
 /**
  * The agent runtime returned by {@link createRuntime}.
  *
- * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
- * lower-level helpers (`executeTool`, `toolSchemas`, `createSession`) for
- * testing and advanced usage. A session over your OWN audio I/O is
- * {@link connectSession}, a free function over this handle rather than a
- * method on it.
+ * Satisfies {@link AgentRuntime} for use by transport code. A session over
+ * your OWN audio I/O is {@link connectSession}, a free function over this
+ * handle rather than a method on it.
  *
  * @sealed Only {@link createRuntime} produces one — see {@link runtimeBrand}.
  *
@@ -422,6 +371,22 @@ export declare const runtimeBrand: unique symbol;
 export type Runtime = AgentRuntime & {
   /** The seal — see {@link runtimeBrand}. */
   readonly [runtimeBrand]: true;
+};
+
+/**
+ * A {@link Runtime} plus the lower-level handles only this package's own code
+ * reaches: running one tool, the schemas it advertises, and creating a session
+ * for a client sink directly rather than over a socket.
+ *
+ * They were members of the public `Runtime`, used by nothing outside this
+ * package's specs, and a received handle's member is a promise — so they moved
+ * to the one type {@link createRuntimeWithSeams} returns. `createRuntime` hands
+ * back the same object typed as `Runtime`; a session over your OWN I/O is
+ * {@link connectSession}.
+ *
+ * @internal
+ */
+export type HostRuntime = Runtime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
   /** Tool schemas registered with the S2S API (custom + built-in). */

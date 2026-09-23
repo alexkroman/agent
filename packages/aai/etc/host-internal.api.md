@@ -522,12 +522,6 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 // @internal
 export function createDetachedSlotStore(): SlotStore;
 
-// @public
-export function createSttError(code: SttError["code"], message: string): SttError;
-
-// @public
-export function createTtsError(code: TtsError["code"], message: string): TtsError;
-
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -1214,55 +1208,8 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
-export interface SttError extends Error {
-    // (undocumented)
-    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
-}
-
-// @public (undocumented)
-export type SttEvents = {
-    partial: (text: string, meta?: SttTurnMeta) => void;
-    final: (text: string, meta?: SttTurnMeta) => void;
-    error: (err: SttError) => void;
-};
-
-// @public
-export interface SttOpener {
-    // (undocumented)
-    readonly name: string;
-    // (undocumented)
-    open(options: SttOpenOptions): Promise<SttSession>;
-}
-
-// @public
-export interface SttOpenOptions {
-    apiKey: string;
-    sampleRate: number;
-    // (undocumented)
-    signal: AbortSignal;
-    // (undocumented)
-    sttPrompt?: string | undefined;
-}
-
-// @public
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
-};
-
-// @public
-export interface SttSession {
-    // (undocumented)
-    close(): Promise<void>;
-    forceEndOfTurn?(): void;
-    // (undocumented)
-    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
-    sendAudio(pcm: Int16Array): void;
-    updateEndpointing?(minTurnSilenceMs: number): void;
-}
-
-// @public
-export type SttTurnMeta = {
-    endOfTurnConfidence?: number;
 };
 
 // @public
@@ -1419,56 +1366,9 @@ export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 
 // @public
-export interface TtsError extends Error {
-    // (undocumented)
-    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
-}
-
-// @public
-export type TtsEvents = {
-    audio: (pcm: Int16Array) => void;
-    words: (words: readonly TtsWordTiming[]) => void;
-    done: () => void;
-    error: (err: TtsError) => void;
-};
-
-// @public
-export interface TtsOpener {
-    // (undocumented)
-    readonly name: string;
-    // (undocumented)
-    open(options: TtsOpenOptions): Promise<TtsSession>;
-}
-
-// @public
-export interface TtsOpenOptions {
-    apiKey: string;
-    sampleRate: number;
-    signal: AbortSignal;
-}
-
-// @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
-
-// @public
-export interface TtsSession {
-    cancel(): void;
-    // (undocumented)
-    close(): Promise<void>;
-    flush(): void;
-    // (undocumented)
-    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
-    sendText(text: string): void;
-}
-
-// @public
-export interface TtsWordTiming {
-    readonly endMs: number;
-    readonly startMs: number;
-    readonly text: string;
-}
 
 // @public
 interface TypedDelegateResult<T> extends DelegateResult {
@@ -1480,9 +1380,6 @@ interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
-
-// @public
-export type Unsubscribe = () => void;
 
 // @public
 export const UPLOAD_CHUNK_BYTES: number;

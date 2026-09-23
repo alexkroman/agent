@@ -17,13 +17,9 @@ import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import { StepFetch } from '@alexkroman1/aai/host-internal';
-import type { SttOpener } from '@alexkroman1/aai/host-internal';
 import type { SttProvider } from '@alexkroman1/aai/stt';
-import type { SttSession } from '@alexkroman1/aai/host-internal';
 import type { ToolInputSchema } from '@alexkroman1/aai';
-import type { TtsOpener } from '@alexkroman1/aai/host-internal';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
-import type { TtsSession } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
@@ -85,7 +81,7 @@ export type EvalRunOptions = StartOptions & {
     readonly timeoutMs?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type EvalSession = {
     readonly id: string;
     say(text: string): Promise<EvalTurn>;
@@ -97,19 +93,12 @@ export type EvalSession = {
 };
 
 // @public
-export type EvalSessionOptions = {
-    readonly agent: AgentDef;
+export interface EvalSessionOptions extends HostAgentOptions {
     readonly env?: Record<string, string>;
-    readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
-    readonly runCode?: RunCodeExecutor;
-    readonly fetch?: typeof globalThis.fetch;
-    readonly toolTimeoutMs?: number;
-    readonly generate?: HostGenerateFn;
-    readonly workflows?: WorkflowClient | undefined;
+    // (undocumented)
     readonly turnTimeoutMs?: number;
-    readonly logger?: Logger;
-};
+}
 
 // @public
 export type EvalSleep = {
@@ -117,7 +106,7 @@ export type EvalSleep = {
     readonly duration: string | number | Date;
 };
 
-// @public
+// @public @sealed
 export type EvalTextAgent = {
     readonly id: string;
     send(text: string): Promise<EvalTurn>;
@@ -129,18 +118,11 @@ export type EvalTextAgent = {
 };
 
 // @public
-export type EvalTextAgentOptions = {
-    readonly agent: AgentDef;
+export interface EvalTextAgentOptions extends HostAgentOptions {
     readonly env?: Record<string, string>;
-    readonly providerEnv?: ProviderEnv;
     readonly llm?: LlmProvider;
-    readonly runCode?: RunCodeExecutor;
-    readonly fetch?: typeof globalThis.fetch;
-    readonly toolTimeoutMs?: number;
-    readonly workflows?: WorkflowClient | undefined;
     readonly turnTimeoutMs?: number;
-    readonly logger?: Logger;
-};
+}
 
 // @public
 export function evalTextCredentials(agent: AgentDef, hostEnv?: Record<string, string | undefined>): EvalCredentials;
@@ -177,7 +159,7 @@ export type EvalWorkflowEngineOptions = {
     readonly speech?: SpeechSynthesizer | undefined;
 };
 
-// @public
+// @public @sealed
 export type EvalWorkflowRun<R = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -193,7 +175,7 @@ export type EvalWorkflowRun<R = unknown> = {
     readonly snapshot: WorkflowRunSnapshot<R>;
 };
 
-// @public
+// @public @sealed
 export type EvalWorkflows = {
     readonly client: WorkflowClient;
     run<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, input: InferSchemaOutput<P>, options?: EvalRunOptions): Promise<EvalWorkflowRun<R>>;
@@ -228,6 +210,17 @@ export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: re
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
 
 // @public
+export interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
 export type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     signal?: AbortSignal | undefined;
     onUsage?: ((usage: StepUsage) => void) | undefined;
@@ -255,7 +248,16 @@ export type LogContext = Record<string, unknown>;
 export type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-export type Logger = Record<LogLevel, LogFn>;
+export interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
 
 // @public
 export type LogLevel = "info" | "warn" | "error" | "debug";
@@ -297,6 +299,53 @@ export interface StepUsage {
     // (undocumented)
     totalTokens?: number | undefined;
 }
+
+// @public
+export interface SttError extends Error {
+    // (undocumented)
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+}
+
+// @public (undocumented)
+export type SttEvents = {
+    partial: (text: string, meta?: SttTurnMeta) => void;
+    final: (text: string, meta?: SttTurnMeta) => void;
+    error: (err: SttError) => void;
+};
+
+// @public
+export interface SttOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: SttOpenOptions): Promise<SttSession>;
+}
+
+// @public
+export interface SttOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    // (undocumented)
+    signal: AbortSignal;
+    // (undocumented)
+    sttPrompt?: string | undefined;
+}
+
+// @public
+export interface SttSession {
+    // (undocumented)
+    close(): Promise<void>;
+    forceEndOfTurn?(): void;
+    // (undocumented)
+    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+    sendAudio(pcm: Int16Array): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
+}
+
+// @public
+export type SttTurnMeta = {
+    endOfTurnConfidence?: number;
+};
 
 // @public
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
@@ -365,10 +414,60 @@ export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: 
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public
+export interface TtsError extends Error {
+    // (undocumented)
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+}
+
+// @public
+export type TtsEvents = {
+    audio: (pcm: Int16Array) => void;
+    words: (words: readonly TtsWordTiming[]) => void;
+    done: () => void;
+    error: (err: TtsError) => void;
+};
+
+// @public
+export interface TtsOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: TtsOpenOptions): Promise<TtsSession>;
+}
+
+// @public
+export interface TtsOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    signal: AbortSignal;
+}
+
+// @public
+export interface TtsSession {
+    cancel(): void;
+    // (undocumented)
+    close(): Promise<void>;
+    flush(): void;
+    // (undocumented)
+    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+    sendText(text: string): void;
+}
+
+// @public
+export interface TtsWordTiming {
+    readonly endMs: number;
+    readonly startMs: number;
+    readonly text: string;
+}
+
+// @public
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
 export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+
+// @public
+export type Unsubscribe = () => void;
 
 // @public
 export type VmRunCodeOptions = {

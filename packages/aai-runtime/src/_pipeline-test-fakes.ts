@@ -14,6 +14,12 @@
  * @internal Not part of the public API.
  */
 
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import type { SttProvider } from "@alexkroman1/aai/stt";
+import type { TtsProvider } from "@alexkroman1/aai/tts";
+import type { LanguageModel } from "ai";
+import { createNanoEvents, type Emitter } from "nanoevents";
+import { vi } from "vitest";
 import type {
   SttEvents,
   SttOpener,
@@ -26,13 +32,7 @@ import type {
   TtsSession,
   TtsWordTiming,
   Unsubscribe,
-} from "@alexkroman1/aai/host-internal";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
-import type { LanguageModel } from "ai";
-import { createNanoEvents, type Emitter } from "nanoevents";
-import { vi } from "vitest";
+} from "./providers/openers.ts";
 import { registerLlmKind, registerSttKind, registerTtsKind } from "./providers/resolve.ts";
 
 function makeCodedError<C extends string>(code: C, message: string): Error & { code: C } {

@@ -1,14 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import {
-  createSttError,
-  resolveSonioxSttSettings,
-  SONIOX_API_KEY_ENV,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
-} from "@alexkroman1/aai/host-internal";
+import { resolveSonioxSttSettings, SONIOX_API_KEY_ENV } from "@alexkroman1/aai/host-internal";
 import type { SonioxSttOptions } from "@alexkroman1/aai/stt";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -19,6 +11,13 @@ import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
 import { dropSocket, openGuardedWs } from "../_socket.ts";
 import { closeOnAbort, createSttSessionShell, requireApiKey } from "../_utils.ts";
+import {
+  createSttError,
+  type SttEvents,
+  type SttOpener,
+  type SttOpenOptions,
+  type SttSession,
+} from "../openers.ts";
 
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.

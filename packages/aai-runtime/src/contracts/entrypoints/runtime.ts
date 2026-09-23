@@ -17,6 +17,10 @@ export {
   createRuntime,
   type ExecuteTool,
   type ExecuteToolOptions,
+  // The base `RuntimeOptions` extends — and `TextAgentOptions` and the eval
+  // option bags, which reach it by name. Owned here, where the engine's own
+  // options are.
+  type HostAgentOptions,
   type RunCodeExecutor,
   type Runtime,
   type RuntimeOptions,
