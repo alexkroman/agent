@@ -1,29 +1,14 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 3, rule 7, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32, rule 33.",
-  "rule2_spreadTernary": {
-    "packages/aai-cli/src/_utils.ts": 1,
-    "packages/aai-server/src/subprocess-sandbox.ts": 1,
-    "packages/aai-server/src/test-utils.ts": 1
-  },
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 12, rule 13, rule 14, rule 18, rule 20, rule 21, rule 23, rule 26, rule 28, rule 31, rule 32, rule 33.",
   "rule4_inlineTickPromise": {
-    "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 1,
     "packages/aai-runtime/src/tool-executor.ts": 1,
-    "packages/aai-server/src/platform/lock.test.ts": 3,
-    "packages/aai-server/src/slug-lock.test.ts": 1,
-    "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/src/studio-session-broker.test.ts": 2
-  },
-  "rule5_deleteProcessEnv": {
-    "packages/aai-cli/src/_test-setup.ts": 1
-  },
-  "rule8_handRolledOwnedMap": {
-    "packages/aai-studio-server/src/studio-sse.ts": 1
+    "packages/aai-studio-client/src/_test-utils.ts": 1
   },
   "rule11_hardcodedTmp": {
     "packages/aai-server/src/modal/agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
-    "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 2,
+    "packages/aai-runtime/src/integration/_pipeline-fuzz-model.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 2,
     "packages/aai-runtime/src/runtime-session-callbacks.ts": 2,
     "packages/aai-runtime/src/runtime-types.ts": 5,
@@ -46,29 +31,15 @@
     "scripts/loadtest-runs.mjs": 1
   },
   "rule22_truthySpread": {
-    "packages/aai-cli/src/_deploy.ts": 2,
-    "packages/aai-cli/src/deploy.ts": 1,
-    "packages/aai-cli/src/studio.ts": 1,
-    "packages/aai-runtime/src/_test-utils.ts": 1,
     "packages/aai-runtime/src/providers/stt/elevenlabs.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-llm-trace.ts": 1,
     "packages/aai-runtime/src/workflow/report.ts": 2,
     "packages/aai-server/src/guest/forward.ts": 1,
-    "packages/aai-server/src/modal/agent-sandbox.test.ts": 1,
-    "packages/aai-server/src/supabase-auth.test.ts": 2,
-    "packages/aai-studio-server/src/_test-combined.ts": 1,
-    "packages/aai-studio-server/src/studio-account-routes.ts": 1,
-    "packages/aai-studio-server/src/studio-deploy.test.ts": 1,
     "packages/aai-studio-server/src/studio-session-ensure.ts": 1,
     "packages/aai-studio-server/src/studio-session-publish.ts": 1,
-    "packages/aai-studio-server/src/studio-sse.test.ts": 1,
     "packages/aai-templates/templates/retail-orders-agent/shared.ts": 1,
     "packages/aai-templates/templates/retail-orders-agent/tools/get_order_details.ts": 1,
     "packages/aai/src/host/builtin-tools.ts": 1,
-    "packages/aai/src/host/page-design.ts": 4,
-    "packages/aai/src/sdk/providers/stt/assemblyai.ts": 1,
-    "packages/aai/src/sdk/providers/stt/elevenlabs.ts": 1,
-    "packages/aai/src/sdk/step-fetch.ts": 1,
     "scripts/with-test-pg.mjs": 1
   },
   "rule24_toolContextField": {
@@ -100,7 +71,6 @@
     "packages/aai-cli/src/_config.test.ts": 1,
     "packages/aai-cli/src/_console-audio.test.ts": 1,
     "packages/aai-cli/src/_dev-env.test.ts": 10,
-    "packages/aai-cli/src/_dev-server-restart.test.ts": 10,
     "packages/aai-cli/src/_dev-server.test.ts": 11,
     "packages/aai-cli/src/_resource-commands.test.ts": 2,
     "packages/aai-cli/src/_templates.test.ts": 1,
