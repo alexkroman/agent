@@ -252,7 +252,10 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     ...(options.languages !== undefined && options.languages.length > 0
       ? { languages: options.languages }
       : {}),
-    ...(options.streamingUrl ? { streamingUrl: options.streamingUrl } : {}),
+    // An empty `streamingUrl` means "use the default endpoint", same as absent.
+    ...(options.streamingUrl !== undefined && options.streamingUrl !== ""
+      ? { streamingUrl: options.streamingUrl }
+      : {}),
     ...omitUndefined({ region: options.region }),
     ...omitUndefined({ formatTurns: options.formatTurns }),
   };

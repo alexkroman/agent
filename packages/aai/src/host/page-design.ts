@@ -38,6 +38,7 @@ import {
   MAX_DESIGN_STYLESHEETS,
   MAX_HTML_BYTES,
 } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
@@ -146,10 +147,15 @@ export function parsePage(html: string, baseUrl: string): PageParse {
   return { stylesheetUrls, inlineCss, html: stripped.replace(BLANK_RUN_RE, "\n\n").trim() };
 }
 
-function capText(text: string, max: number): { text: string; truncated: boolean } {
+/**
+ * Cap `text` at `max` characters. `truncated` is `true` or `undefined`, never
+ * `false`, because every caller reports it as an optional flag that only
+ * appears when set — so the result spreads through `omitUndefined` as-is.
+ */
+function capText(text: string, max: number): { text: string; truncated: true | undefined } {
   return text.length > max
     ? { text: text.slice(0, max), truncated: true }
-    : { text, truncated: false };
+    : { text, truncated: undefined };
 }
 
 type StylesheetResult =
@@ -168,7 +174,7 @@ async function fetchStylesheet(
     });
     if (!sheet.ok) return { url, error: `HTTP ${sheet.error}` };
     const { text, truncated } = capText(sheet.text, MAX_DESIGN_CSS_CHARS);
-    return { url, css: text, ...(truncated && { truncated: true as const }) };
+    return { url, css: text, ...omitUndefined({ truncated }) };
   } catch (err) {
     // A stylesheet href is page-controlled — an SSRF rejection or network
     // failure on one sheet must not throw away the page and the other sheets.
@@ -229,9 +235,13 @@ export function createGetPageDesign(
       return {
         url,
         html: html.text,
-        ...(html.truncated && { htmlTruncated: true }),
-        ...(css.text && { inlineCss: css.text }),
-        ...(css.truncated && { inlineCssTruncated: true }),
+        ...omitUndefined({
+          htmlTruncated: html.truncated,
+          // A page with no <style> blocks reports no `inlineCss` at all rather
+          // than an empty string.
+          inlineCss: css.text === "" ? undefined : css.text,
+          inlineCssTruncated: css.truncated,
+        }),
         stylesheets,
         ...(skipped > 0 && { skippedStylesheets: skipped }),
       };

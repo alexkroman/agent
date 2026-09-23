@@ -27,10 +27,10 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
 function Dots(): ReactNode {
   const theme = useTheme();
   const muted = inkTint(theme.text, theme.surface, INK_MUTED_PCT);
-  return DOT_STYLES.map((style, i) => (
+  return DOT_STYLES.map((style) => (
     <div
-      // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe
-      key={i}
+      // Each dot's delay is distinct, so it doubles as a stable key.
+      key={style.animationDelay}
       className="w-1.5 h-1.5 rounded-full"
       style={{ ...style, background: muted }}
     />

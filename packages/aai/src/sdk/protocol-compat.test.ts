@@ -15,6 +15,7 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   MAX_TOOL_RESULT_CHARS,
 } from "./constants.ts";
+import { isRecord } from "./is-record.ts";
 import { SessionCommandSchema, SessionErrorCodeSchema } from "./protocol.ts";
 import { SessionEventSchema } from "./protocol-events.ts";
 
@@ -41,8 +42,8 @@ function loadFixture(filename: string): Fixture {
 const fixtureFiles = readdirSync(FIXTURE_DIR)
   .filter((f) => f.endsWith(".json"))
   .filter((f) => {
-    const parsed = loadFixture(f) as unknown as Record<string, unknown>;
-    return "SessionEvent" in parsed && "SessionCommand" in parsed;
+    const parsed: unknown = loadFixture(f);
+    return isRecord(parsed) && "SessionEvent" in parsed && "SessionCommand" in parsed;
   })
   .sort();
 
