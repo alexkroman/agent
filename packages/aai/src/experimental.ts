@@ -49,7 +49,12 @@ export interface OpenAICompatibleLlmOptions {
    * fall back to that an author would recognise, so it is named out loud.
    */
   readonly apiKeyEnv: string;
-  /** Forwarded to the chat client as its AI SDK `providerOptions.openai`. */
+  /**
+   * The endpoint's own wire fields (`top_k`, a routing object, …), merged
+   * verbatim into each JSON request body. A field the client writes itself
+   * (`model`, `messages`, `tools`, `stream`, a set call setting) wins a
+   * collision, so an entry here acts as a default.
+   */
   readonly providerOptions?: Readonly<Record<string, unknown>>;
 }
 

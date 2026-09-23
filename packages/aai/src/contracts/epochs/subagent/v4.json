@@ -3,7 +3,7 @@
   "capability": "subagent",
   "epoch": 4,
   "rule": 2,
-  "sha256": "fdb678b569125247a4c2587a9b4dd63b7f8976a22683a9e6f2100479527c868c",
+  "sha256": "387dc069c6521b1a0863fed3c99682f393e927c0bcea532e514d3ef79e0f2e97",
   "exports": [
     "DEFAULT_GUARDRAIL_MAX_REVISIONS",
     "DELEGATE_TOOL_NAME",
@@ -20,5 +20,5 @@
     "TypedSubagentDef",
     "subagent"
   ],
-  "rollup": "a2d7a4fe7c4c16215a0e55f5a912a891abf0b6efc2c4fb60bcd13b445c0553d4"
+  "rollup": "f0b6c4bd6cb9fb5af054a76beb2abb9288823d1972e050c10a28a585bc684930"
 }

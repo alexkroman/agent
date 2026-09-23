@@ -15,6 +15,8 @@ import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
+import type { StandardSchemaV1 } from "./standard-schema.ts";
+import { type SubagentDef, subagent } from "./subagent.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
@@ -581,4 +583,29 @@ test("telephony is declarable on a voice agent and refused where there is no cal
   expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().not.toExtend<AgentParams>();
   // A text agent has no audio path, so a phone call has nothing to reach.
   expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
+});
+
+/**
+ * `SubagentDef` REFUSES `maxRetries`. That name was the guardrail's revision
+ * budget before the knobs were unified, and on `ModelTuning` it means provider
+ * retries — so accepting it would keep `subagent({ guardrail, maxRetries: 3 })`
+ * compiling while silently changing what the 3 bounds. The error is the point:
+ * the field is typed as a message naming `maxRevisions`, so it says the fix.
+ */
+test("subagent() rejects maxRetries and takes maxRevisions", () => {
+  const guardrail = () => true as const;
+  subagent({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
+  // Structural, not only excess-property: `maxRetries` is typed as the rename
+  // message, so a def carrying a NUMBER there is not a `SubagentDef` at all —
+  // whether written inline or built elsewhere and passed in.
+  type OldSpelling = { name: string; systemPrompt: string; guardrail: () => true; maxRetries: 3 };
+  expectTypeOf<OldSpelling>().not.toExtend<Parameters<typeof subagent>[0]>();
+  expectTypeOf<OldSpelling>().not.toExtend<SubagentDef>();
+  // The schema overload refuses it too.
+  expectTypeOf<
+    Omit<OldSpelling, "guardrail"> & { schema: StandardSchemaV1<unknown, { a: string }> }
+  >().not.toExtend<SubagentDef & { schema: StandardSchemaV1 }>();
+  // The tuning knobs a subagent does take are still there.
+  expectTypeOf<SubagentDef>().toHaveProperty("temperature");
+  expectTypeOf<SubagentDef>().toHaveProperty("maxOutputTokens");
 });

@@ -191,9 +191,11 @@ total over `AgentModelTuning`, so a sixth knob that skips the table fails to
 compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
 is inert unless `toolChoice` demands a call. **`AgentModelTuning` extends
 `ModelTuning`** (`temperature`, `maxOutputTokens`, `maxRetries` — the
-per-request half), which `SubagentDef` extends too, so a knob added there
-reaches both loops; a subagent's guardrail budget is `maxRevisions`, NOT
-`maxRetries`, which means the provider's retries everywhere.
+per-request half), which `SubagentDef` extends too MINUS `maxRetries`, so a
+knob added there reaches both loops. A subagent's guardrail budget is
+`maxRevisions`; `maxRetries` was its old name, so `SubagentDef` re-types it as
+a message naming the rename (the `InlineToolsMisuse` idiom) and old code fails
+to compile instead of silently budgeting provider retries.
 
 **`SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`**
 (`Omit<ToolDef, "execute">` plus their own `execute`; the dialog's
@@ -358,10 +360,14 @@ Reference providers shipped today:
   `@ai-sdk/openai`'s `.chat()` client repointed), `gateway` (`createGateway`
   from `ai`) and `assemblyai`. `baseUrl` repoints any of them; an UNREGISTERED
   provider carrying one resolves as an OpenAI-compatible chat endpoint keyed by
-  `apiKeyEnv` (else `<PROVIDER>_API_KEY`), and `providerOptions` is forwarded as
-  that client's AI SDK `providerOptions` entry. Cerebras is worth naming for
-  serving LATENCY (~0.55s to a complete tool call against ~0.95s self-hosted
-  for the same open-weight model).
+  `apiKeyEnv` (else `<PROVIDER>_API_KEY`). `providerOptions` is a native
+  client's AI SDK `providerOptions` entry (typed — unknown keys are dropped),
+  but on the OpenAI-compatible ones (`openrouter`, `cerebras`, any `baseUrl`
+  provider) it is merged into the request BODY by a `fetch` wrapper
+  (`_request-body-extras.ts`), SDK-built fields winning a collision, because
+  `@ai-sdk/openai`'s chat schema strips every vendor key. Cerebras is worth
+  naming for serving LATENCY (~0.55s to a complete tool call against ~0.95s
+  self-hosted for the same open-weight model).
   - `provider: "assemblyai"` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via

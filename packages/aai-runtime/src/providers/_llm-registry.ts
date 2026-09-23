@@ -52,6 +52,7 @@ import {
 import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
+import { mergeRequestBody } from "./_request-body-extras.ts";
 import { options, pickEndpoint } from "./_utils.ts";
 
 /** One registry entry per LLM provider — adding a provider is one entry here. */
@@ -83,9 +84,12 @@ function model(descriptor: LlmProvider): string {
 
 /**
  * The descriptor's `providerOptions`, layered onto every call as the AI SDK's
- * `providerOptions[key]` — the one generic channel for a vendor-specific
- * setting, so the SDK needs no per-vendor options type to carry one. Absent,
- * the model is returned unwrapped (by identity).
+ * `providerOptions[key]` — the channel for a NATIVE `@ai-sdk/*` client, so the
+ * SDK needs no per-vendor options type to carry one. That client validates the
+ * entry against its own typed options (camelCase, e.g. Anthropic's
+ * `thinking`), so a key it does not know is dropped there. The
+ * OpenAI-compatible entries do not use this — see {@link openAiCompatible}.
+ * Absent, the model is returned unwrapped (by identity).
  */
 function withProviderOptions(
   lm: LanguageModel,
@@ -135,6 +139,11 @@ const PROVIDER_IDS = {
  * OpenRouter, Cerebras and any `baseUrl` descriptor. Uses `.chat()`, because
  * the provider's default callable targets OpenAI's Responses API, which none
  * of them serve.
+ *
+ * `providerOptions` are the VENDOR's wire fields, so they are merged into the
+ * request BODY (see `_request-body-extras.ts`, which owns the precedence: the
+ * SDK-built body wins a collision) rather than passed as the AI SDK's
+ * `providerOptions.openai`, whose schema strips every key it does not know.
  */
 function openAiCompatible(
   name: string,
@@ -146,13 +155,13 @@ function openAiCompatible(
     envVar,
     label,
     create: (apiKey, d) => {
-      const baseURL = opts(d).baseUrl ?? defaultBaseUrl;
-      return withProviderOptions(
-        lazyModel(`${name}.chat`, model(d), async () =>
-          (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL }), name }).chat(model(d)),
+      const { baseUrl, providerOptions } = opts(d);
+      const baseURL = baseUrl ?? defaultBaseUrl;
+      const fetch = providerOptions === undefined ? undefined : mergeRequestBody(providerOptions);
+      return lazyModel(`${name}.chat`, model(d), async () =>
+        (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL, fetch }), name }).chat(
+          model(d),
         ),
-        "openai",
-        d,
       );
     },
   };

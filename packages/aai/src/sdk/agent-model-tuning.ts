@@ -105,7 +105,9 @@ export interface UsageLimits {
  * Every field is passed straight through to the provider request, so each is
  * refused in S2S mode on the AGENT — there the provider runs the loop; see this
  * module's header. A subagent always runs on this runtime, whatever the parent's
- * mode, so it may set all three.
+ * mode, so it may set `temperature` and `maxOutputTokens` — but not
+ * `maxRetries`, which {@link SubagentDef} omits so the old guardrail-budget
+ * spelling fails to compile.
  *
  * @public
  */
@@ -139,10 +141,9 @@ export interface ModelTuning {
    * @defaultValue the AI SDK's own (2 retries, exponential backoff)
    *
    * Transport-level retries of a request that never produced an answer at all
-   * (a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-   * guardrail sending an answer back is {@link SubagentDef.maxRevisions}; the
-   * two compose, since a revision is one more request and each request still
-   * gets its own retries.
+   * (a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+   * a subagent's requests retry on the AI SDK default, and its guardrail
+   * sending an answer back is {@link SubagentDef.maxRevisions}.
    *
    * `0` is the value to reach for on a live call, and the reason is the clock:
    * the default backoff can spend several seconds before the turn is declared

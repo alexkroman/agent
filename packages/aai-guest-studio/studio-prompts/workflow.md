@@ -2080,8 +2080,8 @@ The provider is a string, not a function name:
 | `"gateway"`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `"assemblyai"` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
-`model` is required — a third-party vendor's catalog is not this SDK's to
-default from. Example: `llm({ provider: "anthropic", model: "claude-haiku-4-5" })`.
+`model` is required. Example:
+`llm({ provider: "anthropic", model: "claude-haiku-4-5" })`.
 `"openrouter"` and `"gateway"` (the [Vercel AI
 Gateway](https://vercel.com/docs/ai-gateway)) address a model as
 `"creator/model"`; every other provider takes its own bare id.
@@ -2090,7 +2090,8 @@ Gateway](https://vercel.com/docs/ai-gateway)) address a model as
 entry is reached as an OpenAI-compatible endpoint by naming its `baseUrl` (and
 `apiKeyEnv`, the variable its key is in); `aai build` warns about an unknown
 provider that has neither. `providerOptions` carries provider-specific
-settings, forwarded to the vendor client as its AI SDK `providerOptions`.
+settings: a native client's AI SDK `providerOptions`; on `openrouter`,
+`cerebras` or a `baseUrl` provider, raw request-body fields (`top_k`).
 
 `"assemblyai"` routes through the [AssemblyAI LLM
 Gateway](https://www.assemblyai.com/docs/llm-gateway) — an

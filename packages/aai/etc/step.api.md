@@ -415,12 +415,13 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef extends ModelTuning {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
     name: string;

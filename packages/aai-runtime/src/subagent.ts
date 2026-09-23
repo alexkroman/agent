@@ -175,13 +175,12 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       // somewhere to run — the same arithmetic as `createTextAgent`.
       stopWhen: stepCountIs(maxSteps + 1),
       prepareStep: forceFinalAnswer(maxSteps, logger, sessionId),
-      // The subagent's `ModelTuning`, the same three knobs the parent's own
-      // loop takes and passed the same way. `maxRetries` is the PROVIDER's
-      // retry budget; the guardrail's is `maxRevisions`, read above.
+      // The subagent's `ModelTuning` — `SubagentDef` omits `maxRetries`, so
+      // its requests retry on the AI SDK default; the guardrail's budget is
+      // `maxRevisions`, read above.
       ...omitUndefined({
         temperature: sub.temperature,
         maxOutputTokens: sub.maxOutputTokens,
-        maxRetries: sub.maxRetries,
       }),
     });
 

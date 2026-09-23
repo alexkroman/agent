@@ -106,8 +106,13 @@ Options for [llm](#llm).
 
 `P` is inferred from `provider`, which is what narrows `model` to the
 gateway's ids and `providerOptions` to [AssemblyAILlmProviderOptions](#assemblyaillmprovideroptions)
-for `"assemblyai"`. For every other provider `providerOptions` is forwarded
-verbatim to the AI SDK as that provider's `providerOptions` entry.
+for `"assemblyai"`. On a provider with a native AI SDK client (`anthropic`,
+`openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) `providerOptions`
+is that client's AI SDK `providerOptions` entry, validated against its typed
+options. On an OpenAI-compatible one (`openrouter`, `cerebras`, or any
+`baseUrl` provider) it is the vendor's own wire fields, merged verbatim into
+the JSON request body — a field the SDK writes itself (`model`, `messages`,
+`tools`, `stream`, a call setting such as `temperature`) wins a collision.
 
 #### Extends
 

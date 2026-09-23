@@ -305,6 +305,9 @@ export const STATE_RULES = [
       "call so a spec can stub it, and builds a `Headers`/`Response` from the\n" +
       "ambient realm — which undici 8 brand-checks against its own classes (see\n" +
       "`host/_undici.ts`). Its origin is a model provider, one streaming call a\n" +
-      "turn, not a fan-out.",
+      "turn, not a fan-out. `providers/_request-body-extras.ts` is the second,\n" +
+      "for the same origin: it only adds `providerOptions` to a request BODY, so\n" +
+      "a pooled default there would make a body option silently move that\n" +
+      "provider onto a different transport than it has without one.",
   },
 ];

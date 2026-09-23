@@ -2894,10 +2894,9 @@ up on.
 the AI SDK's own (2 retries, exponential backoff)
 
 Transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
-two compose, since a revision is one more request and each request still
-gets its own retries.
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -3827,10 +3826,9 @@ up on.
 the AI SDK's own (2 retries, exponential backoff)
 
 Transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
-two compose, since a revision is one more request and each request still
-gets its own retries.
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -5893,11 +5891,12 @@ the name means one thing wherever it is written.
 Every field is passed straight through to the provider request, so each is
 refused in S2S mode on the AGENT — there the provider runs the loop; see this
 module's header. A subagent always runs on this runtime, whatever the parent's
-mode, so it may set all three.
+mode, so it may set `temperature` and `maxOutputTokens` — but not
+`maxRetries`, which [SubagentDef](#subagentdef) omits so the old guardrail-budget
+spelling fails to compile.
 
 #### Extended by
 
-- [`SubagentDef`](#subagentdef)
 - [`AgentModelTuning`](#agentmodeltuning)
 
 #### Properties
@@ -5933,10 +5932,9 @@ up on.
 the AI SDK's own (2 retries, exponential backoff)
 
 Transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
-two compose, since a revision is one more request and each request still
-gets its own retries.
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -8891,9 +8889,17 @@ Every field except `name` and `systemPrompt` is optional, and the defaults
 are the parent agent's: the same LLM descriptor, no tools, and
 the framework default (`DEFAULT_MAX_STEPS`) steps.
 
+It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`, deliberately. That name
+was this def's guardrail budget before the knobs were unified, and on
+`ModelTuning` it means provider retries; accepting it here would have kept
+`subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
+what the 3 bounds. Refused instead, it is a compile error whose message
+names [SubagentDef.maxRevisions](#maxrevisions). A subagent's provider requests
+retry on the AI SDK's default.
+
 #### Extends
 
-- [`ModelTuning`](#modeltuning)
+- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
 
 #### Extended by
 
@@ -9043,31 +9049,13 @@ provider stops emitting rather than wrapping up.
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: number;
+optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
 ```
 
-How many times a FAILED provider call is retried before the step is given
-up on.
-
-###### Default Value
-
-the AI SDK's own (2 retries, exponential backoff)
-
-Transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
-two compose, since a revision is one more request and each request still
-gets its own retries.
-
-`0` is the value to reach for on a live call, and the reason is the clock:
-the default backoff can spend several seconds before the turn is declared
-failed, and the caller hears every one of them as silence. An agent whose
-`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
-line do the work.
-
-###### Inherited from
-
-[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-2)
+Not a field. Typed as the message that names the rename, so
+`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SubagentDef.maxRevisions](#maxrevisions).
 
 ##### maxRevisions?
 
@@ -9081,11 +9069,11 @@ How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Not [ModelTuning.maxRetries](#maxretries-2)**, which this def also takes: that one
-retries a provider REQUEST that failed (a 429, a socket reset), this one
-re-runs a delegation that SUCCEEDED and was judged not good enough. They
-shared the name `maxRetries` until the knobs were unified, which made the
-one that sounded like a transport setting the guardrail's budget.
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -9547,32 +9535,18 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens-3)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: number;
+optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
 ```
 
-How many times a FAILED provider call is retried before the step is given
-up on.
-
-###### Default Value
-
-the AI SDK's own (2 retries, exponential backoff)
-
-Transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
-guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
-two compose, since a revision is one more request and each request still
-gets its own retries.
-
-`0` is the value to reach for on a live call, and the reason is the clock:
-the default backoff can spend several seconds before the turn is declared
-failed, and the caller hears every one of them as silence. An agent whose
-`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
-line do the work.
+Not a field. Typed as the message that names the rename, so
+`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SubagentDef.maxRevisions](#maxrevisions).
 
 ###### Inherited from
 
@@ -9590,11 +9564,11 @@ How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
 
-**Not [ModelTuning.maxRetries](#maxretries-2)**, which this def also takes: that one
-retries a provider REQUEST that failed (a 429, a socket reset), this one
-re-runs a delegation that SUCCEEDED and was judged not good enough. They
-shared the name `maxRetries` until the knobs were unified, which made the
-one that sounded like a transport setting the guardrail's budget.
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -9726,7 +9700,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`temperature`](#temperature-6)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### tools?
 

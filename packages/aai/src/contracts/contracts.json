@@ -147,8 +147,8 @@
     "supported": [4],
     "dropped": {
       "1": "Imports DEFAULT_GUARDRAIL_MAX_RETRIES, renamed DEFAULT_GUARDRAIL_MAX_REVISIONS, and sets maxRetries as the guardrail budget — which is now the provider's retry budget (ModelTuning.maxRetries); the guardrail's is maxRevisions.",
-      "2": "Sets maxRetries beside a guardrail meaning the revision budget. It still compiles, but maxRetries is now the provider's retry budget (ModelTuning.maxRetries) and the guardrail's is maxRevisions, so an epoch-2 subagent silently gets the default of one revision.",
-      "3": "SubagentDef.maxRetries is now the PROVIDER's retry budget (the shared ModelTuning knob, as on agent()); the guardrail's revision budget it used to name is maxRevisions, and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. An epoch-3 subagent importing the constant no longer compiles, and one writing guardrail + maxRetries still compiles but budgets the wrong thing."
+      "2": "Sets maxRetries beside a guardrail as the revision budget. SubagentDef no longer accepts maxRetries \u2014 it is a compile error naming maxRevisions, the guardrail's budget now \u2014 so an epoch-2 subagent fails to build rather than silently budgeting the wrong thing.",
+      "3": "The guardrail's revision budget is renamed maxRevisions and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. SubagentDef takes ModelTuning WITHOUT maxRetries, so an epoch-3 subagent writing guardrail + maxRetries (or importing the constant) no longer compiles, and the error names maxRevisions; a subagent's provider requests retry on the AI SDK default."
     }
   },
   "testing": {

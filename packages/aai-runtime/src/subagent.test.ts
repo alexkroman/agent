@@ -8,7 +8,6 @@
  */
 
 import { subagent, tool } from "@alexkroman1/aai";
-import { APICallError } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -57,37 +56,6 @@ describe("createSubagentRunner", () => {
       parentCall(),
     );
     expect(model.calls[0]).toMatchObject({ temperature: 0.3, maxOutputTokens: 64 });
-  });
-
-  it("maxRetries is the PROVIDER's retry budget, not the guardrail's", async () => {
-    // A retryable failure on every request. With the SDK's default budget this
-    // is three requests and several seconds of backoff; `maxRetries: 0` makes
-    // it exactly one, which is what proves the knob reaches the request.
-    const { model, descriptor, env } = setup([]);
-    let requests = 0;
-    Object.assign(model, {
-      doGenerate: () => {
-        requests += 1;
-        return Promise.reject(
-          new APICallError({
-            message: "Service Unavailable",
-            url: "https://llm.example/v1",
-            requestBodyValues: {},
-            statusCode: 503,
-            isRetryable: true,
-          }),
-        );
-      },
-    });
-    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    await expect(
-      run(
-        subagent({ name: "flaky", systemPrompt: "S.", maxRetries: 0 }),
-        { task: "t" },
-        parentCall(),
-      ),
-    ).rejects.toThrow(/Service Unavailable/);
-    expect(requests).toBe(1);
   });
 
   it("returns the subagent's final text with an empty cost report", async () => {
