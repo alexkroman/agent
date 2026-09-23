@@ -271,6 +271,21 @@ function parseToolResult(raw: string, name: string, at: number, hasSchema: boole
 }
 
 /**
+ * Every call to `name` in `calls` — THROWING, naming what the scope did call,
+ * when there is none. The two result readers below share it so a miss has one
+ * spelling: a `find` that answers `undefined` is how a case passes against
+ * nothing.
+ */
+function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly EvalToolCall[] {
+  const matching = callsTo(calls, name);
+  if (matching.length === 0) {
+    const seen = calls.map((c) => c.name).join(", ");
+    throw new Error(`no call to "${name}"; this scope called: ${seen || "no tools"}`);
+  }
+  return matching;
+}
+
+/**
  * The result of the LAST call to `name` in `calls`, parsed.
  *
  * {@link toolResultIn} refuses a scope holding two calls to one tool, and that
@@ -312,11 +327,7 @@ export function lastToolResultIn<T = unknown>(
   name: string,
   schema?: StandardSchemaV1<unknown, T>,
 ): T {
-  const matching = calls.filter((call) => call.name === name);
-  if (matching.length === 0) {
-    const seen = calls.map((c) => c.name).join(", ");
-    throw new Error(`no call to "${name}"; this scope called: ${seen || "no tools"}`);
-  }
+  const matching = requireCallsTo(calls, name);
   // Hand the single last call to the reader that already parses one, so the
   // parse, the never-completed check and the schema path have one spelling.
   return toolResultIn([matching.at(-1) as EvalToolCall], name, schema);
@@ -336,11 +347,7 @@ export function toolResultIn<T = unknown>(
   name: string,
   schema?: StandardSchemaV1<unknown, T>,
 ): T {
-  const matching = calls.filter((call) => call.name === name);
-  if (matching.length === 0) {
-    const seen = calls.map((c) => c.name).join(", ");
-    throw new Error(`no call to "${name}"; this scope called: ${seen || "no tools"}`);
-  }
+  const matching = requireCallsTo(calls, name);
   if (matching.length > 1) {
     throw new Error(`${matching.length} calls to "${name}" — read them off toolCalls yourself`);
   }

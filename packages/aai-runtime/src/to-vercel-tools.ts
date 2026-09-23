@@ -87,6 +87,15 @@ function callOptions(
   return { signal, executeOptions };
 }
 
+/**
+ * What the MODEL is told about one tool — shared by {@link toVercelTools} and
+ * {@link toDeclaredTools}, because a speculation's request has to carry exactly
+ * the declarations the real one does.
+ */
+function declarationOf(schema: ToolSchema) {
+  return { description: schema.description, inputSchema: jsonSchema(schema.parameters) };
+}
+
 export function toVercelTools(
   schemas: readonly ToolSchema[],
   ctx: ToVercelToolsContext,
@@ -94,8 +103,7 @@ export function toVercelTools(
   const out: Record<string, Tool> = {};
   for (const schema of schemas) {
     out[schema.name] = tool({
-      description: schema.description,
-      inputSchema: jsonSchema(schema.parameters),
+      ...declarationOf(schema),
       execute: async (args: unknown, options: ToolExecutionOptions<unknown>) => {
         // Repair stringified scalars ("1500", "true") toward the schema's
         // declared types before the tool (or a relay observer) sees them.
@@ -178,10 +186,7 @@ export function toVercelTools(
 export function toDeclaredTools(schemas: readonly ToolSchema[]): Record<string, Tool> {
   const out: Record<string, Tool> = {};
   for (const schema of schemas) {
-    out[schema.name] = tool({
-      description: schema.description,
-      inputSchema: jsonSchema(schema.parameters),
-    });
+    out[schema.name] = tool(declarationOf(schema));
   }
   return out;
 }

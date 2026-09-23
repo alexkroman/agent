@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { type JournalArm, keysFor, runOf, stepOf } from "./conformance-cases.ts";
+import { type JournalArm, keysFor, runOf, startRun, stepOf } from "./conformance-cases.ts";
 
 /**
  * The step/attempt half of the contract.
@@ -32,9 +32,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // The whole reason `appendStep` answers with the stored entry rather than
         // with what it was handed: two executions that both ran the step have to
         // agree on what it returned, or the two replays diverge.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const first = await journal.appendStep(
           runId,
           stepOf({ key: "charge#0", output: "first", attempts: 1, finishedAt: 1000 }),
@@ -49,9 +47,7 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("two concurrent appends of one key agree on one entry", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const [a, b] = await Promise.all([
           journal.appendStep(runId, stepOf({ key: "ship#0", output: "a", finishedAt: 1000 })),
           journal.appendStep(runId, stepOf({ key: "ship#0", output: "b", finishedAt: 1001 })),
@@ -61,9 +57,7 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("readSteps answers every settled step, in the order they settled", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         for (const [n, key] of ["one#0", "two#0", "three#0"].entries()) {
           await journal.appendStep(runId, stepOf({ key, finishedAt: 1000 + n }));
         }
@@ -75,10 +69,8 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("readSteps is empty for a run with no steps, and for one nobody started", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
+        const { journal, runId } = await startRun(arm);
         const missing = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
         expect(await journal.readSteps(runId)).toEqual([]);
         expect(await journal.readSteps(missing.runId)).toEqual([]);
       });
@@ -89,10 +81,8 @@ export function journalStepConformance(arm: JournalArm): void {
         // nobody started all mean "not settled" rather than raising — the answer
         // only ever SKIPS work, so reading it wrongly re-runs a step, which
         // at-least-once already permits.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
+        const { journal, runId } = await startRun(arm);
         const missing = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
         await journal.createRun(runOf({ runId: missing.runId }));
         const entry = stepOf({ key: "poll#1", name: "poll", finishedAt: 4242 });
         await journal.appendStep(runId, entry);
@@ -108,9 +98,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // one of them. `startedAt` is the live instance: it was added by an
         // `alter table`, so a read that omitted it would answer a step with no
         // derivable cost and nothing else would notice.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         for (const [n, key] of ["a#0", "b#0", "c#0"].entries()) {
           await journal.appendStep(
             runId,
@@ -123,9 +111,7 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("a step's name and attempt count are what was stored", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const entry = stepOf({ key: "poll#3", name: "poll", attempts: 4, finishedAt: 1234 });
         expect(await journal.appendStep(runId, entry)).toEqual(entry);
       });
@@ -134,9 +120,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // The whole point of the column: `finishedAt - startedAt` is what the
         // step cost, and an arm that dropped the value would report every step
         // as unknown-duration while every other arm reported a real one.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const entry = stepOf({ key: "convert#0", startedAt: 1000, finishedAt: 4500 });
 
         expect(await journal.appendStep(runId, entry)).toMatchObject({
@@ -152,9 +136,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // as the epoch — so a step that took two seconds would report as having
         // taken fifty-five years. Every arm must answer `undefined`, which is
         // what `StepEntry.startedAt` obliges a reader to render as unknown.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const entry = stepOf({ key: "legacy#0", finishedAt: 2000 });
         // `stepOf` defaults no start, so this is the pre-column shape exactly.
         expect(entry.startedAt).toBeUndefined();
@@ -170,9 +152,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // against the case above while silently dropping a real value. Nothing
         // produces an epoch start in practice; the point is that the two
         // conditions are distinguished rather than conflated.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const entry = stepOf({ key: "epoch#0", startedAt: 0, finishedAt: 5 });
 
         expect((await journal.appendStep(runId, entry)).startedAt).toBe(0);
@@ -188,9 +168,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // already burned the attempt and a step that wedges the guest cannot be
         // redelivered forever. The number is how many are outstanding, not how
         // many times the step has been tried.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-3", HOUR)).toBe(3);
@@ -201,9 +179,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // an at-least-once transport, and before the holder the platform
         // backend's own doc had to say "must not soften it by retrying the call
         // itself — a retried claim would burn two".
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR)).toBe(1);
@@ -239,9 +215,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // The whole reason a charge carries an instant. A walk that DIED cannot
         // release, so before this its charge stood forever and `maxAttempts`
         // deaths on one key refused that step permanently.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const longAgo = Date.now() - 2 * HOUR;
         await claimingAt(longAgo, () => journal.claimAttempt(runId, "charge#0", "dead-1", HOUR));
         await claimingAt(longAgo, () => journal.claimAttempt(runId, "charge#0", "dead-2", HOUR));
@@ -257,9 +231,7 @@ export function journalStepConformance(arm: JournalArm): void {
         //
         // Both paths, because they are different code: a FRESH key inserts its
         // whole map, where an existing key goes through the prune-and-add.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         expect(await journal.claimAttempt(runId, "fresh#0", "walk-1", 0)).toBe(1);
         await claimingAt(Date.now() - 2 * HOUR, () =>
           journal.claimAttempt(runId, "existing#0", "walk-1", HOUR),
@@ -272,9 +244,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // `on conflict do nothing` gets wrong: the row exists, so nothing is
         // written, and the old instant keeps it out of the count — an attempt
         // that answers 0 and is charged to nobody.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await claimingAt(Date.now() - 2 * HOUR, () =>
           journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
         );
@@ -292,9 +262,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // claim is stamped half an hour ago and the re-claim happens now, so a
         // ten-minute window includes a refreshed instant and excludes the
         // original. 1 means it was not refreshed; 2 means it was.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await claimingAt(Date.now() - HOUR / 2, () =>
           journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
         );
@@ -303,9 +271,7 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("two keys on one run are counted independently", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
         await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR);
         expect(await journal.claimAttempt(runId, "ship#0", "walk-1", HOUR)).toBe(1);
@@ -313,11 +279,9 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("two runs sharing a key are counted independently", async () => {
-        const journal = arm.journal();
-        const one = keysFor(arm);
-        const two = keysFor(arm);
-        await journal.createRun(runOf({ runId: one.runId }));
-        await journal.createRun(runOf({ runId: two.runId }));
+        const one = await startRun(arm);
+        const two = await startRun(arm, {}, one.journal);
+        const { journal } = one;
         await journal.claimAttempt(one.runId, "charge#0", "walk-1", HOUR);
         expect(await journal.claimAttempt(two.runId, "charge#0", "walk-1", HOUR)).toBe(1);
       });
@@ -326,9 +290,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // Anything that READS then WRITES gives both deliveries the same number
         // and lets a step exceed its ceiling. One statement is the remedy, and
         // this is the assertion that can tell the two apart.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const claimed = await Promise.all([
           journal.claimAttempt(runId, "charge#0", "walk-1", HOUR),
           journal.claimAttempt(runId, "charge#0", "walk-2", HOUR),
@@ -341,9 +303,7 @@ export function journalStepConformance(arm: JournalArm): void {
         // A charge is a LEASE — see `JournalStore.releaseAttempt`. Only an
         // attempt that never ENDED keeps one, which is what makes the ceiling a
         // bound on abandonment rather than on reaches.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
         expect(await journal.claimAttempt(runId, "charge#0", "walk-2", HOUR)).toBe(2);
         await journal.releaseAttempt(runId, "charge#0", "walk-2");
@@ -353,9 +313,7 @@ export function journalStepConformance(arm: JournalArm): void {
       test("a release names the charge, so it cannot take another walk's", async () => {
         // The floor the counter needed is gone with the counter: a decrement
         // could not tell whose charge it was spending, and a delete can.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
         await journal.releaseAttempt(runId, "charge#0", "walk-2");
         await journal.releaseAttempt(runId, "charge#0", "walk-2");
@@ -364,9 +322,7 @@ export function journalStepConformance(arm: JournalArm): void {
       });
 
       test("a release that lands twice is a no-op the second time", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimAttempt(runId, "charge#0", "walk-1", HOUR);
         await journal.releaseAttempt(runId, "charge#0", "walk-1");
         await journal.releaseAttempt(runId, "charge#0", "walk-1");

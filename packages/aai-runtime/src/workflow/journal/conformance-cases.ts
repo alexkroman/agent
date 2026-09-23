@@ -93,6 +93,39 @@ export function runOf(overrides: Partial<RunRecord> & { runId: string }): RunRec
   };
 }
 
+/** What {@link startRun} answers: the store the run is on, plus the names the case owns. */
+export type StartedRun<J extends JournalStore = JournalStore> = ReturnType<typeof keysFor> & {
+  journal: J;
+};
+
+/**
+ * The preamble nearly every case opens with — a store, fresh keys, and ONE run
+ * created on them — so a case body starts at what it is about.
+ *
+ * `overrides` is the part of the record the case cares about (`status`,
+ * `input`); the run id is always the minted one. `journal` is for a half that
+ * narrows the store before using it (`resumableOf` in
+ * `workflow/journal/conformance-resume.ts`), so the narrowed type survives.
+ */
+export function startRun(
+  arm: JournalArm,
+  overrides?: Omit<Partial<RunRecord>, "runId">,
+): Promise<StartedRun>;
+export function startRun<J extends JournalStore>(
+  arm: JournalArm,
+  overrides: Omit<Partial<RunRecord>, "runId">,
+  journal: J,
+): Promise<StartedRun<J>>;
+export async function startRun(
+  arm: JournalArm,
+  overrides: Omit<Partial<RunRecord>, "runId"> = {},
+  journal: JournalStore = arm.journal(),
+): Promise<StartedRun> {
+  const keys = keysFor(arm);
+  await journal.createRun(runOf({ ...overrides, runId: keys.runId }));
+  return { ...keys, journal };
+}
+
 /** A settled step with everything defaulted. */
 export function stepOf(overrides: Partial<StepEntry> & { key: string }): StepEntry {
   return {
@@ -131,9 +164,7 @@ export function journalRunConformance(arm: JournalArm): void {
         // The id is the CALLER's, so a collision means two starts raced and
         // exactly one may win. Silently keeping either one discards a run
         // somebody is already holding an id for.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await expect(journal.createRun(runOf({ runId, workflow: "other" }))).rejects.toThrow();
       });
 
@@ -166,9 +197,7 @@ export function journalRunConformance(arm: JournalArm): void {
       // this section is where the contract is at its most explicit.
 
       test("a run started with NO input reads back with input absent", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, input: undefined }));
+        const { journal, runId } = await startRun(arm, { input: undefined });
         const run = await journal.getRun(runId);
         expect(run?.input).toBeUndefined();
       });
@@ -177,9 +206,7 @@ export function journalRunConformance(arm: JournalArm): void {
         // `null` is a value an author can pass and `undefined` is the absence of
         // one; a backend that stores both as SQL NULL loses the difference and a
         // replay reads a different input than the run was started with.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, input: null }));
+        const { journal, runId } = await startRun(arm, { input: null });
         const run = await journal.getRun(runId);
         expect(run?.input).toBeNull();
       });
@@ -198,9 +225,7 @@ export function journalRunConformance(arm: JournalArm): void {
         // here would compare unequal to every real version and have the message
         // report a redeploy on a run that never had one — asserting as a fact
         // the one cause it should have ruled out.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, codeVersion: undefined }));
+        const { journal, runId } = await startRun(arm, { codeVersion: undefined });
         expect((await journal.getRun(runId))?.codeVersion).toBeUndefined();
       });
 
@@ -223,9 +248,7 @@ export function journalRunConformance(arm: JournalArm): void {
         // made `setStatus` throw from inside the driver and the run never left
         // `running`. The delivery then failed and was retried against the same
         // fault, forever.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         expect(await journal.setStatus(runId, "completed", { output: undefined })).toBe(true);
         const run = await journal.getRun(runId);
         expect(run?.status).toBe("completed");
@@ -233,25 +256,19 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("a completed run with a NULL output reads back null", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         await journal.setStatus(runId, "completed", { output: null });
         expect((await journal.getRun(runId))?.output).toBeNull();
       });
 
       test("a run that never failed reads back with error absent", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         await journal.setStatus(runId, "completed", { output: 1 });
         expect((await journal.getRun(runId))?.error).toBeUndefined();
       });
 
       test("a failed run carries its message", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         await journal.setStatus(runId, "failed", { error: { message: "the otter escaped" } });
         const run = await journal.getRun(runId);
         expect(run?.status).toBe("failed");
@@ -259,9 +276,7 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("an ok step with no output has neither an output nor an error", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const stored = await journal.appendStep(
           runId,
           stepOf({ key: "notify#0", output: undefined }),
@@ -271,9 +286,7 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("a failed step carries its message and no output", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const stored = await journal.appendStep(
           runId,
           stepOf({
@@ -289,9 +302,7 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("a step's output that is NULL is not the same as one that is absent", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const stored = await journal.appendStep(runId, stepOf({ key: "lookup#0", output: null }));
         expect(stored.output).toBeNull();
       });
@@ -299,9 +310,7 @@ export function journalRunConformance(arm: JournalArm): void {
 
     describe("setStatus is a COMPARE-AND-SET, and the answer is whether it moved", () => {
       test("it moves when the current status is in expect", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         expect(await journal.setStatus(runId, "completed", { output: 42 }, ["running"])).toBe(true);
         expect((await journal.getRun(runId))?.output).toBe(42);
       });
@@ -309,9 +318,7 @@ export function journalRunConformance(arm: JournalArm): void {
       test("it REFUSES when the run is not where the caller thought, and changes nothing", async () => {
         // The failure this prevents: a cancelled run marked `completed` by a
         // worker that had not noticed the cancel.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         await journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
         expect(await journal.setStatus(runId, "completed", { output: 42 }, ["running"])).toBe(
           false,
@@ -322,9 +329,7 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("an absent expect matches whatever the run is now", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "pending" }));
+        const { journal, runId } = await startRun(arm, { status: "pending" });
         expect(await journal.setStatus(runId, "running")).toBe(true);
         expect((await journal.getRun(runId))?.status).toBe("running");
       });
@@ -338,9 +343,7 @@ export function journalRunConformance(arm: JournalArm): void {
       test("only the FIRST of two deliveries completes the run", async () => {
         // Both racing workers ran the body; the compare-and-set is what decides
         // which one's answer the run reports.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         const verdicts = await Promise.all([
           journal.setStatus(runId, "completed", { output: "first" }, ["running"]),
           journal.setStatus(runId, "completed", { output: "second" }, ["running"]),
@@ -349,9 +352,7 @@ export function journalRunConformance(arm: JournalArm): void {
       });
 
       test("a later status move with NO patch leaves the stored output alone", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" });
         await journal.setStatus(runId, "completed", { output: { kept: true } });
         expect(await journal.setStatus(runId, "cancelled")).toBe(true);
         expect((await journal.getRun(runId))?.output).toEqual({ kept: true });

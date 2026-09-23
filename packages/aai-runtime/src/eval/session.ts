@@ -65,8 +65,8 @@ import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
-import { assertTurnMeasurable } from "./_turn-faults.ts";
-import { type EvalToolCall, errorsIn, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { assertTurnMeasurable, measuredTurn } from "./_turn-faults.ts";
+import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
 
 /** How long one turn may take before the harness gives up on it. */
@@ -460,20 +460,8 @@ async function openWithFakes(
     stt.commit(text);
     if (manual) session.command({ type: "user_turn_commit" });
     await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
-    const turn = events.slice(from);
-    assertTurnMeasurable(
-      `the reply to ${JSON.stringify(text.slice(0, 60))}`,
-      turn,
-      toolNames,
-      "voice",
-    );
-    return {
-      text: saidIn(turn).join(" "),
-      events: turn,
-      toolCalls: toolCallsInEvents(turn),
-      completed: turn.some((e) => e.type === "reply.completed"),
-      errors: errorsIn(turn),
-    };
+    const what = `the reply to ${JSON.stringify(text.slice(0, 60))}`;
+    return measuredTurn(what, events.slice(from), toolNames, "voice");
   };
 
   return {
