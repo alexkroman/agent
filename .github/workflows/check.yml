@@ -693,10 +693,6 @@ jobs:
   platform-stack:
     needs: setup
     runs-on: ubuntu-latest
-    # `packages: read` is for the ghcr.io login below, and nothing else.
-    permissions:
-      contents: read
-      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -729,21 +725,34 @@ jobs:
           # strongly here. `ship-workflow-gate.test.ts` asserts the two agree,
           # because two literals in two files is the shape that drifts.
           version: 2.109.1
-      # AUTHENTICATED pulls, because `supabase start` pulls ~10 images from
-      # ghcr.io and an anonymous pull shares a rate limit with every other
-      # anonymous client on the runner's address. On 2026-09-23 four
-      # consecutive runs of this job died in `toomanyrequests` before any test
-      # ran — on #1525 and #1526 alike, so not a property of either diff. The
-      # token is the job's own read-only one; the images are public, so any
-      # authenticated identity may pull them.
-      - name: Log in to ghcr.io
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       # `supabase start` applies supabase/migrations on INIT, so a fresh
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).
-      - run: supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket
+      #
+      # **Retried on a registry THROTTLE only, the same shape as the Postgres
+      # pull in `integration-and-scenario`.** `supabase start` pulls ~10 images
+      # from ghcr.io, retries each twice 4-8s apart, and then fails the job
+      # before a test has run. On 2026-09-23 that happened on five consecutive
+      # runs across two PRs, all `toomanyrequests`, and logging in to ghcr.io
+      # did not change it. Every image that finished pulling stays in the local
+      # cache, so each attempt asks for fewer; the delays grow because the
+      # quota is per unit TIME. Any other failure exits at once — a broken
+      # migration has to stay fast and loud.
+      - name: Start the Supabase stack
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/supabase-start.log"
+          for delay in 15 45 90 0; do
+            if supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if ! grep -q toomanyrequests "$log" || [ "$delay" = 0 ]; then
+              exit 1
+            fi
+            echo "::warning title=ghcr.io throttled supabase start::retrying in ${delay}s"
+            supabase stop --no-backup || true
+            sleep "$delay"
+          done
       # The SAME resolver a developer runs: it shells out to
       # `supabase status -o env`, exports the Supabase trio beside the database
       # URL, and sets AAI_REQUIRE_PG + AAI_REQUIRE_STACK — so a variable that
