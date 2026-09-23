@@ -164,6 +164,9 @@ function* ownedNames(dir) {
     const capability = `${key}:${file.replace(/\.ts$/, "")}`;
     const text = readFileSync(join(entryDir, file), "utf8");
     for (const [, clause, from] of text.matchAll(/export\s*\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
+      // Both groups are mandatory in the pattern, but `matchAll` types them
+      // `string | undefined` under the scripts' strict checking.
+      if (clause === undefined || from === undefined) continue;
       const specifier = bySource.get(relative(dir, join(entryDir, from)));
       if (specifier === undefined) continue;
       for (const name of clauseNames(clause)) yield [specifier, name, capability];
@@ -289,7 +292,8 @@ function foldTarget(name, rows) {
   const match = /^(.+?)(Props|Options)$/.exec(name);
   if (match === null) return;
   const base = match[1];
-  const lowered = `${base[0].toLowerCase()}${base.slice(1)}`;
+  if (base === undefined) return;
+  const lowered = `${base.charAt(0).toLowerCase()}${base.slice(1)}`;
   const target = [base, lowered].find((candidate) => rows.has(candidate));
   if (target === undefined) return;
   const same = (a, b) => a.length === b.length && a.every((s) => b.includes(s));
