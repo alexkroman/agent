@@ -91,6 +91,17 @@ export function createSttEventHandlers(deps: {
    * `createAgentSpeakingPredicate`.
    */
   agentIsSpeaking: () => boolean;
+  /**
+   * Is any agent audio on the line, filler included? What the edge gate reads,
+   * so it is what decides whether a held edge still has a floor to protect.
+   * See `createAudioOnLinePredicate`.
+   */
+  audioOnLine: () => boolean;
+  /**
+   * Did the agent have the floor when the current utterance began? Only such
+   * an utterance can barge in — see `createBargeInPolicy`, step 1.
+   */
+  utteranceOpenedOverSpeech: () => boolean;
   /** Has this reply sent real speech, as opposed to dead-air filler? */
   hasSpokenRecordable: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
@@ -194,6 +205,7 @@ export function createSttEventHandlers(deps: {
   // module of its own. See pipeline-barge-in-policy.ts.
   const bargeIn = createBargeInPolicy({
     agentIsSpeaking,
+    utteranceOpenedOverSpeech: deps.utteranceOpenedOverSpeech,
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
     utteranceDurationMs: () => speechEdges.durationMs(),
@@ -248,7 +260,7 @@ export function createSttEventHandlers(deps: {
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
         // long as the user is talking.
-        if (!agentIsSpeaking()) deps.edgeGate.release();
+        if (!deps.audioOnLine()) deps.edgeGate.release();
         emitPartial();
         // Preemptive generation (on by default) reads the confidence here and
         // nowhere else — the non-barge-in branch IS the idle-ish case it is

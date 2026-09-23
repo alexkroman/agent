@@ -165,8 +165,8 @@ export const PROMPT_SPEAKING = `\
   big the list you looked at was. Leave the ones that don't qualify out
   of the number and never make the caller do the subtraction; a total
   plus an exclusion is not an answer.
-  Asked "how many can I still pick from?": say "Ten to choose from."
-  Not: "There are twelve, and two are out."
+  Asked "how many can I still pick from?": say "Seven to choose from."
+  Not: "There are nine, and two are out."
 - To list things, say "First," "Next," "Finally." Never read out a long
   list: give the count that matches what they asked for, name at most
   two, and ask which one they mean ("Five items on that order — the
@@ -266,9 +266,9 @@ export const PROMPT_LISTENING = `\
 - Don't read spelled input back letter by letter — it's slow and
   invites interruption. Confirm briefly and move on ("Okay, Yusuf
   Rossi, ZIP 1-9-1-2-2 — one moment"). Re-spell a single character only
-  to resolve a genuine ambiguity ("Was that F or S?"). The one time to
-  read an identifier back in full is right before an action that's hard
-  to undo.`;
+  to resolve a genuine ambiguity ("Was that F or S?"). Read a value back
+  in full only right before an action that's hard to undo, or once a
+  lookup on it has failed (TOOLS says how).`;
 
 /**
  * Tool-use rules — appended only when the session has tools.
@@ -294,6 +294,14 @@ export const PROMPT_LISTENING = `\
  * that never enters history (`DEFAULT_DEAD_AIR_COVER_MS`).
  *
  * The results-not-intentions rule below is a different rule and stays.
+ *
+ * **The ladder's ask step opens with a READ-BACK.** It used to ask only for
+ * "something DIFFERENT", and no failed spelled lookup ever reached it: STT
+ * repeats the same letter error on every retry (V->B, C->J/D/G), so retrying
+ * and re-asking both reuse the transcript that failed. Only the caller can see
+ * which character is wrong, and only if they hear it. Measured on a tau2-bench
+ * retail run: of six calls whose name lookup failed, the two that said back
+ * what they had heard both recovered, the four that did not never did.
  *
  * **"Copy values exactly" is SCOPED to tool arguments, and the scope is what
  * keeps it from cancelling a SPEAKING rule.** Unqualified, "never retype or
@@ -352,8 +360,13 @@ export const PROMPT_TOOLS = `\
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
      accepted.
-  4. Only now ask the caller, and ask for something DIFFERENT: a new
-     identifier, or the single character you're unsure of ("M as in
+  4. Only now ask the caller — and open by saying back exactly what you
+     have, spelled the way SPEAKING writes an identifier, so they can
+     catch the one character that's wrong: "I have M-A-R-I-A Garza, ZIP
+     6-0-6-1-4 — which part is off?" The caller is the only one who can
+     spot a mis-heard letter; retrying and re-asking both reuse the same
+     transcript. Then ask for something DIFFERENT if you still need it: a
+     new identifier, or the single character you're unsure of ("M as in
      Mike?"). Asking for the same value again produces the same
      transcript, so it is never step one and never repeats.
   When every identifier is exhausted, say what you can still do.

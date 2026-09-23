@@ -1624,11 +1624,13 @@ real time — so a barge-in anywhere in the line records the heard prefix throug
 `persistInterruptedTurn`. It used to push the whole line up front, so a caller
 who cut it off after two words left a record saying all of it was delivered.
 
-**Not covered: a barge-in during the TTS drain.** `runTurn` has already
-committed the full text by then, so that case keeps `buildTailResumePrompt` as
-its only mitigation (which this change makes word-truthful). Fixing it means
-deferring the history commit until after the drain — a change to `runReply`'s
-body contract, deliberately separate.
+**A cut AFTER the body committed is taken back too** — during the TTS drain,
+in the client's playback tail, or while a chained reply queues behind it (35 of
+36 barge-ins in one tau2 run). The committed reply registers with the cursor
+(`HeardTracker.markPersisted`), which keeps it, placed on the clock, until its
+audio has played; a cut that finds it unplayed rewrites the record in place
+(`transports/pipeline-heard-history.ts`): heard prefix + `[interrupted]`, or no
+text, tool steps kept. Logs `Pipeline heard-history truncated`.
 
 ## A `reset` starts a conversation, so it GREETS
 

@@ -371,6 +371,73 @@ describe("resume mooted by a committed user turn", () => {
   });
 });
 
+describe("speech edges over dead-air filler", () => {
+  function fillerActivity() {
+    const reports: string[] = [];
+    const made = makeActivity({
+      callbacks: {
+        report: (event) => {
+          reports.push(event.type);
+          if (event.type === "reply.cancelled") made.calls.cancelled++;
+        },
+      },
+      // Filler is playing: audio on the line, but no real speech yet.
+      isPlaybackPending: () => true,
+      hasSpokenRecordable: () => false,
+    });
+    return { ...made, reports };
+  }
+
+  test("a caller talking over a holding phrase does NOT release speech_started", () => {
+    // The measured defect: the edge gate read the filler-blind barge-in
+    // predicate, so `speech_started` went out with no `cancelled`, and a client
+    // that flushes its playout on that event threw the filler away while the
+    // host believed it was heard.
+    const { activity, calls, reports } = fillerActivity();
+    activity.sttEvents.onSttPartial("hello are you still there");
+    expect(reports).not.toContain("speech.started");
+    // ...and still does not barge in: the reply behind the filler survives.
+    expect(calls.aborts).toBe(0);
+    expect(calls.cancelled).toBe(0);
+  });
+
+  test("the utterance still commits as a chained turn", () => {
+    const { activity, calls } = fillerActivity();
+    activity.sttEvents.onSttPartial("hello are you still there");
+    activity.sttEvents.onSttFinal("hello are you still there");
+    expect(calls.aborts).toBe(0);
+    expect(calls.chained).toEqual([{ text: "hello are you still there", isResume: false }]);
+  });
+});
+
+describe("a re-prompt that began before the reply spoke", () => {
+  test("does not replace the reply that started speaking under it", () => {
+    // "Hello? Are you still there?" opens into a tool chain's silence, the
+    // answer starts speaking mid-utterance, and the final lands after. It was
+    // counted as a barge-in and discarded the answer; it now chains behind it.
+    const { activity, calls, state } = makeActivity();
+    state.spoke = false; // turn in flight, nothing audible yet
+    activity.sttEvents.onSttPartial("hello");
+    state.spoke = true; // the answer starts speaking
+    activity.sttEvents.onSttPartial("hello are you still there");
+    activity.sttEvents.onSttFinal("hello are you still there");
+    expect(calls.aborts).toBe(0);
+    expect(calls.cancelled).toBe(0);
+    expect(calls.chained).toEqual([{ text: "hello are you still there", isResume: false }]);
+  });
+
+  test("the NEXT utterance, begun over the speech, barges in as before", () => {
+    const { activity, calls, state } = makeActivity();
+    state.spoke = false;
+    activity.sttEvents.onSttPartial("hello");
+    state.spoke = true;
+    activity.sttEvents.onSttFinal("hello are you still there");
+    expect(calls.aborts).toBe(0);
+    activity.sttEvents.onSttPartial("wait stop that is wrong");
+    expect(calls.aborts).toBe(1);
+  });
+});
+
 // ─── The latch has no self-expiry ──────────────────────────────────────────
 //
 // A recovery window used to expire on its own, so a stale one was harmless.

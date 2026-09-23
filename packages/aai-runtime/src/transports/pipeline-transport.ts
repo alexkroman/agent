@@ -16,6 +16,7 @@ import { createDialogKnobs } from "./pipeline-dialog-knobs.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import { NO_GUARDRAILS } from "./pipeline-guardrails.ts";
 import { createHeardTracker } from "./pipeline-heard.ts";
+import { createHeardHistory } from "./pipeline-heard-history.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./pipeline-llm-stream.ts";
 import { createPersonaStep } from "./pipeline-persona-knobs.ts";
@@ -435,6 +436,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
     emitError,
     metrics,
+    trackPersisted: createHeardHistory({ history, heard, gate, log, sid: opts.sid }),
   });
 
   // Session lifecycle: open/greet/teardown — see

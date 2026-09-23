@@ -140,6 +140,23 @@ describe("buildSystemPrompt", () => {
     expect(askAgain).toBeGreaterThan(confusions);
   });
 
+  // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
+  // retail run no failed spelled lookup ever reached it: the agent asked for
+  // other identifiers or handed off. STT repeats the same letter error (V->B,
+  // C->J/D/G) on every retry, so only the caller can spot it — and of six
+  // calls whose name lookup failed, the two where the agent said back what it
+  // had heard both recovered; the four where it did not, none did.
+  test("the ladder's ask step opens by saying back what was heard", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ask = result.slice(result.indexOf("Only now ask the caller"));
+    const readBack = ask.indexOf("saying back exactly what you");
+    const different = ask.indexOf("ask for something DIFFERENT");
+    expect(readBack).toBeGreaterThan(-1);
+    expect(different).toBeGreaterThan(readBack);
+    // LISTENING's no-read-back rule names the exception rather than contradicting it.
+    expect(result).toContain("once a\n  lookup on it has failed");
+  });
+
   // Three sections used to carry a repeat-ask budget in three different units
   // ("at most once" / "never" / "two attempts"), which is both a violation of
   // this file's one-rule-one-section invariant and the reason an injected

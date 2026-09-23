@@ -45,6 +45,8 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     isResumeTurnInFlight: () => false,
     hasTurnSpoken: () => false,
     agentIsSpeaking: () => false,
+    audioOnLine: () => false,
+    utteranceOpenedOverSpeech: () => false,
     hasSpokenRecordable: () => false,
     abortInFlightTurn: vi.fn(),
     tailResumePrompt: () => undefined,
