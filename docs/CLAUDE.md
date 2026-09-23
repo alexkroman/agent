@@ -421,9 +421,10 @@ ORIGINAL rollup, so a chain of compatible steps cannot walk away from it.
 `--bump` REFUSES a change the probe proved compatible — it would mint an epoch
 for nothing.
 Additive changes pass (optional member, optional parameter, new export, widened
-parameter, narrowed return); a removed export, a required member, a changed or
-narrowed/widened union, an added required parameter, a return that provides less
-or a stricter generic constraint fails, and needs `--bump`.
+parameter, narrowed return); a removed export, a required member, a REMOVED
+member (optional or not), a changed or narrowed/widened union, an added required
+parameter, a return that provides less or a stricter generic constraint fails,
+and needs `--bump`.
 
 **Methods and constructors are compared STRICTLY.** TypeScript relates a
 method-shorthand member, and a class's constructor, BIVARIANTLY even under
@@ -444,7 +445,16 @@ each probed pair and reports every such position by path; the verdict is
 found a break", since a return loosened to `any` may break nobody. An `any` on
 both sides is unchanged and passes.
 
-**Four things are made to AGREE before either side is compiled**
+**A removed member is a BREAK even when it was optional**, and assignability
+cannot see it go: `{ name: string }` and `{ name: string; generate?: Fn }` are
+assignable both ways, yet every author passing `generate` in an object literal
+hits an excess-property error and every reader of it a missing property. The
+same paired walk reports each member the old side of an object position has
+and the new side lacks (a new string index signature excepted). Before it,
+`EvalSessionOptions` losing `generate` probed as a revision of `eval@7` while
+two retained frozen examples passing it stopped compiling.
+
+**Five things are made to AGREE before either side is compiled**
 (`scripts/_api-contracts-compat-rewrite.mjs`), each because two separately
 compiled modules disagree about something a consumer's program has once:
 
@@ -501,6 +511,15 @@ compiled modules disagree about something a consumer's program has once:
   copy dropped then fails to compile, which surfaces as a break (safe). **The
   blind spot**: a change to that type which breaks only THIS capability's use
   of it passes here — its owner's probe and the frozen examples are what see it.
+- **A declaration whose closure is byte-identical on both sides is ONE
+  declaration** too, the same move for a name only REACHED. Closure identity
+  already passed an unchanged name that is itself probed, but a generic
+  conditional reached INSIDE a changed signature was still two unrelated
+  declarations: `sessionSlot`'s unchanged `SessionSlotOptions<T>` (its `after`
+  reads `RejectThenable<After>`) failed the moment the `@sealed` `SessionSlot`
+  it returns gained `snapshot`. Equal text reaching equal text is the same type,
+  and a name reaching anything that changed has a changed closure and stays
+  two, so nothing is hidden. Never for the self-probe below.
 
 **Every current epoch's rollup must probe compatible with ITSELF**, checked on
 every `check:api-contracts` run (`scripts/_api-contracts-staleness.mjs`). A
@@ -1106,20 +1125,22 @@ not a defect in these comments — do not "fix" them by deleting links.
 
 ## What writing the `aai-runtime` epoch templates found
 
-Four things the surface cannot currently demonstrate about itself. None is a bug;
-each is a decision worth making rather than inheriting.
+Four things the surface could not demonstrate about itself. Three are RESOLVED
+the same way — by taking the half a template could not use OFF the contracted
+surface rather than adding the half it lacked — and the fourth still stands.
 
-- **`uploads` publishes a store TYPE and two blob implementations with no
-  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
-  are `@internal`, so they are on `/internal` and the template has to take the
-  store as a parameter. Honest for an embedder handed one by
-  `createRuntimeServer`, and it means the capability cannot show its own
-  end-to-end wiring.
-- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  contracted and `createWorkflowClient` is on `/internal`, so a template can
-  assemble the bag and not hand it to anything. Its `logger` field is required
-  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
-  on `/internal` too — only the `Logger` type is contracted.
+- **`uploads` published a store TYPE and two blob implementations with no
+  contracted way to join them** (`createUploadStore` and `resolveUploadBlobs`
+  were `@internal`). Resolved: `UploadStore`, `UploadBackend`, both backends,
+  `UPLOADS_TABLE`, `partKey` and `partsOf` are on `/internal` now, and the
+  capability is what an embedder actually writes against — the `UPLOAD_*`
+  constants, `UploadMeta`/`UploadPart` and the two errors.
+- **`workflow` was the same shape one level up**: `WorkflowClientOptions` was
+  contracted and `createWorkflowClient` was not, so a template could assemble
+  the bag and not hand it to anything. Resolved the same way — the capability is
+  the constants and `ensureWorkflowJournalSchema`. `Logger` is an INTERFACE on
+  the `logging` capability now, so a host's own logger satisfies it without
+  reaching for `/internal`'s `consoleLogger`.
 
   It once reached a second epoch for a reason worth knowing, because it is the
   SIBLING version of the `TextTurnResult` hazard below: the export list did not
@@ -1127,12 +1148,11 @@ each is a decision worth making rather than inheriting.
   `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
   now rather than `/workflow-api`, since the prefix is the server's half of that
   API. A host that takes the constant from `@alexkroman1/aai-runtime` — every
-  host — sees nothing. The numbering has been reset since, so the hazard is the
-  durable part, not the version it landed at.
-- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
-  the honest template is fifty lines of skeleton and anything in the wild will either
-  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
-  `aai` publishes `createToolContext` — would remove the incentive to launder it.
+  host — sees nothing. The hazard is the durable part, not the version.
+- **`WdkAdapter` was nine methods with no partial-implementation affordance.**
+  Resolved by removal: it, `WdkRunRecord` and `WdkStreamOptions` are internal to
+  the workflow engine and exported by no subpath, so there is no skeleton for a
+  host to write and nothing to launder with a cast.
 - **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
   capability's contract hash moves when the `ai` package's `StreamTextResult`
   moves. An upstream minor can force an epoch classification here with no change
