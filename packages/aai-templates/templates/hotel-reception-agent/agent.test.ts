@@ -491,10 +491,7 @@ describe("the booking dialog", () => {
     expect(at(ctx)).toBe("desk");
     // One more caller turn and a real second room is legal.
     const later = withCallerTurns(5);
-    hotelSlot.set(
-      later,
-      structuredClone(hotelSlot.get(ctx)) as Parameters<typeof hotelSlot.set>[1],
-    );
+    hotelSlot.set(later, hotelSlot.snapshot(ctx));
     expectDialogOk(await run("start_room_booking", later));
   });
 

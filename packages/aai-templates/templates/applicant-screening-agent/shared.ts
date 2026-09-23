@@ -463,6 +463,17 @@ export interface ScreeningProgress {
 }
 
 /**
+ * Declares the event's payload to the SDK, so `ctx.send(SCREENING_PROGRESS, …)`
+ * is type-checked against {@link ScreeningProgress} at every call site — a
+ * missing `total` is a compile error here, not a ticker the page cannot draw.
+ */
+declare module "@alexkroman1/aai" {
+  interface ClientEventMap {
+    [SCREENING_PROGRESS]: ScreeningProgress;
+  }
+}
+
+/**
  * A tick to hand a fan-out: one {@link SCREENING_PROGRESS} event per item that
  * settles. `Pick<ToolContext, "send">` because the ticker wants the one channel
  * and nothing else the tool was handed.
@@ -475,6 +486,6 @@ export function progressTicker(
   let done = 0;
   return () => {
     done += 1;
-    ctx.send(SCREENING_PROGRESS, { phase, done, total } satisfies ScreeningProgress);
+    ctx.send(SCREENING_PROGRESS, { phase, done, total });
   };
 }

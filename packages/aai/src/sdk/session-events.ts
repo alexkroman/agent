@@ -49,6 +49,7 @@ import type { SlotStore } from "./session-state.ts";
  * provides no database, so a hook that wants to persist brings its own client and
  * credential — the same change tool code saw, and for the same reason.
  *
+ * @sealed
  * @public
  */
 export type SessionEventContext = {

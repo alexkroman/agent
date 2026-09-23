@@ -79,32 +79,40 @@
  */
 
 /**
- * One of the opt-in prompt presets THIS release ships — see
- * {@link VOICE_PRESETS} for what each one says and what it costs. The
- * autocomplete half of {@link VoicePresetName}.
- *
- * Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
- * which would be the shorter way round: a derived alias renders in the API
- * report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
- * internal constant a reader cannot import and TypeDoc refuses to link. The
- * union renders as the strings, which is the answer to the only question
- * anybody asks of this type.
- *
- * @public
- */
-export type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
-
-/**
- * A preset name — one of {@link KnownVoicePresetName}, or any other string.
+ * A preset name — one of the opt-in prompt presets THIS release ships (see
+ * {@link VOICE_PRESETS} for what each one says and what it costs), or any
+ * other string.
  *
  * OPEN so an agent naming a preset a later release adds compiles against this
  * one. An unknown name emits no text (the prompt is assembled from the known
  * names only), and `aai build` / `aai dev` warn about it rather than the type
  * refusing it.
  *
+ * The known names are written INLINE rather than as an exported
+ * `KnownVoicePresetName` half. A closed union on the published surface is a
+ * type an author's code can pin, so a preset added to it changed a published
+ * type in a way no probe can call compatible (a union that grows is not
+ * assignable back to the one it grew from). Inline, the literals are only the
+ * autocomplete of an open type — `"a" | "b" | (string & {})` and
+ * `"a" | "b" | "c" | (string & {})` are the same set — so a regenerated list is
+ * a compatible change. Spelled as literals rather than derived from
+ * `VOICE_PRESET_NAMES` so the API report and the docs render the strings.
+ *
  * @public
  */
-export type VoicePresetName = KnownVoicePresetName | (string & {});
+export type VoicePresetName =
+  | "echoVerification"
+  | "speechNormalization"
+  | "natoAlphabet"
+  | (string & {});
+
+/**
+ * The CLOSED set of preset names this release has text for — private, derived
+ * from {@link VOICE_PRESETS}' own keys so the two cannot drift, and never
+ * exported (see {@link VoicePresetName} for why the closed half stays off the
+ * published surface).
+ */
+type ShippedVoicePresetName = keyof typeof VOICE_PRESETS;
 
 /**
  * The preset names, in the order {@link voicePresetSection} emits them.
@@ -124,7 +132,7 @@ export const VOICE_PRESET_NAMES = [
   "echoVerification",
   "speechNormalization",
   "natoAlphabet",
-] as const satisfies readonly KnownVoicePresetName[];
+] as const satisfies readonly ShippedVoicePresetName[];
 
 /**
  * The line emitted once above whatever presets are on.
@@ -313,7 +321,9 @@ const NATO_ALPHABET = `\
  *
  * @public
  */
-export const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>> = {
+export const VOICE_PRESETS: Readonly<
+  Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>
+> = {
   echoVerification: ECHO_VERIFICATION,
   speechNormalization: SPEECH_NORMALIZATION,
   natoAlphabet: NATO_ALPHABET,

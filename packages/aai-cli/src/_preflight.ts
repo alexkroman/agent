@@ -32,10 +32,16 @@
  * config is unpacked.
  */
 
-import type { TelephonyCarrier } from "@alexkroman1/aai";
 import { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import { plural } from "@alexkroman1/aai/utils";
 import { CARRIER_PARAM, requiredProviderEnvVars, TELEPHONY_PATH } from "@alexkroman1/aai-runtime";
+
+/**
+ * A carrier this build ships a codec for — the CLOSED set. `TelephonyCarrier` is
+ * open (a declaration may name a carrier a later SDK ships), so everything here
+ * that must be TOTAL over the carriers keys off `TELEPHONY_CARRIERS` instead.
+ */
+type ShippedCarrier = (typeof TELEPHONY_CARRIERS)[number];
 
 /**
  * The config shape read out of a bundle's `__aaiConfig` export: the provider
@@ -122,7 +128,7 @@ export function missingCredentialMessage(missing: string[]): string {
 export const CARRIER_SIGNING_SECRETS = {
   twilio: "TWILIO_AUTH_TOKEN",
   telnyx: "TELNYX_PUBLIC_KEY",
-} as const satisfies Record<TelephonyCarrier, string>;
+} as const satisfies Record<ShippedCarrier, string>;
 
 /**
  * The carriers a declaration admits, in `TELEPHONY_CARRIERS` order.
@@ -133,7 +139,7 @@ export const CARRIER_SIGNING_SECRETS = {
  * DROPPED. It is re-derived here only because that function is `@internal` to
  * `aai-runtime` and reaches no published subpath; keep the two in step.
  */
-export function declaredCarriers(config: PreflightConfig): TelephonyCarrier[] {
+export function declaredCarriers(config: PreflightConfig): ShippedCarrier[] {
   const access = config.telephony;
   if (access === undefined || access === false) return [];
   if (access === true) return [...TELEPHONY_CARRIERS];
@@ -161,7 +167,7 @@ export function declaredCarriers(config: PreflightConfig): TelephonyCarrier[] {
 export function missingTelephonySecrets(
   config: PreflightConfig,
   env: Record<string, string>,
-): { carrier: TelephonyCarrier; secret: string }[] {
+): { carrier: ShippedCarrier; secret: string }[] {
   return declaredCarriers(config)
     .map((carrier) => ({ carrier, secret: CARRIER_SIGNING_SECRETS[carrier] }))
     .filter(({ secret }) => !env[secret]);
@@ -169,7 +175,7 @@ export function missingTelephonySecrets(
 
 /** One line per carrier whose signing secret is absent. */
 export function missingTelephonySecretWarnings(
-  missing: readonly { carrier: TelephonyCarrier; secret: string }[],
+  missing: readonly { carrier: ShippedCarrier; secret: string }[],
 ): string[] {
   return missing.map(
     ({ carrier, secret }) =>
@@ -200,7 +206,7 @@ export function missingTelephonySecretWarnings(
 export function telephonyWebhooks(
   config: PreflightConfig,
   agentUrl: string,
-): { carrier: TelephonyCarrier; url: string }[] {
+): { carrier: ShippedCarrier; url: string }[] {
   return declaredCarriers(config).map((carrier) => ({
     carrier,
     url: `${agentUrl}${TELEPHONY_PATH}?${CARRIER_PARAM}=${carrier}`,

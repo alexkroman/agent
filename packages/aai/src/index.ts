@@ -292,6 +292,8 @@ export type {
   ToolInputSchema,
 } from "./sdk/schema.ts";
 export {
+  type ClientEventMap,
+  type ClientEventSender,
   type EventMapOf,
   SESSION_SOURCED_EVENT_TYPES,
   type SessionEvent,

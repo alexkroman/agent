@@ -76,7 +76,7 @@
 import type { ModelTuning } from "./agent-model-tuning.ts";
 import type { LlmProvider } from "./providers.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
-import type { BuiltinTool, ToolDef } from "./types.ts";
+import type { BuiltinTool, ToolSet } from "./types.ts";
 
 /**
  * How many times a {@link SubagentDef.guardrail} may send an answer back when
@@ -192,7 +192,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * subagent with no entry here and no `builtinTools` is a pure reasoning
    * pass — legal, and occasionally what you want.
    */
-  tools?: Readonly<Record<string, ToolDef>>;
+  tools?: ToolSet;
   /**
    * Builtins this subagent may call, resolved exactly as `agent({
    * builtinTools })` resolves them. Independent of the parent's: a parent that
@@ -417,6 +417,7 @@ export type SubagentGuardrail = (
  * What one delegated run returns: the accepted attempt, plus what getting there
  * took.
  *
+ * @sealed
  * @public
  */
 export interface DelegateResult extends SubagentAnswer {

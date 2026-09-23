@@ -265,6 +265,9 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     create,
     durable,
     get,
+    // `get` hands back the stored (frozen) value itself, so this is always a
+    // real copy, durable or not — the one case `privateCopy` skips.
+    snapshot: (ctx) => structuredClone(get(ctx)) as T,
     // The public signature answers `RejectThenableResult<R>`, an authoring
     // guard the implementation has no way to satisfy generically — at run time
     // it hands back exactly what the mutator returned, which is `R` on every

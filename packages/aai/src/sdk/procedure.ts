@@ -58,6 +58,7 @@ export interface ProcedureRunOptions {
  *
  * @typeParam M - The XState machine.
  *
+ * @sealed
  * @public
  */
 export interface Procedure<M extends AnyStateMachine> {

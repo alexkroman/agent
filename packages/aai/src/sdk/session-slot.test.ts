@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
 import { sessionSlot } from "./session-slot.ts";
@@ -113,6 +113,26 @@ describe("sessionSlot", () => {
     const stored = cartSlot.set(ctx, { items: ["pear"], nextId: 9 });
     expect(Object.isFrozen(stored)).toBe(true);
     expect(Object.isFrozen(stored.items)).toBe(true);
+  });
+
+  test("snapshot is a MUTABLE copy that set can restore, and changes nothing stored", () => {
+    const ctx = createToolContext();
+    cartSlot.update(ctx, (cart) => {
+      cart.items.push("a");
+    });
+    const copy = cartSlot.snapshot(ctx);
+    expectTypeOf(copy).toEqualTypeOf<Cart>();
+    expect(Object.isFrozen(copy)).toBe(false);
+    copy.items.push("b");
+    expect(cartSlot.get(ctx).items).toEqual(["a"]);
+    const other = createToolContext();
+    expect(cartSlot.set(other, copy)).toEqual({ items: ["a", "b"], nextId: 1 });
+  });
+
+  test("snapshot installs the default on first access, like get", () => {
+    const ctx = createToolContext();
+    expect(cartSlot.snapshot(ctx)).toEqual({ items: [], nextId: 1 });
+    expect(ctx.slots.read("cart")).toEqual({ items: [], nextId: 1 });
   });
 
   test("reset discards the value and installs a fresh default", () => {

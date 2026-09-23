@@ -22,7 +22,13 @@ import { z } from "zod";
  * error the author sees rather than a rule that does nothing on a call.
  */
 
-/** @internal Zod schema for `BuiltinTool`. Exported for reuse in internal schemas. */
+/**
+ * @internal The builtin names THIS release ships, as a closed enum — for the
+ * readers that must know whether a name resolves (`isBuiltin` in
+ * `testing-deployable.ts`, the build warning). NOT what the config schema
+ * validates `builtinTools` with: `BuiltinTool` is open, so the schema is
+ * {@link BuiltinToolNameSchema}.
+ */
 export const BuiltinToolSchema = z.enum([
   "web_search",
   "visit_webpage",
@@ -34,6 +40,25 @@ export const BuiltinToolSchema = z.enum([
   "recall",
   "calculate",
 ]);
+
+/**
+ * @internal Zod schema for a `builtinTools` entry — ANY non-empty string,
+ * because `BuiltinTool` is an open vocabulary: a config naming a builtin a later
+ * SDK ships must still deploy on this one. The runtime resolves only the names
+ * it ships and skips the rest, and an unknown name is WARNED about at build
+ * time (`agentConfigWarnings`), never refused here — the same treatment as
+ * {@link VoicePresetNameSchema}.
+ */
+export const BuiltinToolNameSchema = z.string().min(1);
+
+/**
+ * @internal Zod schema for a `telephony` carrier entry — ANY non-empty string,
+ * because `TelephonyCarrier` is open. The runtime serves only the carriers it
+ * ships a codec for (`enabledCarriers` filters against `TELEPHONY_CARRIERS`),
+ * so an unknown name mounts nothing, and it is WARNED about at build time
+ * rather than refused.
+ */
+export const TelephonyCarrierNameSchema = z.string().min(1);
 
 /**
  * @internal Zod schema for `VoicePresetName` — ANY non-empty string, because

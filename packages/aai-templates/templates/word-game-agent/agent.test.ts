@@ -247,10 +247,7 @@ describe("a round", () => {
     const laundered = player.ctx({
       messages: [saidAloud(`Okay so the word is ${word}, how do I describe that`)],
     });
-    gameSlot.set(
-      laundered,
-      structuredClone(gameSlot.get(ctx)) as Parameters<typeof gameSlot.set>[1],
-    );
+    gameSlot.set(laundered, gameSlot.snapshot(ctx));
     gameFlow.send(laundered, { type: "STARTED" });
     const foul = expectDialogOk<{ verdict: string }>(
       await run("relay_description", { description: "something you would describe" }, laundered),

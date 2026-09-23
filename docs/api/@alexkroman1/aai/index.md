@@ -1177,7 +1177,7 @@ const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 ### persona()
 
 ```ts
-function persona(def: PersonaDef): PersonaDef;
+function persona<N extends string>(def: PersonaDef<N>): PersonaDef<N>;
 ```
 
 Define a persona. An identity function, like [tool](#tool-2) and [subagent](#subagent):
@@ -1185,22 +1185,31 @@ it exists for the type, for the name to grep for, and so a persona is
 declared at module scope where both the roster and a tool that hands off to
 it can import it.
 
+The name is inferred as a LITERAL (`const N`), so a roster built from these
+knows its own names and a handoff to one that is not on it fails to compile.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
 #### Parameters
 
 ##### def
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 #### Returns
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 ***
 
 ### personas()
 
 ```ts
-function personas(list: readonly PersonaDef[]): Personas;
+function personas<N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
 ```
 
 Declare the roster.
@@ -1211,15 +1220,21 @@ with no symptom otherwise: two personas with one name route to whichever the
 lookup finds; a tool two personas both declare is gated by whichever wrapper
 landed last.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
 #### Parameters
 
 ##### list
 
-readonly [`PersonaDef`](#personadef)[]
+readonly [`PersonaDef`](#personadef)\<`N`\>[]
 
 #### Returns
 
-[`Personas`](#personas-1)
+[`Personas`](#personas-1)\<`N`\>
 
 ***
 
@@ -3049,7 +3064,7 @@ declare tools it never reaches. This field is only about the surface.
 ##### personas?
 
 ```ts
-optional personas?: Personas;
+optional personas?: Personas<string>;
 ```
 
 WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`.
@@ -3510,7 +3525,7 @@ take a tool-choice parameter.
 ##### tools
 
 ```ts
-tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+tools: ToolSet;
 ```
 
 The tools the agent may invoke, keyed by the name the model calls.
@@ -4017,6 +4032,8 @@ tool and mirrored into `useState`; 58% of generated agents built one.
 
 ### AgentSessionContext
 
+**`Sealed`**
+
 The session a per-session author function is running for.
 
 #### Properties
@@ -4244,6 +4261,43 @@ speaks.
 
 ***
 
+### ClientEventMap
+
+The agent's OWN custom events — what `ctx.send(event, data)` pushes to the
+browser — keyed by event name, and EMPTY until the agent declares some.
+
+An interface so an agent can augment it, exactly like
+[SessionEventMap](#sessioneventmap). Once a name is declared, `ctx.send` type-checks its
+payload: a misspelled field or a wrong type is a compile error in the tool
+that sends it, rather than a client handler that silently reads `undefined`.
+A name nobody declared still sends `unknown`, so declaring one event never
+obliges the agent to declare the rest.
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+declare module "@alexkroman1/aai" {
+  interface ClientEventMap {
+    "order.progress": { done: number; total: number };
+  }
+}
+
+export default tool({
+  description: "Ship the order",
+  inputSchema: z.object({}),
+  execute: (_args, ctx) => {
+    ctx.send("order.progress", { done: 1, total: 3 });
+    return { ok: true };
+  },
+});
+```
+
+The payload is typed on the SENDING side only: on the wire it is still a
+`custom.emitted` frame whose `data` the schema admits as any JSON value.
+
+***
+
 ### DelegateOptions
 
 Per-call options for [DelegateFn](#delegatefn).
@@ -4282,6 +4336,8 @@ conversation and knows nothing the task does not say.
 ***
 
 ### DelegateResult
+
+**`Sealed`**
 
 What one delegated run returns: the accepted attempt, plus what getting there
 took.
@@ -4372,6 +4428,8 @@ Every tool call this attempt made, in order.
 ***
 
 ### Dialog
+
+**`Sealed`**
 
 A dialog statechart bound to a session, created by [dialog](#dialog-1).
 
@@ -4796,6 +4854,8 @@ construction, so there is nothing here that cannot be stored.
 ***
 
 ### DialogPosition
+
+**`Sealed`**
 
 Where a dialog currently is.
 
@@ -5431,6 +5491,8 @@ for it, moving the dialog out of a state this tool was never allowed in.
 
 ### DialogToolResult
 
+**`Sealed`**
+
 What a [Dialog.tool](#tool) answers on success.
 
 #### Extends
@@ -5576,6 +5638,8 @@ turn that made it rather than living only in one tool result.
 ***
 
 ### HandoffResult
+
+**`Sealed`**
 
 What a handoff returns — the shape a tool hands back as its result so the
 model learns, in the same turn, who is speaking now.
@@ -5966,6 +6030,17 @@ requirement is a failure with no symptom otherwise: a persona with no
 `description` routes badly and reads as the model being unreliable; one with
 no `systemPrompt` speaks as the agent and nobody can tell it took over.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The persona's `name`, as a literal when [persona](#persona-4)
+  infers it — what lets [Personas.handoff](#handoff-1) refuse a misspelled target
+  at compile time. Defaults to `string`, which is every persona written
+  before the parameter existed.
+
 #### Properties
 
 ##### description
@@ -5982,7 +6057,7 @@ not the mechanism.
 ##### name
 
 ```ts
-name: string;
+name: N;
 ```
 
 What this persona is called — the value of the `handoff` tool's `persona`
@@ -6017,7 +6092,7 @@ The model's tool-choice policy while this persona is speaking.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools only this persona may call, by the name the model calls them by.
@@ -6032,8 +6107,18 @@ Each name must be unique across the roster and must not collide with a
 
 ### PersonaPosition
 
+**`Sealed`**
+
 Where a session is, persona-wise — the position [Personas.position](#position-1)
 answers, the shape `DialogPosition` has for a dialog.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's persona names — see [Personas](#personas-1).
 
 #### Properties
 
@@ -6056,7 +6141,7 @@ The [HandoffOptions.note](#note) that came with that handoff.
 ##### persona
 
 ```ts
-readonly persona: PersonaDef;
+readonly persona: PersonaDef<N>;
 ```
 
 The persona speaking now.
@@ -6090,6 +6175,8 @@ readonly state: string;
 
 ### Personas
 
+**`Sealed`**
+
 The roster the agent declares and every tool reaches for — what
 [personas](#personas-2) returns.
 
@@ -6098,12 +6185,24 @@ a bare array like `agent({ subagents })`: a handoff has to know the whole
 roster to name who it came FROM and to refuse a target that is not on it, and
 a bare array gives a tool body neither.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's persona names, inferred by [personas](#personas-2) from
+  the literal names [persona](#persona-4) gives each entry, so
+  `desk.handoff(ctx, "biling")` is a compile error rather than a throw on a
+  live call. Defaults to `string`, so a `Personas` annotation written before
+  the parameter existed still accepts any roster.
+
 #### Methods
 
 ##### active()
 
 ```ts
-active(ctx: SlotHolder): PersonaDef;
+active(ctx: SlotHolder): PersonaDef<N>;
 ```
 
 The persona speaking now: `position(ctx).persona`.
@@ -6116,14 +6215,14 @@ The persona speaking now: `position(ctx).persona`.
 
 ###### Returns
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 ##### handoff()
 
 ```ts
 handoff(
    ctx: SlotHolder, 
-   to: string | PersonaDef, 
+   to: N | PersonaDef<N>, 
    options?: HandoffOptions
 ): HandoffResult;
 ```
@@ -6149,7 +6248,7 @@ minted `handoff` tool turns them into a `ToolFailure` for the model.
 
 ###### to
 
-`string` \| [`PersonaDef`](#personadef)
+`N` \| [`PersonaDef`](#personadef)\<`N`\>
 
 ###### options?
 
@@ -6162,7 +6261,7 @@ minted `handoff` tool turns them into a `ToolFailure` for the model.
 ##### position()
 
 ```ts
-position(ctx: SlotHolder): PersonaPosition;
+position(ctx: SlotHolder): PersonaPosition<N>;
 ```
 
 Who is speaking, and how they came to be — see [PersonaPosition](#personaposition).
@@ -6175,14 +6274,14 @@ Who is speaking, and how they came to be — see [PersonaPosition](#personaposit
 
 ###### Returns
 
-[`PersonaPosition`](#personaposition)
+[`PersonaPosition`](#personaposition)\<`N`\>
 
 #### Properties
 
 ##### list
 
 ```ts
-readonly list: readonly PersonaDef[];
+readonly list: readonly PersonaDef<N>[];
 ```
 
 The roster, in declaration order. The first entry is the ENTRY persona.
@@ -6452,6 +6551,8 @@ export default agent({
 ***
 
 ### Procedure
+
+**`Sealed`**
 
 A machine that can be run as a unit of work, created by [procedure](#procedure-2).
 
@@ -7823,6 +7924,8 @@ EventMapOf.user-turn.exceeded
 
 ### SessionSlot
 
+**`Sealed`**
+
 A named slot of per-session state, created by [sessionSlot](#sessionslot-1).
 
 #### Type Parameters
@@ -7986,6 +8089,34 @@ its draft is a copy; this is the same rule applied to the other writer.
 ###### Returns
 
 [`DeepReadonly`](#deepreadonly)\<`T`\>
+
+##### snapshot()
+
+```ts
+snapshot(ctx: SlotHolder): T;
+```
+
+A MUTABLE deep copy of this session's value — `structuredClone` of what
+[SessionSlot.get](#get) returns, typed as the slot's own `T` rather than
+its readonly view, installing the default on first access like `get`.
+
+For the caller that wants to hold a value BESIDE the slot: a spec recording
+the state before a tool runs so it can restore it with
+[SessionSlot.set](#set), or a tool building a modified candidate it may
+never store. Mutating the copy changes nothing stored — every write still
+goes through `update` or `set`. It replaces
+`structuredClone(slot.get(ctx)) as Parameters<typeof slot.set>[1]`, whose
+cast was the only way back from `DeepReadonly<T>` to `T`.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+`T`
 
 ##### tool()
 
@@ -9190,7 +9321,7 @@ researcher subagent and the voice that relays what it found.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools this subagent may call, by the name the model calls them by.
@@ -9705,7 +9836,7 @@ researcher subagent and the voice that relays what it found.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools this subagent may call, by the name the model calls them by.
@@ -10087,7 +10218,9 @@ type BuiltinTool =
   | "think"
   | "remember"
   | "recall"
-  | "calculate";
+  | "calculate"
+  | string & {
+};
 ```
 
 Identifier for a built-in server-side tool.
@@ -10110,6 +10243,57 @@ When `builtinTools` is not set, only `think` is enabled
 (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
 for by name. Setting the field replaces the default rather than extending
 it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
+
+OPEN, like `VoicePresetName`: the names above are written inline as the
+autocomplete half, and any other string compiles, so an agent naming a
+builtin a later release adds still builds against this one. The runtime
+resolves only the names it ships and skips the rest, so an unknown name is a
+tool that silently never appears — which is why `aai build` / `aai dev` warn
+about it (`agentConfigWarnings`) rather than the type refusing it. Inline
+rather than an exported closed `Known…` half, so a builtin added here is a
+compatible change to this type.
+
+***
+
+### ClientEventSender
+
+```ts
+type ClientEventSender = <K>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+```
+
+What `ctx.send` is: push one custom event to the connected browser client,
+typed by [ClientEventMap](#clienteventmap).
+
+A name declared in the map must be sent with its declared payload; any other
+name takes `unknown`. ONE conditional signature rather than a typed overload
+in front of a `(string, unknown)` fallback, deliberately: with overloads, a
+DECLARED name sent with the wrong payload fails the first signature and
+silently resolves against the fallback, so the declaration would type
+nothing. Any `(event: string, data: unknown) => void` is one of these, which
+is how the runtime and the test doubles implement it.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* 
+  \| keyof [`ClientEventMap`](#clienteventmap)
+  \| `string` & \{
+\}
+
+#### Parameters
+
+##### event
+
+`K`
+
+##### data
+
+`K` *extends* keyof [`ClientEventMap`](#clienteventmap) ? [`ClientEventMap`](#clienteventmap)\[`K`\] : `unknown`
+
+#### Returns
+
+`void`
 
 ***
 
@@ -10601,6 +10785,8 @@ type GenerateResult = {
 };
 ```
 
+**`Sealed`**
+
 Result of one LLM generation call without a Standard Schema — text only.
 
 `object` is declared as optional-and-`unknown` rather than omitted because
@@ -10785,36 +10971,6 @@ optional timeoutMs?: number;
 
 Give up waiting after this long and reject with
 [KeyedLockTimeoutError](#keyedlocktimeouterror). Omit to wait indefinitely.
-
-***
-
-### KnownTurnDetectionMode
-
-```ts
-type KnownTurnDetectionMode = "auto" | "manual";
-```
-
-The turn-detection modes this release implements — the autocomplete half of
-[TurnDetectionMode](#turndetectionmode). See [PipelineVoiceTuning.turnDetection](#turndetection).
-
-***
-
-### KnownVoicePresetName
-
-```ts
-type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
-```
-
-One of the opt-in prompt presets THIS release ships — see
-[VOICE\_PRESETS](#voice_presets) for what each one says and what it costs. The
-autocomplete half of [VoicePresetName](#voicepresetname).
-
-Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
-which would be the shorter way round: a derived alias renders in the API
-report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
-internal constant a reader cannot import and TypeDoc refuses to link. The
-union renders as the strings, which is the answer to the only question
-anybody asks of this type.
 
 ***
 
@@ -11300,6 +11456,8 @@ type SessionEventContext = {
   slots: SlotStore;
 };
 ```
+
+**`Sealed`**
 
 What a session event handler is handed alongside the event.
 
@@ -11912,10 +12070,25 @@ carrier does not sign the WebSocket upgrade this gates.
 ### TelephonyCarrier
 
 ```ts
-type TelephonyCarrier = "twilio" | "telnyx";
+type TelephonyCarrier = 
+  | "twilio"
+  | "telnyx"
+  | string & {
+};
 ```
 
-A phone carrier that can open a media stream against an agent.
+A phone carrier that can open a media stream against an agent — `"twilio"`
+or `"telnyx"`, the two this release ships a codec for, or any other string.
+
+OPEN, like `VoicePresetName`: the known carriers are written inline as the
+autocomplete half, so a declaration naming a carrier a later release adds
+still compiles and deploys against this one. The runtime serves only the
+carriers it ships a codec for and DROPS the rest (`enabledCarriers`), so an
+unknown name mounts nothing — which is why `aai build` / `aai dev` warn about
+it (`agentConfigWarnings`) rather than the type refusing it. Inline rather
+than an exported closed `Known…` half, so a carrier added here is a
+compatible change to this type; code that must be TOTAL over the shipped
+carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
 
 ***
 
@@ -12191,13 +12364,15 @@ type ToolContext = {
   generate: GenerateFn;
   messages: readonly Message[];
   random: RandomSource;
+  send: ClientEventSender;
   sessionId: string;
   signal: AbortSignal;
   slots: SlotStore;
   workflows: WorkflowClient;
-  send: void;
 };
 ```
+
+**`Sealed`**
 
 Context passed to tool `execute` functions.
 
@@ -12247,33 +12422,6 @@ const lookupNote = tool({
   },
 });
 ```
-
-#### Methods
-
-##### send()
-
-```ts
-send(event: string, data: unknown): void;
-```
-
-Push a custom event to the connected browser client. Fire-and-forget:
-events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
-serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
-dropped (with a warning log), not thrown.
-
-###### Parameters
-
-###### event
-
-`string`
-
-###### data
-
-`unknown`
-
-###### Returns
-
-`void`
 
 #### Properties
 
@@ -12449,6 +12597,25 @@ export default tool({
   execute: (_args, ctx) => ({ pick: pickOne(["Luigi's", "The Anchor"], ctx.random) }),
 });
 ```
+
+##### send
+
+```ts
+send: ClientEventSender;
+```
+
+Push a custom event to the connected browser client. Fire-and-forget:
+events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
+serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
+dropped (with a warning log), not thrown.
+
+**Typed by [ClientEventMap](#clienteventmap).** An event name the agent declared there
+(by module augmentation) must be sent with that payload — a wrong shape is
+a compile error here rather than a client handler reading `undefined`. Any
+other name still takes `unknown`, so the map is opt-in per event.
+
+See [ClientEventSender](#clienteventsender) for the signature, and for why it is one
+conditional signature rather than a typed overload.
 
 ##### sessionId
 
@@ -13057,6 +13224,22 @@ optional start?:
 
 ***
 
+### ToolSet
+
+```ts
+type ToolSet = Readonly<Record<string, ToolDef>>;
+```
+
+A map of tools by the name the model calls them by — the shape every field
+that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
+lowers to), [PersonaDef.tools](#tools-1) and [SubagentDef.tools](#tools-2).
+
+Named once so the three cannot drift, and so a helper that builds or filters
+a set of tools has one type to be written against rather than restating
+`Readonly<Record<string, ToolDef>>`.
+
+***
+
 ### ToolStartMessage
 
 ```ts
@@ -13135,17 +13318,24 @@ Compile-time stage tag; never present at runtime.
 
 ```ts
 type TurnDetectionMode = 
-  | KnownTurnDetectionMode
+  | "auto"
+  | "manual"
   | string & {
 };
 ```
 
-A turn-detection mode — one of [KnownTurnDetectionMode](#knownturndetectionmode), or any other
+A turn-detection mode — `"auto"` or `"manual"`, the two this release
+implements (see [PipelineVoiceTuning.turnDetection](#turndetection)), or any other
 string.
 
 OPEN so a mode a later release adds compiles against this one. The runtime
 treats every value but `"manual"` as `"auto"`, and `aai build` / `aai dev`
 warn about a value it does not know, rather than the type refusing it.
+
+The known modes are written INLINE rather than as an exported closed
+`KnownTurnDetectionMode` half: inline they are only the autocomplete of an
+open type, so a mode added here is a compatible change, where a published
+closed union that grows is not assignable back to the one it grew from.
 
 ***
 
@@ -13153,17 +13343,31 @@ warn about a value it does not know, rather than the type refusing it.
 
 ```ts
 type VoicePresetName = 
-  | KnownVoicePresetName
+  | "echoVerification"
+  | "speechNormalization"
+  | "natoAlphabet"
   | string & {
 };
 ```
 
-A preset name — one of [KnownVoicePresetName](#knownvoicepresetname), or any other string.
+A preset name — one of the opt-in prompt presets THIS release ships (see
+[VOICE\_PRESETS](#voice_presets) for what each one says and what it costs), or any
+other string.
 
 OPEN so an agent naming a preset a later release adds compiles against this
 one. An unknown name emits no text (the prompt is assembled from the known
 names only), and `aai build` / `aai dev` warn about it rather than the type
 refusing it.
+
+The known names are written INLINE rather than as an exported
+`KnownVoicePresetName` half. A closed union on the published surface is a
+type an author's code can pin, so a preset added to it changed a published
+type in a way no probe can call compatible (a union that grows is not
+assignable back to the one it grew from). Inline, the literals are only the
+autocomplete of an open type — `"a" | "b" | (string & {})` and
+`"a" | "b" | "c" | (string & {})` are the same set — so a regenerated list is
+a compatible change. Spelled as literals rather than derived from
+`VOICE_PRESET_NAMES` so the API report and the docs render the strings.
 
 ***
 
@@ -15110,7 +15314,7 @@ The session event vocabulary — the ONE source of truth. `SessionEventMap`,
 ### VOICE\_PRESETS
 
 ```ts
-const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
+const VOICE_PRESETS: Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>;
 ```
 
 The shipped text of every preset, keyed by the name `agent({ voicePresets })`

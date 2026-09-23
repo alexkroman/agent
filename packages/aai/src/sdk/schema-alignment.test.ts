@@ -37,7 +37,10 @@ describe("AgentConfigSchema", () => {
     ["empty name", { name: "" }],
     ["non-integer maxSteps", { maxSteps: 2.5 }],
     ["negative maxSteps", { maxSteps: -1 }],
-    ["invalid builtinTools", { builtinTools: ["not_a_tool"] }],
+    // An EMPTY name, not an unknown one: `BuiltinTool` is open, so an unknown
+    // builtin parses and is warned about by `agentConfigWarnings` instead.
+    ["an empty builtinTools entry", { builtinTools: [""] }],
+    ["a non-string builtinTools entry", { builtinTools: [42] }],
   ])("rejects %s", (_label, override) => {
     expect(AgentConfigSchema.safeParse({ ...valid, ...override }).success).toBe(false);
   });
@@ -133,8 +136,24 @@ describe("type ↔ schema alignment", () => {
     `);
   });
 
-  test("BuiltinTool type equals schema inference", () => {
-    expectTypeOf<z.infer<typeof BuiltinToolSchema>>().toEqualTypeOf<BuiltinTool>();
+  test("BuiltinTool is OPEN: the shipped enum plus any string, and the config schema accepts it", () => {
+    // The enum is the closed set THIS release ships; the published type writes
+    // the same names inline as its autocomplete half, then opens.
+    expectTypeOf<z.infer<typeof BuiltinToolSchema> | (string & {})>().toEqualTypeOf<BuiltinTool>();
+    expectTypeOf<"a_later_builtin">().toExtend<BuiltinTool>();
+    const config = { name: "a", systemPrompt: "p", greeting: "g" };
+    for (const builtinTools of [["think"], ["a_later_builtin"]]) {
+      expect(AgentConfigSchema.safeParse({ ...config, builtinTools }).success).toBe(true);
+    }
+    expect(AgentConfigSchema.safeParse({ ...config, builtinTools: [""] }).success).toBe(false);
+  });
+
+  test("AgentConfigSchema accepts an unknown telephony carrier (it is warned about, not refused)", () => {
+    const config = { name: "a", systemPrompt: "p", greeting: "g" };
+    for (const telephony of [true, ["twilio"], ["a-later-carrier"]]) {
+      expect(AgentConfigSchema.safeParse({ ...config, telephony }).success).toBe(true);
+    }
+    expect(AgentConfigSchema.safeParse({ ...config, telephony: [""] }).success).toBe(false);
   });
 
   test("ToolChoice type equals schema inference", () => {
