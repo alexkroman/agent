@@ -1,0 +1,40 @@
+// @public
+export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
+
+// @public
+export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
+    keyterms?: readonly string[];
+    languages?: readonly string[];
+    voice?: string;
+}
+
+// @public
+export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
+
+// @public
+export interface OpenAIS2sOptions extends ProviderCredentialOptions {
+    model?: "gpt-realtime-2" | "gpt-realtime" | (string & {});
+    url?: string;
+    voice?: OpenAIS2sVoice;
+}
+
+// @public
+export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse" | (string & {});
+
+// @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "s2s";
+};

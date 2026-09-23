@@ -3,7 +3,7 @@
   "capability": "state",
   "epoch": 5,
   "rule": 2,
-  "sha256": "2cd706e7ae5c72b8032d8e194b9d4ebbae9a9bb9d8ffdd29c9e9e89e034845b7",
+  "sha256": "6529a3156ab5f36590d9d9095b20d3cc3438dfb07545e7eb8a6e69169ad4c61b",
   "exports": [
     "DeepReadonly",
     "SessionSlot",
@@ -15,5 +15,20 @@
     "StateProjection",
     "sessionSlot"
   ],
-  "rollup": "819c2387a5c5a4e7d0f275913e6e23c1e7c69bdcf5c456c601776ce0903f83d9"
+  "rollup": "819c2387a5c5a4e7d0f275913e6e23c1e7c69bdcf5c456c601776ce0903f83d9",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "2cd706e7ae5c72b8032d8e194b9d4ebbae9a9bb9d8ffdd29c9e9e89e034845b7",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "6529a3156ab5f36590d9d9095b20d3cc3438dfb07545e7eb8a6e69169ad4c61b",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

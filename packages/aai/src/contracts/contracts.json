@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 14,
-    "supported": [1, 2, 3, 9, 11, 12, 14],
+    "current": 15,
+    "supported": [1, 2, 3, 9, 11, 12, 15],
     "dropped": {
       "4": "keyterms, agentContext and the lowConfidence policy are removed. An epoch-4 agent that declared assemblyAIStt({ keyterms }) or agent({ lowConfidence }) no longer compiles, so its frozen example could not either — which is why this is a retire rather than an example somebody owes.",
       "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
@@ -9,7 +9,8 @@
       "7": "Removes agent({ lowConfidence }) and the three LowConfidence* types with it. An epoch-7 agent that declared the policy no longer compiles; one that did not is unaffected, but the type is gone from the surface so there is nothing to retain.",
       "8": "The regex-keyed endpointing rule table, the two barge-in phrase lists and the smartMatching preset are removed, so an epoch-8 agent declaring endpointingRules, acknowledgementPhrases, interruptionPhrases or voicePresets: [\"smartMatching\"] no longer compiles. All four decided behaviour by pattern-matching the caller's own words; the table was measured to absorb 27-40% of turns' endpointing budget, which is why a minTurnSilenceMs change could not be measured at all.",
       "10": "Its frozen example indexes VOICE_PRESETS with a VoicePresetName; VoicePresetName is open now (any string) and VOICE_PRESETS is keyed by KnownVoicePresetName, so the index no longer type-checks.",
-      "13": "VoicePresetName and the turnDetection field are now open vocabularies (KnownVoicePresetName | (string & {}), TurnDetectionMode = KnownTurnDetectionMode | (string & {})) and VOICE_PRESETS is Readonly<Record<KnownVoicePresetName, string>> rather than its literal text; code that indexes VOICE_PRESETS with a VoicePresetName, or narrows an AgentDef's turnDetection/voicePresets to the old closed unions, no longer compiles."
+      "13": "VoicePresetName and the turnDetection field are now open vocabularies (KnownVoicePresetName | (string & {}), TurnDetectionMode = KnownTurnDetectionMode | (string & {})) and VOICE_PRESETS is Readonly<Record<KnownVoicePresetName, string>> rather than its literal text; code that indexes VOICE_PRESETS with a VoicePresetName, or narrows an AgentDef's turnDetection/voicePresets to the old closed unions, no longer compiles.",
+      "14": "BuiltinTool and TelephonyCarrier are open vocabularies now (each gained | (string & {})), and KnownTurnDetectionMode and KnownVoicePresetName were removed with the rest of the Known* aliases: an epoch-14 author importing either name, or narrowing exhaustively over an AgentDef's builtinTools or telephony carriers, no longer compiles."
     }
   },
   "builtins": {
@@ -67,8 +68,8 @@
     "dropped": {}
   },
   "llm": {
-    "current": 9,
-    "supported": [9],
+    "current": 10,
+    "supported": [10],
     "dropped": {
       "1": "Its frozen example names the removed per-vendor factories and options types (anthropicLlm, assemblyAILlm, ModelOptions, …), which epoch 9 replaced with the single llm() descriptor; it no longer compiles.",
       "2": "The AssemblyAIGatewayModel union lost two ids, which is breaking for any binding annotated with one: kimi-k2.5 was retired by the gateway (it answered 410 and is no longer advertised) and qwen3.5-4b-32k-experimental was RENAMED to -fast upstream. It also gained seven, including the two the fast/slow defaults now name. The union is a snapshot of a service that moves faster than this package, which is why the field still accepts a plain string — but a removed literal names a model the service will not run, so recording when it went is the point.",
@@ -77,7 +78,8 @@
       "5": "Its frozen example names the removed per-vendor factories and options types (anthropicLlm, assemblyAILlm, ModelOptions, …), which epoch 9 replaced with the single llm() descriptor; it no longer compiles.",
       "6": "Its frozen example names the removed per-vendor factories and options types (anthropicLlm, assemblyAILlm, ModelOptions, …), which epoch 9 replaced with the single llm() descriptor; it no longer compiles.",
       "7": "Its frozen example names the removed per-vendor factories and options types (anthropicLlm, assemblyAILlm, ModelOptions, …), which epoch 9 replaced with the single llm() descriptor; it no longer compiles.",
-      "8": "The ten per-vendor factories (anthropicLlm … assemblyAILlm), their options types, ModelOptions and the four exported base-URL constants are removed in favour of one llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? }) descriptor; AssemblyAI's region/reasoningEffort moved into providerOptions and gatewayUrl became baseUrl; AssemblyAIGatewayModel is now open (KnownGatewayModel | (string & {})). An epoch-8 stage naming any factory no longer compiles."
+      "8": "The ten per-vendor factories (anthropicLlm … assemblyAILlm), their options types, ModelOptions and the four exported base-URL constants are removed in favour of one llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? }) descriptor; AssemblyAI's region/reasoningEffort moved into providerOptions and gatewayUrl became baseUrl; AssemblyAIGatewayModel is now open (KnownGatewayModel | (string & {})). An epoch-8 stage naming any factory no longer compiles.",
+      "9": "KnownGatewayModel and KnownLlmProvider were removed (the gateway-model and provider vocabularies are inline and open, and LlmSpec names what an llm field takes), and AssemblyAIReasoningEffort gained | (string & {}): an epoch-9 author importing either Known* name, or narrowing exhaustively over reasoningEffort, no longer compiles."
     }
   },
   "metrics": {
@@ -101,9 +103,11 @@
     "dropped": {}
   },
   "s2s": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "OpenAIS2sVoice is an open vocabulary now (it gained | (string & {})): an epoch-1 author narrowing exhaustively over OpenAIS2sOptions.voice no longer compiles."
+    }
   },
   "spoken": {
     "current": 2,
@@ -147,13 +151,13 @@
     "supported": [4],
     "dropped": {
       "1": "Imports DEFAULT_GUARDRAIL_MAX_RETRIES, renamed DEFAULT_GUARDRAIL_MAX_REVISIONS, and sets maxRetries as the guardrail budget — which is now the provider's retry budget (ModelTuning.maxRetries); the guardrail's is maxRevisions.",
-      "2": "Sets maxRetries beside a guardrail as the revision budget. SubagentDef no longer accepts maxRetries \u2014 it is a compile error naming maxRevisions, the guardrail's budget now \u2014 so an epoch-2 subagent fails to build rather than silently budgeting the wrong thing.",
+      "2": "Sets maxRetries beside a guardrail as the revision budget. SubagentDef no longer accepts maxRetries — it is a compile error naming maxRevisions, the guardrail's budget now — so an epoch-2 subagent fails to build rather than silently budgeting the wrong thing.",
       "3": "The guardrail's revision budget is renamed maxRevisions and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. SubagentDef takes ModelTuning WITHOUT maxRetries, so an epoch-3 subagent writing guardrail + maxRetries (or importing the constant) no longer compiles, and the error names maxRevisions; a subagent's provider requests retry on the AI SDK default."
     }
   },
   "testing": {
-    "current": 13,
-    "supported": [13],
+    "current": 14,
+    "supported": [14],
     "dropped": {
       "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
       "2": "Its example scripts the model and a subagent with the bare shapes (a string, an unwrapped route table) and imports StubGenerateRoutes; scripts are { reply } or { routes } now and StubGenerateRoutes is removed.",
@@ -166,7 +170,8 @@
       "9": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 9 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
       "10": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 10 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
       "11": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 11 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
-      "12": "A stub script is now named: stubGenerate/stubDelegate/stubStepDelegate/installStubStepDelegate and createToolContext's and scriptedToolContext's generate/delegate take { reply } or { routes } instead of a bare reply-or-table union, and StubGenerateRoutes (with its misuse arm) is gone. Every epoch-12 script literal stops compiling. commandedBuiltins, expectPromptBuiltinsDeclared and deployedAgent take structural shapes of only the fields they read, which every epoch-12 argument still satisfies. Also, expectDeployable returns the resolved AgentConfig, whose voicePresets and turnDetection are now open strings; a binding annotated with the epoch-12 closed unions no longer accepts the result."
+      "12": "A stub script is now named: stubGenerate/stubDelegate/stubStepDelegate/installStubStepDelegate and createToolContext's and scriptedToolContext's generate/delegate take { reply } or { routes } instead of a bare reply-or-table union, and StubGenerateRoutes (with its misuse arm) is gone. Every epoch-12 script literal stops compiling. commandedBuiltins, expectPromptBuiltinsDeclared and deployedAgent take structural shapes of only the fields they read, which every epoch-12 argument still satisfies. Also, expectDeployable returns the resolved AgentConfig, whose voicePresets and turnDetection are now open strings; a binding annotated with the epoch-12 closed unions no longer accepts the result.",
+      "13": "expectDeployable() returns the new DeployedConfig (name, mode and each stage's resolved provider) instead of the whole parsed agent config, and takes the definition generically: an epoch-13 test reading greeting, systemPrompt, maxSteps or any other config field off its result no longer compiles."
     }
   },
   "tool": {
@@ -182,9 +187,11 @@
     "dropped": {}
   },
   "tts": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "AssemblyAITtsVoiceId was removed (the voice vocabulary is inline and open, and ttsVoiceInfo() is the lookup): an epoch-1 author importing it no longer compiles."
+    }
   },
   "turn-taking": {
     "current": 1,
@@ -207,8 +214,10 @@
     "dropped": {}
   },
   "workflow-api": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "WorkflowInputOf and WorkflowOutputOf now read a definition's run signature structurally instead of matching WorkflowDef<infer P>, and WorkflowRunOf follows them: for a D that is not a WorkflowDef, or whose run is typed apart from its schema, they resolve differently, so an epoch-2 caller relying on the old reading may no longer compile. The per-method options are named types now (additive)."
+    }
   }
 }

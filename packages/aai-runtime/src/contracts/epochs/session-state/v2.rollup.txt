@@ -1,0 +1,23 @@
+// @public
+export function ensureSessionStateSchema(options: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}

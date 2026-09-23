@@ -3,7 +3,7 @@
   "capability": "text",
   "epoch": 3,
   "rule": 2,
-  "sha256": "23f476269c9f41d0a422a5fc2268522d368a837f139cd02dfb577c8c520d3cdd",
+  "sha256": "f08d15148be51b1fafa662c96699012c2afe0638a13decbc371996c5ec10db7b",
   "exports": [
     "TextAgent",
     "TextAgentOptions",
@@ -11,5 +11,20 @@
     "TextTurnResult",
     "createTextAgent"
   ],
-  "rollup": "c97f7cc5cb1c2d85e15de29c2dd3218ead025dcb141c97c72e9f6de2613a9a9c"
+  "rollup": "c97f7cc5cb1c2d85e15de29c2dd3218ead025dcb141c97c72e9f6de2613a9a9c",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "23f476269c9f41d0a422a5fc2268522d368a837f139cd02dfb577c8c520d3cdd",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "f08d15148be51b1fafa662c96699012c2afe0638a13decbc371996c5ec10db7b",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

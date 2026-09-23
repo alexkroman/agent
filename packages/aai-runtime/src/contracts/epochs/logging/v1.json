@@ -3,7 +3,7 @@
   "capability": "logging",
   "epoch": 1,
   "rule": 2,
-  "sha256": "ee9edaae1f358cdea14bafa7532c374231a92f9c7a1772f522500c612eaf96bf",
+  "sha256": "96c965234f0d65d30ded8704dbb0468d97882301c988f4324d5382a158667e1f",
   "exports": [
     "DEFAULT_LOG_BUFFER_LINES",
     "DEFAULT_LOG_LINE_BYTES",
@@ -20,5 +20,20 @@
     "Logger",
     "createLogBuffer"
   ],
-  "rollup": "29e07c963672a12db948a91a9ba87ec886ff5ddc5a3a5bab98b7992a6cd137b4"
+  "rollup": "29e07c963672a12db948a91a9ba87ec886ff5ddc5a3a5bab98b7992a6cd137b4",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "ee9edaae1f358cdea14bafa7532c374231a92f9c7a1772f522500c612eaf96bf",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "96c965234f0d65d30ded8704dbb0468d97882301c988f4324d5382a158667e1f",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }
