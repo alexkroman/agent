@@ -159,12 +159,24 @@ export async function platformPost(opts: PlatformEndpoint, call: PlatformCall): 
   const startedAt = performance.now();
   // ONE deadline for the whole call, transport included — so a socket attempt
   // that is refused and retried over HTTP cannot spend two of them. `pTimeout`
-  // does not abort the work it loses; that was already true of the fetch this
-  // wraps, and the socket's pending entry is dropped by its own close path.
-  const reply = await pTimeout(send(opts, call, traceparent), {
-    milliseconds: call.timeoutMs,
-    message: `${call.label} timed out after ${call.timeoutMs}ms`,
-  });
+  // does not abort the work it loses, so the HTTP arm is handed a signal the
+  // deadline FIRES: without it a timed-out request stayed open on `rpcFetch`'s
+  // shared pool — the one the run-event reads ride — until the platform answered
+  // it or the socket died, with nobody left to read the reply. Aborted only on
+  // the losing path, never after a win, because the success path still reads
+  // the body through the same request. The socket arm needs none: its pending
+  // entry is dropped by its own close path.
+  const abandon = new AbortController();
+  let reply: PlatformReply;
+  try {
+    reply = await pTimeout(send(opts, call, traceparent, abandon.signal), {
+      milliseconds: call.timeoutMs,
+      message: `${call.label} timed out after ${call.timeoutMs}ms`,
+    });
+  } catch (err: unknown) {
+    abandon.abort(err);
+    throw err;
+  }
   // DEBUG, which `consoleLogger` makes a no-op unless `AAI_DEBUG=1`: this is one
   // line per platform call on a path that sustains several a second, and it is
   // an instrument rather than an event. The `traceId` is the join key and the
@@ -214,6 +226,8 @@ async function send(
   opts: PlatformEndpoint,
   call: PlatformCall,
   traceparent: string,
+  /** Fired when the caller's deadline gives up on this call — see `platformPost`. */
+  signal: AbortSignal,
 ): Promise<PlatformReply> {
   const socket = platformSocketFor(opts);
   if (socket !== undefined) {
@@ -246,6 +260,7 @@ async function send(
       traceparent,
     },
     body: call.body,
+    signal,
   });
   return { status: res.status, ok: res.ok, transport: "http", text: () => res.text() };
 }

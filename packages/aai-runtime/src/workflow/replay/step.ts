@@ -76,7 +76,7 @@ import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { stepReport } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { JournalStore, StepEntry } from "../journal/types.ts";
 import { withStepContext } from "../run-context.ts";
 import type { StepGate } from "../step-gate.ts";
@@ -331,7 +331,12 @@ async function backOff(options: StepAttemptOptions, tries: number, err: unknown)
   // (see MAX_IN_PROCESS_RETRY_MS), and a line explaining the wait is worth
   // nothing once the wait is over.
   await reportRetry(options.name, tries, options.maxAttempts, delayMs, err);
-  await sleep(delayMs);
+  // Under the WALK's signal, which resolves the wait early rather than
+  // rejecting it: the loop's own `throwIfAborted()` at the top of the next try
+  // is what turns a cancel into the throw, with the reason `attemptLoop`
+  // classifies by identity. Bare, a cancel landing in a `retryAfter` of half a
+  // minute held the walk — and the delivery — for all of it.
+  await sleep(delayMs, omitUndefined({ signal: options.signal }));
 }
 
 async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {

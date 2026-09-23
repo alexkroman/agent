@@ -399,5 +399,21 @@ describe("brokered through the platform", () => {
       await settled;
       expect(issued).toBe(1);
     });
+
+    test("ABORTS the timed-out request rather than leaving it on the pool", async () => {
+      let seen: AbortSignal | undefined;
+      const blobs = createBrokeredUploadBlobs({
+        base: "https://platform.test/digest-desk/",
+        fetch: (_input, init) => {
+          seen = init?.signal ?? undefined;
+          return new Promise<Response>(() => undefined);
+        },
+      });
+      const settled = expect(blobs.size("uploads/upl_a/0")).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(120_001);
+      await drainBackoff();
+      await settled;
+      expect(seen?.aborted).toBe(true);
+    });
   });
 });

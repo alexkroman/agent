@@ -9888,25 +9888,34 @@ export type WakeUpOptions = {
 
 // @public
 export type WorkflowApi = {
-    list(): Promise<WorkflowSummary[]>;
+    list(options?: {
+        signal?: AbortSignal;
+    }): Promise<WorkflowSummary[]>;
     upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     start(workflow: string, input?: unknown, options?: {
         key?: string;
+        signal?: AbortSignal;
     }): Promise<string>;
     startAndWait(workflow: string, input?: unknown, options?: {
         key?: string;
         wait?: number;
+        signal?: AbortSignal;
     }): Promise<WorkflowRunSnapshot>;
     get(runId: string, options?: {
         wait?: number;
+        signal?: AbortSignal;
     }): Promise<WorkflowRunSnapshot | undefined>;
     find(workflow: string, key: string, options?: {
         limit?: number;
+        signal?: AbortSignal;
     }): Promise<WorkflowRunSnapshot[]>;
     recent(workflow: string, options?: {
         limit?: number;
+        signal?: AbortSignal;
     }): Promise<WorkflowRunSnapshot[]>;
-    cancel(runId: string): Promise<boolean>;
+    cancel(runId: string, options?: {
+        signal?: AbortSignal;
+    }): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
     streamOutput(runId: string, options?: {
         namespace?: string;
@@ -9921,9 +9930,13 @@ export type WorkflowApi = {
         fromIndex?: number;
         signal?: AbortSignal;
     }): AsyncIterable<unknown>;
-    wake(runId: string, options?: WakeUpOptions): Promise<number>;
+    wake(runId: string, options?: WakeUpOptions & {
+        signal?: AbortSignal;
+    }): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string): Promise<UploadInfo>;
+    uploadInfo(id: string, options?: {
+        signal?: AbortSignal;
+    }): Promise<UploadInfo>;
     download(id: string, options?: {
         signal?: AbortSignal;
     }): Promise<Blob>;

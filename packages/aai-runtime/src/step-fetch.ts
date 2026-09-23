@@ -41,7 +41,7 @@ import {
 import type { StepFetchInit } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createEgressPool } from "./_egress-pool.ts";
-import { currentRun } from "./workflow/run-context.ts";
+import { withWalkSignal } from "./workflow/run-context.ts";
 
 /**
  * A published step `fetch`, with the pool behind it.
@@ -109,7 +109,7 @@ export function createStepFetch(): StepFetchHandle {
         // `Headers` widened in by a looser caller type cannot ride through.
         headers: init.headers && { ...init.headers },
         body: init.body,
-        signal: stepSignal(init.signal),
+        signal: withWalkSignal(init.signal),
         // Required by undici (and by the spec) for a streaming request body, and
         // REFUSED alongside a plain one — so it is set only when the body really is
         // an iterable. A step sending a stored upload window by window is the case
@@ -124,31 +124,6 @@ export function createStepFetch(): StepFetchHandle {
   // that was about to finish. Idle keep-alive sockets — the thing a rebuild
   // strands — go either way.
   return { fetch, close: pool.close };
-}
-
-/**
- * The caller's signal, COMBINED with the walk's.
- *
- * The engine hands a step body no `AbortSignal` — deliberately, because
- * `stepFetch` is reached from inside a step's own helpers and a parameter would
- * have to be threaded through every one of them (see `RunContext["step"]`). So
- * the walk's signal is read out of the run context here, which is the one place
- * every step's outbound HTTP already goes through.
- *
- * What it buys is that a CANCEL reaches a step's I/O. Without it a cancelled run
- * — or a delivery whose caller hung up — went on uploading a recording nobody
- * was waiting for until the process died, and `attemptLoop`'s abort arm could
- * only unwind once the request it could not see had finished.
- *
- * `AbortSignal.any` rather than replacing either: a caller's own deadline still
- * fires first, and sources are held weakly so there is no unlink bookkeeping.
- * Outside a run — a step called directly from a spec — there is no walk and the
- * caller's signal passes through untouched.
- */
-function stepSignal(callerSignal: AbortSignal | undefined): AbortSignal | undefined {
-  const walk = currentRun()?.step?.signal;
-  if (!walk) return callerSignal;
-  return callerSignal ? AbortSignal.any([callerSignal, walk]) : walk;
 }
 
 /**

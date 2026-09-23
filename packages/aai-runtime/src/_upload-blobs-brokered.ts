@@ -138,11 +138,22 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
     `${base}/${BROKERED_UPLOADS_PATH}/${key.split("/").slice(-2).join("/")}`;
 
   const send = async (key: string, init: RequestInit, op: string): Promise<Response> => {
-    const res = await pTimeout(call(url(key), init), {
-      milliseconds: BYTE_OP_TIMEOUT_MS,
-      message: `upload blob ${op} for ${key} timed out after ${BYTE_OP_TIMEOUT_MS}ms`,
-    });
-    return res;
+    // `pTimeout` settles the await and abandons the request, so the request is
+    // handed a signal the deadline FIRES. Without it a timed-out PUT went on
+    // sending its megabytes, and a hung GET held one of the blob pool's 64
+    // connections per origin, for as long as the far side cared to — the very
+    // hung socket the deadline exists to be rid of. Aborted on the losing path
+    // only: a winning `read` still has its body to consume through this request.
+    const abandon = new AbortController();
+    try {
+      return await pTimeout(call(url(key), { ...init, signal: abandon.signal }), {
+        milliseconds: BYTE_OP_TIMEOUT_MS,
+        message: `upload blob ${op} for ${key} timed out after ${BYTE_OP_TIMEOUT_MS}ms`,
+      });
+    } catch (err: unknown) {
+      abandon.abort(err);
+      throw err;
+    }
   };
 
   /**

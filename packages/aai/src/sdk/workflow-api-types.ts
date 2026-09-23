@@ -81,7 +81,7 @@ export type WorkflowApiClientOptions = {
  */
 export type WorkflowApi = {
   /** Declared workflows: name, description, and the input schema to render. */
-  list(): Promise<WorkflowSummary[]>;
+  list(options?: { signal?: AbortSignal }): Promise<WorkflowSummary[]>;
   /**
    * Store a file and resolve the handle a run input carries.
    *
@@ -111,7 +111,11 @@ export type WorkflowApi = {
    * when the caller might be gone before the run finishes and you would rather
    * look it up than remember the id.
    */
-  start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string>;
+  start(
+    workflow: string,
+    input?: unknown,
+    options?: { key?: string; signal?: AbortSignal },
+  ): Promise<string>;
   /**
    * Start a run and resolve the FINISHED one — the synchronous call.
    *
@@ -128,7 +132,7 @@ export type WorkflowApi = {
   startAndWait(
     workflow: string,
     input?: unknown,
-    options?: { key?: string; wait?: number },
+    options?: { key?: string; wait?: number; signal?: AbortSignal },
   ): Promise<WorkflowRunSnapshot>;
   /**
    * Read a run's state. Resolves undefined for an unknown id.
@@ -140,9 +144,16 @@ export type WorkflowApi = {
    * `useWorkflowRun<R>` in the browser client, or a cast at the one place a
    * script reads `output`.
    */
-  get(runId: string, options?: { wait?: number }): Promise<WorkflowRunSnapshot | undefined>;
+  get(
+    runId: string,
+    options?: { wait?: number; signal?: AbortSignal },
+  ): Promise<WorkflowRunSnapshot | undefined>;
   /** Runs of `workflow` started with `key`, newest first. */
-  find(workflow: string, key: string, options?: { limit?: number }): Promise<WorkflowRunSnapshot[]>;
+  find(
+    workflow: string,
+    key: string,
+    options?: { limit?: number; signal?: AbortSignal },
+  ): Promise<WorkflowRunSnapshot[]>;
   /**
    * Runs of `workflow`, newest first, whatever key they carry.
    *
@@ -151,13 +162,16 @@ export type WorkflowApi = {
    * its own `runId`). Two methods rather than one nullable key, so a caller
    * meaning "this user's runs" cannot silently widen to every user's.
    */
-  recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRunSnapshot[]>;
+  recent(
+    workflow: string,
+    options?: { limit?: number; signal?: AbortSignal },
+  ): Promise<WorkflowRunSnapshot[]>;
   /**
    * Stop a run, resolving whether this call is what ended it. A run that had
    * already finished answers false rather than failing — two tabs pressing Stop
    * is ordinary.
    */
-  cancel(runId: string): Promise<boolean>;
+  cancel(runId: string, options?: { signal?: AbortSignal }): Promise<boolean>;
   /**
    * Open a server-sent-event stream of one run's state.
    *
@@ -249,7 +263,7 @@ export type WorkflowApi = {
    * caller can do with that answer that it could not do with a rejection it never
    * had to make a round trip for.
    */
-  wake(runId: string, options?: WakeUpOptions): Promise<number>;
+  wake(runId: string, options?: WakeUpOptions & { signal?: AbortSignal }): Promise<number>;
   /**
    * Store a file under an id YOU chose, so a run can start before it is all in.
    *
@@ -274,7 +288,7 @@ export type WorkflowApi = {
    * on — a `size` that stopped growing means only that nothing arrived recently,
    * which a slow link and a dead client both produce.
    */
-  uploadInfo(id: string): Promise<UploadInfo>;
+  uploadInfo(id: string, options?: { signal?: AbortSignal }): Promise<UploadInfo>;
   /**
    * Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
    * a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`

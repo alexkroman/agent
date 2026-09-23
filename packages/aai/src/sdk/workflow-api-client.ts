@@ -122,30 +122,43 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
     : {};
 
   /**
-   * The per-request deadline, or nothing.
+   * The request's signal: the caller's, the client's deadline, both, or neither.
    *
    * `extraMs` is the wait budget the agent has agreed to hold the socket open
    * for; without it a 20s client deadline would cut a 60s wait in the middle and
    * report a network error for a run that is perfectly healthy — losing the one
    * thing the caller cannot rebuild.
+   *
+   * The caller's `signal` is COMBINED rather than preferred: a page that unmounts
+   * cancels sooner, and the deadline still bounds a caller whose own signal
+   * never fires. `AbortSignal.any` holds its sources weakly, so a settled
+   * request leaves nothing on a signal the page keeps for its whole lifetime.
    */
-  function deadline(extraMs = 0): { signal?: AbortSignal } {
-    if (options.timeoutMs === undefined) return {};
-    return { signal: AbortSignal.timeout(options.timeoutMs + extraMs) };
+  function deadline(extraMs = 0, signal?: AbortSignal): { signal?: AbortSignal } {
+    const timeout =
+      options.timeoutMs === undefined
+        ? undefined
+        : AbortSignal.timeout(options.timeoutMs + extraMs);
+    if (timeout === undefined) return omitUndefined({ signal });
+    return { signal: signal ? AbortSignal.any([signal, timeout]) : timeout };
   }
 
   /** `POST /runs`, shared by `start` and `startAndWait`. */
   async function postRun(
     workflow: string,
     input: unknown,
-    options: { key?: string | undefined; wait?: number | undefined },
+    options: {
+      key?: string | undefined;
+      wait?: number | undefined;
+      signal?: AbortSignal | undefined;
+    },
   ): Promise<{ runId: string; run?: WorkflowRunSnapshot }> {
     const wait = options.wait;
     const res = await fetch(`${base}/runs`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({ workflow, ...omitUndefined({ input, key: options.key, wait }) }),
-      ...deadline(wait),
+      ...deadline(wait, options.signal),
     });
     if (!res.ok) throw await failure(res);
     return await readJson<{ runId: string; run?: WorkflowRunSnapshot }>(res);
@@ -162,12 +175,13 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
   async function listRuns(
     query: Record<string, string>,
     limit: number | undefined,
+    signal: AbortSignal | undefined,
   ): Promise<WorkflowRunSnapshot[]> {
     const params = new URLSearchParams(query);
     if (limit !== undefined) params.set("limit", String(limit));
     const res = await fetch(`${base}/runs?${params.toString()}`, {
       headers: auth,
-      ...deadline(),
+      ...deadline(0, signal),
     });
     if (!res.ok) throw await failure(res);
     const body = await readJson<{ runs?: WorkflowRunSnapshot[] }>(res);
@@ -179,25 +193,36 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
       return uploadFile(base, auth, failure, file, options);
     },
 
-    async list(): Promise<WorkflowSummary[]> {
-      const res = await fetch(base, { headers: auth, ...deadline() });
+    async list(options?: { signal?: AbortSignal }): Promise<WorkflowSummary[]> {
+      const res = await fetch(base, { headers: auth, ...deadline(0, options?.signal) });
       if (!res.ok) throw await failure(res);
       const body = await readJson<{ workflows?: WorkflowSummary[] }>(res);
       return body.workflows ?? [];
     },
 
-    async start(workflow: string, input?: unknown, options?: { key?: string }): Promise<string> {
-      const { runId } = await postRun(workflow, input, { key: options?.key });
+    async start(
+      workflow: string,
+      input?: unknown,
+      options?: { key?: string; signal?: AbortSignal },
+    ): Promise<string> {
+      const { runId } = await postRun(workflow, input, {
+        key: options?.key,
+        signal: options?.signal,
+      });
       return runId;
     },
 
     async startAndWait(
       workflow: string,
       input?: unknown,
-      options?: { key?: string; wait?: number },
+      options?: { key?: string; wait?: number; signal?: AbortSignal },
     ): Promise<WorkflowRunSnapshot> {
       const wait = clampWorkflowWait(options?.wait ?? MAX_WORKFLOW_WAIT_MS);
-      const body = await postRun(workflow, input, { key: options?.key, wait });
+      const body = await postRun(workflow, input, {
+        key: options?.key,
+        wait,
+        signal: options?.signal,
+      });
       // A `wait` is always answered with the snapshot, so the fallback covers only
       // a body that arrived without one — a proxy that rewrote it, or a replica
       // that has not yet seen its own write.
@@ -206,13 +231,13 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
 
     async get(
       runId: string,
-      options?: { wait?: number },
+      options?: { wait?: number; signal?: AbortSignal },
     ): Promise<WorkflowRunSnapshot | undefined> {
       const wait = clampWorkflowWait(options?.wait);
       const query = wait > 0 ? `?wait=${wait}` : "";
       const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}${query}`, {
         headers: auth,
-        ...deadline(wait),
+        ...deadline(wait, options?.signal),
       });
       // 404 is "no such run", which is an ANSWER rather than a failure: a caller
       // reading an id it just started can legitimately race the run's creation.
@@ -227,14 +252,17 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
     find(
       workflow: string,
       key: string,
-      options?: { limit?: number },
+      options?: { limit?: number; signal?: AbortSignal },
     ): Promise<WorkflowRunSnapshot[]> {
-      return listRuns({ workflow, key }, options?.limit);
+      return listRuns({ workflow, key }, options?.limit, options?.signal);
     },
 
-    recent(workflow: string, options?: { limit?: number }): Promise<WorkflowRunSnapshot[]> {
+    recent(
+      workflow: string,
+      options?: { limit?: number; signal?: AbortSignal },
+    ): Promise<WorkflowRunSnapshot[]> {
       // No `key` in the query is what selects the keyless read server-side.
-      return listRuns({ workflow }, options?.limit);
+      return listRuns({ workflow }, options?.limit, options?.signal);
     },
 
     watch(runId: string, signal?: AbortSignal): Promise<Response> {
@@ -283,17 +311,20 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
     uploadStream: (id: string, file: UploadBody, options?: UploadOptions) =>
       streamUploadFile(base, auth, failure, id, file, options),
 
-    uploadInfo: (id: string) => readUploadInfo(base, auth, failure, id),
+    // Under `deadline()` like every other read: a small JSON record, polled by a
+    // page watching a streamed upload, is exactly the request that must not hang.
+    uploadInfo: (id: string, options?: { signal?: AbortSignal }) =>
+      readUploadInfo(base, auth, failure, id, deadline(0, options?.signal).signal),
 
     // No `deadline()`: like an upload, its duration is a function of the FILE.
     download: (id, options) => downloadUpload(base, auth, failure, id, options?.signal),
 
-    async wake(runId: string, options?: WakeUpOptions): Promise<number> {
+    async wake(runId: string, options?: WakeUpOptions & { signal?: AbortSignal }): Promise<number> {
       const query = wakeQuery(options?.correlationIds);
       const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake${query}`, {
         method: "POST",
         headers: auth,
-        ...deadline(),
+        ...deadline(0, options?.signal),
       });
       // A run the agent does not know is "nothing was sleeping", which is the
       // same answer as a live run that was not asleep — see `wake`'s doc.
@@ -303,11 +334,11 @@ export function createWorkflowApiClient(options: WorkflowApiClientOptions): Work
       return body.woken ?? 0;
     },
 
-    async cancel(runId: string): Promise<boolean> {
+    async cancel(runId: string, options?: { signal?: AbortSignal }): Promise<boolean> {
       const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}`, {
         method: "DELETE",
         headers: auth,
-        ...deadline(),
+        ...deadline(0, options?.signal),
       });
       if (!res.ok) throw await failure(res);
       const body = await readJson<{ cancelled?: boolean }>(res);

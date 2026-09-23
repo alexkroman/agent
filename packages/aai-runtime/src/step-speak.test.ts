@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "./_test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./providers/tts/_fake-ws-test-utils.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
+import { withRunContext } from "./workflow/run-context.ts";
 
 // Async factory importing an import-free module: the module under test imports
 // "ws" itself, so the factory must not reach it.
@@ -133,25 +134,59 @@ describe("speakOverWebSocket", () => {
     await expect(audio).rejects.toThrow("(4001): nope");
   });
 
-  test("an abort mid-synthesis rejects and releases the socket", async () => {
+  test("an abort mid-synthesis rejects with the signal's OWN reason and releases the socket", async () => {
+    // Identity, not a message: `attemptLoop` recognises a cancelled walk by
+    // `err === signal.reason`, and a wrapped abort read as the step failing.
     const controller = new AbortController();
     const { audio, ws } = await speak({ signal: controller.signal });
-    controller.abort(new Error("the run was cancelled"));
+    const reason = new Error("the run was cancelled");
+    controller.abort(reason);
 
-    await expect(audio).rejects.toThrow("synthesis aborted");
+    await expect(audio).rejects.toBe(reason);
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
   });
 
   test("an already-aborted signal never dials anything", async () => {
+    const reason = new Error("too late");
     await expect(
       speakOverWebSocket({
         text: "hello",
         apiKey: "k",
         voice: "jane",
         sampleRate: 24_000,
-        signal: AbortSignal.abort(new Error("too late")),
+        signal: AbortSignal.abort(reason),
       }),
-    ).rejects.toThrow("synthesis aborted");
+    ).rejects.toBe(reason);
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  test("a non-Error reason still rejects with an Error that names it", async () => {
+    const controller = new AbortController();
+    const { audio } = await speak({ signal: controller.signal });
+    controller.abort("hung up");
+
+    await expect(audio).rejects.toThrow("synthesis aborted (hung up)");
+  });
+
+  test("cancelling the WALK stops a synthesis the step passed no walk signal to", async () => {
+    // The regression: the engine hands a step body no signal, so a cancelled
+    // run's `stepSpeak` held a billed socket open until its own deadline.
+    const walk = new AbortController();
+    const started = withRunContext(
+      {
+        runId: "wrun_1",
+        workflow: "flow",
+        step: { name: "speak", key: "speak#0", attempt: 1, maxAttempts: 3, signal: walk.signal },
+        write: () => Promise.resolve(0),
+      },
+      () => speak(),
+    );
+    const { audio, ws } = await started;
+    const reason = new Error("cancelled");
+    walk.abort(reason);
+
+    await expect(audio).rejects.toBe(reason);
+    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
   });
 
   test("translates the language code, because the wire wants the whole word", async () => {

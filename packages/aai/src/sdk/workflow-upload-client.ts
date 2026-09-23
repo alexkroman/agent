@@ -475,8 +475,12 @@ export async function readUploadInfo(
   headers: Record<string, string>,
   fail: (res: Response) => Promise<Error>,
   id: string,
+  signal?: AbortSignal,
 ): Promise<UploadInfo> {
-  const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}/info`, { headers });
+  const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}/info`, {
+    headers,
+    ...omitUndefined({ signal }),
+  });
   if (!res.ok) throw await fail(res);
   return await readApiJson<UploadInfo>(res);
 }

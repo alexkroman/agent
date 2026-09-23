@@ -900,7 +900,9 @@ query.
 ##### cancel()
 
 ```ts
-cancel(runId: string): Promise<boolean>;
+cancel(runId: string, options?: {
+  signal?: AbortSignal;
+}): Promise<boolean>;
 ```
 
 Stop a run, resolving whether this call is what ended it. A run that had
@@ -912,6 +914,12 @@ is ordinary.
 ###### runId
 
 `string`
+
+###### options?
+
+###### signal?
+
+`AbortSignal`
 
 ###### Returns
 
@@ -955,6 +963,7 @@ find(
    key: string, 
    options?: {
   limit?: number;
+  signal?: AbortSignal;
 }
 ): Promise<WorkflowRunSnapshot[]>;
 ```
@@ -976,6 +985,10 @@ Runs of `workflow` started with `key`, newest first.
 ###### limit?
 
 `number`
+
+###### signal?
+
+`AbortSignal`
 
 ###### Returns
 
@@ -1081,6 +1094,7 @@ no position a re-open could resume from.
 
 ```ts
 get(runId: string, options?: {
+  signal?: AbortSignal;
   wait?: number;
 }): Promise<WorkflowRunSnapshot | undefined>;
 ```
@@ -1102,6 +1116,10 @@ script reads `output`.
 
 ###### options?
 
+###### signal?
+
+`AbortSignal`
+
 ###### wait?
 
 `number`
@@ -1113,10 +1131,20 @@ script reads `output`.
 ##### list()
 
 ```ts
-list(): Promise<WorkflowSummary[]>;
+list(options?: {
+  signal?: AbortSignal;
+}): Promise<WorkflowSummary[]>;
 ```
 
 Declared workflows: name, description, and the input schema to render.
+
+###### Parameters
+
+###### options?
+
+###### signal?
+
+`AbortSignal`
 
 ###### Returns
 
@@ -1127,6 +1155,7 @@ Declared workflows: name, description, and the input schema to render.
 ```ts
 recent(workflow: string, options?: {
   limit?: number;
+  signal?: AbortSignal;
 }): Promise<WorkflowRunSnapshot[]>;
 ```
 
@@ -1149,6 +1178,10 @@ meaning "this user's runs" cannot silently widen to every user's.
 
 `number`
 
+###### signal?
+
+`AbortSignal`
+
 ###### Returns
 
 `Promise`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot)[]\>
@@ -1161,6 +1194,7 @@ start(
    input?: unknown, 
    options?: {
   key?: string;
+  signal?: AbortSignal;
 }
 ): Promise<string>;
 ```
@@ -1190,6 +1224,10 @@ look it up than remember the id.
 
 `string`
 
+###### signal?
+
+`AbortSignal`
+
 ###### Returns
 
 `Promise`\<`string`\>
@@ -1202,6 +1240,7 @@ startAndWait(
    input?: unknown, 
    options?: {
   key?: string;
+  signal?: AbortSignal;
   wait?: number;
 }
 ): Promise<WorkflowRunSnapshot>;
@@ -1234,6 +1273,10 @@ answered.
 ###### key?
 
 `string`
+
+###### signal?
+
+`AbortSignal`
 
 ###### wait?
 
@@ -1329,7 +1372,9 @@ recording over a long link wants — see [UploadOptions.parallel](#parallel).
 ##### uploadInfo()
 
 ```ts
-uploadInfo(id: string): Promise<UploadInfo>;
+uploadInfo(id: string, options?: {
+  signal?: AbortSignal;
+}): Promise<UploadInfo>;
 ```
 
 Read an upload's record: its name, how much has ARRIVED, and `complete`.
@@ -1343,6 +1388,12 @@ which a slow link and a dead client both produce.
 ###### id
 
 `string`
+
+###### options?
+
+###### signal?
+
+`AbortSignal`
 
 ###### Returns
 
@@ -1394,7 +1445,9 @@ exactly as it reads a single streaming `PUT`.
 ##### wake()
 
 ```ts
-wake(runId: string, options?: WakeUpOptions): Promise<number>;
+wake(runId: string, options?: WakeUpOptions & {
+  signal?: AbortSignal;
+}): Promise<number>;
 ```
 
 End a run's `sleep()` early, resolving how many pending sleeps were
@@ -1424,7 +1477,9 @@ had to make a round trip for.
 
 ###### options?
 
-[`WakeUpOptions`](#wakeupoptions)
+[`WakeUpOptions`](#wakeupoptions) & \{
+  `signal?`: `AbortSignal`;
+\}
 
 ###### Returns
 
