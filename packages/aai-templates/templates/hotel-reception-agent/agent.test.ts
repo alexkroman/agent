@@ -1,11 +1,12 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
 import type { SessionEvent, ToolContext } from "@alexkroman1/aai";
-import { isToolFailure } from "@alexkroman1/aai";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
+  runTool,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -30,6 +31,29 @@ import {
 } from "./records.ts";
 import { deskProjection, hotelSlot } from "./session.ts";
 import { deskView } from "./shared.ts";
+import bookAirportCar from "./tools/book_airport_car.ts";
+import bookBusinessCenter from "./tools/book_business_center.ts";
+import bookSpaAppointment from "./tools/book_spa_appointment.ts";
+import bookTour from "./tools/book_tour.ts";
+import cancelRoomBooking from "./tools/cancel_room_booking.ts";
+import checkRestaurantAvailability from "./tools/check_restaurant_availability.ts";
+import checkRoomAvailability from "./tools/check_room_availability.ts";
+import dispatchEmergency from "./tools/dispatch_emergency.ts";
+import disputeCharge from "./tools/dispute_charge.ts";
+import lookupBooking from "./tools/lookup_booking.ts";
+import lookupInvoice from "./tools/lookup_invoice.ts";
+import lookupPolicy from "./tools/lookup_policy.ts";
+import modifyRestaurantReservation from "./tools/modify_restaurant_reservation.ts";
+import recordFollowup from "./tools/record_followup.ts";
+import reinstateBooking from "./tools/reinstate_booking.ts";
+import resendConfirmation from "./tools/resend_confirmation.ts";
+import reserveTable from "./tools/reserve_table.ts";
+import resolveRoomConflict from "./tools/resolve_room_conflict.ts";
+import scheduleWakeupCall from "./tools/schedule_wakeup_call.ts";
+import takeGuestMessage from "./tools/take_guest_message.ts";
+import transferCall from "./tools/transfer_call.ts";
+import updateCard from "./tools/update_card.ts";
+import verifyBooking from "./tools/verify_booking.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
@@ -42,11 +66,15 @@ const run = toolRunner(agentDef);
  * `expectToolOk` (`@alexkroman1/aai/testing`) unwraps a DIALOG tool's envelope;
  * thirty-two of this template's tools are ungated `hotelSlot` tools whose result
  * is their own value, so this is the same "fail at the call, quoting what was
- * refused" for them.
+ * refused" for them. TYPED by what it is handed — `runTool(theTool, …)`
+ * answers the tool's own return type — so it only subtracts the failure arm and
+ * restates no shape.
  */
-function ok<T>(result: unknown): T {
+function ok<T>(result: T): Exclude<T, ToolFailure> {
   if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return result as T;
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
 }
 
 /** What the runtime offers the desk dialog when the caller says something. */
@@ -76,7 +104,7 @@ const withCallerTurns = (n: number) =>
 
 /** Verify as a seeded guest, the way the model has to. */
 async function verify(ctx: ToolContext, lastName: string, confirmationCode: string) {
-  return ok<{ code: string }>(await run("verify_booking", { lastName, confirmationCode }, ctx));
+  return ok(await runTool(verifyBooking, { lastName, confirmationCode }, ctx));
 }
 
 const A_CARD = {
@@ -207,8 +235,8 @@ describe("the seeded hotel", () => {
   });
 
   test("Friday July 3 is sold out, and the desk says so rather than inventing a room", async () => {
-    const empty = ok<{ available: boolean; message: string }>(
-      await run("check_room_availability", {
+    const empty = ok(
+      await runTool(checkRoomAvailability, {
         checkIn: "2026-07-03",
         checkOut: "2026-07-04",
         guests: 2,
@@ -216,8 +244,8 @@ describe("the seeded hotel", () => {
     );
     expect(empty.available).toBe(false);
     expect(empty.message).toMatch(/add_to_waitlist/);
-    const open = ok<{ available: boolean; options: string }>(
-      await run("check_room_availability", {
+    const open = ok(
+      await runTool(checkRoomAvailability, {
         checkIn: "2026-07-14",
         checkOut: "2026-07-17",
         guests: 2,
@@ -588,9 +616,7 @@ describe("cancelling", () => {
   test("outside the window the whole total comes back; inside it one night is kept", async () => {
     const outside = createToolContext();
     await verify(outside, "Smith", "HTL-AB12");
-    const full = ok<{ withinWindow: boolean; forfeit: number; refund: number }>(
-      await run("cancel_room_booking", outside),
-    );
+    const full = ok(await runTool(cancelRoomBooking, outside));
     expect(full).toMatchObject({ withinWindow: false, forfeit: 0, refund: 59_360 });
     expect(hotelSlot.get(outside).bookings.find((b) => b.code === "HTL-AB12")?.status).toBe(
       "cancelled",
@@ -599,12 +625,7 @@ describe("cancelling", () => {
 
     const inside = createToolContext();
     await verify(inside, "Sato", "HTL-BN23");
-    const partial = ok<{
-      withinWindow: boolean;
-      forfeit: number;
-      refund: number;
-      message: string;
-    }>(await run("cancel_room_booking", inside));
+    const partial = ok(await runTool(cancelRoomBooking, inside));
     // Room 204 is 220 a night; the forfeit is that rate, never a model's arithmetic.
     expect(partial).toMatchObject({ withinWindow: true, forfeit: 22_000, refund: 54_880 - 22_000 });
     expect(partial.message).toContain("one room-night (220 dollars) is forfeited");
@@ -614,17 +635,15 @@ describe("cancelling", () => {
     const ctx = withCallerTurns(2);
     await verify(ctx, "Smith", "HTL-AB12");
     ok(await run("cancel_room_booking", ctx));
-    const again = ok<{ alreadyCancelled: boolean; message: string }>(
-      await run("cancel_room_booking", ctx),
-    );
+    const again = ok(await runTool(cancelRoomBooking, ctx));
     expect(again.alreadyCancelled).toBe(true);
     expect(again.message).toContain("refund the full 593 dollars and 60 cents");
   });
 
   test("reinstating brings a cancelled booking back only while its room is free", async () => {
     const ctx = createToolContext();
-    const back = ok<{ reinstated: boolean; code: string }>(
-      await run("reinstate_booking", { lastName: "Wagner", confirmationCode: "htl fw77" }, ctx),
+    const back = ok(
+      await runTool(reinstateBooking, { lastName: "Wagner", confirmationCode: "htl fw77" }, ctx),
     );
     expect(back).toMatchObject({ reinstated: true, code: "HTL-FW77" });
     expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-FW77")?.status).toBe(
@@ -632,8 +651,8 @@ describe("cancelling", () => {
     );
     expect(hotelSlot.get(ctx).verifiedCode).toBe("HTL-FW77");
     // Already active: a no-op that says so.
-    const noop = ok<{ reinstated: boolean }>(
-      await run("reinstate_booking", { lastName: "Wagner", confirmationCode: "HTL-FW77" }, ctx),
+    const noop = ok(
+      await runTool(reinstateBooking, { lastName: "Wagner", confirmationCode: "HTL-FW77" }, ctx),
     );
     expect(noop.reinstated).toBe(false);
   });
@@ -645,12 +664,12 @@ describe("disputes", () => {
   test("the policy table decides the refund, and the refund moves the invoice", async () => {
     const ctx = createToolContext();
     await verify(ctx, "Lee", "HTL-GH78");
-    const invoice = ok<{ lineItems: { label: string }[] }>(await run("lookup_invoice", ctx));
+    const invoice = ok(await runTool(lookupInvoice, ctx));
     expect(invoice.lineItems.map((li) => li.label)).toContain("Late checkout");
 
-    const filed = ok<{ outcome: string; refund: number; say: string }>(
-      await run(
-        "dispute_charge",
+    const filed = ok(
+      await runTool(
+        disputeCharge,
         {
           category: "late_checkout_fee",
           lineItemLabel: "late checkout",
@@ -670,9 +689,9 @@ describe("disputes", () => {
   test("a no-show is explained, never refunded, and escalates only when the caller pushes", async () => {
     const ctx = createToolContext();
     await verify(ctx, "Richardson", "HTL-NS44");
-    const pushed = ok<{ outcome: string; refund: number }>(
-      await run(
-        "dispute_charge",
+    const pushed = ok(
+      await runTool(
+        disputeCharge,
         {
           category: "no_show",
           lineItemLabel: "Room (2 nights)",
@@ -748,11 +767,9 @@ describe("room conflicts", () => {
   test("Kenji Tanaka is WALKED: the house is full tonight, and 301 is his again tomorrow", async () => {
     const ctx = createToolContext();
     await verify(ctx, "Tanaka", "HTL-RT88");
-    const looked = ok<{ WARNING?: string }>(await run("lookup_booking", ctx));
+    const looked = ok(await runTool(lookupBooking, ctx));
     expect(looked.WARNING).toMatch(/double-booked/);
-    const resolved = ok<{ resolved: string; partnerHotel: string; returnDate: string }>(
-      await run("resolve_room_conflict", ctx),
-    );
+    const resolved = ok(await runTool(resolveRoomConflict, ctx));
     expect(resolved).toMatchObject({
       resolved: "walked",
       partnerHotel: "the Harbor House",
@@ -767,18 +784,13 @@ describe("room conflicts", () => {
     const ctx = createToolContext();
     await verify(ctx, "Whelan", "HTL-TW55");
     const before = hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-TW55")?.total;
-    const resolved = ok<{
-      resolved: string;
-      roomType: string;
-      upgraded: boolean;
-      room: string;
-    }>(await run("resolve_room_conflict", ctx));
+    const resolved = ok(await runTool(resolveRoomConflict, ctx));
     expect(resolved).toMatchObject({ resolved: "moved", roomType: "suite", upgraded: true });
     const after = hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-TW55");
     expect(after?.roomId).toBe(resolved.room);
     expect(after?.total).toBe(before);
     // And the lookup no longer warns.
-    expect(ok<{ WARNING?: string }>(await run("lookup_booking", ctx)).WARNING).toBeUndefined();
+    expect(ok(await runTool(lookupBooking, ctx)).WARNING).toBeUndefined();
   });
 
   test("a booking with no conflict has nothing to resolve", async () => {
@@ -799,11 +811,11 @@ describe("taking a message", () => {
       callerPhone: "415 555 0100",
       message: "Dinner is at eight.",
     };
-    const guest = ok<Record<string, unknown>>(
-      await run("take_guest_message", { ...args, recipient: "Jonathan Pierce" }, ctx),
+    const guest = ok(
+      await runTool(takeGuestMessage, { ...args, recipient: "Jonathan Pierce" }, ctx),
     );
-    const stranger = ok<Record<string, unknown>>(
-      await run("take_guest_message", { ...args, recipient: "Nobody Here" }, ctx),
+    const stranger = ok(
+      await runTool(takeGuestMessage, { ...args, recipient: "Nobody Here" }, ctx),
     );
     const shape = (r: Record<string, unknown>) => Object.keys(r).sort();
     expect(shape(guest)).toEqual(shape(stranger));
@@ -834,13 +846,9 @@ describe("taking a message", () => {
 
 describe("the restaurant", () => {
   test("open slots come from the tables that seat the party and are not already taken", async () => {
-    const open = ok<{ open: string[] }>(
-      await run("check_restaurant_availability", { date: TODAY, partySize: 4 }),
-    );
+    const open = ok(await runTool(checkRestaurantAvailability, { date: TODAY, partySize: 4 }));
     expect(open.open).toContain("7 PM");
-    const six = ok<{ open: string[] }>(
-      await run("check_restaurant_availability", { date: TODAY, partySize: 6 }),
-    );
+    const six = ok(await runTool(checkRestaurantAvailability, { date: TODAY, partySize: 6 }));
     // The one six-top is García's at 7:30 tonight.
     expect(six.open).not.toContain("7:30 PM");
     expect(six.open).toContain("7 PM");
@@ -856,7 +864,7 @@ describe("the restaurant", () => {
       lastName: "Reyes",
       phone: "415 555 0199",
     };
-    const booked = ok<{ code: string; time: string }>(await run("reserve_table", args, ctx));
+    const booked = ok(await runTool(reserveTable, args, ctx));
     expect(booked.code).toMatch(/^RES-/);
     expect(booked.time).toBe("7 PM");
 
@@ -870,9 +878,9 @@ describe("the restaurant", () => {
 
   test("moving a reservation keeps its table when that table is still free", async () => {
     const ctx = createToolContext();
-    const moved = ok<{ code: string; time: string; partySize: number }>(
-      await run(
-        "modify_restaurant_reservation",
+    const moved = ok(
+      await runTool(
+        modifyRestaurantReservation,
         { lastName: "Bennett", confirmationCode: "RES-JK90", newDate: TODAY, newTime: "19:30" },
         ctx,
       ),
@@ -906,9 +914,9 @@ describe("the restaurant", () => {
 describe("services", () => {
   test("an emergency is dispatched with no verification, and the direction matches the kind", async () => {
     const ctx = createToolContext();
-    const sent = ok<{ dispatched: boolean; room: string; next: string }>(
-      await run(
-        "dispatch_emergency",
+    const sent = ok(
+      await runTool(
+        dispatchEmergency,
         { room: "room 401", kind: "medical", situation: "guest collapsed" },
         ctx,
       ),
@@ -926,18 +934,18 @@ describe("services", () => {
 
   test("a wake-up call is set, a followup is recorded, and each is a ledger line with a reference", async () => {
     const ctx = createToolContext();
-    const wake = ok<{ reference: string; when: string }>(
-      await run(
-        "schedule_wakeup_call",
+    const wake = ok(
+      await runTool(
+        scheduleWakeupCall,
         { room: "304", guestName: "Frank Adler", date: addDays(TODAY, 1), time: "04:45" },
         ctx,
       ),
     );
     expect(wake.reference).toMatch(/^WUC-/);
     expect(wake.when).toBe("Tuesday, June 9 at 4:45 AM");
-    const followup = ok<{ reference: string; next: string }>(
-      await run(
-        "record_followup",
+    const followup = ok(
+      await runTool(
+        recordFollowup,
         {
           kind: "housekeeping",
           callerName: "Priya Nair",
@@ -957,15 +965,15 @@ describe("services", () => {
 
   test("a transfer happens exactly once per department", async () => {
     const ctx = createToolContext();
-    const first = ok<{ alreadyTransferred: boolean }>(
-      await run(
-        "transfer_call",
+    const first = ok(
+      await runTool(
+        transferCall,
         { destination: "restaurant", summary: "party of ten, private room" },
         ctx,
       ),
     );
-    const second = ok<{ alreadyTransferred: boolean }>(
-      await run("transfer_call", { destination: "restaurant", summary: "again" }, ctx),
+    const second = ok(
+      await runTool(transferCall, { destination: "restaurant", summary: "again" }, ctx),
     );
     expect(first.alreadyTransferred).toBe(false);
     expect(second.alreadyTransferred).toBe(true);
@@ -974,9 +982,9 @@ describe("services", () => {
 
   test("the catalogs price a booking and refuse past its caps", async () => {
     const ctx = createToolContext();
-    const tour = ok<{ total: string; reference: string }>(
-      await run(
-        "book_tour",
+    const tour = ok(
+      await runTool(
+        bookTour,
         {
           tour: "full_day_city",
           date: addDays(TODAY, 2),
@@ -1006,9 +1014,9 @@ describe("services", () => {
       guestPhone: "1",
     });
     expect(isToolFailure(past) && past.error).toMatch(/in the past/);
-    const spa = ok<{ total: string }>(
-      await run(
-        "book_spa_appointment",
+    const spa = ok(
+      await runTool(
+        bookSpaAppointment,
         {
           service: "deep_tissue_massage",
           date: addDays(TODAY, 1),
@@ -1021,9 +1029,9 @@ describe("services", () => {
       ),
     );
     expect(spa.total).toBe("280 dollars");
-    const biz = ok<{ total: string }>(
-      await run(
-        "book_business_center",
+    const biz = ok(
+      await runTool(
+        bookBusinessCenter,
         {
           service: "meeting_room",
           date: addDays(TODAY, 1),
@@ -1039,7 +1047,7 @@ describe("services", () => {
   });
 
   test("the policy book renders the catalogs, so a price lives in one place", async () => {
-    const tours = ok<{ policy: string }>(await run("lookup_policy", { topic: "tours" }));
+    const tours = ok(await runTool(lookupPolicy, { topic: "tours" }));
     expect(tours.policy).toContain("Half-day city highlights");
     expect(tours.policy).toContain("65 dollars per person");
     expect(POLICIES.spa.body).toContain("140 dollars per person");
@@ -1068,8 +1076,8 @@ describe("services", () => {
         passengers: 5,
       }),
     ).toBeDefined();
-    const car = ok<{ total: string }>(
-      await run("book_airport_car", {
+    const car = ok(
+      await runTool(bookAirportCar, {
         room: "401",
         pickupDate: addDays(TODAY, 1),
         pickupTime: "06:00",
@@ -1108,9 +1116,9 @@ describe("services", () => {
     expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-AB12")?.lateArrivalNote).toBe(
       "around 1 AM",
     );
-    const sent = ok<{ to: string }>(await run("resend_confirmation", { kind: "folio" }, ctx));
+    const sent = ok(await runTool(resendConfirmation, { kind: "folio" }, ctx));
     expect(sent.to).toBe("eleanor.smith@gmail.com");
-    const card = ok<{ cardLast4: string }>(await run("update_card", A_CARD, ctx));
+    const card = ok(await runTool(updateCard, A_CARD, ctx));
     expect(card.cardLast4).toBe("4471");
     expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-AB12")?.cardLast4).toBe("4471");
   });

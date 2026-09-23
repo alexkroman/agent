@@ -29,6 +29,7 @@ import {
   createToolContext,
   createWorkflowContext,
   parseSchemaInput,
+  runTool,
   type StubDelegateCall,
   type StubGatewayCall,
   type StubStepAnswer,
@@ -57,6 +58,7 @@ import type {
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { research } from "./shared.ts";
+import researchStatus from "./tools/research_status.ts";
 import {
   FILING_TEXT_PARAM_ENV,
   FILING_WEBHOOK_ENV,
@@ -204,7 +206,7 @@ describe("research_status", () => {
       }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await run("research_status", ctx)) as { runs: string[] };
+    const result = await runTool(researchStatus, ctx);
     expect(result.runs[0]).toContain("Otters use tools.");
     expect(result.runs[0]).toContain("3 sources");
   });
@@ -220,7 +222,7 @@ describe("research_status", () => {
       }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await run("research_status", ctx)) as { runs: string[] };
+    const result = await runTool(researchStatus, ctx);
     expect(result.runs[0]).toContain("12 minutes ago");
     expect(result.runs[0]).not.toContain("research:");
   });
@@ -231,7 +233,7 @@ describe("research_status", () => {
         createRunSnapshot({ workflow: "research", status: "running", createdAt: Date.now() }),
       ]),
     });
-    const result = (await run("research_status", ctx)) as { runs: string[] };
+    const result = await runTool(researchStatus, ctx);
     expect(result.runs[0]).toContain("Just now");
   });
 
@@ -239,7 +241,7 @@ describe("research_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "research", status: "running" })]),
     });
-    const result = (await run("research_status", ctx)) as { runs: string[] };
+    const result = await runTool(researchStatus, ctx);
     expect(result.runs[0]).toContain("Still working on it.");
   });
 
@@ -248,7 +250,7 @@ describe("research_status", () => {
       createRunSnapshot({ workflow: "research", status: "failed", error: "model unavailable" }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await run("research_status", ctx)) as { runs: string[] };
+    const result = await runTool(researchStatus, ctx);
     expect(result.runs[0]).toContain("model unavailable");
   });
 

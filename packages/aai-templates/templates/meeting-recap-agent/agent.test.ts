@@ -51,6 +51,7 @@ import {
   createWorkflowContext,
   parseSchemaInput,
   type RecordedStep,
+  runTool,
   schemaInputIssues,
   stubGatewayRoute,
   toolRunner,
@@ -73,6 +74,8 @@ import {
 } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { recap } from "./shared.ts";
+import cancelRecap from "./tools/cancel_recap.ts";
+import recapStatus from "./tools/recap_status.ts";
 import {
   askWhetherToKeep,
   awaitTranscript,
@@ -261,9 +264,7 @@ describe("recap_status", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
-    const result = (await run("recap_status", createToolContext({ workflows }))) as {
-      runs: string[];
-    };
+    const result = await runTool(recapStatus, createToolContext({ workflows }));
     expect(result.runs[0]).toContain("air quality");
   });
 
@@ -277,10 +278,10 @@ describe("recap_status", () => {
         output: finishedOutput({ kept: false, answered: false }),
       }),
     ];
-    const result = (await run(
-      "recap_status",
+    const result = await runTool(
+      recapStatus,
       createToolContext({ workflows: stubWorkflows(runs) }),
-    )) as { runs: string[] };
+    );
     expect(result.runs[0]).toContain("transcript deleted");
   });
 
@@ -288,7 +289,7 @@ describe("recap_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]),
     });
-    const result = (await run("recap_status", ctx)) as { runs: string[] };
+    const result = await runTool(recapStatus, ctx);
     expect(result.runs[0]).toContain("Still working");
   });
 
@@ -299,10 +300,10 @@ describe("recap_status", () => {
     const runs = [
       createRunSnapshot({ workflow: "recap", status: "failed", error: "provider unavailable" }),
     ];
-    const result = (await run(
-      "recap_status",
+    const result = await runTool(
+      recapStatus,
       createToolContext({ workflows: stubWorkflows(runs) }),
-    )) as { runs: string[] };
+    );
     expect(result.runs[0]).toContain("rolled back");
     expect(result.runs[0]).toContain("provider unavailable");
   });
@@ -407,9 +408,7 @@ describe("cancel_recap", () => {
     // stops replaying the run, so the compensations never fire. A template that
     // implied otherwise would be teaching the wrong thing.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = (await run("cancel_recap", createToolContext({ workflows }))) as {
-      note: string;
-    };
+    const result = await runTool(cancelRecap, createToolContext({ workflows }));
     expect(result.note).toContain("left behind");
   });
 

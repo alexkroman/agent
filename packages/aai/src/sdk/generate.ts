@@ -52,7 +52,7 @@
  * field on this bag.
  */
 
-import type { LlmProvider } from "./providers.ts";
+import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./schema.ts";
 
 /**
@@ -74,7 +74,7 @@ export type GenerateOptions = {
    * Credentials resolve from the agent's env — an S2S agent can use
    * `generate` by naming a provider whose API key it holds as a secret.
    */
-  llm?: LlmProvider | string;
+  llm?: LlmSpec;
   /**
    * Schema for structured output. When set, the model is constrained to the
    * schema and the result's `object` carries the parsed value. Accepts a

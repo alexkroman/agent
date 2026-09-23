@@ -81,6 +81,7 @@ export interface MetricStat {
 /**
  * Everything collected so far. A stat is absent until its first sample,
  * never a row of zeroes.
+ * @sealed
  * @public
  */
 export interface MetricsSummary {
@@ -108,6 +109,7 @@ export interface MetricsSummary {
 /**
  * A running summary of `metrics.collected` frames — see
  * {@link createMetricsCollector}.
+ * @sealed
  * @public
  */
 export interface MetricsCollector {

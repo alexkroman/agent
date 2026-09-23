@@ -25,7 +25,6 @@ import {
   type AssemblyAIGatewayModel,
   type AssemblyAILlmProviderOptions,
   type AssemblyAIReasoningEffort,
-  type KnownLlmProvider,
   type LlmOptions,
   type LlmProvider,
   llm,
@@ -59,7 +58,6 @@ import {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceId,
   type AssemblyAITtsVoiceInfo,
   assemblyAITts,
   CARTESIA_DEFAULT_VOICE,
@@ -69,6 +67,8 @@ import {
   type RimeTtsOptions,
   rimeTts,
   type TtsProvider,
+  ttsVoiceIds,
+  ttsVoiceInfo,
 } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 
@@ -93,8 +93,9 @@ describe("the LLM stage: one factory, the provider is data", () => {
   test("`llm({ provider })` returns a descriptor whose `kind` IS the provider", () => {
     // Keyed BY the provider, so the table is its own assertion: a descriptor
     // with the wrong kind fails on its own row rather than in an aggregate.
-    // `KnownLlmProvider` is the autocomplete; the field itself is open.
-    const byProvider: Record<KnownLlmProvider, LlmProvider> = {
+    // The ten built-in providers are `LlmProviderName`'s autocomplete; the
+    // field itself is open, so any other name compiles too (see below).
+    const byProvider: Record<string, LlmProvider> = {
       anthropic: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
       assemblyai: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
       cerebras: llm({ provider: "cerebras", model: "qwen-3.8-27b" }),
@@ -127,7 +128,7 @@ describe("the LLM stage: one factory, the provider is data", () => {
   });
 
   test("an unlisted provider is reached by naming its OpenAI-compatible endpoint", () => {
-    // `provider` is open (`KnownLlmProvider | (string & {})`): a vendor this
+    // `provider` is open (`"assemblyai" | … | (string & {})`): a vendor this
     // release has not heard of compiles, and `baseUrl` is what the host
     // resolver dials it through. `aai build` warns about one with neither.
     const stage = llm({
@@ -266,12 +267,17 @@ describe("the TTS stage", () => {
     // by hand: `{ language: "fr" }` alone fills in the default voice, which
     // speaks English, so asking for French and nothing else used to produce an
     // agent that connected, reported ready, and never spoke.
-    const info: AssemblyAITtsVoiceInfo = ASSEMBLYAI_TTS_VOICES[ASSEMBLYAI_TTS_DEFAULT_VOICE];
-    expect(info.language).toBe("en");
+    // `ttsVoiceInfo` is the lookup by an OPEN voice id — `undefined` for one
+    // this release's catalog does not list — so it needs no cast.
+    const info: AssemblyAITtsVoiceInfo | undefined = ttsVoiceInfo(ASSEMBLYAI_TTS_DEFAULT_VOICE);
+    expect(info?.language).toBe("en");
+    expect(ttsVoiceInfo("a-voice-shipped-next-week")).toBeUndefined();
+    // With no language, `ttsVoiceIds()` is the whole catalog, in its order.
+    expect(ttsVoiceIds()).toEqual(Object.keys(ASSEMBLYAI_TTS_VOICES));
 
-    const ids = Object.keys(ASSEMBLYAI_TTS_VOICES) as AssemblyAITtsVoiceId[];
     for (const language of Object.keys(ASSEMBLYAI_TTS_LANGUAGES) as AssemblyAITtsLanguage[]) {
-      const [voice] = ids.filter((id) => ASSEMBLYAI_TTS_VOICES[id].language === language);
+      // `ttsVoiceIds(language)` is the catalog filtered to its speakers.
+      const [voice] = ttsVoiceIds(language);
       expect(voice, language).toBeDefined();
       if (!voice) continue;
       const speaking = agent({ name: NAME, tts: assemblyAITts({ language, voice }) });

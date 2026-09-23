@@ -218,6 +218,41 @@ const input = z.object({
 });
 ```
 
+***
+
+### ttsVoiceInfo()
+
+```ts
+function ttsVoiceInfo(voice: AssemblyAITtsVoice): AssemblyAITtsVoiceInfo | undefined;
+```
+
+What the catalog records about `voice` — its language and accent — or
+`undefined` for a voice this release's catalog does not list.
+
+The lookup [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) cannot do by index: its keys are the
+catalog's literals while [AssemblyAITtsVoice](index.md#assemblyaittsvoice) is open, so indexing it
+with an author's voice needed a cast — and a cast that also let
+`"toString"` read `Object.prototype`. An own-key check answers both.
+
+#### Parameters
+
+##### voice
+
+[`AssemblyAITtsVoice`](index.md#assemblyaittsvoice)
+
+#### Returns
+
+[`AssemblyAITtsVoiceInfo`](#assemblyaittsvoiceinfo) \| `undefined`
+
+#### Example
+
+```ts
+import { ttsVoiceInfo } from "@alexkroman1/aai/tts";
+
+ttsVoiceInfo("estelle")?.language; // "fr"
+ttsVoiceInfo("a-voice-shipped-next-week"); // undefined
+```
+
 ## Interfaces
 
 ### AssemblyAITtsOptions
@@ -320,10 +355,10 @@ lines of `readonly language: "en"; readonly accent: "US"` — and so into the
 `aai:tts` contract hash. Re-accenting a voice is a catalog refresh, not an
 API change, and it was forcing an epoch classification.
 
-The IDS stay literal ([AssemblyAITtsVoiceId](#assemblyaittsvoiceid)), because those are the
-half an author types and the half autocomplete exists for; a voice arriving
-or leaving really is a change to what may be written. That is the split:
-which voices exist is contract, what each one sounds like is data.
+The IDS stay literal (the catalog's keys, and the literal half of the open
+[AssemblyAITtsVoice](index.md#assemblyaittsvoice)), because those are the half an author types and
+the half autocomplete exists for. That is the split: which voices exist is
+autocomplete, what each one sounds like is data.
 
 #### Properties
 
@@ -455,41 +490,12 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 ISO 639-1 code for a language the AssemblyAI voice catalog speaks.
 
-***
-
-### AssemblyAITtsVoiceId
-
-```ts
-type AssemblyAITtsVoiceId = 
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-  | "estelle";
-```
-
-The voice ids this release's catalog carries.
-
-Spelled out rather than derived with `keyof typeof`, so that annotating the
-map below does not cost the literals — see [AssemblyAITtsVoiceInfo](#assemblyaittsvoiceinfo).
-
 ## Variables
 
 ### ASSEMBLYAI\_TTS\_DEFAULT\_VOICE
 
 ```ts
-const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
+const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoice;
 ```
 
 Default voice when `assemblyAITts()` is called with no `voice` — a

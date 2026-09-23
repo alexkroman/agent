@@ -23,7 +23,7 @@
 import agentDef from "virtual:aai/agent";
 import type { InferToolInput, SessionEvent, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure, resolveOne } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk, toolRunner } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogOk, runTool, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";
 import { deskFlow } from "./desk.ts";
@@ -38,6 +38,7 @@ import {
 import { PRICING, type Ticket } from "./records.ts";
 import { hotelSlot } from "./session.ts";
 import { requireVerified } from "./shared.ts";
+import lookupInvoice from "./tools/lookup_invoice.ts";
 import type recordCard from "./tools/record_card.ts";
 
 const run = toolRunner(agentDef);
@@ -238,7 +239,8 @@ describe("a spoken reference is resolved, never guessed", () => {
   test("the disputed line is picked by ordinal off the folio just read out", async () => {
     const ctx = createToolContext();
     await run("verify_booking", { lastName: "Lee", confirmationCode: "HTL-GH78" }, ctx);
-    const lines = (await run("lookup_invoice", ctx)) as { lineItems: { label: string }[] };
+    const lines = await runTool(lookupInvoice, ctx);
+    if (isToolFailure(lines)) throw new Error(`lookup_invoice refused: ${lines.error}`);
     expect(lines.lineItems[1]?.label).toBe("Late checkout");
 
     const byOrdinal = await run(

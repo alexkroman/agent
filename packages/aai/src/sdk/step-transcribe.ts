@@ -133,7 +133,11 @@ export const TRANSCRIBE_WINDOW_BYTES: number = 4_194_304;
 // 30 minutes, spelled as the literal — see TRANSCRIBE_WINDOW_BYTES above.
 export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number = 1_800_000;
 
-/** A finished transcript, as {@link stepTranscribePoll} answers with one. */
+/**
+ * A finished transcript, as {@link stepTranscribePoll} answers with one.
+ *
+ * @sealed
+ */
 export type Transcript = {
   /** The job id, so a caller can quote it in a log or fetch it again later. */
   id: string;
@@ -154,8 +158,11 @@ export type Transcript = {
  * forgets cannot read `undefined` text.
  */
 export type TranscribeProgress =
-  | { done: false; status: string }
-  | { done: true; status: string; transcript: Transcript };
+  // `status` is the provider's own word, OPEN: the literals autocomplete, and a
+  // status the provider adds later still type-checks. `done` is the
+  // discriminant, never `status`.
+  | { done: false; status: "queued" | "processing" | (string & {}) }
+  | { done: true; status: "completed" | (string & {}); transcript: Transcript };
 
 /** What {@link stepTranscribeSubmit} accepts. */
 export type TranscribeSubmitOptions = TranscribeRequestOptions & {

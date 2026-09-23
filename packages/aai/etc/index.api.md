@@ -40,7 +40,7 @@ export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGu
     telephony?: TelephonyAccess;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: ToolSet;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -72,7 +72,7 @@ export interface AgentObservation {
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
-// @public @sealed
+// @public
 export interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -110,10 +110,10 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
 
 // @public
-export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
@@ -144,10 +144,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public
-export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 interface AssemblyAITtsVoiceInfo {
@@ -156,14 +153,7 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
-
-// @public
-export interface ClientEventMap {
-}
-
-// @public
-export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -216,14 +206,14 @@ export interface DelegateOptions {
     task: string;
 }
 
-// @public @sealed
+// @public
 export interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
 }
 
-// @public @sealed
+// @public
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -274,7 +264,7 @@ export interface DialogOptions {
     durable?: boolean;
 }
 
-// @public @sealed
+// @public
 export interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -325,7 +315,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<Too
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
-// @public @sealed
+// @public
 export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
@@ -386,13 +376,13 @@ export type GenerateObjectResult<T> = {
 export type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
 };
 
-// @public @sealed
+// @public
 export type GenerateResult = {
     text: string;
     object?: unknown;
@@ -409,7 +399,7 @@ export interface HandoffOptions {
     note?: string;
 }
 
-// @public @sealed
+// @public
 export interface HandoffResult {
     readonly from: string;
     readonly handoff: true;
@@ -469,7 +459,10 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+export type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+export type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -486,6 +479,9 @@ type LlmDescriptorOptions = {
 export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 export const MCP_SERVER_KEY_RE: RegExp;
@@ -520,7 +516,7 @@ export type Message = {
 // @public
 export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
-// @public
+// @public @sealed
 export interface MetricsCollector {
     collect(sample: MetricsSample): void;
     reset(): void;
@@ -535,7 +531,7 @@ export interface MetricsCollectorOptions {
 // @public
 export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
 
-// @public
+// @public @sealed
 export interface MetricsSummary {
     interrupted: number;
     latencyMs?: MetricStat;
@@ -592,46 +588,46 @@ export function omitUndefined<T extends object>(obj: T): {
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
-export function persona<const N extends string>(def: PersonaDef<N>): PersonaDef<N>;
+export function persona(def: PersonaDef): PersonaDef;
 
 // @public
-export interface PersonaDef<N extends string = string> {
+export interface PersonaDef {
     description: string;
-    name: N;
+    name: string;
     systemPrompt: string;
     temperature?: number;
     toolChoice?: ToolChoice;
-    tools?: ToolSet;
+    tools?: Readonly<Record<string, ToolDef>>;
 }
 
-// @public @sealed
-export interface PersonaPosition<N extends string = string> {
+// @public
+export interface PersonaPosition {
     readonly from?: string;
     readonly note?: string;
-    readonly persona: PersonaDef<N>;
+    readonly persona: PersonaDef;
     readonly pinnedBy?: {
         readonly dialog: string;
         readonly state: string;
     };
 }
 
-// @public @sealed
-export interface Personas<N extends string = string> {
-    active(ctx: SlotHolder): PersonaDef<N>;
-    handoff(ctx: SlotHolder, to: PersonaDef<N> | N, options?: HandoffOptions): HandoffResult;
-    readonly list: readonly PersonaDef<N>[];
-    position(ctx: SlotHolder): PersonaPosition<N>;
+// @public
+export interface Personas {
+    active(ctx: SlotHolder): PersonaDef;
+    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
+    readonly list: readonly PersonaDef[];
+    position(ctx: SlotHolder): PersonaPosition;
 }
 
 // @public
-export function personas<const N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
+export function personas(list: readonly PersonaDef[]): Personas;
 
 // @public
 export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
@@ -672,7 +668,7 @@ export interface PipelineVoiceTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public @sealed
+// @public
 export interface Procedure<M extends AnyStateMachine> {
     readonly machine: M;
     run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;
@@ -778,7 +774,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
     [T in K]: Omit<SessionEventMap[T], "meta">;
 }[K];
 
-// @public @sealed
+// @public
 export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
@@ -1019,7 +1015,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 // @public
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
-// @public @sealed
+// @public
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     create(): T;
     readonly durable: boolean;
@@ -1029,7 +1025,6 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
-    snapshot(ctx: SlotHolder): T;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
@@ -1222,14 +1217,14 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: ToolSet;
+    tools?: Readonly<Record<string, ToolDef>>;
 }
 
 // @public
@@ -1251,12 +1246,12 @@ type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEF
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
-export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
+export type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
     text: true;
-    llm?: LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & Record<never, never>);
+    llm?: LlmSpec;
     stt?: "`stt` cannot be combined with `text` — a text agent has no audio to transcribe";
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
@@ -1289,7 +1284,7 @@ export type ToolCompletionMessage = {
 // @public
 export type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public @sealed
+// @public
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1297,7 +1292,7 @@ export type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send: ClientEventSender;
+    send(event: string, data: unknown): void;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -1358,9 +1353,6 @@ export type ToolMessagesInput = {
 };
 
 // @public
-export type ToolSet = Readonly<Record<string, ToolDef>>;
-
-// @public
 export type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1373,7 +1365,7 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export type TurnDetectionMode = "auto" | "manual" | (string & {});
+export type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
 
 // @public
 export interface TypedDelegateResult<T> extends DelegateResult {
@@ -1398,10 +1390,10 @@ export interface UserTurnLimit {
 }
 
 // @public
-export const VOICE_PRESETS: Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>;
+export const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
 
 // @public
-export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet" | (string & {});
+export type VoicePresetName = KnownVoicePresetName | (string & {});
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -1489,12 +1481,14 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public

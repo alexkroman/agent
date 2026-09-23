@@ -25,7 +25,6 @@ export {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceId,
   type AssemblyAITtsVoiceInfo,
   assemblyAITts,
   CARTESIA_DEFAULT_VOICE,
@@ -36,4 +35,5 @@ export {
   rimeTts,
   type TtsProvider,
   ttsVoiceIds,
+  ttsVoiceInfo,
 } from "../../sdk/providers/tts-barrel.ts";

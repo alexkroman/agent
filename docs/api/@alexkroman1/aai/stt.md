@@ -375,7 +375,10 @@ usually reached for in order to prevent.
 ##### model?
 
 ```ts
-optional model?: string;
+optional model?: 
+  | string & {
+}
+  | "universal-3-5-pro";
 ```
 
 Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
@@ -412,7 +415,12 @@ A/B measurement against the default host; leave unset in production.
 ##### voiceFocus?
 
 ```ts
-optional voiceFocus?: string;
+optional voiceFocus?: 
+  | string & {
+}
+  | "off"
+  | "near-field"
+  | "far-field";
 ```
 
 Voice focus (voice isolation) mode, sent as the `voice_focus` connection
@@ -500,7 +508,11 @@ multilingual support is selected by naming a multilingual `model`.
 ##### model?
 
 ```ts
-optional model?: string;
+optional model?: 
+  | string & {
+}
+  | "nova-3"
+  | "nova-2";
 ```
 
 Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded

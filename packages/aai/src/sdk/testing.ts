@@ -93,6 +93,8 @@ export {
 // each wrote the same three tests, and three the same 32-line scan.
 export {
   commandedBuiltins,
+  type DeployedConfig,
+  type DeployedStage,
   expectDeployable,
   expectPromptBuiltinsDeclared,
 } from "./testing-deployable.ts";

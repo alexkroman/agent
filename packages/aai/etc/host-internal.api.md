@@ -429,13 +429,16 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
+// @public
 type AssemblyAILlmProviderOptions = {
     readonly region?: "us" | "eu";
     readonly reasoningEffort?: AssemblyAIReasoningEffort;
 };
 
 // @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -445,10 +448,10 @@ interface AssemblyAISttOptions extends ProviderCredentialOptions {
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
+    model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }
 
@@ -466,10 +469,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @internal
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
@@ -544,7 +544,7 @@ export const DEEPGRAM_KIND: "deepgram";
 interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
-    model?: "nova-3" | "nova-2" | string;
+    model?: "nova-3" | "nova-2" | (string & {});
 }
 
 // @internal
@@ -669,7 +669,7 @@ export function gatewayModelIds(opts?: {
     eu?: boolean;
 }): KnownGatewayModel[];
 
-// @public
+// @public (undocumented)
 export type GatewayModelInfo = {
     readonly tools: boolean;
     readonly stream: boolean;
@@ -696,7 +696,7 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
@@ -732,7 +732,13 @@ export function isUniversal35Pro(model: string): boolean;
 export const KNOWN_LLM_PROVIDERS: readonly ["assemblyai", "anthropic", "cerebras", "gateway", "google", "groq", "mistral", "openai", "openrouter", "xai"];
 
 // @public
-type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+export type KnownGatewayModel = KnownLiterals<AssemblyAIGatewayModel>;
+
+// @public
+type KnownLiterals<T extends string> = T extends unknown ? string extends T ? never : T : never;
+
+// @internal
+export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -749,6 +755,12 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmProviderName = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai" | (string & {});
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
@@ -1225,7 +1237,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;

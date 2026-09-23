@@ -5692,6 +5692,8 @@ The persona speaking now.
 
 ### MetricsCollector
 
+**`Sealed`**
+
 A running summary of `metrics.collected` frames — see
 [createMetricsCollector](#createmetricscollector).
 
@@ -5759,6 +5761,8 @@ over. Default 1000.
 ***
 
 ### MetricsSummary
+
+**`Sealed`**
 
 Everything collected so far. A stat is absent until its first sample,
 never a row of zeroes.
@@ -9145,7 +9149,7 @@ const researcher = subagent({
 ##### llm?
 
 ```ts
-optional llm?: string | LlmProvider;
+optional llm?: LlmSpec;
 ```
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
@@ -9632,7 +9636,7 @@ const researcher = subagent({
 ##### llm?
 
 ```ts
-optional llm?: string | LlmProvider;
+optional llm?: LlmSpec;
 ```
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
@@ -10161,15 +10165,49 @@ take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
 
 ```ts
 type AssemblyAIGatewayModel = 
-  | KnownGatewayModel
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-opus-5"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
+  | "gemma-4-31b"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
+  | "gpt-5.6-terra"
+  | "gpt-6-astra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "qwen3-32B"
+  | "qwen3-next-80b-a3b"
+  | "qwen3.5-4b-32k-fast"
   | string & {
 };
 ```
 
-A model id on AssemblyAI's LLM Gateway — one of [KnownGatewayModel](llm.md#knowngatewaymodel),
-or any other string.
+A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this
+catalog was generated, or any other string.
 
-The known half is GENERATED from what the gateway advertises, so it is a
+The literal half is GENERATED from what the gateway advertises, so it is a
 snapshot of a service that ships models faster than this package releases:
 a model added upstream after this release is still a legal id, and a
 regeneration that drops one breaks no author's build. Autocomplete, not a
@@ -10181,8 +10219,24 @@ guard.
 
 ```ts
 type AssemblyAITtsVoice = 
-  | AssemblyAITtsVoiceId
-| string & Record<never, never>;
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+  | "estelle"
+  | string & {
+};
 ```
 
 A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
@@ -10701,7 +10755,7 @@ The generated text — the JSON-stringified object.
 
 ```ts
 type GenerateOptions = {
-  llm?: LlmProvider | string;
+  llm?: LlmSpec;
   maxOutputTokens?: number;
   prompt: string;
   schema?: StandardSchemaV1 | Record<string, unknown>;
@@ -10720,7 +10774,7 @@ the module doc for why a field here would be a second, competing one.
 ##### llm?
 
 ```ts
-optional llm?: LlmProvider | string;
+optional llm?: LlmSpec;
 ```
 
 LLM provider for this call: a descriptor from `@alexkroman1/aai/llm`,
@@ -10997,6 +11051,33 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### LlmSpec
+
+```ts
+type LlmSpec = 
+  | LlmProvider
+  | AssemblyAIGatewayModel
+  | `${string}/${string}`
+  | string & {
+};
+```
+
+What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+`ctx.generate({ llm })`: a descriptor from [llm](llm.md#llm), or a model-id string.
+
+A bare id routes through AssemblyAI's LLM Gateway (so
+[AssemblyAIGatewayModel](#assemblyaigatewaymodel)'s ids autocomplete), a `"creator/model"` id
+through the Vercel AI Gateway. Typed against the generated ids so a typo is
+caught where it is written, the job `llm({ provider: "assemblyai", model })`
+has always done — and OPEN (`string & {}`), because the catalog is a
+snapshot of a service that ships models faster than this package releases.
+
+ONE named type because three fields are one field to an author: two inline
+copies of this union and a drifted `LlmProvider | string` (no autocomplete at
+all) were what it replaced.
+
+***
+
 ### McpServerConfig
 
 ```ts
@@ -11187,10 +11268,7 @@ without its envelope, so a hook's event and a transport's body both fit.
 
 ```ts
 type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-  llm?:   | LlmProvider
-     | AssemblyAIGatewayModel
-     | `${string}/${string}`
-     | string & Record<never, never>;
+  llm?: LlmSpec;
   page?: "voice" | StaticFrontDoorMisuse;
   s2s?: undefined;
   text?: undefined;
@@ -11226,11 +11304,7 @@ the rule.
 ##### llm?
 
 ```ts
-optional llm?: 
-  | LlmProvider
-  | AssemblyAIGatewayModel
-  | `${string}/${string}`
-| string & Record<never, never>;
+optional llm?: LlmSpec;
 ```
 
 See [AgentDef.llm](#llm); a string is gateway model-id shorthand —
@@ -11245,7 +11319,7 @@ so one field had two types and only the longer spelling checked anything.
 A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
 autocomplete and a typo a gateway 400 at the first live session.
 
-The `string & Record<never, never>` arm keeps it a WIDENING: the catalog
+The `string & {}` arm of [LlmSpec](#llmspec) keeps it a WIDENING: the catalog
 is a snapshot of a service that ships models faster than this package
 releases, so every id that compiled before still compiles — see
 [AssemblyAITtsVoice](#assemblyaittsvoice), which is autocomplete over its catalog for
@@ -12096,10 +12170,7 @@ carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
 
 ```ts
 type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
-  llm?:   | LlmProvider
-     | AssemblyAIGatewayModel
-     | `${string}/${string}`
-     | string & Record<never, never>;
+  llm?: LlmSpec;
   maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   page?: "voice" | StaticFrontDoorMisuse;
@@ -12131,11 +12202,7 @@ so a knob added to [PipelineVoiceTuning](#pipelinevoicetuning) is rejected here 
 ##### llm?
 
 ```ts
-optional llm?: 
-  | LlmProvider
-  | AssemblyAIGatewayModel
-  | `${string}/${string}`
-| string & Record<never, never>;
+optional llm?: LlmSpec;
 ```
 
 See [AgentDef.llm](#llm); a string is gateway model-id shorthand. Unset →
@@ -14762,20 +14829,26 @@ that happened to carry it. The property itself stays an ordinary
 ### WorkflowInputOf
 
 ```ts
-type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+type WorkflowInputOf<D> = D extends {
+  run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 ```
 
 A workflow's INPUT type — what its declared schema parses to, which is
 exactly what the body's parameter should be.
 
 **The reason it exists is that nothing checks a hand-written parameter.**
-[WorkflowBody](workflow-api.md#workflowbody) takes its input as a function PARAMETER, so it is
+`WorkflowBody` takes its input as a function PARAMETER, so it is
 contravariant: a body declaring a WIDER shape than the schema produces is
 assignable, and a body declaring the same shape with a field's optionality or
 a default's type subtly different is assignable too. Both compile. A
 `z.number().default(5)` against a body that writes `input.limit ?? 3` is the
 sharp version — the schema guarantees `limit` is present, the `??` is dead,
 and the two numbers disagree with nothing to report it.
+
+It reads the parameter `WorkflowDef.run` declares, which IS the schema's
+output (`InferSchemaOutput<P>`), by matching `run`'s shape — see
+[WorkflowOutputOf](workflow-api.md#workflowoutputof) for why a reading matches a shape.
 
 Two details a restated shape gets wrong by hand, both of which this gets
 right for free. A zod `.optional()` infers a property that may be PRESENT AND
@@ -14867,12 +14940,28 @@ erased, and a tool importing it is importing the client half on purpose.
 ### ASSEMBLYAI\_TTS\_VOICES
 
 ```ts
-const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+const ASSEMBLYAI_TTS_VOICES: Readonly<Record<
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+| "estelle", AssemblyAITtsVoiceInfo>>;
 ```
 
 The voice catalog — voice id → the language it speaks and its accent.
 The accent is descriptive metadata for choosing a voice, not a settable
-option: [AssemblyAITtsOptions](tts.md#assemblyaittsoptions) has no `accent` field.
+option: `AssemblyAITtsOptions` has no `accent` field.
 
 A constant rather than a sentence in a doc comment, because a wrong voice
 id is a *silent* failure: it is a free-form string the service rejects
@@ -14891,7 +14980,14 @@ Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
 
 Anything that shows an author their choices — the scaffold guide, a picker
 — should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented.
+someone guessing, which is the failure being prevented. To look a voice up by
+a value typed [AssemblyAITtsVoice](#assemblyaittsvoice), use [ttsVoiceInfo](tts.md#ttsvoiceinfo).
+
+The keys are spelled out in the annotation rather than named as a closed
+`AssemblyAITtsVoiceId` union: a closed union an author can import is one a
+catalog refresh breaks, and the open [AssemblyAITtsVoice](#assemblyaittsvoice) carries the
+same literals for autocomplete. `tts-voice-ids.test.ts` holds the two lists
+equal.
 
 ***
 

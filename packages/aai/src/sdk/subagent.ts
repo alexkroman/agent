@@ -74,7 +74,7 @@
  */
 
 import type { ModelTuning } from "./agent-model-tuning.ts";
-import type { LlmProvider } from "./providers.ts";
+import type { LlmSpec } from "./providers/llm/llm.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type { BuiltinTool, ToolSet } from "./types.ts";
 
@@ -182,7 +182,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
    * doing lookups is spending most of its tokens on tool results, not on
    * reasoning.
    */
-  llm?: LlmProvider | string;
+  llm?: LlmSpec;
   /**
    * The tools this subagent may call, by the name the model calls them by.
    *

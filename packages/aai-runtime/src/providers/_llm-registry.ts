@@ -35,11 +35,11 @@ import {
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
+  type KnownLlmProvider,
   readAssemblyAILlmProviderOptions,
 } from "@alexkroman1/aai/host-internal";
 import {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  type KnownLlmProvider,
   type LlmDescriptorOptions,
   type LlmProvider,
 } from "@alexkroman1/aai/llm";

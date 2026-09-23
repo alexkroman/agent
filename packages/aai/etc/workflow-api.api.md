@@ -6,7 +6,7 @@
 
 import { z } from 'zod';
 
-// @public
+// @public @sealed
 export type AgentClient = WorkflowApi & {
     config(): Promise<ClientConfigResponse>;
     readonly baseUrl: string;
@@ -204,60 +204,29 @@ export type WakeUpOptions = {
     correlationIds?: string[];
 };
 
-// @public
+// @public @sealed
 export type WorkflowApi = {
-    list(options?: {
-        signal?: AbortSignal;
-    }): Promise<WorkflowSummary[]>;
+    list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
     upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    start(workflow: string, input?: unknown, options?: {
-        key?: string;
-        signal?: AbortSignal;
-    }): Promise<string>;
-    startAndWait(workflow: string, input?: unknown, options?: {
-        key?: string;
-        wait?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot>;
-    get(runId: string, options?: {
-        wait?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot | undefined>;
-    find(workflow: string, key: string, options?: {
-        limit?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot[]>;
-    recent(workflow: string, options?: {
-        limit?: number;
-        signal?: AbortSignal;
-    }): Promise<WorkflowRunSnapshot[]>;
-    cancel(runId: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<boolean>;
+    start(workflow: string, input?: unknown, options?: WorkflowStartOptions): Promise<string>;
+    startAndWait(workflow: string, input?: unknown, options?: WorkflowStartAndWaitOptions): Promise<WorkflowRunSnapshot>;
+    get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
+    find(workflow: string, key: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
     watch(runId: string, signal?: AbortSignal): Promise<Response>;
-    streamOutput(runId: string, options?: {
-        namespace?: string;
-        startIndex?: number;
-        signal?: AbortSignal;
-    }): Promise<Response>;
-    follow(runId: string, options?: {
-        signal?: AbortSignal;
-    }): AsyncIterable<WorkflowRunSnapshot>;
-    followOutput(runId: string, options?: {
-        namespace?: string;
-        fromIndex?: number;
-        signal?: AbortSignal;
-    }): AsyncIterable<unknown>;
-    wake(runId: string, options?: WakeUpOptions & {
-        signal?: AbortSignal;
-    }): Promise<number>;
+    streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
+    follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
+    followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
+    wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<UploadInfo>;
-    download(id: string, options?: {
-        signal?: AbortSignal;
-    }): Promise<Blob>;
+    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+    download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
+};
+
+// @public
+export type WorkflowApiCallOptions = {
+    signal?: AbortSignal;
 };
 
 // @public
@@ -317,12 +286,27 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+export type WorkflowFollowOutputOptions = {
+    namespace?: string;
+    fromIndex?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowGetOptions = {
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowInputOf<D> = D extends {
+    readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 
 // @public
 export type WorkflowOutputOf<D> = D extends {
-    run: WorkflowBody<never, infer R>;
-    output?: StandardSchemaV1<unknown, infer O> | undefined;
+    readonly run: (input: never, ctx: never) => infer R;
+    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
 // @public
@@ -331,6 +315,12 @@ export type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+};
+
+// @public
+export type WorkflowRunListOptions = {
+    limit?: number;
+    signal?: AbortSignal;
 };
 
 // @public
@@ -357,6 +347,26 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowStartAndWaitOptions = {
+    key?: string;
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStartOptions = {
+    key?: string;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowStreamOutputOptions = {
+    namespace?: string;
+    startIndex?: number;
+    signal?: AbortSignal;
+};
 
 // @public
 export type WorkflowSummary = {

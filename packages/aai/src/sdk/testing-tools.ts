@@ -102,6 +102,46 @@ function describe(value: unknown): string {
 }
 
 /**
+ * Run a tool — the tool DEF itself, or by the name the model calls it by.
+ *
+ * **Handed the tool, it is TYPED end to end**: the arguments are checked
+ * against what `execute` takes and the result is what it returns, so
+ * `await runTool(addItem, { item: "apple" }, ctx)` needs no cast. The name
+ * form below answers `unknown`, because a name is a string and nothing can
+ * type what it looks up; a spec reading fields off that result used to cast it
+ * (`(await run("add_item", ctx)) as { added: string }`), which is an unchecked
+ * claim that stops meaning anything the day the tool's return changes. A tool
+ * FILE's default export is the very object a deployed agent registers under its
+ * name, so importing it runs the same code the name would reach.
+ *
+ * Matched on `execute` alone rather than on `ToolDef`, so any tool shape —
+ * `tool()`, `slot.tool()`, `dialog.tool()` — is accepted and keeps its own
+ * result type.
+ *
+ * @example
+ * ```ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+ * import { z } from "zod";
+ *
+ * // In a spec this is `import addItem from "./tools/add_item.ts"`.
+ * const addItem = tool({
+ *   description: "Add an item",
+ *   inputSchema: z.object({ item: z.string() }),
+ *   execute: async ({ item }) => ({ added: item }),
+ * });
+ * const { added } = await runTool(addItem, { item: "apple" }, createToolContext());
+ * console.log(added.toUpperCase()); // typed: `added` is a string
+ * ```
+ *
+ * @public
+ */
+export function runTool<T extends { readonly execute: (...args: never[]) => unknown }>(
+  tool: T,
+  argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext,
+  ctx?: ToolContext,
+): Promise<Awaited<ReturnType<T["execute"]>>>;
+/**
  * Run a tool by the name the model calls it by.
  *
  * `args` is unvalidated on purpose: the runtime parses a model's arguments
@@ -155,15 +195,43 @@ function describe(value: unknown): string {
  *
  * @public
  */
-export async function runTool(
+export function runTool(
   agent: ToolBearingAgent,
   name: string,
   argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
   ctx?: ToolContext,
+): Promise<unknown>;
+export async function runTool(
+  target: unknown,
+  nameOrArgs?: unknown,
+  argsOrCtx?: unknown,
+  ctx?: ToolContext,
 ): Promise<unknown> {
+  // A NAME in the second position is the agent form — and `toolOf` already has
+  // a sentence for every way the first argument can fail to be an agent,
+  // including a tool def handed where the agent belongs.
+  if (typeof nameOrArgs === "string") {
+    const agent: unknown = target;
+    return await execute(toolOf(agent as ToolBearingAgent, nameOrArgs), argsOrCtx, ctx);
+  }
+  return await execute(target, nameOrArgs, argsOrCtx);
+}
+
+/**
+ * Call `tool.execute` the way the runtime does, with the arguments-or-context
+ * shape {@link runTool} documents told apart by SHAPE.
+ */
+async function execute(tool: unknown, argsOrCtx: unknown, ctx: unknown): Promise<unknown> {
+  if (!(isRecord(tool) && typeof tool.execute === "function")) {
+    throw new Error(
+      `runTool(tool, …) was handed ${tool === undefined ? "undefined" : `a ${typeof tool} with no \`execute\``} rather than a tool. Pass a tool def (a tool file's default export), or the agent and the tool's NAME: runTool(agentDef, "name", …).`,
+    );
+  }
   const passedContext = ctx ?? (isToolContext(argsOrCtx) ? argsOrCtx : undefined);
   const args = argsOrCtx === undefined || argsOrCtx === passedContext ? {} : argsOrCtx;
-  return await toolOf(agent, name).execute(args, passedContext ?? createToolContext());
+  // `Reflect.apply` rather than `tool.execute(...)`: the def's `execute` is
+  // typed per tool, and the method receiver is kept exactly as a call would.
+  return await Reflect.apply(tool.execute, tool, [args, passedContext ?? createToolContext()]);
 }
 
 /**

@@ -164,13 +164,21 @@ const body = entries
 /**
  * The id union, spelled out rather than derived with `keyof typeof`.
  *
- * `KnownGatewayModel` is PUBLISHED (the autocomplete half of the open
- * `AssemblyAIGatewayModel`), and `keyof typeof ASSEMBLYAI_GATEWAY_MODELS` makes the rollup inline
+ * The ids are PUBLISHED, inline, as the literal half of the open
+ * `AssemblyAIGatewayModel`, and `keyof typeof ASSEMBLYAI_GATEWAY_MODELS` makes the rollup inline
  * the whole 30-model × 5-field literal type to express it — about 190 of the
  * 454 lines the `/llm` report used to be. The epoch hash covers that body, so
  * regenerating this catalog, which is routine ops, forced an `aai:llm`
  * classification for a change no author can see. Written out, a regeneration
  * touches roughly two lines of the report.
+ *
+ * They are written INTO the open type rather than into a named closed
+ * `KnownGatewayModel` beside it. A closed union an author can import is a
+ * type whose every regeneration changes what it accepts, so the compatibility
+ * probe (which holds a TYPE to mutual assignability) could never call one a
+ * revision; `"a" | … | (string & {})` accepts every string before and after.
+ * The closed half this file's own `satisfies` needs is DERIVED from the open
+ * type (`KnownLiterals`), so there is still one list.
  */
 const union = entries.map((e) => `  | ${JSON.stringify(e.id)}`).join("\n");
 
@@ -196,13 +204,15 @@ const file = `// Copyright 2026 the AAI authors. MIT license.
  * weaker claim than it working: \`kimi-k2.5\` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
  *
- * Only the id UNION is published, on \`@alexkroman1/aai/llm\`, as the
- * autocomplete half of the OPEN \`AssemblyAIGatewayModel\` (\`KnownGatewayModel |
+ * Only the ids are published, on \`@alexkroman1/aai/llm\`, spelled inline as
+ * the literal half of the OPEN \`AssemblyAIGatewayModel\` (\`"gpt-5" | … |
  * (string & {})\`), so a regeneration that adds or drops an id is a compatible
  * change to every author's build. The catalog itself, its row type and
  * \`gatewayModelIds\` are on \`@alexkroman1/aai/host-internal\`: their reader is
  * the studio's model selection and this repo's own gate, never an \`agent.ts\`.
  */
+
+import type { KnownLiterals } from "../../../is-known.ts";
 
 export type GatewayModelInfo = {
   /** Accepts a \`tools\` array — required for any agent with tools. */
@@ -226,15 +236,26 @@ export type GatewayModelInfo = {
 };
 
 /**
- * An id the gateway advertised when this catalog was generated — the
- * autocomplete half of \`AssemblyAIGatewayModel\`, which also accepts any other
- * string. A snapshot of a service that ships models faster than this package
- * releases, so it is never a closed set: a model added upstream after this
- * release is still a legal id, and a regeneration that drops one breaks no
- * build.
+ * A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this
+ * catalog was generated, or any other string.
+ *
+ * The literal half is GENERATED from what the gateway advertises, so it is a
+ * snapshot of a service that ships models faster than this package releases:
+ * a model added upstream after this release is still a legal id, and a
+ * regeneration that drops one breaks no author's build. Autocomplete, not a
+ * guard.
  */
-export type KnownGatewayModel =
-${union};
+export type AssemblyAIGatewayModel =
+${union}
+  | (string & {});
+
+/**
+ * The ids this catalog was generated with — the literal half of
+ * {@link AssemblyAIGatewayModel}, derived rather than listed twice. Internal:
+ * a closed union an author could import would make every regeneration a
+ * breaking change to it.
+ */
+export type KnownGatewayModel = KnownLiterals<AssemblyAIGatewayModel>;
 
 export const ASSEMBLYAI_GATEWAY_MODELS = {
 ${body}

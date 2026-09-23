@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoice;
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -18,7 +18,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
 
 // @public
 export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
@@ -34,10 +34,7 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
-
-// @public
-export type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
 
 // @public
 export interface AssemblyAITtsVoiceInfo {
@@ -91,6 +88,9 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 // @public
 export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
+
+// @public
+export function ttsVoiceInfo(voice: AssemblyAITtsVoice): AssemblyAITtsVoiceInfo | undefined;
 
 // (No @packageDocumentation comment for this package)
 

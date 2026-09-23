@@ -38,10 +38,10 @@ export interface ChannelDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export interface ChannelHandler {
-    readonly advice: (options: Record<string, unknown>, detail: string) => string;
+export interface ChannelHandler<O = Record<string, unknown>> {
+    readonly advice: (options: O, detail: string) => string;
     readonly kind: string;
-    readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+    readonly render: (message: ChannelMessage, options: O) => ChannelPayload;
 }
 
 // @public
@@ -85,6 +85,9 @@ export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
 export function registerChannelHandler(handler: ChannelHandler): void;
+
+// @public
+export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];
