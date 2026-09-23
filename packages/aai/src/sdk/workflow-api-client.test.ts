@@ -13,7 +13,11 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { createWorkflowApiClient, WORKFLOW_API_PREFIX } from "./workflow-api-client.ts";
+import {
+  createWorkflowApiClient,
+  WORKFLOW_API_PREFIX,
+  type WorkflowApi,
+} from "./workflow-api-client.ts";
 import { MAX_WORKFLOW_WAIT_MS, type WorkflowRunSnapshot } from "./workflow-run.ts";
 
 const BASE = "https://agents.example/my-agent/";
@@ -423,6 +427,70 @@ describe("timeoutMs", () => {
     await api.streamOutput("wrun_1");
     expect(call(0)[1]).not.toHaveProperty("signal");
     expect(call(1)[1]).not.toHaveProperty("signal");
+  });
+});
+
+describe("a caller's signal", () => {
+  // Every request-response call, each handed `signal` the way a page that
+  // unmounts would. The streaming calls took one already; these did not, so a
+  // `startAndWait` the agent held open for its whole wait could not be ended.
+  const calls: Record<string, (api: WorkflowApi, signal: AbortSignal) => Promise<unknown>> = {
+    list: (api, signal) => api.list({ signal }),
+    start: (api, signal) => api.start("digest", {}, { signal }),
+    startAndWait: (api, signal) => api.startAndWait("digest", {}, { signal }),
+    get: (api, signal) => api.get("wrun_1", { signal }),
+    find: (api, signal) => api.find("digest", "k", { signal }),
+    recent: (api, signal) => api.recent("digest", { signal }),
+    wake: (api, signal) => api.wake("wrun_1", { signal }),
+    cancel: (api, signal) => api.cancel("wrun_1", { signal }),
+    uploadInfo: (api, signal) => api.uploadInfo("abc", { signal }),
+  };
+  const answer = () =>
+    json({ runId: "wrun_1", run: run(), runs: [], workflows: [], woken: 0, cancelled: true });
+
+  test.each(Object.entries(calls))(
+    "%s passes it through untouched when there is no deadline",
+    async (_name, send) => {
+      fetchMock.mockImplementation(async () => answer());
+      const controller = new AbortController();
+      await send(client(), controller.signal);
+      expect(call()[1]?.signal).toBe(controller.signal);
+    },
+  );
+
+  test.each(Object.entries(calls))(
+    "%s COMBINES it with the deadline rather than replacing either",
+    async (_name, send) => {
+      const timeout = vi.spyOn(AbortSignal, "timeout");
+      fetchMock.mockImplementation(async () => answer());
+      const controller = new AbortController();
+      await send(client({ timeoutMs: 20_000 }), controller.signal);
+      const sent = call()[1]?.signal;
+      // The deadline was still armed…
+      expect(timeout).toHaveBeenCalled();
+      // …and the caller's abort reaches the request, with its own reason.
+      expect(sent).not.toBe(controller.signal);
+      expect(sent?.aborted).toBe(false);
+      const reason = new Error("unmounted");
+      controller.abort(reason);
+      expect(sent?.aborted).toBe(true);
+      expect(sent?.reason).toBe(reason);
+    },
+  );
+
+  test("an aborted signal rejects the call with its reason", async () => {
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      init?.signal?.throwIfAborted();
+      return json(run());
+    });
+    const reason = new Error("gone");
+    await expect(
+      client({ timeoutMs: 20_000 }).startAndWait(
+        "digest",
+        {},
+        { signal: AbortSignal.abort(reason) },
+      ),
+    ).rejects.toBe(reason);
   });
 });
 
