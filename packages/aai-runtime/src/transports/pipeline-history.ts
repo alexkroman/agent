@@ -22,6 +22,9 @@
  * `tool` messages a resume brings when it maps them across; they are already
  * inside the step messages the turn itself pushed.
  *
+ * **The LLM view is re-PAIRED on every write** (`../tool-call-pairs.ts`), so
+ * `history` itself — not just one request built from it — stays valid.
+ *
  * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed) — and each
  * push records what its own cap evicted, so `dropTrailingUser` can undo the
  * eviction along with the append. See that member's doc for the turn a rollback
@@ -31,6 +34,8 @@
 import type { Message } from "@alexkroman1/aai";
 import { createEpoch, DEFAULT_MAX_HISTORY, type Epoch } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
+import type { Logger } from "../runtime-config.ts";
+import { pairToolCallsInPlace } from "../tool-call-pairs.ts";
 import { toModelMessage } from "./pipeline-stream.ts";
 
 /** Conversation memory handle returned by {@link createPipelineHistory}. */
@@ -371,8 +376,14 @@ export function persistInterruptedTurn(args: {
  */
 type PushUndo<T> = { readonly pushed: T; readonly evicted: readonly T[] } | null;
 
-/** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
-export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
+/**
+ * Create a {@link PipelineHistory}, optionally seeded from prior text history.
+ * `opts` is where a repaired tool pair is reported.
+ */
+export function createPipelineHistory(
+  seed?: readonly Message[],
+  opts: { log?: Pick<Logger, "warn">; sid?: string } = {},
+): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
   // Same subtraction `seed()` below makes, for the same reason — a `tool`
   // message has no half to pair with here.
@@ -382,6 +393,7 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
   const revision = createEpoch();
   let conversationUndo: PushUndo<Message> = null;
   let llmUndo: PushUndo<ModelMessage> = null;
+  const pairLlm = (): void => pairToolCallsInPlace(llm, opts.log, opts.sid);
 
   /**
    * Pop `content` off the back of `arr` if it is a trailing user message, and
@@ -436,6 +448,7 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
           pushed.push(cleaned);
         }
       }
+      pairLlm();
       const evicted = capLlm(llm);
       const only = pushed.length === 1 ? pushed[0] : undefined;
       llmUndo = only ? { pushed: only, evicted } : null;
@@ -446,6 +459,8 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       const inConversation = applyEdits(conversation, edits.conversation);
       const inLlm = applyEdits(llm, edits.llm);
       if (!(inConversation || inLlm)) return false;
+      // An edit that removed an assistant message must not strand its results.
+      pairLlm();
       // Spent, like any intervening mutation: a removal shifted the window, so
       // restoring an eviction under a later pop could overrun the cap.
       conversationUndo = null;

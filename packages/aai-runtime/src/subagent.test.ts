@@ -468,6 +468,39 @@ describe("createSubagentRunner", () => {
       expect(JSON.stringify(second)).toContain("Is it raining?");
     });
 
+    it("a revision survives an attempt that ended on a tool call nothing executed", async () => {
+      // The attempt's last step ended on an unsafe finish reason, so the SDK
+      // declined the call and `responseMessages` holds it ALONE. Sent back as-is,
+      // the revision request is refused ("Tool result is missing") before it
+      // reaches the model — see `tool-call-pairs.ts`.
+      const { model, descriptor, env } = setup([
+        { call: { name: "lookup", input: { term: "rain" }, id: "c1" }, finishReason: "length" },
+        { text: "Confirmed: yes." },
+      ]);
+      const lookup = tool({
+        description: "Look a term up",
+        inputSchema: z.object({ term: z.string() }),
+        execute: () => "never reached",
+      });
+      const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+
+      const result = await run(
+        subagent({
+          name: "checker",
+          systemPrompt: "Check it.",
+          tools: { lookup },
+          guardrail: ({ text }) => text.startsWith("Confirmed:") || "Answer in words.",
+        }),
+        { task: "Is it raining?" },
+        parentCall(),
+      );
+
+      expect(result).toMatchObject({ text: "Confirmed: yes.", revisions: 1, accepted: true });
+      expect(JSON.stringify(promptOf(model.calls[1]))).toContain(
+        "This tool call was not executed.",
+      );
+    });
+
     it("returns the last rejected answer UNACCEPTED once the budget is spent", async () => {
       const { model, descriptor, env } = setup([{ text: "no" }, { text: "still no" }]);
       const info: string[] = [];

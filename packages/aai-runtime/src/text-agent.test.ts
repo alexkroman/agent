@@ -55,6 +55,32 @@ describe("createTextAgent", () => {
     expect(prompt[0]).toMatchObject({ role: "system", content: "Be brief." });
   });
 
+  test("a caller's history holding an unexecuted tool call still gets a reply", async () => {
+    // A caller that appends each run's `response.messages` carries forward a
+    // call the SDK declined to run (an unsafe finish reason). Sent verbatim, the
+    // SDK refuses the whole request — see `tool-call-pairs.ts`.
+    const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    const chat = createTextAgent({
+      agent: textAgent({ name: "Helper", text: true }),
+      model,
+      logger: silentLogger,
+    });
+    const reply = await drain(
+      chat.stream({
+        messages: [
+          { role: "user", content: "look it up" },
+          {
+            role: "assistant",
+            content: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: {} }],
+          },
+          { role: "user", content: "hello?" },
+        ],
+      }),
+    );
+    expect(reply).toBe("ok");
+    expect(JSON.stringify(model.calls[0]?.prompt)).toContain("This tool call was not executed.");
+  });
+
   test("refuses an agent that did not opt into text mode", () => {
     expect(() =>
       createTextAgent({

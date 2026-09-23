@@ -158,6 +158,19 @@ the same thing here: both take `failed`. A call that rejects outright (the
 author's `onError` threw) takes neither — the model is handed nothing and
 `settled()` is never reached, only `dispose()`.
 
+## A tool call with NO result is repaired where history is written
+
+The AI SDK runs a tool call only when its step finished with `stop` or
+`tool-calls` (ai@7.0.70+). A step that ends on a call with `length`, `other` or
+`content-filter` leaves the call in its messages with no result, and one such
+message in history refuses every later request of the session ("Tool result is
+missing for tool call …"). `tool-call-pairs.ts` is the one guard: the
+pipeline history re-pairs its LLM view on every write, and the text agent and a
+subagent revision pair what they send. A call nothing ran gets an error result
+(`"This tool call was not executed."`); a result with no call is dropped. It is
+not a fifth producer of a `role: "tool"` CONVERSATION message — the synthetic
+result lives only in the model's view, like the step messages it repairs.
+
 ## Read the arm by ROLE, never by field presence
 
 `toolName` and `toolCallId` are optional, and the absence of one is not a
@@ -180,7 +193,7 @@ apart, and its module doc carries the full argument. The three:
   REJECTS with a `FatalToolError` and the model is handed nothing, **and the
   turn stops.** The rejection alone would not stop it: the AI SDK catches a
   rejecting `execute`, emits a `tool-error` part that `pipeline-stream-parts.ts`
-  drops on its `default:` arm, and keeps stepping. `FatalToolLatch` is the side
+  only logs (`Tool call failed`), and keeps stepping. `FatalToolLatch` is the side
   channel that carries the verdict out of the tool call — `to-vercel-tools.ts`
   fires it through `onFatalToolError`, and `withFatalSignal` folds its signal
   into the REQUEST signal only, never the turn's, because aborting the turn's

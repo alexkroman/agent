@@ -24,6 +24,9 @@ export type StreamPart = {
   readonly toolCallId?: string;
   readonly toolName?: string;
   readonly error?: unknown;
+  /** On `finish-step`: why the step ended — read by the turn trace. */
+  readonly finishReason?: string;
+  readonly rawFinishReason?: string;
 };
 
 /** Dependencies the stream-part handler needs from the owning transport. */
@@ -326,6 +329,17 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
       }
       case "tool-result":
         emitToolResult(part);
+        return;
+      case "tool-error":
+        // What an INVALID call (unknown tool, unparseable input) and a thrown
+        // `execute` both become. The model gets it as an error result in the
+        // step's messages; this line is the only place an operator sees WHY.
+        log.warn("Tool call failed", {
+          sid,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          error: errorMessage(part.error),
+        });
         return;
       case "error": {
         errored = true;

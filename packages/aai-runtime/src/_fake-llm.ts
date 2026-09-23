@@ -25,7 +25,16 @@ export type ScriptedPart =
   | { type: "text"; text: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; input: string }
   | { type: "tool-result"; toolCallId: string; toolName: string; result: unknown }
-  | { type: "error"; error: unknown };
+  | { type: "error"; error: unknown }
+  /**
+   * Not a part at all: the step's FINISH REASON, overriding the one the fake
+   * would otherwise derive (`tool-calls` when the step calls a tool, `stop`
+   * otherwise). It exists for the one case a real provider produces and the
+   * derivation cannot: a tool call inside a step that finished for an UNSAFE
+   * reason (`length`, `other`, `content-filter`) — which ai@7.0.70+ refuses to
+   * execute, leaving the call without a result (`pipeline-tool-pairs.ts`).
+   */
+  | { type: "finish-reason"; reason: string };
 
 /**
  * Usage as the CURRENT provider spec declares it — `{ inputTokens: { total } }`,
@@ -102,6 +111,8 @@ function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPar
       };
     case "error":
       return { type: "error", error: part.error };
+    case "finish-reason":
+      throw new Error("fake LLM: a finish-reason entry is not a stream part");
     default: {
       // A fake that fabricates a frame the real provider cannot emit is a
       // FIDELITY bug, and returning the `never` handed it an `undefined` frame
@@ -111,6 +122,19 @@ function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPar
       throw new Error(`fake LLM: unsupported scripted part ${JSON.stringify(unreachable)}`);
     }
   }
+}
+
+/**
+ * The finish reason a scripted step reports: an explicit `finish-reason` entry
+ * wins, an aborted stream is `other`, a step that calls a tool is `tool-calls`
+ * (real providers do this, and the SDK executes a tool only on `stop` or
+ * `tool-calls`), and anything else is `stop`.
+ */
+function scriptedFinishReason(script: readonly ScriptedPart[], aborted: boolean): string {
+  const explicit = script.find((p) => p.type === "finish-reason");
+  if (explicit?.type === "finish-reason") return explicit.reason;
+  if (aborted) return "other";
+  return script.some((p) => p.type === "tool-call") ? "tool-calls" : "stop";
 }
 
 async function streamScript(
@@ -124,6 +148,7 @@ async function streamScript(
   controller.enqueue({ type: "text-start", id: textId });
   try {
     for (const part of script) {
+      if (part.type === "finish-reason") continue;
       if (signal?.aborted) break;
       if (delayMs !== undefined && delayMs > 0) await sleep(delayMs, omitUndefined({ signal }));
       if (signal?.aborted) break;
@@ -135,9 +160,7 @@ async function streamScript(
     // providers do this); the SDK relies on it to accumulate the assistant
     // tool-call message and its result into `response.messages` for the next
     // step/turn. Reporting "stop" here silently drops tool context.
-    let finishReason = "stop";
-    if (signal?.aborted) finishReason = "other";
-    else if (script.some((p) => p.type === "tool-call")) finishReason = "tool-calls";
+    const finishReason = scriptedFinishReason(script, signal?.aborted === true);
     controller.enqueue({
       type: "finish",
       usage: fakeUsage(0, 0),
@@ -181,7 +204,14 @@ function asFakeLanguageModel(model: object): FakeLanguageModel {
  */
 export type ScriptedTurn =
   | { text: string }
-  | { call: { name: string; input: Record<string, unknown>; id?: string } };
+  | {
+      call: { name: string; input: Record<string, unknown>; id?: string };
+      /**
+       * Overrides `tool-calls`. An unsafe reason (`length`, `other`) is how a
+       * real provider ends a step whose call the SDK then declines to run.
+       */
+      finishReason?: string;
+    };
 
 /**
  * A fake model that answers a SCRIPT one entry per `doGenerate` — what a
@@ -221,7 +251,7 @@ export function createScriptedOneShotModel(script: readonly ScriptedTurn[]): Fak
         // last step finished with `stop`, so the old shape resolves `undefined`
         // and throws `NoOutputGeneratedError` naming an empty model reply.
         finishReason: {
-          unified: "text" in turn ? ("stop" as const) : ("tool-calls" as const),
+          unified: "text" in turn ? "stop" : (turn.finishReason ?? "tool-calls"),
           raw: undefined,
         },
         // Two tokens a call, and they really arrive now: a spec over a token
@@ -291,7 +321,7 @@ export function createFakeLanguageModel(
       calls.push(opts);
       const current = steps[stepIndex] ?? (options.repeatLast ? (steps.at(-1) ?? []) : []);
       stepIndex++;
-      const finishReason = current.some((p) => p.type === "tool-call") ? "tool-calls" : "stop";
+      const finishReason = scriptedFinishReason(current, false);
       const content: GeneratedContent[] = [];
       for (const part of current) {
         if (part.type === "text") content.push({ type: "text", text: part.text });
