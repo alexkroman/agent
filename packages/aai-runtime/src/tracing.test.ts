@@ -144,7 +144,10 @@ describe("the metrics gate", () => {
     await expect(
       fresh({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" }),
     ).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toMatch(/@opentelemetry\/sdk-metrics/);
+    // Only OUR line is counted: a spy on the global also sees whatever else the
+    // process warns about while the module graph loads (coverage runs do).
+    const ours = warn.mock.calls.filter((call) => /metric export needs/.test(String(call[0])));
+    expect(ours).toHaveLength(1);
+    expect(String(ours[0]?.[0])).toMatch(/@opentelemetry\/sdk-metrics/);
   });
 });
