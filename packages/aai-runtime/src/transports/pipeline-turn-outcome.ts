@@ -38,9 +38,14 @@
  * history rule, opposite transcript rule — is what a future attempt to unify
  * the three into one helper would get wrong, so they stay separate. The two
  * failure phrases stay separate from EACH OTHER too: their lifecycles really
- * do differ (one inside a reply, one outside any reply, with its own drain and
- * `publishTranscript: false`), and merging them would erase the difference
- * that is the point.
+ * do differ (one inside a reply, one outside any reply, with its own drain),
+ * and merging them would erase the difference that is the point.
+ *
+ * **What they DO share is how a line is sent**, and that is not the merge this
+ * paragraph refuses: `speakFixedLine` (`pipeline-lines.ts`) captions and speaks
+ * both, and the greeting, while each keeps its own placement. The sends had
+ * drifted — the error phrase published an interim and then a byte-identical
+ * final — and one function is what stops a fourth line drifting again.
  *
  * ## The `never` in that row is on the WIRE, because it could not be kept here
  *
@@ -61,6 +66,7 @@
 import type { ModelMessage } from "ai";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import { persistInterruptedTurn } from "./pipeline-history.ts";
+import { speakFixedLine } from "./pipeline-lines.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
 import type { SendTtsText, TransportCallbacks } from "./types.ts";
@@ -157,7 +163,7 @@ export interface TurnOutcome {
 }
 
 export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
-  const { history, callbacks, providers, gate, errorPhrase, sendTtsText } = deps;
+  const { history, callbacks, providers, gate, errorPhrase } = deps;
   const { startFailurePhrase, drainTts } = deps;
   return {
     persistBargeIn(args) {
@@ -188,23 +194,13 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
 
     speakRecovery(failed) {
       if (!failed || errorPhrase.length === 0) return false;
-      sendTtsText(errorPhrase);
-      callbacks.report({
-        type: "agent-transcript.committed",
-        text: errorPhrase,
-        recovery: "turn-failed",
-      });
+      speakFixedLine(deps, { text: errorPhrase, recovery: "turn-failed" });
       return true;
     },
 
     async speakStartFailure() {
       if (startFailurePhrase.length === 0 || !providers.tts) return;
-      callbacks.report({
-        type: "agent-transcript.committed",
-        text: startFailurePhrase,
-        recovery: "session-failed",
-      });
-      sendTtsText(startFailurePhrase, { publishTranscript: false });
+      speakFixedLine(deps, { text: startFailurePhrase, recovery: "session-failed" });
       await drainTts().catch(() => undefined);
     },
 

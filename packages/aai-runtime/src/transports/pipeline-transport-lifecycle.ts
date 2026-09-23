@@ -18,7 +18,9 @@
 
 import type { SttError, TtsError } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "../runtime-config.ts";
+import type { HeardTracker } from "./pipeline-heard.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
+import { createLineReply, type LineReplyDeps } from "./pipeline-lines.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
 import type { TurnChain, TurnGate } from "./pipeline-turn-gate.ts";
@@ -95,11 +97,11 @@ export interface PipelineLifecycleDeps {
   /** Latch the transport's `terminated` flag — see the module doc. */
   markTerminated: () => void;
   abortInFlightTurn: () => void;
+  /** What the greeting's line reply reads — see `createLineReply`. */
+  heard: HeardTracker;
   sendTtsText: SendTtsText;
-  runReply: (
-    idPrefix: string,
-    body: (signal: AbortSignal) => Promise<boolean /* spoke */>,
-  ) => Promise<void>;
+  drainTts: (signal: AbortSignal) => Promise<void>;
+  runReply: LineReplyDeps["runReply"];
   /** Turn-crash handler for `turnChain.chain` call sites — see turnCrashLogger. */
   logTurnCrash: (label: string) => (err: unknown) => void;
 }
@@ -123,10 +125,12 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
     isTerminated,
     markTerminated,
     abortInFlightTurn,
-    sendTtsText,
-    runReply,
     logTurnCrash,
   } = deps;
+  // The greeting is a FIXED line spoken as a reply of its own, so its caption
+  // and history rules are `pipeline-lines.ts`'s, shared with the two failure
+  // phrases rather than spelled a third time here.
+  const lineReply = createLineReply({ ...deps, callbacks, history, gate, turns });
 
   let audioReady = false;
   // The in-flight providers.open() from start(). stop() awaits it so a
@@ -184,13 +188,7 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
   }
 
   function runGreeting(text: string): Promise<void> {
-    return runReply("pipeline-greeting", async () => {
-      callbacks.report({ type: "agent-transcript.committed", text });
-      history.pushConversation({ role: "assistant", content: text });
-      history.pushLlm({ role: "assistant", content: text });
-      sendTtsText(text, { publishTranscript: false });
-      return true;
-    });
+    return lineReply("pipeline-greeting", text);
   }
 
   function greet(): void {
