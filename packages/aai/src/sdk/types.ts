@@ -72,16 +72,6 @@ export type {
  * the source-length cap.
  */
 export type { BuiltinTool } from "./builtin-tools.ts";
-// The MCP declaration an `agent.ts` writes. The client that reads it is
-// `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
-export {
-  MCP_SERVER_KEY_RE,
-  MCP_TOOL_NAME_MAX,
-  MCP_TOOL_PREFIX,
-  type McpServerConfig,
-  type McpServers,
-  mcpToolName,
-} from "./mcp-config.ts";
 // What the agent is LOOKING AT, split off as this file reached the 500-line cap
 // — the fifth such split, and re-exported here like the other four so no import
 // moved. See `sdk/message.ts` for the seam.

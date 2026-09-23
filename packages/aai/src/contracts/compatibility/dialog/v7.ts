@@ -51,9 +51,16 @@ export function advance(ctx: SlotHolder): void {
   order.send(ctx, { type: "ORDERED" });
   order.send(ctx, { type: "DECLINED" });
   order.send(ctx, { type: "PAID" });
-  // @ts-expect-error — a session event arrives through `receive`, never `send`
-  order.send(ctx, { type: "@session.timed-out" });
 }
+
+/** What `send` accepts. A session event arrives through `receive`, never `send`. */
+type Sendable = Parameters<typeof order.send>[1]["type"];
+
+/** Compiles only while `send` refuses the `@` event and still takes `PAID`. */
+export const sessionEventsAreNotSendable: [
+  "@session.timed-out" extends Sendable ? false : true,
+  "PAID" extends Sendable ? true : false,
+] = [true, true];
 
 /** The gate a dialog tool carries, named on its own: `when` plus what it sends. */
 export const paidGate: DialogGate<{ ok: boolean }, OrderEvent> = {

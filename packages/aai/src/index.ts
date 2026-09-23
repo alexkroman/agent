@@ -86,6 +86,17 @@ export * from "./sdk/generate.ts";
  * Per-reply metrics, folded — what an `events: { "metrics.collected" }` hook
  * hands its frames to, and `MetricsCollectedEvent`, the frame itself.
  */
+// The MCP declaration an `agent.ts` writes. The client that reads it is
+// `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
+// Exported here rather than through `sdk/types.ts`, which is at its length cap.
+export {
+  MCP_SERVER_KEY_RE,
+  MCP_TOOL_NAME_MAX,
+  MCP_TOOL_PREFIX,
+  type McpServerConfig,
+  type McpServers,
+  mcpToolName,
+} from "./sdk/mcp-config.ts";
 export * from "./sdk/metrics-collector.ts";
 /**
  * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and

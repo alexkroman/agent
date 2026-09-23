@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-ui/src/default-client.tsx": 1,
     "packages/aai-ui/src/types.test.ts": 2,
@@ -78,7 +78,9 @@
     "packages/aai/src/host/_test-utils.ts": 1,
     "packages/aai/src/host/_undici.ts": 2,
     "packages/aai/src/host/builtin-tools.test.ts": 1,
-    "packages/aai/src/sdk/protocol-compat.test.ts": 1
+    "packages/aai/src/sdk/protocol-compat.test.ts": 1,
+    "packages/aai/src/sdk/testing-generate.test.ts": 2,
+    "packages/aai/src/sdk/testing.test.ts": 1
   },
   "as never": {
     "packages/aai-cli/src/_cli-common.test.ts": 2,
@@ -86,8 +88,8 @@
     "packages/aai-cli/src/dev.test.ts": 1,
     "packages/aai-cli/src/studio.test.ts": 1,
     "packages/aai-guest/src/_test-utils.ts": 1,
-    "packages/aai-guest/src/harness/crash-guards.test.ts": 1,
     "packages/aai-guest/src/harness.test.ts": 1,
+    "packages/aai-guest/src/harness/crash-guards.test.ts": 1,
     "packages/aai-runtime/src/transports/pipeline-stream.test.ts": 3,
     "packages/aai-runtime/src/workflow/notify.test.ts": 2,
     "packages/aai-server/src/delete.test.ts": 2,
@@ -95,8 +97,6 @@
     "packages/aai-server/src/realtime-events.test.ts": 1,
     "packages/aai-studio-client/src/chat-queue.test.ts": 1,
     "packages/aai/src/host/agent-tools.ts": 2,
-    "packages/aai/src/sdk/_internal-types.test.ts": 1,
-    "packages/aai/src/sdk/config-rules.test.ts": 1,
     "packages/aai/src/sdk/define.test.ts": 1,
     "packages/aai/src/sdk/providers/tts/assemblyai.test.ts": 1
   }

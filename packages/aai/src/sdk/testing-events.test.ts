@@ -22,8 +22,12 @@ describe("eventsOf", () => {
   });
 
   test("a name outside the recording's union does not compile", () => {
-    // @ts-expect-error — not a session event
-    expect(eventsOf(recorded, "tool.caled")).toEqual([]);
+    // Probed on the parameter itself, so a misspelling is refused by the
+    // signature a caller meets, and the positive half keeps it from passing
+    // vacuously on a parameter that accepts nothing.
+    type NameParam = Parameters<typeof eventsOf<SessionEventBody, SessionEventBody["type"]>>[1];
+    expectTypeOf<"tool.caled">().not.toExtend<NameParam>();
+    expectTypeOf<"tool.called">().toExtend<NameParam>();
   });
 });
 

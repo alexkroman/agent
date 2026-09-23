@@ -92,6 +92,19 @@ const UNDOCUMENTED_CAPABILITIES = {
     "`aai init` project reaches none of it. Its worked example is `templates/coding-agent`, " +
     "which ships its own `chat.ts` front door for exactly that reason, and its documentation is " +
     "the subpath table in `packages/aai/CLAUDE.md`.",
+  "aai:standard-schema":
+    "the Standard Schema interface types (`StandardSchemaV1` and its result/issue shapes) that " +
+    "a tool's `inputSchema` is checked AGAINST. An author writes a zod schema, which already " +
+    "satisfies the interface, and never names these types; they are exported so a library " +
+    "author can type a validator that is not zod. The guide's tool examples are the " +
+    "documentation of the part an author does write.",
+  "aai-runtime:eval-simulate":
+    "the simulated caller and the model-graded judge (`simulateCall`, `judgeCall`, " +
+    "`evalSimulation`). Each adds a SECOND and THIRD live model to a case, so a keyless " +
+    "`pnpm eval` can only script them, and a judge is a noisy instrument read as a spread " +
+    "under `AAI_EVAL_REPEAT` — a technique past the scripted-and-live cases the guide teaches, " +
+    "not a step every author takes. Its worked example is the `/eval/simulate` module doc, " +
+    "which `check:doc-examples` compiles, and `packages/aai-runtime/CLAUDE.md` covers the rest.",
   "aai-runtime:logging":
     "the HOST logging surface — the buffer/page/line constants a deployment tunes and " +
     "`consoleLogger`. It reaches the example-facing set the same way `aai-runtime:runtime` " +

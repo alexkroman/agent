@@ -629,6 +629,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
 
    ```ts no-check
+   import { expectCalled } from "@alexkroman1/aai-runtime/eval";
    import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
    import { expect } from "vitest";
    import agentDef from "./agent.ts";
@@ -639,7 +640,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
        async ({ session }) => {
          // `say()` returns THAT turn — the reply, its tool calls, its events.
          const turn = await session.say("where is order W1234?");
-         expect(turn.toolCalls.map((c) => c.name)).toContain("look_up");
+         expectCalled(turn, "look_up");
          expect(turn.text).toMatch(/shipped/i);
        },
        // What a SCRIPTED model answers with when there is no key (below).
@@ -1999,9 +2000,9 @@ assistant proactively take a turn after that much user silence (e.g.
 assistant stops nudging after 3 consecutive unanswered nudges until the
 user speaks again.
 
-**Voice-UX tuning (pipeline only):** `minBargeInWords` controls how many
-words of user speech interrupt the assistant mid-reply (default 2, so
-one-word backchannels like "yeah" don't cut it off);
+**Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
+`minBargeInWords` controls how many words of user speech interrupt the
+assistant mid-reply (default 2, so a one-word "yeah" doesn't cut it off);
 `interruptionMinDurationMs` adds a sustained-speech gate on top (default
 500 ms; `0` disables; interim transcripts only — committed turns always
 land). End-of-turn detection (how long a pause ends the user's turn)
@@ -2015,12 +2016,12 @@ promptly pays nothing; `0` disables it. The wording is not yours to set — the
 filler must be purely declarative and never a request for patience, or the
 caller answers it and the answer barges in.
 `resumeFalseInterruption` (default `true`) resumes an interrupted reply when
-a barge-in turns out to be noise — no user turn ever commits. The wait is not
-configurable: the resume fires once the transcript stream goes quiet with no
-final, so it can never race a real turn the STT is still endpointing.
-`userTurnLimit` (default: no cap) bounds ONE user turn — `{ maxWords }`,
-`{ maxDurationMs }`, or both. A caller who never pauses never ends a turn; past
-either cap the transcriber ends it as a pause would — what was heard commits,
+a barge-in turns out to be noise — no user turn ever commits. It fires once the
+transcript stream goes quiet with no final, so it never races a real turn.
+`userTurnLimit` (a `UserTurnLimit`; default: no cap) bounds ONE user turn —
+`{ maxWords }`, `{ maxDurationMs }`, or both. A caller who never pauses never
+ends a turn; past either cap the transcriber ends it as a pause would — what
+was heard commits,
 the rest opens the next turn. Each cut is a `user-turn.exceeded` event
 (`limit`, `words`, `durationMs`); `{}` is refused. Inert (logged once) on a
 transcriber that cannot end a turn on demand; the default `assemblyAIStt()` can.
