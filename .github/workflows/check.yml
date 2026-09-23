@@ -693,6 +693,10 @@ jobs:
   platform-stack:
     needs: setup
     runs-on: ubuntu-latest
+    # `packages: read` is for the ghcr.io login below, and nothing else.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -725,6 +729,17 @@ jobs:
           # strongly here. `ship-workflow-gate.test.ts` asserts the two agree,
           # because two literals in two files is the shape that drifts.
           version: 2.109.1
+      # AUTHENTICATED pulls, because `supabase start` pulls ~10 images from
+      # ghcr.io and an anonymous pull shares a rate limit with every other
+      # anonymous client on the runner's address. On 2026-09-23 four
+      # consecutive runs of this job died in `toomanyrequests` before any test
+      # ran — on #1525 and #1526 alike, so not a property of either diff. The
+      # token is the job's own read-only one; the images are public, so any
+      # authenticated identity may pull them.
+      - name: Log in to ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
       # `supabase start` applies supabase/migrations on INIT, so a fresh
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).
