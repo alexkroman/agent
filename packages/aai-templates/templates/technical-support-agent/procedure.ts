@@ -53,7 +53,7 @@
  */
 
 import {
-  DEFAULT_GUARDRAIL_MAX_RETRIES,
+  DEFAULT_GUARDRAIL_MAX_REVISIONS,
   type GenerateFn,
   type GuardrailVerdict,
   omitUndefined,
@@ -78,13 +78,13 @@ export const MAX_ATTEMPTS = 2;
 /**
  * Regenerations after a "not grounded" verdict, within one attempt.
  *
- * The SDK's own number, not a coincidence: `DEFAULT_GUARDRAIL_MAX_RETRIES` is
+ * The SDK's own number, not a coincidence: `DEFAULT_GUARDRAIL_MAX_REVISIONS` is
  * how many times `subagent({ guardrail })` re-asks after a verdict rejects an
  * answer, and that is exactly what this counter bounds — the same judge, the
  * same retry, one layer down. Taking it from the SDK is how the two stay one
  * decision instead of two constants that drift.
  */
-export const MAX_REGENERATIONS = DEFAULT_GUARDRAIL_MAX_RETRIES;
+export const MAX_REGENERATIONS = DEFAULT_GUARDRAIL_MAX_REVISIONS;
 
 /**
  * What the machine carries: the trace it is building, plus the two counters the

@@ -98,7 +98,10 @@ import type { AgentDef } from "./types.ts";
  *
  * @internal
  */
-export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D {
+export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(
+  def: D,
+  prompt: string,
+): D {
   const trimmed = prompt.trim();
   if (trimmed === "") {
     throw new Error(

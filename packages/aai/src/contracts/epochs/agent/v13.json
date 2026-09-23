@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 13,
   "rule": 2,
-  "sha256": "fcc882cc579c067f8ab646af407b114bbe58d18cb5415c1025722fa6301b94b1",
+  "sha256": "6cd309d433087dd9cfd61f7e64b08dcbb9365286e5f982974d14f7896353e2a6",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -22,6 +22,7 @@
     "MCP_TOOL_PREFIX",
     "McpServerConfig",
     "McpServers",
+    "ModelTuning",
     "PipelineAgentParams",
     "PipelineVoiceTuning",
     "ProviderCredentialOptions",
@@ -46,5 +47,20 @@
     "mcpToolName",
     "workflowApp"
   ],
-  "rollup": "98d489c99a3b56a63bd68db7b0dd8352bc298236ab97f2d2e762466a404a89fa"
+  "rollup": "98d489c99a3b56a63bd68db7b0dd8352bc298236ab97f2d2e762466a404a89fa",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "fcc882cc579c067f8ab646af407b114bbe58d18cb5415c1025722fa6301b94b1",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "6cd309d433087dd9cfd61f7e64b08dcbb9365286e5f982974d14f7896353e2a6",
+      "reason": "additive (checked): +ModelTuning"
+    }
+  ]
 }

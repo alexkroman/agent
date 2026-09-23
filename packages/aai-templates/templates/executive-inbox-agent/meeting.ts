@@ -19,7 +19,7 @@
  */
 
 import {
-  DEFAULT_GUARDRAIL_MAX_RETRIES,
+  DEFAULT_GUARDRAIL_MAX_REVISIONS,
   type DelegateFn,
   type GuardrailVerdict,
   isoDate,
@@ -114,7 +114,7 @@ export const meetingAssistant = subagent({
   // Stated rather than left to the default, because the guardrail is what makes
   // a retry possible and a retry is another whole run: the executive is on the
   // phone, and what they wait through is `MAX_MEETING_STEPS` lookups twice over.
-  maxRetries: DEFAULT_GUARDRAIL_MAX_RETRIES,
+  maxRevisions: DEFAULT_GUARDRAIL_MAX_REVISIONS,
 });
 
 /**

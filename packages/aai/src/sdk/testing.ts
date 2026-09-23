@@ -84,6 +84,7 @@ export {
   type StubDelegateCall,
   type StubDelegateReply,
   type StubDelegateRoute,
+  type StubDelegateScript,
   type StubStepDelegate,
   stubDelegate,
   stubStepDelegate,
@@ -112,7 +113,6 @@ export {
   type StubGenerateCall,
   type StubGenerateReply,
   type StubGenerateRoute,
-  type StubGenerateRoutes,
   type StubGenerateScript,
   stubGenerate,
 } from "./testing-generate.ts";

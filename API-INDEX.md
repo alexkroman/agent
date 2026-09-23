@@ -120,7 +120,7 @@ each is for.
 | `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
 | `CriterionVerdict` | `@alexkroman1/aai-runtime/eval` |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
-| `DEFAULT_GUARDRAIL_MAX_RETRIES` | `@alexkroman1/aai` |
+| `DEFAULT_GUARDRAIL_MAX_REVISIONS` | `@alexkroman1/aai` |
 | `DEFAULT_LISTEN_HOST` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_BUFFER_LINES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_LINE_BYTES` | `@alexkroman1/aai-runtime` |
@@ -147,6 +147,7 @@ each is for.
 | `Dialog` | `@alexkroman1/aai` |
 | `DialogBargeIn` | `@alexkroman1/aai` |
 | `DialogEvent` | `@alexkroman1/aai` |
+| `DialogGate` | `@alexkroman1/aai` |
 | `DialogOptions` | `@alexkroman1/aai` |
 | `DialogPosition` | `@alexkroman1/aai` |
 | `DialogSessionEventName` | `@alexkroman1/aai` |
@@ -295,6 +296,7 @@ each is for.
 | `MintCodeOptions` | `@alexkroman1/aai` |
 | `MistralLlmOptions` | `@alexkroman1/aai/llm` |
 | `ModelOptions` | `@alexkroman1/aai/llm` |
+| `ModelTuning` | `@alexkroman1/aai` |
 | `MultipartBody` | `@alexkroman1/aai/step` |
 | `MultipartPart` | `@alexkroman1/aai/step` |
 | `NumberField` | `@alexkroman1/aai-ui` |
@@ -483,6 +485,7 @@ each is for.
 | `StubDelegateCall` | `@alexkroman1/aai/testing` |
 | `StubDelegateReply` | `@alexkroman1/aai/testing` |
 | `StubDelegateRoute` | `@alexkroman1/aai/testing` |
+| `StubDelegateScript` | `@alexkroman1/aai/testing` |
 | `StubEmitted` | `@alexkroman1/aai/testing` |
 | `StubGateway` | `@alexkroman1/aai/testing` |
 | `StubGatewayCall` | `@alexkroman1/aai/testing` |
@@ -492,7 +495,6 @@ each is for.
 | `StubGenerateCall` | `@alexkroman1/aai/testing` |
 | `StubGenerateReply` | `@alexkroman1/aai/testing` |
 | `StubGenerateRoute` | `@alexkroman1/aai/testing` |
-| `StubGenerateRoutes` | `@alexkroman1/aai/testing` |
 | `StubGenerateScript` | `@alexkroman1/aai/testing` |
 | `StubLlm` | `@alexkroman1/aai-runtime/eval` |
 | `StubReporter` | `@alexkroman1/aai/testing` |

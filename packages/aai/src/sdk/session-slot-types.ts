@@ -14,7 +14,7 @@
 
 import type { DeepReadonly } from "./deep-readonly.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { ToolContext, ToolDef, ToolErrorHandler } from "./types.ts";
+import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
  * The compile error a mutation body gets for being `async`.
@@ -90,6 +90,18 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's
  * value handed to `execute` directly.
  *
+ * **Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+ * `ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+ * whatever `ToolDef` grows next — so a slot-backed tool can declare anything a
+ * plain one can. The field-by-field copy this replaced restated three of them,
+ * and the one it missed was `messages`: a slot tool could not declare tool-call
+ * speech at all, although the builder spreads the def and the runtime would
+ * have spoken it.
+ *
+ * `onError` behaves exactly as it does on any tool, and the slot is not
+ * involved: an `updateTool` mutator that threw stored nothing, by that method's
+ * own contract, so a handler is classifying a call that changed no state.
+ *
  * `value` comes SECOND because it is what a slot-backed tool body actually
  * uses; most take `(args, cart)` and never mention `ctx` at all, which is the
  * point. Putting it there rather than third cannot be got wrong silently — a
@@ -103,24 +115,10 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  *
  * @public
  */
-export interface SlotToolDef<P extends ToolInputSchema, V, R> {
-  /** See {@link ToolDef.description} — what the model reads to decide to call it. */
-  description: string;
-  /** See {@link ToolDef.inputSchema}. */
-  inputSchema?: P;
+export interface SlotToolDef<P extends ToolInputSchema, V, R>
+  extends Omit<ToolDef<P, R>, "execute"> {
   /** The tool body, handed this session's slot value alongside the usual args. */
   execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
-  /**
-   * See {@link ToolDef.onError} — what a THROW out of this body means, and the
-   * only way to say that a failure is fatal rather than something the model
-   * should try again.
-   *
-   * It is forwarded to the {@link ToolDef} this builds and behaves identically:
-   * the slot is not involved, because there is nothing left to hand a handler —
-   * an `updateTool` mutator that threw stored nothing, by that method's own
-   * contract, so `onError` is classifying a call that changed no state.
-   */
-  onError?: ToolErrorHandler;
 }
 
 /**

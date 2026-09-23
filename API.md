@@ -297,6 +297,13 @@ type Message = {
 };
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -385,19 +392,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -1545,6 +1550,13 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 export const MISTRAL_KIND: "mistral";
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
@@ -2016,19 +2028,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -2487,11 +2497,8 @@ export interface AgentGuardrails {
 export type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-export interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+export interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -2611,7 +2618,7 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
-export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS = 1;
 
 // @public
 export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
@@ -2679,6 +2686,13 @@ export type DialogBargeIn = "default" | "off" | {
 export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
 
 // @public
+export interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 export interface DialogOptions {
     durable?: boolean;
 }
@@ -2730,14 +2744,8 @@ export interface DialogTimeoutSpec {
 }
 
 // @public
-export interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -2978,6 +2986,13 @@ export interface MintCodeOptions {
     length?: number;
     random?: () => number;
     taken?: ReadonlySet<string>;
+}
+
+// @public
+export interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
 }
 
 // @public
@@ -3488,11 +3503,8 @@ export type SlotStore = {
 };
 
 // @public
-export interface SlotToolDef<P extends ToolInputSchema, V, R> {
-    description: string;
+export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
 }
 
 // @public
@@ -3613,19 +3625,17 @@ export interface SubagentAnswer {
 }
 
 // @public
-export interface SubagentDef {
+export interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -4711,11 +4721,8 @@ interface AgentGuardrails {
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -4806,6 +4813,13 @@ type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
+interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -4822,14 +4836,8 @@ interface DialogTimeout {
 }
 
 // @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -4931,6 +4939,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
@@ -5362,19 +5377,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -5632,7 +5645,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
+export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {
@@ -6447,6 +6460,13 @@ type Message = {
 };
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export type MultipartBody = {
     body: Uint8Array;
     headers: {
@@ -6743,19 +6763,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -7420,8 +7438,6 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 ## `@alexkroman1/aai/testing`
 
 ```ts
-import type { AnyStateMachine } from 'xstate';
-import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -7532,60 +7548,7 @@ type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
 };
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
-    builtinTools?: readonly BuiltinTool[];
-    description?: string;
-    dialogs?: readonly AnyDialog[];
-    greeting: string;
-    idleTimeoutMs?: number;
-    llm?: LlmProvider;
-    maxSteps: number;
-    mcpServers?: McpServers;
-    name: string;
-    page?: "voice" | "static";
-    personas?: Personas;
-    requiredEnv?: readonly string[];
-    s2s?: S2sProvider;
-    silencePrompt?: string;
-    silenceTimeoutMs?: number;
-    stt?: SttProvider;
-    sttPrompt?: string;
-    subagents?: SubagentRoster;
-    systemPrompt: AgentSystemPrompt;
-    telephony?: TelephonyAccess;
-    text?: true;
-    toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-    tts?: TtsProvider;
-    workflows?: Readonly<Record<string, WorkflowDef>>;
-}
-
-// @public
-type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
-
-// @public
-interface AgentGuardrails {
-    inputGuardrails?: readonly AgentGuardrail[];
-    outputGuardrails?: readonly AgentGuardrail[];
-}
-
-// @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
-
-// @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
-    resetToolChoice?: boolean;
-    temperature?: number;
-    usageLimits?: UsageLimits;
-}
-
-// @public
-interface AgentObservation {
-    events?: SessionEventHandlers;
-    syncState?: StateProjection | readonly StateProjection[];
-}
 
 // @public
 interface AgentSessionContext {
@@ -7596,14 +7559,6 @@ interface AgentSessionContext {
 
 // @public
 type AgentSystemPrompt = string | AgentInstructions;
-
-// @public
-interface AgentVoicePresets {
-    voicePresets?: readonly VoicePresetName[];
-}
-
-// @public
-type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -7618,7 +7573,9 @@ type AnyWorkflowDef<R = unknown> = {
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
-export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
+export function commandedBuiltins(config: {
+    readonly systemPrompt: string;
+}): BuiltinTool[];
 
 // @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
@@ -7656,28 +7613,9 @@ interface DelegateResult extends SubagentAnswer {
 }
 
 // @public
-export function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
-
-// @public
-interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    readonly key: string;
-    readonly machine: M;
-    matches(ctx: SlotHolder, state: string): boolean;
-    position(ctx: SlotHolder): DialogPosition;
-    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
-    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
-    reset(ctx: SlotHolder): DialogPosition;
-    send(ctx: SlotHolder, event: E): DialogPosition;
-    timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
-    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
-}
-
-// @public
-type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
+export function deployedAgent<D extends ToolBearingAgent & {
+    readonly systemPrompt: AgentSystemPrompt;
+}>(authored: D, project: ProjectFiles): D;
 
 // @public
 interface DialogPosition {
@@ -7699,35 +7637,8 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
 }, z.core.$strip>;
 
 // @public
-interface DialogTimeout {
-    readonly afterMs: number;
-    readonly event: {
-        readonly type: string;
-    };
-}
-
-// @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
-}
-
-// @public
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
-}
-
-// @public
-interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
-    readonly temperature?: number;
-    readonly toolChoice?: ToolChoice;
-    readonly voice?: string;
 }
 
 // @public
@@ -7740,7 +7651,7 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
-export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
+export function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -7784,20 +7695,6 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-interface HandoffOptions {
-    note?: string;
-}
-
-// @public
-interface HandoffResult {
-    readonly from: string;
-    readonly handoff: true;
-    readonly instruction: string;
-    readonly note?: string;
-    readonly to: string;
-}
-
-// @public
 const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
@@ -7815,16 +7712,6 @@ type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type McpServerConfig = {
-    url: string;
-    tokenEnv?: string;
-    pinnedTools?: Readonly<Record<string, string>>;
-};
-
-// @public
-type McpServers = Readonly<Record<string, McpServerConfig>>;
-
-// @public
 type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -7833,54 +7720,17 @@ type Message = {
 };
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
 
 // @public
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
-
-// @public
-interface PersonaDef {
-    description: string;
-    name: string;
-    systemPrompt: string;
-    temperature?: number;
-    toolChoice?: ToolChoice;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-interface PersonaPosition {
-    readonly from?: string;
-    readonly note?: string;
-    readonly persona: PersonaDef;
-    readonly pinnedBy?: {
-        readonly dialog: string;
-        readonly state: string;
-    };
-}
-
-// @public
-interface Personas {
-    active(ctx: SlotHolder): PersonaDef;
-    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
-    readonly list: readonly PersonaDef[];
-    position(ctx: SlotHolder): PersonaPosition;
-}
-
-// @public
-interface PipelineVoiceTuning {
-    deadAirCoverMs?: number;
-    errorPhrase?: string;
-    interruptionBackoffMs?: number;
-    interruptionMinDurationMs?: number;
-    minBargeInWords?: number;
-    preemptiveGeneration?: boolean;
-    resumeFalseInterruption?: boolean;
-    startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
-    userTurnLimit?: UserTurnLimit;
-}
 
 // @public
 export type ProjectFiles = {
@@ -7937,11 +7787,6 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
-type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "s2s";
-};
-
-// @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
@@ -7957,7 +7802,7 @@ export function scriptedToolContext(options?: ScriptedToolContextOptions): Scrip
 // @public
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
     generate?: StubGenerateScript | undefined;
-    delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
+    delegate?: StubDelegateScript | undefined;
 };
 
 // @public
@@ -7969,256 +7814,8 @@ export interface SentEvent {
 }
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
-
-// @public
-type SessionEventContext = {
-    sessionId: string;
-    env: Readonly<Partial<Record<string, string>>>;
-    slots: SlotStore;
-};
-
-// @public
-type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
-
-// @public
-type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
-} & {
-    "*"?: SessionEventHandler;
-};
-
-// @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"session.configured">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    audioFormat: z.ZodString;
-    sampleRate: z.ZodNumber;
-    ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"audio.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.started">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.stopped">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    recovery: z.ZodOptional<z.ZodEnum<{
-        "session-failed": "session-failed";
-        "turn-failed": "turn-failed";
-    }>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.called">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.cancelled">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.reset">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error.reported">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodBoolean;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom.emitted">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"state.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    state: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"usage.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    inputTokens: z.ZodNumber;
-    outputTokens: z.ZodNumber;
-    totalTokens: z.ZodNumber;
-    steps: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"guardrail.blocked">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    direction: z.ZodEnum<{
-        input: "input";
-        output: "output";
-    }>;
-    replacement: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    limit: z.ZodEnum<{
-        duration: "duration";
-        words: "words";
-    }>;
-    words: z.ZodNumber;
-    durationMs: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"metrics.collected">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    interrupted: z.ZodBoolean;
-    latencyMs: z.ZodOptional<z.ZodNumber>;
-    stt: z.ZodOptional<z.ZodObject<{
-        endpointingMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        ttftMs: z.ZodOptional<z.ZodNumber>;
-        durationMs: z.ZodNumber;
-        steps: z.ZodNumber;
-        inputTokens: z.ZodOptional<z.ZodNumber>;
-        outputTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        ttfbMs: z.ZodOptional<z.ZodNumber>;
-        characters: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"history.restored">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    messages: z.ZodArray<z.ZodObject<{
-        role: z.ZodEnum<{
-            assistant: "assistant";
-            user: "user";
-        }>;
-        content: z.ZodString;
-    }, z.core.$strip>>;
-    toolCalls: z.ZodArray<z.ZodObject<{
-        callId: z.ZodString;
-        name: z.ZodString;
-        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        status: z.ZodEnum<{
-            done: "done";
-            pending: "pending";
-        }>;
-        result: z.ZodOptional<z.ZodString>;
-        afterMessageIndex: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>], "type">;
-
-// @public
-type SessionEventType = SessionEvent["type"];
-
-// @public
 type SleepOptions = {
     correlationId?: string;
-};
-
-// @public
-type SlotHolder = {
-    readonly slots: SlotStore;
-    readonly sessionId: string;
 };
 
 // @public
@@ -8267,13 +7864,6 @@ type StartOptions = {
 };
 
 // @public
-interface StateProjection<V = unknown> {
-    (value?: unknown): V;
-    readonly create: () => unknown;
-    readonly key: string;
-}
-
-// @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -8297,11 +7887,6 @@ type StreamOptions = {
 };
 
 // @public
-type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "stt";
-};
-
-// @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
 
 // @public
@@ -8311,7 +7896,7 @@ export interface StubDelegate {
 }
 
 // @public
-export function stubDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubDelegate;
+export function stubDelegate(script: StubDelegateScript): StubDelegate;
 
 // @public
 export interface StubDelegateCall {
@@ -8331,6 +7916,15 @@ export type StubDelegateReply = string | {
 
 // @public
 export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+export type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 export type StubEmitted = {
@@ -8397,12 +7991,13 @@ export type StubGenerateReply = string | {
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
 
 // @public
-export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
-    readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
+export type StubGenerateScript = {
+    readonly reply: StubGenerateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+    readonly reply?: never;
 };
-
-// @public
-export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
 
 // @public
 export type StubReporter = {
@@ -8452,7 +8047,7 @@ export interface StubStepDelegate {
 }
 
 // @public
-export function stubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export type StubStepFetch = {
@@ -8557,19 +8152,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -8577,19 +8170,10 @@ interface SubagentDef {
 type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public
-type SubagentRoster = readonly SubagentDef[];
-
-// @public
 interface SubagentToolCall {
     input: unknown;
     name: string;
 }
-
-// @public
-type TelephonyAccess = boolean | readonly TelephonyCarrier[];
-
-// @public
-type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export type TestToolContext = ToolContext & {
@@ -8601,12 +8185,6 @@ export type TestToolContext = ToolContext & {
 // @public
 export type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-};
-
-// @public
-type ToolChoice = "auto" | "required" | "none" | {
-    type: "tool";
-    toolName: string;
 };
 
 // @public
@@ -8636,10 +8214,17 @@ type ToolContext = {
 
 // @public
 export type ToolContextOverrides = {
-    [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] | undefined;
-} & {
-    generate?: ToolContext["generate"] | StubGenerateRoutes | StubGenerateReply | undefined;
-    delegate?: ToolContext["delegate"] | Readonly<Record<string, StubDelegateRoute>> | StubDelegateReply | undefined;
+    env?: ToolContext["env"] | undefined;
+    slots?: ToolContext["slots"] | undefined;
+    messages?: ToolContext["messages"] | undefined;
+    sessionId?: ToolContext["sessionId"] | undefined;
+    send?: ToolContext["send"] | undefined;
+    signal?: ToolContext["signal"] | undefined;
+    deadlineAt?: ToolContext["deadlineAt"] | undefined;
+    workflows?: ToolContext["workflows"] | undefined;
+    random?: ToolContext["random"] | undefined;
+    generate?: ToolContext["generate"] | StubGenerateScript | undefined;
+    delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;
     desk?: StubDelegate | undefined;
 };
@@ -8709,11 +8294,6 @@ type ToolStartMessage = {
 };
 
 // @public
-type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "tts";
-};
-
-// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -8723,20 +8303,6 @@ interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
-
-// @public
-interface UsageLimits {
-    totalTokens?: number;
-}
-
-// @public
-interface UserTurnLimit {
-    maxDurationMs?: number | undefined;
-    maxWords?: number | undefined;
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -8966,7 +8532,7 @@ export function installStubReporter(): StubReporter;
 export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
 
 // @public
-export function installStubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
@@ -8995,6 +8561,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -9092,6 +8665,15 @@ type StubDelegateReply = string | {
 
 // @public
 type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 type StubEmitted = {
@@ -9248,19 +8830,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

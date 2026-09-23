@@ -103,25 +103,22 @@ Tools that call `ctx.generate` take a stub rather than a live key:
 ```ts
 import { createToolContext } from "@alexkroman1/aai/testing";
 
-const ctx = createToolContext({ generate: "A short summary." });
+const ctx = createToolContext({ generate: { reply: "A short summary." } });
 // `ctx.model.calls` records what the model was asked.
 // `ctx.desk` is the same thing for `ctx.delegate`.
 ```
 
-What you pass depends on what the tool reads back:
+A script names its shape — one `reply` for every call, or `routes` keyed by
+system prompt:
 
 | Pass | For |
 | --- | --- |
-| a bare string | a text answer |
-| `{ object: … }` | structured output. Add `text` when the tool reads both |
-| a record keyed by system prompt | a tool that plays more than one model role |
+| `{ reply: "…" }` | a text answer |
+| `{ reply: { object: … } }` | structured output. Add `text` when the tool reads both |
+| `{ reply: (call) => … }` | an answer computed from the call — a queue, say |
+| `{ routes: { [system]: … } }` | a tool that plays more than one model role |
 
-:::caution[Don't wrap a text answer in `{ text: "…" }`]
-It does not compile, but the compiler's advice is misleading: it reports that
-`object` is missing and invites you to add one. Adding `object` is the wrong
-fix if all you wanted was text. Pass the bare string instead, and reach for
-`{ text, object }` only when the tool really reads both.
-:::
+`delegate` takes the same two shapes, with `routes` keyed by subagent name.
 
 `scriptedToolContext({ generate, delegate })` is the same call under a name that
 says both seams are scripted. It hands back `{ ctx, model, desk }` if you would

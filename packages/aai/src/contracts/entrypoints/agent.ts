@@ -56,7 +56,10 @@
  * literal they write `agent({ name })` in, so a signature change in any of them
  * is a change to what declaring an agent looks like. `UsageLimits` rides with
  * `AgentModelTuning` because it is the type of one of its fields and has no
- * reader anywhere else.
+ * reader anywhere else. `ModelTuning` — the per-request half `AgentModelTuning`
+ * extends — is here with it rather than on `subagent`, though `SubagentDef`
+ * extends it too: it is declared beside `AgentModelTuning`, and one capability
+ * owning it is the whole point of it being one declaration.
  *
  * `AgentGuardrails` is worth one more sentence, because `subagent` also
  * contracts a guardrail: `GuardrailVerdict` is one vocabulary shared by both and
@@ -125,6 +128,7 @@ export {
   MCP_TOOL_PREFIX,
   type McpServerConfig,
   type McpServers,
+  type ModelTuning,
   mcpToolName,
   type PipelineAgentParams,
   type PipelineVoiceTuning,

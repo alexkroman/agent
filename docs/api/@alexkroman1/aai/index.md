@@ -2867,10 +2867,9 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
-[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
-the talking. Per STEP, not per turn: a reply that calls three tools has
-four generations in it, and the cap bounds each.
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
 
 On a voice agent it is a bluntness knob rather than a cost one — a model
 that runs long is a model the caller is waiting through — and a value low
@@ -2887,19 +2886,18 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: number;
 ```
 
-How many times a FAILED provider call is retried before the turn is given
+How many times a FAILED provider call is retried before the step is given
 up on.
 
 ###### Default Value
 
 the AI SDK's own (2 retries, exponential backoff)
 
-**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
-same name.** That one counts how many times a subagent's `guardrail` may
-send an ANSWER back — a re-run of a run that succeeded. This one counts
-transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset). They compose: a subagent revision is one
-more request, and each request still gets its own retries.
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
+two compose, since a revision is one more request and each request still
+gets its own retries.
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -3451,10 +3449,8 @@ Sampling temperature.
 
 Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values, and until this
-existed neither could say so: `ctx.generate` and `subagent()` both took a
-temperature while the main loop — the one that does almost all the talking
-— took no sampling parameter at all.
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
@@ -3779,9 +3775,16 @@ agent opts into rather than a hook every agent pays for.
 
 ### AgentModelTuning
 
-Sampling and budget knobs for the agent's OWN model calls — the conversational
-loop, in pipeline and text modes. Every field here is refused in S2S mode;
-see this module's header.
+[ModelTuning](#modeltuning) plus the two knobs only the agent's OWN loop has: a
+per-step tool-choice policy and a session token budget. Every field here is
+refused in S2S mode; see this module's header.
+
+A subagent takes [ModelTuning](#modeltuning) alone — it has no `toolChoice` to reset,
+and it spends on its PARENT's budget, which is where `usageLimits` lives.
+
+#### Extends
+
+- [`ModelTuning`](#modeltuning)
 
 #### Extended by
 
@@ -3797,15 +3800,18 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
-[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
-the talking. Per STEP, not per turn: a reply that calls three tools has
-four generations in it, and the cap bounds each.
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
 
 On a voice agent it is a bluntness knob rather than a cost one — a model
 that runs long is a model the caller is waiting through — and a value low
 enough to truncate mid-sentence will truncate mid-sentence, because the
 provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
@@ -3813,25 +3819,28 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: number;
 ```
 
-How many times a FAILED provider call is retried before the turn is given
+How many times a FAILED provider call is retried before the step is given
 up on.
 
 ###### Default Value
 
 the AI SDK's own (2 retries, exponential backoff)
 
-**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
-same name.** That one counts how many times a subagent's `guardrail` may
-send an ANSWER back — a re-run of a run that succeeded. This one counts
-transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset). They compose: a subagent revision is one
-more request, and each request still gets its own retries.
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
+two compose, since a revision is one more request and each request still
+gets its own retries.
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
 failed, and the caller hears every one of them as silence. An agent whose
 `errorPhrase` should arrive promptly sets this to `0` and lets the recovery
 line do the work.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-2)
 
 ##### resetToolChoice?
 
@@ -3874,10 +3883,12 @@ Sampling temperature.
 
 Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values, and until this
-existed neither could say so: `ctx.generate` and `subagent()` both took a
-temperature while the main loop — the one that does almost all the talking
-— took no sampling parameter at all.
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### usageLimits?
 
@@ -5097,6 +5108,114 @@ The machine itself, for a caller that wants to inspect or visualize it.
 
 ***
 
+### DialogGate
+
+What makes a tool part of a dialog: where it may run, and what it advances.
+
+The half of [DialogToolDef](#dialogtooldef) that is the dialog's own — the rest is
+[ToolDef](#tooldef)'s, unchanged. Declared on its own so the gate's three fields
+have one home and `DialogToolDef` is BUILT from the two halves rather than
+restating either.
+
+#### Extended by
+
+- [`DialogToolDef`](#dialogtooldef)
+
+#### Type Parameters
+
+##### R
+
+`R`
+
+What the tool's `execute` returns, as `sendFrom` reads it.
+
+##### E
+
+`E`
+
+The machine's event union.
+
+#### Properties
+
+##### send?
+
+```ts
+optional send?: E;
+```
+
+The event to send once `execute` has succeeded — how the conversation moves
+on. Omit both this and `sendFrom` for a tool that reads without advancing.
+
+**Nothing is sent when `execute` returns a [ToolFailure](#toolfailure).** A tool
+that failed did not do the thing, so a dialog that advanced anyway would
+leave the conversation a step ahead of reality — the single most expensive
+bug this primitive can have, since every later gate is then wrong too.
+
+##### sendFrom?
+
+```ts
+optional sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+```
+
+The event to send, decided by the RESULT — for a tool whose outcome picks
+the transition. Return `undefined` to stay put.
+
+Separate from `send` rather than a union with it because a union of an
+event and a function of one cannot be narrowed by `typeof`: an event type is
+generic here, so TypeScript cannot rule out that it is itself callable, and
+the check would need a cast to compile. Two fields are also the clearer
+authoring surface — the static case stays a literal. Declaring both is an
+error.
+
+**`NoInfer` is what makes the parameter mean anything.** `R` is inferred
+from `execute`, and a bare `(result: R) => …` here puts `R` in a SECOND
+inference position — so which one wins is decided by the object literal's
+source order. A `sendFrom` written ABOVE `execute` inferred `R = unknown`
+from its own parameter, and then compiled: the narrowing an author wrote it
+for silently stopped meaning anything, with no error anywhere and no way to
+tell the two orderings apart by reading either one. `NoInfer<R>` takes this
+position out of the running, so `execute` decides `R` in both orderings and
+a typo'd property is a `TS2551` in both.
+
+**`Exclude<…, ToolFailure>` is the other half, and it was already true at
+run time**: the failure check returns before `sendFrom` is reached, so a
+failure is never handed to it. Saying so in the type is what lets a body
+declared `Order | ToolFailure` be narrowed here without the author
+re-checking a case that cannot arrive.
+
+###### Parameters
+
+###### result
+
+`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](#toolfailure)\>
+
+###### Returns
+
+`E` \| `undefined`
+
+##### when
+
+```ts
+when: string | readonly string[];
+```
+
+The state(s) this tool may run in, as [DialogPosition.state](#state) spells
+them. Anywhere else the body does not run and the call is refused.
+
+Every name is checked against the machine's own states when the tool is
+DECLARED, so a typo is a throw at startup rather than a tool that is
+silently unreachable for the life of the agent.
+
+**The gate holds for the SEND as well as the body.** A step's tool calls run
+concurrently, so a sibling can move the dialog while this body is awaiting.
+If it has left every `when` state by the time `execute` settles, the body's
+result is still returned, but `send`/`sendFrom` is NOT applied, and the
+position in the result says where the sibling left the conversation.
+Otherwise the event would fire whatever transition the new state declares
+for it, moving the dialog out of a state this tool was never allowed in.
+
+***
+
 ### DialogOptions
 
 Options for [dialog](#dialog-1).
@@ -5414,8 +5533,36 @@ and leaves the conversation exactly where it was.
 
 ### DialogToolDef
 
-The authoring shape of a gated tool — [ToolDef](#tooldef) plus the two things
-that make it part of a dialog: where it may run, and what it advances.
+The authoring shape of a gated tool — [ToolDef](#tooldef) plus the
+[DialogGate](#dialoggate) that makes it part of a dialog.
+
+**Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+`ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+whatever `ToolDef` grows next — and `execute` is restated only because a gated
+body may return a [ToolFailure](#toolfailure) beside `R` (see below). The copy this
+replaced restated three fields, and the one it missed was `messages`: a gated
+tool could not declare tool-call speech at all, although `dialog.tool`
+spreads the def and the runtime would have spoken it.
+
+**`onError`'s answer goes to the model AS THE RESULT, so it carries no
+[DialogToolResult](#dialogtoolresult) envelope and the dialog does not move.** The handler
+runs after the gated call has already unwound, which is past the point where
+`send`/`sendFrom` could have fired — the same answer a RETURNED
+[ToolFailure](#toolfailure) gets, for the same reason: a tool that failed did not do
+the thing. What differs is the SHAPE: where a success carries `state`, `done`
+and `result`, the model reads the handler's failure or string, so a handler
+whose message names where the conversation is has to say so itself. A
+REFUSAL — the model calling this tool from a state `when` does not name — is
+not a throw and never reaches it.
+
+**A `messages.failed` line fires on a refusal**, because a refusal is a
+[ToolFailure](#toolfailure) result like any other. A tool whose refusal should be
+phrased by the model (it carries the state's own instruction) declares
+`failed` with `role: "system"`, or none at all.
+
+#### Extends
+
+- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>.[`DialogGate`](#dialoggate)\<`R`, `E`\>
 
 #### Type Parameters
 
@@ -5485,7 +5632,13 @@ narrow a value it is never handed: the failure check returns before it runs.
 description: string;
 ```
 
-See [ToolDef.description](#description-6) — what the model reads to decide to call it.
+Human-readable description shown to the LLM.
+
+###### Inherited from
+
+```ts
+Omit.description
+```
 
 ##### inputSchema?
 
@@ -5493,7 +5646,71 @@ See [ToolDef.description](#description-6) — what the model reads to decide to 
 optional inputSchema?: P;
 ```
 
-See [ToolDef.inputSchema](#inputschema-2).
+Schema for the tool's input, shown to the LLM and used to validate each
+call's arguments before `execute` runs. Named after the Vercel AI SDK's
+`tool({ inputSchema })`.
+
+###### Inherited from
+
+```ts
+Omit.inputSchema
+```
+
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.messages
+```
 
 ##### onError?
 
@@ -5501,28 +5718,64 @@ See [ToolDef.inputSchema](#inputschema-2).
 optional onError?: ToolErrorHandler;
 ```
 
-See [ToolDef.onError](#onerror-2) — what a THROW out of this call means, and the
-only way to say that a failure is fatal rather than something the model
-should try again. Forwarded to the [ToolDef](#tooldef) this builds, and it
-behaves there exactly as it does on any other tool.
+What to do when `execute` throws — and, by omission, the SDK's default.
 
-**What it returns goes to the model AS THE RESULT, so it does not carry a
-[DialogToolResult](#dialogtoolresult) envelope and the dialog does not move.** The
-handler runs after the gated call has already unwound, which is past the
-point where `send`/`sendFrom` could have fired — and that is the same
-answer a RETURNED [ToolFailure](#toolfailure) gets for the same reason: a tool that
-failed did not do the thing, so a dialog that advanced anyway would leave
-the conversation a step ahead of reality. The difference to know is the
-SHAPE, not the transition: a model reading this call's result gets the
-handler's failure or string where a success would have carried `state`,
-`done` and `result`, so a handler whose message names where the
-conversation is has to say so itself.
+**Without it, every exception becomes an ordinary tool result.** The
+runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+to the model as that call's result, which is the same channel a deliberate
+[toolFailure](#toolfailure-1) uses — so a stale credential, a `TypeError` in the
+author's own code and "no such order" are one thing as far as the model can
+tell, and it will keep calling a permanently broken tool until the reply's
+`maxSteps` budget runs out. That default is unchanged and stays the default:
+for the failures a model really can recover from it is the right answer, and
+every tool written before this field existed depends on it.
 
-It classifies the gated call as a whole, which is `execute`'s throw in every
-practical case but also covers one out of the transition that follows a
-successful body. A refusal — the model calling this tool from a state
-`when` does not name — is not a throw and never reaches it: that returns a
-[ToolFailure](#toolfailure) the model is meant to recover from.
+**With it, the author classifies.** Return a [ToolFailure](#toolfailure) or a string
+and that is what the model gets — the same outcome as the default, with a
+sentence the author chose. Throw — `throw err` re-raises the original — and
+the failure is FATAL to the call: the runtime logs it, reports it as a
+session error (`code: "tool"`), and the tool call REJECTS instead of
+answering, so nothing hands the model something to retry against.
+
+It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+it: that is already the author saying "expected, let the model recover", and
+routing it through here would make the two channels one again.
+
+###### Example
+
+**Fatal on a missing credential, recoverable on a bad lookup**
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+class MissingKeyError extends Error {}
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+    });
+    if (res.status === 404) return toolFailure(`No order ${id}.`);
+    return await res.json();
+  },
+  // A credential the deploy is missing cannot be fixed by asking the model
+  // to try again; a flaky upstream can.
+  onError: (err) => {
+    if (err instanceof MissingKeyError) throw err;
+    return toolFailure("The orders service is unavailable right now.");
+  },
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.onError
+```
 
 ##### send?
 
@@ -5537,6 +5790,10 @@ on. Omit both this and `sendFrom` for a tool that reads without advancing.
 that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
+
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`send`](#send-1)
 
 ##### sendFrom?
 
@@ -5580,6 +5837,10 @@ re-checking a case that cannot arrive.
 
 `E` \| `undefined`
 
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`sendFrom`](#sendfrom)
+
 ##### when
 
 ```ts
@@ -5600,6 +5861,10 @@ result is still returned, but `send`/`sendFrom` is NOT applied, and the
 position in the result says where the sibling left the conversation.
 Otherwise the event would fire whatever transition the new state declares
 for it, moving the dialog out of a state this tool was never allowed in.
+
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`when`](#when)
 
 ***
 
@@ -6047,6 +6312,87 @@ optional taken?: ReadonlySet<string>;
 
 Codes already issued. A generated code that collides is discarded and
 another drawn, so the caller does not have to loop.
+
+***
+
+### ModelTuning
+
+The per-REQUEST knobs every model loop this runtime runs takes — the agent's
+own conversational loop and a [SubagentDef](#subagentdef)'s delegated one alike.
+
+**One declaration, extended by both, rather than a list each restates.**
+`SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+`AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
+meant something else entirely (the guardrail's revision budget, now
+[SubagentDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
+the name means one thing wherever it is written.
+
+Every field is passed straight through to the provider request, so each is
+refused in S2S mode on the AGENT — there the provider runs the loop; see this
+module's header. A subagent always runs on this runtime, whatever the parent's
+mode, so it may set all three.
+
+#### Extended by
+
+- [`SubagentDef`](#subagentdef)
+- [`AgentModelTuning`](#agentmodeltuning)
+
+#### Properties
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a FAILED provider call is retried before the step is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
+two compose, since a revision is one more request and each request still
+gets its own retries.
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
 
 ***
 
@@ -7442,12 +7788,28 @@ export default agent({ name: "Shop", syncState: cartSlot.projected });
 The authoring shape of a slot-backed tool: [ToolDef](#tooldef) with the slot's
 value handed to `execute` directly.
 
+**Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+`ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+whatever `ToolDef` grows next — so a slot-backed tool can declare anything a
+plain one can. The field-by-field copy this replaced restated three of them,
+and the one it missed was `messages`: a slot tool could not declare tool-call
+speech at all, although the builder spreads the def and the runtime would
+have spoken it.
+
+`onError` behaves exactly as it does on any tool, and the slot is not
+involved: an `updateTool` mutator that threw stored nothing, by that method's
+own contract, so a handler is classifying a call that changed no state.
+
 `value` comes SECOND because it is what a slot-backed tool body actually
 uses; most take `(args, cart)` and never mention `ctx` at all, which is the
 point. Putting it there rather than third cannot be got wrong silently — a
 body converted from `tool()` that still names its second parameter `ctx` is a
 type error the first time it reads `ctx.env`, since `V` is not a
 [ToolContext](#toolcontext).
+
+#### Extends
+
+- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>
 
 #### Type Parameters
 
@@ -7507,7 +7869,13 @@ The tool body, handed this session's slot value alongside the usual args.
 description: string;
 ```
 
-See [ToolDef.description](#description-6) — what the model reads to decide to call it.
+Human-readable description shown to the LLM.
+
+###### Inherited from
+
+```ts
+Omit.description
+```
 
 ##### inputSchema?
 
@@ -7515,7 +7883,71 @@ See [ToolDef.description](#description-6) — what the model reads to decide to 
 optional inputSchema?: P;
 ```
 
-See [ToolDef.inputSchema](#inputschema-2).
+Schema for the tool's input, shown to the LLM and used to validate each
+call's arguments before `execute` runs. Named after the Vercel AI SDK's
+`tool({ inputSchema })`.
+
+###### Inherited from
+
+```ts
+Omit.inputSchema
+```
+
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.messages
+```
 
 ##### onError?
 
@@ -7523,14 +7955,64 @@ See [ToolDef.inputSchema](#inputschema-2).
 optional onError?: ToolErrorHandler;
 ```
 
-See [ToolDef.onError](#onerror-2) — what a THROW out of this body means, and the
-only way to say that a failure is fatal rather than something the model
-should try again.
+What to do when `execute` throws — and, by omission, the SDK's default.
 
-It is forwarded to the [ToolDef](#tooldef) this builds and behaves identically:
-the slot is not involved, because there is nothing left to hand a handler —
-an `updateTool` mutator that threw stored nothing, by that method's own
-contract, so `onError` is classifying a call that changed no state.
+**Without it, every exception becomes an ordinary tool result.** The
+runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+to the model as that call's result, which is the same channel a deliberate
+[toolFailure](#toolfailure-1) uses — so a stale credential, a `TypeError` in the
+author's own code and "no such order" are one thing as far as the model can
+tell, and it will keep calling a permanently broken tool until the reply's
+`maxSteps` budget runs out. That default is unchanged and stays the default:
+for the failures a model really can recover from it is the right answer, and
+every tool written before this field existed depends on it.
+
+**With it, the author classifies.** Return a [ToolFailure](#toolfailure) or a string
+and that is what the model gets — the same outcome as the default, with a
+sentence the author chose. Throw — `throw err` re-raises the original — and
+the failure is FATAL to the call: the runtime logs it, reports it as a
+session error (`code: "tool"`), and the tool call REJECTS instead of
+answering, so nothing hands the model something to retry against.
+
+It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+it: that is already the author saying "expected, let the model recover", and
+routing it through here would make the two channels one again.
+
+###### Example
+
+**Fatal on a missing credential, recoverable on a bad lookup**
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+class MissingKeyError extends Error {}
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+    });
+    if (res.status === 404) return toolFailure(`No order ${id}.`);
+    return await res.json();
+  },
+  // A credential the deploy is missing cannot be fixed by asking the model
+  // to try again; a flaky upstream can.
+  onError: (err) => {
+    if (err instanceof MissingKeyError) throw err;
+    return toolFailure("The orders service is unavailable right now.");
+  },
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.onError
+```
 
 ***
 
@@ -7649,6 +8131,10 @@ Every field except `name` and `systemPrompt` is optional, and the defaults
 are the parent agent's: the same LLM descriptor, no tools, and
 the framework default (`DEFAULT_MAX_STEPS`) steps.
 
+#### Extends
+
+- [`ModelTuning`](#modeltuning)
+
 #### Extended by
 
 - [`TypedSubagentDef`](#typedsubagentdef)
@@ -7731,7 +8217,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
+exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -7779,7 +8265,20 @@ reasoning.
 optional maxOutputTokens?: number;
 ```
 
-Cap on generated tokens per step, passed through to the provider.
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
@@ -7787,11 +8286,46 @@ Cap on generated tokens per step, passed through to the provider.
 optional maxRetries?: number;
 ```
 
+How many times a FAILED provider call is retried before the step is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
+two compose, since a revision is one more request and each request still
+gets its own retries.
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-2)
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
+```
+
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
-`1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Not [ModelTuning.maxRetries](#maxretries-2)**, which this def also takes: that one
+retries a provider REQUEST that failed (a 429, a socket reset), this one
+re-runs a delegation that SUCCEEDED and was judged not good enough. They
+shared the name `maxRetries` until the knobs were unified, which made the
+one that sounded like a transport setting the guardrail's budget.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -7894,7 +8428,16 @@ here; `expectedOutput` is the field that remembers it for them.
 optional temperature?: number;
 ```
 
-Sampling temperature passed through to the provider.
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### tools?
 
@@ -8175,7 +8718,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
+exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -8231,11 +8774,20 @@ reasoning.
 optional maxOutputTokens?: number;
 ```
 
-Cap on generated tokens per step, passed through to the provider.
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens-2)
+[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens-3)
 
 ##### maxRetries?
 
@@ -8243,11 +8795,46 @@ Cap on generated tokens per step, passed through to the provider.
 optional maxRetries?: number;
 ```
 
+How many times a FAILED provider call is retried before the step is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+guardrail sending an answer back is [SubagentDef.maxRevisions](#maxrevisions); the
+two compose, since a revision is one more request and each request still
+gets its own retries.
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-3)
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
+```
+
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
-`1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Not [ModelTuning.maxRetries](#maxretries-2)**, which this def also takes: that one
+retries a provider REQUEST that failed (a 429, a socket reset), this one
+re-runs a delegation that SUCCEEDED and was judged not good enough. They
+shared the name `maxRetries` until the knobs were unified, which made the
+one that sounded like a transport setting the guardrail's budget.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -8262,7 +8849,7 @@ not the runtime — that decides what.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-2)
+[`SubagentDef`](#subagentdef).[`maxRevisions`](#maxrevisions)
 
 ##### maxSteps?
 
@@ -8370,11 +8957,16 @@ here; `expectedOutput` is the field that remembers it for them.
 optional temperature?: number;
 ```
 
-Sampling temperature passed through to the provider.
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`temperature`](#temperature-5)
+[`SubagentDef`](#subagentdef).[`temperature`](#temperature-6)
 
 ##### tools?
 
@@ -9545,7 +10137,7 @@ type Message = {
 A single message in the conversation history.
 
 Messages are passed to tool `execute` functions via
-[ToolContext.messages](#messages) to provide conversation context.
+[ToolContext.messages](#messages-2) to provide conversation context.
 
 **The `"tool"` arm carries what an EARLIER tool answered**, which is the one
 thing a tool could not see before. Its two extra fields say WHICH call the
@@ -13209,14 +13801,14 @@ someone guessing, which is the failure being prevented.
 
 ***
 
-### DEFAULT\_GUARDRAIL\_MAX\_RETRIES
+### DEFAULT\_GUARDRAIL\_MAX\_REVISIONS
 
 ```ts
-const DEFAULT_GUARDRAIL_MAX_RETRIES: 1 = 1;
+const DEFAULT_GUARDRAIL_MAX_REVISIONS: 1 = 1;
 ```
 
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back when
-the subagent names no [SubagentDef.maxRetries](#maxretries-2) of its own.
+the subagent names no [SubagentDef.maxRevisions](#maxrevisions) of its own.
 
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose

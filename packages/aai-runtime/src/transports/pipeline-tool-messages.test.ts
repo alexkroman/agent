@@ -8,14 +8,15 @@
 // its own gap silences the generic cover" is a property of two timers in
 // different modules agreeing.
 
-import type { ToolMessages } from "@alexkroman1/aai";
+import { dialog, sessionSlot, type ToolDef, type ToolMessages } from "@alexkroman1/aai";
 import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
-import type { ToolSchema } from "@alexkroman1/aai/manifest";
+import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { silentLogger } from "../_test-utils.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { executeToolCall } from "../tool-executor.ts";
 import { createToolSpeechController } from "../tool-messages-runner.ts";
 import { useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { consumeLlmStream } from "./pipeline-llm-stream.ts";
@@ -39,6 +40,15 @@ function schemaWith(messages: ToolMessages): ToolSchema {
  * like a success or a `ToolFailure` to the outcome arm.
  */
 async function runTurn(messages: ToolMessages, result = '{"status":"shipped"}') {
+  return await runTurnWith(schemaWith(messages), async () => result);
+}
+
+/**
+ * {@link runTurn} over a caller's own declaration and executor — so a spec can
+ * hand it the schema `agentToolsToSchemas` derives from a REAL tool and run
+ * that tool's `execute`, rather than a hand-written schema and a canned result.
+ */
+async function runTurnWith(schema: ToolSchema, executeTool: () => Promise<string>) {
   const spoken: { text: string; record: boolean }[] = [];
   const deltas: string[] = [];
   const controller = createToolSpeechController({ log: silentLogger, sid: "s", random: () => 0 });
@@ -52,8 +62,8 @@ async function runTurn(messages: ToolMessages, result = '{"status":"shipped"}') 
     llm,
     systemPrompt: "s",
     messages: [{ role: "user", content: "where is my order" }],
-    tools: toVercelTools([schemaWith(messages)], {
-      executeTool: async () => result,
+    tools: toVercelTools([schema], {
+      executeTool,
       sessionId: "s",
       messages: () => [],
       toolSpeech: controller,
@@ -121,6 +131,58 @@ describe("a verbatim completion takes the model out of the loop", () => {
     );
     expect(modelCalls).toBe(1);
     expect(spoken.at(-1)?.text).toBe("I couldn't reach the order system.");
+  });
+});
+
+describe("slot and dialog tools speak through the same path as `tool()`", () => {
+  // `SlotToolDef` and `DialogToolDef` used to restate `ToolDef` field by field,
+  // and neither restated `messages` — so the two builders a stateful agent
+  // writes most could not declare tool-call speech. Both are built FROM
+  // `ToolDef` now; these run the REAL built tool through a real turn, so the
+  // claim is the whole path: the def, the builder's spread, the wire
+  // declaration, the executor, and the line.
+  type Cart = { items: string[] };
+  const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
+
+  async function runBuilt(name: string, def: ToolDef) {
+    const [schema] = agentToolsToSchemas({ [name]: def });
+    if (schema === undefined) throw new Error("no schema");
+    return await runTurnWith({ ...schema, name: "lookup" }, () =>
+      executeToolCall(name, {}, { tool: def, env: {}, sessionId: "s" }),
+    );
+  }
+
+  test("a slot.updateTool's verbatim completion is spoken, and the model is not called again", async () => {
+    const add = cartSlot.updateTool({
+      description: "Add an item",
+      execute: (_args, cart) => {
+        cart.items.push("apple");
+        return { count: cart.items.length };
+      },
+      messages: { complete: [{ role: "assistant", content: "Added it to your cart." }] },
+    });
+    const { spoken, modelCalls } = await runBuilt("add_item", add);
+    expect(modelCalls).toBe(1);
+    expect(spoken.at(-1)).toEqual({ text: "Added it to your cart.", record: true });
+  });
+
+  test("a dialog tool's REFUSAL takes the `failed` line, because a refusal is a ToolFailure", async () => {
+    const flow = dialog("flow", {
+      initial: "collecting",
+      states: { collecting: { on: { DONE: "confirming" } }, confirming: { final: true } },
+    });
+    const confirm = flow.tool({
+      description: "Confirm the booking",
+      when: "confirming",
+      execute: () => "confirmed",
+      messages: {
+        complete: [{ role: "assistant", content: "You're booked." }],
+        failed: [{ role: "assistant", content: "We are not there yet." }],
+      },
+    });
+    const { spoken, modelCalls } = await runBuilt("confirm", confirm);
+    expect(modelCalls).toBe(1);
+    expect(spoken.at(-1)?.text).toBe("We are not there yet.");
   });
 });
 

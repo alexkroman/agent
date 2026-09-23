@@ -112,6 +112,13 @@ type Message = {
 };
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export type MultipartBody = {
     body: Uint8Array;
     headers: {
@@ -408,19 +415,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

@@ -8,6 +8,7 @@
  */
 
 import { subagent, tool } from "@alexkroman1/aai";
+import { APICallError } from "ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -48,6 +49,48 @@ function parentCall(overrides: Partial<ToolCallDefaults> = {}): ToolCallDefaults
 }
 
 describe("createSubagentRunner", () => {
+  it("passes the subagent's ModelTuning to the provider — the knobs the agent's own loop takes", async () => {
+    const { model, descriptor, env } = setup([{ text: "done" }]);
+    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+    await run(
+      subagent({ name: "tuned", systemPrompt: "S.", temperature: 0.3, maxOutputTokens: 64 }),
+      { task: "t" },
+      parentCall(),
+    );
+    expect(model.calls[0]).toMatchObject({ temperature: 0.3, maxOutputTokens: 64 });
+  });
+
+  it("maxRetries is the PROVIDER's retry budget, not the guardrail's", async () => {
+    // A retryable failure on every request. With the SDK's default budget this
+    // is three requests and several seconds of backoff; `maxRetries: 0` makes
+    // it exactly one, which is what proves the knob reaches the request.
+    const { model, descriptor, env } = setup([]);
+    let requests = 0;
+    Object.assign(model, {
+      doGenerate: () => {
+        requests += 1;
+        return Promise.reject(
+          new APICallError({
+            message: "Service Unavailable",
+            url: "https://llm.example/v1",
+            requestBodyValues: {},
+            statusCode: 503,
+            isRetryable: true,
+          }),
+        );
+      },
+    });
+    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+    await expect(
+      run(
+        subagent({ name: "flaky", systemPrompt: "S.", maxRetries: 0 }),
+        { task: "t" },
+        parentCall(),
+      ),
+    ).rejects.toThrow(/Service Unavailable/);
+    expect(requests).toBe(1);
+  });
+
   it("returns the subagent's final text with an empty cost report", async () => {
     const { descriptor, env } = setup([{ text: "Three sources agree: yes." }]);
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
@@ -374,7 +417,7 @@ describe("createSubagentRunner", () => {
           name: "checker",
           systemPrompt: "Check it.",
           schema: Verdict,
-          maxRetries: 1,
+          maxRevisions: 1,
         }),
         { task: "x" },
         parentCall(),
@@ -489,7 +532,7 @@ describe("createSubagentRunner", () => {
       expect(info.join("\n")).toContain('subagent "checker": guardrail still rejecting');
     });
 
-    it("honours maxRetries, and 0 means the guardrail reports without retrying", async () => {
+    it("honours maxRevisions, and 0 means the guardrail reports without retrying", async () => {
       const { model, descriptor, env } = setup([{ text: "a" }, { text: "b" }, { text: "c" }]);
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
       const check = subagent({
@@ -498,11 +541,11 @@ describe("createSubagentRunner", () => {
         guardrail: () => "nope",
       });
 
-      const none = await run({ ...check, maxRetries: 0 }, { task: "x" }, parentCall());
+      const none = await run({ ...check, maxRevisions: 0 }, { task: "x" }, parentCall());
       expect(model.calls).toHaveLength(1);
       expect(none).toMatchObject({ revisions: 0, accepted: false, complaint: "nope" });
 
-      const twice = await run({ ...check, maxRetries: 2 }, { task: "x" }, parentCall());
+      const twice = await run({ ...check, maxRevisions: 2 }, { task: "x" }, parentCall());
       expect(model.calls).toHaveLength(4);
       expect(twice).toMatchObject({ revisions: 2, accepted: false });
     });
@@ -533,7 +576,7 @@ describe("createSubagentRunner", () => {
         subagent({
           name: "checker",
           systemPrompt: "Check it.",
-          maxRetries: 0,
+          maxRevisions: 0,
           guardrail: (answer) => {
             seen.push(answer);
             return "no lookups";
@@ -618,7 +661,7 @@ describe("createSubagentRunner — the delegating session's budget", () => {
         subagent({
           name: "checker",
           systemPrompt: "Check it.",
-          maxRetries: 3,
+          maxRevisions: 3,
           guardrail: () => "try again",
         }),
         { task: "x" },

@@ -80,6 +80,33 @@ export type StubDelegateReply =
  */
 export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
 
+/**
+ * Everything {@link stubDelegate} and {@link stubStepDelegate} accept: ONE route
+ * answering every delegation, or a table of routes keyed by subagent name —
+ * each under a key that says which.
+ *
+ * The same two shapes {@link StubGenerateScript} takes, for the same reason: a
+ * bare "a table, or a reply" union is told apart at runtime by the reply's
+ * shape, so a subagent named `text` could never be routed and a reply object
+ * could be read as a table. Named, there is nothing to guess.
+ *
+ * @public
+ */
+export type StubDelegateScript =
+  | {
+      /** Answers EVERY delegation, whichever subagent it names. */
+      readonly reply: StubDelegateRoute;
+      readonly routes?: never;
+    }
+  | {
+      /**
+       * One route per subagent, keyed by its `name`. A delegation naming no
+       * route rejects, naming the subagent.
+       */
+      readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+      readonly reply?: never;
+    };
+
 /** A fake `ctx.delegate`: the function to pass, and what it was asked. */
 export interface StubDelegate {
   /** Pass as `delegate` to `createToolContext`. */
@@ -89,10 +116,11 @@ export interface StubDelegate {
 }
 
 /**
- * Build a fake `ctx.delegate` from a script keyed by subagent name.
+ * Build a fake `ctx.delegate` from a script: one reply, or routes keyed by
+ * subagent name.
  *
- * Pass a single route (not a record) to answer every delegation the same way,
- * which is what a one-subagent tool wants.
+ * Pass `{ reply }` to answer every delegation the same way, which is what a
+ * one-subagent tool wants.
  *
  * @example Two subagents, one queue
  * ```ts
@@ -100,8 +128,10 @@ export interface StubDelegate {
  *
  * const findings = ["Rain on Tuesday.", "Clear on Wednesday."];
  * const desk = stubDelegate({
- *   researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
- *   "fact-checker": "Both claims check out.",
+ *   routes: {
+ *     researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
+ *     "fact-checker": "Both claims check out.",
+ *   },
  * });
  * const ctx = createToolContext({ delegate: desk.delegate });
  * // … run the tool, then assert on who was asked what:
@@ -110,11 +140,10 @@ export interface StubDelegate {
  *
  * @public
  */
-export function stubDelegate(
-  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
-): StubDelegate {
+export function stubDelegate(script: StubDelegateScript): StubDelegate {
   const calls: StubDelegateCall[] = [];
-  const routes = isRouteTable(script) ? script : undefined;
+  const routes = routeTable(script);
+  const single = "reply" in script ? script.reply : undefined;
 
   // `async`, and that is load-bearing rather than a style choice: it makes a
   // route that THROWS — which is how a spec scripts a subagent run that failed —
@@ -130,7 +159,7 @@ export function stubDelegate(
   const run = async (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult> => {
     const call: StubDelegateCall = { subagent, task: options.task, options };
     calls.push(call);
-    const route = routes ? routes[subagent.name] : (script as StubDelegateRoute);
+    const route = routes ? routes[subagent.name] : single;
     if (route === undefined) {
       throw new Error(
         `stubDelegate: no route for subagent ${JSON.stringify(subagent.name)}. ` +
@@ -174,7 +203,7 @@ export interface StubStepDelegate {
  * ```ts
  * import { stubStepDelegate } from "@alexkroman1/aai/testing";
  *
- * const desk = stubStepDelegate({ researcher: "Prices fell 12% in 2025." });
+ * const desk = stubStepDelegate({ routes: { researcher: "Prices fell 12% in 2025." } });
  * try {
  *   // … call the exported step, then assert on `desk.calls`
  * } finally {
@@ -184,26 +213,28 @@ export interface StubStepDelegate {
  *
  * @public
  */
-export function stubStepDelegate(
-  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
-): StubStepDelegate {
+export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate {
   const { delegate, calls } = stubDelegate(script);
   publishStepDelegate(delegate);
   return { calls, restore: () => publishStepDelegate(undefined) };
 }
 
 /**
- * Is this a table of routes, or one route?
- *
- * Told apart by the reply shape rather than by `typeof`, exactly as
- * `stubGenerate` does it — and for the same reason `StubDelegateReply`'s object
- * form REQUIRES `text`: a table with one route named `text` would otherwise be
- * indistinguishable from a single reply.
+ * The route table a script names, or `undefined` for a `{ reply }` script — and
+ * a throw for anything that is neither, which is what a script in the bare
+ * shape this used to take reaches when nothing type-checked it.
  */
-function isRouteTable(
-  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
-): script is Readonly<Record<string, StubDelegateRoute>> {
-  return isRecord(script) && !("text" in script);
+function routeTable(
+  script: StubDelegateScript,
+): Readonly<Record<string, StubDelegateRoute>> | undefined {
+  const given: unknown = script;
+  if (isRecord(given) && "reply" in given !== "routes" in given) {
+    return "routes" in script ? script.routes : undefined;
+  }
+  throw new Error(
+    "stubDelegate: a script is `{ reply }` (one route for every delegation) or `{ routes }` " +
+      "(keyed by subagent name), exactly one of the two",
+  );
 }
 
 /** The full {@link DelegateResult} a route's shorthand stands for. */

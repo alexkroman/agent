@@ -110,9 +110,7 @@ shape, the silence it answers with, and how to make it fail instead.
 ### installStubStepDelegate()
 
 ```ts
-function installStubStepDelegate(script: 
-  | StubDelegateRoute
-  | Readonly<Record<string, StubDelegateRoute>>): StubStepDelegate;
+function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 ```
 
 Publish a fake subagent runner for `stepDelegate`, restored when this test
@@ -126,8 +124,7 @@ deliberately, because there is no degraded version of running a model loop.
 
 ##### script
 
-  \| [`StubDelegateRoute`](../testing.md#stubdelegateroute)
-  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](../testing.md#stubdelegateroute)\>\>
+[`StubDelegateScript`](../testing.md#stubdelegatescript)
 
 #### Returns
 

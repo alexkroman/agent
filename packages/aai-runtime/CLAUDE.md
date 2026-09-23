@@ -582,7 +582,7 @@ rejected answer AND the complaint appended to the conversation it already has,
 so the tool results the first attempt paid for are still in the window when the
 model is told what was wrong with them. The only version available outside this
 function starts a FRESH run, which re-reads the four pages to fix the citation
-it was holding the source for. Exhausting `maxRetries` (default 1 — a revision
+it was holding the source for. Exhausting `maxRevisions` (default 1 — a revision
 is another full run, and the caller is on a phone) returns the last attempt with
 `accepted: false` rather than throwing: there IS an answer, and whether to read
 it out is the calling tool's decision, not the runtime's.

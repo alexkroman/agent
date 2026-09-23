@@ -54,7 +54,7 @@
  *   appended as its own section. The "tell it to summarize" rule, made
  *   structural.
  * - {@link SubagentDef.guardrail} — a check on the answer that can send it BACK
- *   with a complaint, up to {@link SubagentDef.maxRetries} times. The retry
+ *   with a complaint, up to {@link SubagentDef.maxRevisions} times. The retry
  *   continues the run it is correcting, so the tool results the first attempt
  *   paid for are not bought twice.
  * - {@link SubagentDef.description} — what this subagent is for, read by
@@ -73,13 +73,14 @@
  * by name.
  */
 
+import type { ModelTuning } from "./agent-model-tuning.ts";
 import type { LlmProvider } from "./providers.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type { BuiltinTool, ToolDef } from "./types.ts";
 
 /**
  * How many times a {@link SubagentDef.guardrail} may send an answer back when
- * the subagent names no {@link SubagentDef.maxRetries} of its own.
+ * the subagent names no {@link SubagentDef.maxRevisions} of its own.
  *
  * Declared here rather than in `constants.ts` for the reason
  * `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -87,7 +88,7 @@ import type { BuiltinTool, ToolDef } from "./types.ts";
  *
  * @public
  */
-export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS = 1;
 
 /**
  * A subagent definition — what {@link subagent} returns and
@@ -99,7 +100,7 @@ export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
  *
  * @public
  */
-export interface SubagentDef {
+export interface SubagentDef extends ModelTuning {
   /**
    * What this subagent is called. It reaches the model only as the id on the
    * subagent's own requests; its reader is a log line and a failure message
@@ -208,7 +209,7 @@ export interface SubagentDef {
    * complaint, and the runtime re-runs the subagent with its own rejected
    * answer and that complaint appended to the conversation it already has — so
    * the retry keeps every tool result the first attempt paid for and is told
-   * exactly what to fix. Bounded by {@link SubagentDef.maxRetries}.
+   * exactly what to fix. Bounded by {@link SubagentDef.maxRevisions}.
    *
    * **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
    * of an answer and cannot say that a citation is missing, that the sources
@@ -240,7 +241,13 @@ export interface SubagentDef {
   /**
    * How many times a {@link SubagentDef.guardrail} may send an answer back.
    *
-   * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+   * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+   *
+   * **Not {@link ModelTuning.maxRetries}**, which this def also takes: that one
+   * retries a provider REQUEST that failed (a 429, a socket reset), this one
+   * re-runs a delegation that SUCCEEDED and was judged not good enough. They
+   * shared the name `maxRetries` until the knobs were unified, which made the
+   * one that sounded like a transport setting the guardrail's budget.
    *
    * One, not CrewAI's three, because a revision is another FULL run of the
    * subagent and the caller is on a live phone call — the third attempt at a
@@ -253,7 +260,7 @@ export interface SubagentDef {
    * answer still has to say something, and it should be the caller's tool —
    * not the runtime — that decides what.
    */
-  maxRetries?: number;
+  maxRevisions?: number;
   /**
    * The SHAPE the final message must have — any
    * [Standard Schema](https://standardschema.dev), zod being the documented
@@ -293,10 +300,6 @@ export interface SubagentDef {
    * ```
    */
   schema?: StandardSchemaV1;
-  /** Sampling temperature passed through to the provider. */
-  temperature?: number;
-  /** Cap on generated tokens per step, passed through to the provider. */
-  maxOutputTokens?: number;
 }
 
 /**

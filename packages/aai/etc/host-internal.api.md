@@ -827,6 +827,13 @@ export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
 export const MISTRAL_KIND: "mistral";
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
@@ -1298,19 +1305,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

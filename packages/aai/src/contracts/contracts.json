@@ -97,8 +97,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
+    "current": 5,
+    "supported": [1, 2, 3, 4, 5],
     "dropped": {}
   },
   "step": {
@@ -124,18 +124,30 @@
     }
   },
   "subagent": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
+    "current": 4,
+    "supported": [4],
+    "dropped": {
+      "1": "Imports DEFAULT_GUARDRAIL_MAX_RETRIES, renamed DEFAULT_GUARDRAIL_MAX_REVISIONS, and sets maxRetries as the guardrail budget — which is now the provider's retry budget (ModelTuning.maxRetries); the guardrail's is maxRevisions.",
+      "2": "Sets maxRetries beside a guardrail meaning the revision budget. It still compiles, but maxRetries is now the provider's retry budget (ModelTuning.maxRetries) and the guardrail's is maxRevisions, so an epoch-2 subagent silently gets the default of one revision.",
+      "3": "SubagentDef.maxRetries is now the PROVIDER's retry budget (the shared ModelTuning knob, as on agent()); the guardrail's revision budget it used to name is maxRevisions, and DEFAULT_GUARDRAIL_MAX_RETRIES is DEFAULT_GUARDRAIL_MAX_REVISIONS. An epoch-3 subagent importing the constant no longer compiles, and one writing guardrail + maxRetries still compiles but budgets the wrong thing."
+    }
   },
   "testing": {
-    "current": 12,
-    "supported": [2, 3, 4, 8, 9, 10, 11, 12],
+    "current": 13,
+    "supported": [13],
     "dropped": {
       "1": "The `{ text }`-only script arm no longer compiles. Epoch 1 accepted `stubGenerate({ text })` — which type-checked, was then read as a route table keyed by the system prompt \"text\", and rejected every call at runtime. Epoch 2 makes it a compile error via StubGenerateRoutes' misuse arm, so epoch-1 code that wrote it stops building; code that wrote { text, object } or a route table is unaffected. Retaining epoch 1 would have promised the misuse keeps compiling.",
+      "2": "Its example scripts the model and a subagent with the bare shapes (a string, an unwrapped route table) and imports StubGenerateRoutes; scripts are { reply } or { routes } now and StubGenerateRoutes is removed.",
+      "3": "Same as epoch 2: bare-shape stubGenerate/stubDelegate scripts and a StubGenerateRoutes import, none of which compile now that a script is { reply } or { routes }.",
+      "4": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 4 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
       "5": "`ToolSchema` and `AgentConfigSchema` reach this subpath, and both lost members with the fast/slow split: the schema's `mutates`/`completes` and the config's `twoTier`. A spec that built either shape with one of those keys no longer compiles — `.strict()` on the config schema makes it a parse failure too.",
       "6": "Collateral, as it has been for six epochs: AgentConfigSchema and AgentConfigSource reach this surface, and both lost the lowConfidence field. A spec that built either shape with that key no longer compiles.",
-      "7": "AgentConfigSchema is published here, and its shape lost acknowledgementPhrases, interruptionPhrases, endpointingRules and the smartMatching preset value with the removal recorded on aai:agent epoch 8. A spec asserting on any of those keys no longer compiles."
+      "7": "AgentConfigSchema is published here, and its shape lost acknowledgementPhrases, interruptionPhrases, endpointingRules and the smartMatching preset value with the removal recorded on aai:agent epoch 8. A spec asserting on any of those keys no longer compiles.",
+      "8": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 8 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
+      "9": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 9 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
+      "10": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 10 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
+      "11": "Every epoch before 13 took stub scripts in the bare reply-or-table shape (stubGenerate(\"…\"), stubDelegate({ researcher: … }), createToolContext({ generate: \"…\" })); a script is { reply } or { routes } now, so the stub half of what epoch 11 promised no longer compiles. Its frozen example only compiled because it exercised none of those calls.",
+      "12": "A stub script is now named: stubGenerate/stubDelegate/stubStepDelegate/installStubStepDelegate and createToolContext's and scriptedToolContext's generate/delegate take { reply } or { routes } instead of a bare reply-or-table union, and StubGenerateRoutes (with its misuse arm) is gone. Every epoch-12 script literal stops compiling. commandedBuiltins, expectPromptBuiltinsDeclared and deployedAgent take structural shapes of only the fields they read, which every epoch-12 argument still satisfies."
     }
   },
   "tool": {

@@ -142,7 +142,7 @@ function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
   // resolves a provider client, so the seam a step reaches it through is the
   // delegate slot. Unstubbed it THROWS, which is why a converted template's eval
   // cannot silently keep passing over research that never ran.
-  installStubStepDelegate({ researcher: RESEARCH_FINDINGS });
+  installStubStepDelegate({ routes: { researcher: RESEARCH_FINDINGS } });
   return { calls: stub.calls, release: () => gate.resolve() };
 }
 

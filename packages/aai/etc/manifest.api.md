@@ -166,11 +166,8 @@ interface AgentGuardrails {
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -261,6 +258,13 @@ type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
+interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -277,14 +281,8 @@ interface DialogTimeout {
 }
 
 // @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -386,6 +384,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
@@ -817,19 +822,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -1087,7 +1090,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
+export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {

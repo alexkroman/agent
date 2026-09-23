@@ -87,7 +87,7 @@ export function installStubReporter(): StubReporter;
 export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
 
 // @public
-export function installStubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
@@ -116,6 +116,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -213,6 +220,15 @@ type StubDelegateReply = string | {
 
 // @public
 type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 type StubEmitted = {
@@ -369,19 +385,17 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

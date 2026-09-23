@@ -109,9 +109,9 @@ describe("createToolContext", () => {
 
   test("a `generate` SCRIPT is built into the fake, installed, and exposed as ctx.model", async () => {
     // The two-step the documentation page taught — `stubGenerate(script)`,
-    // destructure, `createToolContext({ generate })` — in one call. A bare
-    // string answers every prompt, which is what a one-model tool wants.
-    const ctx = createToolContext({ generate: "A short summary." });
+    // destructure, `createToolContext({ generate })` — in one call. `{ reply }`
+    // answers every prompt, which is what a one-model tool wants.
+    const ctx = createToolContext({ generate: { reply: "A short summary." } });
     expect(await ctx.generate({ prompt: "summarize this" })).toEqual({
       text: "A short summary.",
       object: null,
@@ -120,16 +120,16 @@ describe("createToolContext", () => {
   });
 
   test("a `delegate` script does the same thing for the subagent seam", async () => {
-    const ctx = createToolContext({ delegate: { researcher: "Prices fell 12%." } });
+    const ctx = createToolContext({ delegate: { routes: { researcher: "Prices fell 12%." } } });
     const sub = subagent({ name: "researcher", systemPrompt: "Research prices." });
     expect(await ctx.delegate(sub, { task: "prices" })).toMatchObject({ text: "Prices fell 12%." });
     expect(ctx.desk.calls.map((call) => call.subagent.name)).toEqual(["researcher"]);
   });
 
   test("a FUNCTION in either position is still the seam itself", async () => {
-    // `GenerateFn` and a top-level function ROUTE are both `(x) => y`, so the
-    // field admits only the former and the fake stays unwired — the same rule
-    // `sent` follows when a test brings its own `send` spy.
+    // A computed route is `{ reply: fn }`, so a bare function here can only be
+    // the seam, and the fake stays unwired — the same rule `sent` follows when a
+    // test brings its own `send` spy.
     const generate = vi.fn(async () => ({ text: "mine", object: null }));
     const ctx = createToolContext({ generate });
     expect(await ctx.generate({ prompt: "hi" })).toEqual({ text: "mine", object: null });
@@ -139,9 +139,9 @@ describe("createToolContext", () => {
 
   test("a fake the spec built itself can be NAMED, and is then both seam and ctx.model", async () => {
     // The escape hatch under the sugar, and what `scriptedToolContext` uses: a
-    // script this field cannot express (a top-level function route) is built
-    // into a fake and handed over by name.
-    const model = stubGenerate((call) => `answered ${call.prompt}`);
+    // fake built elsewhere — shared across two contexts, say — handed over by
+    // name.
+    const model = stubGenerate({ reply: (call) => `answered ${call.prompt}` });
     const ctx = createToolContext({ model });
     expect((await ctx.generate({ prompt: "q" })).text).toBe("answered q");
     expect(ctx.model).toBe(model);
@@ -150,15 +150,15 @@ describe("createToolContext", () => {
 
   test("no script and no fake leaves the rejecting default, which names the override", async () => {
     // The default has to say which override to pass — the one thing a route-less
-    // fake cannot, since `stubGenerate({})` rejects naming a system prompt.
+    // fake cannot, since `stubGenerate({ routes: {} })` rejects naming a system prompt.
     const ctx = createToolContext();
     await expect(ctx.generate({ prompt: "hi" })).rejects.toThrow(/pass `generate` to/);
     expect(ctx.model.calls).toEqual([]);
   });
 
-  test("a `{ text }`-only script is refused where it is written, not on the first call", () => {
-    const misuse = { text: "A short summary." } as ToolContextOverrides["generate"];
-    expect(() => createToolContext({ generate: misuse })).toThrow(/route TABLE keyed "text"/);
+  test("a script in the old bare shape is refused where it is written, not on the first call", () => {
+    const bare = { text: "A short summary." } as unknown as ToolContextOverrides["generate"];
+    expect(() => createToolContext({ generate: bare })).toThrow(/a script is `\{ reply \}`/);
   });
 
   test("overrides win over the defaults", () => {

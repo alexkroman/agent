@@ -451,7 +451,9 @@ describe("the steps that research", () => {
   });
 
   test("investigate hands the angle to a subagent, with the brief as its context", async () => {
-    const desk = installStubStepDelegate({ researcher: "Sea otters crack shellfish [1]." });
+    const desk = installStubStepDelegate({
+      routes: { researcher: "Sea otters crack shellfish [1]." },
+    });
 
     const note = await investigate(brief, "Tool use");
 
@@ -467,7 +469,7 @@ describe("the steps that research", () => {
   test("the researcher is given the web builtins, the budget, and what to answer with", async () => {
     // What this template still OWNS, now that the loop is the runtime's: which
     // capabilities the angle is worth, and what a finding has to be.
-    const desk = installStubStepDelegate({ researcher: "found things" });
+    const desk = installStubStepDelegate({ routes: { researcher: "found things" } });
     await investigate(brief, "Tool use");
 
     const researcher = desk.calls[0]?.subagent;
@@ -479,15 +481,17 @@ describe("the steps that research", () => {
 
   test("sources are what the researcher CITED", async () => {
     const desk = installStubStepDelegate({
-      // The runtime runs a subagent's tools; the stub does not, so the route
-      // calls `cite` the way a real run would. It is an ordinary `ToolDef`, which
-      // is what makes that possible at all.
-      researcher: (call: StubDelegateCall) => {
-        void call.subagent.tools?.cite?.execute(
-          { title: "Otters", url: "https://otters.example/tools" },
-          createToolContext(),
-        );
-        return "Sea otters crack shellfish [1].";
+      routes: {
+        // The runtime runs a subagent's tools; the stub does not, so the route
+        // calls `cite` the way a real run would. It is an ordinary `ToolDef`, which
+        // is what makes that possible at all.
+        researcher: (call: StubDelegateCall) => {
+          void call.subagent.tools?.cite?.execute(
+            { title: "Otters", url: "https://otters.example/tools" },
+            createToolContext(),
+          );
+          return "Sea otters crack shellfish [1].";
+        },
       },
     });
 
@@ -501,13 +505,15 @@ describe("the steps that research", () => {
     // The worse of the two failures is a note full of findings reporting no
     // sources at all — the report stage cites from this list.
     installStubStepDelegate({
-      researcher: {
-        text: "Sea otters crack shellfish.",
-        toolCalls: [
-          { name: "web_search", input: { query: "otter tool use" } },
-          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-        ],
+      routes: {
+        researcher: {
+          text: "Sea otters crack shellfish.",
+          toolCalls: [
+            { name: "web_search", input: { query: "otter tool use" } },
+            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+          ],
+        },
       },
     });
 
@@ -521,13 +527,15 @@ describe("the steps that research", () => {
   test("investigate reports what the angle cost, since the searches are not visible here", async () => {
     const reported = installStubReporter();
     installStubStepDelegate({
-      researcher: {
-        text: "found things",
-        toolCalls: [
-          { name: "web_search", input: { query: "a" } },
-          { name: "web_search", input: { query: "b" } },
-          { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-        ],
+      routes: {
+        researcher: {
+          text: "found things",
+          toolCalls: [
+            { name: "web_search", input: { query: "a" } },
+            { name: "web_search", input: { query: "b" } },
+            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
+          ],
+        },
       },
     });
 
@@ -846,7 +854,7 @@ describe("the run is DURABLE", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // No `RESEARCH_SLACK_WEBHOOK_URL`, so the filing step posts nothing — which
     // is why the gateway counts below are the run's model calls and only those.
-    installStubStepDelegate({ researcher: "Nothing was found on this angle." });
+    installStubStepDelegate({ routes: { researcher: "Nothing was found on this angle." } });
   });
 
   /** The step keys a run journaled — the same shape three cases assert on. */

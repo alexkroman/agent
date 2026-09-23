@@ -57,18 +57,21 @@ function scriptedDesk(
   const research = options.research ?? ((call) => `Findings for ${call.task}.`);
   return scriptedToolContext({
     delegate: {
-      researcher: (call) => {
-        const reply = research(call);
-        if (typeof reply === "string") return { text: reply };
-        return {
-          text: reply.text,
-          toolCalls: Array.from({ length: reply.searches ?? 0 }, (_unused, index) => ({
-            name: "web_search",
-            input: { query: `q${index}` },
-          })),
-        };
+      routes: {
+        researcher: (call) => {
+          const reply = research(call);
+          if (typeof reply === "string") return { text: reply };
+          return {
+            text: reply.text,
+            toolCalls: Array.from({ length: reply.searches ?? 0 }, (_unused, index) => ({
+              name: "web_search",
+              input: { query: `q${index}` },
+            })),
+          };
+        },
+        "fact-checker":
+          options.check ?? '{"verdict": "confirmed", "detail": "Two sources say so."}',
       },
-      "fact-checker": options.check ?? '{"verdict": "confirmed", "detail": "Two sources say so."}',
     },
   });
 }
@@ -172,10 +175,12 @@ describe("research_topic", () => {
     let inFlight = 0;
     let peak = 0;
     const model = stubDelegate({
-      researcher: () => {
-        inFlight += 1;
-        peak = Math.max(peak, inFlight);
-        return "found";
+      routes: {
+        researcher: () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          return "found";
+        },
       },
     });
     // The fake answers synchronously, so `inFlight` is only ever 1 unless the
@@ -216,9 +221,11 @@ describe("research_topic", () => {
 
   test("one failed angle does not sink the briefing", async () => {
     const model = stubDelegate({
-      researcher: (call) => {
-        if (call.task === "b") throw new Error("provider is having a day");
-        return `Answer to ${call.task}.`;
+      routes: {
+        researcher: (call) => {
+          if (call.task === "b") throw new Error("provider is having a day");
+          return `Answer to ${call.task}.`;
+        },
       },
     });
     const ctx = createToolContext({ delegate: model.delegate });
@@ -238,8 +245,10 @@ describe("research_topic", () => {
 
   test("fails as a tool when every angle fails, quoting the first reason", async () => {
     const model = stubDelegate({
-      researcher: () => {
-        throw new Error("gateway said no");
+      routes: {
+        researcher: () => {
+          throw new Error("gateway said no");
+        },
       },
     });
 
@@ -313,9 +322,11 @@ describe("verify_claim", () => {
     // `stubDelegate` parses it — what makes this the UNACCEPTED case is the
     // staged `complaint`.
     const model = stubDelegate({
-      "fact-checker": {
-        text: '{"verdict": "unclear", "detail": "Nothing conclusive."}',
-        complaint: "no verdict word",
+      routes: {
+        "fact-checker": {
+          text: '{"verdict": "unclear", "detail": "Nothing conclusive."}',
+          complaint: "no verdict word",
+        },
       },
     });
 
@@ -350,8 +361,10 @@ describe("verify_claim", () => {
 
   test("reports a failed check as a tool failure the model can recover from", async () => {
     const model = stubDelegate({
-      "fact-checker": () => {
-        throw new Error("checker timed out");
+      routes: {
+        "fact-checker": () => {
+          throw new Error("checker timed out");
+        },
       },
     });
 

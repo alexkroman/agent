@@ -9,8 +9,8 @@ const planner = subagent({ name: "planner", systemPrompt: "Plan." });
 describe("scriptedToolContext", () => {
   test("wires both fakes into one context and hands them back", async () => {
     const { ctx, model, desk } = scriptedToolContext({
-      generate: { "You triage.": { object: { response: "email" } } },
-      delegate: { planner: "Three steps." },
+      generate: { routes: { "You triage.": { object: { response: "email" } } } },
+      delegate: { routes: { planner: "Three steps." } },
     });
     expect(await ctx.generate({ system: "You triage.", prompt: "hi" })).toMatchObject({
       object: { response: "email" },

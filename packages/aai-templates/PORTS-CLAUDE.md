@@ -189,7 +189,7 @@ no equivalent, because a conversation has no invalid input; the state's
   `Subject:` line the desk reads out, a signature from the coordinator their
   backstory names — so it is `expectedOutput` plus a `guardrail`, which is
   CrewAI's own `expected_output` and task `guardrail` pair. The runtime's
-  retry budget is one rather than their three, argued on `maxRetries`.
+  retry budget is one rather than their three, argued on `maxRevisions`.
 - **The feedback loop gained a bound.** Their edge is unbounded and each pass is
   a model call per candidate; `MAX_FEEDBACK_ROUNDS` is the `retry_count > 3`
   guard from their `self_evaluation_loop_flow`, and past it the refusal names

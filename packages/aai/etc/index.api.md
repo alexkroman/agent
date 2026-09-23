@@ -58,11 +58,8 @@ export interface AgentGuardrails {
 export type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-export interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+export interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -182,7 +179,7 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
-export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS = 1;
 
 // @public
 export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
@@ -250,6 +247,13 @@ export type DialogBargeIn = "default" | "off" | {
 export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
 
 // @public
+export interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 export interface DialogOptions {
     durable?: boolean;
 }
@@ -301,14 +305,8 @@ export interface DialogTimeoutSpec {
 }
 
 // @public
-export interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -549,6 +547,13 @@ export interface MintCodeOptions {
     length?: number;
     random?: () => number;
     taken?: ReadonlySet<string>;
+}
+
+// @public
+export interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
 }
 
 // @public
@@ -1059,11 +1064,8 @@ export type SlotStore = {
 };
 
 // @public
-export interface SlotToolDef<P extends ToolInputSchema, V, R> {
-    description: string;
+export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
 }
 
 // @public
@@ -1184,19 +1186,17 @@ export interface SubagentAnswer {
 }
 
 // @public
-export interface SubagentDef {
+export interface SubagentDef extends ModelTuning {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

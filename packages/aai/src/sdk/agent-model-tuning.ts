@@ -92,31 +92,39 @@ export interface UsageLimits {
 }
 
 /**
- * Sampling and budget knobs for the agent's OWN model calls — the conversational
- * loop, in pipeline and text modes. Every field here is refused in S2S mode;
- * see this module's header.
+ * The per-REQUEST knobs every model loop this runtime runs takes — the agent's
+ * own conversational loop and a {@link SubagentDef}'s delegated one alike.
+ *
+ * **One declaration, extended by both, rather than a list each restates.**
+ * `SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+ * `AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
+ * meant something else entirely (the guardrail's revision budget, now
+ * {@link SubagentDef.maxRevisions}). A knob added here reaches both loops, and
+ * the name means one thing wherever it is written.
+ *
+ * Every field is passed straight through to the provider request, so each is
+ * refused in S2S mode on the AGENT — there the provider runs the loop; see this
+ * module's header. A subagent always runs on this runtime, whatever the parent's
+ * mode, so it may set all three.
  *
  * @public
  */
-export interface AgentModelTuning {
+export interface ModelTuning {
   /**
    * Sampling temperature.
    *
    * Omitted by default, so the model's own default applies; some models (Claude
    * 5 among them) ignore it and warn, so set it only for a temperature-capable
-   * one. A booking desk and a game master want different values, and until this
-   * existed neither could say so: `ctx.generate` and `subagent()` both took a
-   * temperature while the main loop — the one that does almost all the talking
-   * — took no sampling parameter at all.
+   * one. A booking desk and a game master want different values; so do a
+   * researcher subagent and the voice that relays what it found.
    */
   temperature?: number;
   /**
    * Cap on generated tokens per step, passed straight through to the provider.
    *
-   * The same field {@link SubagentDef.maxOutputTokens} and
-   * {@link GenerateOptions.maxOutputTokens} already had, on the loop that does
-   * the talking. Per STEP, not per turn: a reply that calls three tools has
-   * four generations in it, and the cap bounds each.
+   * The same field {@link GenerateOptions.maxOutputTokens} has for a one-shot
+   * call. Per STEP, not per turn: a reply that calls three tools has four
+   * generations in it, and the cap bounds each.
    *
    * On a voice agent it is a bluntness knob rather than a cost one — a model
    * that runs long is a model the caller is waiting through — and a value low
@@ -125,17 +133,16 @@ export interface AgentModelTuning {
    */
   maxOutputTokens?: number;
   /**
-   * How many times a FAILED provider call is retried before the turn is given
+   * How many times a FAILED provider call is retried before the step is given
    * up on.
    *
    * @defaultValue the AI SDK's own (2 retries, exponential backoff)
    *
-   * **Not {@link SubagentDef.maxRetries}, which is a different budget with the
-   * same name.** That one counts how many times a subagent's `guardrail` may
-   * send an ANSWER back — a re-run of a run that succeeded. This one counts
-   * transport-level retries of a request that never produced an answer at all
-   * (a 429, a 502, a socket reset). They compose: a subagent revision is one
-   * more request, and each request still gets its own retries.
+   * Transport-level retries of a request that never produced an answer at all
+   * (a 429, a 502, a socket reset) — NOT a re-run of one that did. A subagent's
+   * guardrail sending an answer back is {@link SubagentDef.maxRevisions}; the
+   * two compose, since a revision is one more request and each request still
+   * gets its own retries.
    *
    * `0` is the value to reach for on a live call, and the reason is the clock:
    * the default backoff can spend several seconds before the turn is declared
@@ -144,6 +151,19 @@ export interface AgentModelTuning {
    * line do the work.
    */
   maxRetries?: number;
+}
+
+/**
+ * {@link ModelTuning} plus the two knobs only the agent's OWN loop has: a
+ * per-step tool-choice policy and a session token budget. Every field here is
+ * refused in S2S mode; see this module's header.
+ *
+ * A subagent takes {@link ModelTuning} alone — it has no `toolChoice` to reset,
+ * and it spends on its PARENT's budget, which is where `usageLimits` lives.
+ *
+ * @public
+ */
+export interface AgentModelTuning extends ModelTuning {
   /**
    * Put `toolChoice` back to `"auto"` after the FIRST step of a reply.
    *

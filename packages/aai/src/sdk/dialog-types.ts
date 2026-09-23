@@ -22,7 +22,7 @@
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SessionEventType } from "./session-events.ts";
 import type { ToolChoice } from "./tool-def.ts";
-import type { ToolContext, ToolDef, ToolErrorHandler } from "./types.ts";
+import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
 
 /**
@@ -66,20 +66,19 @@ export interface DialogToolResult<R> extends DialogPosition {
 }
 
 /**
- * The authoring shape of a gated tool — {@link ToolDef} plus the two things
- * that make it part of a dialog: where it may run, and what it advances.
+ * What makes a tool part of a dialog: where it may run, and what it advances.
  *
- * @typeParam P - The tool's input schema.
- * @typeParam R - What `execute` returns.
+ * The half of {@link DialogToolDef} that is the dialog's own — the rest is
+ * {@link ToolDef}'s, unchanged. Declared on its own so the gate's three fields
+ * have one home and `DialogToolDef` is BUILT from the two halves rather than
+ * restating either.
+ *
+ * @typeParam R - What the tool's `execute` returns, as `sendFrom` reads it.
  * @typeParam E - The machine's event union.
  *
  * @public
  */
-export interface DialogToolDef<P extends ToolInputSchema, R, E> {
-  /** See {@link ToolDef.description} — what the model reads to decide to call it. */
-  description: string;
-  /** See {@link ToolDef.inputSchema}. */
-  inputSchema?: P;
+export interface DialogGate<R, E> {
   /**
    * The state(s) this tool may run in, as {@link DialogPosition.state} spells
    * them. Anywhere else the body does not run and the call is refused.
@@ -135,6 +134,45 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
    * re-checking a case that cannot arrive.
    */
   sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+}
+
+/**
+ * The authoring shape of a gated tool — {@link ToolDef} plus the
+ * {@link DialogGate} that makes it part of a dialog.
+ *
+ * **Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+ * `ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+ * whatever `ToolDef` grows next — and `execute` is restated only because a gated
+ * body may return a {@link ToolFailure} beside `R` (see below). The copy this
+ * replaced restated three fields, and the one it missed was `messages`: a gated
+ * tool could not declare tool-call speech at all, although `dialog.tool`
+ * spreads the def and the runtime would have spoken it.
+ *
+ * **`onError`'s answer goes to the model AS THE RESULT, so it carries no
+ * {@link DialogToolResult} envelope and the dialog does not move.** The handler
+ * runs after the gated call has already unwound, which is past the point where
+ * `send`/`sendFrom` could have fired — the same answer a RETURNED
+ * {@link ToolFailure} gets, for the same reason: a tool that failed did not do
+ * the thing. What differs is the SHAPE: where a success carries `state`, `done`
+ * and `result`, the model reads the handler's failure or string, so a handler
+ * whose message names where the conversation is has to say so itself. A
+ * REFUSAL — the model calling this tool from a state `when` does not name — is
+ * not a throw and never reaches it.
+ *
+ * **A `messages.failed` line fires on a refusal**, because a refusal is a
+ * {@link ToolFailure} result like any other. A tool whose refusal should be
+ * phrased by the model (it carries the state's own instruction) declares
+ * `failed` with `role: "system"`, or none at all.
+ *
+ * @typeParam P - The tool's input schema.
+ * @typeParam R - What `execute` returns.
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export interface DialogToolDef<P extends ToolInputSchema, R, E>
+  extends Omit<ToolDef<P, R>, "execute">,
+    DialogGate<R, E> {
   /**
    * The tool body. Runs only in one of `when`'s states.
    *
@@ -150,31 +188,6 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
    * narrow a value it is never handed: the failure check returns before it runs.
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-  /**
-   * See {@link ToolDef.onError} — what a THROW out of this call means, and the
-   * only way to say that a failure is fatal rather than something the model
-   * should try again. Forwarded to the {@link ToolDef} this builds, and it
-   * behaves there exactly as it does on any other tool.
-   *
-   * **What it returns goes to the model AS THE RESULT, so it does not carry a
-   * {@link DialogToolResult} envelope and the dialog does not move.** The
-   * handler runs after the gated call has already unwound, which is past the
-   * point where `send`/`sendFrom` could have fired — and that is the same
-   * answer a RETURNED {@link ToolFailure} gets for the same reason: a tool that
-   * failed did not do the thing, so a dialog that advanced anyway would leave
-   * the conversation a step ahead of reality. The difference to know is the
-   * SHAPE, not the transition: a model reading this call's result gets the
-   * handler's failure or string where a success would have carried `state`,
-   * `done` and `result`, so a handler whose message names where the
-   * conversation is has to say so itself.
-   *
-   * It classifies the gated call as a whole, which is `execute`'s throw in every
-   * practical case but also covers one out of the transition that follows a
-   * successful body. A refusal — the model calling this tool from a state
-   * `when` does not name — is not a throw and never reaches it: that returns a
-   * {@link ToolFailure} the model is meant to recover from.
-   */
-  onError?: ToolErrorHandler;
 }
 
 /**

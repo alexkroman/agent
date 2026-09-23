@@ -51,7 +51,7 @@ export type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.
  * (S2S refuses all of them). Split off this file at the source-length cap, on
  * the seam {@link PipelineVoiceTuning} established.
  */
-export type { AgentModelTuning, UsageLimits } from "./agent-model-tuning.ts";
+export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 /**
  * The two observe-only declarations (`syncState`, `events`), split off this
  * file at the cap. `agent-observation.ts` argues why they are one group and
