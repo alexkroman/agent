@@ -106,7 +106,7 @@ describe("POST /deploy body concurrency", () => {
         putAgent: async () => {
           await block;
         },
-      } as never,
+      },
     });
 
     const held = deploy(fetch, { key: "k", body: { slug: "holder" } });

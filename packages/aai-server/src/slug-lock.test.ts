@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { setImmediate } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { localSlugLock, type SlugMutationLock } from "./platform/lock.ts";
 import { authFetch, createTestOrchestrator, deploy, deployAgent } from "./test-utils.ts";
@@ -19,7 +20,7 @@ test("concurrent deploy and delete are serialized", async () => {
         // Yield inside the critical section so the other mutation gets a turn
         // to run if nothing is holding it back — without this, the two could
         // serialize by accident on the event loop and prove nothing.
-        await new Promise((resolve) => setImmediate(resolve));
+        await setImmediate();
         return await fn();
       } finally {
         holders.push(live);

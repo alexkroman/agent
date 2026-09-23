@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { setImmediate } from "node:timers/promises";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "../agent-store.ts";
 import { createMemoryBlobStorage } from "../blob-storage.ts";
@@ -245,7 +246,7 @@ describe("createPgSlugLock", () => {
       lock("my-agent", async () => {
         order.push("first-start");
         live.push(counts().live);
-        await new Promise((resolve) => setImmediate(resolve));
+        await setImmediate();
         live.push(counts().live);
         order.push("first-end");
       }),
@@ -309,7 +310,7 @@ describe("localSlugLock", () => {
     await Promise.all([
       localSlugLock("slug", async () => {
         order.push("first-start");
-        await new Promise((resolve) => setImmediate(resolve));
+        await setImmediate();
         order.push("first-end");
       }),
       localSlugLock("slug", async () => {
@@ -369,7 +370,7 @@ describe("createMutationLock", () => {
     await Promise.all([
       lock("s", async () => {
         order.push("first-start");
-        await new Promise((resolve) => setImmediate(resolve));
+        await setImmediate();
         order.push("first-end");
       }),
       lock("s", () => {

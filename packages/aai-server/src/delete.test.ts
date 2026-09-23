@@ -7,6 +7,7 @@ import {
   authFetch,
   createTestStore,
   deployAgent,
+  fakeSandbox,
   makeSlot,
   NO_CLIENT_DIR,
   type TestFetch,
@@ -68,7 +69,7 @@ test("delete's change event shuts down the resident sandbox", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockResolvedValue(undefined);
-  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
+  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: fakeSandbox({ shutdown }) });
 
   const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
   expect(resp.status).toBe(200);
@@ -84,7 +85,7 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));
-  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
+  setSlot(slots, { ...makeSlot({ slug: "my-agent" }), sandbox: fakeSandbox({ shutdown }) });
 
   const resp = await authFetch(fetch, "/my-agent", { method: "DELETE" });
 

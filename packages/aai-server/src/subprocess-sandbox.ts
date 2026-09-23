@@ -123,8 +123,11 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
     execArgv:
       params.memoryLimitMiB === undefined ? [] : [`--max-old-space-size=${params.memoryLimitMiB}`],
     env: {
-      ...omitUndefined({ AAI_GUEST_TOKEN: params.token }),
-      ...(params.port !== undefined ? { AAI_GUEST_PORT: String(params.port) } : {}),
+      ...omitUndefined({
+        AAI_GUEST_TOKEN: params.token,
+        // Stringified only when present: `String(undefined)` would be "undefined".
+        AAI_GUEST_PORT: params.port === undefined ? undefined : String(params.port),
+      }),
       // Auth-free session endpoint: keep it off the dev machine's network.
       AAI_GUEST_HOST: "127.0.0.1",
       // The only inherited variable. A container image ships a PATH and tool

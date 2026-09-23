@@ -7,7 +7,7 @@
  * modal/sandbox-env.test.ts.
  */
 
-import { AlreadyExistsError, type Image } from "modal";
+import { AlreadyExistsError } from "modal";
 import { describe, expect, it, vi } from "vitest";
 import { SandboxNameTakenError } from "../sandbox/directory.ts";
 import { SandboxUnavailableError } from "../sandbox/errors.ts";
@@ -15,8 +15,8 @@ import { captureLogs } from "../test-utils.ts";
 import { resolveSpawnImage, translateCreateError, translateSpawnFailure } from "./context.ts";
 
 /** A stand-in for a Modal `Image`, identified only by tag. */
-function fakeImage(tag: string): Image {
-  return { tag } as unknown as Image;
+function fakeImage(tag: string): { tag: string } {
+  return { tag };
 }
 
 describe("translateCreateError", () => {

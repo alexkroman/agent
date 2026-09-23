@@ -97,7 +97,7 @@ describe("agents channel", () => {
     channel.handlers[0]?.({ new: { slug: "deployed" } });
     channel.handlers[0]?.({ new: null, old: { slug: "deleted" } });
     // Malformed payloads are dropped, never thrown.
-    channel.handlers[0]?.({ new: { slug: 42 } as never });
+    channel.handlers[0]?.({ new: { slug: 42 } });
     channel.handlers[0]?.({});
 
     expect(seen).toEqual(["deployed", "b:deployed", "deleted", "b:deleted"]);

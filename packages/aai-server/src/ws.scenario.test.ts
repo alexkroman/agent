@@ -12,7 +12,7 @@ import http from "node:http";
 import type { SessionEvent } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";
-import type { ServerSession, SessionWebSocket } from "@alexkroman1/aai-runtime";
+import type { ServerSession } from "@alexkroman1/aai-runtime";
 import { stampSessionEvent, wireSessionSocket } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
@@ -97,7 +97,7 @@ function startTestServer(): Promise<{
     server.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
         const sessions = createOwnedMap<string, ServerSession>();
-        wireSessionSocket(ws as unknown as SessionWebSocket, {
+        wireSessionSocket(ws, {
           sessions,
           createSession: (sid, client) => {
             // The session gets its own id and its own sink, because `configure`

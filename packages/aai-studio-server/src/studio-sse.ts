@@ -5,7 +5,7 @@
  * the stream lifecycle helper.
  */
 
-import { createCoalescingRunner } from "@alexkroman1/aai/internal";
+import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { registerLiveStream } from "aai-server/platform";
 import type { SSEStreamingApi } from "hono/streaming";
@@ -133,13 +133,15 @@ export type SharedReads = {
 };
 
 export function createSharedReads(): SharedReads {
-  const entries = new Map<string, { trigger(): Promise<Frame>; refs: number }>();
+  type Entry = { trigger(): Promise<Frame>; refs: number; evict(): boolean };
+  const entries = createOwnedMap<string, Entry>();
   return {
     acquire(key, read) {
       let entry = entries.get(key);
       if (!entry) {
-        entry = { ...createCoalescingRunner(read), refs: 0 };
-        entries.set(key, entry);
+        const created: Entry = { ...createCoalescingRunner(read), refs: 0, evict: () => false };
+        created.evict = entries.claim(key, created);
+        entry = created;
       }
       entry.refs += 1;
       const held = entry;
@@ -153,7 +155,9 @@ export function createSharedReads(): SharedReads {
           if (released) return;
           released = true;
           held.refs -= 1;
-          if (held.refs === 0 && entries.get(key) === held) entries.delete(key);
+          // The claim's own release: it evicts only while `held` still owns
+          // `key`, so a successor entry under the same key is never removed.
+          if (held.refs === 0) held.evict();
         },
       };
     },

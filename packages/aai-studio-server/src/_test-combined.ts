@@ -58,7 +58,7 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     // makes: one process, so an in-memory queue — explicitly, never by a
     // downstream `??`.
     previewQueue: overrides.previewQueue ?? createMemoryPreviewQueue(),
-    ...(overrides.replicaId && { replicaId: overrides.replicaId }),
+    ...omitUndefined({ replicaId: overrides.replicaId }),
   });
   const fetch: TestFetch = async (input, init) => {
     const path = typeof input === "string" ? input : new URL(String(input)).pathname;

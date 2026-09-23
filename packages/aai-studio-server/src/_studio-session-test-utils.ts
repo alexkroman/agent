@@ -62,15 +62,23 @@ export function fakeGuest(
       disposed = true;
     },
   } as unknown as GuestConnection;
-  const warm = {
+  // A complete `WarmHarness`, so a field the type grows is an error here
+  // rather than an `undefined` the broker trips over. The studio never reads
+  // the three process-lifecycle members; they only mirror the dispose flag.
+  const warm: WarmHarness = {
     conn,
     guestOrigin,
     token: "sandbox-token",
     sessionUrl: `${guestOrigin}/websocket`,
+    cleanup: async () => {
+      disposed = true;
+    },
+    alive: () => !disposed,
+    onExit: () => undefined,
     [Symbol.asyncDispose]: async () => {
       disposed = true;
     },
-  } as unknown as WarmHarness;
+  };
   return { warm, requests, handlers, disposed: () => disposed };
 }
 

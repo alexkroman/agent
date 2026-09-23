@@ -7,6 +7,7 @@
  */
 
 import { writeFile } from "node:fs/promises";
+import type { SandboxCreateParams } from "modal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GUEST_SCRATCH_DIR } from "../guest/exec-env.ts";
 import type { RpcConnection } from "../rpc-transport.ts";
@@ -32,16 +33,6 @@ function makeFakeDial(socket: FakeGuestSocket) {
     return socket.ws;
   };
   return { dial, calls };
-}
-
-/**
- * Widen a `createGuestSandbox` params object for `toMatchObject` assertions.
- * The real type is a struct rather than an index signature, so the widening
- * needs a cast — keep it at this one seam; the escape-hatch ratchet counts
- * every occurrence.
- */
-function asRecord(params: object): Record<string, unknown> {
-  return params as unknown as Record<string, unknown>;
 }
 
 beforeEach(() => {
@@ -172,12 +163,12 @@ describe("spawnModalWarm", () => {
   it("creates a tunneled sandbox and dials the harness", async () => {
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const createParams: Record<string, unknown>[] = [];
+    const createParams: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(asRecord(params));
+        createParams.push(params);
         return sb;
       },
     };
@@ -269,7 +260,7 @@ describe("spawnModalWarm", () => {
     }): Promise<Record<string, unknown>> => {
       const fake = makeFakeProc();
       const sb = makeFakeSandbox(fake);
-      const createParams: Record<string, unknown>[] = [];
+      const createParams: SandboxCreateParams[] = [];
       const socket = createFakeGuestSocket();
       const { dial } = makeFakeDial(socket);
       const warm = await spawnModalWarm(
@@ -278,7 +269,7 @@ describe("spawnModalWarm", () => {
           lookupGuestSandbox: () => Promise.resolve(null),
           prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
-            createParams.push(asRecord(params));
+            createParams.push(params);
             return sb;
           },
         },
@@ -309,7 +300,7 @@ describe("spawnModalWarm", () => {
     const spawnOnce = async (): Promise<Record<string, unknown>> => {
       const fake = makeFakeProc();
       const sb = makeFakeSandbox(fake);
-      const createParams: Record<string, unknown>[] = [];
+      const createParams: SandboxCreateParams[] = [];
       const socket = createFakeGuestSocket();
       const { dial } = makeFakeDial(socket);
       const warm = await spawnModalWarm(
@@ -318,7 +309,7 @@ describe("spawnModalWarm", () => {
           lookupGuestSandbox: () => Promise.resolve(null),
           prepareGuestImage: () => Promise.resolve(),
           createGuestSandbox: async (_code, params) => {
-            createParams.push(asRecord(params));
+            createParams.push(params);
             return sb;
           },
         },
@@ -345,12 +336,12 @@ describe("spawnModalWarm", () => {
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "1024");
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const createParams: Record<string, unknown>[] = [];
+    const createParams: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(asRecord(params));
+        createParams.push(params);
         return sb;
       },
     };
@@ -378,12 +369,12 @@ describe("spawnModalWarm", () => {
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "4096");
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const createParams: Record<string, unknown>[] = [];
+    const createParams: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(asRecord(params));
+        createParams.push(params);
         return sb;
       },
     };
@@ -404,12 +395,12 @@ describe("spawnModalWarm", () => {
   it("omits cpu/memory reservations entirely when no limits are configured", async () => {
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const createParams: Record<string, unknown>[] = [];
+    const createParams: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(asRecord(params));
+        createParams.push(params);
         return sb;
       },
     };
@@ -428,12 +419,12 @@ describe("spawnModalWarm", () => {
     vi.stubEnv("SANDBOX_IDLE_TIMEOUT_SECS", "600");
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const createParams: Record<string, unknown>[] = [];
+    const createParams: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, params) => {
-        createParams.push(asRecord(params));
+        createParams.push(params);
         return sb;
       },
     };

@@ -5,6 +5,7 @@
 // (tested in aai-server). What's left here: target construction, deploy
 // metadata stamping, and passing the CLI's output through for the chat.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
@@ -53,7 +54,7 @@ const PARAMS = {
 async function seedProject(deps: StudioDeployDeps, project: string, deployedSlug?: string) {
   await createWorkspace(deps.workspaces, SCOPE, project, {
     files: { "agent.ts": "export default {}" },
-    ...(deployedSlug && { deployedSlug }),
+    ...omitUndefined({ deployedSlug }),
   });
 }
 
