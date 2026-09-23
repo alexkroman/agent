@@ -83,7 +83,7 @@ type ChatPanelProps = {
  * reason rides along when it gave one — a capacity or boot timeout reads very
  * differently from a bad key, and the generic line cannot tell them apart.
  */
-function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => Promise<unknown> }) {
   if (error == null) {
     return <p className="m-0 text-[13px] text-subtle italic">Starting sandbox…</p>;
   }
@@ -94,7 +94,9 @@ function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => void }
       {reason && <p className="m-0 text-[13px] text-subtle">{reason}</p>}
       {/* Re-broker in place — the retries behind "Starting sandbox…" already
           gave up, so recovery must not require a page reload. */}
-      <button type="button" className="btn" onClick={onRetry}>
+      {/* The outcome is not read here: a re-broker that fails lands back in
+          `error` through the session query, which is what renders this note. */}
+      <button type="button" className="btn" onClick={() => void onRetry()}>
         Try again
       </button>
     </div>

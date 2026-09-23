@@ -130,8 +130,13 @@ export type InProcessWorkflowEngineOptions = {
    * `stop()` still cancels whatever timers this factory created, which for an
    * injected dispatcher is none: what a deployed guest owes on the way down is
    * nothing, the queue holding the schedule.
+   *
+   * The same union as `WorkflowEngineOptions.dispatch`, because it is handed
+   * straight through: the platform dispatcher's promise is what acks a delivery,
+   * and a `=> void` here erased it from the type while the engine still awaited
+   * it at runtime.
    */
-  dispatch?: ((runId: string, at?: number) => void) | undefined;
+  dispatch?: ((runId: string, at?: number) => void | Promise<void>) | undefined;
 };
 
 /** The engine plus the one thing a host must do on the way down. */
@@ -348,9 +353,10 @@ export function createInProcessWorkflowEngine(
     }
     const entry = { again: false };
     walking.set(runId, entry);
-    // `void` with a catch rather than an async listener — `guard-invariants`
-    // rule 23, and the reason it exists: a rejection escaping into the timer
-    // callback is an unhandled rejection, which by default ends the process.
+    // `void` with a catch rather than an async listener, which `pnpm
+    // lint:promises` reports for this reason: a rejection escaping into the
+    // timer callback is an unhandled rejection, which by default ends the
+    // process.
     void engine
       .execute(runId)
       .catch((err: unknown) => {

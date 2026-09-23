@@ -457,7 +457,8 @@ class DispatchSession {
     try {
       this.capNode?.port.postMessage({ event: "stop" });
       for (const track of this.stream?.getTracks() ?? []) track.stop();
-      this.ctx?.close();
+      // close() rejects on an already-closed context, outside this try.
+      void this.ctx?.close().catch(() => {});
     } catch {
       /* ignore */
     }

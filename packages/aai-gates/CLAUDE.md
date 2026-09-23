@@ -188,40 +188,54 @@ eleventh file in a worker — correct code reported as a leak, by the leak
 detector. And it throws from a `queueMicrotask` rather than from the listener,
 so the failure does not unwind whichever call site happened to add the listener.
 
-### Rule 23 exists because Biome cannot see a `node:` builtin
+### Promise rules run on oxlint: Biome cannot see a `node:` builtin
 
-Biome's `noFloatingPromises` / `noMisusedPromises` are ON, so a rule duplicating
-them would be noise. Measured against Biome 2.5, what they DO catch: a floating
-call in local or relatively-imported source, from a third-party package
-(`p-timeout`, `zod`), from a global (`fetch`), a `.then` chain with no rejection
-handler, `Promise.all`, a promise in a boolean position, and an async callback
-passed to a **locally-declared** `() => void` parameter.
+Biome's `noFloatingPromises` / `noMisusedPromises` are ON. Measured against
+Biome 2.5, what they DO catch: a floating call in local or relatively-imported
+source, from a third-party package (`p-timeout`, `zod`), from a global
+(`fetch`), a `.then` chain with no rejection handler, `Promise.all`, a promise
+in a boolean position, and an async callback passed to a **locally-declared**
+`() => void` parameter.
 
 What they report NOTHING for is every promise whose type comes from a `node:`
 module: `writeFile` (node:fs/promises), `pipeline` / `finished`
 (node:stream/promises), `setTimeout` (node:timers/promises), `resolve4`
 (node:dns/promises), `once` (node:events) — and the two that matter most here,
 `EventEmitter.on(…, async …)` and `AbortSignal.addEventListener(…, async …)`.
+It is not a resolution failure, not a `Promise<void>` exemption, and not fixable
+by re-exporting: the blindness follows the type's ORIGIN.
 
-Three hypotheses were tested and all three are wrong, which is worth recording
-so nobody re-tests them: it is not a resolution failure (`@types/node` resolves
-from the package), not a `Promise<void>` exemption (both are caught when declared
-locally), and **not fixable by re-exporting** — routing the import through a
-local `export { writeFile } from "node:fs/promises"` restores nothing, because
-the blindness follows the type's ORIGIN rather than the import path.
+**`pnpm lint:promises` closes it.** oxlint's `oxlint-tsgolint` backend runs the
+typescript-eslint rules on tsgo, so it needs no `ts.createProgram` — the
+constraint that ruled out typescript-eslint itself under `typescript@7`.
+`.oxlintrc.json` turns on `no-floating-promises` and `no-misused-promises` and
+nothing else; Biome stays the linter. Measured before adopting, on every shape
+above: all seven floating `node:` calls and all four listener registrations
+(including the `{ once: true }` third argument) reported, and none of the
+correct twins — the arrow body that RETURNS `readFile(…)`, the `void p.catch()`
+listener, the awaited call. That also covers the floating half rule 23 could
+not take, since a type checker can tell a returned promise from a dropped one
+where a line scan could not.
 
-**typescript-eslint cannot close it.** Its type-aware rules need
-`ts.createProgram` and a `TypeChecker`; `typescript@7.0.2` exports only
-`lib/version.cjs` plus the `unstable/*` subpaths, which is the same constraint
-that makes `docs/` pin `typescript@~6`. Linting with a second compiler the repo
-does not build with is a worse trade than the gap — so if that pin ever moves,
-re-measure the list above before retiring rule 23.
+First run over the tree: 110 findings, and what they were is the argument for
+the tool. 100 came from seven specs typing their fetch stub as `ReturnType<typeof
+vi.fn>`, which erases the return to `void` and so hid every async implementation
+from both linters — typed as `Mock<(url, init?) => Promise<Response>>` now. The
+rest were real: a `dispatch` option typed `=> void` that the engine awaits, a
+retry button discarding a promise, `.finally(() => shutdown())` in `aai start`,
+and two `examples/` servers registering an `async` SIGINT listener — the exact
+shape that cost `scaffold/server.mjs` a real bug.
 
-**The floating half is deliberately NOT a rule.** `readFile(…)` written as an
-arrow expression body that legitimately RETURNS the promise is indistinguishable,
-line-wise, from a floating statement, and three of the tree's occurrences are
-exactly that — a rule flagging correct code is one that gets muted rather than
-fixed. The listener half has no such twin, which is why it is rule 23.
+**`guard-invariants` rule 23 is retired**, its number with it. It was the
+listener half, matched by method NAME at argument index 1; the type-aware rule
+matches any callback slot typed to return `void`, wherever it comes from.
+
+**A file is linted against its NEAREST `tsconfig.json`**, which is the trap to
+know. `scripts/**/*.mjs` belong to `tsconfig.scripts.json`, which nothing finds
+by walking up, so they were silently linted with no types at all until
+`scripts/tsconfig.json` (a bare `extends`) put a discoverable config beside
+them. A new directory of JS or TS outside every `tsconfig.json`'s reach has the
+same failure: no error, just nothing reported.
 
 ## A gated-runtime suite's CI wiring is specced here too
 

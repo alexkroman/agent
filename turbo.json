@@ -492,6 +492,30 @@
     // `knip.json`, `konsistent.json`, …) were outside `files.includes` too, so
     // nothing read them. `API-EXPORTS.json` stays out: it is generated, and
     // `check:api-report` already holds it byte for byte.
+    // The type-aware HALF of promise linting, which Biome cannot do: Biome's
+    // `noFloatingPromises` / `noMisusedPromises` report nothing for a promise
+    // whose type comes from a `node:` module or `lib.dom` (`writeFile`,
+    // `pipeline`, `EventEmitter.on(…, async …)`, `addEventListener`) — measured
+    // in `packages/aai-gates/CLAUDE.md`. oxlint's tsgolint backend runs the
+    // typescript-eslint rules on tsgo, so it needs no JS compiler API and works
+    // under TS 7. `.oxlintrc.json` enables those two rules and nothing else.
+    //
+    // One root task over the whole tree rather than a per-package `lint`
+    // entry: tsgolint builds each tsconfig's program once per run, and a file
+    // is linted against the nearest `tsconfig.json` — which is why
+    // `scripts/tsconfig.json` exists at all.
+    "//#lint:promises": {
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mjs",
+        "**/*.js",
+        "**/tsconfig*.json",
+        "tsconfig*.json",
+        ".oxlintrc.json",
+        "!**/dist/**"
+      ]
+    },
     "//#lint:root": {
       "inputs": [
         "scripts/**",

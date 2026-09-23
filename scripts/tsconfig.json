@@ -1,0 +1,10 @@
+{
+  // Discovery only: nothing builds with this file. `tsconfig.scripts.json` is
+  // the program for `scripts/**/*.mjs` (`pnpm typecheck:scripts`), but a tool
+  // that finds a file's project by walking up to the nearest `tsconfig.json`
+  // — oxlint's type-aware pass (`pnpm lint:promises`), and every editor — hit
+  // the ROOT config instead, which has `allowJs` off, and so saw these files
+  // with no types at all. The type-aware promise rules reported nothing here
+  // for exactly that reason.
+  "extends": "../tsconfig.scripts.json"
+}

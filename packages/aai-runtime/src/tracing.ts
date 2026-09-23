@@ -256,8 +256,8 @@ async function orInstallLine<T>(load: () => Promise<T>): Promise<T> {
  * careful about — `main()` is synchronous, and awaiting the import would put
  * the measured ~390 ms an enabled exporter costs to construct in front of the
  * listen, where an unconfigured guest pays 0.1 ms and a configured one has
- * opted in. And a detached promise needs a `catch` (`guard-invariants` rule 23
- * is the same shape for listeners): without one, a collector URL that will not
+ * opted in. And a detached promise needs a `catch` (an async listener is the
+ * same shape, and `no-misused-promises` reports it): without one, a collector URL that will not
  * parse becomes an unhandled rejection, which `installCrashGuards` turns into a
  * guest that exits at boot — telemetry taking the agent down with it.
  *

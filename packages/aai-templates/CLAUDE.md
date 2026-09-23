@@ -48,9 +48,9 @@ one that lands in somebody else's project.
 `scaffold/server.mjs` registered its `SIGINT`/`SIGTERM` handler as an `async`
 listener, so a rejecting `server.close()` became an unhandled rejection — a
 stack trace and a nonzero exit on Ctrl-C, in every project ever scaffolded.
-`guard-invariants` rule 23 caught it because that gate walks `packages/`
-directly; Biome's own `noMisusedPromises`, which is on and would have flagged it,
-had been told not to look.
+`guard-invariants` rule 23 (now retired for `pnpm lint:promises`) caught it
+because that gate walked `packages/` directly; Biome's own `noMisusedPromises`,
+which is on and would have flagged it, had been told not to look.
 
 **Removing the exclusion cost one import-order fix** in `vite.config.ts` — six
 code files checked, nothing else to report. `noUndeclaredDependencies` in

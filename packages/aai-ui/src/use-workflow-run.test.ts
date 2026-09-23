@@ -15,7 +15,7 @@
  */
 
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createMockWorkflowApi, workflowRun as run } from "./_react-test-utils.ts";
 import { DEFAULT_WORKFLOW_POLL_MS, MAX_MISSING_READS, useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
@@ -32,7 +32,10 @@ function json(body: unknown, status = 200): Response {
  * `fetch` is stubbed for every spec, not only the one that reaches it: an
  * unstubbed call would hit the jsdom origin and fail slowly rather than loudly.
  */
-let fetchMock: ReturnType<typeof vi.fn>;
+// Typed as the fetch it stands in for: `ReturnType<typeof vi.fn>` erases the
+// return to void, which hides every async implementation from the type-aware
+// promise rules (`pnpm lint:promises`).
+let fetchMock: Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   fetchMock = vi.fn();

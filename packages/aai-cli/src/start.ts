@@ -227,16 +227,20 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
       // close() shuts the runtime down too — no separate runtime.shutdown().
       // Spans the batch processor is holding are flushed with it; `shutdown`
       // never rejects, so telemetry cannot turn a clean stop into a failed one.
-      server
-        .close()
-        .finally(() => tracing?.shutdown())
-        .then(
-          () => process.exit(0),
-          (error: unknown) => {
-            log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
-            process.exit(1);
-          },
-        );
+      const stop = async (): Promise<void> => {
+        try {
+          await server.close();
+        } finally {
+          await tracing?.shutdown();
+        }
+      };
+      stop().then(
+        () => process.exit(0),
+        (error: unknown) => {
+          log.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+          process.exit(1);
+        },
+      );
     });
   }
 

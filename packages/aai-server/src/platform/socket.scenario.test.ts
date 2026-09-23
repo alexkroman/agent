@@ -58,7 +58,12 @@ beforeAll(async () => {
   token = await bearerFor(store, SLUG);
   // A real `node:http` server rather than `serve()`, so `injectWebSocket` is
   // handed the type it declares and this file needs no cast to get there.
-  const server = createServer(getRequestListener(app.fetch));
+  // The listener is async and settles its own errors into a 500, so the
+  // node-typed `=> void` slot gets a sync wrapper rather than the promise.
+  const listener = getRequestListener(app.fetch);
+  const server = createServer((req, res) => {
+    void listener(req, res);
+  });
   injectWebSocket(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();

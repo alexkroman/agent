@@ -87,7 +87,7 @@ export function useCopy(): UseCopyResult {
     // screen either way, so a failure only changes the button label. It has to
     // change it: a silent no-op is indistinguishable from a broken button.
     const write = navigator.clipboard?.writeText(text);
-    if (!write) {
+    if (write === undefined) {
       flash({ text, ok: false });
       return;
     }

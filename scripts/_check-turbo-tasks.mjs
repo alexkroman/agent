@@ -41,6 +41,7 @@ export const TURBO_TASKS = {
     // you are thinking about what to remove, not about what removal strands.
     "check:knip",
     "lint:root",
+    "lint:promises",
     "test:coverage",
   ],
   full: [
@@ -57,6 +58,7 @@ export const TURBO_TASKS = {
     "check:markdown",
     "check:shell",
     "lint:root",
+    "lint:promises",
     "test:coverage",
     "check:integration",
     "check:scenario",

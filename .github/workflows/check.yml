@@ -145,6 +145,9 @@ jobs:
           # package — so until this line it was the one source directory in
           # the repo that no lint job touched.
           pnpm run lint:root
+          # The type-aware promise rules Biome cannot evaluate — see
+          # `//#lint:promises` in turbo.json.
+          pnpm run lint:promises
           pnpm run check:syncpack
           # Manifest SHAPE, the other half of syncpack. See `//#check:format`
           # in turbo.json for why `sortExports` has to name `@dev/source`.

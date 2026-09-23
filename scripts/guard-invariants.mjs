@@ -14,8 +14,8 @@
  * violation is self-correcting and a reviewer never has to re-explain it. The
  * numeric IDs are stable identifiers: a rule that is deleted leaves its number
  * retired rather than letting a later rule inherit it, because the numbers show
- * up in commit messages and in `guard-invariants-baseline.json`. Rules 6 and 10
- * are retired and 15 is reserved; nothing may reuse them.
+ * up in commit messages and in `guard-invariants-baseline.json`. Rules 6, 10 and
+ * 23 are retired and 15 is reserved; nothing may reuse them.
  *
  * ## The catalogue is DERIVED — `node scripts/guard-invariants.mjs --rules`
  *
@@ -241,7 +241,7 @@ function ruleCatalogue() {
     for (const line of remedy.split("\n")) lines.push(`    ${line}`);
     lines.push("");
   }
-  lines.push("Rules 6 and 10 (retired) and 15 (reserved) have no definition; the numbers");
+  lines.push("Rules 6, 10 and 23 (retired) and 15 (reserved) have no definition; the numbers");
   lines.push("stay retired rather than being reused — they appear in commit messages");
   lines.push("and in the baseline's history.");
   return lines.join("\n");

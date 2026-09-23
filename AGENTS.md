@@ -711,10 +711,12 @@ back to the host's `process.env`.
 
 ### Known limitations
 
-- **Biome's promise rules cannot see a `node:` builtin**, and typescript-eslint
-  cannot close it — `typescript@7` ships no compiler API. `guard-invariants`
-  rule 23 covers the listener half; the measurements are in
-  `packages/aai-templates/CLAUDE.md`.
+- **Biome's promise rules cannot see a `node:` builtin**, so the type-aware half
+  runs on oxlint instead: `pnpm lint:promises` (tsgolint, on tsgo — no JS
+  compiler API needed) holds `no-floating-promises` and `no-misused-promises`,
+  and retired `guard-invariants` rule 23. A file is linted against its NEAREST
+  `tsconfig.json`, which is why `scripts/tsconfig.json` exists. The measurements
+  are in `packages/aai-gates/CLAUDE.md`.
 - **Type-level tests**: eleven `.test-d.ts` files — eight in `aai`
   (`sdk/define.test-d.ts`, `sdk/define-agent-groups.test-d.ts`,
   `sdk/_session-slot-caps.test-d.ts`, `sdk/env-types.test-d.ts`,
