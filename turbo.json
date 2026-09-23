@@ -516,6 +516,19 @@
         "!**/dist/**"
       ]
     },
+    // actionlint + zizmor over the workflows — see `scripts/check-workflows.mjs`.
+    // `AAI_REQUIRE_WORKFLOW_LINT` is declared for the same reason as
+    // `AAI_REQUIRE_SHELLCHECK` below: strict env mode would strip it, and a
+    // missing binary would then SKIP in the one job meant to fail.
+    "//#check:workflows": {
+      "inputs": [
+        ".github/workflows/**",
+        ".github/zizmor.yml",
+        ".github/actionlint.yaml",
+        "scripts/check-workflows.mjs"
+      ],
+      "env": ["AAI_REQUIRE_WORKFLOW_LINT", "ACTIONLINT", "ZIZMOR"]
+    },
     "//#lint:root": {
       "inputs": [
         "scripts/**",

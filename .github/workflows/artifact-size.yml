@@ -85,8 +85,10 @@ jobs:
 
       - name: Resolve acknowledgement
         id: ack
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
-          if [ "${{ github.event.action }}" = "synchronize" ]; then
+          if [ "$EVENT_ACTION" = "synchronize" ]; then
             # The label was just removed above, whatever the event payload says.
             echo "acknowledged=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ contains(github.event.pull_request.labels.*.name, 'acknowledge-size-warning') }}" = "true" ]; then

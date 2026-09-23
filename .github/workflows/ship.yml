@@ -188,6 +188,12 @@ concurrency:
   group: ship-${{ github.ref }}
   cancel-in-progress: false
 
+# Read-only by default; a job that writes declares exactly what it writes.
+# Without this block every job got the repository's default token scopes, which
+# is what `zizmor` (`pnpm check:workflows`) reports as excessive-permissions.
+permissions:
+  contents: read
+
 jobs:
   # ── 0. the Version Packages PR ──────────────────────────────────────────────
   #
@@ -223,7 +229,10 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+        with: # zizmor: ignore[artipacked]
+          # Credentials persist: the one job besides `release` that PUSHES:
+          # `changesets/action` commits the version bump and pushes its branch.
+          #
           # `fetch-depth: 0`, and it is load-bearing. `changeset version`
           # writes each CHANGELOG entry by finding the commit that ADDED the
           # changeset file (`getCommitsThatAddChangesets` →
@@ -348,6 +357,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # This job wants precisely `HEAD^..HEAD`; every other checkout in the
           # repo is depth 0.
           fetch-depth: 2
@@ -358,10 +368,12 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # No version line has to have moved: a dispatch is a human naming a
             # ref to ship, which is what makes it a rollback path.
-            echo "release=true" >> "$GITHUB_OUTPUT"
-            echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
-            # A manual deploy still needs its migrations applied first.
-            echo "migrate=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            {
+              echo "release=true"
+              echo "deploy=${{ inputs.deploy }}"
+              # A manual deploy still needs its migrations applied first.
+              echo "migrate=${{ inputs.deploy }}"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           bumped() {
@@ -397,9 +409,11 @@ jobs:
             # can simply `needs: migrate` — when it runs at all, migrate ran too.
             migrate=true
           fi
-          echo "release=$release" >> "$GITHUB_OUTPUT"
-          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
-          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
+          {
+            echo "release=$release"
+            echo "deploy=$deploy"
+            echo "migrate=$migrate"
+          } >> "$GITHUB_OUTPUT"
 
   # ── 2. npm ──────────────────────────────────────────────────────────────────
   release:
@@ -423,7 +437,10 @@ jobs:
       packed: ${{ steps.pack.outputs.packed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
+        with: # zizmor: ignore[artipacked]
+          # Credentials persist: this job pushes tags (`git push --tags`) and
+          # reads them back (`git ls-remote`), so the credential must persist.
+          #
           # `fetch-depth: 0`, and it is load-bearing. `changeset version`
           # writes each CHANGELOG entry by finding the commit that ADDED the
           # changeset file (`getCommitsThatAddChangesets` →
@@ -636,6 +653,7 @@ jobs:
           # that was never assigned is an unbound-variable error under `set -u`,
           # and the branch below has to be reachable rather than fatal.
           expected=()
+          # shellcheck disable=SC2016 # single-quoted on purpose: it is JavaScript.
           mapfile -t expected < <(node -e '
             const fs = require("node:fs");
             for (const entry of fs.readdirSync("packages")) {
@@ -707,6 +725,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -768,12 +787,14 @@ jobs:
             --push
 
       - name: Summary
+        env:
+          IMAGE_REF: ${{ steps.push.outputs.ref }}
         run: |
           {
             echo "### Guest image published"
             echo
             echo '```'
-            echo "${{ steps.push.outputs.ref }}"
+            echo "$IMAGE_REF"
             echo '```'
             echo
             echo "Pull it in a dev server with:"
@@ -812,6 +833,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
       - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
@@ -890,6 +912,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

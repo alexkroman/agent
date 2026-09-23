@@ -55,6 +55,7 @@
     "check:sherif": "sherif --ignore-package aai-docs --fail-on-warnings",
     "check:studio-prompt": "node scripts/sync-studio-prompt.mjs --check",
     "check:syncpack": "syncpack lint",
+    "check:workflows": "node scripts/check-workflows.mjs",
     "check:template-types": "node scripts/check-template-types.mjs",
     "check:test-assertions": "node scripts/check-test-assertions.mjs",
     "check:untyped-imports": "node scripts/check-untyped-imports.mjs",
