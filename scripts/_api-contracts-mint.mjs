@@ -275,7 +275,7 @@ export function applyUpdate(pkg, table, reports, blockersOf) {
  * epochs discarded first (G4), then back onto a supported epoch whose hash the
  * surface returned to, else one new epoch past the latest.
  *
- * @returns {{ contract: object, target: number, previous: number, pointedBack: boolean, restored: boolean }}
+ * @returns {{ contract: import("./_api-contracts-tree.mjs").CapabilityEpochs, target: number, previous: number, pointedBack: boolean, restored: boolean }}
  */
 export function planBump(pkg, capability, contract, generated, { retain, reason }) {
   const from = discardBranchEpochs(pkg, capability, contract) ?? contract;

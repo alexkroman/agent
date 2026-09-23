@@ -314,9 +314,9 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   value passes, and the consumer cannot write the type down. Three things
   already touched this and none FAILED — `includeForgottenExports` RECORDS such
   a type, TypeDoc only covers what it renders, and `check:api-contracts` then
-  hashed a declaration without asking whether it is importable — so the surface a
-  consumer must satisfy and the one it can NAME had drifted apart unmeasured. It
-  cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
+  hashed a declaration without asking whether it is importable — so the surface
+  a consumer must satisfy and the one it can NAME had drifted apart unmeasured.
+  It cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
   not be rendered at all until four types were exported. Scored per PACKAGE and
   baselined rather than absolute (some must stay unnameable: the `*Misuse`
   compile-error types); its own doc argues both, and the two floors.
