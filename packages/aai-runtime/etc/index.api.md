@@ -17,7 +17,7 @@ import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
 import { LanguageModel } from 'ai';
-import type { LlmProvider } from '@alexkroman1/aai/llm';
+import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
 import type { ModelMessage } from 'ai';

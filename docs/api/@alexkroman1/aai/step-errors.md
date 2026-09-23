@@ -793,7 +793,7 @@ them having a `Retry-After` header or nothing.
 ### DEFAULT\_RETRY\_DELAY\_MS
 
 ```ts
-const DEFAULT_RETRY_DELAY_MS: 1000 = 1000;
+const DEFAULT_RETRY_DELAY_MS: number;
 ```
 
 How long a [RetryableError](#retryableerror) that names no delay waits.

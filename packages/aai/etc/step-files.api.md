@@ -15,10 +15,10 @@ export type ReadUploadToFileOptions = {
 };
 
 // @public
-export const STEP_FILE_READ_CONCURRENCY = 4;
+export const STEP_FILE_READ_CONCURRENCY: number;
 
 // @public
-export const STEP_FILE_WINDOW_BYTES = 8388608;
+export const STEP_FILE_WINDOW_BYTES: number;
 
 // @public
 type UploadInfo = {

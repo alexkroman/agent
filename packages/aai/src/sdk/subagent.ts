@@ -88,7 +88,7 @@ import type { BuiltinTool, ToolDef } from "./types.ts";
  *
  * @public
  */
-export const DEFAULT_GUARDRAIL_MAX_REVISIONS = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number = 1;
 
 /**
  * A subagent definition — what {@link subagent} returns and

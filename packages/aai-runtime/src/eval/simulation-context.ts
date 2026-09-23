@@ -17,7 +17,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
-import { assemblyAILlm, type LlmProvider } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, type LlmProvider, llm } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import type { EvalMode } from "./_announce.ts";
@@ -100,7 +100,8 @@ export function simulationContext(inputs: Inputs): EvalSimulationContext {
   const { agent, mode, target, suite, caseOptions } = inputs;
   const liveEnv = (): ProviderEnv =>
     suite.providerEnv ?? withHostCredentialFallback({ ...suite.env });
-  const agentModel = (): LlmProvider => suite.llm ?? agent.llm ?? assemblyAILlm();
+  const agentModel = (): LlmProvider =>
+    suite.llm ?? agent.llm ?? llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL });
 
   return {
     async simulate(caller, options) {

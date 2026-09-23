@@ -39,7 +39,7 @@ is the security boundary.
 
 ## Package exports
 
-Twenty-two subpaths, nineteen of them mapped below. What decides which
+Twenty-three subpaths, twenty of them mapped below. What decides which
 one a symbol lives on:
 
 ### The root barrel is CURATED, and `export *` is what broke it
@@ -80,6 +80,32 @@ Nothing was deleted: budgets and defaults went to `./internal`, the slug/CLI
 contracts and wire helpers to `./utils`. **`index.ts`'s module doc holds the
 test in full and is the only thing enforcing membership — keep it accurate.**
 
+## New features ship in `/experimental` first
+
+**No inert knobs on the contracted surface.** A field that is typed and
+documented but not honoured end to end — or honoured without a measurement
+saying it helps — is a behaviour an author declares and never gets, and every
+one shipped so far cost an epoch to remove. So a NEW, UNMEASURED feature lands on
+`@alexkroman1/aai/experimental` (`src/experimental.ts`), which is on
+`NON_AUTHORING_SUBPATHS` (no capability, no epoch) and on `docs-markdown.mjs`'s
+`UNDOCUMENTED_SUBPATHS`. Promotion is a MOVE to the subpath that owns the surface,
+joining that capability — never a re-export from both. A contracted type may not
+name an experimental one (it would be an UNOWNED declaration, which the gate
+refuses), so an experimental feature is reachable only by importing it.
+
+**Open vocabularies are `Known… | (string & {})`** — `AssemblyAIGatewayModel`,
+`LlmProviderName`, `VoicePresetName`, `TurnDetectionMode`, like
+`AssemblyAITtsVoice` before them. The known half autocompletes; an unknown value
+compiles, is accepted by `AgentConfigSchema`, and is WARNED about by
+`agentConfigWarnings` at build. A regenerated known list is then a compatible
+change the probe proves (a revision, not an epoch).
+
+**A published constant is typed as its primitive**, never its literal
+(`DEFAULT_SYSTEM_PROMPT: string`, `VOICE_PRESETS: Readonly<Record<…, string>>`,
+the `*_TIMEOUT_MS: number` family): a value is a behaviour, reviewed in its
+module's diff and owed a changeset, not a type an author's code can pin.
+Identifiers (`DELEGATE_TOOL_NAME`, `SLACK_CHANNEL_KIND`) stay literal.
+
 ## One epoch classification the tool cannot make
 
 A worked example for the epoch rules in the root `AGENTS.md`. **`aai:defaults`**
@@ -115,7 +141,8 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, `SessionEvent` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
-| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `cerebrasLlm`, `gatewayLlm`, `assemblyAILlm`); nine of the ten take one shared `ModelOptions` rather than nine byte-identical `{ model: string }` interfaces |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })` — the provider is DATA (`KnownLlmProvider \| (string & {})`), not a function name. It replaced ten per-vendor factories, their options types and two exported base URLs; key variables and endpoints live in `aai-runtime`'s resolver table. An unregistered provider with a `baseUrl` resolves as OpenAI-compatible |
+| `@alexkroman1/aai/experimental` | `experimental.ts` | The lane an UNMEASURED feature ships in before promotion — see "New features ship in `/experimental` first" below. Uncontracted and undocumented by deny-list entry, not by omission |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), the voice catalog, and `ttsVoiceIds(language?)` — the catalog as the non-empty tuple `z.enum` takes, falling back to the default voice on an empty filter |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openAIS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
@@ -140,7 +167,7 @@ DevKit builder that compiled a `workflows/*.ts` module's remainder as a
 `packages/aai-templates/CLAUDE.md` carries the two templates that paid for
 getting the old rule wrong.
 
-**Not on those four subpaths**, each barrel's doc saying why: the eighteen
+**Not on those four subpaths**, each barrel's doc saying why: the
 `*_KIND`/`*_API_KEY_ENV` pairs (`/host-internal`, beside the `resolve*Settings`
 helpers reading them), the eighteen narrowed `*Provider` aliases (gone), and
 `ProviderDescriptor` (the root alone).
@@ -236,7 +263,8 @@ The default injection runs at every mode-derivation site — `toAgentConfig`
 provider resolution — before `assertProviderTriple`.
 Partial provider configs are FILLED, not rejected: `defaultProviders`
 supplies the AssemblyAI default for each unset stage of `stt`/`llm`/`tts`
-(when `s2s` is unset), so `agent({ llm: anthropicLlm(...) })` means "the
+(when `s2s` is unset), so
+`agent({ llm: llm({ provider: "anthropic", model }) })` means "the
 default pipeline with that LLM". The compile-time union (`AgentParams` in
 `sdk/define.ts`) matches: any subset of the triple is legal, while `s2s`
 combined with a pipeline provider or a pipeline-only tuning field still
@@ -320,33 +348,28 @@ Reference providers shipped today:
   endpoint and WINS over `region`, and **`languages`, whose unset value is
   "detect per turn", NOT "English"** — read that one before changing it.
 
-- **LLM**: one of the typed factories below — each returns a pure
-  descriptor; the `@ai-sdk/*` package is only imported by the host-side
-  resolver (`host/providers/resolve.ts`), never by the agent bundle:
-  - `anthropicLlm({ model })` — `ANTHROPIC_API_KEY`
-  - `openAILlm({ model })` — `OPENAI_API_KEY`
-  - `googleLlm({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
-  - `mistralLlm({ model })` — `MISTRAL_API_KEY`
-  - `xAILlm({ model })` — `XAI_API_KEY`
-  - `groqLlm({ model })` — `GROQ_API_KEY`
-  - `openRouterLlm({ model })` — `OPENROUTER_API_KEY`; and
-  - `gatewayLlm({ model })` — `AI_GATEWAY_API_KEY`. Both are AGGREGATORS
-    addressed as `"creator/model"`, and neither needs an extra `@ai-sdk/*`
-    dependency (`@ai-sdk/openai`'s `.chat()` client repointed, and
-    `createGateway` from `ai`). Each module's doc carries the rest.
-  - `cerebrasLlm({ model })` — `CEREBRAS_API_KEY`. Also `@ai-sdk/openai`'s
-    `.chat()` client repointed, so also no extra dependency — but NOT an
-    aggregator: the catalogue is a handful of open-weight models and the ids
-    are BARE (`"qwen-3.8-27b"`), not `"creator/model"`. **The reason to name
-    this vendor is serving LATENCY** — the same `qwen-3.8-27b` answered a
-    complete tool call in ~0.55s here against ~0.95s on a self-hosted vLLM
-    endpoint, and on a voice pipeline that is paid every turn. Its module doc
-    carries the rest.
-  - `assemblyAILlm({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
+- **LLM**: ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?,
+  providerOptions? })` (`sdk/providers/llm/llm.ts`), returning a pure
+  descriptor whose `kind` IS the provider. The `@ai-sdk/*` package is only
+  imported by the host-side resolver, never by the agent bundle, and
+  **`aai-runtime`'s `providers/_llm-registry.ts` is where each provider's key
+  variable, base URL and client live** — `anthropic`, `openai`, `google`,
+  `mistral`, `xai`, `groq`, `cerebras` and `openrouter` (both on
+  `@ai-sdk/openai`'s `.chat()` client repointed), `gateway` (`createGateway`
+  from `ai`) and `assemblyai`. `baseUrl` repoints any of them; an UNREGISTERED
+  provider carrying one resolves as an OpenAI-compatible chat endpoint keyed by
+  `apiKeyEnv` (else `<PROVIDER>_API_KEY`), and `providerOptions` is forwarded as
+  that client's AI SDK `providerOptions` entry. Cerebras is worth naming for
+  serving LATENCY (~0.55s to a complete tool call against ~0.95s self-hosted
+  for the same open-weight model).
+  - `provider: "assemblyai"` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
-    `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
-    endpoint. The client is built with a `fetch` wrapper,
+    `@ai-sdk/openai`'s `.chat()` client. `providerOptions: { region: "eu" }`
+    selects the EU endpoint (a `baseUrl` wins over it), and
+    `providerOptions.reasoningEffort` is consumed by the resolver rather than
+    forwarded. The gateway endpoints are on `/host-internal` because
+    `stepGenerate` dials them itself. The client is built with a `fetch` wrapper,
     `repairOpenAiStream` — the gateway documents streamed responses for OpenAI
     models only, and its Claude streams break two AI SDK expectations, each
     fatal to a turn. **Both defects, and why bytes are the only place they can
@@ -365,7 +388,7 @@ Reference providers shipped today:
     **Two things are keyed to the id, they disagree between model families, and
     getting either wrong fails SILENTLY.** That constant's doc carries the full
     matrix; the rule is that `TOOLS_REQUIRE_NO_REASONING` membership decides
-    whether a bare `assemblyAILlm()` fills `reasoningEffort: "none"`, and
+    whether `llm({ provider: "assemblyai" })` fills `reasoningEffort: "none"`, and
     `assemblyAIPipeline()`'s explicit effort must be a value the id ACCEPTS —
     a rejected one is a 400 that the streaming path this SDK uses turns into a
     bare `500 {"message":"something went wrong"}` with the explanation
@@ -442,12 +465,14 @@ Reference providers shipped today:
     delta reintroduces the whole-turn lag whenever no next delta comes.
 
 `host-internal.ts` publishes a provider's `KIND` tag and
-`<PROVIDER>_API_KEY_ENV` constant, never a stage subpath. Adding a provider
-means: descriptor factory in its `sdk/providers/{stt,tts,llm,s2s}/<name>.ts`
+`<PROVIDER>_API_KEY_ENV` constant, never a stage subpath. Adding an STT/TTS/S2S
+provider means: descriptor factory in its `sdk/providers/{stt,tts,s2s}/<name>.ts`
 module, its two constants in `host-internal.ts`, an opener in
 `aai-runtime`'s `providers/{stt,tts}/` (built on the shared session shell in
 `providers/_utils.ts`), and one entry in the matching registry in
-`providers/resolve.ts`.
+`providers/resolve.ts`. Adding an LLM provider is ONE entry in
+`_llm-registry.ts` plus its name in `KnownLlmProvider`/`KNOWN_LLM_PROVIDERS`
+(the registry's `satisfies Record<KnownLlmProvider, …>` holds the two together).
 
 **Reach for `createSttSessionShell` / `createTtsSessionShell`, not
 `createSessionShell` directly.** The raw factory also takes `cleanCloseIsFatal`,
@@ -1564,7 +1589,8 @@ Session mode resolved {
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
          maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
          voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
-  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-luna' },
+  llm: { kind: 'assemblyai', model: 'gpt-5.6-luna',
+         providerOptions: { reasoningEffort: 'none' } },
   tts: { kind: 'assemblyai', voice: 'jane' }
 }
 ```

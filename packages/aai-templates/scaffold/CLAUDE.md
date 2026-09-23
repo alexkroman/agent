@@ -1337,13 +1337,13 @@ descriptor (the descriptor owns its own voice). A raw config that skips
 ```ts
 import { agent } from "@alexkroman1/aai";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+  llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
   tts: cartesiaTts(),
 });
 ```
@@ -1476,41 +1476,40 @@ API keys require it; the US endpoints reject them. Example:
 
 ### LLM — `@alexkroman1/aai/llm`
 
-| Factory         | SDK package         | Env var                        |
-| --------------- | ------------------- | ------------------------------ |
-| `anthropicLlm`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `openAILlm`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
-| `googleLlm`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `mistralLlm`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `xAILlm`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
-| `groqLlm`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `openRouterLlm` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
-| `gatewayLlm`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
-| `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
+ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })`.
+The provider is a string, not a function name:
 
-LLM factories require `{ model: string }` — the `ModelOptions` interface,
-shared by all of them except `assemblyAILlm`. Example:
-`anthropicLlm({ model: "claude-haiku-4-5" })`. The argument is required
-because a third-party vendor's catalog is not this SDK's to default from;
-`assemblyAILlm()` is the one bare call, since it has a default model.
+| `provider`     | SDK package         | Env var                        |
+| -------------- | ------------------- | ------------------------------ |
+| `"anthropic"`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
+| `"openai"`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `"google"`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `"mistral"`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
+| `"xai"`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `"groq"`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
+| `"cerebras"`   | `@ai-sdk/openai`    | `CEREBRAS_API_KEY`             |
+| `"openrouter"` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `"gateway"`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
+| `"assemblyai"` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
-`openRouterLlm` routes through [OpenRouter](https://openrouter.ai) — an
-OpenAI-compatible endpoint fronting hundreds of models addressed as
-`"creator/model"`, e.g.
-`openRouterLlm({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
-no extra SDK install (it reuses the `@ai-sdk/openai` client).
+`model` is required — a third-party vendor's catalog is not this SDK's to
+default from. Example: `llm({ provider: "anthropic", model: "claude-haiku-4-5" })`.
+`"openrouter"` and `"gateway"` (the [Vercel AI
+Gateway](https://vercel.com/docs/ai-gateway)) address a model as
+`"creator/model"`; every other provider takes its own bare id.
 
-`gatewayLlm` routes through the [Vercel AI
-Gateway](https://vercel.com/docs/ai-gateway) — one endpoint fronting
-hundreds of models addressed as `"creator/model"`, e.g.
-`gatewayLlm({ model: "zai/glm-4.6" })`. It needs no extra SDK install
-(the gateway client ships inside the `ai` package).
+`provider` is OPEN: any other string compiles. A provider with no built-in
+entry is reached as an OpenAI-compatible endpoint by naming its `baseUrl` (and
+`apiKeyEnv`, the variable its key is in); `aai build` warns about an unknown
+provider that has neither. `providerOptions` carries provider-specific
+settings, forwarded to the vendor client as its AI SDK `providerOptions`.
 
-`assemblyAILlm` routes through the [AssemblyAI LLM
+`"assemblyai"` routes through the [AssemblyAI LLM
 Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
 OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini,
 etc.) with the same API key as AssemblyAI STT. A bare model-id string on
-`llm` is shorthand for it, and unset stages keep the AssemblyAI default:
+`llm` is shorthand for it (and a `"creator/model"` string for `"gateway"`), and
+unset stages keep the AssemblyAI default:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -1521,8 +1520,9 @@ export default agent({
 });
 ```
 
-`assemblyAILlm({ model, region: "eu" })` is the explicit form; `region`
-selects EU data residency.
+`llm({ provider: "assemblyai", model, providerOptions: { region: "eu" } })` is
+the explicit form; `region` selects EU data residency, and `reasoningEffort`
+beside it sets the model's reasoning effort.
 
 Mixing providers works the same way — declare the stages you're changing:
 

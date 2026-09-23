@@ -9,7 +9,7 @@
  */
 
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { LLM_REGISTRY } from "./_llm-registry.ts";
+import { llmEntryFor } from "./_llm-registry.ts";
 
 /**
  * A descriptor's own credential env var, overriding the registry default.
@@ -58,10 +58,10 @@ export function envVarOf(entry: { envVar: string }, descriptor: object | undefin
  * Its own function rather than a call to {@link requiredProviderEnvVars},
  * because that one answers about a VOICE agent and its no-complete-pipeline
  * branch adds the default AssemblyAI key: asked about a text agent declaring
- * `anthropicLlm()`, it reports `ASSEMBLYAI_API_KEY` the agent will never read,
+ * `llm({ provider: "anthropic" })`, it reports `ASSEMBLYAI_API_KEY` the agent will never read,
  * and an eval gate over that answer skips a suite this machine could run.
  */
 export function llmProviderEnvVar(descriptor: LlmProvider): string {
-  const entry = LLM_REGISTRY[descriptor.kind];
+  const entry = llmEntryFor(descriptor);
   return entry === undefined ? (descriptorEnvVar(descriptor) ?? "") : envVarOf(entry, descriptor);
 }

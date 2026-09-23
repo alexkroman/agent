@@ -24,7 +24,7 @@ export const RIME_API_KEY_ENV = "RIME_API_KEY";
  * `cove` is a `mistv2` speaker, matching the default model below — so a
  * bare `rimeTts()` works out of the box for new agents.
  */
-export const RIME_DEFAULT_VOICE = "cove";
+export const RIME_DEFAULT_VOICE: string = "cove";
 
 /** Options for {@link rimeTts}. */
 export interface RimeTtsOptions extends ProviderCredentialOptions {

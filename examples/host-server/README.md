@@ -153,14 +153,14 @@ are plain data, so this still costs no credential:
 
 ```ts
 import { createHostServer } from "@alexkroman1/aai-runtime";
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { deepgramStt } from "@alexkroman1/aai/stt";
 import { cartesiaTts } from "@alexkroman1/aai/tts";
 
 const server = createHostServer({
   defaults: {
     stt: deepgramStt({ model: "nova-3" }),
-    llm: anthropicLlm({ model: "claude-sonnet-4-5" }),
+    llm: llm({ provider: "anthropic", model: "claude-sonnet-4-5" }),
     tts: cartesiaTts({ voice: "…" }),
     idleTimeoutMs: 120_000,
   },

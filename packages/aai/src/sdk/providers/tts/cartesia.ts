@@ -21,7 +21,7 @@ export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
  * is the same voice the example templates ship with, so a bare `cartesiaTts()`
  * works out of the box for new agents.
  */
-export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+export const CARTESIA_DEFAULT_VOICE: string = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
 /** Options for {@link cartesiaTts}. */
 export interface CartesiaTtsOptions extends ProviderCredentialOptions {

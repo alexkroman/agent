@@ -62,7 +62,7 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
@@ -116,7 +116,8 @@ export type {
  */
 function resolveModel(options: TextAgentOptions): LanguageModel {
   if (options.model) return options.model;
-  const descriptor: LlmProvider = options.agent.llm ?? assemblyAILlm();
+  const descriptor: LlmProvider =
+    options.agent.llm ?? llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL });
   return resolveLlm(descriptor, options.providerEnv ?? options.env ?? {});
 }
 
@@ -181,7 +182,8 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   // documented as running on the same descriptor and the same credential as the
   // turns do, and three independent spellings is three chances at a text agent
   // whose tools quietly dial a different provider than its replies.
-  const toolLlm: LlmProvider = agent.llm ?? assemblyAILlm();
+  const toolLlm: LlmProvider =
+    agent.llm ?? llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL });
   const toolEnv = options.providerEnv ?? options.env ?? {};
 
   const generate = createGenerateFn({ llm: toolLlm, env: toolEnv });

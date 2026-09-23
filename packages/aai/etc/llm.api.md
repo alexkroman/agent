@@ -5,67 +5,35 @@
 ```ts
 
 // @public
-export function anthropicLlm(options: AnthropicLlmOptions): LlmProvider;
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL: AssemblyAIGatewayModel;
 
 // @public
-export interface AnthropicLlmOptions extends ModelOptions {
-}
+export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
 
 // @public
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
-
-// @public
-export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
-
-// @public
-export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1";
-
-// @public
-export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
-export function assemblyAILlm(options?: AssemblyAILlmOptions): LlmProvider;
-
-// @public
-export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
+export type AssemblyAILlmProviderOptions = {
+    readonly region?: "us" | "eu";
+    readonly reasoningEffort?: AssemblyAIReasoningEffort;
+};
 
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
+export type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
 
 // @public
-export function cerebrasLlm(options: CerebrasLlmOptions): LlmProvider;
+export type KnownLlmProvider = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai";
 
 // @public
-export interface CerebrasLlmOptions extends ModelOptions {
-}
+export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
 
 // @public
-export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
-
-// @public
-export interface GatewayLlmOptions extends ModelOptions {
-}
-
-// @public
-export function googleLlm(options: GoogleLlmOptions): LlmProvider;
-
-// @public
-export interface GoogleLlmOptions extends ModelOptions {
-}
-
-// @public
-export function groqLlm(options: GroqLlmOptions): LlmProvider;
-
-// @public
-export interface GroqLlmOptions extends ModelOptions {
+export interface LlmOptions<P extends LlmProviderName = LlmProviderName> extends ProviderCredentialOptions {
+    readonly baseUrl?: string;
+    readonly model: P extends "assemblyai" ? AssemblyAIGatewayModel : string;
+    readonly provider: P;
+    readonly providerOptions?: P extends "assemblyai" ? AssemblyAILlmProviderOptions : Readonly<Record<string, unknown>>;
 }
 
 // @public
@@ -74,33 +42,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function mistralLlm(options: MistralLlmOptions): LlmProvider;
-
-// @public
-export interface MistralLlmOptions extends ModelOptions {
-}
-
-// @public
-export interface ModelOptions extends ProviderCredentialOptions {
-    model: string;
-}
-
-// @public
-export function openAILlm(options: OpenAILlmOptions): LlmProvider;
-
-// @public
-export interface OpenAILlmOptions extends ModelOptions {
-}
-
-// @public
-export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-// @public
-export function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider;
-
-// @public
-export interface OpenRouterLlmOptions extends ModelOptions {
-}
+export type LlmProviderName = KnownLlmProvider | (string & {});
 
 // @public
 export interface ProviderCredentialOptions {
@@ -113,13 +55,6 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly kind: Kind;
     // (undocumented)
     readonly options: Options;
-}
-
-// @public
-export function xAILlm(options: XAILlmOptions): LlmProvider;
-
-// @public
-export interface XAILlmOptions extends ModelOptions {
 }
 
 // (No @packageDocumentation comment for this package)

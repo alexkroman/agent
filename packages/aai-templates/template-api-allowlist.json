@@ -19,6 +19,8 @@
     "HandoffOptions",
     "KeyedLockOptions",
     "KeyedLockTimeoutError",
+    "KnownTurnDetectionMode",
+    "KnownVoicePresetName",
     "LlmProvider",
     "MCP_SERVER_KEY_RE",
     "MetricStat",
@@ -45,6 +47,7 @@
     "ToolMessagesInput",
     "ToolStartMessage",
     "TtsProvider",
+    "TurnDetectionMode",
     "UsageLimits",
     "UserTurnLimit",
     "VOICE_PRESETS",
@@ -285,12 +288,7 @@
     "transcodeToWav"
   ],
   "@alexkroman1/aai/html": [],
-  "@alexkroman1/aai/llm": [
-    "CEREBRAS_BASE_URL",
-    "CerebrasLlmOptions",
-    "ProviderCredentialOptions",
-    "cerebrasLlm"
-  ],
+  "@alexkroman1/aai/llm": ["KnownGatewayModel", "LlmProviderName", "ProviderCredentialOptions"],
   "@alexkroman1/aai/s2s": ["ProviderCredentialOptions"],
   "@alexkroman1/aai/step": [
     "MultipartBody",

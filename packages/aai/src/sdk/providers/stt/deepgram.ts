@@ -68,7 +68,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
  * `konsistent.json` does not check the name: the shared template only covers
  * the `*_DEFAULT_MODEL` and `*_DEFAULT_VOICE` shapes.
  */
-export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number = 1500;
 
 /**
  * Build a Deepgram STT descriptor.

@@ -884,7 +884,7 @@ readonly options: SlackChannelOptions & Record<string, unknown>;
 ### CHANNEL\_POST\_TIMEOUT\_MS
 
 ```ts
-const CHANNEL_POST_TIMEOUT_MS: 30000 = 30000;
+const CHANNEL_POST_TIMEOUT_MS: number;
 ```
 
 A platform is not slow. A post that has not answered in 30s is not going to,

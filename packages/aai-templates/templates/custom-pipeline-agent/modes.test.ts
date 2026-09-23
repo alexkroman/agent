@@ -23,7 +23,7 @@ import {
   type SharedAgentParams,
   type TextAgentParams,
 } from "@alexkroman1/aai";
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 
@@ -55,7 +55,7 @@ describe("three modes, three arms", () => {
       // all-AssemblyAI preset.
       pipeline: {
         ...SHARED,
-        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
       } satisfies PipelineAgentParams,
       // S2S replaces all three with one service-side loop.
       s2s: { ...SHARED, s2s: assemblyAIS2s() } satisfies S2sAgentParams,
@@ -94,13 +94,13 @@ test("the preset takes OPTIONS — one setting across the three stages at once",
   const options: AssemblyAIPipelineOptions = { region: "eu", voice: "michael" };
   const pipeline = assemblyAIPipeline(options);
   expect(pipeline.stt.options.region).toBe("eu");
-  expect(pipeline.llm.options.region).toBe("eu");
+  expect(pipeline.llm.options.providerOptions).toMatchObject({ region: "eu" });
   expect(pipeline.tts.options.voice).toBe("michael");
 
   // And a stage declared AFTER the spread still wins — that is the whole point
   // of it being a plain object, and it is how this template's own `agent.ts`
   // would read if it wanted the other two stages visible in the config.
-  const mine = anthropicLlm({ model: "claude-haiku-4-5" });
+  const mine = llm({ provider: "anthropic", model: "claude-haiku-4-5" });
   expect(agent({ ...SHARED, ...pipeline, llm: mine }).llm).toBe(mine);
 });
 

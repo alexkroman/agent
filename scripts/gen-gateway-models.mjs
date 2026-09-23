@@ -164,8 +164,8 @@ const body = entries
 /**
  * The id union, spelled out rather than derived with `keyof typeof`.
  *
- * `AssemblyAIGatewayModel` is PUBLISHED (`AssemblyAILlmOptions.model` narrows
- * to it), and `keyof typeof ASSEMBLYAI_GATEWAY_MODELS` makes the rollup inline
+ * `KnownGatewayModel` is PUBLISHED (the autocomplete half of the open
+ * `AssemblyAIGatewayModel`), and `keyof typeof ASSEMBLYAI_GATEWAY_MODELS` makes the rollup inline
  * the whole 30-model × 5-field literal type to express it — about 190 of the
  * 454 lines the `/llm` report used to be. The epoch hash covers that body, so
  * regenerating this catalog, which is routine ops, forced an `aai:llm`
@@ -196,11 +196,12 @@ const file = `// Copyright 2026 the AAI authors. MIT license.
  * weaker claim than it working: \`kimi-k2.5\` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
  *
- * Only the id UNION is published, on \`@alexkroman1/aai/llm\`, because
- * \`AssemblyAILlmOptions.model\` narrows to it for autocomplete. The catalog
- * itself, its row type and \`gatewayModelIds\` are on
- * \`@alexkroman1/aai/host-internal\`: their reader is the studio's model
- * selection and this repo's own gate, never an \`agent.ts\`.
+ * Only the id UNION is published, on \`@alexkroman1/aai/llm\`, as the
+ * autocomplete half of the OPEN \`AssemblyAIGatewayModel\` (\`KnownGatewayModel |
+ * (string & {})\`), so a regeneration that adds or drops an id is a compatible
+ * change to every author's build. The catalog itself, its row type and
+ * \`gatewayModelIds\` are on \`@alexkroman1/aai/host-internal\`: their reader is
+ * the studio's model selection and this repo's own gate, never an \`agent.ts\`.
  */
 
 export type GatewayModelInfo = {
@@ -224,13 +225,20 @@ export type GatewayModelInfo = {
   readonly context: number;
 };
 
-/** An id the gateway advertises. */
-export type AssemblyAIGatewayModel =
+/**
+ * An id the gateway advertised when this catalog was generated — the
+ * autocomplete half of \`AssemblyAIGatewayModel\`, which also accepts any other
+ * string. A snapshot of a service that ships models faster than this package
+ * releases, so it is never a closed set: a model added upstream after this
+ * release is still a legal id, and a regeneration that drops one breaks no
+ * build.
+ */
+export type KnownGatewayModel =
 ${union};
 
 export const ASSEMBLYAI_GATEWAY_MODELS = {
 ${body}
-} as const satisfies Record<AssemblyAIGatewayModel, GatewayModelInfo>;
+} as const satisfies Record<KnownGatewayModel, GatewayModelInfo>;
 
 /**
  * Ids usable for a streaming, tool-calling agent — the only shape this SDK
@@ -238,8 +246,8 @@ ${body}
  * a model that is deprecated or loses \`stream\` upstream drops out on the
  * next regeneration instead of waiting to be noticed.
  */
-export function gatewayModelIds(opts: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
-  return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [AssemblyAIGatewayModel, GatewayModelInfo][])
+export function gatewayModelIds(opts: { eu?: boolean } = {}): KnownGatewayModel[] {
+  return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [KnownGatewayModel, GatewayModelInfo][])
     .filter(([, m]) => m.live && m.tools && m.stream && (!opts.eu || m.eu))
     .map(([id]) => id);
 }

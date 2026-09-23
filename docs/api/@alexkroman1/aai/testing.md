@@ -584,7 +584,7 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -592,7 +592,7 @@ function expectDeployable(def: AgentConfigSource): {
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 };
 ```
 
@@ -711,7 +711,7 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -719,7 +719,7 @@ The agent under test — an `agent()` definition, or the raw
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 }
 ```
 
@@ -964,7 +964,7 @@ optional toolChoice?:
 ##### turnDetection?
 
 ```ts
-optional turnDetection?: "auto" | "manual";
+optional turnDetection?: string;
 ```
 
 ##### usageLimits?
@@ -987,7 +987,7 @@ optional turnDetection?: "auto" | "manual";
 ##### voicePresets?
 
 ```ts
-optional voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+optional voicePresets?: readonly string[];
 ```
 
 #### Throws

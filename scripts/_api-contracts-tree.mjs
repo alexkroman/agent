@@ -68,6 +68,8 @@ const NON_AUTHORING_SUBPATHS = {
     "./slugify": "how a human name becomes a slug, for the CLI, the platform and the studio",
     "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
     "./internal": "cross-package infrastructure, explicitly not semver-covered",
+    "./experimental":
+      "the lane a new, UNMEASURED feature ships in before promotion — deliberately uncontracted, so trying a shape costs no epoch and promises nothing; a feature joins a capability when it is promoted to the subpath that owns its surface",
     "./testing/vite":
       "a Vite plugin serving `virtual:aai/agent` — build tooling a `vitest.config.ts` registers, not something an agent.ts or a spec BODY writes against",
     "./host-internal":

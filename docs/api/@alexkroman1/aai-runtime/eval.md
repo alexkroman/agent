@@ -1364,7 +1364,7 @@ missing?
 The sibling of `evalCredentials`, and separate because that one OVER-ASKS
 here: it answers about a voice agent, so an agent with no complete pipeline
 gets the default AssemblyAI STT key added — and a text agent declaring
-`anthropicLlm()` was reported as needing `ASSEMBLYAI_API_KEY` it will never
+`llm({ provider: "anthropic", ... })` was reported as needing `ASSEMBLYAI_API_KEY` it will never
 read, which skips a suite the machine could have run live.
 
 A text agent resolves exactly one provider credential, its LLM's — and when
@@ -1589,7 +1589,7 @@ function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVe
 Have a model rule on `criteria` over `input`, and hand back the verdict.
 
 ```ts
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval";
 
 export async function grade(call: SimulatedCall): Promise<void> {
@@ -1598,7 +1598,7 @@ export async function grade(call: SimulatedCall): Promise<void> {
       "The agent looked the order up before saying whether it shipped.",
       "The agent never asked for a card number.",
     ],
-    llm: anthropicLlm({ model: "claude-sonnet-5" }),
+    llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
   });
   if (!verdict.pass) throw new Error(verdict.explain());
 }
@@ -3311,7 +3311,7 @@ ended, and what was measured.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { openEvalSession, simulateCall } from "@alexkroman1/aai-runtime/eval";
 
 export async function hurriedCaller(): Promise<void> {
@@ -3322,7 +3322,7 @@ export async function hurriedCaller(): Promise<void> {
         persona: "a polite but hurried customer",
         goal: "find out whether order W1234 has shipped",
       },
-      llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+      llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
     });
     if (call.endedBy !== "caller") throw new Error(call.transcript());
     console.log(call.metrics.toolCallCounts, call.metrics.latencyMs);

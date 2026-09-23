@@ -439,8 +439,21 @@ discovered from the tree, for the reason the entry points and the capabilities
 are, and its authoring subpaths are then everything it publishes with types
 MINUS a deny-list of the non-authoring ones (`NON_AUTHORING_SUBPATHS` in
 `scripts/_api-contracts-tree.mjs`, which exempts `aai`'s `/protocol`,
-`/manifest`, `/slugify`, `/workspace-files`, `/internal` and `/host-internal`
-with a reason each). Deny rather than allow for the reason the config schema
+`/manifest`, `/slugify`, `/workspace-files`, `/internal`, `/host-internal` and
+`/experimental` with a reason each).
+
+**`@alexkroman1/aai/experimental` is the lane that keeps inert knobs OFF the
+contracted surface.** A new, unmeasured feature ships there first — deny-listed
+from the contracts here and from the rendered reference (`UNDOCUMENTED_SUBPATHS`
+in `scripts/docs-markdown.mjs`), while still getting an API report, so trying a
+shape costs no epoch and promises nothing — and is PROMOTED by moving its names
+to the subpath that owns the surface, where it joins a capability. Never a
+re-export from both. A contracted signature may not name an experimental type:
+that type would be UNOWNED (below) and the check refuses it, which is what
+keeps the lane from leaking onto the surface it exists to protect.
+`packages/aai/CLAUDE.md` carries the authoring half of the rule.
+
+Deny rather than allow for the reason the config schema
 does it (see "One canonical config schema, deny-list boundaries"): a new subpath
 defaults INTO the contracted surface and fails until its exports join a
 capability, where an allow-list would silently leave it uncovered.

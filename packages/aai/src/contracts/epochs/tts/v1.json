@@ -3,7 +3,7 @@
   "capability": "tts",
   "epoch": 1,
   "rule": 2,
-  "sha256": "45e80f9028c451842d57a509a7eb9ff0e377812e6774ceaa10a94b3d98a506bb",
+  "sha256": "27c1d0d48fe25ad3e5329c433524a524a172539d7a3f838328ea6b153962544f",
   "exports": [
     "ASSEMBLYAI_TTS_DEFAULT_VOICE",
     "ASSEMBLYAI_TTS_LANGUAGES",
@@ -23,5 +23,20 @@
     "rimeTts",
     "ttsVoiceIds"
   ],
-  "rollup": "165d85d3ca22cfbbc4f4b81300975b0474f5bf0c8cd208fb17ab0157fd4bf86d"
+  "rollup": "165d85d3ca22cfbbc4f4b81300975b0474f5bf0c8cd208fb17ab0157fd4bf86d",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "45e80f9028c451842d57a509a7eb9ff0e377812e6774ceaa10a94b3d98a506bb",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "27c1d0d48fe25ad3e5329c433524a524a172539d7a3f838328ea6b153962544f",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

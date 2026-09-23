@@ -114,11 +114,41 @@ export {
 } from "./sdk/pipeline-tuning-constants.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
 /**
- * The eighteen `*_KIND` / `*_API_KEY_ENV` pairs, one per provider module.
+ * The LLM stage's host half: the AssemblyAI kind, key variable and gateway
+ * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in
+ * the runtime's resolver table alone), and the known-provider list the
+ * runtime's registry is held total against. Every OTHER provider's key
+ * variable and base URL lives in that table (`aai-runtime`'s
+ * `providers/_llm-registry.ts`), beside the client it configures.
+ */
+export {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  ASSEMBLYAI_LLM_KIND,
+} from "./sdk/providers/llm/assemblyai.ts";
+export { KNOWN_LLM_PROVIDERS } from "./sdk/providers/llm/llm.ts";
+export { normalizeLlm } from "./sdk/providers/llm/shared/from-string.ts";
+/**
+ * The generated gateway catalog and its row type.
+ *
+ * The OPEN id type (`AssemblyAIGatewayModel`) and its known half
+ * (`KnownGatewayModel`) are on `@alexkroman1/aai/llm`. The catalog itself is a
+ * capability table read by the studio's model selection and by this repo's own
+ * gate, and inlining it into the published `.d.ts` made a routine regeneration
+ * a classification decision.
+ */
+export {
+  ASSEMBLYAI_GATEWAY_MODELS,
+  type GatewayModelInfo,
+  gatewayModelIds,
+} from "./sdk/providers/llm/shared/gateway-models.ts";
+/**
+ * The `*_KIND` / `*_API_KEY_ENV` pairs of the STT, TTS and S2S provider modules.
  *
  * They used to sit on the four stage subpaths, and no author ever typed one: a
  * factory returns the `kind`, and the host resolves the credential out of the
- * agent's env by name. Four of the eighteen key names are the same string
+ * agent's env by name. Four of the key names are the same string
  * (`"ASSEMBLYAI_API_KEY"`) under four names, and four of the kinds are
  * (`"assemblyai"`) — the distinct NAMES exist so `apiKeyEnv` can repoint one
  * stage without moving the others, which is a host concern end to end.
@@ -127,34 +157,6 @@ export { defaultProviders } from "./sdk/providers/_default-providers.ts";
  * whole of their readership: the runtime's opener registries, its
  * "Session mode resolved" log, and the platform's credential preflight.
  */
-export { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "./sdk/providers/llm/anthropic.ts";
-export {
-  ASSEMBLYAI_LLM_API_KEY_ENV,
-  ASSEMBLYAI_LLM_KIND,
-} from "./sdk/providers/llm/assemblyai.ts";
-export { CEREBRAS_API_KEY_ENV, CEREBRAS_KIND } from "./sdk/providers/llm/cerebras.ts";
-export { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "./sdk/providers/llm/gateway.ts";
-export { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "./sdk/providers/llm/google.ts";
-export { GROQ_API_KEY_ENV, GROQ_KIND } from "./sdk/providers/llm/groq.ts";
-export { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "./sdk/providers/llm/mistral.ts";
-export { OPENAI_API_KEY_ENV, OPENAI_KIND } from "./sdk/providers/llm/openai.ts";
-export { OPENROUTER_API_KEY_ENV, OPENROUTER_KIND } from "./sdk/providers/llm/openrouter.ts";
-export { normalizeLlm } from "./sdk/providers/llm/shared/from-string.ts";
-/**
- * The generated gateway catalog and its row type.
- *
- * The id UNION (`AssemblyAIGatewayModel`) stays on `@alexkroman1/aai/llm`,
- * because `AssemblyAILlmOptions.model` narrows to it. The catalog itself is a
- * 30-row capability table read by the studio's model selection and by this
- * repo's own gate, and inlining it into the published `.d.ts` made a routine
- * regeneration a `major`-classification decision.
- */
-export {
-  ASSEMBLYAI_GATEWAY_MODELS,
-  type GatewayModelInfo,
-  gatewayModelIds,
-} from "./sdk/providers/llm/shared/gateway-models.ts";
-export { XAI_API_KEY_ENV, XAI_KIND } from "./sdk/providers/llm/xai.ts";
 export {
   ASSEMBLYAI_S2S_API_KEY_ENV,
   ASSEMBLYAI_S2S_KIND,

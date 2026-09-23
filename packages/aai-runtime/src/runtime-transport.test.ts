@@ -3,7 +3,7 @@
 // The wire shape of those fields lives in s2s.test.ts.
 
 import type { AgentDef } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
@@ -226,7 +226,7 @@ describe("createTransportFactory (pipeline)", () => {
         // never` sailed straight past, mapping nothing at all.
         agent: makeAgent({
           stt: assemblyAIStt(),
-          llm: assemblyAILlm(),
+          llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
           tts: assemblyAITts(),
           [field]: value,
         }),
@@ -276,7 +276,11 @@ describe("createTransportFactory (pipeline)", () => {
       .mockReturnValue(fakeTransport());
     const factory = createTransportFactory(
       transportDeps({
-        agent: makeAgent({ stt: assemblyAIStt(), llm: assemblyAILlm(), tts: assemblyAITts() }),
+        agent: makeAgent({
+          stt: assemblyAIStt(),
+          llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
+          tts: assemblyAITts(),
+        }),
         env: {
           ASSEMBLYAI_API_KEY: "k",
           [FAKE_STT_API_KEY_ENV]: "stt-key",

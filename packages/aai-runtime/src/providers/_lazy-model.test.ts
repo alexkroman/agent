@@ -10,18 +10,7 @@
  * every trace.
  */
 
-import {
-  ANTHROPIC_KIND,
-  ASSEMBLYAI_LLM_KIND,
-  CEREBRAS_KIND,
-  GATEWAY_KIND,
-  GOOGLE_KIND,
-  GROQ_KIND,
-  MISTRAL_KIND,
-  OPENAI_KIND,
-  OPENROUTER_KIND,
-  XAI_KIND,
-} from "@alexkroman1/aai/host-internal";
+import { ASSEMBLYAI_LLM_KIND } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { describe, expect, it } from "vitest";
 import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
@@ -29,26 +18,24 @@ import { LLM_REGISTRY } from "./_llm-registry.ts";
 
 /** How each kind's vendor model is built eagerly — the twin under test. */
 const EAGER: Record<string, (apiKey: string, modelId: string) => Promise<unknown>> = {
-  [ANTHROPIC_KIND]: async (apiKey, modelId) =>
+  anthropic: async (apiKey, modelId) =>
     (await import("@ai-sdk/anthropic")).createAnthropic({
       apiKey,
       baseURL: "https://api.anthropic.com/v1",
     })(modelId),
-  [OPENAI_KIND]: async (apiKey, modelId) =>
+  openai: async (apiKey, modelId) =>
     (await import("@ai-sdk/openai")).createOpenAI({ apiKey })(modelId),
-  [GOOGLE_KIND]: async (apiKey, modelId) =>
+  google: async (apiKey, modelId) =>
     (await import("@ai-sdk/google")).createGoogleGenerativeAI({ apiKey })(modelId),
-  [MISTRAL_KIND]: async (apiKey, modelId) =>
+  mistral: async (apiKey, modelId) =>
     (await import("@ai-sdk/mistral")).createMistral({ apiKey })(modelId),
-  [XAI_KIND]: async (apiKey, modelId) =>
-    (await import("@ai-sdk/xai")).createXai({ apiKey })(modelId),
-  [GROQ_KIND]: async (apiKey, modelId) =>
-    (await import("@ai-sdk/groq")).createGroq({ apiKey })(modelId),
-  [OPENROUTER_KIND]: async (apiKey, modelId) =>
+  xai: async (apiKey, modelId) => (await import("@ai-sdk/xai")).createXai({ apiKey })(modelId),
+  groq: async (apiKey, modelId) => (await import("@ai-sdk/groq")).createGroq({ apiKey })(modelId),
+  openrouter: async (apiKey, modelId) =>
     (await import("@ai-sdk/openai"))
       .createOpenAI({ apiKey, baseURL: "https://openrouter.ai/api/v1", name: "openrouter" })
       .chat(modelId),
-  [CEREBRAS_KIND]: async (apiKey, modelId) =>
+  cerebras: async (apiKey, modelId) =>
     (await import("@ai-sdk/openai"))
       .createOpenAI({ apiKey, baseURL: "https://api.cerebras.ai/v1", name: "cerebras" })
       .chat(modelId),
@@ -67,7 +54,7 @@ function descriptor(kind: string, model: string): LlmProvider {
 }
 
 describe("the deferred model matches its eager twin", () => {
-  // GATEWAY_KIND is deliberately absent from EAGER: `createGateway` ships
+  // "gateway" is deliberately absent from EAGER: `createGateway` ships
   // inside `ai`, so that entry is not deferred at all and has no twin to
   // compare against. Asserted below rather than left implicit.
   it.each(Object.keys(EAGER))("%s reports the same identity before loading", async (kind) => {
@@ -89,7 +76,7 @@ describe("the deferred model matches its eager twin", () => {
     // twin above, so adding a provider without one fails here.
     expect(Object.keys(EAGER).sort()).toEqual(
       Object.keys(LLM_REGISTRY)
-        .filter((k) => k !== GATEWAY_KIND)
+        .filter((k) => k !== "gateway")
         .sort(),
     );
   });

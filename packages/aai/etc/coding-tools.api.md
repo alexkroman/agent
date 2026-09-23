@@ -14,10 +14,10 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public (undocumented)
-export const BASH_TIMEOUT_MAX_MS = 300000;
+export const BASH_TIMEOUT_MAX_MS: number;
 
 // @public
-export const BASH_TIMEOUT_MS = 60000;
+export const BASH_TIMEOUT_MS: number;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -97,7 +97,7 @@ type GenerateResult = {
 };
 
 // @public
-export const GLOB_LIMIT = 100;
+export const GLOB_LIMIT: number;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -140,7 +140,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 type RandomSource = () => number;
 
 // @public
-export const READ_LIMIT = 2000;
+export const READ_LIMIT: number;
 
 // @public
 type SleepOptions = {

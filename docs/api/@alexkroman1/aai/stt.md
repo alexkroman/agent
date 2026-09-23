@@ -85,7 +85,7 @@ The API key is resolved host-side from the agent's env
 descriptor stays free of secrets and safe to serialize.
 
 Named `assemblyAIStt` (not `assemblyAI`) so the STT, LLM
-(`assemblyAILlm`), and TTS (`assemblyAITts`) factories can be imported
+(`llm({ provider: "assemblyai" })`), and TTS (`assemblyAITts`) factories can be imported
 side by side without aliasing.
 
 #### Parameters
@@ -610,7 +610,7 @@ verbatim so users can opt in to future models.
 ### ASSEMBLYAI\_STT\_EU\_URL
 
 ```ts
-const ASSEMBLYAI_STT_EU_URL: "wss://streaming.eu.assemblyai.com/v3/ws" = "wss://streaming.eu.assemblyai.com/v3/ws";
+const ASSEMBLYAI_STT_EU_URL: string;
 ```
 
 EU data-residency streaming endpoint.
@@ -620,7 +620,7 @@ EU data-residency streaming endpoint.
 ### DEEPGRAM\_DEFAULT\_ENDPOINTING\_MS
 
 ```ts
-const DEEPGRAM_DEFAULT_ENDPOINTING_MS: 1500 = 1500;
+const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
 ```
 
 Default Deepgram `endpointing` (ms) — **the same knob as

@@ -46,11 +46,7 @@ export const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -67,10 +63,7 @@ export const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -122,6 +115,8 @@ export function agentConfigWarnings(config: {
     s2s?: unknown;
     stt?: unknown;
     llm?: unknown;
+    voicePresets?: unknown;
+    turnDetection?: unknown;
 }): string[];
 
 // @public
@@ -359,6 +354,12 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -441,7 +442,7 @@ const PIPELINE_ONLY_TUNING: {
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? "auto" | "manual" : readonly string[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? TurnDetectionMode : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -458,7 +459,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
+    turnDetection?: TurnDetectionMode;
     userTurnLimit?: UserTurnLimit;
 }
 
@@ -1049,6 +1050,9 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -1071,7 +1075,7 @@ interface UserTurnLimit {
 }
 
 // @public
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = KnownVoicePresetName | (string & {});
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

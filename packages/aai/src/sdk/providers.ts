@@ -6,7 +6,7 @@
  *
  * - The *descriptor* layer (`SttProvider` / `LlmProvider` / `TtsProvider`) is
  *   pure data — `{ kind, options }` objects returned by the user-facing
- *   factories (`assemblyAIStt(...)`, `anthropicLlm(...)`, `cartesiaTts(...)`). They
+ *   factories (`assemblyAIStt(...)`, `llm({ provider: "anthropic", ... })`, `cartesiaTts(...)`). They
  *   are JSON-serializable, contain no functions, and can cross the CLI →
  *   server → guest boundary without evaluating any third-party SDK.
  *   They live in `sdk/` alongside `Manifest` and have zero Node-only deps.
@@ -91,7 +91,7 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 /**
  * Descriptor for an LLM provider. Returned by factories like
- * `anthropicLlm(...)` from `@alexkroman1/aai/llm`.
+ * `llm({ provider: "anthropic", ... })` from `@alexkroman1/aai/llm`.
  */
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
   /** Compile-time stage tag; never present at runtime. */

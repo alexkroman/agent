@@ -60,7 +60,12 @@ export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-t
 export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
-export type { PipelineVoiceTuning, UserTurnLimit } from "./agent-voice-tuning.ts";
+export type {
+  KnownTurnDetectionMode,
+  PipelineVoiceTuning,
+  TurnDetectionMode,
+  UserTurnLimit,
+} from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached
@@ -135,7 +140,12 @@ export type {
  * moved. `voice-presets.ts` carries the shipped text of each, what it costs on
  * every model request, and which default it overrides.
  */
-export { type AgentVoicePresets, VOICE_PRESETS, type VoicePresetName } from "./voice-presets.ts";
+export {
+  type AgentVoicePresets,
+  type KnownVoicePresetName,
+  VOICE_PRESETS,
+  type VoicePresetName,
+} from "./voice-presets.ts";
 
 /**
  * Fully resolved agent definition.
@@ -400,7 +410,7 @@ export interface AgentDef
   stt?: SttProvider;
   /**
    * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-   * `anthropicLlm({ model })`) for pipeline mode. Unset (with no `s2s`), the
+   * `llm({ provider: "anthropic", model })`) for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to the AssemblyAI LLM Gateway. Note this is pure
    * serializable data, not a Vercel AI SDK `LanguageModel` instance — the
    * host resolves the descriptor into a `LanguageModel` at session start,

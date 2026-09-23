@@ -20,7 +20,7 @@
  * - **The credential gate is `evalTextCredentials`.** `evalCredentials`
  *   answers about a VOICE agent and adds the default AssemblyAI STT key to any
  *   agent without a complete pipeline — which every text agent is — so a suite
- *   for an agent declaring `anthropicLlm()` skipped over a key it would never
+ *   for an agent declaring `llm({ provider: "anthropic", ... })` skipped over a key it would never
  *   read.
  *
  * There is no workflow engine opened here, where `describeEval` opens one for

@@ -17,7 +17,7 @@
  */
 
 import { agent, tool } from "@alexkroman1/aai";
-import { anthropicLlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -29,7 +29,7 @@ const def = agent({ name: "Text Mode", text: true });
 
 describe("evalTextCredentials", () => {
   test("asks for the DEFAULTED model's key when the agent declares no llm", () => {
-    // `createTextAgent` falls back to `assemblyAILlm()`, so the question is
+    // `createTextAgent` falls back to `llm({ provider: "assemblyai", ... })`, so the question is
     // asked about the model the run would really use.
     expect(evalTextCredentials(def, { ASSEMBLYAI_API_KEY: "k" }).ready).toBe(true);
     expect(evalTextCredentials(def, {}).reason).toContain("ASSEMBLYAI_API_KEY");
@@ -42,7 +42,7 @@ describe("evalTextCredentials", () => {
     const anthropic = agent({
       name: "Text Anthropic",
       text: true,
-      llm: anthropicLlm({ model: "claude-opus-5" }),
+      llm: llm({ provider: "anthropic", model: "claude-opus-5" }),
     });
     expect(evalTextCredentials(anthropic, { ANTHROPIC_API_KEY: "k" })).toMatchObject({
       ready: true,
@@ -57,7 +57,7 @@ describe("evalTextCredentials", () => {
     const own = agent({
       name: "Text Own Key",
       text: true,
-      llm: anthropicLlm({ model: "claude-opus-5", apiKeyEnv: "MY_KEY" }),
+      llm: llm({ provider: "anthropic", model: "claude-opus-5", apiKeyEnv: "MY_KEY" }),
     });
     // The NAME comes off the descriptor. Whether the shell can satisfy it is a
     // different question and the answer is no, here as in `evalCredentials`:

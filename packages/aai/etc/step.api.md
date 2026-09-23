@@ -268,10 +268,10 @@ type StartOptions = {
 };
 
 // @public
-export const STEP_SPEAK_SAMPLE_RATE = 24000;
+export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
-export const STEP_SPEAK_TIMEOUT_MS = 120000;
+export const STEP_SPEAK_TIMEOUT_MS: number;
 
 // @public
 export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
@@ -513,28 +513,28 @@ type ToolStartMessage = {
 };
 
 // @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
+export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS: readonly [string];
 
 // @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string;
 
 // @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string;
 
 // @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES = 4194304;
+export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {

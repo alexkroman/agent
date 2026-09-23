@@ -44,7 +44,7 @@ export function resolveEvalMode(
    * What the CASE overrides, which decides the credential question with it.
    *
    * Without this the mode was read off the AGENT alone, so
-   * `describeEval(def, define, { llm: assemblyAILlm() })` on an agent declaring
+   * `describeEval(def, define, { llm: llm({ provider: "assemblyai", model }) })` on an agent declaring
    * `anthropic()` announced "SCRIPTED — ANTHROPIC_API_KEY is not set" while
    * holding the key the run would actually have used. Measured on
    * `custom-pipeline-agent`: the override was honoured by the session and ignored by

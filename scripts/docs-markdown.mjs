@@ -142,6 +142,12 @@ const UNDOCUMENTED_SUBPATHS = {
       "a Vite plugin serving `virtual:aai/agent`. Its consumer is a `vitest.config.ts`, not an " +
       "agent.ts or a spec body, and its one exported function is documented at its own source — " +
       "a reference page here would sit under the authoring API describing build wiring.",
+    "./experimental":
+      "The lane an UNMEASURED feature ships in before promotion, with no " +
+      "semver promise. A reference page would present a feature that may " +
+      "change in a patch as documented API; its module doc says so where an " +
+      "author importing it will read it, and a feature gets its page when it " +
+      "is promoted to the subpath that owns the surface.",
     "./internal":
       "The escape hatch, not an API. Its 49 exports are `@internal` by " +
       "intent — the subpath exists so they are reachable without sitting in " +

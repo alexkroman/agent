@@ -2608,7 +2608,8 @@ Env key holding the AssemblyAI API key. Defaults to `ASSEMBLYAI_API_KEY`
 optional gatewayUrl?: string;
 ```
 
-Gateway base URL, e.g. `ASSEMBLYAI_LLM_GATEWAY_EU_URL` for EU residency.
+Gateway base URL, including the version path — e.g.
+`https://llm-gateway.eu.assemblyai.com/v1` for EU residency.
 
 ##### maxTokens?
 
@@ -3235,7 +3236,7 @@ inline. There is no sniffing anywhere in the store, by design.
 ### STEP\_SPEAK\_SAMPLE\_RATE
 
 ```ts
-const STEP_SPEAK_SAMPLE_RATE: 24000 = 24000;
+const STEP_SPEAK_SAMPLE_RATE: number;
 ```
 
 Sample rate [stepSpeak](#stepspeak) asks for when a caller names none.
@@ -3245,7 +3246,7 @@ Sample rate [stepSpeak](#stepspeak) asks for when a caller names none.
 ### STEP\_SPEAK\_TIMEOUT\_MS
 
 ```ts
-const STEP_SPEAK_TIMEOUT_MS: 120000 = 120000;
+const STEP_SPEAK_TIMEOUT_MS: number;
 ```
 
 How long one [stepSpeak](#stepspeak) call may take before it is abandoned.
@@ -3262,7 +3263,7 @@ runs out with nothing anywhere naming the cause.
 ### TRANSCRIBE\_API
 
 ```ts
-const TRANSCRIBE_API: "https://api.assemblyai.com" = "https://api.assemblyai.com";
+const TRANSCRIBE_API: string;
 ```
 
 The async API's base.
@@ -3272,7 +3273,7 @@ The async API's base.
 ### TRANSCRIBE\_MODELS
 
 ```ts
-const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+const TRANSCRIBE_MODELS: readonly [string];
 ```
 
 The models a job asks for when a caller names none.
@@ -3289,7 +3290,7 @@ workflow's output.
 ### TRANSCRIBE\_SYNC\_ENDPOINT
 
 ```ts
-const TRANSCRIBE_SYNC_ENDPOINT: "https://sync.assemblyai.com/transcribe" = "https://sync.assemblyai.com/transcribe";
+const TRANSCRIBE_SYNC_ENDPOINT: string;
 ```
 
 The synchronous endpoint. Global — it routes to the nearest region.
@@ -3299,7 +3300,7 @@ The synchronous endpoint. Global — it routes to the nearest region.
 ### TRANSCRIBE\_SYNC\_MODEL
 
 ```ts
-const TRANSCRIBE_SYNC_MODEL: "universal-3-5-pro" = "universal-3-5-pro";
+const TRANSCRIBE_SYNC_MODEL: string;
 ```
 
 Required on every sync request; the endpoint routes on it.
@@ -3309,7 +3310,7 @@ Required on every sync request; the endpoint routes on it.
 ### TRANSCRIBE\_SYNC\_TIMEOUT\_MS
 
 ```ts
-const TRANSCRIBE_SYNC_TIMEOUT_MS: 60000 = 60000;
+const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
 ```
 
 The endpoint's own per-request deadline, plus room to upload.
@@ -3323,7 +3324,7 @@ where a submit merely queues it.
 ### TRANSCRIBE\_TIMEOUT\_MS
 
 ```ts
-const TRANSCRIBE_TIMEOUT_MS: 60000 = 60000;
+const TRANSCRIBE_TIMEOUT_MS: number;
 ```
 
 Per-request deadline when a caller names none.
@@ -3338,7 +3339,7 @@ with an id and a poll answers with a status, both immediately.
 ### TRANSCRIBE\_UPLOAD\_TIMEOUT\_MS
 
 ```ts
-const TRANSCRIBE_UPLOAD_TIMEOUT_MS: 1800000 = 1800000;
+const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
 ```
 
 Deadline for the upload leg.
@@ -3352,7 +3353,7 @@ trip would cancel exactly the uploads this exists to handle.
 ### TRANSCRIBE\_WINDOW\_BYTES
 
 ```ts
-const TRANSCRIBE_WINDOW_BYTES: 4194304 = 4194304;
+const TRANSCRIBE_WINDOW_BYTES: number;
 ```
 
 How much of a stored upload one outbound window carries.

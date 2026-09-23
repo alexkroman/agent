@@ -368,7 +368,7 @@ export type RuntimeOptions = {
    * default to the all-AssemblyAI pipeline when the agent declares none).
    */
   stt?: SttProvider | undefined;
-  /** LLM provider descriptor, from a factory like `anthropicLlm(...)`. */
+  /** LLM provider descriptor, from a factory like `llm({ provider: "anthropic", ... })`. */
   llm?: LlmProvider | undefined;
   /** TTS provider descriptor ({@link TtsProvider}). */
   tts?: TtsProvider | undefined;

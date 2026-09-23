@@ -97,7 +97,7 @@ import { stepReadUpload } from "./step-uploads.ts";
 import { stepRequireCompleteUpload } from "./step-uploads-complete.ts";
 
 /** The async API's base. */
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
+export const TRANSCRIBE_API: string = "https://api.assemblyai.com";
 
 /**
  * The models a job asks for when a caller names none.
@@ -109,7 +109,7 @@ export const TRANSCRIBE_API = "https://api.assemblyai.com";
  * default; naming it is what stops a default change silently moving a
  * workflow's output.
  */
-export const TRANSCRIBE_MODELS = ["universal-3-5-pro"] as const;
+export const TRANSCRIBE_MODELS: readonly [string] = ["universal-3-5-pro"];
 
 /**
  * How much of a stored upload one outbound window carries.
@@ -121,7 +121,7 @@ export const TRANSCRIBE_MODELS = ["universal-3-5-pro"] as const;
 // rolled-up .d.ts and so out of this capability's contract hash — the budget
 // could then move under a green gate. See "Value-carrying constants carry a
 // LITERAL type" in AGENTS.md.
-export const TRANSCRIBE_WINDOW_BYTES = 4_194_304;
+export const TRANSCRIBE_WINDOW_BYTES: number = 4_194_304;
 
 /**
  * Deadline for the upload leg.
@@ -131,7 +131,7 @@ export const TRANSCRIBE_WINDOW_BYTES = 4_194_304;
  * trip would cancel exactly the uploads this exists to handle.
  */
 // 30 minutes, spelled as the literal — see TRANSCRIBE_WINDOW_BYTES above.
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1_800_000;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number = 1_800_000;
 
 /** A finished transcript, as {@link stepTranscribePoll} answers with one. */
 export type Transcript = {

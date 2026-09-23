@@ -1,0 +1,20 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "llm",
+  "epoch": 9,
+  "rule": 2,
+  "sha256": "b659a052cf9dfb594bed03caee2be10151f42e18d6a3d6275ed69037e8d73e22",
+  "exports": [
+    "ASSEMBLYAI_LLM_DEFAULT_MODEL",
+    "AssemblyAIGatewayModel",
+    "AssemblyAILlmProviderOptions",
+    "AssemblyAIReasoningEffort",
+    "KnownGatewayModel",
+    "KnownLlmProvider",
+    "LlmOptions",
+    "LlmProvider",
+    "LlmProviderName",
+    "llm"
+  ],
+  "rollup": "842cb0f1cad7321156e2c0a329ea82762d4bfd8ec572b0ae70a51a2e11c3efe8"
+}

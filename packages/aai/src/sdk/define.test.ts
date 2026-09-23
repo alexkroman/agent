@@ -7,8 +7,7 @@ import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
 import { agent, tool, workflowApp } from "./define.ts";
 import { dialog } from "./dialog.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
-import { anthropicLlm } from "./providers/llm/anthropic.ts";
-import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
+import { llm } from "./providers/llm/llm.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt, resolveAssemblyAISttSettings } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
@@ -113,8 +112,8 @@ describe("agent()", () => {
   });
 
   test("llm descriptors pass through unchanged", () => {
-    const llm = assemblyAILlm({ model: "gpt-5.5" });
-    expect(agent({ name: "t", ...assemblyAIPipeline(), llm }).llm).toBe(llm);
+    const stage = llm({ provider: "assemblyai", model: "gpt-5.5" });
+    expect(agent({ name: "t", ...assemblyAIPipeline(), llm: stage }).llm).toBe(stage);
   });
 
   test("the default pipeline turns reasoning OFF", () => {
@@ -123,12 +122,14 @@ describe("agent()", () => {
     // a low TTFT — it only keeps the line from sounding hung up while one
     // elapses. Pinned as a test because the symptom of losing it is seconds of
     // silence rather than an error.
-    const { llm } = assemblyAIPipeline();
+    const { llm: stage } = assemblyAIPipeline();
+    const effort = (d: typeof stage) =>
+      (d.options.providerOptions as { reasoningEffort?: string } | undefined)?.reasoningEffort;
     // This pin and the model pin below are ONE fact: the value has to be one
     // the id accepts, and the families disagree — `"none"` here reaches 0
     // reasoning tokens, a Gemini id answers 400 to it. See
     // ASSEMBLYAI_LLM_DEFAULT_MODEL for the matrix.
-    expect(llm.options.reasoningEffort).toBe("none");
+    expect(effort(stage)).toBe("none");
     // The descriptor must carry a model that accepts the parameter. Pinned
     // alongside the effort because the two are coupled, and the direction of
     // the coupling has now flipped twice: into the `gpt-5.6` family (INSIDE
@@ -151,24 +152,24 @@ describe("agent()", () => {
     // to a tool-carrying request on it unless the effort is off, so the pair
     // below is what stands between the default pipeline and a call that
     // connects and cannot answer.
-    expect(llm.options.model).toBe("gpt-5.6-luna");
+    expect(stage.options.model).toBe("gpt-5.6-luna");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the
     // mode-derivation sites (toAgentConfig, and the runtime's provider
     // resolution), so `agent()` itself leaves the stage unset.
-    expect(toAgentConfig(agent({ name: "t" })).llm).toStrictEqual(llm);
+    expect(toAgentConfig(agent({ name: "t" })).llm).toStrictEqual(stage);
 
     // Region must not drop it.
-    expect(assemblyAIPipeline({ region: "eu" }).llm.options.reasoningEffort).toBe("none");
+    expect(effort(assemblyAIPipeline({ region: "eu" }).llm)).toBe("none");
   });
 
   test("an explicit llm stage keeps its own reasoning setting", () => {
     // The override replaces the descriptor whole, which is what keeps
     // `reasoning_effort` off models that reject it.
-    const claude = assemblyAILlm({ model: "claude-sonnet-4-6" });
+    const claude = llm({ provider: "assemblyai", model: "claude-sonnet-4-6" });
     expect(agent({ name: "t", llm: claude }).llm).toBe(claude);
-    expect(claude.options.reasoningEffort).toBeUndefined();
+    expect(claude.options.providerOptions).toBeUndefined();
   });
 
   test("applies defaults", () => {
@@ -226,8 +227,13 @@ describe("agent()", () => {
   function pipelineAgent() {
     const stt = assemblyAIStt({ model: "universal-3-5-pro" });
     const tts = cartesiaTts({ voice: "v" });
-    const llm = anthropicLlm({ model: "claude-haiku-4-5" });
-    return { stt, llm, tts, def: agent({ name: "t", systemPrompt: "p", stt, llm, tts }) };
+    const stage = llm({ provider: "anthropic", model: "claude-haiku-4-5" });
+    return {
+      stt,
+      llm: stage,
+      tts,
+      def: agent({ name: "t", systemPrompt: "p", stt, llm: stage, tts }),
+    };
   }
 
   test("preserves stt/llm/tts providers on the returned def", () => {
@@ -265,10 +271,10 @@ describe("agent()", () => {
   });
 
   test("a single declared stage keeps it; the rest fill from the default pipeline", () => {
-    const llm = anthropicLlm({ model: "claude-haiku-4-5" });
-    const parsed = toAgentConfig(agent({ name: "t", llm }));
+    const stage = llm({ provider: "anthropic", model: "claude-haiku-4-5" });
+    const parsed = toAgentConfig(agent({ name: "t", llm: stage }));
     expect(parsed.mode).toBe("pipeline");
-    expect(parsed.llm).toStrictEqual(llm);
+    expect(parsed.llm).toStrictEqual(stage);
     expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
     expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
   });

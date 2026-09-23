@@ -52,7 +52,7 @@ import {
   type TypedSubagentDef,
   toolFailure,
 } from "@alexkroman1/aai";
-import { type AssemblyAIGatewayModel, assemblyAILlm } from "@alexkroman1/aai/llm";
+import { type AssemblyAIGatewayModel, llm } from "@alexkroman1/aai/llm";
 import { z } from "zod";
 
 /**
@@ -64,11 +64,12 @@ import { z } from "zod";
  * its own `llm`, because which model a subagent runs on is part of what
  * declaring a subagent means.
  *
- * Annotated as {@link AssemblyAIGatewayModel} rather than left as three string
- * literals: `AssemblyAILlmOptions.model` widens to `string` so the gateway
- * accepts a name it has never heard of, and a typo in one of three copies is a
- * refusal from ONE subagent while the other two answer — the hardest shape of
- * failure to notice on a live call. Here it is a compile error.
+ * Named ONCE rather than written as three string literals: the gateway's id
+ * type is open (a model shipped after this release still compiles), so a typo
+ * is not a compile error, and a typo in one of three copies is a refusal from
+ * ONE subagent while the other two answer — the hardest shape of failure to
+ * notice on a live call. One constant makes that impossible; annotating it as
+ * {@link AssemblyAIGatewayModel} is what autocompletes the known ids.
  */
 export const CHEAP_MODEL: AssemblyAIGatewayModel = "gemini-2.5-flash-lite";
 
@@ -165,7 +166,7 @@ export const factChecker: TypedSubagentDef<Verdict> = subagent({
   // that `detail` is one sentence and names the evidence.
   expectedOutput: "`detail` is one sentence naming what you found and where.",
   schema: VerdictSchema,
-  llm: assemblyAILlm({ model: CHEAP_MODEL }),
+  llm: llm({ provider: "assemblyai", model: CHEAP_MODEL }),
   builtinTools: ["web_search"],
   maxSteps: 2,
 });
@@ -193,7 +194,7 @@ export const explainer = subagent({
     "definition is worse than an admitted gap.",
   ].join("\n"),
   expectedOutput: "Two sentences, spoken plainly. No preamble and no list.",
-  llm: assemblyAILlm({ model: CHEAP_MODEL }),
+  llm: llm({ provider: "assemblyai", model: CHEAP_MODEL }),
   maxSteps: 1,
 });
 
@@ -217,7 +218,7 @@ export const counterpoint = subagent({
   ].join("\n"),
   expectedOutput:
     "Two or three sentences: the objection, who makes it, and how seriously to take it.",
-  llm: assemblyAILlm({ model: CHEAP_MODEL }),
+  llm: llm({ provider: "assemblyai", model: CHEAP_MODEL }),
   builtinTools: ["web_search"],
   maxSteps: 3,
 });

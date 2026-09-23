@@ -19,8 +19,6 @@ each is for.
 | `AAI_AGENT_MODULE` | `@alexkroman1/aai/testing/vite` |
 | `AGENT_STATE_LABELS` | `@alexkroman1/aai-ui` |
 | `ASSEMBLYAI_LLM_DEFAULT_MODEL` | `@alexkroman1/aai/llm` |
-| `ASSEMBLYAI_LLM_GATEWAY_EU_URL` | `@alexkroman1/aai/llm` |
-| `ASSEMBLYAI_LLM_GATEWAY_URL` | `@alexkroman1/aai/llm` |
 | `ASSEMBLYAI_STT_EU_URL` | `@alexkroman1/aai/stt` |
 | `ASSEMBLYAI_TTS_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
 | `ASSEMBLYAI_TTS_LANGUAGES` | `@alexkroman1/aai/tts` |
@@ -46,11 +44,10 @@ each is for.
 | `AgentState` | `@alexkroman1/aai-ui` |
 | `AgentSystemPrompt` | `@alexkroman1/aai` |
 | `AgentVoicePresets` | `@alexkroman1/aai` |
-| `AnthropicLlmOptions` | `@alexkroman1/aai/llm` |
 | `AnyDialog` | `@alexkroman1/aai` |
 | `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
 | `AssemblyAIGatewayModel` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
-| `AssemblyAILlmOptions` | `@alexkroman1/aai/llm` |
+| `AssemblyAILlmProviderOptions` | `@alexkroman1/aai/llm` |
 | `AssemblyAIPipelineOptions` | `@alexkroman1/aai` |
 | `AssemblyAIReasoningEffort` | `@alexkroman1/aai/llm` |
 | `AssemblyAIS2sOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
@@ -78,7 +75,6 @@ each is for.
 | `CARRIER_CODECS` | `@alexkroman1/aai-runtime` |
 | `CARRIER_PARAM` | `@alexkroman1/aai-runtime` |
 | `CARTESIA_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
-| `CEREBRAS_BASE_URL` | `@alexkroman1/aai/llm` |
 | `CHANNEL_POST_TIMEOUT_MS` | `@alexkroman1/aai/channels` |
 | `CLIENT_ARTIFACT_REL` | `@alexkroman1/aai-cli/start` |
 | `CLIENT_CONFIG_METHODS` | `@alexkroman1/aai/protocol` |
@@ -90,7 +86,6 @@ each is for.
 | `CarrierInbound` | `@alexkroman1/aai-runtime` |
 | `CarrierName` | `@alexkroman1/aai-runtime` |
 | `CartesiaTtsOptions` | `@alexkroman1/aai/tts` |
-| `CerebrasLlmOptions` | `@alexkroman1/aai/llm` |
 | `Channel` | `@alexkroman1/aai/channels` |
 | `ChannelDeliveryError` | `@alexkroman1/aai/channels` |
 | `ChannelDescriptor` | `@alexkroman1/aai/channels` |
@@ -209,14 +204,11 @@ each is for.
 | `FormProps` | `@alexkroman1/aai-ui` |
 | `FormValues` | `@alexkroman1/aai-ui` |
 | `GLOB_LIMIT` | `@alexkroman1/aai/coding-tools` |
-| `GatewayLlmOptions` | `@alexkroman1/aai/llm` |
 | `GenerateFn` | `@alexkroman1/aai` |
 | `GenerateObjectResult` | `@alexkroman1/aai` |
 | `GenerateOptions` | `@alexkroman1/aai` |
 | `GenerateResult` | `@alexkroman1/aai` |
 | `GlobalConfig` | `@alexkroman1/aai-cli/project-config` |
-| `GoogleLlmOptions` | `@alexkroman1/aai/llm` |
-| `GroqLlmOptions` | `@alexkroman1/aai/llm` |
 | `GuardrailVerdict` | `@alexkroman1/aai` |
 | `HANDOFF_TOOL_NAME` | `@alexkroman1/aai` |
 | `HOST_ONLY_AGENT_FIELDS` | `@alexkroman1/aai/manifest` |
@@ -243,10 +235,16 @@ each is for.
 | `KeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockTimeoutError` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
+| `KnownGatewayModel` | `@alexkroman1/aai/llm` |
+| `KnownLlmProvider` | `@alexkroman1/aai/llm` |
+| `KnownTurnDetectionMode` | `@alexkroman1/aai` |
+| `KnownVoicePresetName` | `@alexkroman1/aai` |
 | `LOCAL_ONLY_FILES` | `@alexkroman1/aai/workspace-files` |
 | `LOCKFILES` | `@alexkroman1/aai/workspace-files` |
 | `LOG_LINE_TRUNCATED` | `@alexkroman1/aai-runtime` |
+| `LlmOptions` | `@alexkroman1/aai/llm` |
 | `LlmProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
+| `LlmProviderName` | `@alexkroman1/aai/llm` |
 | `LlmRegistryEntry` | `@alexkroman1/aai-runtime` |
 | `LogBuffer` | `@alexkroman1/aai-runtime` |
 | `LogBufferOptions` | `@alexkroman1/aai-runtime` |
@@ -294,22 +292,18 @@ each is for.
 | `MetricsSink` | `@alexkroman1/aai-runtime/tracing` |
 | `MetricsSummary` | `@alexkroman1/aai` |
 | `MintCodeOptions` | `@alexkroman1/aai` |
-| `MistralLlmOptions` | `@alexkroman1/aai/llm` |
-| `ModelOptions` | `@alexkroman1/aai/llm` |
 | `ModelTuning` | `@alexkroman1/aai` |
 | `MultipartBody` | `@alexkroman1/aai/step` |
 | `MultipartPart` | `@alexkroman1/aai/step` |
 | `NumberField` | `@alexkroman1/aai-ui` |
-| `OPENROUTER_BASE_URL` | `@alexkroman1/aai/llm` |
 | `OTEL_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
 | `OTEL_METRICS_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
 | `OTEL_METRICS_EXPORTER_ENV` | `@alexkroman1/aai-runtime/tracing` |
 | `OTEL_METRIC_NAMES` | `@alexkroman1/aai-runtime/tracing` |
 | `OTEL_SERVICE_NAME_ENV` | `@alexkroman1/aai-runtime/tracing` |
-| `OpenAILlmOptions` | `@alexkroman1/aai/llm` |
+| `OpenAICompatibleLlmOptions` | `@alexkroman1/aai/experimental` |
 | `OpenAIS2sOptions` | `@alexkroman1/aai/s2s` |
 | `OpenAIS2sVoice` | `@alexkroman1/aai/s2s` |
-| `OpenRouterLlmOptions` | `@alexkroman1/aai/llm` |
 | `OpenerRegistryEntry` | `@alexkroman1/aai-runtime` |
 | `OtelMeterLike` | `@alexkroman1/aai-runtime/tracing` |
 | `PROJECT_GUIDE_POINTER` | `@alexkroman1/aai/workspace-files` |
@@ -593,6 +587,7 @@ each is for.
 | `TtsProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
 | `TtsSession` | `@alexkroman1/aai-runtime` |
 | `TtsWordTiming` | `@alexkroman1/aai-runtime` |
+| `TurnDetectionMode` | `@alexkroman1/aai` |
 | `TypecheckResult` | `@alexkroman1/aai-cli/typecheck` |
 | `TypedDelegateResult` | `@alexkroman1/aai` |
 | `TypedSubagentDef` | `@alexkroman1/aai` |
@@ -699,14 +694,11 @@ each is for.
 | `WorkspaceWalkOptions` | `@alexkroman1/aai/workspace-files` |
 | `WriteUploadFromFileOptions` | `@alexkroman1/aai/step-files` |
 | `WriteUploadOptions` | `@alexkroman1/aai/step` |
-| `XAILlmOptions` | `@alexkroman1/aai/llm` |
 | `aaiAgentPlugin` | `@alexkroman1/aai/testing/vite` |
 | `addDays` | `@alexkroman1/aai` |
 | `agent` | `@alexkroman1/aai` |
 | `agentConfigWarnings` | `@alexkroman1/aai/manifest` |
 | `agentToolsToSchemas` | `@alexkroman1/aai/manifest` |
-| `anthropicLlm` | `@alexkroman1/aai/llm` |
-| `assemblyAILlm` | `@alexkroman1/aai/llm` |
 | `assemblyAIPipeline` | `@alexkroman1/aai` |
 | `assemblyAIS2s` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
 | `assemblyAIStt` | `@alexkroman1/aai/stt` |
@@ -721,7 +713,6 @@ each is for.
 | `bytesPerSecond` | `@alexkroman1/aai/step` |
 | `carrierByName` | `@alexkroman1/aai-runtime` |
 | `cartesiaTts` | `@alexkroman1/aai/tts` |
-| `cerebrasLlm` | `@alexkroman1/aai/llm` |
 | `clockTime` | `@alexkroman1/aai` |
 | `commandedBuiltins` | `@alexkroman1/aai/testing` |
 | `completedOutput` | `@alexkroman1/aai-runtime/eval` |
@@ -802,9 +793,6 @@ each is for.
 | `formatBytes` | `@alexkroman1/aai/utils` |
 | `formatDuration` | `@alexkroman1/aai/utils` |
 | `formatMoney` | `@alexkroman1/aai/utils` |
-| `gatewayLlm` | `@alexkroman1/aai/llm` |
-| `googleLlm` | `@alexkroman1/aai/llm` |
-| `groqLlm` | `@alexkroman1/aai/llm` |
 | `htmlToText` | `@alexkroman1/aai/html` |
 | `installStubGateway` | `@alexkroman1/aai/testing/vitest` |
 | `installStubLlm` | `@alexkroman1/aai-runtime/eval` |
@@ -834,6 +822,7 @@ each is for.
 | `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
 | `layerScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
 | `lenientParse` | `@alexkroman1/aai/protocol` |
+| `llm` | `@alexkroman1/aai/llm` |
 | `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
 | `mapConcurrent` | `@alexkroman1/aai/step` |
 | `mapSettled` | `@alexkroman1/aai/step` |
@@ -841,19 +830,17 @@ each is for.
 | `mergeScaffoldManifest` | `@alexkroman1/aai/workspace-files` |
 | `metricsEndpoint` | `@alexkroman1/aai-runtime/tracing` |
 | `mintCode` | `@alexkroman1/aai` |
-| `mistralLlm` | `@alexkroman1/aai/llm` |
 | `mountClient` | `@alexkroman1/aai-ui` |
 | `mountPage` | `@alexkroman1/aai-ui` |
 | `multipartBody` | `@alexkroman1/aai/step` |
 | `normalizeToolMessages` | `@alexkroman1/aai/manifest` |
 | `offsetToMs` | `@alexkroman1/aai/step` |
 | `omitUndefined` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `openAILlm` | `@alexkroman1/aai/llm` |
+| `openAICompatibleLlm` | `@alexkroman1/aai/experimental` |
 | `openAIS2s` | `@alexkroman1/aai/s2s` |
 | `openEvalSession` | `@alexkroman1/aai-runtime/eval` |
 | `openEvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
 | `openEvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
-| `openRouterLlm` | `@alexkroman1/aai/llm` |
 | `orFail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `otelMetricsSink` | `@alexkroman1/aai-runtime/tracing` |
 | `pageMetadata` | `@alexkroman1/aai/html` |
@@ -1037,7 +1024,6 @@ each is for.
 | `writeConfigHome` | `@alexkroman1/aai-cli/project-config` |
 | `writeFileWithParents` | `@alexkroman1/aai/workspace-files` |
 | `writeUploadFromFile` | `@alexkroman1/aai/step-files` |
-| `xAILlm` | `@alexkroman1/aai/llm` |
 
 ## Framework internals
 
@@ -1047,10 +1033,10 @@ trace or a type error can be traced back to something.
 | Name | Import from |
 | --- | --- |
 | `AGENT_CSP` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
-| `ANTHROPIC_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ANTHROPIC_KIND` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_GATEWAY_MODELS` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_LLM_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
+| `ASSEMBLYAI_LLM_GATEWAY_EU_URL` | `@alexkroman1/aai/host-internal` |
+| `ASSEMBLYAI_LLM_GATEWAY_URL` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_LLM_KIND` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `ASSEMBLYAI_S2S_KIND` | `@alexkroman1/aai/host-internal` |
@@ -1068,8 +1054,6 @@ trace or a type error can be traced back to something.
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
 | `CARTESIA_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `CARTESIA_KIND` | `@alexkroman1/aai/host-internal` |
-| `CEREBRAS_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `CEREBRAS_KIND` | `@alexkroman1/aai/host-internal` |
 | `CLIENT_AUDIO_LEAD_MS` | `@alexkroman1/aai/internal` |
 | `CONTAINED_ENV` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
 | `ClientEventDecision` | `@alexkroman1/aai/internal` |
@@ -1119,18 +1103,13 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_KIND` | `@alexkroman1/aai/host-internal` |
 | `EMPTY_PARAMS` | `@alexkroman1/aai/host-internal` |
 | `Epoch` | `@alexkroman1/aai/internal` |
-| `GATEWAY_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `GATEWAY_KIND` | `@alexkroman1/aai/host-internal` |
-| `GOOGLE_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `GOOGLE_KIND` | `@alexkroman1/aai/host-internal` |
-| `GROQ_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `GROQ_KIND` | `@alexkroman1/aai/host-internal` |
 | `GatewayModelInfo` | `@alexkroman1/aai/host-internal` |
 | `HEARD_AUDIO_LAG_MS` | `@alexkroman1/aai/internal` |
 | `InvariantDetail` | `@alexkroman1/aai/internal` |
 | `InvariantViolation` | `@alexkroman1/aai/internal` |
 | `JitteredBackoffOptions` | `@alexkroman1/aai/internal` |
 | `JournalConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
+| `KNOWN_LLM_PROVIDERS` | `@alexkroman1/aai/host-internal` |
 | `LOG_PREVIEW_CHARS` | `@alexkroman1/aai/host-internal` |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | `@alexkroman1/aai/internal` |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | `@alexkroman1/aai/internal` |
@@ -1156,14 +1135,8 @@ trace or a type error can be traced back to something.
 | `MIC_BUFFER_SECONDS` | `@alexkroman1/aai/internal` |
 | `MIC_SEND_MAX_BUFFERED_BYTES` | `@alexkroman1/aai/internal` |
 | `MIC_SILENCE_PROBE_MS` | `@alexkroman1/aai/internal` |
-| `MISTRAL_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `MISTRAL_KIND` | `@alexkroman1/aai/host-internal` |
-| `OPENAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `OPENAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
 | `OPENAI_S2S_KIND` | `@alexkroman1/aai/host-internal` |
-| `OPENROUTER_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `OPENROUTER_KIND` | `@alexkroman1/aai/host-internal` |
 | `OpenUpload` | `@alexkroman1/aai/host-internal` |
 | `OwnedMap` | `@alexkroman1/aai/internal` |
 | `PACER_BURST_MS` | `@alexkroman1/aai/internal` |
@@ -1267,8 +1240,6 @@ trace or a type error can be traced back to something.
 | `WORKFLOW_QUEUE_PATH` | `@alexkroman1/aai-runtime/internal` |
 | `WS_NORMAL_CLOSURE` | `@alexkroman1/aai/host-internal` |
 | `WS_OPEN` | `@alexkroman1/aai/internal` |
-| `XAI_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `XAI_KIND` | `@alexkroman1/aai/host-internal` |
 | `agentInstructionsSection` | `@alexkroman1/aai/host-internal` |
 | `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
 | `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |

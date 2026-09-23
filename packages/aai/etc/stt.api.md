@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
+export const ASSEMBLYAI_STT_EU_URL: string;
 
 // @public
 export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
@@ -26,7 +26,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
 
 // @public
 export function deepgramStt(options?: DeepgramSttOptions): SttProvider;

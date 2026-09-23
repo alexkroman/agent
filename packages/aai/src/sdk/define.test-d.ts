@@ -11,7 +11,7 @@ import {
   tool,
   type workflowApp,
 } from "./define.ts";
-import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
+import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
@@ -236,7 +236,7 @@ test("any subset of the provider triple is an accepted AgentParams", () => {
  *
  * The field used to be `LlmProvider | string`, so the documented spelling
  * (`llm: "claude-sonnet-4-6"`) had no autocomplete and a typo became a gateway
- * 400 at the first live session — while `assemblyAILlm({ model })`, which this
+ * 400 at the first live session — while `llm({ provider: "assemblyai", model })`, which this
  * field desugars into, was typed against the generated union all along. These
  * cases are the two halves of that: the union has to be VISIBLE, and every
  * string that compiled before has to keep compiling.

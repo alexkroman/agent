@@ -494,7 +494,7 @@ the unset stages keep the AssemblyAI default:
 | Subpath | Factories |
 | --- | --- |
 | `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
-| `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `gatewayLlm` |
+| `@alexkroman1/aai/llm` | `llm({ provider, model })` — one factory; `provider` is `"assemblyai"`, `"anthropic"`, `"openai"`, `"google"`, `"mistral"`, `"xai"`, `"groq"`, `"cerebras"`, `"openrouter"`, `"gateway"`, or any OpenAI-compatible endpoint named by `baseUrl` |
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
 
 Factories return pure descriptors — serializable data, not SDK clients.

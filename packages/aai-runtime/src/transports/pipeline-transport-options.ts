@@ -5,7 +5,7 @@
 // so each option's default lives next to its documentation rather than being
 // re-applied at the point of use.
 
-import type { ToolChoice, UserTurnLimit } from "@alexkroman1/aai";
+import type { ToolChoice, TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import type { ExecuteTool, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
@@ -281,7 +281,7 @@ export interface PipelineTransportOptions {
    * Who ends the caller's turn — see `AgentDef.turnDetection`. Unset is
    * `"auto"`, read straight off the options like `userTurnLimit`.
    */
-  turnDetection?: "auto" | "manual" | undefined;
+  turnDetection?: TurnDetectionMode | undefined;
 }
 
 /**

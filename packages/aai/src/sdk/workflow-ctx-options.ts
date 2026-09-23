@@ -116,7 +116,7 @@ export type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = S
  *
  * @public
  */
-export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
+export const DEFAULT_STEP_MAX_ATTEMPTS: number = 3;
 
 /**
  * Per-wait options, for a wait that carries a DEADLINE.

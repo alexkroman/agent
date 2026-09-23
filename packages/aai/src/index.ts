@@ -118,19 +118,17 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  * The gateway model ids `agent({ llm })` is written against — the same
  * forgotten-export defect as `AssemblyAITtsVoice` below, one field over.
  *
- * `AgentParams.llm` accepts this union (a bare id routes through the AssemblyAI
- * LLM Gateway on the key every agent already has), and until now it was typed
- * bare `string` while the identical `assemblyAILlm({ model })` next door was
- * typed against the union — so `llm: "claude-sonnet-4-6"`, which is how the
- * docs write it, had no autocomplete and a typo reached the author as a gateway
- * 400 at the first live session. Autocomplete, not a guard: the catalog is
- * GENERATED from what `/v1/models` advertises, so a model shipped after this
- * release still compiles and still runs.
+ * `AgentParams.llm` accepts this type (a bare id routes through the AssemblyAI
+ * LLM Gateway on the key every agent already has), so `llm: "some-model"`
+ * autocompletes the gateway's ids. Autocomplete, not a guard: the known half is
+ * GENERATED from what `/v1/models` advertises and the type is OPEN
+ * (`KnownGatewayModel | (string & {})`), so a model shipped after this release
+ * still compiles and still runs.
  *
  * `@alexkroman1/aai/llm` keeps it too — that is where an explicit
- * `assemblyAILlm({ model })` stage is written.
+ * `llm({ provider: "assemblyai", model })` stage is written.
  */
-export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/shared/gateway-models.ts";
+export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/llm.ts";
 /**
  * S2S is opt-in now that the pipeline is the default mode, so the opt-in
  * descriptor lives next to `agent()` too.
@@ -138,8 +136,8 @@ export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/shared/gateway-
  * By NAME rather than `export *`: that module also exports
  * `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV`, which an `agent.ts`
  * never writes — the descriptor sets the kind, and credentials resolve
- * server-side. Those two, and the seventeen `*_KIND`/`*_API_KEY_ENV` constants
- * of the other provider modules, are on `@alexkroman1/aai/host-internal` with
+ * server-side. Those two, and the `*_KIND`/`*_API_KEY_ENV` constants of the
+ * other provider modules, are on `@alexkroman1/aai/host-internal` with
  * the `resolve*Settings` helpers that read them.
  */
 export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./sdk/providers/s2s/assemblyai.ts";

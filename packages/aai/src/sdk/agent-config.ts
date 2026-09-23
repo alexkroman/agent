@@ -60,7 +60,7 @@ export type ExecuteTool = (
 
 /**
  * Provider descriptor — a `{ kind, options }` pair produced by factories
- * like `assemblyAIStt(...)` / `anthropicLlm(...)` / `cartesiaTts(...)`. Kept
+ * like `assemblyAIStt(...)` / `llm({ provider: "anthropic", ... })` / `cartesiaTts(...)`. Kept
  * deliberately generic at the schema layer: kind-specific validation lives
  * in the host-side resolver, which knows what each adapter expects.
  *
@@ -192,8 +192,9 @@ export const AgentConfigSchema = z.object({
   // Serializable like `builtinTools` beside it and for the same reason: it is a
   // DECLARATION of what the agent has switched on, the runtime that assembles
   // the prompt may be in a guest sandbox, and `buildSystemPrompt` reads it off
-  // the config. An unknown name is REFUSED rather than ignored — a preset
-  // silently dropped is a behaviour the author declared and never got.
+  // the config. An unknown name is ACCEPTED (the vocabulary is open, so a newer
+  // preset still deploys on an older runtime) and WARNED about at build time by
+  // `agentConfigWarnings` — a preset dropped without a word is the failure.
   voicePresets: z.array(VoicePresetNameSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
   silenceTimeoutMs: z.number().positive().optional(),
@@ -226,9 +227,12 @@ export const AgentConfigSchema = z.object({
     })
     .optional(),
   // Who ends the caller's turn: the transcriber on a pause, or the client's
-  // push-to-talk commit. An enum rather than a boolean so a third policy (a
-  // semantic end-of-turn model, say) is a member rather than a second flag.
-  turnDetection: z.enum(["auto", "manual"]).optional(),
+  // push-to-talk commit. A string rather than a boolean so a third policy (a
+  // semantic end-of-turn model, say) is a member rather than a second flag —
+  // and an OPEN string, so a config naming a mode a later SDK implements still
+  // deploys here; the runtime treats anything but "manual" as "auto", and
+  // `agentConfigWarnings` says so at build time.
+  turnDetection: z.string().min(1).optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

@@ -93,7 +93,7 @@ import { stepWriteUpload, type WriteUploadOptions } from "../sdk/step-uploads-wr
 // arithmetic initializer widens to `number` and drops the value out of the
 // contract hash. See "Value-carrying constants carry a LITERAL type" in
 // AGENTS.md.
-export const STEP_FILE_WINDOW_BYTES = 8_388_608;
+export const STEP_FILE_WINDOW_BYTES: number = 8_388_608;
 
 /**
  * Windows {@link readUploadToFile} reads at once, when the file is known to be
@@ -120,7 +120,7 @@ export const STEP_FILE_WINDOW_BYTES = 8_388_608;
  * moving it; a wider default costs a guest's resident set linearly, and a metered
  * link takes back throughput that width alone tries to buy.
  */
-export const STEP_FILE_READ_CONCURRENCY = 4;
+export const STEP_FILE_READ_CONCURRENCY: number = 4;
 
 /** Options for {@link withTempDir}. */
 export type WithTempDirOptions = {

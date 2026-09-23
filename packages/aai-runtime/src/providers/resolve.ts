@@ -51,7 +51,7 @@ import type {
 } from "@alexkroman1/aai/tts";
 import type { LanguageModel } from "ai";
 import type { LlmRegistryEntry } from "./_llm-registry.ts";
-import { LLM_REGISTRY } from "./_llm-registry.ts";
+import { LLM_REGISTRY, llmEntryFor } from "./_llm-registry.ts";
 import { descriptorEnvVar, envVarOf } from "./_provider-env-var.ts";
 import { options, requireApiKey } from "./_utils.ts";
 
@@ -309,7 +309,9 @@ export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => vo
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
-  const entry = lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
+  // A provider with no registered entry still resolves when its descriptor
+  // names a `baseUrl` (OpenAI-compatible) — see `llmEntryFor`.
+  const entry = llmEntryFor(descriptor) ?? lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
   const apiKey = requireKey(env, envVarOf(entry, descriptor), entry.label);
   return entry.create(apiKey, descriptor);
 }
@@ -391,7 +393,10 @@ export function requiredProviderEnvVars(agent: {
 
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
-  add(envVarFor(LLM_REGISTRY, agent.llm));
+  if (agent.llm !== undefined) {
+    const entry = llmEntryFor(agent.llm as LlmProvider);
+    add(entry === undefined ? descriptorEnvVar(agent.llm) : envVarOf(entry, agent.llm));
+  }
 
   // No pipeline triple: either an explicit `s2s` descriptor selects a vendor,
   // or nothing is declared and the default AssemblyAI pipeline is injected.

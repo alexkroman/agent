@@ -138,7 +138,7 @@ export type RetryableErrorOptions = {
  *
  * @public
  */
-export const DEFAULT_RETRY_DELAY_MS = 1000;
+export const DEFAULT_RETRY_DELAY_MS: number = 1000;
 
 /**
  * A failure another attempt might survive, with an optional "not before".

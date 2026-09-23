@@ -140,7 +140,7 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
@@ -171,7 +171,7 @@ const DEFAULT_TURN_TIMEOUT_MS = 90_000;
  * The sibling of `evalCredentials`, and separate because that one OVER-ASKS
  * here: it answers about a voice agent, so an agent with no complete pipeline
  * gets the default AssemblyAI STT key added — and a text agent declaring
- * `anthropicLlm()` was reported as needing `ASSEMBLYAI_API_KEY` it will never
+ * `llm({ provider: "anthropic", ... })` was reported as needing `ASSEMBLYAI_API_KEY` it will never
  * read, which skips a suite the machine could have run live.
  *
  * A text agent resolves exactly one provider credential, its LLM's — and when
@@ -183,7 +183,9 @@ export function evalTextCredentials(
   hostEnv: Record<string, string | undefined> = process.env,
 ): EvalCredentials {
   const env = withHostCredentialFallback({}, hostEnv);
-  const name = llmProviderEnvVar(agent.llm ?? assemblyAILlm());
+  const name = llmProviderEnvVar(
+    agent.llm ?? llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
+  );
   return { env, ...credentialVerdict(name.length > 0 && !env[name] ? [name] : []) };
 }
 

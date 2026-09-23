@@ -402,7 +402,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
   declaring `openai: OpenAI` for the type names also makes the factory
-  `openAILlm`. That is the wanted derivation; the identity entries that used to
+  `openAIS2s`. That is the wanted derivation; the identity entries that used to
   suppress it (`openai: openai`, `openrouter: openrouter`) are gone with the
   lowercase spellings they kept alive. `elevenlabs: elevenLabs` stays, being a
   real override rather than an identity.

@@ -37,11 +37,7 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -58,10 +54,7 @@ const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;

@@ -131,7 +131,7 @@ describe("a voice on a provider this SDK carries no catalog for", () => {
 
 describe('region: "eu" with a TTS stage that has no EU endpoint', () => {
   const EU_STT = descriptor("assemblyai", { region: "eu" });
-  const EU_LLM = descriptor("assemblyai", { region: "eu" });
+  const EU_LLM = descriptor("assemblyai", { model: "m", providerOptions: { region: "eu" } });
 
   test("warns from the STT stage, naming the host the audio really comes from", () => {
     // The one option on this surface that is a COMPLIANCE claim rather than a
@@ -169,5 +169,38 @@ describe('region: "eu" with a TTS stage that has no EU endpoint', () => {
     // Residency rules that bind transcripts often do not bind synthesized
     // audio, and refusing would break every EU agent that already decided this.
     expect(() => agentConfigWarnings({ stt: EU_STT, tts: assemblyAITts() })).not.toThrow();
+  });
+});
+
+describe("open vocabularies warn rather than refuse", () => {
+  // `provider`, `voicePresets` and `turnDetection` are typed `Known | (string & {})`,
+  // so a value this release has not heard of COMPILES. What keeps a typo from
+  // becoming a silent no-op (or a first-session failure) is this line.
+  test("an unknown LLM provider with no baseUrl is named, with the remedy", () => {
+    const [warning] = agentConfigWarnings({ llm: descriptor("antrhopic", { model: "m" }) });
+    expect(warning).toContain('LLM provider "antrhopic"');
+    expect(warning).toContain("baseUrl");
+  });
+
+  test("a known provider, or an unknown one WITH a baseUrl, says nothing", () => {
+    expect(agentConfigWarnings({ llm: descriptor("anthropic", { model: "m" }) })).toEqual([]);
+    expect(
+      agentConfigWarnings({
+        llm: descriptor("my-vendor", { model: "m", baseUrl: "https://llm.example.test/v1" }),
+      }),
+    ).toEqual([]);
+  });
+
+  test("an unknown voice preset is named once per entry; known ones are silent", () => {
+    expect(agentConfigWarnings({ voicePresets: ["natoAlphabet", "natoAlfabet"] })).toEqual([
+      expect.stringContaining('Voice preset "natoAlfabet"'),
+    ]);
+  });
+
+  test("an unknown turnDetection mode says it runs as auto", () => {
+    expect(agentConfigWarnings({ turnDetection: "manual" })).toEqual([]);
+    expect(agentConfigWarnings({ turnDetection: "semantic" })).toEqual([
+      expect.stringContaining('runs with "auto"'),
+    ]);
   });
 });

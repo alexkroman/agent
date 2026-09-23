@@ -5,7 +5,7 @@
 // (pipeline-speech-edges.ts), and the predicates every one of those is built
 // from. What the handlers DO with a transcript is pipeline-stt-handlers.ts.
 
-import type { UserTurnLimit } from "@alexkroman1/aai";
+import type { TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
@@ -75,7 +75,7 @@ export function createUserActivity(deps: {
   /** Cap one user turn by words and/or time; unset is no cap. See `UserTurnLimit`. */
   userTurnLimit: UserTurnLimit | undefined;
   /** Who ends the caller's turn — see `AgentDef.turnDetection`. Unset is `"auto"`. */
-  turnDetection: "auto" | "manual" | undefined;
+  turnDetection: TurnDetectionMode | undefined;
   /** The utterance closed, by any path — see `TurnMetrics.onUtteranceEnded`. */
   onUtteranceEnded?: (() => void) | undefined;
   /**

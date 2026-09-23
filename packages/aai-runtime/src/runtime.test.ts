@@ -15,7 +15,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "@alexkroman1/aai/internal";
-import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropicLlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
@@ -270,7 +270,7 @@ describe("createRuntime", () => {
     const exec = createRuntime({
       agent: makeAgent({
         stt: assemblyAIStt(),
-        llm: anthropicLlm({ model: "claude-sonnet-5" }),
+        llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
         tts: cartesiaTts({ voice: "v" }),
       }),
       env: {
@@ -584,7 +584,7 @@ describe("createRuntime — provider resolution seams", () => {
         agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
         stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
         tts: cartesiaTts(),
       }),
     ).not.toThrow();
@@ -600,7 +600,7 @@ describe("createRuntime — provider resolution seams", () => {
       env: PROVIDER_KEYS,
       logger,
       stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-      llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+      llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
       tts: cartesiaTts(),
     });
     expect(logger.info).toHaveBeenCalledWith(

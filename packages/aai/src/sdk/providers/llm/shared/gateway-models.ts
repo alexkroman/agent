@@ -20,11 +20,12 @@
  * weaker claim than it working: `kimi-k2.5` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
  *
- * Only the id UNION is published, on `@alexkroman1/aai/llm`, because
- * `AssemblyAILlmOptions.model` narrows to it for autocomplete. The catalog
- * itself, its row type and `gatewayModelIds` are on
- * `@alexkroman1/aai/host-internal`: their reader is the studio's model
- * selection and this repo's own gate, never an `agent.ts`.
+ * Only the id UNION is published, on `@alexkroman1/aai/llm`, as the
+ * autocomplete half of the OPEN `AssemblyAIGatewayModel` (`KnownGatewayModel |
+ * (string & {})`), so a regeneration that adds or drops an id is a compatible
+ * change to every author's build. The catalog itself, its row type and
+ * `gatewayModelIds` are on `@alexkroman1/aai/host-internal`: their reader is
+ * the studio's model selection and this repo's own gate, never an `agent.ts`.
  */
 
 export type GatewayModelInfo = {
@@ -48,8 +49,15 @@ export type GatewayModelInfo = {
   readonly context: number;
 };
 
-/** An id the gateway advertises. */
-export type AssemblyAIGatewayModel =
+/**
+ * An id the gateway advertised when this catalog was generated — the
+ * autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other
+ * string. A snapshot of a service that ships models faster than this package
+ * releases, so it is never a closed set: a model added upstream after this
+ * release is still a legal id, and a regeneration that drops one breaks no
+ * build.
+ */
+export type KnownGatewayModel =
   | "claude-haiku-4-5-20251001"
   | "claude-opus-4-5-20251101"
   | "claude-opus-4-6"
@@ -140,7 +148,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "qwen3-32B": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
   "qwen3-next-80b-a3b": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
   "qwen3.5-4b-32k-fast": { tools: false, stream: true, eu: false, live: true, context: 32_768 },
-} as const satisfies Record<AssemblyAIGatewayModel, GatewayModelInfo>;
+} as const satisfies Record<KnownGatewayModel, GatewayModelInfo>;
 
 /**
  * Ids usable for a streaming, tool-calling agent — the only shape this SDK
@@ -148,8 +156,8 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
  * a model that is deprecated or loses `stream` upstream drops out on the
  * next regeneration instead of waiting to be noticed.
  */
-export function gatewayModelIds(opts: { eu?: boolean } = {}): AssemblyAIGatewayModel[] {
-  return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [AssemblyAIGatewayModel, GatewayModelInfo][])
+export function gatewayModelIds(opts: { eu?: boolean } = {}): KnownGatewayModel[] {
+  return (Object.entries(ASSEMBLYAI_GATEWAY_MODELS) as [KnownGatewayModel, GatewayModelInfo][])
     .filter(([, m]) => m.live && m.tools && m.stream && (!opts.eu || m.eu))
     .map(([id]) => id);
 }
