@@ -16,7 +16,7 @@
  * lib declarations from disk and writes nothing.
  */
 
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { sole } from "./_gate-support.ts";
 
 type Probe = { compatible: boolean; problems: string[]; unproven: string[]; added: string[] };
@@ -79,6 +79,14 @@ const edit = (from: string, to: string) => {
   if (!BASE.includes(from)) throw new Error(`the fixture no longer contains ${from}`);
   return BASE.replace(from, to);
 };
+
+// The first probe in a process loads the TypeScript 6 checker and parses its lib
+// and `@types/node` (~1.4s here, past 5s on a loaded CI runner with coverage);
+// every later one reuses both (~40ms). That is a one-time FIXTURE cost, so it is
+// paid here rather than charged to whichever test happens to run first.
+beforeAll(() => {
+  probe(BASE);
+});
 
 describe("the probe is importable, and not vacuous", () => {
   test("an identical rollup is compatible", () => {
