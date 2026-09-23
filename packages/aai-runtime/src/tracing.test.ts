@@ -69,7 +69,15 @@ describe("the env gate", () => {
     // An unhandled rejection here would reach `installCrashGuards` and exit the
     // guest at boot — telemetry taking the agent down with it. The failure has
     // to be a log line, so this drives the path that produces one.
-    expect(startTracingDetached({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe(undefined);
+    // Metrics OFF: the generic endpoint arms both halves, and this spec returns
+    // once SPANS register — a metrics start still in flight would outlive it,
+    // leaking a MeterProvider into whichever spec runs next.
+    expect(
+      startTracingDetached({
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318",
+        OTEL_METRICS_EXPORTER: "none",
+      }),
+    ).toBe(undefined);
     // Let the dynamic import and the provider construction settle, then tear
     // the globals down — this really did start an exporter.
     await vi.waitFor(() => expect(registeredIntegrations()).toHaveLength(1));
