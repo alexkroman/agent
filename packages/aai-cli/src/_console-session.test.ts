@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import {
   type ConsolePlayer,

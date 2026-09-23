@@ -18,7 +18,7 @@
  * @module
  */
 
-import type { SessionEvent } from "./protocol-events.ts";
+import type { SessionEvent, SessionEventType } from "./session-event-map.ts";
 import type { SlotStore } from "./session-state.ts";
 
 /**
@@ -79,6 +79,9 @@ export type SessionEventContext = {
 /**
  * One handler: an event of the type it was declared under, plus the context.
  *
+ * Parameterized by the EVENT, as it always was; name one member with the map
+ * rather than an `Extract` — `SessionEventHandler<SessionEvent<"tool.called">>`.
+ *
  * The return type is `unknown`, and that is deliberate rather than lazy.
  * `void | Promise<void>` reads better and does not compile for the most obvious
  * handler anyone writes: TypeScript's rule that a value-returning function is
@@ -95,24 +98,6 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (
 ) => unknown;
 
 /**
- * Every event name a handler map may be keyed by, as a union.
- *
- * The keys of {@link SessionEventHandlers} are computed from the wire union, so
- * without this alias the only way to read the list is the event schema itself —
- * which renders as one long type expression. Name it to get an autocompletable
- * union, and to write a handler map's key type down in your own code:
- *
- * ```ts
- * import type { SessionEventType } from "@alexkroman1/aai";
- *
- * const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
- * ```
- *
- * @public
- */
-export type SessionEventType = SessionEvent["type"];
-
-/**
  * The `events` map an agent declares — keyed by event type, plus `"*"`.
  *
  * The mapped half is what makes a handler's parameter TYPED: declaring
@@ -124,7 +109,7 @@ export type SessionEventType = SessionEvent["type"];
  * @public
  */
 export type SessionEventHandlers = {
-  [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, { type: K }>>;
+  [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
   /** Runs for every event, AFTER the typed handler for that event. */
   "*"?: SessionEventHandler;

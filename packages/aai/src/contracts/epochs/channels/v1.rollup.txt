@@ -1,0 +1,117 @@
+// @public
+export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
+    readonly __surface?: "channel";
+};
+
+// @public
+export const CHANNEL_POST_TIMEOUT_MS = 30000;
+
+// @public
+export class ChannelDeliveryError extends Error {
+    constructor(message: string, init: {
+        readonly channelKind: string;
+        readonly status?: number | undefined;
+        readonly retryable: boolean;
+        readonly retryAfter?: Date | undefined;
+        readonly cause?: unknown;
+    });
+    readonly channelKind: string;
+    // (undocumented)
+    readonly name = "ChannelDeliveryError";
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export interface ChannelDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+export interface ChannelHandler {
+    readonly advice: (options: Record<string, unknown>, detail: string) => string;
+    readonly kind: string;
+    readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+}
+
+// @public
+export interface ChannelMessage {
+    readonly heading?: string;
+    readonly sections?: readonly ChannelSection[];
+    readonly subtitle?: string;
+    readonly text: string;
+}
+
+// @public
+export interface ChannelPayload {
+    readonly body: Record<string, unknown>;
+    readonly headers?: Readonly<Record<string, string>>;
+    readonly url: string;
+}
+
+// @public
+export interface ChannelSection {
+    readonly body?: string;
+    readonly bullets?: readonly string[];
+    readonly subtitle?: string;
+    readonly title?: string;
+    readonly url?: string;
+}
+
+// @public
+export function escapeSlackMrkdwn(text: string): string;
+
+// @public
+export function explainChannelFailure(channel: Channel, detail: string): string;
+
+// @public
+export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
+
+// @public
+export function isSlackWebhookUrl(value: string): boolean;
+
+// @public
+export function isSlackWorkflowTriggerUrl(url: string): boolean;
+
+// @public
+export function registerChannelHandler(handler: ChannelHandler): void;
+
+// @public
+export function registeredChannelKindNames(): readonly string[];
+
+// @public
+export function renderChannelPayload(channel: Channel, message: ChannelMessage): ChannelPayload;
+
+// @public
+export function renderSlackChannelPayload(message: ChannelMessage, options: SlackChannelOptions): ChannelPayload;
+
+// @public
+export function renderSlackPlainText(message: ChannelMessage): string;
+
+// @public
+export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
+
+// @public
+export const SLACK_CHANNEL_HANDLER: ChannelHandler;
+
+// @public
+export const SLACK_CHANNEL_KIND = "slack";
+
+// @public
+export type SlackChannel = Channel & {
+    readonly kind: typeof SLACK_CHANNEL_KIND;
+    readonly options: SlackChannelOptions & Record<string, unknown>;
+};
+
+// @public
+export function slackChannel(options: SlackChannelOptions): SlackChannel;
+
+// @public
+export interface SlackChannelOptions {
+    readonly textParam?: string;
+    readonly webhookUrl: string;
+}

@@ -15,7 +15,6 @@ import {
   registerFakeProviders,
   type ScriptedTurn,
 } from "./_pipeline-test-fakes.ts";
-import { makeUsageMeter } from "./_test-utils.ts";
 import { createSubagentRunner, NESTED_DELEGATE_MESSAGE } from "./subagent.ts";
 import type { ToolCallDefaults } from "./tool-executor.ts";
 
@@ -48,6 +47,17 @@ function parentCall(overrides: Partial<ToolCallDefaults> = {}): ToolCallDefaults
 }
 
 describe("createSubagentRunner", () => {
+  it("passes the subagent's ModelTuning to the provider — the knobs the agent's own loop takes", async () => {
+    const { model, descriptor, env } = setup([{ text: "done" }]);
+    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
+    await run(
+      subagent({ name: "tuned", systemPrompt: "S.", temperature: 0.3, maxOutputTokens: 64 }),
+      { task: "t" },
+      parentCall(),
+    );
+    expect(model.calls[0]).toMatchObject({ temperature: 0.3, maxOutputTokens: 64 });
+  });
+
   it("returns the subagent's final text with an empty cost report", async () => {
     const { descriptor, env } = setup([{ text: "Three sources agree: yes." }]);
     const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
@@ -374,7 +384,7 @@ describe("createSubagentRunner", () => {
           name: "checker",
           systemPrompt: "Check it.",
           schema: Verdict,
-          maxRetries: 1,
+          maxRevisions: 1,
         }),
         { task: "x" },
         parentCall(),
@@ -489,7 +499,7 @@ describe("createSubagentRunner", () => {
       expect(info.join("\n")).toContain('subagent "checker": guardrail still rejecting');
     });
 
-    it("honours maxRetries, and 0 means the guardrail reports without retrying", async () => {
+    it("honours maxRevisions, and 0 means the guardrail reports without retrying", async () => {
       const { model, descriptor, env } = setup([{ text: "a" }, { text: "b" }, { text: "c" }]);
       const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
       const check = subagent({
@@ -498,11 +508,11 @@ describe("createSubagentRunner", () => {
         guardrail: () => "nope",
       });
 
-      const none = await run({ ...check, maxRetries: 0 }, { task: "x" }, parentCall());
+      const none = await run({ ...check, maxRevisions: 0 }, { task: "x" }, parentCall());
       expect(model.calls).toHaveLength(1);
       expect(none).toMatchObject({ revisions: 0, accepted: false, complaint: "nope" });
 
-      const twice = await run({ ...check, maxRetries: 2 }, { task: "x" }, parentCall());
+      const twice = await run({ ...check, maxRevisions: 2 }, { task: "x" }, parentCall());
       expect(model.calls).toHaveLength(4);
       expect(twice).toMatchObject({ revisions: 2, accepted: false });
     });
@@ -533,7 +543,7 @@ describe("createSubagentRunner", () => {
         subagent({
           name: "checker",
           systemPrompt: "Check it.",
-          maxRetries: 0,
+          maxRevisions: 0,
           guardrail: (answer) => {
             seen.push(answer);
             return "no lookups";
@@ -547,100 +557,6 @@ describe("createSubagentRunner", () => {
       // verdicts is a loop, not a check.
       expect(seen).toEqual([{ text: "answered without looking", steps: 1, toolCalls: [] }]);
     });
-  });
-});
-
-/**
- * What a delegated run costs the SESSION that delegated.
- *
- * The gap these close is the one that stopped two templates adopting
- * `usageLimits` at all: a subagent run is a full nested tool loop — the most
- * expensive thing a delegating agent does — and none of it reached the meter,
- * so `usage.updated` under-reported and a budget bounded only the conversation.
- * They drive the real runner over a fake that really reports tokens, because a
- * spec that recorded into the meter itself would pass against either wiring.
- * The scripted fake spends two tokens per `doGenerate`, i.e. per STEP.
- */
-describe("createSubagentRunner — the delegating session's budget", () => {
-  it("reports EVERY step of the run, not one lump per delegation", async () => {
-    // Two steps: a tool call, then the answer. A per-attempt report would say
-    // one, and a fan-out's cost would then be understated by its own depth.
-    const { descriptor, env } = setup([
-      { call: { name: "lookup", input: { term: "tide" } } },
-      { text: "The tide is out." },
-    ]);
-    const lookup = tool({
-      description: "Look a term up",
-      inputSchema: z.object({ term: z.string() }),
-      execute: () => "out",
-    });
-    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { meter: usage, updates } = makeUsageMeter();
-
-    const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Research.", tools: { lookup } }),
-      { task: "Is the tide in?" },
-      parentCall({ usage }),
-    );
-
-    expect(result.steps).toBe(2);
-    expect(usage.snapshot()).toEqual({ inputTokens: 2, outputTokens: 2, totalTokens: 4, steps: 2 });
-    // Announced per step, which is what makes `usage.updated` usable as a
-    // progress signal on a delegation that takes a while.
-    expect(updates).toHaveLength(2);
-  });
-
-  it("refuses a delegation once the budget is spent, without dialling the model", async () => {
-    const { model, descriptor, env } = setup([{ text: "never asked" }]);
-    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { meter: usage } = makeUsageMeter({ totalTokens: 100 });
-    usage.record({ inputTokens: 90, outputTokens: 30 });
-
-    await expect(
-      run(
-        subagent({ name: "researcher", systemPrompt: "Research." }),
-        { task: "Is the tide in?" },
-        parentCall({ usage }),
-      ),
-    ).rejects.toThrow(/usageLimits\.totalTokens/);
-    expect(model.calls).toHaveLength(0);
-  });
-
-  it("refuses a REVISION too — a guardrail retry is another full run", async () => {
-    // The cap is reached by the first attempt. A check placed above the retry
-    // loop would let the guardrail spend the whole revision budget past it.
-    const { model, descriptor, env } = setup([{ text: "first" }, { text: "second" }]);
-    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-    const { meter: usage } = makeUsageMeter({ totalTokens: 2 });
-
-    await expect(
-      run(
-        subagent({
-          name: "checker",
-          systemPrompt: "Check it.",
-          maxRetries: 3,
-          guardrail: () => "try again",
-        }),
-        { task: "x" },
-        parentCall({ usage }),
-      ),
-    ).rejects.toThrow(/usageLimits\.totalTokens/);
-    expect(model.calls).toHaveLength(1);
-  });
-
-  it("a sessionless parent (a workflow step) is uncounted, never refused", async () => {
-    // `stepDelegate` hands over a bag with no meter — a durable run does not
-    // belong to a session's budget, and absent must not read as exhausted.
-    const { descriptor, env } = setup([{ text: "done" }]);
-    const run = createSubagentRunner({ llm: descriptor, env, logger: silent });
-
-    const result = await run(
-      subagent({ name: "researcher", systemPrompt: "Research." }),
-      { task: "x" },
-      { env: {}, logger: silent },
-    );
-
-    expect(result.text).toBe("done");
   });
 });
 

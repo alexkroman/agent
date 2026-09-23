@@ -79,19 +79,32 @@
  */
 
 /**
- * One of the four opt-in prompt presets — see {@link VOICE_PRESETS} for what
- * each one says and what it costs.
+ * One of the opt-in prompt presets THIS release ships — see
+ * {@link VOICE_PRESETS} for what each one says and what it costs. The
+ * autocomplete half of {@link VoicePresetName}.
  *
  * Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
  * which would be the shorter way round: a derived alias renders in the API
  * report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
  * internal constant a reader cannot import and TypeDoc refuses to link. The
- * union renders as the four strings, which is the answer to the only question
+ * union renders as the strings, which is the answer to the only question
  * anybody asks of this type.
  *
  * @public
  */
-export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+export type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+
+/**
+ * A preset name — one of {@link KnownVoicePresetName}, or any other string.
+ *
+ * OPEN so an agent naming a preset a later release adds compiles against this
+ * one. An unknown name emits no text (the prompt is assembled from the known
+ * names only), and `aai build` / `aai dev` warn about it rather than the type
+ * refusing it.
+ *
+ * @public
+ */
+export type VoicePresetName = KnownVoicePresetName | (string & {});
 
 /**
  * The preset names, in the order {@link voicePresetSection} emits them.
@@ -111,7 +124,7 @@ export const VOICE_PRESET_NAMES = [
   "echoVerification",
   "speechNormalization",
   "natoAlphabet",
-] as const satisfies readonly VoicePresetName[];
+] as const satisfies readonly KnownVoicePresetName[];
 
 /**
  * The line emitted once above whatever presets are on.
@@ -279,11 +292,14 @@ const NATO_ALPHABET = `\
  * the framework emits it once, above your instructions, under a stated
  * precedence.
  *
- * Un-annotated and `as const`, so the declaration's TYPE is the prompt text:
- * the rolled-up `.d.ts` then carries every word, which is what puts a prompt
- * change in `etc/index.api.md` where a reviewer reads it. `satisfies` is what
- * keeps the record total — a fifth name in `VOICE_PRESET_NAMES` with no
- * text here is a compile error.
+ * Typed as a record of STRINGS, not as its own text. It used to be
+ * un-annotated and `as const`, so the declaration's TYPE was the prompt text —
+ * which made every wording change a change to the published TYPE, and every
+ * such change a contract decision about nothing an author's code can observe.
+ * A preset's words are a behaviour: they are reviewed in this file's diff, held
+ * to a token band by `voice-presets.test.ts`, and owed a changeset, the same
+ * treatment `DEFAULT_SYSTEM_PROMPT` gets. The annotation also keeps the record
+ * total — a name in `VOICE_PRESET_NAMES` with no text here is a compile error.
  *
  * @example Turn two of them on
  * ```ts
@@ -297,11 +313,11 @@ const NATO_ALPHABET = `\
  *
  * @public
  */
-export const VOICE_PRESETS = {
+export const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>> = {
   echoVerification: ECHO_VERIFICATION,
   speechNormalization: SPEECH_NORMALIZATION,
   natoAlphabet: NATO_ALPHABET,
-} as const satisfies Record<VoicePresetName, string>;
+};
 
 /**
  * The presets an agent declared, as one prompt section — or `undefined` when it

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "channels",
   "epoch": 1,
-  "sha256": "0f2dbb87b416cfd9619d1565f9a8a7418bbdc72531f5360979c9402b012e2c2f",
+  "rule": 2,
+  "sha256": "d5d27e9b57e6ef13808e0679c7ade47476444eaf00ab2051957e3bb818ab8160",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -28,5 +29,6 @@
     "renderSlackPlainText",
     "sendToChannel",
     "slackChannel"
-  ]
+  ],
+  "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba"
 }

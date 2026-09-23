@@ -54,7 +54,7 @@
  *   appended as its own section. The "tell it to summarize" rule, made
  *   structural.
  * - {@link SubagentDef.guardrail} — a check on the answer that can send it BACK
- *   with a complaint, up to {@link SubagentDef.maxRetries} times. The retry
+ *   with a complaint, up to {@link SubagentDef.maxRevisions} times. The retry
  *   continues the run it is correcting, so the tool results the first attempt
  *   paid for are not bought twice.
  * - {@link SubagentDef.description} — what this subagent is for, read by
@@ -73,13 +73,14 @@
  * by name.
  */
 
+import type { ModelTuning } from "./agent-model-tuning.ts";
 import type { LlmProvider } from "./providers.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type { BuiltinTool, ToolDef } from "./types.ts";
 
 /**
  * How many times a {@link SubagentDef.guardrail} may send an answer back when
- * the subagent names no {@link SubagentDef.maxRetries} of its own.
+ * the subagent names no {@link SubagentDef.maxRevisions} of its own.
  *
  * Declared here rather than in `constants.ts` for the reason
  * `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -87,7 +88,7 @@ import type { BuiltinTool, ToolDef } from "./types.ts";
  *
  * @public
  */
-export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number = 1;
 
 /**
  * A subagent definition — what {@link subagent} returns and
@@ -97,9 +98,17 @@ export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
  * are the parent agent's: the same LLM descriptor, no tools, and
  * the framework default (`DEFAULT_MAX_STEPS`) steps.
  *
+ * It takes {@link ModelTuning} WITHOUT `maxRetries`, deliberately. That name
+ * was this def's guardrail budget before the knobs were unified, and on
+ * `ModelTuning` it means provider retries; accepting it here would have kept
+ * `subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
+ * what the 3 bounds. Refused instead, it is a compile error whose message
+ * names {@link SubagentDef.maxRevisions}. A subagent's provider requests
+ * retry on the AI SDK's default.
+ *
  * @public
  */
-export interface SubagentDef {
+export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
   /**
    * What this subagent is called. It reaches the model only as the id on the
    * subagent's own requests; its reader is a log line and a failure message
@@ -208,7 +217,7 @@ export interface SubagentDef {
    * complaint, and the runtime re-runs the subagent with its own rejected
    * answer and that complaint appended to the conversation it already has — so
    * the retry keeps every tool result the first attempt paid for and is told
-   * exactly what to fix. Bounded by {@link SubagentDef.maxRetries}.
+   * exactly what to fix. Bounded by {@link SubagentDef.maxRevisions}.
    *
    * **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
    * of an answer and cannot say that a citation is missing, that the sources
@@ -240,7 +249,13 @@ export interface SubagentDef {
   /**
    * How many times a {@link SubagentDef.guardrail} may send an answer back.
    *
-   * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+   * @defaultValue `1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+   *
+   * **Was `maxRetries`.** Renamed because {@link ModelTuning.maxRetries} retries
+   * a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+   * delegation that SUCCEEDED and was judged not good enough. A subagent does
+   * not accept `maxRetries` at all, so code written against the old name fails
+   * to compile rather than quietly meaning something else.
    *
    * One, not CrewAI's three, because a revision is another FULL run of the
    * subagent and the caller is on a live phone call — the third attempt at a
@@ -253,7 +268,14 @@ export interface SubagentDef {
    * answer still has to say something, and it should be the caller's tool —
    * not the runtime — that decides what.
    */
-  maxRetries?: number;
+  maxRevisions?: number;
+  /**
+   * Not a field. Typed as the message that names the rename, so
+   * `subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+   * rather than with a bare excess-property one — the idiom `agent({ tools })`
+   * uses. See {@link SubagentDef.maxRevisions}.
+   */
+  maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
   /**
    * The SHAPE the final message must have — any
    * [Standard Schema](https://standardschema.dev), zod being the documented
@@ -293,10 +315,6 @@ export interface SubagentDef {
    * ```
    */
   schema?: StandardSchemaV1;
-  /** Sampling temperature passed through to the provider. */
-  temperature?: number;
-  /** Cap on generated tokens per step, passed through to the provider. */
-  maxOutputTokens?: number;
 }
 
 /**

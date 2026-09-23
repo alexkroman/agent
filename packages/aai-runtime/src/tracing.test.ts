@@ -17,7 +17,6 @@
 import { trace } from "@opentelemetry/api";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 import {
-  metricsEndpoint,
   OTEL_ENDPOINT_ENVS,
   startTracing,
   startTracingDetached,
@@ -114,27 +113,6 @@ describe("the env gate", () => {
 });
 
 describe("the metrics gate", () => {
-  test("opens on the generic endpoint or the metrics-specific one", () => {
-    expect(metricsEndpoint({})).toBeUndefined();
-    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318" })).toBe("http://c:4318");
-    expect(metricsEndpoint({ OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://m:4318" })).toBe(
-      "http://m:4318",
-    );
-    // The traces-specific variable is for traces only.
-    expect(
-      metricsEndpoint({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://t:4318" }),
-    ).toBeUndefined();
-  });
-
-  test("OTEL_METRICS_EXPORTER=none closes it, whatever the endpoint", () => {
-    expect(
-      metricsEndpoint({
-        OTEL_EXPORTER_OTLP_ENDPOINT: "http://c:4318",
-        OTEL_METRICS_EXPORTER: "none",
-      }),
-    ).toBeUndefined();
-  });
-
   test("missing METRICS peers are one warning, and the start still resolves", async () => {
     // A deployment that installed only the trace peers keeps its traces: the
     // metrics half answers with the install line and steps aside.

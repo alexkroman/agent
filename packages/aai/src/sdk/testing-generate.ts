@@ -59,65 +59,26 @@ export type StubGenerateReply = string | { text?: string; object: unknown };
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
 
 /**
- * A table of routes keyed by system prompt — with the one key that cannot mean
- * what it looks like typed as the RULE it breaks.
+ * Everything {@link stubGenerate} accepts: ONE route answering every call, or a
+ * table of routes keyed by system prompt — each under a key that says which.
  *
- * The `text` arm is a misuse message, on the same pattern as `AgentParams`'
- * misuse arms and `SyncMutationMisuse`: a string literal type nothing an author
- * can pass satisfies. It is written INLINE rather than as its own exported
- * alias, because a misuse arm is machinery an author meets as a message and
- * never by name — the argument `packages/aai/typedoc.json`'s
- * `intentionallyNotExported` makes for the twenty-odd others.
+ * ```ts
+ * import { stubGenerate } from "@alexkroman1/aai/testing";
  *
- * The misuse it names is the one `isRouteTable` cannot see. A record without an
- * `object` key IS a route table, so `stubGenerate({ text: "…" })` type-checked
- * as a table with one route named `text` — a system prompt no tool carries —
- * and then rejected every call with "no route for this call's system prompt".
+ * stubGenerate({ reply: "The documented answer." });
+ * stubGenerate({ routes: { "You grade documents.": { object: { score: 1 } } } });
+ * ```
  *
- * **This arm does not reach `tsc`'s output, and the reason generalizes.** A
- * misuse arm only prints when no SIBLING arm of the union shape-competes for
- * the same object literal. Here {@link StubGenerateReply}'s
- * `{ text?: string; object: unknown }` declares an OPTIONAL `text`, so
- * TypeScript scores it the closer match for `{ text: "…" }` and elaborates
- * against it — printing "Property 'object' is missing", which points at the
- * wrong remedy: the author wanted a bare string, not an added `object`.
- * Measured against the real declarations; three repair attempts (an extra
- * `{ text: Misuse; object?: never }` arm, splitting the object arm, both) leave
- * the output unchanged, because TS picks any arm requiring `object`. The only
- * shape that surfaces the literal is one where no reply arm declares `text` at
- * all, which would drop the legal `{ text, object }` reply.
- *
- * So the arm is kept for the shape it documents, and the RUNTIME guard in
- * {@link stubGenerate} is what actually names the rule for a caller who gets
- * past the compiler. `docs/src/content/docs/build/testing.md` describes the
- * misleading message rather than promising this one.
- *
- * The cost is that a route table can no longer be keyed by a system prompt whose
- * whole text is `"text"`, which is not a system prompt, and which the runtime
- * guard in {@link stubGenerate} refuses anyway.
- *
- * @public
- */
-export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
-  readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
-};
-
-/**
- * The same sentence at RUNTIME, for a caller with no compiler — in two halves
- * because one literal of that length reads to Biome's `noSecrets` as a
- * high-entropy secret, the trap `testing-deployable.ts` composes around too.
- *
- * {@link TEXT_ONLY_MISUSE} is annotated OFF the type rather than merely
- * resembling it, so the two cannot drift: a JS spec and a TS spec are told the
- * same thing, and an edit to one copy that misses the other fails to compile.
- */
-const MISUSE_HEAD = 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — ';
-const MISUSE_TAIL =
-  "pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
-const TEXT_ONLY_MISUSE: NonNullable<StubGenerateRoutes["text"]> = `${MISUSE_HEAD}${MISUSE_TAIL}`;
-
-/**
- * Everything {@link stubGenerate} accepts: a table of routes, or one route.
+ * **Why two keys rather than "a record, or a route".** The bare form was a union
+ * of a route table and a single reply, told apart at runtime by whether the
+ * object had an `object` key — so `stubGenerate({ text: "…" })` type-checked as
+ * a table with one route named `text` and rejected every call. A misuse arm in
+ * the type was meant to refuse it, and could not SPEAK: the reply arm's
+ * optional `text` out-scored it, so `tsc` printed "Property 'object' is
+ * missing" — the wrong remedy. With the shape named, there is nothing to
+ * disambiguate: `{ reply: { text } }` is a reply, and a function under `reply`
+ * is a computed route, never mistaken for the seam itself (see
+ * `ToolContextOverrides.generate`).
  *
  * Named because it is written down in three places — that function, the
  * `generate` field of `createToolContext`'s overrides, and
@@ -126,7 +87,21 @@ const TEXT_ONLY_MISUSE: NonNullable<StubGenerateRoutes["text"]> = `${MISUSE_HEAD
  *
  * @public
  */
-export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
+export type StubGenerateScript =
+  | {
+      /** Answers EVERY call, whatever its system prompt. */
+      readonly reply: StubGenerateRoute;
+      readonly routes?: never;
+    }
+  | {
+      /**
+       * One route per model ROLE, keyed by the call's system prompt. A call
+       * whose system prompt names no route rejects, naming it; `""` is the
+       * route for a call that carries none.
+       */
+      readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+      readonly reply?: never;
+    };
 
 /** A fake `ctx.generate`: the function to pass, and what it was asked. */
 export interface StubGenerate {
@@ -137,12 +112,13 @@ export interface StubGenerate {
 }
 
 /**
- * Build a fake `ctx.generate` from a script keyed by system prompt.
+ * Build a fake `ctx.generate` from a script: one reply, or routes keyed by
+ * system prompt.
  *
  * A call whose system prompt names no route throws, naming it — an unscripted
  * model call is a spec that has drifted from the tool, not a case to paper over.
- * Pass a single route (not a record) to answer every call the same way, which is
- * what a one-model tool wants.
+ * Pass `{ reply }` to answer every call the same way, which is what a one-model
+ * tool wants.
  *
  * @example Two model roles, one queue
  * ```ts
@@ -150,8 +126,10 @@ export interface StubGenerate {
  *
  * const verdicts = ["yes", "no"];
  * const model = stubGenerate({
- *   "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
- *   "You answer questions.": "The documented answer.",
+ *   routes: {
+ *     "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
+ *     "You answer questions.": "The documented answer.",
+ *   },
  * });
  * const ctx = createToolContext({ generate: model.generate });
  * // … run the tool, then assert on the roles it played:
@@ -162,23 +140,19 @@ export interface StubGenerate {
  * ```ts
  * import { stubGenerate } from "@alexkroman1/aai/testing";
  *
- * const model = stubGenerate({ object: { steps: ["Only step"] } });
- * // A text-only answer is the STRING, never `{ text }` alone — that shape is a
- * // route table keyed "text", and `StubGenerateRoutes` makes it a compile error.
- * const answerer = stubGenerate("The documented answer.");
+ * const model = stubGenerate({ reply: { object: { steps: ["Only step"] } } });
+ * const answerer = stubGenerate({ reply: "The documented answer." });
  * ```
  *
  * @public
  */
 export function stubGenerate(script: StubGenerateScript): StubGenerate {
   const calls: StubGenerateCall[] = [];
-  // At BIND rather than on the first call, and for the reason the type refuses
-  // the same shape: the cause is the literal here, and the routing failure it
-  // used to produce named a system prompt instead.
-  if (isRecord(script) && !("object" in script) && "text" in script) {
-    throw new Error(`stubGenerate: ${TEXT_ONLY_MISUSE}`);
-  }
-  const routes = isRouteTable(script) ? script : undefined;
+  // Checked at BIND, for a caller with no compiler: a script in the old bare
+  // shape would otherwise read as a table with no routes and reject every call
+  // with a sentence about system prompts.
+  const routes = routeTable(script);
+  const single = "reply" in script ? script.reply : undefined;
 
   // Annotated rather than inferred, and the implementation returns `object` on
   // every path: that is what makes one function inhabit both of `GenerateFn`'s
@@ -186,7 +160,7 @@ export function stubGenerate(script: StubGenerateScript): StubGenerate {
   const generate = ((options: GenerateOptions) => {
     const call: StubGenerateCall = { prompt: options.prompt, system: options.system, options };
     calls.push(call);
-    const route = routes ? routes[options.system ?? ""] : (script as StubGenerateRoute);
+    const route = routes ? routes[options.system ?? ""] : single;
     if (route === undefined) {
       // REJECTS rather than throws: `ctx.generate` returns a promise, so a
       // synchronous throw would surface in a different place from every real
@@ -211,26 +185,22 @@ export function stubGenerate(script: StubGenerateScript): StubGenerate {
 }
 
 /**
- * Is this a table of routes, or one route?
- *
- * A single-route `{ object: … }` is an object too, so the two are told apart by
- * the reply shape rather than by `typeof` — which is also why `StubGenerateReply`
- * requires `object` rather than allowing `{ text }` alone: a bare `{ text }`
- * would be indistinguishable from a table with one route named `text`.
- *
- * That trade-off is unchanged, and what changed is who pays for it.
- * {@link StubGenerateRoutes}' misuse arm makes the indistinguishable literal a
- * compile error and {@link stubGenerate} refuses it at bind, so the rule is
- * enforced where it is written rather than discovered from a rejected call.
- * Relaxing `StubGenerateReply` to accept `{ text }` alone was considered and
- * rejected: the literal would then be assignable to the reply arm, the misuse
- * arm could never fire, and this predicate would still read it as a table —
- * i.e. exactly today's silent failure, with the compile error removed.
+ * The route table a script names, or `undefined` for a `{ reply }` script — and
+ * a throw for anything that is neither, which is what a script in the bare
+ * shape `stubGenerate` used to take (a string, a lone reply, an unwrapped table)
+ * reaches when nothing type-checked it.
  */
-function isRouteTable(
+function routeTable(
   script: StubGenerateScript,
-): script is Readonly<Record<string, StubGenerateRoute>> {
-  return isRecord(script) && !("object" in script);
+): Readonly<Record<string, StubGenerateRoute>> | undefined {
+  const given: unknown = script;
+  if (isRecord(given) && "reply" in given !== "routes" in given) {
+    return "routes" in script ? script.routes : undefined;
+  }
+  throw new Error(
+    "stubGenerate: a script is `{ reply }` (one route for every call) or `{ routes }` " +
+      "(keyed by system prompt), exactly one of the two",
+  );
 }
 
 /** The `{ text, object }` shape both `GenerateFn` overloads are satisfied by. */

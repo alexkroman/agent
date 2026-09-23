@@ -1,0 +1,19 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "metrics",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "734f261079c291c011d9dc40a3935f5177cb6aa1c5f76661d585e9a7c74c011c",
+  "exports": [
+    "MetricsContext",
+    "MetricsSink",
+    "OTEL_METRICS_ENDPOINT_ENVS",
+    "OTEL_METRICS_EXPORTER_ENV",
+    "OTEL_METRIC_NAMES",
+    "OtelMeterLike",
+    "metricsEndpoint",
+    "otelMetricsSink",
+    "registerMetricsSink"
+  ],
+  "rollup": "327f6096390b7173e0a503dfbae9cc312178494ffaeab9e44cb9afba7cb5c8c9"
+}

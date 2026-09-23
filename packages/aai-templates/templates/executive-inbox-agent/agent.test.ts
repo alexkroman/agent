@@ -75,23 +75,29 @@ function scriptedDesk(
 ) {
   return scriptedToolContext({
     generate: {
-      [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
-      [REWRITE_SYSTEM]: (call) => ({
-        object: {
-          toneLogic: "casual and direct",
-          rewrittenContent: `(in Maya's voice) ${draftIn(call.prompt)}`,
+      routes: {
+        [TRIAGE_SYSTEM]: (call) => ({ object: verdictFor(call.prompt) }),
+        [REWRITE_SYSTEM]: (call) => ({
+          object: {
+            toneLogic: "casual and direct",
+            rewrittenContent: `(in Maya's voice) ${draftIn(call.prompt)}`,
+          },
+        }),
+        [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: opts.chooser ?? [] } },
+        [UPDATE_MEMORY_SYSTEM]: {
+          object: opts.update ?? { logic: "", updatePrompt: false, newPrompt: "" },
         },
-      }),
-      [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: opts.chooser ?? [] } },
-      [UPDATE_MEMORY_SYSTEM]: {
-        object: opts.update ?? { logic: "", updatePrompt: false, newPrompt: "" },
       },
     },
     delegate: {
-      "meeting-assistant": {
-        text: "Maya is free Wednesday 1pm-3pm.",
-        steps: 3,
-        toolCalls: [{ name: "get_events_for_days", input: { days: ["2026-03-17", "2026-03-18"] } }],
+      routes: {
+        "meeting-assistant": {
+          text: "Maya is free Wednesday 1pm-3pm.",
+          steps: 3,
+          toolCalls: [
+            { name: "get_events_for_days", input: { days: ["2026-03-17", "2026-03-18"] } },
+          ],
+        },
       },
     },
   });
@@ -594,17 +600,19 @@ describe("reflect (their multi_reflection_graph)", () => {
   test("rewrites each chosen prompt in parallel and skips a declined one", async () => {
     let updates = 0;
     const model = stubGenerate({
-      [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: ["tone", "calendar"] } },
-      [UPDATE_MEMORY_SYSTEM]: (call) => {
-        updates += 1;
-        const calendar = call.prompt.includes(DEFAULT_MEMORY.schedulePreferences);
-        return {
-          object: {
-            logic: calendar ? "45 minutes" : "",
-            updatePrompt: calendar,
-            newPrompt: calendar ? "Meetings are 45 minutes." : "",
-          },
-        };
+      routes: {
+        [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: ["tone", "calendar"] } },
+        [UPDATE_MEMORY_SYSTEM]: (call) => {
+          updates += 1;
+          const calendar = call.prompt.includes(DEFAULT_MEMORY.schedulePreferences);
+          return {
+            object: {
+              logic: calendar ? "45 minutes" : "",
+              updatePrompt: calendar,
+              newPrompt: calendar ? "Meetings are 45 minutes." : "",
+            },
+          };
+        },
       },
     });
     const out = await reflect(model.generate, { ...input, promptTypes: ["tone", "calendar"] });
@@ -620,7 +628,9 @@ describe("reflect (their multi_reflection_graph)", () => {
   });
 
   test("a chooser that names nothing costs no second call", async () => {
-    const model = stubGenerate({ [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } } });
+    const model = stubGenerate({
+      routes: { [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } } },
+    });
     expect(await reflect(model.generate, { ...input, promptTypes: ["tone"] })).toEqual([]);
     expect(model.calls).toHaveLength(1);
   });

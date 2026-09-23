@@ -33,6 +33,7 @@
  * @module
  */
 
+import type { TurnDetectionMode } from "@alexkroman1/aai";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 
@@ -99,7 +100,7 @@ type ManualTurnPhase = "closed" | "open" | "committing";
  * @internal
  */
 export function createManualTurn(
-  policy: "auto" | "manual" | undefined,
+  policy: TurnDetectionMode | undefined,
   deps: {
     /** Ask the transcriber to end the utterance it has open, now. */
     forceEndOfTurn(): void;

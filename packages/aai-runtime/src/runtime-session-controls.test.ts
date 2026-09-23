@@ -7,8 +7,8 @@
 // the session's one publishing path, and every author function is looking at
 // the SAME slots.
 
-import type { AgentGuardrail, SlotStore } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { AgentGuardrail, SessionEvent, SlotStore } from "@alexkroman1/aai";
+import { eventsOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeAgent, makeClientSink, makeConfig, makeLogger } from "./_test-utils.ts";
 import { openSessionWiring } from "./runtime-session-controls.ts";
@@ -74,14 +74,6 @@ function wire(
     state,
   });
   return { ...wiring, events, state };
-}
-
-/** Every event of one type the client received. */
-function eventsOf<T extends SessionEvent["type"]>(
-  events: readonly SessionEvent[],
-  type: T,
-): Extract<SessionEvent, { type: T }>[] {
-  return events.filter((event): event is Extract<SessionEvent, { type: T }> => event.type === type);
 }
 
 describe("openSessionWiring", () => {

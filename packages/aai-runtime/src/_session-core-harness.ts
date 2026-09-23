@@ -11,9 +11,10 @@
  * inbound surface.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
 import { makeEmitter } from "./_test-utils.ts";
 import type { ServerSession, ServerSessionOptions } from "./session-core.ts";

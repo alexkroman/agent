@@ -6,7 +6,6 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
-import type { SessionEvent } from "./protocol.ts";
 import {
   buildReadyConfig,
   EVENT_ID_PREFIX,
@@ -14,8 +13,9 @@ import {
   SESSION_COMMAND_TYPES,
   SessionCommandSchema,
   SessionErrorCodeSchema,
-  SessionEventSchema,
 } from "./protocol.ts";
+import { SessionEventSchema } from "./protocol-events.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 
 describe("protocol constants", () => {
   test("DEFAULT_STT_SAMPLE_RATE is 16000", () => {
@@ -206,20 +206,20 @@ describe("property: lenientParse", () => {
 
 describe("protocol type contracts", () => {
   test("SessionEvent narrows on user-transcript.committed", () => {
-    type UserTranscript = Extract<SessionEvent, { type: "user-transcript.committed" }>;
+    type UserTranscript = SessionEvent<"user-transcript.committed">;
     expectTypeOf<UserTranscript>().toHaveProperty("text");
     expectTypeOf<UserTranscript["text"]>().toBeString();
   });
 
   test("SessionEvent narrows on tool.called", () => {
-    type ToolCall = Extract<SessionEvent, { type: "tool.called" }>;
+    type ToolCall = SessionEvent<"tool.called">;
     expectTypeOf<ToolCall>().toHaveProperty("toolCallId");
     expectTypeOf<ToolCall>().toHaveProperty("toolName");
     expectTypeOf<ToolCall>().toHaveProperty("args");
   });
 
   test("SessionEvent narrows on error.reported", () => {
-    type ErrorEvent = Extract<SessionEvent, { type: "error.reported" }>;
+    type ErrorEvent = SessionEvent<"error.reported">;
     expectTypeOf<ErrorEvent>().toHaveProperty("code");
     expectTypeOf<ErrorEvent>().toHaveProperty("message");
   });

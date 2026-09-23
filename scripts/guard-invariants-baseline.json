@@ -82,7 +82,8 @@
     "packages/aai-ui/src/define-client.tsx": 1
   },
   "rule29_globalFetchInRuntime": {
-    "packages/aai-runtime/src/providers/_openai-stream-repair.ts": 1
+    "packages/aai-runtime/src/providers/_openai-stream-repair.ts": 1,
+    "packages/aai-runtime/src/providers/_request-body-extras.ts": 1
   },
   "rule30_nondeterministicWorkflowBody": {
     "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 1,

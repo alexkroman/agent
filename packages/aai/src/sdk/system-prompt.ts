@@ -90,16 +90,15 @@ export {
  * assembled from parts and is not reproduced here — a second copy in a comment
  * would drift from the one the agent runs.
  */
-// Composed with a template literal, and every section above is left
-// un-annotated, so this constant's TYPE is the prompt text itself. That is
-// deliberate and it is what puts the value in `aai:defaults`' contract hash:
-// a `: string` annotation (or a `.join()`) widens to `string`, the rolled-up
-// .d.ts carries no text, and ~10,000 characters of measured voice rules could
-// then be rewritten under a green gate — a behaviour change for every agent
-// that omitted `systemPrompt` and for every agent that composed against it.
-// The cost is that `etc/index.api.md` carries the prompt verbatim; that is the
-// artifact a reviewer is supposed to read a prompt change in.
-export const DEFAULT_SYSTEM_PROMPT =
+// Annotated `: string`, so the published TYPE is not the prompt text. It used to
+// be left un-annotated on the argument that the literal type put the value in
+// `aai:defaults`' contract hash — it never did (the hash reads any string
+// literal over 80 characters as `string`), so ~10,000 characters of prompt sat
+// in every API report as a TYPE an author's code could come to depend on, and
+// a wording change was a type change nobody could classify. The text is a
+// BEHAVIOUR: reviewed in this module's diff, pinned by `system-prompt.test.ts`,
+// and owed a changeset for every agent that omits `systemPrompt`.
+export const DEFAULT_SYSTEM_PROMPT: string =
   `${PROMPT_ROLE}\n\n${PROMPT_PERSONALITY}\n\n${PROMPT_SPEAKING}\n\n${PROMPT_LISTENING}\n\n${PROMPT_TOOLS}` as const;
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {

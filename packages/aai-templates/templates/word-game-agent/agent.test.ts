@@ -41,7 +41,9 @@ const at = (ctx: ToolContext) => gameFlow.position(ctx).state;
 function scriptedPlayer() {
   let nextGuess = "nothing";
   const model = stubGenerate({
-    [PLAYER_SYSTEM]: () => ({ object: { guess: nextGuess, remark: `Is it a ${nextGuess}?` } }),
+    routes: {
+      [PLAYER_SYSTEM]: () => ({ object: { guess: nextGuess, remark: `Is it a ${nextGuess}?` } }),
+    },
   });
   return {
     model,

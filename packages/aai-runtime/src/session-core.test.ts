@@ -1,11 +1,11 @@
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
-import { describe, expect, test, vi } from "vitest";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
+import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
 import { flush, makeEmitter, makeLogger } from "./_test-utils.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
-import type { Transport } from "./transports/types.ts";
+import type { Transport, TransportEventBody, TransportEventType } from "./transports/types.ts";
 
 describe("createSessionCore — lifecycle", () => {
   test("start/stop calls transport", async () => {
@@ -602,5 +602,43 @@ describe("createSessionCore — faultCode", () => {
     core.report({ type: "error.reported", code: "tts", message: "missing API key", fatal: true });
     core.report({ type: "error.reported", code: "stt", message: "socket closed", fatal: true });
     expect(core.faultCode).toBe("tts");
+  });
+});
+
+describe("createSessionCore — report classification", () => {
+  // The reports `handleReport` FORWARDS without acting on. Its switch names each
+  // one and its `default` is `satisfies never`, so a new reportable event fails
+  // to compile there until it is classified; this pins the runtime half — each
+  // forwarded report reaches the client once, unchanged.
+  type Forwarded =
+    | "audio.completed"
+    | "metrics.collected"
+    | "speech.stopped"
+    | "tool.completed"
+    | "user-turn.exceeded";
+  const forwarded: { [K in Forwarded]: TransportEventBody<K> } = {
+    "audio.completed": { type: "audio.completed" },
+    "metrics.collected": { type: "metrics.collected", interrupted: false },
+    "speech.stopped": { type: "speech.stopped" },
+    "tool.completed": { type: "tool.completed", toolCallId: "c1", result: "ok" },
+    "user-turn.exceeded": {
+      type: "user-turn.exceeded",
+      limit: "words",
+      words: 40,
+      durationMs: 9000,
+    },
+  };
+
+  test("the forwarded set is reportable (none is session-sourced)", () => {
+    expectTypeOf<Forwarded>().toExtend<TransportEventType>();
+  });
+
+  test.each(Object.values(forwarded))("forwards $type verbatim, once", async (report) => {
+    const { core, sink } = makeCore();
+    await core.start();
+    core.report(report);
+    const out = sink.events.filter((e) => e.type === report.type);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject(report);
   });
 });

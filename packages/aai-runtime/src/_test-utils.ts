@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type {
   AgentDef,
   AgentSessionContext,
+  SessionEvent,
   ToolContext,
   ToolDef,
   ToolErrorHandler,
@@ -13,7 +14,7 @@ import { createSeededRandom, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { type Db, rejectingWorkflows, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";

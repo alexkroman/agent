@@ -30,7 +30,7 @@
  * @module
  */
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 
 /**
  * Which harness is asking — the two differ only in the sentence that says WHY

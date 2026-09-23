@@ -128,6 +128,11 @@
       "types": "./dist/host/tools-barrel.d.ts",
       "import": "./dist/host/tools-barrel.js"
     },
+    "./experimental": {
+      "@dev/source": "./src/experimental.ts",
+      "types": "./dist/experimental.d.ts",
+      "import": "./dist/experimental.js"
+    },
     "./internal": {
       "@dev/source": "./src/internal.ts",
       "types": "./dist/internal.d.ts",

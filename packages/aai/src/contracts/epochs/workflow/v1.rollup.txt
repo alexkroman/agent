@@ -1,0 +1,195 @@
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+export type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
+export function workflow<P extends ToolInputSchema = ToolInputSchema, O extends StandardSchemaV1 = StandardSchemaV1>(def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output"> & {
+    output: O;
+}): WorkflowDef<P, InferSchemaOutput<O>>;
+
+// @public (undocumented)
+export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+
+// @public
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public
+export type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};

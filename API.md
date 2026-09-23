@@ -17,6 +17,7 @@ symbol exported from two subpaths appears under both.
 
 - `@alexkroman1/aai/channels` — `packages/aai/etc/channels.api.md`
 - `@alexkroman1/aai/coding-tools` — `packages/aai/etc/coding-tools.api.md`
+- `@alexkroman1/aai/experimental` — `packages/aai/etc/experimental.api.md`
 - `@alexkroman1/aai/ffmpeg` — `packages/aai/etc/ffmpeg.api.md`
 - `@alexkroman1/aai/host-internal` — `packages/aai/etc/host-internal.api.md`
 - `@alexkroman1/aai/html` — `packages/aai/etc/html.api.md`
@@ -44,10 +45,13 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/start` — `packages/aai-cli/etc/start.api.md`
 - `@alexkroman1/aai-cli/typecheck` — `packages/aai-cli/etc/typecheck.api.md`
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
+- `@alexkroman1/aai-runtime/auth` — `packages/aai-runtime/etc/auth.api.md`
 - `@alexkroman1/aai-runtime/eval` — `packages/aai-runtime/etc/eval.api.md`
+- `@alexkroman1/aai-runtime/eval/simulate` — `packages/aai-runtime/etc/eval-simulate.api.md`
 - `@alexkroman1/aai-runtime/eval/vitest` — `packages/aai-runtime/etc/eval-vitest.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
+- `@alexkroman1/aai-runtime/metrics` — `packages/aai-runtime/etc/metrics.api.md`
 - `@alexkroman1/aai-runtime/testing` — `packages/aai-runtime/etc/testing.api.md`
 - `@alexkroman1/aai-runtime/tracing` — `packages/aai-runtime/etc/tracing.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
@@ -63,7 +67,7 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export const CHANNEL_POST_TIMEOUT_MS = 30000;
+export const CHANNEL_POST_TIMEOUT_MS: number;
 
 // @public
 export class ChannelDeliveryError extends Error {
@@ -189,10 +193,10 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public (undocumented)
-export const BASH_TIMEOUT_MAX_MS = 300000;
+export const BASH_TIMEOUT_MAX_MS: number;
 
 // @public
-export const BASH_TIMEOUT_MS = 60000;
+export const BASH_TIMEOUT_MS: number;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -272,7 +276,7 @@ type GenerateResult = {
 };
 
 // @public
-export const GLOB_LIMIT = 100;
+export const GLOB_LIMIT: number;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -284,7 +288,15 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -295,6 +307,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -308,7 +327,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 type RandomSource = () => number;
 
 // @public
-export const READ_LIMIT = 2000;
+export const READ_LIMIT: number;
 
 // @public
 type SleepOptions = {
@@ -385,19 +404,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -597,6 +615,43 @@ type WorkflowSummary = {
 };
 ```
 
+## `@alexkroman1/aai/experimental`
+
+```ts
+// @public
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+export function openAICompatibleLlm(options: OpenAICompatibleLlmOptions): LlmProvider;
+
+// @public
+export interface OpenAICompatibleLlmOptions {
+    readonly apiKeyEnv: string;
+    readonly baseUrl: string;
+    readonly model: string;
+    readonly provider: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+```
+
 ## `@alexkroman1/aai/ffmpeg`
 
 ```ts
@@ -766,11 +821,7 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -787,10 +838,7 @@ const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -852,12 +900,6 @@ interface AgentSessionContext {
 
 // @public
 type AgentSystemPrompt = string | AgentInstructions;
-
-// @public
-export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-
-// @public (undocumented)
-export const ANTHROPIC_KIND: "anthropic";
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -1121,10 +1163,16 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
 };
 
 // @public
-export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_LLM_API_KEY_ENV: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
+
+// @public
+export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
+
+// @public
+export const ASSEMBLYAI_LLM_KIND = "assemblyai";
 
 // @public
 export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
@@ -1167,7 +1215,13 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+type AssemblyAILlmProviderOptions = {
+    readonly region?: "us" | "eu";
+    readonly reasoningEffort?: AssemblyAIReasoningEffort;
+};
+
+// @public
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -1240,12 +1294,6 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
-
-// @public
-export const CEREBRAS_API_KEY_ENV = "CEREBRAS_API_KEY";
-
-// @public (undocumented)
-export const CEREBRAS_KIND: "cerebras";
 
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
@@ -1402,15 +1450,9 @@ export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): stri
 export function freezeStorable<T>(value: T, path: string): T;
 
 // @public
-export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
-
-// @public (undocumented)
-export const GATEWAY_KIND: "gateway";
-
-// @public
 export function gatewayModelIds(opts?: {
     eu?: boolean;
-}): AssemblyAIGatewayModel[];
+}): KnownGatewayModel[];
 
 // @public
 export type GatewayModelInfo = {
@@ -1452,18 +1494,6 @@ type GenerateResult = {
 };
 
 // @public
-export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
-
-// @public (undocumented)
-export const GOOGLE_KIND: "google";
-
-// @public
-export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
-
-// @public (undocumented)
-export const GROQ_KIND: "groq";
-
-// @public
 type GuardrailVerdict = true | string;
 
 // @public
@@ -1484,10 +1514,24 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isUniversal35Pro(model: string): boolean;
 
 // @internal
+export const KNOWN_LLM_PROVIDERS: readonly ["assemblyai", "anthropic", "cerebras", "gateway", "google", "groq", "mistral", "openai", "openrouter", "xai"];
+
+// @public
+type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+
+// @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -1539,31 +1583,20 @@ type Message = {
 };
 
 // @public
-export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
-
-// @public (undocumented)
-export const MISTRAL_KIND: "mistral";
-
-// @public
-export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
-export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public (undocumented)
-export const OPENAI_KIND: "openai";
+export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
 export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
-
-// @public
-export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
-
-// @public (undocumented)
-export const OPENROUTER_KIND: "openrouter";
 
 // @public
 export type OpenUpload = {
@@ -1647,6 +1680,9 @@ export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
 type RandomSource = () => number;
+
+// @internal
+export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
@@ -2016,19 +2052,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -2383,12 +2418,6 @@ type WorkflowSummary = {
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;
-
-// @public
-export const XAI_API_KEY_ENV = "XAI_API_KEY";
-
-// @public (undocumented)
-export const XAI_KIND: "xai";
 ```
 
 ## `@alexkroman1/aai/html`
@@ -2487,11 +2516,8 @@ export interface AgentGuardrails {
 export type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-export interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+export interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -2545,7 +2571,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
 
 // @public
-export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
 
 // @public
 export function assemblyAIPipeline(options?: AssemblyAIPipelineOptions): {
@@ -2611,13 +2637,13 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
-export const DEFAULT_GUARDRAIL_MAX_RETRIES = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 
 // @public
-export const DEFAULT_STEP_MAX_ATTEMPTS = 3;
+export const DEFAULT_STEP_MAX_ATTEMPTS: number;
 
 // @public
-export const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An amount under a\n  dollar is cents alone — \"twenty-six cents\", never \"$0.26\", which is\n  read out as \"zero dollars twenty-six cents\". Write a date in words\n  (\"May twelfth\"), never slashed — \"05/12\" is read \"zero five one\n  twelve\".\n- An IDENTIFIER is the exception, and the rule is about how you WRITE\n  it: hyphenate it, one character per hyphen, end to end, and drop any\n  \"#\". That spelling is what makes the voice read a code out instead of\n  adding it up, and it is the whole rule — a code you paste unchanged\n  is a code the caller loses.\n  Anything that names one record rather than counting something is an\n  identifier: an order, item, or product number, a card's last four, a\n  ZIP, a phone number, a confirmation code.\n  Right: \"W-2-3-7-8-1-5-6\", \"A-B-C-1-2-3\", \"ending in 2-4-7-8\".\n  Wrong: \"W2378156\", \"#W2378156\", \"2478\", \"7747408585\" — each is read\n  as a quantity (\"W two million three hundred seventy-eight\n  thousand...\", \"twenty-four seventy-eight\"), and even when it isn't\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"774, 740, 8585\" — commas turn one code into three numbers.\n  One unbroken hyphen run is the only form that survives.\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-2\", never\n  \"two K2\".\n- An EMAIL ADDRESS is never written as one token. Say the name as\n  ordinary words, hyphenate the digits, and speak the separators:\n  \"yusuf dot rossi, 7-3-0-1, at example dot com\". Written whole,\n  \"yusuf.rossi7301@example.com\" comes out as \"yusuf rossi seven\n  thousand three hundred one at example com\", and another address came\n  out as different words entirely. Don't spell the letters either —\n  that loses the \"at\". Spell one character only to settle an ambiguity.\n- Put a value the caller has to write down — an identifier, an amount,\n  an address, an email — in your FIRST sentence. Most of a long reply\n  is never heard, and a value saved for the end is the part that goes\n  missing.\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly into what you SEND a\n  tool. Never retype, reformat, or construct an ID from a pattern — if\n  you don't have it, look it up first, then use it. This is about tool\n  arguments only: what you SAY is respelled for the voice under\n  SPEAKING, which changes no characters, only where the hyphens go.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
+export const DEFAULT_SYSTEM_PROMPT: string;
 
 // @public
 type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
@@ -2676,7 +2702,23 @@ export type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
-export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
+export type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+    type: N;
+} : never : never;
+
+// @public
+export type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? (C extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (C extends {
+    states: infer N;
+} ? DialogEventNames<N> : never) : never : never : never;
+
+// @public
+export interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
 
 // @public
 export interface DialogOptions {
@@ -2730,14 +2772,8 @@ export interface DialogTimeoutSpec {
 }
 
 // @public
-export interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -2763,9 +2799,11 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
-type EventOf<N> = N extends string ? {
-    type: N;
-} : never;
+export type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R | ToolFailure>;
@@ -2881,11 +2919,28 @@ export class KeyedLockTimeoutError extends Error {
     readonly key: string;
 }
 
+// @public
+type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+
+// @public
+export type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+export type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -2893,7 +2948,7 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export const MCP_SERVER_KEY_RE: RegExp;
 
 // @public
-export const MCP_TOOL_NAME_MAX = 64;
+export const MCP_TOOL_NAME_MAX: number;
 
 // @public
 export const MCP_TOOL_PREFIX = "mcp_";
@@ -2920,9 +2975,7 @@ export type Message = {
 };
 
 // @public
-export type MetricsCollectedEvent = Extract<SessionEvent, {
-    type: "metrics.collected";
-}>;
+export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
 // @public
 export interface MetricsCollector {
@@ -2981,14 +3034,11 @@ export interface MintCodeOptions {
 }
 
 // @public
-type NamesIn<S> = (S extends {
-    on: infer O;
-} ? Extract<keyof O, string> : never) | (S extends {
-    states: infer M;
-} ? NamesInMap<M> : never);
-
-// @public
-type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? NamesIn<C> : never : never : never;
+export interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export function omitUndefined<T extends object>(obj: T): {
@@ -3075,7 +3125,7 @@ export interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
+    turnDetection?: TurnDetectionMode;
     userTurnLimit?: UserTurnLimit;
 }
 
@@ -3175,7 +3225,15 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function safeJsonParse(text: string): unknown;
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+
+// @public
+export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public
+export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
+    [T in K]: Omit<SessionEventMap[T], "meta">;
+}[K];
 
 // @public
 export type SessionEventContext = {
@@ -3189,15 +3247,17 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event:
 
 // @public
 export type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
+export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -3414,7 +3474,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-export type SessionEventType = SessionEvent["type"];
+export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
@@ -3441,6 +3501,9 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
     durable?: boolean;
     view?: (value: DeepReadonly<T>) => V;
 }
+
+// @public
+export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
@@ -3488,11 +3551,8 @@ export type SlotStore = {
 };
 
 // @public
-export interface SlotToolDef<P extends ToolInputSchema, V, R> {
-    description: string;
+export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
 }
 
 // @public
@@ -3514,7 +3574,7 @@ export function spokenOrdinal(spoken: string): number | undefined;
 export function spokenTime(hhmm: string): string;
 
 // @public
-interface StandardSchemaIssue {
+export interface StandardSchemaIssue {
     readonly errors?: unknown;
     readonly issues?: unknown;
     // (undocumented)
@@ -3526,7 +3586,7 @@ interface StandardSchemaIssue {
 }
 
 // @public
-type StandardSchemaResult<Output> = {
+export type StandardSchemaResult<Output> = {
     readonly value: Output;
     readonly issues?: undefined;
 } | {
@@ -3534,7 +3594,7 @@ type StandardSchemaResult<Output> = {
 };
 
 // @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly "~standard": {
         readonly version: 1;
         readonly vendor: string;
@@ -3613,19 +3673,18 @@ export interface SubagentAnswer {
 }
 
 // @public
-export interface SubagentDef {
+export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -3767,6 +3826,9 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
+export type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+// @public
 export interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -3789,14 +3851,10 @@ export interface UserTurnLimit {
 }
 
 // @public
-export const VOICE_PRESETS: {
-    readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
-    readonly speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
-    readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
-};
+export const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
 
 // @public
-export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+export type VoicePresetName = KnownVoicePresetName | (string & {});
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -4428,102 +4486,52 @@ export const WS_OPEN = 1;
 
 ```ts
 // @public
-export function anthropicLlm(options: AnthropicLlmOptions): LlmProvider;
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL: AssemblyAIGatewayModel;
 
 // @public
-export interface AnthropicLlmOptions extends ModelOptions {
-}
+export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
 
 // @public
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.6-luna";
-
-// @public
-export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
-
-// @public
-export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1";
-
-// @public
-export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
-export function assemblyAILlm(options?: AssemblyAILlmOptions): LlmProvider;
-
-// @public
-export interface AssemblyAILlmOptions extends ProviderCredentialOptions {
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
+export type AssemblyAILlmProviderOptions = {
+    readonly region?: "us" | "eu";
+    readonly reasoningEffort?: AssemblyAIReasoningEffort;
+};
 
 // @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export const CEREBRAS_BASE_URL = "https://api.cerebras.ai/v1";
+export type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
 
 // @public
-export function cerebrasLlm(options: CerebrasLlmOptions): LlmProvider;
+export type KnownLlmProvider = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "google" | "groq" | "mistral" | "openai" | "openrouter" | "xai";
 
 // @public
-export interface CerebrasLlmOptions extends ModelOptions {
+export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider;
+
+// @public
+export type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+export interface LlmOptions<P extends LlmProviderName = LlmProviderName> extends ProviderCredentialOptions {
+    readonly baseUrl?: string;
+    readonly model: P extends "assemblyai" ? AssemblyAIGatewayModel : string;
+    readonly provider: P;
+    readonly providerOptions?: P extends "assemblyai" ? AssemblyAILlmProviderOptions : Readonly<Record<string, unknown>>;
 }
 
 // @public
-export function gatewayLlm(options: GatewayLlmOptions): LlmProvider;
-
-// @public
-export interface GatewayLlmOptions extends ModelOptions {
-}
-
-// @public
-export function googleLlm(options: GoogleLlmOptions): LlmProvider;
-
-// @public
-export interface GoogleLlmOptions extends ModelOptions {
-}
-
-// @public
-export function groqLlm(options: GroqLlmOptions): LlmProvider;
-
-// @public
-export interface GroqLlmOptions extends ModelOptions {
-}
-
-// @public
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
 // @public
-export function mistralLlm(options: MistralLlmOptions): LlmProvider;
-
-// @public
-export interface MistralLlmOptions extends ModelOptions {
-}
-
-// @public
-export interface ModelOptions extends ProviderCredentialOptions {
-    model: string;
-}
-
-// @public
-export function openAILlm(options: OpenAILlmOptions): LlmProvider;
-
-// @public
-export interface OpenAILlmOptions extends ModelOptions {
-}
-
-// @public
-export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-// @public
-export function openRouterLlm(options: OpenRouterLlmOptions): LlmProvider;
-
-// @public
-export interface OpenRouterLlmOptions extends ModelOptions {
-}
+export type LlmProviderName = KnownLlmProvider | (string & {});
 
 // @public
 export interface ProviderCredentialOptions {
@@ -4536,13 +4544,6 @@ interface ProviderDescriptor<Kind extends string, Options> {
     readonly kind: Kind;
     // (undocumented)
     readonly options: Options;
-}
-
-// @public
-export function xAILlm(options: XAILlmOptions): LlmProvider;
-
-// @public
-export interface XAILlmOptions extends ModelOptions {
 }
 ```
 
@@ -4591,11 +4592,7 @@ export const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -4612,10 +4609,7 @@ export const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -4667,6 +4661,8 @@ export function agentConfigWarnings(config: {
     s2s?: unknown;
     stt?: unknown;
     llm?: unknown;
+    voicePresets?: unknown;
+    turnDetection?: unknown;
 }): string[];
 
 // @public
@@ -4711,11 +4707,8 @@ interface AgentGuardrails {
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -4806,6 +4799,13 @@ type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
+interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -4822,14 +4822,8 @@ interface DialogTimeout {
 }
 
 // @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -4844,6 +4838,13 @@ interface DialogVoiceConfig {
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
+
+// @public
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 type FindOptions = {
@@ -4906,11 +4907,25 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -4931,6 +4946,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
@@ -4981,7 +5003,7 @@ const PIPELINE_ONLY_TUNING: {
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? "auto" | "manual" : readonly string[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? TurnDetectionMode : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -4998,7 +5020,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
+    turnDetection?: TurnDetectionMode;
     userTurnLimit?: UserTurnLimit;
 }
 
@@ -5025,7 +5047,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
 type SessionEventContext = {
@@ -5039,14 +5061,16 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -5264,7 +5288,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
@@ -5362,19 +5386,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -5591,6 +5614,9 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -5613,7 +5639,7 @@ interface UserTurnLimit {
 }
 
 // @public
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = KnownVoicePresetName | (string & {});
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -5632,7 +5658,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
+export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {
@@ -5776,10 +5802,14 @@ export interface ClientSink {
 }
 
 // @public
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export const EVENT_ID_PREFIX = "evt_";
 
 // @public
-export const EVENT_ID_PREFIX = "evt_";
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export type HostConfig = z.infer<typeof HostConfigSchema>;
@@ -6052,10 +6082,11 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
-export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
 
 // @public
 export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
@@ -6066,8 +6097,8 @@ export const SessionEventMetaSchema: z.ZodObject<{
     at: z.ZodNumber;
 }, z.core.$strip>;
 
-// @public (undocumented)
-export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -6282,6 +6313,9 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 ```
 
 ## `@alexkroman1/aai/s2s`
@@ -6428,7 +6462,15 @@ export function isTransientStatus(status: number): boolean;
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -6445,6 +6487,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export type MultipartBody = {
@@ -6596,10 +6645,10 @@ type StartOptions = {
 };
 
 // @public
-export const STEP_SPEAK_SAMPLE_RATE = 24000;
+export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
-export const STEP_SPEAK_TIMEOUT_MS = 120000;
+export const STEP_SPEAK_TIMEOUT_MS: number;
 
 // @public
 export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
@@ -6743,19 +6792,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -6843,28 +6891,28 @@ type ToolStartMessage = {
 };
 
 // @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
+export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS: readonly [string];
 
 // @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string;
 
 // @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string;
 
 // @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES = 4194304;
+export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {
@@ -7120,7 +7168,7 @@ interface ChannelSection {
 }
 
 // @public
-export const DEFAULT_RETRY_DELAY_MS = 1000;
+export const DEFAULT_RETRY_DELAY_MS: number;
 
 // @public
 export class FatalError extends Error {
@@ -7299,10 +7347,10 @@ export type ReadUploadToFileOptions = {
 };
 
 // @public
-export const STEP_FILE_READ_CONCURRENCY = 4;
+export const STEP_FILE_READ_CONCURRENCY: number;
 
 // @public
-export const STEP_FILE_WINDOW_BYTES = 8388608;
+export const STEP_FILE_WINDOW_BYTES: number;
 
 // @public
 type UploadInfo = {
@@ -7347,7 +7395,7 @@ type WriteUploadOptions = {
 
 ```ts
 // @public
-export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
+export const ASSEMBLYAI_STT_EU_URL: string;
 
 // @public
 export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
@@ -7368,7 +7416,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
 
 // @public
 export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
@@ -7420,8 +7468,6 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 ## `@alexkroman1/aai/testing`
 
 ```ts
-import type { AnyStateMachine } from 'xstate';
-import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -7461,11 +7507,7 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -7482,10 +7524,7 @@ const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -7532,60 +7571,7 @@ type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
 };
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
-    builtinTools?: readonly BuiltinTool[];
-    description?: string;
-    dialogs?: readonly AnyDialog[];
-    greeting: string;
-    idleTimeoutMs?: number;
-    llm?: LlmProvider;
-    maxSteps: number;
-    mcpServers?: McpServers;
-    name: string;
-    page?: "voice" | "static";
-    personas?: Personas;
-    requiredEnv?: readonly string[];
-    s2s?: S2sProvider;
-    silencePrompt?: string;
-    silenceTimeoutMs?: number;
-    stt?: SttProvider;
-    sttPrompt?: string;
-    subagents?: SubagentRoster;
-    systemPrompt: AgentSystemPrompt;
-    telephony?: TelephonyAccess;
-    text?: true;
-    toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-    tts?: TtsProvider;
-    workflows?: Readonly<Record<string, WorkflowDef>>;
-}
-
-// @public
-type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
-
-// @public
-interface AgentGuardrails {
-    inputGuardrails?: readonly AgentGuardrail[];
-    outputGuardrails?: readonly AgentGuardrail[];
-}
-
-// @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
-
-// @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
-    resetToolChoice?: boolean;
-    temperature?: number;
-    usageLimits?: UsageLimits;
-}
-
-// @public
-interface AgentObservation {
-    events?: SessionEventHandlers;
-    syncState?: StateProjection | readonly StateProjection[];
-}
 
 // @public
 interface AgentSessionContext {
@@ -7596,14 +7582,6 @@ interface AgentSessionContext {
 
 // @public
 type AgentSystemPrompt = string | AgentInstructions;
-
-// @public
-interface AgentVoicePresets {
-    voicePresets?: readonly VoicePresetName[];
-}
-
-// @public
-type AnyDialog = Dialog<AnyStateMachine, unknown>;
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -7618,7 +7596,9 @@ type AnyWorkflowDef<R = unknown> = {
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
-export function commandedBuiltins(config: AgentConfig): BuiltinTool[];
+export function commandedBuiltins(config: {
+    readonly systemPrompt: string;
+}): BuiltinTool[];
 
 // @public
 export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
@@ -7656,28 +7636,9 @@ interface DelegateResult extends SubagentAnswer {
 }
 
 // @public
-export function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
-
-// @public
-interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
-    readonly key: string;
-    readonly machine: M;
-    matches(ctx: SlotHolder, state: string): boolean;
-    position(ctx: SlotHolder): DialogPosition;
-    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
-    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
-    reset(ctx: SlotHolder): DialogPosition;
-    send(ctx: SlotHolder, event: E): DialogPosition;
-    timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
-    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
-}
-
-// @public
-type DialogBargeIn = "default" | "off" | {
-    minWords?: number;
-    minDurationMs?: number;
-};
+export function deployedAgent<D extends ToolBearingAgent & {
+    readonly systemPrompt: AgentSystemPrompt;
+}>(authored: D, project: ProjectFiles): D;
 
 // @public
 interface DialogPosition {
@@ -7699,36 +7660,16 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
 }, z.core.$strip>;
 
 // @public
-interface DialogTimeout {
-    readonly afterMs: number;
-    readonly event: {
-        readonly type: string;
-    };
-}
-
-// @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
-}
-
-// @public
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
 
 // @public
-interface DialogVoiceConfig {
-    readonly bargeIn?: DialogBargeIn;
-    readonly temperature?: number;
-    readonly toolChoice?: ToolChoice;
-    readonly voice?: string;
-}
+export function eventsOf<E extends {
+    type: string;
+}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
+    type: K;
+}>[];
 
 // @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
@@ -7740,7 +7681,7 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
-export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
+export function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -7784,20 +7725,6 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-interface HandoffOptions {
-    note?: string;
-}
-
-// @public
-interface HandoffResult {
-    readonly from: string;
-    readonly handoff: true;
-    readonly instruction: string;
-    readonly note?: string;
-    readonly to: string;
-}
-
-// @public
 const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
 
 // @public
@@ -7806,23 +7733,28 @@ type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+export function isEvent<E extends {
+    type: string;
+}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
+    type: K;
+}>;
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
-
-// @public
-type McpServerConfig = {
-    url: string;
-    tokenEnv?: string;
-    pinnedTools?: Readonly<Record<string, string>>;
-};
-
-// @public
-type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {
@@ -7833,54 +7765,17 @@ type Message = {
 };
 
 // @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
 
 // @public
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
-
-// @public
-interface PersonaDef {
-    description: string;
-    name: string;
-    systemPrompt: string;
-    temperature?: number;
-    toolChoice?: ToolChoice;
-    tools?: Readonly<Record<string, ToolDef>>;
-}
-
-// @public
-interface PersonaPosition {
-    readonly from?: string;
-    readonly note?: string;
-    readonly persona: PersonaDef;
-    readonly pinnedBy?: {
-        readonly dialog: string;
-        readonly state: string;
-    };
-}
-
-// @public
-interface Personas {
-    active(ctx: SlotHolder): PersonaDef;
-    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
-    readonly list: readonly PersonaDef[];
-    position(ctx: SlotHolder): PersonaPosition;
-}
-
-// @public
-interface PipelineVoiceTuning {
-    deadAirCoverMs?: number;
-    errorPhrase?: string;
-    interruptionBackoffMs?: number;
-    interruptionMinDurationMs?: number;
-    minBargeInWords?: number;
-    preemptiveGeneration?: boolean;
-    resumeFalseInterruption?: boolean;
-    startFailurePhrase?: string;
-    startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
-    userTurnLimit?: UserTurnLimit;
-}
 
 // @public
 export type ProjectFiles = {
@@ -7937,11 +7832,6 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
-type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "s2s";
-};
-
-// @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
@@ -7957,7 +7847,7 @@ export function scriptedToolContext(options?: ScriptedToolContextOptions): Scrip
 // @public
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
     generate?: StubGenerateScript | undefined;
-    delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
+    delegate?: StubDelegateScript | undefined;
 };
 
 // @public
@@ -7969,256 +7859,8 @@ export interface SentEvent {
 }
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
-
-// @public
-type SessionEventContext = {
-    sessionId: string;
-    env: Readonly<Partial<Record<string, string>>>;
-    slots: SlotStore;
-};
-
-// @public
-type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
-
-// @public
-type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
-} & {
-    "*"?: SessionEventHandler;
-};
-
-// @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"session.configured">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    audioFormat: z.ZodString;
-    sampleRate: z.ZodNumber;
-    ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"audio.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.started">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.stopped">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-transcript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent-transcript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    recovery: z.ZodOptional<z.ZodEnum<{
-        "session-failed": "session-failed";
-        "turn-failed": "turn-failed";
-    }>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.called">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.cancelled">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.reset">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timed-out">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error.reported">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodBoolean;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom.emitted">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"state.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    state: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"usage.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    inputTokens: z.ZodNumber;
-    outputTokens: z.ZodNumber;
-    totalTokens: z.ZodNumber;
-    steps: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"guardrail.blocked">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    direction: z.ZodEnum<{
-        input: "input";
-        output: "output";
-    }>;
-    replacement: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user-turn.exceeded">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    limit: z.ZodEnum<{
-        duration: "duration";
-        words: "words";
-    }>;
-    words: z.ZodNumber;
-    durationMs: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"metrics.collected">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    interrupted: z.ZodBoolean;
-    latencyMs: z.ZodOptional<z.ZodNumber>;
-    stt: z.ZodOptional<z.ZodObject<{
-        endpointingMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        ttftMs: z.ZodOptional<z.ZodNumber>;
-        durationMs: z.ZodNumber;
-        steps: z.ZodNumber;
-        inputTokens: z.ZodOptional<z.ZodNumber>;
-        outputTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        ttfbMs: z.ZodOptional<z.ZodNumber>;
-        characters: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"history.restored">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    messages: z.ZodArray<z.ZodObject<{
-        role: z.ZodEnum<{
-            assistant: "assistant";
-            user: "user";
-        }>;
-        content: z.ZodString;
-    }, z.core.$strip>>;
-    toolCalls: z.ZodArray<z.ZodObject<{
-        callId: z.ZodString;
-        name: z.ZodString;
-        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        status: z.ZodEnum<{
-            done: "done";
-            pending: "pending";
-        }>;
-        result: z.ZodOptional<z.ZodString>;
-        afterMessageIndex: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>], "type">;
-
-// @public
-type SessionEventType = SessionEvent["type"];
-
-// @public
 type SleepOptions = {
     correlationId?: string;
-};
-
-// @public
-type SlotHolder = {
-    readonly slots: SlotStore;
-    readonly sessionId: string;
 };
 
 // @public
@@ -8267,13 +7909,6 @@ type StartOptions = {
 };
 
 // @public
-interface StateProjection<V = unknown> {
-    (value?: unknown): V;
-    readonly create: () => unknown;
-    readonly key: string;
-}
-
-// @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -8297,11 +7932,6 @@ type StreamOptions = {
 };
 
 // @public
-type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "stt";
-};
-
-// @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
 
 // @public
@@ -8311,7 +7941,7 @@ export interface StubDelegate {
 }
 
 // @public
-export function stubDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubDelegate;
+export function stubDelegate(script: StubDelegateScript): StubDelegate;
 
 // @public
 export interface StubDelegateCall {
@@ -8331,6 +7961,15 @@ export type StubDelegateReply = string | {
 
 // @public
 export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+export type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 export type StubEmitted = {
@@ -8397,12 +8036,13 @@ export type StubGenerateReply = string | {
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
 
 // @public
-export type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
-    readonly text?: 'a bare `{ text }` is read as a route TABLE keyed "text", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both';
+export type StubGenerateScript = {
+    readonly reply: StubGenerateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+    readonly reply?: never;
 };
-
-// @public
-export type StubGenerateScript = StubGenerateRoutes | StubGenerateRoute;
 
 // @public
 export type StubReporter = {
@@ -8452,7 +8092,7 @@ export interface StubStepDelegate {
 }
 
 // @public
-export function stubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export type StubStepFetch = {
@@ -8557,19 +8197,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -8577,19 +8216,10 @@ interface SubagentDef {
 type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
 // @public
-type SubagentRoster = readonly SubagentDef[];
-
-// @public
 interface SubagentToolCall {
     input: unknown;
     name: string;
 }
-
-// @public
-type TelephonyAccess = boolean | readonly TelephonyCarrier[];
-
-// @public
-type TelephonyCarrier = "twilio" | "telnyx";
 
 // @public
 export type TestToolContext = ToolContext & {
@@ -8601,12 +8231,6 @@ export type TestToolContext = ToolContext & {
 // @public
 export type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-};
-
-// @public
-type ToolChoice = "auto" | "required" | "none" | {
-    type: "tool";
-    toolName: string;
 };
 
 // @public
@@ -8636,10 +8260,17 @@ type ToolContext = {
 
 // @public
 export type ToolContextOverrides = {
-    [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] | undefined;
-} & {
-    generate?: ToolContext["generate"] | StubGenerateRoutes | StubGenerateReply | undefined;
-    delegate?: ToolContext["delegate"] | Readonly<Record<string, StubDelegateRoute>> | StubDelegateReply | undefined;
+    env?: ToolContext["env"] | undefined;
+    slots?: ToolContext["slots"] | undefined;
+    messages?: ToolContext["messages"] | undefined;
+    sessionId?: ToolContext["sessionId"] | undefined;
+    send?: ToolContext["send"] | undefined;
+    signal?: ToolContext["signal"] | undefined;
+    deadlineAt?: ToolContext["deadlineAt"] | undefined;
+    workflows?: ToolContext["workflows"] | undefined;
+    random?: ToolContext["random"] | undefined;
+    generate?: ToolContext["generate"] | StubGenerateScript | undefined;
+    delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;
     desk?: StubDelegate | undefined;
 };
@@ -8709,11 +8340,6 @@ type ToolStartMessage = {
 };
 
 // @public
-type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-    readonly __stage?: "tts";
-};
-
-// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -8723,20 +8349,6 @@ interface TypedSubagentDef<T> extends SubagentDef {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
-
-// @public
-interface UsageLimits {
-    totalTokens?: number;
-}
-
-// @public
-interface UserTurnLimit {
-    maxDurationMs?: number | undefined;
-    maxWords?: number | undefined;
-}
-
-// @public
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -8966,7 +8578,7 @@ export function installStubReporter(): StubReporter;
 export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
 
 // @public
-export function installStubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
@@ -8984,7 +8596,15 @@ export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowCl
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -8995,6 +8615,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -9092,6 +8719,15 @@ type StubDelegateReply = string | {
 
 // @public
 type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 type StubEmitted = {
@@ -9248,19 +8884,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -9504,7 +9139,7 @@ export function webSearch<T = UntypedJsonBody>(query: string | ({
 
 ```ts
 // @public
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -9545,7 +9180,7 @@ export interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+export const CARTESIA_DEFAULT_VOICE: string;
 
 // @public
 export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
@@ -9571,7 +9206,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export const RIME_DEFAULT_VOICE = "cove";
+export const RIME_DEFAULT_VOICE: string;
 
 // @public
 export function rimeTts(options?: RimeTtsOptions): TtsProvider;
@@ -9707,7 +9342,7 @@ export type AnyWorkflowDef<R = unknown> = {
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
-const ClientConfigResponseSchema: z.ZodObject<{
+export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
@@ -10239,6 +9874,68 @@ export type BuildWorkerOptions = {
 };
 ```
 
+## `@alexkroman1/aai-runtime/auth`
+
+```ts
+import type http from 'node:http';
+
+// @public
+export function createSessionAuth(options: SessionAuthOptions): SessionAuth;
+
+// @public
+export function createSessionToken(input: SessionTokenInput): string;
+
+// @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
+export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
+
+// @public
+export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
+
+// @public @sealed
+export type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
+};
+
+// @public
+export const sessionAuthBrand: unique symbol;
+
+// @public
+export type SessionAuthOptions = {
+    secret?: string | undefined;
+    verify?: SessionVerifier | undefined;
+    allowedOrigins?: readonly string[] | undefined;
+};
+
+// @public
+export type SessionIdentity = {
+    sub: string;
+    sessionId?: string;
+    claims?: Record<string, unknown>;
+};
+
+// @public
+export type SessionTokenInput = SessionIdentity & {
+    secret: string;
+    ttlSeconds?: number;
+    now?: number;
+};
+
+// @public
+export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
+
+// @public
+export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
+
+// @public
+export type VerifySessionTokenOptions = {
+    secret: string;
+    now?: number;
+};
+```
+
 ## `@alexkroman1/aai-runtime/eval`
 
 ```ts
@@ -10250,7 +9947,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -10266,15 +9963,6 @@ import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
-
-// @public
-export type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
 
 // @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
@@ -10293,20 +9981,10 @@ export function createStubTtsOpener(name: string): TtsOpener & {
 export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
-export type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
 }[];
-
-// @public
-export const DEFAULT_MAX_TURNS = 12;
 
 // @public
 export const DEFAULT_RUN_TIMEOUT_MS = 300000;
@@ -10318,12 +9996,7 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 export function describeTurn(turn: EvalTurn): string;
 
 // @public
-export const END_CALL_TOOL = "end_call";
-
-// @public
-export function errorsIn(events: readonly SessionEvent[]): readonly Extract<SessionEvent, {
-    type: "error.reported";
-}>[];
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
 
 // @public
 export type EvalCredentials = {
@@ -10421,9 +10094,7 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public
@@ -10504,20 +10175,6 @@ export function installStubLlm(script: StubScript): StubLlm;
 export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
-export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
-
-// @public
-export type JudgeCallOptions = {
-    readonly criteria: readonly string[];
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly context?: string;
-};
-
-// @public
-export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
@@ -10557,64 +10214,6 @@ export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
-
-// @public
-export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
-
-// @public
-export type SimulateCallOptions = {
-    readonly caller: SimulatedCaller;
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly maxTurns?: number;
-};
-
-// @public
-export type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-export type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-export type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-export type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
-};
-
-// @public
-export type SimulationTarget = {
-    say(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-} | {
-    send(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-};
 
 // @public
 export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
@@ -10713,6 +10312,167 @@ export type VmRunCodeOptions = {
 };
 ```
 
+## `@alexkroman1/aai-runtime/eval/simulate`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai';
+
+// @public
+export type CallVerdict = {
+    readonly pass: boolean;
+    readonly criteria: readonly CriterionVerdict[];
+    readonly summary: string;
+    readonly scripted: boolean;
+    explain(): string;
+};
+
+// @public
+export type CriterionVerdict = {
+    readonly criterion: string;
+    readonly pass: boolean;
+    readonly reason: string;
+};
+
+// @public
+export const DEFAULT_MAX_TURNS = 12;
+
+// @public
+export const END_CALL_TOOL = "end_call";
+
+// @public
+type EvalMode = "live" | "stub";
+
+// @public
+export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
+
+// @public
+export type EvalSimulationContext = {
+    simulate(caller: SimulatedCaller, options?: {
+        readonly maxTurns?: number;
+    }): Promise<SimulatedCall>;
+    judge(input: JudgeInput, criteria: readonly string[], options?: {
+        readonly context?: string;
+    }): Promise<CallVerdict>;
+};
+
+// @public
+export type EvalSimulationOptions = {
+    readonly agent: AgentDef;
+    readonly mode: EvalMode;
+    readonly target: SimulationTarget;
+    readonly callerLlm?: LlmProvider;
+    readonly judgeLlm?: LlmProvider;
+    readonly llm?: LlmProvider;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly stubCaller?: StubScript;
+    readonly stubJudge?: readonly boolean[];
+};
+
+// @public
+type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+    readonly errors: readonly SessionEvent<"error.reported">[];
+};
+
+// @public
+export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
+
+// @public
+export type JudgeCallOptions = {
+    readonly criteria: readonly string[];
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly context?: string;
+};
+
+// @public
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
+
+// @public
+export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
+
+// @public
+export type SimulateCallOptions = {
+    readonly caller: SimulatedCaller;
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly maxTurns?: number;
+};
+
+// @public
+export type SimulatedCall = {
+    readonly caller: SimulatedCaller;
+    readonly greeting: readonly string[];
+    readonly turns: readonly SimulatedTurn[];
+    readonly endedBy: "caller" | "max-turns";
+    readonly endReason: string | undefined;
+    readonly metrics: SimulationMetrics;
+    transcript(): string;
+};
+
+// @public
+export type SimulatedCaller = {
+    readonly persona: string;
+    readonly goal: string;
+    readonly opening?: string;
+};
+
+// @public
+export type SimulatedTurn = {
+    readonly caller: string;
+    readonly turn: EvalTurn;
+    readonly latencyMs: number | undefined;
+};
+
+// @public
+export type SimulationMetrics = {
+    readonly turns: number;
+    readonly durationMs: number;
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly toolCallCounts: Readonly<Record<string, number>>;
+    readonly latencyMs: {
+        readonly mean: number | undefined;
+        readonly p50: number | undefined;
+        readonly max: number | undefined;
+    };
+};
+
+// @public
+export type SimulationTarget = {
+    say(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+} | {
+    send(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+};
+
+// @public
+type StubScript = string | readonly (string | StubStep)[];
+
+// @public
+type StubStep = {
+    readonly text: string;
+} | {
+    readonly tool: string;
+    readonly args?: Record<string, unknown>;
+};
+```
+
 ## `@alexkroman1/aai-runtime/eval/vitest`
 
 ```ts
@@ -10721,10 +10481,10 @@ import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import type { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -10735,26 +10495,10 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
-
-// @public
-type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: DescribeEvalOptions): void;
 
 // @public
-export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimulationSuiteOptions & {
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
     readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 
@@ -10762,7 +10506,7 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimula
 export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
 
 // @public
-export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent"> & EvalSimulationSuiteOptions;
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 
 // @public
 export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
@@ -10773,8 +10517,6 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
 };
 
 // @public
@@ -10818,28 +10560,6 @@ type EvalSessionOptions = {
 };
 
 // @public
-export type EvalSimulationCaseOptions = {
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
-};
-
-// @public
-export type EvalSimulationContext = {
-    simulate(caller: SimulatedCaller, options?: {
-        readonly maxTurns?: number;
-    }): Promise<SimulatedCall>;
-    judge(input: JudgeInput, criteria: readonly string[], options?: {
-        readonly context?: string;
-    }): Promise<CallVerdict>;
-};
-
-// @public
-export type EvalSimulationSuiteOptions = {
-    readonly callerLlm?: LlmProvider;
-    readonly judgeLlm?: LlmProvider;
-};
-
-// @public
 type EvalSleep = {
     readonly label: string;
     readonly duration: string | number | Date;
@@ -10849,7 +10569,7 @@ type EvalSleep = {
 export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTestContext = EvalSimulationContext & {
+export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
@@ -10884,7 +10604,7 @@ type EvalTextAgentOptions = {
 export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTextTestContext = EvalSimulationContext & {
+export type EvalTextTestContext = {
     readonly agent: EvalTextAgent;
     readonly mode: EvalMode;
 };
@@ -10903,9 +10623,7 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public
@@ -10985,9 +10703,6 @@ type HostGenerateFn = (options: GenerateOptions, callOptions?: {
 }) => Promise<GenerateResult>;
 
 // @public
-type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 type LogContext = Record<string, unknown>;
 
 // @public
@@ -11012,44 +10727,6 @@ overrides?: {
 export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
     mode: EvalMode;
     reason: string;
-};
-
-// @public
-type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
 };
 
 // @public
@@ -11084,13 +10761,11 @@ import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
 import { LanguageModel } from 'ai';
-import type { LlmProvider } from '@alexkroman1/aai/llm';
+import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { McpServers } from '@alexkroman1/aai';
 import type { Message } from '@alexkroman1/aai';
 import type { ModelMessage } from 'ai';
@@ -11101,8 +10776,10 @@ import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { streamText } from 'ai';
@@ -11157,11 +10834,11 @@ export type AgentServer = {
 
 // @public
 export interface AgentServerOptions extends SharedServerOptions {
-    agent: RuntimeOptions["agent"];
+    agent: AgentDef;
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
-    journal?: RuntimeOptions["journal"];
+    journal?: JournalStore | undefined;
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -11223,6 +10900,9 @@ export type CloseableDb = Db & {
 };
 
 // @public
+export function connectSession(runtime: Runtime, sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
+
+// @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
 
 // @public (undocumented)
@@ -11276,9 +10956,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
-export function createSessionToken(input: SessionTokenInput): string;
-
-// @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
 
 // @public
@@ -11314,11 +10991,6 @@ export function ensureWorkflowJournalSchema(options: {
     logger: Logger;
 }): Promise<boolean>;
 
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
-
 export { ExecuteTool }
 
 export { ExecuteToolOptions }
@@ -11351,12 +11023,6 @@ type HookRecord = {
 };
 
 export { HostCredentialEnv }
-
-// @public
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
-    signal?: AbortSignal | undefined;
-    onUsage?: ((usage: StepUsage) => void) | undefined;
-}) => Promise<GenerateResult>;
 
 // @public
 export interface HostServerOptions extends SharedServerOptions {
@@ -11619,11 +11285,11 @@ type RunRecord = {
 // @public
 type RunStatus = WorkflowRunStatus;
 
-// @public
+// @public @sealed
 export type Runtime = AgentRuntime & {
+    readonly [runtimeBrand]: true;
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
-    connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
     createSession(options: {
         id: string;
         agent: string;
@@ -11631,6 +11297,9 @@ export type Runtime = AgentRuntime & {
         skipGreeting?: boolean;
     }): ServerSession;
 };
+
+// @public
+export const runtimeBrand: unique symbol;
 
 // @public
 export type RuntimeOptions = {
@@ -11660,13 +11329,12 @@ export type RuntimeOptions = {
         error: string;
     }>) | undefined;
     toolTimeoutMs?: number | undefined;
-    generate?: HostGenerateFn | undefined;
     stt?: SttProvider | undefined;
     llm?: LlmProvider | undefined;
     tts?: TtsProvider | undefined;
 };
 
-// @public (undocumented)
+// @public
 export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
@@ -11676,11 +11344,11 @@ export type RuntimeServerOptions = {
     hostBaseAgent?: AgentDef;
     greeting?: string;
     uploadBroker?: string;
-    upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
-    request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
     page?: "voice" | "static";
     telephony?: TelephonyAccess;
-    auth?: SessionAuthOptions | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -11692,6 +11360,9 @@ export type S2sConfig = {
 
 // @public
 export function salvageJson(input: string): Promise<string | null>;
+
+// @public
+export type ServerRequestHook = (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
 
 // @public
 export type ServerSession = {
@@ -11710,23 +11381,18 @@ export type ServerSession = {
 };
 
 // @public
-export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+export type ServerUpgradeHook = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
 
 // @public
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
-// @public
-export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
-
-// @public
-export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
-
-// @public
-export type SessionAuthOptions = {
-    secret?: string | undefined;
-    verify?: SessionVerifier | undefined;
-    allowedOrigins?: readonly string[] | undefined;
+// @public @sealed
+type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
 };
+
+// @public
+const sessionAuthBrand: unique symbol;
 
 // @public
 export type SessionConnection = {
@@ -11757,13 +11423,6 @@ export type SessionEventStream = {
     discard(sessionId: string): void;
     clear(): void;
     readonly durable: boolean;
-};
-
-// @public
-export type SessionIdentity = {
-    sub: string;
-    sessionId?: string;
-    claims?: Record<string, unknown>;
 };
 
 // @public
@@ -11806,16 +11465,6 @@ export type SessionStateStore = {
 };
 
 // @public
-export type SessionTokenInput = SessionIdentity & {
-    secret: string;
-    ttlSeconds?: number;
-    now?: number;
-};
-
-// @public
-export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
-
-// @public
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -11838,9 +11487,9 @@ export type SessionWebSocket = {
 // @public
 export type SharedServerOptions = {
     logger?: Logger | undefined;
-    upgrade?: RuntimeServerOptions["upgrade"];
-    request?: RuntimeServerOptions["request"];
-    auth?: RuntimeServerOptions["auth"];
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -11885,16 +11534,6 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
-
-// @public
-interface StepUsage {
-    // (undocumented)
-    inputTokens?: number | undefined;
-    // (undocumented)
-    outputTokens?: number | undefined;
-    // (undocumented)
-    totalTokens?: number | undefined;
-}
 
 // @public
 export type StoredSessionEvent = {
@@ -11972,10 +11611,10 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+export type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
 
 // @public
-export type TransportEventType = TransportEventBody["type"];
+export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { TtsError }
 
@@ -12056,15 +11695,6 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
-
-// @public
-export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
-
-// @public
-export type VerifySessionTokenOptions = {
-    secret: string;
-    now?: number;
-};
 
 // @public
 export type WdkAdapter = {
@@ -12153,8 +11783,10 @@ import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
@@ -12264,11 +11896,6 @@ export function createUploadStore(options: {
 
 // @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
-
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
 
 // @internal
 export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
@@ -12746,7 +12373,10 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
+
+// @public
+type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { UPLOAD_CHUNK_BYTES }
 
@@ -12841,6 +12471,71 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
 };
 ```
 
+## `@alexkroman1/aai-runtime/metrics`
+
+```ts
+import type { MetricsCollectedEvent } from '@alexkroman1/aai';
+
+// @public
+export interface MetricsContext {
+    // (undocumented)
+    agent: string;
+    // (undocumented)
+    sessionId: string;
+}
+
+// @public
+export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
+
+// @public
+export interface MetricsSink {
+    // (undocumented)
+    record(event: MetricsCollectedEvent, context: MetricsContext): void;
+}
+
+// @public
+export const OTEL_METRIC_NAMES: {
+    readonly replies: "aai.replies";
+    readonly latency: "aai.reply.latency";
+    readonly sttEndpointing: "aai.stt.endpointing_delay";
+    readonly llmTtft: "aai.llm.time_to_first_token";
+    readonly llmDuration: "aai.llm.duration";
+    readonly llmTokens: "aai.llm.tokens";
+    readonly ttsTtfb: "aai.tts.time_to_first_byte";
+    readonly ttsCharacters: "aai.tts.characters";
+};
+
+// @public
+export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+// @public
+export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
+
+// @public
+export interface OtelMeterLike {
+    // (undocumented)
+    createCounter(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        add(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+    // (undocumented)
+    createHistogram(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        record(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+}
+
+// @public
+export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
+
+// @public
+export function registerMetricsSink(sink: MetricsSink): () => void;
+```
+
 ## `@alexkroman1/aai-runtime/testing`
 
 ```ts
@@ -12852,7 +12547,7 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
@@ -13098,75 +12793,14 @@ export type WorkflowTestStep = {
 ## `@alexkroman1/aai-runtime/tracing`
 
 ```ts
-import type { MetricsCollectedEvent } from '@alexkroman1/aai';
-
 // @public
 export const DEFAULT_SERVICE_NAME = "aai-agent";
-
-// @public
-export interface MetricsContext {
-    // (undocumented)
-    agent: string;
-    // (undocumented)
-    sessionId: string;
-}
-
-// @public
-export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
-
-// @public
-export interface MetricsSink {
-    // (undocumented)
-    record(event: MetricsCollectedEvent, context: MetricsContext): void;
-}
 
 // @public
 export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
 
 // @public
-export const OTEL_METRIC_NAMES: {
-    readonly replies: "aai.replies";
-    readonly latency: "aai.reply.latency";
-    readonly sttEndpointing: "aai.stt.endpointing_delay";
-    readonly llmTtft: "aai.llm.time_to_first_token";
-    readonly llmDuration: "aai.llm.duration";
-    readonly llmTokens: "aai.llm.tokens";
-    readonly ttsTtfb: "aai.tts.time_to_first_byte";
-    readonly ttsCharacters: "aai.tts.characters";
-};
-
-// @public
-export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
-
-// @public
-export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
-
-// @public
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
-
-// @public
-export interface OtelMeterLike {
-    // (undocumented)
-    createCounter(name: string, options?: {
-        description?: string;
-        unit?: string;
-    }): {
-        add(value: number, attributes?: Record<string, string | boolean>): void;
-    };
-    // (undocumented)
-    createHistogram(name: string, options?: {
-        description?: string;
-        unit?: string;
-    }): {
-        record(value: number, attributes?: Record<string, string | boolean>): void;
-    };
-}
-
-// @public
-export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
-
-// @public
-export function registerMetricsSink(sink: MetricsSink): () => void;
 
 // @public
 export type RuntimeTracing = {
@@ -13269,17 +12903,16 @@ export function AutoScroll(input: {
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
 
-// @public
+// @public @sealed
 export type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -13289,6 +12922,9 @@ export type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+export const browserSessionBrand: unique symbol;
 
 // @public
 export function BulletList(input: BulletListProps): ReactNode;
@@ -13548,7 +13184,16 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "startUserTurn" | "commitUserTurn" | "clearUserTurn" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = {
+    start(): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    restart(): void;
+    disconnect(): void;
+    toggle(): void;
+    end(): void;
+};
 
 // @public
 export type SessionControlAction = "start" | "toggle" | "restart" | "end";
@@ -13810,6 +13455,13 @@ export type UsePushToTalkResult = {
         disabled: boolean;
         "aria-pressed": boolean;
     };
+};
+
+// @public
+export type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
 };
 
 // @public
@@ -14095,17 +13747,16 @@ export function ApiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public
+// @public @sealed
 type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -14115,6 +13766,9 @@ type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+const browserSessionBrand: unique symbol;
 
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
@@ -14215,6 +13869,13 @@ export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
+
+// @public
+type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};
 
 // @public
 export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;

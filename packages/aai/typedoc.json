@@ -44,16 +44,9 @@
     // signatures, where they are what a reader needs to see.
     "RejectThenable",
     "RejectThenableResult",
-    "StandardSchemaV1",
-    // The issue type from the same vendor interface, reached the same way:
-    // `schemaInputIssues` (`@alexkroman1/aai/testing`) answers
-    // `readonly StandardSchemaIssue[] | undefined`. Its whole job is to be
-    // handed to a reporter or asserted non-empty, and `~standard` is a wire
-    // contract between a schema library and this SDK rather than an authoring
-    // surface — a spec naming the type is naming the seam these helpers exist
-    // to hide. It still appears inline in the rendered signature, and the API
-    // report carries its declaration under `includeForgottenExports`.
-    "StandardSchemaIssue",
+    // `StandardSchemaV1` and `StandardSchemaIssue` used to be listed here. They
+    // are exported from the root now, owned by the `standard-schema` capability,
+    // because eight contracts hashed their bodies while none owned them.
     // The field-list and message types behind `AgentParams`' four arms, plus
     // the endpointing pair and the silence-nudge one. They are the implementation of a compile error — an
     // author reads them in the message tsc prints, never by name — so they are
@@ -79,22 +72,10 @@
     "StaticAgentParamsCore",
     "StaticFrontDoorMisuse",
     "WorkflowAppMisuse",
-    "WorkflowAppOnlyField",
-    // A type-level helper, not API: `SessionEventBody` is
-    // `DistributiveOmit<SessionEvent, "meta">` because a plain `Omit` over a
-    // discriminated union collapses it to one non-discriminated object. Nothing a
-    // consumer can name, and nothing they need to — the distribution is what they
-    // get. Exporting it to satisfy the reference would put a conditional-type
-    // utility on the published surface.
-    "DistributiveOmit",
-    // The two conditional-type helpers behind `DialogEvent<S>`. They walk a
-    // `DialogSpec`'s nested `states` collecting `on` keys, and the union they
-    // produce is the whole of what an author sees — `dialog.send` takes it and
-    // a misspelled event name is the error. Naming either one is meaningless
-    // outside that recursion, and exporting them to satisfy the reference would
-    // put two type-level utilities on the published surface. Same argument as
-    // `DistributiveOmit` above.
-    "EventOf",
-    "NamesInMap"
+    "WorkflowAppOnlyField"
+    // `DistributiveOmit`, `EventOf` and `NamesInMap` used to be listed here.
+    // `SessionEventBody` is a lookup into the exported `SessionEventMap` now, and
+    // `DialogEvent<S>` is written over the exported `DialogEventNames<M>`, so
+    // there is no unexported helper left in either signature to excuse.
   ]
 }

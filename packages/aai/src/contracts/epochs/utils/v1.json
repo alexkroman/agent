@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "utils",
   "epoch": 1,
-  "sha256": "a34ea7601ab9ed23c204e866b2e6aa9578d3b60a00e049d383f0a84e013ab337",
+  "rule": 2,
+  "sha256": "d08ca59924a89cc3bff7ed1daab56fac9fe3eea2aa9cba50d449d4303e9787d2",
   "exports": [
     "KeyedLock",
     "KeyedLockOptions",
@@ -23,5 +24,6 @@
     "roundMoney",
     "safeJsonParse",
     "withLock"
-  ]
+  ],
+  "rollup": "3564c81dd8231fb94817354b89e49e2f427c584e13b2537cdbcdeef6ca252b81"
 }

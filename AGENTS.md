@@ -479,11 +479,13 @@ Four things a change to a published package owes, without reading further:
 
 - **Regenerate rather than hand-edit** — `pnpm api-report`, `pnpm docs:md`. All
   three trees are derived, and all three gates fail on a stale one.
-- **A capability whose shape moved has to be CLASSIFIED before it can land**:
-  `node scripts/api-contracts.mjs --bump <pkg>:<capability> --retain` (epoch N
-  still compiles) or `--drop "<reason>"`. Run `pnpm typecheck` FIRST — the
-  frozen examples it reddens are the older epochs to drop. Names are qualified
-  per package (`aai-ui:workflow`), and ambiguity is REFUSED, never resolved by
+- **A capability whose hash moved has to be RECORDED before it can land**:
+  `node scripts/api-contracts.mjs --update` when the check says the change is
+  provably compatible (a revision of the same epoch — no example owed), else
+  `--bump <pkg>:<capability> --drop "<reason>"` (or `--retain`, epoch N still
+  compiles, with a frozen example). Run `pnpm typecheck` FIRST — the frozen
+  examples it reddens are the older epochs to drop. Names are qualified per
+  package (`aai-ui:workflow`), and ambiguity is REFUSED, never resolved by
   precedence.
 - **A new subpath export defaults INTO all three** — each is a deny-list, so it
   fails until somebody writes down why it should be out.
@@ -495,8 +497,9 @@ Four things a change to a published package owes, without reading further:
 CONTRACT package owes. This section used to be two, "Published type signatures
 are a committed report" and "The authoring surface is versioned in epochs" —
 the titles three package guides still cite as living in the root; both are
-there under those same headings, with the `@internal`-surface ratchet, the six
-load-bearing properties of an epoch, why capabilities rather than entry points,
+there under those same headings, with the `@internal`-surface ratchet, the
+load-bearing properties of an epoch (revisions, one epoch per branch, one owner
+per hashed type), why capabilities rather than entry points,
 and the two mechanical notes.
 
 ### The authoring guide ships inside the SDK
@@ -519,7 +522,7 @@ prevents and why the shipped SKILL carries no API guidance of its own.
 
 The third artifact of the three above: two renderings of the published type
 surface, both from TypeDoc over the built `dist/*.d.ts` of `aai`, `aai-ui` and
-three of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
+four of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
 site into `docs/dist/**` in ONE Astro build — the handwritten guide, plus the
 reference at `/reference/`, which `starlight-typedoc` renders as Starlight pages
 rather than TypeDoc's own HTML; `pnpm docs:md` renders `docs/api/**` as
@@ -710,19 +713,24 @@ back to the host's `process.env`.
   cannot close it — `typescript@7` ships no compiler API. `guard-invariants`
   rule 23 covers the listener half; the measurements are in
   `packages/aai-templates/CLAUDE.md`.
-- **Type-level tests**: six `.test-d.ts` files — four in `aai`
-  (`sdk/define.test-d.ts`, `sdk/env-types.test-d.ts`, `sdk/dialog.test-d.ts`,
-  `sdk/workflow-types.test-d.ts`), one in `aai-ui` (`hooks.test-d.ts` — the four
-  generic hooks a custom client is written against) and one in `aai-runtime`
-  (`providers/providers.test-d.ts`). Most subpath exports are still uncovered,
-  and **the two newest files each have a blind spot a template hit on day 1**:
-  each pins only the shape its own fixtures use — see "A `sendFrom` goes BELOW
-  `execute`" and "A body that names `WorkflowInputOf` obliges the DEF to carry a
-  type" in `packages/aai-templates/CLAUDE.md`. (Their RUNTIME export
-  lists are pinned — see `sdk/exports.test.ts` — which is a different
-  guarantee.) `hooks.test-d.ts` pins the deliberate
-  `any`s (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes,
-  because tightening one to `unknown` is a breaking change for every untyped
+- **Type-level tests**: eleven `.test-d.ts` files — eight in `aai`
+  (`sdk/define.test-d.ts`, `sdk/define-agent-groups.test-d.ts`,
+  `sdk/_session-slot-caps.test-d.ts`, `sdk/env-types.test-d.ts`,
+  `sdk/dialog.test-d.ts`, `sdk/testing.test-d.ts`,
+  `sdk/workflow-types.test-d.ts`, `sdk/providers/llm/llm.test-d.ts`), one in
+  `aai-ui` (`hooks.test-d.ts` — the four generic hooks a custom client is
+  written against, and the `BrowserSession` seal) and two in `aai-runtime`
+  (`providers/providers.test-d.ts`, `runtime.test-d.ts` — the `Runtime` seal).
+  Each package's are the `aai-types` / `aai-ui-types` / `aai-runtime-types`
+  vitest projects. Most subpath exports are still uncovered, and
+  **`dialog.test-d.ts` and `workflow-types.test-d.ts` each have a blind spot a
+  template hit on day 1**: each pins only the shape its own fixtures use — see
+  "A `sendFrom` goes BELOW `execute`" and "A body that names `WorkflowInputOf`
+  obliges the DEF to carry a type" in `packages/aai-templates/CLAUDE.md`.
+  (Their RUNTIME export lists are pinned — see `sdk/exports.test.ts` — which is
+  a different guarantee.) `hooks.test-d.ts` pins the deliberate `any`s
+  (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes, because
+  tightening one to `unknown` is a breaking change for every untyped
   client and should fail here rather than in a user's build.
 
 ### Open testability work

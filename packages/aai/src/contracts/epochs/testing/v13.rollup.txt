@@ -1,0 +1,1027 @@
+import { z } from 'zod';
+
+// @public
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+// @internal
+const AgentConfigSchema: z.ZodObject<{
+    name: z.ZodString;
+    description: z.ZodOptional<z.ZodString>;
+    systemPrompt: z.ZodDefault<z.ZodString>;
+    greeting: z.ZodDefault<z.ZodString>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    maxSteps: z.ZodOptional<z.ZodNumber>;
+    temperature: z.ZodOptional<z.ZodNumber>;
+    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
+    maxRetries: z.ZodOptional<z.ZodNumber>;
+    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
+    usageLimits: z.ZodOptional<z.ZodObject<{
+        totalTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
+        auto: "auto";
+        none: "none";
+        required: "required";
+    }>, z.ZodObject<{
+        type: z.ZodLiteral<"tool">;
+        toolName: z.ZodString;
+    }, z.core.$strip>]>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        calculate: "calculate";
+        fetch_json: "fetch_json";
+        get_page_design: "get_page_design";
+        recall: "recall";
+        remember: "remember";
+        run_code: "run_code";
+        think: "think";
+        visit_webpage: "visit_webpage";
+        web_search: "web_search";
+    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
+    silencePrompt: z.ZodOptional<z.ZodString>;
+    minBargeInWords: z.ZodOptional<z.ZodNumber>;
+    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
+    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
+    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
+    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
+    errorPhrase: z.ZodOptional<z.ZodString>;
+    startFailurePhrase: z.ZodOptional<z.ZodString>;
+    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
+    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
+    userTurnLimit: z.ZodOptional<z.ZodObject<{
+        maxWords: z.ZodOptional<z.ZodNumber>;
+        maxDurationMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
+    stt: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    s2s: z.ZodOptional<z.ZodObject<{
+        kind: z.ZodString;
+        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    }, z.core.$strip>>;
+    text: z.ZodOptional<z.ZodLiteral<true>>;
+    mode: z.ZodOptional<z.ZodEnum<{
+        pipeline: "pipeline";
+        s2s: "s2s";
+        text: "text";
+    }>>;
+    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodURL;
+        tokenEnv: z.ZodOptional<z.ZodString>;
+        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    }, z.core.$strict>>>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
+        telnyx: "telnyx";
+        twilio: "twilio";
+    }>>>]>>;
+}, z.core.$strip>;
+
+// @public
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+    systemPrompt?: AgentSystemPrompt;
+} & {
+    [K in HostOnlyAgentField]?: unknown;
+};
+
+// @public
+type AgentInstructions = (ctx: AgentSessionContext) => string;
+
+// @public
+interface AgentSessionContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    slots: SlotStore;
+}
+
+// @public
+type AgentSystemPrompt = string | AgentInstructions;
+
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+export function commandedBuiltins(config: {
+    readonly systemPrompt: string;
+}): BuiltinTool[];
+
+// @public
+export function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
+
+// @public
+export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+
+// @public
+export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
+
+// @public
+export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
+
+// @public
+export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
+
+// @public
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
+}
+
+// @public
+export function deployedAgent<D extends ToolBearingAgent & {
+    readonly systemPrompt: AgentSystemPrompt;
+}>(authored: D, project: ProjectFiles): D;
+
+// @public
+interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly persona?: string;
+    readonly state: string;
+}
+
+// @public
+export function dialogRefusalPattern(state?: string): RegExp;
+
+// @public
+export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<{
+    result: T;
+    state: z.ZodString;
+    done: z.ZodBoolean;
+    instruction: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+
+// @public
+interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
+
+// @public
+export function eventsOf<E extends {
+    type: string;
+}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
+    type: K;
+}>[];
+
+// @public
+export function expectDeployable(def: AgentConfigSource): AgentConfig;
+
+// @public
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
+
+// @public
+export function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
+
+// @public
+export function expectToolOk<T>(result: unknown): T;
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @public
+type GuardrailVerdict = true | string;
+
+// @public
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
+
+// @public
+type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
+
+// @public
+export function installStubReporter(): StubReporter;
+
+// @public
+export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
+
+// @public
+export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function installStubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+
+// @public
+export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
+
+// @public
+export function isEvent<E extends {
+    type: string;
+}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
+    type: K;
+}>;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+    toolName?: string;
+    toolCallId?: string;
+};
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
+export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
+
+// @public
+export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+
+// @public
+export type ProjectFiles = {
+    readonly tools?: ToolModules;
+    readonly systemPrompt?: string;
+};
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+type RandomSource = () => number;
+
+// @public
+export type RecordedSleep = {
+    label: string;
+    until: number | Date;
+    correlationId?: string | undefined;
+};
+
+// @public
+export type RecordedStep = {
+    name: string;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+export function routeStepFetch(routes: readonly StepRoute[], options?: {
+    unmatched?: StepUnmatched;
+}): (request: StubStepRequest) => StubStepAnswer;
+
+// @public
+export function runGuardrail(def: SubagentDef, text: string, answer?: Partial<SubagentAnswer>): GuardrailVerdict;
+
+// @public
+export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
+    status?: "pending" | "running" | undefined;
+} | {
+    status: "completed";
+    output: R;
+} | {
+    status: "failed";
+    error: string;
+} | {
+    status: "cancelled";
+});
+
+// @public
+export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
+
+// @public
+export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
+
+// @public
+export interface ScriptedToolContext {
+    ctx: TestToolContext;
+    desk: StubDelegate;
+    model: StubGenerate;
+}
+
+// @public
+export function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
+
+// @public
+export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
+    generate?: StubGenerateScript | undefined;
+    delegate?: StubDelegateScript | undefined;
+};
+
+// @public
+export interface SentEvent {
+    // (undocumented)
+    data: unknown;
+    // (undocumented)
+    event: string;
+}
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+export type StepRoute = (request: StubStepRequest) => StubStepAnswer | undefined;
+
+// @public
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public
+export type StepUnmatched = "throw" | "notFound" | StepRoute;
+
+// @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
+export interface StubDelegate {
+    calls: StubDelegateCall[];
+    delegate: DelegateFn;
+}
+
+// @public
+export function stubDelegate(script: StubDelegateScript): StubDelegate;
+
+// @public
+export interface StubDelegateCall {
+    options: DelegateOptions;
+    subagent: SubagentDef;
+    task: string;
+}
+
+// @public
+export type StubDelegateReply = string | {
+    text: string;
+    steps?: number;
+    toolCalls?: readonly SubagentToolCall[];
+    revisions?: number;
+    complaint?: string;
+};
+
+// @public
+export type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+export type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
+
+// @public
+export type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
+export interface StubGateway {
+    calls: StubGatewayCall[];
+    fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+}
+
+// @public
+export function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
+
+// @public
+export interface StubGatewayCall {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    prompt: string;
+    system: string | undefined;
+    url: string;
+}
+
+// @public
+export interface StubGatewayOptions {
+    headers?: Record<string, string>;
+    status?: number;
+}
+
+// @public
+export interface StubGatewayRoute {
+    calls: StubGatewayCall[];
+    route: (request: StubStepRequest) => StubStepAnswer | undefined;
+}
+
+// @public
+export function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
+
+// @public
+export interface StubGenerate {
+    calls: StubGenerateCall[];
+    generate: GenerateFn;
+}
+
+// @public
+export function stubGenerate(script: StubGenerateScript): StubGenerate;
+
+// @public
+export interface StubGenerateCall {
+    options: GenerateOptions;
+    prompt: string;
+    system: string | undefined;
+}
+
+// @public
+export type StubGenerateReply = string | {
+    text?: string;
+    object: unknown;
+};
+
+// @public
+export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubGenerateScript = {
+    readonly reply: StubGenerateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+    readonly reply?: never;
+};
+
+// @public
+export type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+export function stubReporter(): StubReporter;
+
+// @public
+export type StubSpeech = {
+    calls: StubSpeechCall[];
+    restore(): void;
+};
+
+// @public
+export function stubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export type StubSpeechCall = {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language: string | undefined;
+    sampleRate: number;
+};
+
+// @public
+export type StubSpeechOptions = {
+    pcmBytes?: number | undefined;
+    error?: Error | undefined;
+};
+
+// @public
+export type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public
+export interface StubStepDelegate {
+    calls: StubDelegateCall[];
+    restore(): void;
+}
+
+// @public
+export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
+
+// @public
+export type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function stubStepInfo(step: {
+    attempt?: number | undefined;
+    maxAttempts?: number | undefined;
+    name?: string | undefined;
+}): {
+    restore: () => void;
+};
+
+// @public
+export type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};
+
+// @public
+export type StubTranscribe = {
+    calls: StubTranscribeCall[];
+    restore(): void;
+};
+
+// @public
+export function stubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export type StubTranscribeCall = StubStepRequest & {
+    leg: StubTranscribeLeg;
+};
+
+// @public
+export type StubTranscribeFailure = {
+    leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
+    status?: number | undefined;
+    message?: string | undefined;
+    retryAfterSeconds?: number | undefined;
+};
+
+// @public
+export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+
+// @public
+export type StubTranscribeOptions = {
+    text?: string | readonly string[] | undefined;
+    durationSec?: number | undefined;
+    audioUrl?: string | undefined;
+    jobIdPrefix?: string | undefined;
+    pendingPolls?: number | undefined;
+    jobError?: string | undefined;
+    failure?: StubTranscribeFailure | undefined;
+    otherwise?: ((request: StubStepRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>) | undefined;
+};
+
+// @public
+export type StubUpload = Uint8Array | {
+    bytes: Uint8Array;
+    name?: string;
+    type?: string;
+    complete?: boolean;
+};
+
+// @public
+export type StubUploads = {
+    restore(): void;
+    writes: StubUploadWrite[];
+    read(id: string): StubUploadWrite | undefined;
+};
+
+// @public
+export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+
+// @public
+export type StubUploadsOptions = {
+    writable?: boolean | undefined;
+    idPrefix?: string | undefined;
+};
+
+// @public
+export type StubUploadWrite = {
+    id: string;
+    name: string;
+    type: string;
+    bytes: Uint8Array;
+};
+
+// @public
+export type StubWorkflowsOptions = {
+    runs?: readonly WorkflowRunSnapshot[];
+    names?: readonly string[];
+    runId?: string;
+    lastLine?: unknown;
+};
+
+// @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
+interface SubagentDef extends ModelTuning {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
+    llm?: LlmProvider | string;
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: string;
+    schema?: StandardSchemaV1;
+    systemPrompt: string;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
+export type TestToolContext = ToolContext & {
+    readonly sent: SentEvent[];
+    readonly model: StubGenerate;
+    readonly desk: StubDelegate;
+};
+
+// @public
+export type ToolBearingAgent = {
+    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+};
+
+// @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
+type ToolContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    generate: GenerateFn;
+    delegate: DelegateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    deadlineAt: number;
+    workflows: WorkflowClient;
+    random: RandomSource;
+};
+
+// @public
+export type ToolContextOverrides = {
+    env?: ToolContext["env"] | undefined;
+    slots?: ToolContext["slots"] | undefined;
+    messages?: ToolContext["messages"] | undefined;
+    sessionId?: ToolContext["sessionId"] | undefined;
+    send?: ToolContext["send"] | undefined;
+    signal?: ToolContext["signal"] | undefined;
+    deadlineAt?: ToolContext["deadlineAt"] | undefined;
+    workflows?: ToolContext["workflows"] | undefined;
+    random?: ToolContext["random"] | undefined;
+    generate?: ToolContext["generate"] | StubGenerateScript | undefined;
+    delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
+    model?: StubGenerate | undefined;
+    desk?: StubDelegate | undefined;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
+export function toolInputIssues(agent: ToolBearingAgent, name: string, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
+type ToolModules = Readonly<Record<string, unknown>>;
+
+// @public
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
+
+// @public
+export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext) => Promise<unknown>;
+
+// @public
+export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
+export const WORKFLOW_CONTEXT_NOW = 1767225600000;
+
+// @public
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public
+type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+export type WorkflowContextOptions = {
+    runId?: string;
+    workflow?: string;
+    runSteps?: boolean;
+    results?: Record<string, unknown>;
+    hooks?: Record<string, unknown>;
+    now?: number | (() => number);
+    random?: number | (() => number);
+    uuid?: string | (() => string);
+};
+
+// @public
+export type WorkflowContextRecorder = WorkflowContext & {
+    readonly steps: RecordedStep[];
+    readonly slept: RecordedSleep[];
+    readonly waited: string[];
+};
+
+// @public
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};

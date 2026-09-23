@@ -13,12 +13,12 @@
  * ```ts
  * import { agent } from "@alexkroman1/aai";
  * import { assemblyAIStt } from "@alexkroman1/aai/stt";
- * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { llm } from "@alexkroman1/aai/llm";
  * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * export default agent({
  *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
- *   llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+ *   llm: llm({ provider: "assemblyai", model: "qwen3-next-80b-a3b" }),
  *   tts: assemblyAITts({ voice: "jane" }),
  * });
  * ```
@@ -59,7 +59,8 @@
 
 import { omitUndefined } from "../omit-undefined.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../providers.ts";
-import { assemblyAILlm } from "./llm/assemblyai.ts";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "./llm/assemblyai.ts";
+import { llm } from "./llm/llm.ts";
 import { assemblyAIStt } from "./stt/assemblyai.ts";
 import { type AssemblyAITtsVoice, assemblyAITts } from "./tts/assemblyai.ts";
 
@@ -143,7 +144,11 @@ export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
     // thing turning reasoning off — and the measured cost of losing it there is
     // 1786ms p50 time-to-first-token against 999ms. Deleting it as redundant
     // makes the next id change a silent regression.
-    llm: assemblyAILlm({ reasoningEffort: "none", ...omitUndefined({ region }) }),
+    llm: llm({
+      provider: "assemblyai",
+      model: ASSEMBLYAI_LLM_DEFAULT_MODEL,
+      providerOptions: { reasoningEffort: "none", ...omitUndefined({ region }) },
+    }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };
 }

@@ -2,11 +2,13 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow-api",
   "epoch": 2,
-  "sha256": "df7a2aecbab939237826008e4d2338073008d72bbada77faa6ce872ab61c9d82",
+  "rule": 2,
+  "sha256": "e7b3ee3182df8f48ac37ed2086ddc9bf0a32446354ace280cd8f0aabb4056567",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
     "ClientConfigResponse",
+    "ClientConfigResponseSchema",
     "EventStreamFrame",
     "FindOptions",
     "StartOptions",
@@ -33,5 +35,21 @@
     "createWorkflowApiClient",
     "isTerminal",
     "readEventStream"
+  ],
+  "rollup": "92d4e5ff547d647f74da5c0a0417c5fa2a71e9d12a79cf41f9703e174aa029e8",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "72b7806cfee8385dca9ed20e9326b19d0da76e734b604732d9bb5c1349078032",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "e7b3ee3182df8f48ac37ed2086ddc9bf0a32446354ace280cd8f0aabb4056567",
+      "reason": "additive (checked): +ClientConfigResponseSchema"
+    }
   ]
 }

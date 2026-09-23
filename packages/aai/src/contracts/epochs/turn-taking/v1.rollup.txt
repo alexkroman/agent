@@ -1,0 +1,26 @@
+// @public
+type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+export interface PipelineVoiceTuning {
+    deadAirCoverMs?: number;
+    errorPhrase?: string;
+    interruptionBackoffMs?: number;
+    interruptionMinDurationMs?: number;
+    minBargeInWords?: number;
+    preemptiveGeneration?: boolean;
+    resumeFalseInterruption?: boolean;
+    startFailurePhrase?: string;
+    startSpeakingFloorMs?: number;
+    turnDetection?: TurnDetectionMode;
+    userTurnLimit?: UserTurnLimit;
+}
+
+// @public
+type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+// @public
+export interface UserTurnLimit {
+    maxDurationMs?: number | undefined;
+    maxWords?: number | undefined;
+}

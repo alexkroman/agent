@@ -227,7 +227,13 @@ export { createBrowserSession } from "./session-core.ts";
 export type {
   AgentCustomEvent,
   BrowserSession,
+  // The seal `BrowserSession` carries. TYPE-ONLY: there is no value to import,
+  // which is what stops a hand-written object from satisfying the type.
+  browserSessionBrand,
   SessionSnapshot,
+  // `session.userTurn` — push-to-talk's three edges, the `push-to-talk`
+  // capability's beside `usePushToTalk`.
+  UserTurnControls,
 } from "./session-core-types.ts";
 // Types
 export type {

@@ -9,7 +9,7 @@ import { rawConfig } from "./_test-utils.ts";
 import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
-import { anthropicLlm } from "./providers/llm/anthropic.ts";
+import { llm } from "./providers/llm/llm.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
@@ -18,7 +18,7 @@ import { rimeTts } from "./providers/tts/rime.ts";
 
 const pipelineFields = {
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+  llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
   tts: cartesiaTts({ voice: "v" }),
 };
 
@@ -591,7 +591,7 @@ describe("the end-of-turn window", () => {
       rawConfig({
         name: "Line",
         stt: assemblyAIStt({ minTurnSilenceMs: 2000, maxTurnSilenceMs: 1000 }),
-        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
         tts: assemblyAITts(),
       }),
     ).toThrow(/can never fire/);
@@ -619,7 +619,7 @@ describe("the end-of-turn window", () => {
       rawConfig({
         name: "Line",
         stt: { kind: "deepgram", options: { minTurnSilenceMs: 9000 } },
-        llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+        llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
         tts: assemblyAITts(),
       }).mode,
     ).toBe("pipeline");
@@ -662,8 +662,12 @@ describe("temperature scope", () => {
       expect(config(pipelineFields)).not.toHaveProperty("turnDetection");
     });
 
-    test("refuses a policy that is not one of the two", () => {
-      expect(() => rawConfig({ ...pipelineFields, turnDetection: "vad" })).toThrow(/turnDetection/);
+    test("accepts a policy this release does not know — it is warned about, not refused", () => {
+      // The vocabulary is open (`TurnDetectionMode`), so a mode a later SDK
+      // implements still deploys here and runs as "auto";
+      // `agentConfigWarnings` is what says so at build time.
+      expect(config({ ...pipelineFields, turnDetection: "vad" }).turnDetection).toBe("vad");
+      expect(() => config({ ...pipelineFields, turnDetection: "" })).toThrow(/turnDetection/);
     });
 
     test("is refused on a text agent, which has no microphone to gate", () => {

@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "eval-assert",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "2d9a8966ab5ff97ec940c1452ef26c4cb8db40768aa5809679e500d71fcd52bf",
+  "exports": ["expectCalled", "lastToolResultIn"],
+  "rollup": "aa953bed6f79c9bf6ed4c2222ddca320251c1798ea782fae206b3f8546f362ca"
+}

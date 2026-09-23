@@ -35,7 +35,7 @@ interface ChannelSection {
 }
 
 // @public
-export const DEFAULT_RETRY_DELAY_MS = 1000;
+export const DEFAULT_RETRY_DELAY_MS: number;
 
 // @public
 export class FatalError extends Error {

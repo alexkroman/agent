@@ -27,7 +27,7 @@
  * then passes or fails for the wrong reason.
  */
 import agentDef from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 import {
   createVmRunCode,
   customEventsIn,

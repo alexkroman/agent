@@ -309,7 +309,7 @@ Bytes per read. Defaults to [STEP\_FILE\_WINDOW\_BYTES](#step_file_window_bytes)
 ### STEP\_FILE\_READ\_CONCURRENCY
 
 ```ts
-const STEP_FILE_READ_CONCURRENCY: 4 = 4;
+const STEP_FILE_READ_CONCURRENCY: number;
 ```
 
 Windows [readUploadToFile](#readuploadtofile) reads at once, when the file is known to be
@@ -341,7 +341,7 @@ link takes back throughput that width alone tries to buy.
 ### STEP\_FILE\_WINDOW\_BYTES
 
 ```ts
-const STEP_FILE_WINDOW_BYTES: 8388608 = 8388608;
+const STEP_FILE_WINDOW_BYTES: number;
 ```
 
 Bytes moved per store round trip, in either direction.

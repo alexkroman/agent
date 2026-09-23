@@ -1,0 +1,408 @@
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
+
+// @public
+export const DELEGATE_TOOL_NAME = "delegate";
+
+// @public
+export type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
+
+// @public
+export interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+export interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
+}
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @public
+export type GuardrailVerdict = true | string;
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+    toolName?: string;
+    toolCallId?: string;
+};
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+type RandomSource = () => number;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public (undocumented)
+export function subagent<S extends StandardSchemaV1>(def: SubagentDef & {
+    schema: S;
+}): TypedSubagentDef<InferSchemaOutput<S>>;
+
+// @public (undocumented)
+export function subagent(def: SubagentDef): SubagentDef;
+
+// @public
+export interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
+export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
+    llm?: LlmProvider | string;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: string;
+    schema?: StandardSchemaV1;
+    systemPrompt: string;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+export type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+export type SubagentRoster = readonly SubagentDef[];
+
+// @public
+export interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
+type ToolContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    generate: GenerateFn;
+    delegate: DelegateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    deadlineAt: number;
+    workflows: WorkflowClient;
+    random: RandomSource;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
+
+// @public
+export interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+export interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public
+type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};

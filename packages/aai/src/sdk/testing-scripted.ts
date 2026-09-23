@@ -24,7 +24,7 @@ import {
   type TestToolContext,
   type ToolContextOverrides,
 } from "./_testing-context.ts";
-import { type StubDelegate, type StubDelegateRoute, stubDelegate } from "./testing-delegate.ts";
+import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
 import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
 
 /**
@@ -45,14 +45,10 @@ import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./test
  * @public
  */
 export type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-  /**
-   * The script `stubGenerate` takes — routes keyed by system prompt, or one
-   * route. Named through {@link StubGenerateScript} rather than restated, so the
-   * `{ text }`-only misuse arm that type refuses is refused here too.
-   */
+  /** The script `stubGenerate` takes — `{ reply }`, or `{ routes }` keyed by system prompt. */
   generate?: StubGenerateScript | undefined;
-  /** The script `stubDelegate` takes — routes keyed by subagent name, or one route. */
-  delegate?: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute | undefined;
+  /** The script `stubDelegate` takes — `{ reply }`, or `{ routes }` keyed by subagent name. */
+  delegate?: StubDelegateScript | undefined;
 };
 
 /**
@@ -78,8 +74,7 @@ export interface ScriptedToolContext {
  * the same scripts and expose the same fakes on the context (`ctx.model`,
  * `ctx.desk`), so one call covers scripting either seam, both, or neither. This
  * stays for the spec that reads the two fakes by name — `const { ctx, model,
- * desk } = scriptedToolContext(…)` — and for the one script shape the context's
- * own field cannot express, a top-level function route.
+ * desk } = scriptedToolContext(…)`.
  *
  * Each call is a distinct session, as with `createToolContext`. A spec that
  * wants two sessions sharing one script calls this twice with the same routes
@@ -92,8 +87,8 @@ export interface ScriptedToolContext {
  *
  * const TRIAGE = "You triage email.";
  * const { ctx, model, desk } = scriptedToolContext({
- *   generate: { [TRIAGE]: { object: { response: "email" } } },
- *   delegate: { "meeting-assistant": "Free Wednesday 1pm." },
+ *   generate: { routes: { [TRIAGE]: { object: { response: "email" } } } },
+ *   delegate: { routes: { "meeting-assistant": "Free Wednesday 1pm." } },
  * });
  * // … run the tool against `ctx`, then:
  * // expect(model.calls.map((call) => call.system)).toEqual([TRIAGE]);
@@ -104,11 +99,11 @@ export interface ScriptedToolContext {
  */
 export function scriptedToolContext(options: ScriptedToolContextOptions = {}): ScriptedToolContext {
   const { generate, delegate, ...overrides } = options;
-  // `{}` is a route table with no routes: every call rejects naming "(none)",
+  // An empty route table: every call rejects naming "(none)",
   // which is `createToolContext`'s own default said more usefully — and the
   // fake still records the call.
-  const model = stubGenerate(generate ?? {});
-  const desk = stubDelegate(delegate ?? {});
+  const model = stubGenerate(generate ?? { routes: {} });
+  const desk = stubDelegate(delegate ?? { routes: {} });
   // Both halves of each seam: the FUNCTION to install, and the fake to expose as
   // `ctx.model`/`ctx.desk`. Passing the script down instead would be shorter and
   // would lose one thing — this signature also accepts a TOP-LEVEL FUNCTION

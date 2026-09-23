@@ -140,7 +140,7 @@ it (verified in vitest 4.1's own `resolved.cliExclude` handling), so
 `node_modules` stays excluded and the one pattern buys the same test/eval
 disjointness the CLI gets from its filter.
 
-**`aai console` is `runtime.connect` with a microphone** (`console.ts`,
+**`aai console` is `connectSession` with a microphone** (`console.ts`,
 `_console-session.ts`, `_console-audio.ts`). It loads the agent exactly as
 `aai dev` does (`loadWorker`, `resolveAgentEnv`, the shell-credential
 fallback), builds a runtime in-process and runs ONE session over a `ClientSink`

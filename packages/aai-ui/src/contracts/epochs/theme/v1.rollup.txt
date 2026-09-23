@@ -1,0 +1,11 @@
+// @public
+export type ClientTheme = {
+    bg?: string;
+    primary?: string;
+    text?: string;
+    surface?: string;
+    border?: string;
+};
+
+// @public
+export function useTheme(): Required<ClientTheme>;

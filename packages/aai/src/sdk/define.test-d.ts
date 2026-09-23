@@ -4,6 +4,7 @@ import { z } from "zod";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
 import type { InlineToolsMisuse } from "./agent-params.ts";
+import type { TurnDetectionMode } from "./agent-voice-tuning.ts";
 import {
   type AgentParams,
   agent,
@@ -11,13 +12,17 @@ import {
   tool,
   type workflowApp,
 } from "./define.ts";
-import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
+import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { SessionEventType } from "./session-event-map.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
+import type { StandardSchemaV1 } from "./standard-schema.ts";
+import { type SubagentDef, subagent } from "./subagent.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
 import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
+import type { VoicePresetName } from "./voice-presets.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -236,7 +241,7 @@ test("any subset of the provider triple is an accepted AgentParams", () => {
  *
  * The field used to be `LlmProvider | string`, so the documented spelling
  * (`llm: "claude-sonnet-4-6"`) had no autocomplete and a typo became a gateway
- * 400 at the first live session — while `assemblyAILlm({ model })`, which this
+ * 400 at the first live session — while `llm({ provider: "assemblyai", model })`, which this
  * field desugars into, was typed against the generated union all along. These
  * cases are the two halves of that: the union has to be VISIBLE, and every
  * string that compiled before has to keep compiling.
@@ -581,4 +586,51 @@ test("telephony is declarable on a voice agent and refused where there is no cal
   expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().not.toExtend<AgentParams>();
   // A text agent has no audio path, so a phone call has nothing to reach.
   expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
+});
+
+/**
+ * `SubagentDef` REFUSES `maxRetries`. That name was the guardrail's revision
+ * budget before the knobs were unified, and on `ModelTuning` it means provider
+ * retries — so accepting it would keep `subagent({ guardrail, maxRetries: 3 })`
+ * compiling while silently changing what the 3 bounds. The error is the point:
+ * the field is typed as a message naming `maxRevisions`, so it says the fix.
+ */
+test("subagent() rejects maxRetries and takes maxRevisions", () => {
+  const guardrail = () => true as const;
+  subagent({ name: "r", systemPrompt: "S.", guardrail, maxRevisions: 3 });
+  // Structural, not only excess-property: `maxRetries` is typed as the rename
+  // message, so a def carrying a NUMBER there is not a `SubagentDef` at all —
+  // whether written inline or built elsewhere and passed in.
+  type OldSpelling = { name: string; systemPrompt: string; guardrail: () => true; maxRetries: 3 };
+  expectTypeOf<OldSpelling>().not.toExtend<Parameters<typeof subagent>[0]>();
+  expectTypeOf<OldSpelling>().not.toExtend<SubagentDef>();
+  // The schema overload refuses it too.
+  expectTypeOf<
+    Omit<OldSpelling, "guardrail"> & { schema: StandardSchemaV1<unknown, { a: string }> }
+  >().not.toExtend<SubagentDef & { schema: StandardSchemaV1 }>();
+  // The tuning knobs a subagent does take are still there.
+  expectTypeOf<SubagentDef>().toHaveProperty("temperature");
+  expectTypeOf<SubagentDef>().toHaveProperty("maxOutputTokens");
+});
+
+/**
+ * The OPEN vocabularies — `Known | (string & {})` — must stay open without
+ * collapsing to `string`. A plain `| string` absorbs the known half, and with
+ * it the autocomplete the union exists for; the `& {}` is what keeps both.
+ */
+test("open unions admit any string and keep their known half", () => {
+  expectTypeOf<TurnDetectionMode>().not.toEqualTypeOf<string>();
+  expectTypeOf<VoicePresetName>().not.toEqualTypeOf<string>();
+  expectTypeOf<AssemblyAIGatewayModel>().not.toEqualTypeOf<string>();
+  expectTypeOf<"auto">().toExtend<TurnDetectionMode>();
+  expectTypeOf<"semantic-v2">().toExtend<TurnDetectionMode>();
+  expectTypeOf<"a-preset-from-later">().toExtend<VoicePresetName>();
+  expectTypeOf<"a-model-from-later">().toExtend<AssemblyAIGatewayModel>();
+});
+
+test("SessionEventType is closed: a misspelled event is not one", () => {
+  expectTypeOf<"tool.called">().toExtend<SessionEventType>();
+  expectTypeOf<"tool.call">().not.toExtend<SessionEventType>();
+  expectTypeOf<"reply.complete">().not.toExtend<SessionEventType>();
+  expectTypeOf<string>().not.toExtend<SessionEventType>();
 });

@@ -54,7 +54,7 @@ export const MCP_SERVER_KEY_RE = /^[a-z][a-z0-9_]{0,23}$/;
  * refused when the tool list is sent, by a vendor, in a message that names
  * neither the server nor the tool.
  */
-export const MCP_TOOL_NAME_MAX = 64;
+export const MCP_TOOL_NAME_MAX: number = 64;
 
 /**
  * The prefix every MCP-derived tool name carries.

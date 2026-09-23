@@ -63,8 +63,7 @@
  * @module
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StepResult, ToolSet } from "ai";
 import { silentLogger } from "../runtime-config.ts";

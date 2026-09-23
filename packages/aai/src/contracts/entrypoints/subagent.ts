@@ -29,7 +29,7 @@
  */
 
 export {
-  DEFAULT_GUARDRAIL_MAX_RETRIES,
+  DEFAULT_GUARDRAIL_MAX_REVISIONS,
   DELEGATE_TOOL_NAME,
   type DelegateFn,
   type DelegateOptions,

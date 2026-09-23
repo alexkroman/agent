@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -46,7 +46,7 @@ export interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+export const CARTESIA_DEFAULT_VOICE: string;
 
 // @public
 export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
@@ -72,7 +72,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export const RIME_DEFAULT_VOICE = "cove";
+export const RIME_DEFAULT_VOICE: string;
 
 // @public
 export function rimeTts(options?: RimeTtsOptions): TtsProvider;

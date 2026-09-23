@@ -92,11 +92,13 @@ function scriptedDesk(script: Script = {}): ScriptedToolContext {
 
   return scriptedToolContext({
     generate: {
-      [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
-      [REPLANNER_SYSTEM]: act,
-      [REVISE_SYSTEM]: act,
+      routes: {
+        [PLANNER_SYSTEM]: { object: { steps: script.steps ?? ["Only step"] } },
+        [REPLANNER_SYSTEM]: act,
+        [REVISE_SYSTEM]: act,
+      },
     },
-    delegate: { executor: worksTheStep },
+    delegate: { routes: { executor: worksTheStep } },
   });
 }
 
@@ -125,7 +127,9 @@ describe("planNode", () => {
 
 describe("executeStep", () => {
   test("hands the step to the executor, with the objective and the history as context", async () => {
-    const desk = stubDelegate({ executor: stepReply("Flights are around 180 return.") });
+    const desk = stubDelegate({
+      routes: { executor: stepReply("Flights are around 180 return.") },
+    });
 
     const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", [
       { step: "Pick dates", result: "Mid-May", settled: true, searches: [] },
@@ -147,12 +151,14 @@ describe("executeStep", () => {
     // delegation — so the calls are the only honest source for the desk's
     // "what the wait bought" line.
     const desk = stubDelegate({
-      executor: {
-        text: stepReply("Flights are around 180 return."),
-        toolCalls: [
-          { name: "search", input: { query: "lisbon flights may" } },
-          { name: "search", input: { query: "lisbon flights june" } },
-        ],
+      routes: {
+        executor: {
+          text: stepReply("Flights are around 180 return."),
+          toolCalls: [
+            { name: "search", input: { query: "lisbon flights may" } },
+            { name: "search", input: { query: "lisbon flights june" } },
+          ],
+        },
       },
     });
 
@@ -164,7 +170,7 @@ describe("executeStep", () => {
   test("the executor is given its two tools and a bounded budget", async () => {
     // What this template still OWNS now that the loop is the runtime's: which
     // capabilities the step is worth, and how long it may spend.
-    const desk = stubDelegate({ executor: stepReply("done") });
+    const desk = stubDelegate({ routes: { executor: stepReply("done") } });
     await executeStep(desk.delegate, "objective", "step", []);
 
     const executor = desk.calls[0]?.subagent;
@@ -181,7 +187,9 @@ describe("executeStep", () => {
     // read one string, so a step that found nothing and a step that answered
     // arrived in the same shape.
     const desk = stubDelegate({
-      executor: stepReply({ finding: "Nothing current on that route.", settled: false }),
+      routes: {
+        executor: stepReply({ finding: "Nothing current on that route.", settled: false }),
+      },
     });
 
     const outcome = await executeStep(desk.delegate, "get to Lisbon", "Check prices", []);
@@ -195,9 +203,11 @@ describe("executeStep", () => {
     // so `accepted` is false — and a `settled: true` from an answer the runtime
     // refused is exactly the claim not to take at face value.
     const desk = stubDelegate({
-      executor: {
-        text: stepReply({ finding: "Flights are cheap in May.", settled: true }),
-        complaint: "You reported the step as unsettled without searching for anything.",
+      routes: {
+        executor: {
+          text: stepReply({ finding: "Flights are cheap in May.", settled: true }),
+          complaint: "You reported the step as unsettled without searching for anything.",
+        },
       },
     });
 

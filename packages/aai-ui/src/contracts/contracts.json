@@ -29,11 +29,17 @@
     "supported": [1, 2],
     "dropped": {}
   },
+  "push-to-talk": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "session": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "BrowserSession gained three required methods (startUserTurn, commitUserTurn, clearUserTurn) and SessionActions with it, so a hand-written epoch-1 BrowserSession or SessionActions double no longer satisfies the type. aai-ui has no external implementers of either, and a consumer that only CALLS the session is unaffected."
+      "1": "BrowserSession gained three required methods (startUserTurn, commitUserTurn, clearUserTurn) and SessionActions with it, so a hand-written epoch-1 BrowserSession or SessionActions double no longer satisfies the type. aai-ui has no external implementers of either, and a consumer that only CALLS the session is unaffected.",
+      "2": "BrowserSession is SEALED (a type-only browserSessionBrand only createBrowserSession mints), its three push-to-talk methods became the session.userTurn sub-handle (start/commit/clear), SessionActions is declared on its own without them, and usePushToTalk moved to the push-to-talk capability. An epoch-2 hand-written session double, or a caller of session.startUserTurn(), no longer compiles."
     }
   },
   "theme": {

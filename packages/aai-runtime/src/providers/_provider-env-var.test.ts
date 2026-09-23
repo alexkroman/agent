@@ -9,17 +9,19 @@
  * about what happens when it is absent.
  */
 
-import { anthropicLlm, assemblyAILlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { describe, expect, test } from "vitest";
 import { descriptorEnvVar, envVarOf, llmProviderEnvVar } from "./_provider-env-var.ts";
 
 describe("descriptorEnvVar", () => {
   test("reads a descriptor's own apiKeyEnv", () => {
-    expect(descriptorEnvVar(anthropicLlm({ model: "m", apiKeyEnv: "MY_KEY" }))).toBe("MY_KEY");
+    expect(descriptorEnvVar(llm({ provider: "anthropic", model: "m", apiKeyEnv: "MY_KEY" }))).toBe(
+      "MY_KEY",
+    );
   });
 
   test("answers undefined for a descriptor that named none", () => {
-    expect(descriptorEnvVar(anthropicLlm({ model: "m" }))).toBeUndefined();
+    expect(descriptorEnvVar(llm({ provider: "anthropic", model: "m" }))).toBeUndefined();
     expect(descriptorEnvVar(undefined)).toBeUndefined();
   });
 
@@ -35,19 +37,25 @@ describe("descriptorEnvVar", () => {
 describe("envVarOf", () => {
   test("prefers the descriptor's override over the registry default", () => {
     const entry = { envVar: "REGISTRY_DEFAULT" };
-    expect(envVarOf(entry, anthropicLlm({ model: "m", apiKeyEnv: "MY_KEY" }))).toBe("MY_KEY");
-    expect(envVarOf(entry, anthropicLlm({ model: "m" }))).toBe("REGISTRY_DEFAULT");
+    expect(envVarOf(entry, llm({ provider: "anthropic", model: "m", apiKeyEnv: "MY_KEY" }))).toBe(
+      "MY_KEY",
+    );
+    expect(envVarOf(entry, llm({ provider: "anthropic", model: "m" }))).toBe("REGISTRY_DEFAULT");
   });
 });
 
 describe("llmProviderEnvVar", () => {
   test("answers the registry's variable for a known kind", () => {
-    expect(llmProviderEnvVar(assemblyAILlm())).toBe("ASSEMBLYAI_API_KEY");
-    expect(llmProviderEnvVar(anthropicLlm({ model: "m" }))).toBe("ANTHROPIC_API_KEY");
+    expect(
+      llmProviderEnvVar(llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL })),
+    ).toBe("ASSEMBLYAI_API_KEY");
+    expect(llmProviderEnvVar(llm({ provider: "anthropic", model: "m" }))).toBe("ANTHROPIC_API_KEY");
   });
 
   test("honours the descriptor's override, like every other credential read", () => {
-    expect(llmProviderEnvVar(anthropicLlm({ model: "m", apiKeyEnv: "MY_KEY" }))).toBe("MY_KEY");
+    expect(llmProviderEnvVar(llm({ provider: "anthropic", model: "m", apiKeyEnv: "MY_KEY" }))).toBe(
+      "MY_KEY",
+    );
   });
 
   test("an UNKNOWN kind answers what the descriptor named, or nothing", () => {
@@ -55,9 +63,9 @@ describe("llmProviderEnvVar", () => {
     // vendor's key is worse than naming none, so the honest answer for a kind
     // with no registry entry and no override is the empty string its caller
     // reads as "no credential to ask for".
-    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: { apiKeyEnv: "X_KEY" } })).toBe(
-      "X_KEY",
-    );
-    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: {} })).toBe("");
+    expect(
+      llmProviderEnvVar({ kind: "not-a-vendor", options: { model: "m", apiKeyEnv: "X_KEY" } }),
+    ).toBe("X_KEY");
+    expect(llmProviderEnvVar({ kind: "not-a-vendor", options: { model: "m" } })).toBe("");
   });
 });

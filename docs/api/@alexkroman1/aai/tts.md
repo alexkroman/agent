@@ -72,7 +72,7 @@ The API key is resolved host-side from the agent's env
 descriptor stays free of secrets and safe to serialize.
 
 Named `assemblyAITts` (not `assemblyAI`) so the STT
-(`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
+(`assemblyAIStt`), LLM (`llm({ provider: "assemblyai" })`), and TTS factories can be
 imported side by side without aliasing.
 
 #### Parameters
@@ -489,7 +489,7 @@ map below does not cost the literals — see [AssemblyAITtsVoiceInfo](#assemblya
 ### ASSEMBLYAI\_TTS\_DEFAULT\_VOICE
 
 ```ts
-const ASSEMBLYAI_TTS_DEFAULT_VOICE: "jane" = "jane";
+const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId;
 ```
 
 Default voice when `assemblyAITts()` is called with no `voice` — a
@@ -570,7 +570,7 @@ readonly pt: "portuguese";
 ### CARTESIA\_DEFAULT\_VOICE
 
 ```ts
-const CARTESIA_DEFAULT_VOICE: "f786b574-daa5-4673-aa0c-cbe3e8534c02" = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+const CARTESIA_DEFAULT_VOICE: string;
 ```
 
 Default voice used when callers invoke `cartesiaTts()` with no `voice`. This
@@ -582,7 +582,7 @@ works out of the box for new agents.
 ### RIME\_DEFAULT\_VOICE
 
 ```ts
-const RIME_DEFAULT_VOICE: "cove" = "cove";
+const RIME_DEFAULT_VOICE: string;
 ```
 
 Default Rime speaker used when callers invoke `rimeTts()` with no `voice`.

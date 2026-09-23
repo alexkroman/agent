@@ -31,7 +31,7 @@ function scriptedAgentLlm(steps: Parameters<typeof createFakeLanguageModel>[0]) 
     create: () => createFakeLanguageModel(steps),
   });
   return {
-    llm: { kind, options: {} },
+    llm: { kind, options: { model: "stub" } },
     providerEnv: { SIMULATE_SPEC_LLM_KEY: "k" },
     release,
   };

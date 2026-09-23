@@ -13,7 +13,11 @@
 
 import { GUARDRAIL_FIELDS, type GuardrailField } from "./agent-guardrails.ts";
 import { MODEL_TUNING_FIELDS, type ModelTuningField } from "./agent-model-tuning.ts";
-import type { PipelineVoiceTuning, UserTurnLimit } from "./agent-voice-tuning.ts";
+import type {
+  PipelineVoiceTuning,
+  TurnDetectionMode,
+  UserTurnLimit,
+} from "./agent-voice-tuning.ts";
 import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
@@ -221,7 +225,7 @@ export type PipelineTuning = {
             : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit"
               ? UserTurnLimit
               : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection"
-                ? "auto" | "manual"
+                ? TurnDetectionMode
                 : readonly string[])
     | undefined;
 };

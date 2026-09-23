@@ -95,7 +95,37 @@ const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 
 type Contract = { current: number; supported: number[]; dropped: Record<string, string> };
-type Epoch = { kind: string; capability: string; epoch: number; sha256: string; exports: string[] };
+type Epoch = {
+  kind: string;
+  capability: string;
+  epoch: number;
+  rule?: number;
+  sha256: string;
+  exports: string[];
+  rollup?: string;
+};
+
+/**
+ * The newest epoch, which is `current` unless a `--bump` pointed current BACK
+ * at a supported epoch the surface returned to. Restated rather than imported:
+ * the point of this suite is a second derivation of what the script believes.
+ */
+const latestOf = ({ current, supported, dropped }: Contract): number =>
+  Math.max(current, ...supported, ...Object.keys(dropped).map(Number));
+
+/**
+ * The rollup each epoch was minted from — the OLD side of every compatibility
+ * probe, pinned by sha in its record.
+ */
+const rollups: Record<string, string> = import.meta.glob(
+  "../../*/src/contracts/epochs/*/*.rollup.txt",
+  { query: "?raw", import: "default", eager: true },
+);
+
+const sha256Hex = async (text: string): Promise<string> =>
+  [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 
 const fixtures: Record<string, string> = { ...tsFixtures, ...tsxFixtures };
 
@@ -399,10 +429,11 @@ describe("capability contracts", () => {
     const mine = entry.epochs
       .filter((record) => record.capability === entry.capability)
       .sort((a, b) => a.version - b.version);
+    const latest = latestOf(contract);
     expect(
       mine.map((record) => record.version),
-      `${entry.id} must retain every epoch from 1 to ${contract.current}. ${remedy}`,
-    ).toEqual(Array.from({ length: contract.current }, (_, index) => index + 1));
+      `${entry.id} must retain every epoch from 1 to ${latest}. ${remedy}`,
+    ).toEqual(Array.from({ length: latest }, (_, index) => index + 1));
 
     for (const { version, record } of mine) {
       expect(record.capability, `v${version}.json names the wrong capability`).toBe(
@@ -419,10 +450,12 @@ describe("capability contracts", () => {
     }
   });
 
-  test.each(contracts)("$id classifies every historical epoch exactly once", (entry) => {
-    const { current, supported, dropped } = entry.table[entry.capability] as Contract;
+  test.each(contracts)("$id classifies every non-current epoch exactly once", (entry) => {
+    const contract = entry.table[entry.capability] as Contract;
+    const { current, supported, dropped } = contract;
     expect(supported, `${entry.id} must support its current epoch`).toContain(current);
-    for (let version = 1; version < current; version += 1) {
+    for (let version = 1; version <= latestOf(contract); version += 1) {
+      if (version === current) continue;
       const isSupported = supported.includes(version);
       const isDropped = Object.hasOwn(dropped, version);
       expect(
@@ -431,6 +464,37 @@ describe("capability contracts", () => {
           `dropped. ${remedy}`,
       ).toBe(true);
       if (isDropped) expect((dropped[version] ?? "").trim(), "a drop needs a reason").not.toBe("");
+    }
+  });
+
+  test.each(contracts)("$id's current epoch pins the rollup it was minted from", async (entry) => {
+    // The compatibility probe proves a revision against this file, so one that
+    // was edited, regenerated or lost would let a break be "proven" against
+    // the wrong baseline. The sha is computed here, independently of the
+    // script, over the file with its one trailing newline removed.
+    const { current } = entry.table[entry.capability] as Contract;
+    const record = entry.epochs.find(
+      (epoch) => epoch.capability === entry.capability && epoch.version === current,
+    )?.record;
+    const path = `../../${entry.pkg}/src/contracts/epochs/${entry.capability}/v${current}.rollup.txt`;
+    const text = rollups[path];
+    expect(record?.rule, `${entry.id} v${current} is not hashed under rule 2. ${remedy}`).toBe(2);
+    expect(text, `${path} is missing. ${remedy}`).toBeTypeOf("string");
+    expect(text ?? "", `${path} is empty`).not.toBe("");
+    expect(
+      await sha256Hex((text ?? "").replace(/\n$/, "")),
+      `${path} is not the pinned rollup`,
+    ).toBe(record?.rollup);
+  });
+
+  test("the rollup corpus is not empty and has no orphans", () => {
+    // A glob that stopped resolving agrees with every "missing" above only if
+    // each case is also asserted to find something — and a rollup for an epoch
+    // no record names is an artifact nothing checks.
+    expect(Object.keys(rollups).length).toBeGreaterThanOrEqual(contracts.length);
+    for (const path of Object.keys(rollups)) {
+      const json = path.replace(/\.rollup\.txt$/, ".json");
+      expect(Object.keys(epochFiles), `${path} has no epoch record beside it`).toContain(json);
     }
   });
 

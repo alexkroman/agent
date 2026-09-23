@@ -1,6 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 // An EVAL: does the order-taker actually take the order?
 //
 // `agent.test.ts` drives the six tools directly, which settles what each one

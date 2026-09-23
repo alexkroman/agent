@@ -79,7 +79,7 @@ export type UnforwardedRuntimeOption =
    * The TESTING and SANDBOX seams. Every one replaces a piece of the engine
    * wholesale — the tool executor, the schemas it advertises, the sockets it
    * opens, the `run_code` sandbox, the egress `fetch`, the tool-result hook,
-   * the guidance injected into a prompt, the one-shot generator — and a caller
+   * the guidance injected into a prompt — and a caller
    * filling one is embedding the runtime rather than serving an agent, which
    * is `createRuntime` + `createRuntimeServer`. They are `@internal` or
    * platform-harness only.
@@ -92,7 +92,6 @@ export type UnforwardedRuntimeOption =
   | "fetch"
   | "onToolResult"
   | "toolGuidance"
-  | "generate"
   | "workflows"
   /**
    * The TUNING numbers. Each is a default the framework enforces on its own
@@ -147,7 +146,21 @@ export type RedundantExcuse = Extract<UnforwardedRuntimeOption, keyof AgentServe
  * `never` satisfies it and anything else resolves to a string literal that does
  * not — reporting the offending member's name at the instantiation below.
  */
+/**
+ * Every member this door DECLARES for itself (rather than indexing
+ * `RuntimeOptions["…"]`, which it used to) must still be accepted where it is
+ * forwarded — the name of each one that drifted, `never` when none has.
+ */
+export type TypeDrift = {
+  [K in keyof AgentServerOptions & keyof RuntimeOptions]-?: NonNullable<
+    AgentServerOptions[K]
+  > extends NonNullable<RuntimeOptions[K]>
+    ? never
+    : K;
+}[keyof AgentServerOptions & keyof RuntimeOptions];
+
 export type AssertNoForwardingGap<T extends never = ForwardingGap> = T;
+export type AssertNoTypeDrift<T extends never = TypeDrift> = T;
 export type AssertNoStaleExcuse<T extends never = StaleExcuse> = T;
 export type AssertNoRedundantExcuse<T extends never = RedundantExcuse> = T;
 
@@ -161,5 +174,6 @@ export type AssertNoRedundantExcuse<T extends never = RedundantExcuse> = T;
  * runtime option actually reads.
  */
 export type NoForwardingGap = AssertNoForwardingGap;
+export type NoTypeDrift = AssertNoTypeDrift;
 export type NoStaleExcuse = AssertNoStaleExcuse;
 export type NoRedundantExcuse = AssertNoRedundantExcuse;

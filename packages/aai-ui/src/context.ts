@@ -53,24 +53,33 @@ export function SessionProvider({
  * places: the two lists have to be the same list, and a member added to one and
  * not the other is a hook that cannot do what `useSession()` can.
  *
- * Method signatures come from {@link BrowserSession} — one source of truth.
+ * DECLARED here rather than picked out of {@link BrowserSession}: that handle is
+ * sealed and grows, and a `Pick` made every member it gained a candidate for
+ * this list without anyone deciding. Push-to-talk is the case in point — its
+ * three edges are `session.userTurn`, reached through `usePushToTalk`, and not
+ * actions every chrome is handed. `createBrowserSession` is what keeps each of
+ * these assignable from the session's own methods.
  *
  * @public
  */
-export type SessionActions = Pick<
-  BrowserSession,
-  | "start"
-  | "cancel"
-  | "startUserTurn"
-  | "commitUserTurn"
-  | "clearUserTurn"
-  | "resetState"
-  | "reset"
-  | "restart"
-  | "disconnect"
-  | "toggle"
-  | "end"
->;
+export type SessionActions = {
+  /** Start the call for the first time — see {@link BrowserSession.start}. */
+  start(): void;
+  /** Cancel the current agent turn and discard in-flight TTS audio. */
+  cancel(): void;
+  /** Clear messages, transcripts and error state, keeping the connection. */
+  resetState(): void;
+  /** Clear state and reopen the connection — the same session id. */
+  reset(): void;
+  /** End the call and begin a fresh one — see {@link BrowserSession.restart}. */
+  restart(): void;
+  /** Close the WebSocket and release all audio resources. */
+  disconnect(): void;
+  /** Toggle between connected and disconnected (after `start()`). */
+  toggle(): void;
+  /** End the call and return to the not-started state — see {@link BrowserSession.end}. */
+  end(): void;
+};
 
 /**
  * What {@link useSession} returns: the live {@link SessionSnapshot} fields
@@ -103,9 +112,8 @@ export function useSessionCore(): BrowserSession {
 
 /**
  * The session's control methods — `start`, `cancel`, `resetState`, `reset`,
- * `restart`, `disconnect`, `toggle`, `end`, and the three push-to-talk edges
- * (`startUserTurn`, `commitUserTurn`, `clearUserTurn`) — with **no snapshot
- * subscription**.
+ * `restart`, `disconnect`, `toggle`, `end` — with **no snapshot subscription**.
+ * Push-to-talk is not among them: that is `usePushToTalk`.
  *
  * This is the narrow half of {@link useSession}, and it is the half a custom
  * chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
@@ -166,12 +174,9 @@ export function useSessionActions(): SessionActions {
   // `getSnapshot`, `connect`, dispose) is NOT in the returned object, so a
   // client cannot reach it by widening the type back.
   return useMemo(
-    () => ({
+    (): SessionActions => ({
       start: core.start,
       cancel: core.cancel,
-      startUserTurn: core.startUserTurn,
-      commitUserTurn: core.commitUserTurn,
-      clearUserTurn: core.clearUserTurn,
       resetState: core.resetState,
       reset: core.reset,
       restart: core.restart,

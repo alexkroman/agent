@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "metrics",
   "epoch": 1,
-  "sha256": "9774242f01643442cdcf54709e8edab3f1035de958cadf5b5c876b35b339aba0",
+  "rule": 2,
+  "sha256": "7d03012c10a8482a2d3d09d92eb27a65dc93379f819830a35ee1da1be1efc4e4",
   "exports": [
     "MetricStat",
     "MetricsCollectedEvent",
@@ -11,5 +12,21 @@
     "MetricsSample",
     "MetricsSummary",
     "createMetricsCollector"
+  ],
+  "rollup": "0e6d2e77c1e328f5b7b61c1ebd6462dc0c415d54076a0f1ece2dc30a84143c91",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "87d8a5f3d751ed89259549972b47bdd551bedb431db0ccebd22c53a843109411",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "7d03012c10a8482a2d3d09d92eb27a65dc93379f819830a35ee1da1be1efc4e4",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
   ]
 }

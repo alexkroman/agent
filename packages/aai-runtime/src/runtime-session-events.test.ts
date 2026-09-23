@@ -9,8 +9,8 @@
  * that the same events are readable back off the runtime.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { dialog, type SessionEventHandlers } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";

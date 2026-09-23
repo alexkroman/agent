@@ -93,7 +93,15 @@ export function isTransientStatus(status: number): boolean;
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -110,6 +118,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export type MultipartBody = {
@@ -261,10 +276,10 @@ type StartOptions = {
 };
 
 // @public
-export const STEP_SPEAK_SAMPLE_RATE = 24000;
+export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
-export const STEP_SPEAK_TIMEOUT_MS = 120000;
+export const STEP_SPEAK_TIMEOUT_MS: number;
 
 // @public
 export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
@@ -408,19 +423,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -508,28 +522,28 @@ type ToolStartMessage = {
 };
 
 // @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
+export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS: readonly [string];
 
 // @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string;
 
 // @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string;
 
 // @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
+export const TRANSCRIBE_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
 
 // @public
-export const TRANSCRIBE_WINDOW_BYTES = 4194304;
+export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {

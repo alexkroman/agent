@@ -2,12 +2,14 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "client",
   "epoch": 1,
-  "sha256": "7f6cbdf7ce4d1f2942f69db35c1e6caefbdf4b805681d2fe1f3d773836fabe6d",
+  "rule": 2,
+  "sha256": "f41815782852c5e4de989d045ca1b495e8f6d2feb3adecceab820361888015b2",
   "exports": [
     "ClientConfig",
     "ClientConfigResponse",
     "ClientHandle",
     "ToolDisplayConfig",
     "mountClient"
-  ]
+  ],
+  "rollup": "6478d3f746fe4991120bc81539ecc2c05792693c472008c805180fe7ca6c1ad7"
 }

@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { ToolSchemaSchema } from "./_internal-types.ts";
 import { MAX_AUDIO_SAMPLE_RATE } from "./constants.ts";
-import type { SessionEvent } from "./protocol-events.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
@@ -42,11 +42,8 @@ export {
   SESSION_EVENT_TYPES,
   type SessionErrorCode,
   SessionErrorCodeSchema,
-  type SessionEvent,
-  type SessionEventBody,
   type SessionEventMeta,
   SessionEventMetaSchema,
-  SessionEventSchema,
 } from "./protocol-events.ts";
 
 /**

@@ -64,16 +64,16 @@ describe("BrowserSession push-to-talk", () => {
   it("sends one frame per edge, and nothing while disconnected", async () => {
     const idle = createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
     expect(() => {
-      idle.startUserTurn();
-      idle.commitUserTurn();
-      idle.clearUserTurn();
+      idle.userTurn.start();
+      idle.userTurn.commit();
+      idle.userTurn.clear();
     }).not.toThrow();
 
     const core = await live();
-    core.startUserTurn();
-    core.commitUserTurn();
-    core.startUserTurn();
-    core.clearUserTurn();
+    core.userTurn.start();
+    core.userTurn.commit();
+    core.userTurn.start();
+    core.userTurn.clear();
     expect(sentTypes(socket)).toEqual([
       "user_turn_start",
       "user_turn_commit",
@@ -91,7 +91,7 @@ describe("BrowserSession push-to-talk", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(core.getSnapshot().state).toBe("speaking");
 
-    core.startUserTurn();
+    core.userTurn.start();
     expect(core.getSnapshot().state).toBe("listening");
     core.disconnect();
   });
@@ -99,17 +99,17 @@ describe("BrowserSession push-to-talk", () => {
   it("a press into silence leaves the state alone", async () => {
     const core = await live();
     const before = core.getSnapshot().state;
-    core.startUserTurn();
+    core.userTurn.start();
     expect(core.getSnapshot().state).toBe(before);
     core.disconnect();
   });
 
   it("clearing a turn clears the caption it left behind", async () => {
     const core = await live();
-    core.startUserTurn();
+    core.userTurn.start();
     socket?.simulateMessage(JSON.stringify({ type: "user-transcript.updated", text: "never mi" }));
     expect(core.getSnapshot().userTranscript).toBe("never mi");
-    core.clearUserTurn();
+    core.userTurn.clear();
     expect(core.getSnapshot().userTranscript).toBeNull();
     core.disconnect();
   });

@@ -9,12 +9,12 @@
  * so a full AssemblyAI pipeline needs exactly one secret.
  *
  * The three AssemblyAI stage factories have distinct names
- * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
+ * (`assemblyAIStt`, `llm({ provider: "assemblyai" })`, `assemblyAITts`), so they can be
  * imported side by side:
  *
  * ```ts
  * import { assemblyAIStt } from "@alexkroman1/aai/stt";
- * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { llm } from "@alexkroman1/aai/llm";
  * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
@@ -41,7 +41,7 @@ export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
  * in the catalog speaks exactly one language, so changing `language`
  * generally means changing `voice` too.
  */
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoiceId = "jane";
 
 /**
  * What the catalog records about one voice: the language it speaks and the
@@ -437,7 +437,7 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
  * descriptor stays free of secrets and safe to serialize.
  *
  * Named `assemblyAITts` (not `assemblyAI`) so the STT
- * (`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
+ * (`assemblyAIStt`), LLM (`llm({ provider: "assemblyai" })`), and TTS factories can be
  * imported side by side without aliasing.
  *
  * @example

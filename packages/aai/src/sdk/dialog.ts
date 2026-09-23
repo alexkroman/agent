@@ -84,8 +84,8 @@ import type {
   DialogVoiceConfig,
 } from "./dialog-types.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { SessionEvent } from "./protocol-events.ts";
 import type { ToolInputSchema } from "./schema.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
@@ -105,6 +105,8 @@ export type {
 export type {
   DialogBargeIn,
   DialogEvent,
+  DialogEventNames,
+  DialogGate,
   DialogPosition,
   DialogSessionEventName,
   DialogSpec,
@@ -122,7 +124,7 @@ export type {
  * The same test as {@link isToolFailure}, and it exists because NEGATING that
  * one does not subtract: the false branch of a `value is ToolFailure` test
  * leaves a generic `R | ToolFailure` exactly as it was, and `R` is not the
- * `Exclude<R, ToolFailure>` that {@link DialogToolDef.sendFrom} declares — a
+ * `Exclude<R, ToolFailure>` that {@link DialogGate.sendFrom} declares — a
  * conditional type is only assignable FROM a source assignable to BOTH its
  * branches, and nothing is assignable to `never`. A predicate's POSITIVE branch
  * can say it, so this is what lets the one call site hand `sendFrom` a narrowed
@@ -437,9 +439,9 @@ export function dialog(
       return {
         // Spread rather than restating `inputSchema`, for the reason
         // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
-        // its optionality against a still-generic `P`. `onError` rides it too,
+        // its optionality against a still-generic `P`. `onError` and `messages` ride it too,
         // which is what makes a gated tool classifiable like any other — see
-        // `DialogToolDef.onError` for what a handled throw does NOT do (carry
+        // `DialogToolDef`'s doc for what a handled throw does NOT do (carry
         // the envelope, move the dialog).
         ...rest,
         // ASYNC, and it has to be: a voice tool routinely awaits a model call or
@@ -473,7 +475,7 @@ export function dialog(
           // where the alternative is a cast at the one call.
           const result: R | ToolFailure = await execute(args, ctx);
           // A failed tool did not do the thing, so the dialog must not move past
-          // it. See DialogToolDef.send.
+          // it. See DialogGate.send.
           if (isToolFailure(result)) return result;
           // `isSuccess` is that same test stated as a SUBTRACTION, and it is
           // always true here — the failure returned on the line above. What the
@@ -486,7 +488,7 @@ export function dialog(
           // A step's tool calls run CONCURRENTLY, so a sibling may have moved the
           // dialog during the await. The gate is RE-CHECKED (synchronously, right
           // before the send) so the event cannot fire a transition out of a state
-          // this tool was never allowed in — see `DialogToolDef.when` — and the
+          // this tool was never allowed in — see `DialogGate.when` — and the
           // position is re-READ, since `at` describes a conversation moved on.
           const stillHere = allowed.some((state) => matches(ctx, state));
           const moved = event === undefined || !stillHere ? position(ctx) : send(ctx, event);

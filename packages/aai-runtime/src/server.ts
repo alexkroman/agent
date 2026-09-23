@@ -40,6 +40,8 @@ import { asSessionWebSocket } from "./ws-handler.ts";
 export type {
   AgentServer,
   RuntimeServerOptions,
+  ServerRequestHook,
+  ServerUpgradeHook,
   SessionRuntime,
   SharedServerOptions,
 } from "./server-types.ts";

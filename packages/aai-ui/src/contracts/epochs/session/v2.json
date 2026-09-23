@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "session",
   "epoch": 2,
-  "sha256": "16bb6e84b0c83c50eef56ae025fefc80bc58da3bb72e99dd2398089e10f77dc0",
+  "rule": 2,
+  "sha256": "8b727686f9a2dc64c0abba2eae7a2604b786183ada2a7f1307ad40c27b0f6f8d",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",
@@ -32,5 +33,6 @@
     "useSessionSelector",
     "useSessionStatus",
     "useUserTranscript"
-  ]
+  ],
+  "rollup": "5b6a35113159b659969d75b1cb1f586f270917c2f96f0b5c8878ffc95a39317c"
 }

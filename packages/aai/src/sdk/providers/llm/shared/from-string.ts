@@ -13,8 +13,7 @@
  */
 
 import type { LlmProvider } from "../../../providers.ts";
-import { assemblyAILlm } from "../assemblyai.ts";
-import { gatewayLlm } from "../gateway.ts";
+import { llm } from "../llm.ts";
 
 /**
  * One descriptor per model id, so repeated desugaring of the same string
@@ -25,12 +24,13 @@ import { gatewayLlm } from "../gateway.ts";
 const byModelId = new Map<string, LlmProvider>();
 
 /** Normalize an `llm` field that may be a model-id string shorthand. */
-export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined {
-  if (typeof llm !== "string") return llm;
-  let descriptor = byModelId.get(llm);
+export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined {
+  if (typeof value !== "string") return value;
+  const model = value;
+  let descriptor = byModelId.get(model);
   if (!descriptor) {
-    descriptor = llm.includes("/") ? gatewayLlm({ model: llm }) : assemblyAILlm({ model: llm });
-    byModelId.set(llm, descriptor);
+    descriptor = llm({ provider: model.includes("/") ? "gateway" : "assemblyai", model });
+    byModelId.set(model, descriptor);
   }
   return descriptor;
 }

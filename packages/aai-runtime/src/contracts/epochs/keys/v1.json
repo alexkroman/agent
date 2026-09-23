@@ -2,11 +2,13 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "keys",
   "epoch": 1,
-  "sha256": "8bfd1a3bee90e69cfa10a2fabd493914b5e470505fb803f36c1328945e34c0d5",
+  "rule": 2,
+  "sha256": "644bcb99c7f25936987c301ee256d7b1645c9f067543b22ea5a2da87a0b28813",
   "exports": [
     "WorkflowKeyStore",
     "createMemoryKeyStore",
     "createPostgresKeyStore",
     "resolveKeyStore"
-  ]
+  ],
+  "rollup": "f682134f870922692a8eb53463bc19bbb3301f6458472f18380077db8acfa966"
 }

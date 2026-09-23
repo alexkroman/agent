@@ -2,12 +2,14 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "dialog",
   "epoch": 7,
-  "sha256": "6c84bf33a0ba96b9b0b6623800e55c96efc99bc69554b803ceab217e77abfb1a",
+  "rule": 2,
+  "sha256": "5165c1455c16c42510ac615f92fa04607634553a21f40ff113062f58cdce7c8c",
   "exports": [
     "AnyDialog",
     "Dialog",
     "DialogBargeIn",
     "DialogEvent",
+    "DialogGate",
     "DialogOptions",
     "DialogPosition",
     "DialogSessionEventName",
@@ -19,5 +21,21 @@
     "DialogToolResult",
     "DialogVoiceConfig",
     "dialog"
+  ],
+  "rollup": "9790208ab9de176ce47be4115f28cb4202e501ec1e7de7053738dd548a5728e4",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "7b87c84e2f19b0d1a3f4077f577db671ae46aea16165c36df1f370cb876a883e",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "5165c1455c16c42510ac615f92fa04607634553a21f40ff113062f58cdce7c8c",
+      "reason": "additive (checked): +DialogGate"
+    }
   ]
 }

@@ -9,10 +9,10 @@ import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import type { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -23,26 +23,10 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
-
-// @public
-type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: DescribeEvalOptions): void;
 
 // @public
-export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimulationSuiteOptions & {
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
     readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 
@@ -50,7 +34,7 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimula
 export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
 
 // @public
-export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent"> & EvalSimulationSuiteOptions;
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 
 // @public
 export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
@@ -61,8 +45,6 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
 };
 
 // @public
@@ -106,28 +88,6 @@ type EvalSessionOptions = {
 };
 
 // @public
-export type EvalSimulationCaseOptions = {
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
-};
-
-// @public
-export type EvalSimulationContext = {
-    simulate(caller: SimulatedCaller, options?: {
-        readonly maxTurns?: number;
-    }): Promise<SimulatedCall>;
-    judge(input: JudgeInput, criteria: readonly string[], options?: {
-        readonly context?: string;
-    }): Promise<CallVerdict>;
-};
-
-// @public
-export type EvalSimulationSuiteOptions = {
-    readonly callerLlm?: LlmProvider;
-    readonly judgeLlm?: LlmProvider;
-};
-
-// @public
 type EvalSleep = {
     readonly label: string;
     readonly duration: string | number | Date;
@@ -137,7 +97,7 @@ type EvalSleep = {
 export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTestContext = EvalSimulationContext & {
+export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
@@ -172,7 +132,7 @@ type EvalTextAgentOptions = {
 export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTextTestContext = EvalSimulationContext & {
+export type EvalTextTestContext = {
     readonly agent: EvalTextAgent;
     readonly mode: EvalMode;
 };
@@ -191,9 +151,7 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public
@@ -273,9 +231,6 @@ type HostGenerateFn = (options: GenerateOptions, callOptions?: {
 }) => Promise<GenerateResult>;
 
 // @public
-type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 type LogContext = Record<string, unknown>;
 
 // @public
@@ -300,44 +255,6 @@ overrides?: {
 export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
     mode: EvalMode;
     reason: string;
-};
-
-// @public
-type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
 };
 
 // @public

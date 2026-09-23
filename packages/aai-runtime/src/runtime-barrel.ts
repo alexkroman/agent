@@ -17,7 +17,8 @@
  *   process that has no bundler to do it at build time.
  * - {@link createRuntime} — the engine underneath it ({@link RuntimeOptions},
  *   {@link Runtime}, {@link SessionStartOptions}), for a process that owns its
- *   own transport.
+ *   own transport; {@link connectSession} runs a session over your own audio
+ *   I/O on it.
  * - {@link withHostCredentialFallback} — fill an agent's provider credentials
  *   from the host's own environment.
  * - {@link requiredProviderEnvVars} — which keys an agent config needs, before
@@ -32,7 +33,7 @@
  *   for the model stage.
  *
  * Everything on this page is CONTRACTED: each name belongs to exactly one of
- * the fourteen capabilities under `contracts/`, so a signature change here is
+ * the capabilities under `contracts/`, so a signature change here is
  * classified against an epoch rather than discovered by whoever's build breaks.
  *
  * The cross-package infrastructure that `aai-server`, `aai-cli` and `aai-guest`
@@ -188,30 +189,26 @@ export type {
   LogLevel,
   S2sConfig,
 } from "./runtime-config.ts";
-export type { SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
+// A session over a caller's own audio I/O — a free function over the sealed
+// handle rather than a method on it. See `runtime-connect.ts`.
+export { connectSession } from "./runtime-connect.ts";
+// The seal `Runtime` carries. TYPE-ONLY: there is no value to import, which is
+// what stops a hand-written object from satisfying the type.
+export type { runtimeBrand, SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
 export {
   type AgentServer,
   createRuntimeServer,
   DEFAULT_LISTEN_HOST,
   type RuntimeServerOptions,
   rejectingRuntime,
+  type ServerRequestHook,
+  type ServerUpgradeHook,
   type SessionRuntime,
   type SharedServerOptions,
 } from "./server.ts";
-// Authenticating `WS /websocket`: minting and checking the session ticket, and
-// the option that turns the gate on. The gate's own machinery stays unexported.
-export {
-  createSessionToken,
-  SESSION_AUTH_PROTOCOL_PREFIX,
-  SESSION_SECRET_ENV,
-  SESSION_UNAUTHORIZED_CLOSE_CODE,
-  type SessionAuthOptions,
-  type SessionIdentity,
-  type SessionTokenInput,
-  type SessionVerifier,
-  type VerifySessionTokenOptions,
-  verifySessionToken,
-} from "./session-auth.ts";
+// Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
+// their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
+// subpath and capability. A server option names only the opaque `SessionAuth`.
 export type { ServerSession } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a

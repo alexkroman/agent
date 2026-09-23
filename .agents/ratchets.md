@@ -313,13 +313,35 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   published signature references and NO subpath of its package exports. The
   value passes, and the consumer cannot write the type down. Three things
   already touched this and none FAILED — `includeForgottenExports` RECORDS such
-  a type, TypeDoc only covers what it renders, and `check:api-contracts` hashes
-  a declaration without asking whether it is importable — so the surface a
-  consumer must satisfy and the one it can NAME had drifted apart unmeasured. It
-  cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
+  a type, TypeDoc only covers what it renders, and `check:api-contracts` then
+  hashed a declaration without asking whether it is importable — so the surface
+  a consumer must satisfy and the one it can NAME had drifted apart unmeasured.
+  It cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
   not be rendered at all until four types were exported. Scored per PACKAGE and
   baselined rather than absolute (some must stay unnameable: the `*Misuse`
   compile-error types); its own doc argues both, and the two floors.
+- **`pnpm check:api-contracts`** carries two shrink-only baselines beside the
+  epochs, both in `packages/<pkg>/src/contracts/` and both lowered — never
+  raised — by `node scripts/api-contracts.mjs --update-internal`:
+  `internal-surface.json` (`@internal` names on a public subpath) and
+  `unowned-surface.json` — every declaration a capability HASH covers that no
+  capability owns, split into `unowned` (exported by some published subpath,
+  e.g. `AgentConfig` on `/manifest`) and `forgotten`
+  (`ae-forgotten-export`: exported by none). This is the second half of what
+  `check:api-nameable` measures, asked of the contract instead of the package:
+  a new ownerless type fails, `--bump`/`--update` refuse the capability that
+  reaches it, and the remedy is ONE owner, because a body hashed in three
+  capabilities is three epochs per change. It opened at 35 names in `aai` and
+  5 in `aai-runtime`, and stands at 26 and 4 now: the session event vocabulary
+  (`aai:events`), the Standard Schema types (`aai:standard-schema`), dialog's
+  event-name helpers and `ClientConfigResponseSchema` got owners. The gate
+  also fails a branch that grew any capability by
+  more than one epoch or one revision against the merge-base. That half is a
+  property of a BRANCH, the same exception `check:deploy-changeset` is, and it
+  clears the same bar: without a base it SAYS it did not run (every tree check
+  still does) rather than printing a checkmark over it. CI checks out full
+  history, so there it always runs. The mechanism is
+  `docs/CLAUDE.md`'s "The authoring surface is versioned in epochs".
 - **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
   50% per-file statement floor over what `test:coverage` wrote, because the
   `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module
@@ -383,7 +405,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   compose**:
   `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
   declaring `openai: OpenAI` for the type names also makes the factory
-  `openAILlm`. That is the wanted derivation; the identity entries that used to
+  `openAIS2s`. That is the wanted derivation; the identity entries that used to
   suppress it (`openai: openai`, `openrouter: openrouter`) are gone with the
   lowercase spellings they kept alive. `elevenlabs: elevenLabs` stays, being a
   real override rather than an identity.

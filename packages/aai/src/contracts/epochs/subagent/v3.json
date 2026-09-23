@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "subagent",
   "epoch": 3,
-  "sha256": "0cc36c8c6f7f4be85686adcec3ef73346acf51b66ab1d931336e2183b97b805a",
+  "rule": 2,
+  "sha256": "3f3635508b2ec3912fab2d4f0c8462f7b6b792143f27716abf46e620d267199c",
   "exports": [
     "DEFAULT_GUARDRAIL_MAX_RETRIES",
     "DELEGATE_TOOL_NAME",
@@ -18,5 +19,21 @@
     "TypedDelegateResult",
     "TypedSubagentDef",
     "subagent"
+  ],
+  "rollup": "527fe605f9055e6b5936fa6766607624e6a9a882c76c1f41edea70d1e1b0729e",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "c0d840dc2b3cc6c028074e67a3648445860f6794b872f4cc10f1eb9bed715dfd",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "3f3635508b2ec3912fab2d4f0c8462f7b6b792143f27716abf46e620d267199c",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
   ]
 }

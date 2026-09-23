@@ -47,7 +47,7 @@
  */
 
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { llm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HarnessBundleAccess } from "aai-guest-core/types";
@@ -111,9 +111,10 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
     systemPrompt: session.system,
     // The model is host configuration delivered by `studio/session-init`; the
     // KEY is the caller's own and rides in as `providerEnv`, never here.
-    llm: assemblyAILlm({
+    llm: llm({
+      provider: "assemblyai",
       model: session.model,
-      ...omitUndefined({ region: session.region }),
+      providerOptions: omitUndefined({ region: session.region }),
     }),
     maxSteps: session.maxSteps,
     // Unset means the PROVIDER's default, and a step truncated at it has its

@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { agent, dialog, persona, personas, type SlotStore, tool } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeConfig, makeLogger, makeSessionContext } from "./_test-utils.ts";

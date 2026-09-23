@@ -58,10 +58,10 @@ import {
 import { multipartBody, stepFetch } from "./step-fetch.ts";
 
 /** The synchronous endpoint. Global — it routes to the nearest region. */
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string = "https://sync.assemblyai.com/transcribe";
 
 /** Required on every sync request; the endpoint routes on it. */
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string = "universal-3-5-pro";
 
 /**
  * The endpoint's own per-request deadline, plus room to upload.
@@ -70,7 +70,7 @@ export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
  * share one request here: the far side is doing the work while this waits,
  * where a submit merely queues it.
  */
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60_000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number = 60_000;
 
 /** What {@link stepTranscribeSync} accepts. */
 export type TranscribeSyncOptions = TranscribeRequestOptions & {

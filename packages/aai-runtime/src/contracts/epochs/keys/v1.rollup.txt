@@ -1,0 +1,16 @@
+import type { Db } from '@alexkroman1/aai/internal';
+
+// @public
+export function createMemoryKeyStore(): WorkflowKeyStore;
+
+// @public
+export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
+
+// @public
+export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
+
+// @public
+export type WorkflowKeyStore = {
+    record(workflow: string, key: string, runId: string): Promise<void>;
+    lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};

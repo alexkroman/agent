@@ -74,8 +74,7 @@
  * transitions already are.
  */
 
-import type { AnyDialog, SlotHolder, SlotStore } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { AnyDialog, SessionEvent, SlotHolder, SlotStore } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { createRestartableTimer, type RestartableTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";

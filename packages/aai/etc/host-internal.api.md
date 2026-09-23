@@ -48,11 +48,7 @@ const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -69,10 +65,7 @@ const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -134,12 +127,6 @@ interface AgentSessionContext {
 
 // @public
 type AgentSystemPrompt = string | AgentInstructions;
-
-// @public
-export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-
-// @public (undocumented)
-export const ANTHROPIC_KIND: "anthropic";
 
 // @public
 type AnyWorkflowDef<R = unknown> = {
@@ -403,10 +390,16 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
 };
 
 // @public
-export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_LLM_API_KEY_ENV: string;
 
 // @public
-export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_GATEWAY_EU_URL: string;
+
+// @public
+export const ASSEMBLYAI_LLM_GATEWAY_URL: string;
+
+// @public
+export const ASSEMBLYAI_LLM_KIND = "assemblyai";
 
 // @public
 export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
@@ -449,7 +442,13 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+type AssemblyAILlmProviderOptions = {
+    readonly region?: "us" | "eu";
+    readonly reasoningEffort?: AssemblyAIReasoningEffort;
+};
+
+// @public
+type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -522,12 +521,6 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
-
-// @public
-export const CEREBRAS_API_KEY_ENV = "CEREBRAS_API_KEY";
-
-// @public (undocumented)
-export const CEREBRAS_KIND: "cerebras";
 
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
@@ -684,15 +677,9 @@ export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): stri
 export function freezeStorable<T>(value: T, path: string): T;
 
 // @public
-export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
-
-// @public (undocumented)
-export const GATEWAY_KIND: "gateway";
-
-// @public
 export function gatewayModelIds(opts?: {
     eu?: boolean;
-}): AssemblyAIGatewayModel[];
+}): KnownGatewayModel[];
 
 // @public
 export type GatewayModelInfo = {
@@ -734,18 +721,6 @@ type GenerateResult = {
 };
 
 // @public
-export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
-
-// @public (undocumented)
-export const GOOGLE_KIND: "google";
-
-// @public
-export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
-
-// @public (undocumented)
-export const GROQ_KIND: "groq";
-
-// @public
 type GuardrailVerdict = true | string;
 
 // @public
@@ -766,10 +741,24 @@ export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 export function isUniversal35Pro(model: string): boolean;
 
 // @internal
+export const KNOWN_LLM_PROVIDERS: readonly ["assemblyai", "anthropic", "cerebras", "gateway", "google", "groq", "mistral", "openai", "openrouter", "xai"];
+
+// @public
+type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
+
+// @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -821,31 +810,20 @@ type Message = {
 };
 
 // @public
-export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
-
-// @public (undocumented)
-export const MISTRAL_KIND: "mistral";
-
-// @public
-export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
-export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public (undocumented)
-export const OPENAI_KIND: "openai";
+export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
 // @public
 export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
 
 // @public
 export const OPENAI_S2S_KIND: "openai-realtime";
-
-// @public
-export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
-
-// @public (undocumented)
-export const OPENROUTER_KIND: "openrouter";
 
 // @public
 export type OpenUpload = {
@@ -929,6 +907,9 @@ export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
 type RandomSource = () => number;
+
+// @internal
+export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
@@ -1298,19 +1279,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -1665,12 +1645,6 @@ type WorkflowSummary = {
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;
-
-// @public
-export const XAI_API_KEY_ENV = "XAI_API_KEY";
-
-// @public (undocumented)
-export const XAI_KIND: "xai";
 
 // (No @packageDocumentation comment for this package)
 

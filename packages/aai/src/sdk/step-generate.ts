@@ -66,7 +66,10 @@ export type StepGenerateOptions = {
    * — the same name every AssemblyAI stage reads.
    */
   apiKeyEnv?: string;
-  /** Gateway base URL, e.g. `ASSEMBLYAI_LLM_GATEWAY_EU_URL` for EU residency. */
+  /**
+   * Gateway base URL, including the version path — e.g.
+   * `https://llm-gateway.eu.assemblyai.com/v1` for EU residency.
+   */
   gatewayUrl?: string;
   /** Request deadline in milliseconds. Defaults to 60s. */
   timeoutMs?: number;
@@ -204,7 +207,7 @@ export async function stepGenerate(
       // The same setting the shipped voice pipeline sends, and for the same
       // measured reason: on a hybrid-thinking model, reasoning roughly doubles
       // time to first token for no gain on work shaped like this. See
-      // `packages/aai/CLAUDE.md`'s `assemblyAILlm` rows.
+      // `packages/aai/CLAUDE.md`'s `llm({ provider: "assemblyai" })` rows.
       reasoning_effort: "none",
       // `omitUndefined` rather than two spread-ternaries: an unset knob must be
       // ABSENT from the body, not present as `undefined`, and this is the one

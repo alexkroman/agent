@@ -23,7 +23,7 @@ import {
   crewAgentPrompt,
   crewExpectedOutput,
   EMAIL_FOLLOWUP_AGENT,
-  EMAIL_GUARDRAIL_RETRIES,
+  EMAIL_GUARDRAIL_REVISIONS,
   EVALUATOR_SYSTEM,
   emailGuardrail,
   emailTask,
@@ -125,19 +125,23 @@ interface Script {
 function scriptedDesk(script: Script = {}) {
   const scripted = scriptedToolContext({
     generate: {
-      [EVALUATOR_SYSTEM]: (call: StubGenerateCall) => {
-        const id = candidateIdIn(call.prompt);
-        if (script.failScoring?.includes(id)) throw new Error(`gateway said no for ${id}`);
-        const table = script.scores ?? SCORES;
-        return { object: { score: table[id] ?? 50, reason: `Scripted reasoning for ${id}.` } };
+      routes: {
+        [EVALUATOR_SYSTEM]: (call: StubGenerateCall) => {
+          const id = candidateIdIn(call.prompt);
+          if (script.failScoring?.includes(id)) throw new Error(`gateway said no for ${id}`);
+          const table = script.scores ?? SCORES;
+          return { object: { score: table[id] ?? 50, reason: `Scripted reasoning for ${id}.` } };
+        },
       },
     },
     delegate: {
-      "hr-coordinator": (call) => {
-        const name = call.task.match(/^Name: (.+)$/m)?.[1] ?? "";
-        if (script.failEmail?.includes(name)) throw new Error(`coordinator timed out on ${name}`);
-        const reply = script.email ? script.email(call) : emailFor(call);
-        return typeof reply === "string" ? { text: reply } : reply;
+      routes: {
+        "hr-coordinator": (call) => {
+          const name = call.task.match(/^Name: (.+)$/m)?.[1] ?? "";
+          if (script.failEmail?.includes(name)) throw new Error(`coordinator timed out on ${name}`);
+          const reply = script.email ? script.email(call) : emailFor(call);
+          return typeof reply === "string" ? { text: reply } : reply;
+        },
       },
     },
   });
@@ -900,8 +904,8 @@ describe("the crews", () => {
     // declaration. Pinned to the NUMBER as well as to the constant, so an SDK
     // default that moved is a decision this template makes again rather than
     // one it inherits.
-    expect(emailWriter.maxRetries).toBe(EMAIL_GUARDRAIL_RETRIES);
-    expect(EMAIL_GUARDRAIL_RETRIES).toBe(1);
+    expect(emailWriter.maxRevisions).toBe(EMAIL_GUARDRAIL_REVISIONS);
+    expect(EMAIL_GUARDRAIL_REVISIONS).toBe(1);
   });
 
   test("the guardrail accepts a subject line and a signature, and names what is missing", () => {

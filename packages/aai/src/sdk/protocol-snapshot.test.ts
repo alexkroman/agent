@@ -8,8 +8,10 @@
  */
 import { describe, expect, test } from "vitest";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
-import type { SessionCommand, SessionEvent, SessionEventBody } from "./protocol.ts";
-import { EVENT_ID_PREFIX, SessionCommandSchema, SessionEventSchema } from "./protocol.ts";
+import type { SessionCommand } from "./protocol.ts";
+import { EVENT_ID_PREFIX, SessionCommandSchema } from "./protocol.ts";
+import { SessionEventSchema } from "./protocol-events.ts";
+import type { SessionEvent, SessionEventBody } from "./session-event-map.ts";
 
 /**
  * The envelope every event carries on the wire, so the cases below stay about

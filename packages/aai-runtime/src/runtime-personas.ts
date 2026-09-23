@@ -46,8 +46,7 @@
  * closes that.
  */
 
-import type { PersonaDef, Personas, SlotHolder, SlotStore } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { PersonaDef, Personas, SessionEvent, SlotHolder, SlotStore } from "@alexkroman1/aai";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";

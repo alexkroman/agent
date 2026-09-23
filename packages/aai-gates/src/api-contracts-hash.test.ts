@@ -34,10 +34,12 @@ import { sole } from "./_gate-support.ts";
  * shape as `guard-invariants-scanner-rules.test.ts`, and destructured with a
  * fallback so "is importable" stays an assertion rather than a crash.
  */
-const { hashableBody } =
+type Analysis = { hashable: string; own: string[]; unowned: string[]; foreignRefs: string[] };
+const { hashableBody, analyzeBody } =
   sole(
     import.meta.glob<{
       hashableBody: (body: string, foreign: Set<string>) => string;
+      analyzeBody: (body: string, foreign: Set<string>) => Analysis;
     }>("../../../scripts/_api-contracts-hash.mjs", { eager: true }),
   ) ?? {};
 
@@ -115,7 +117,7 @@ describe("declarations another capability contracts", () => {
   // reaches it, so every workflow reshape used to bump `tool` too — 74% of that
   // capability's hashed lines were somebody else's.
   const withCtx = (members: string) =>
-    "// @public\nexport interface ToolContext {\n    workflows: WorkflowClient;\n}\n\n" +
+    "// @public\nexport interface ToolContext {\n    workflows: WorkflowCtx;\n}\n\n" +
     `// @public\ninterface WorkflowCtx {\n${members}\n}`;
   const foreign = new Set(["WorkflowCtx"]);
 
@@ -163,14 +165,108 @@ describe("declarations another capability contracts", () => {
   test("a declaration NO capability owns is still hashed by body", () => {
     // `includeForgottenExports` puts these in the report precisely because a
     // consumer has to satisfy them while having no name to import them by.
-    // Nothing else contracts their shape, so this is their only cover.
-    const a = normalized("// @public\ninterface DelegateOptions {\n    task: string;\n}", foreign);
-    const b = normalized("// @public\ninterface DelegateOptions {\n    task: number;\n}", foreign);
+    // Nothing else contracts their shape, so this is their only cover — and
+    // `_api-contracts-ownership.mjs` fails on it unless it is baselined.
+    const seed = "// @public\nexport declare function delegate(o: DelegateOptions): void;\n";
+    const a = normalized(`${seed}interface DelegateOptions {\n    task: string;\n}`, foreign);
+    const b = normalized(`${seed}interface DelegateOptions {\n    task: number;\n}`, foreign);
     expect(a).not.toBe(b);
   });
 
   test("a multi-declarator statement is foreign only if every name is", () => {
-    const body = "// @public\ndeclare const WorkflowCtx: number, Mine: string;";
+    const body =
+      "// @public\nexport interface Root {\n    a: typeof Mine;\n}\n" +
+      "declare const WorkflowCtx: number, Mine: string;";
     expect(normalized(body, foreign)).toContain("Mine: string");
+  });
+});
+
+describe("G3 — only what the capability's OWN declarations reach directly", () => {
+  // The old rule hashed every foreign NAME reachable anywhere in the rollup,
+  // so a new type reachable through `ToolContext` bumped `state`, `step`,
+  // `subagent` and `coding` with no change of their own.
+  const body = (ctxMembers: string) =>
+    "// @public\nexport interface StateApi {\n    ctx: ToolContext;\n}\n\n" +
+    `interface ToolContext {\n${ctxMembers}\n}\n\n` +
+    "interface WorkflowCtx {\n    step(): void;\n}\n\ninterface Usage {\n    tokens: number;\n}";
+  const foreign = new Set(["ToolContext", "WorkflowCtx", "Usage"]);
+
+  test("a foreign name reached only THROUGH another foreign body is not hashed", () => {
+    const a = normalized(body("    workflows: WorkflowCtx;"), foreign);
+    const b = normalized(body("    workflows: WorkflowCtx;\n    usage: Usage;"), foreign);
+    expect(b).toBe(a);
+    expect(a).toContain("(contracted elsewhere) ToolContext");
+    expect(a).not.toContain("WorkflowCtx");
+  });
+
+  test("but one the capability references DIRECTLY is", () => {
+    const direct =
+      "// @public\nexport interface StateApi {\n    ctx: ToolContext;\n    usage: Usage;\n}\n\n" +
+      "interface ToolContext {\n    x: number;\n}\n\ninterface Usage {\n    tokens: number;\n}";
+    expect(normalized(direct, foreign)).toContain("ToolContext, Usage");
+  });
+
+  test("an unowned declaration reached through the capability's own surface is walked into", () => {
+    const withHelper = (field: string) =>
+      "// @public\nexport interface Api {\n    opts: Helper;\n}\n\n" +
+      `interface Helper {\n    ${field}\n}`;
+    const a = analyzeBody?.(withHelper("a: number;"), new Set());
+    const b = analyzeBody?.(withHelper("a: string;"), new Set());
+    expect(a?.hashable).not.toBe(b?.hashable);
+    expect(a?.unowned).toEqual(["Helper"]);
+    expect(a?.own).toEqual(["Api"]);
+  });
+});
+
+describe("G5 — presentation is not contract", () => {
+  const decl = "export interface Api {\n    a: Thing;\n}";
+
+  test("import form and order do not move the hash", () => {
+    const a = normalized(
+      `import type { Thing } from 'x';\nimport { Other } from 'y';\n\n// @public\n${decl}`,
+    );
+    const b = normalized(`import { Thing } from 'x';\n\n// @public\n${decl}`);
+    expect(b).toBe(a);
+  });
+
+  test("but importing the name from a DIFFERENT module does", () => {
+    const a = normalized(`import { Thing } from 'x';\n\n// @public\n${decl}`);
+    const b = normalized(`import { Thing } from 'z';\n\n// @public\n${decl}`);
+    expect(b).not.toBe(a);
+  });
+
+  test("release tags, (undocumented) and @deprecated lines do not move it", () => {
+    const a = normalized(`// @public\n${decl}`);
+    const b = normalized(`// @public (undocumented)\n// @deprecated\n${decl}`);
+    expect(b).toBe(a);
+  });
+
+  test("a string literal type longer than 80 characters reads as `string`", () => {
+    const long = (text: string) => `// @public\nexport type Prompt = "${text}";`;
+    expect(normalized(long("a".repeat(90)))).toBe(normalized(long("b".repeat(95))));
+    expect(normalized(long("a".repeat(90)))).toContain("string");
+  });
+
+  test("but a short literal is shape, and still moves it", () => {
+    const short = (text: string) => `// @public\nexport type Mode = "${text}";`;
+    expect(normalized(short("fast"))).not.toBe(normalized(short("slow")));
+  });
+
+  test("a const's literal VALUES reduce to their kind; the key set stays", () => {
+    const defaults = (body: string) => `// @public\nexport const DEFAULTS: {\n${body}\n};`;
+    const a = normalized(defaults('    readonly timeoutMs: 30000;\n    readonly voice: "a";'));
+    const b = normalized(defaults('    readonly timeoutMs: 45000;\n    readonly voice: "b";'));
+    expect(b).toBe(a);
+    const renamed = normalized(defaults('    readonly timeout: 30000;\n    readonly voice: "a";'));
+    expect(renamed).not.toBe(a);
+    const retyped = normalized(
+      defaults('    readonly timeoutMs: "30000";\n    readonly voice: "a";'),
+    );
+    expect(retyped).not.toBe(a);
+  });
+
+  test("a function type inside a const keeps its literal parameter types", () => {
+    const f = (mode: string) => `// @public\nexport const run: (mode: "${mode}") => void;`;
+    expect(normalized(f("fast"))).not.toBe(normalized(f("slow")));
   });
 });

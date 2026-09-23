@@ -378,9 +378,14 @@ as jest's `done`, so `async (session) => …` is an error where
 play the user — a `persona` and a `goal` — against an `EvalSession` or an
 `EvalTextAgent`, until it calls `end_call` or `maxTurns` runs out.
 `judgeCall(input, { criteria, llm })` (`eval/judge.ts`) has a model rule on each
-criterion over the result. A `describeEval`/`describeTextEval` case gets both as
-`simulate()` and `judge()` on its context (`eval/simulation-context.ts`). Five
-decisions worth not undoing:
+criterion over the result. Both are on `@alexkroman1/aai-runtime/eval/simulate`
+— their own subpath and their own `eval-simulate` capability — and a
+`describeEval`/`describeTextEval` case builds the pair with
+`evalSimulation({ agent, mode, target: session })` (`eval/simulation-context.ts`)
+rather than finding it on its context. They used to be intersected into
+`EvalTestContext` and the suite/case options, which made every change to a
+simulation an epoch of the harness a case runs in. Five decisions worth not
+undoing:
 
 - **The caller drives the same `say()`/`send()` a scripted case does.** A
   simulated call is a list of ordinary `EvalTurn`s, so `turnCalling`,
@@ -395,11 +400,12 @@ decisions worth not undoing:
   skipped fails with that said. An empty criteria list throws.
 - **Keyless, both are SCRIPTED**, like the agent's own model: `stubCaller` is
   the caller's lines (ending on `{ tool: "end_call" }`), `stubJudge` the
-  rulings, and a stub verdict carries `scripted: true`. `runJudge`'s flag is
-  in-package so nothing else can label a verdict.
-- **Live, both default to the model the agent is evaluated on**, overridable per
-  suite with `callerLlm`/`judgeLlm`. One key, one bill; a stronger judge is
-  one option away.
+  rulings — both `evalSimulation` options, driven by the case's own `mode` —
+  and a stub verdict carries `scripted: true`. `runJudge`'s flag is in-package
+  so nothing else can label a verdict.
+- **Live, both default to the model the agent is evaluated on**, overridable
+  with `callerLlm`/`judgeLlm`. One key, one bill; a stronger judge is one
+  option away.
 
 Text only, like everything on this subpath: `latencyMs` is committed utterance
 to first reply text, i.e. model and tool time, never endpointing or synthesis.

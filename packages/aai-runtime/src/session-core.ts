@@ -183,7 +183,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
-  function handleToolCalled(event: Extract<TransportEventBody, { type: "tool.called" }>): void {
+  function handleToolCalled(event: TransportEventBody<"tool.called">): void {
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
     // drain must not start tool work (guest RPC, ctx.generate)
@@ -267,10 +267,24 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         }
         break;
       }
-      default:
-        // `speech.stopped`, `audio.completed`, `tool.completed` — nothing for the
-        // session to do but publish them.
+      // FORWARDED: nothing for the session to do but publish them. Listed by
+      // name rather than left to a `default`, so that an event added to the
+      // vocabulary is a compile error below until somebody decides whether the
+      // session has to act on it — a `default` that published everything was
+      // how a new report got forwarded without anyone classifying it.
+      case "audio.completed":
+      case "metrics.collected":
+      case "speech.stopped":
+      case "tool.completed":
+      case "user-turn.exceeded":
         break;
+      default: {
+        // Unreachable by type; at runtime an untyped transport's unknown report
+        // is still published, as it always was.
+        const unclassified: never = event;
+        emit(unclassified);
+        return;
+      }
     }
     emit(event);
   }

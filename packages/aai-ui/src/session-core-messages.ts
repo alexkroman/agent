@@ -10,9 +10,9 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { safeJsonParse } from "@alexkroman1/aai";
+import { type SessionEvent, SessionEventSchema, safeJsonParse } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
-import { lenientParse, type SessionEvent, SessionEventSchema } from "@alexkroman1/aai/protocol";
+import { lenientParse } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { AudioPath } from "./session-core-audio-state.ts";
 import type { SessionStateMachine } from "./session-core-state.ts";
@@ -209,7 +209,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     updateState({ ...extra, ...agentState.apply({ type: "LISTEN" }) });
   }
 
-  function handleErrorEvent(e: Extract<SessionEvent, { type: "error.reported" }>): void {
+  function handleErrorEvent(e: SessionEvent<"error.reported">): void {
     console.error("Agent error:", e.message);
     // `!== false` rather than a bare read, keeping the defensiveness the branch
     // below already had: an `error.reported` from an older guest that predates

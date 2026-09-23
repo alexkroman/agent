@@ -56,12 +56,14 @@
  */
 
 import type {
+  SessionEvent,
+  SessionEventBody,
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
   SlotStore,
 } from "@alexkroman1/aai";
-import type { ClientSink, SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";

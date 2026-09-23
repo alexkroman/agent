@@ -15,7 +15,8 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   MAX_TOOL_RESULT_CHARS,
 } from "./constants.ts";
-import { SessionCommandSchema, SessionErrorCodeSchema, SessionEventSchema } from "./protocol.ts";
+import { SessionCommandSchema, SessionErrorCodeSchema } from "./protocol.ts";
+import { SessionEventSchema } from "./protocol-events.ts";
 
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
 

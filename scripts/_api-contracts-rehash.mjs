@@ -12,13 +12,16 @@
 
 import { generateCapabilityReports } from "./_api-contracts.mjs";
 import { classify } from "./_api-contracts-checks.mjs";
+import { HASH_RULE } from "./_api-contracts-hash.mjs";
 import {
   capabilities,
   capabilityId,
   epochRecord,
   readEpoch,
+  readRollup,
   readTable,
   writeEpoch,
+  writeRollup,
 } from "./_api-contracts-tree.mjs";
 
 /**
@@ -40,6 +43,40 @@ import {
  * surface — the diff makes that reviewable, since a rehash shows as changed
  * `sha256` fields under unchanged epoch numbers and nothing else.
  */
+/** Rewrite one current epoch under the current rule; `false` when it already is. */
+function rehashOne(pkg, capability, epoch, generated) {
+  const committed = readEpoch(pkg, capability, epoch);
+  const { added, removed } = classify(committed.exports ?? [], generated.exports);
+  if (added.length > 0 || removed.length > 0) {
+    const moved = [...removed.map((n) => `-${n}`), ...added.map((n) => `+${n}`)].join(", ");
+    console.error(
+      `api-contracts: "${capabilityId(pkg, capability)}" has export-list changes (${moved}).\n` +
+        "  That is a surface change, not a hash-rule change. Classify it with `--bump`, " +
+        "and rehash from a green tree.",
+    );
+    process.exit(1);
+  }
+  const existing = readRollup(pkg, capability, epoch);
+  const current =
+    committed.sha256 === generated.sha256 && committed.rule === HASH_RULE && existing !== undefined;
+  if (current) return false;
+  // The epoch's ROLLUP is kept when it has one: it is what the epoch was minted
+  // from, and a rehash changes the question, not the promise. An epoch with none
+  // (minted before rollups were committed) gets today's body, which is sound for
+  // the same reason the rehash is — from a green tree the surface IS the epoch's.
+  const body = existing ?? generated.body;
+  const history =
+    committed.revisions === undefined
+      ? {}
+      : { revision: committed.revision, revisions: committed.revisions };
+  writeEpoch(pkg, capability, epoch, {
+    ...epochRecord(capability, epoch, { ...generated, body }),
+    ...history,
+  });
+  if (existing === undefined) writeRollup(pkg, capability, epoch, body);
+  return true;
+}
+
 export function rehash(packages, reason) {
   if (reason === undefined || reason.trim() === "") {
     console.error(
@@ -54,22 +91,10 @@ export function rehash(packages, reason) {
     const table = readTable(pkg);
     const reports = generateCapabilityReports(pkg);
     for (const capability of capabilities(pkg)) {
-      const id = capabilityId(pkg, capability);
       const epoch = table[capability].current;
-      const committed = readEpoch(pkg, capability, epoch);
-      const generated = reports.get(capability);
-      const { added, removed } = classify(committed.exports ?? [], generated.exports);
-      if (added.length > 0 || removed.length > 0) {
-        console.error(
-          `api-contracts: "${id}" has export-list changes (${[...removed.map((n) => `-${n}`), ...added.map((n) => `+${n}`)].join(", ")}).\n` +
-            "  That is a surface change, not a hash-rule change. Classify it with `--bump`, " +
-            "and rehash from a green tree.",
-        );
-        process.exit(1);
+      if (rehashOne(pkg, capability, epoch, reports.get(capability))) {
+        rewritten.push(`${capabilityId(pkg, capability)}@${epoch}`);
       }
-      if (committed.sha256 === generated.sha256) continue;
-      writeEpoch(pkg, capability, epoch, epochRecord(capability, epoch, generated));
-      rewritten.push(`${id}@${epoch}`);
     }
   }
 

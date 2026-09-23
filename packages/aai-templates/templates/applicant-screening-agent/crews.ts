@@ -51,7 +51,7 @@
  */
 
 import {
-  DEFAULT_GUARDRAIL_MAX_RETRIES,
+  DEFAULT_GUARDRAIL_MAX_REVISIONS,
   type DelegateFn,
   type DelegateResult,
   type GenerateFn,
@@ -311,7 +311,7 @@ export const emailGuardrail: SubagentGuardrail = ({ text }) => {
  * What a complaint buys the coordinator: one more run, and no more.
  *
  * CrewAI's task `guardrail` retries three times; the SDK's default is
- * {@link DEFAULT_GUARDRAIL_MAX_RETRIES}, which is one, and one is the right
+ * {@link DEFAULT_GUARDRAIL_MAX_REVISIONS}, which is one, and one is the right
  * budget on a phone. A retry is another run of the coordinator inside a
  * twelve-email fan-out the caller is holding the line through, and the two
  * things this guardrail checks — a subject line, a signature — are ones a model
@@ -322,7 +322,7 @@ export const emailGuardrail: SubagentGuardrail = ({ text }) => {
  * Written out rather than inherited, because a retry budget nobody can see at
  * the declaration is a budget nobody decided.
  */
-export const EMAIL_GUARDRAIL_RETRIES = DEFAULT_GUARDRAIL_MAX_RETRIES;
+export const EMAIL_GUARDRAIL_REVISIONS = DEFAULT_GUARDRAIL_MAX_REVISIONS;
 
 /**
  * Their `LeadResponseCrew`: `email_followup_agent` running
@@ -337,7 +337,7 @@ export const emailWriter = subagent({
   systemPrompt: crewAgentPrompt(EMAIL_FOLLOWUP_AGENT),
   expectedOutput: EMAIL_EXPECTED_OUTPUT,
   guardrail: emailGuardrail,
-  maxRetries: EMAIL_GUARDRAIL_RETRIES,
+  maxRevisions: EMAIL_GUARDRAIL_REVISIONS,
   maxSteps: 1,
 });
 

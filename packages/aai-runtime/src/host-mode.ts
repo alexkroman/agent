@@ -15,14 +15,14 @@
  * when the matching inbound `tool_result` arrives.
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, SessionEventBody } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { HostConfig, SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { HostConfig } from "@alexkroman1/aai/protocol";
 import { HostConfigMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";

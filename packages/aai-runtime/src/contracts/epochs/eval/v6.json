@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "eval",
   "epoch": 6,
-  "sha256": "21c3beedfcfa22d41e4b57216d242f0d96263add7ad203fa61ce9c855ed06b33",
+  "rule": 2,
+  "sha256": "41416815b093acf060da6713486981b3a67f2f53819a9fe4e206408b13a4f38d",
   "exports": [
     "CallVerdict",
     "CriterionVerdict",
@@ -96,5 +97,6 @@
     "toolResultIn",
     "toolResultsIn",
     "turnCalling"
-  ]
+  ],
+  "rollup": "0822a579c5d7aecd479189e254dc8ce11387f746ddb2319fe4321ebd1f51683d"
 }

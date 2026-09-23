@@ -1,0 +1,54 @@
+// @public
+export type ReadUploadOptions = {
+    start?: number | undefined;
+    end?: number | undefined;
+};
+
+// @public
+export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
+export function stepUploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
+export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, options?: WriteUploadOptions): Promise<UploadInfo>;
+
+// @public
+export class UploadIncompleteError extends Error {
+    constructor(message: string, stored: number);
+    readonly retryable = false;
+    readonly stored: number;
+}
+
+// @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
+};
+
+// @public
+export type UploadRange = {
+    start: number;
+    end: number;
+};
+
+// @public
+export type UploadSlice = {
+    info: UploadInfo;
+    bytes: Uint8Array;
+    start: number;
+    end: number;
+};
+
+// @public
+export type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};

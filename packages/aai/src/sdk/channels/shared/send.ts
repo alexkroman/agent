@@ -43,7 +43,7 @@ import { ChannelDeliveryError } from "./channel-types.ts";
  * A platform is not slow. A post that has not answered in 30s is not going to,
  * and a step holding a socket open past that is a step nobody can cancel.
  */
-export const CHANNEL_POST_TIMEOUT_MS = 30_000;
+export const CHANNEL_POST_TIMEOUT_MS: number = 30_000;
 
 const CHANNEL_KINDS = new Map<string, ChannelHandler>();
 

@@ -29,15 +29,16 @@
     // be pulled in as imports, parsed and never checked. Same note as
     // `tsconfig.scripts.json`.
     "checkJs": true,
-    // The same three relaxations `tsconfig.scripts.json` argues for, for the
-    // same reason and no other: this is annotation-free JavaScript, so
-    // `noImplicitAny` would demand JSDoc on every parameter in the file before
-    // the compiler could report a single real mistake. Everything that catches
+    // ONE relaxation, of the three `tsconfig.scripts.json` argues for: this is
+    // annotation-free JavaScript, so `noImplicitAny` would demand JSDoc on every
+    // parameter in the file before the compiler could report a single real
+    // mistake. The other two were copied from that file and are back ON —
+    // measured here rather than inherited, `noUncheckedIndexedAccess` cost
+    // nothing and `useUnknownInCatchVariables` found two `catch` blocks reading
+    // `.message` off a value that need not be an Error. Everything that catches
     // an actual defect — `strict`, and `strictNullChecks` with it — stays on,
     // which is what surfaced all 15.
-    "noImplicitAny": false,
-    "noUncheckedIndexedAccess": false,
-    "useUnknownInCatchVariables": false
+    "noImplicitAny": false
   },
   // Generic on purpose, like the other two: tsc's `include` only sets ROOT
   // files, and a browser entry is imported by nothing, so anything not matched

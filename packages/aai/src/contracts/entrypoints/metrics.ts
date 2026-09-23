@@ -6,11 +6,13 @@
  * `agent({ events })` hook receives — and the collector that folds many of
  * them into a summary.
  *
- * The frame's TYPE is here even though its schema lives on the non-authoring
- * `/protocol` subpath, for the reason `SessionEventType` is on `agent`: an
- * author writes `(e: MetricsCollectedEvent) => …` and reads `e.llm?.ttftMs`,
- * so the field names ARE the API, and a stage renamed on the wire must be a
- * classification here rather than a silent break in a user's dashboard.
+ * The frame's TYPE is here even though the vocabulary it is one member of is
+ * `events`': an author writes `(e: MetricsCollectedEvent) => …` and reads
+ * `e.llm?.ttftMs`, so the field names ARE the API, and a stage renamed on the
+ * wire must be a classification here rather than a silent break in a user's
+ * dashboard. It is declared as `SessionEvent<"metrics.collected">`, so this
+ * report names the vocabulary without hashing it, and a NEW event elsewhere in
+ * it no longer moves this capability.
  *
  * `MetricsSummary`'s ABSENT-until-sampled stats and the windowed percentiles
  * are behaviour a signature cannot carry; `metrics-collector.test.ts` pins

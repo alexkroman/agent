@@ -42,7 +42,7 @@
  * @module
  */
 
-import type { SessionEvent } from "./protocol-events.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 
 /**
  * One `metrics.collected` frame, envelope included — what an
@@ -53,7 +53,7 @@ import type { SessionEvent } from "./protocol-events.ts";
  * name an author annotates a handler with.
  * @public
  */
-export type MetricsCollectedEvent = Extract<SessionEvent, { type: "metrics.collected" }>;
+export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
 /**
  * What {@link MetricsCollector.collect} reads off one frame — the event

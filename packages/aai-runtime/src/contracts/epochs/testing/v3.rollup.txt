@@ -1,0 +1,249 @@
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import type { Db } from '@alexkroman1/aai/internal';
+import type { LanguageModel } from 'ai';
+import type { ModelMessage } from 'ai';
+import type { PrepareStepFunction } from 'ai';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai';
+import type { StepResult } from 'ai';
+import type { ToolChoice } from '@alexkroman1/aai';
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { ToolSet } from 'ai';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowDef } from '@alexkroman1/aai';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export const DEFAULT_MAX_DELIVERIES = 50;
+
+// @public
+export type DeterminismKind = "now" | "random" | "uuid";
+
+// @public
+export type HookRecord = {
+    token: string;
+    delivered: boolean;
+    payload?: unknown;
+    closed?: boolean;
+};
+
+// @public
+export class JournalConflictError extends Error {
+    constructor(message: string);
+    static is(value: unknown): value is JournalConflictError;
+}
+
+// @public
+export type JournalStore = {
+    createRun(record: RunRecord): Promise<void>;
+    getRun(runId: string): Promise<RunRecord | undefined>;
+    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
+    setStatus(runId: string, next: RunStatus, patch?: {
+        output?: unknown;
+        error?: {
+            message: string;
+        };
+    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    readSteps(runId: string): Promise<StepEntry[]>;
+    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
+    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
+    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
+    readSleeps(runId: string): Promise<SleepEntry[]>;
+    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
+    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
+    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
+    closeHook(runId: string, key: string): Promise<boolean>;
+    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
+    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
+    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
+};
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export type ResumableRun = {
+    runId: string;
+    wakeAt?: number | undefined;
+};
+
+// @public
+export type RunRecord = {
+    runId: string;
+    workflow: string;
+    status: RunStatus;
+    createdAt: number;
+    input: unknown;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    codeVersion?: string | undefined;
+};
+
+// @public
+export type RunStatus = WorkflowRunStatus;
+
+// @public
+export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
+
+// @public
+export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
+    readonly script: readonly ScriptedTextStep[];
+};
+
+// @public
+export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
+
+// @public
+export type RunWorkflowOptions = {
+    name?: string;
+    journal?: JournalStore;
+    logger?: Logger;
+    crashAt?: string;
+    maxDeliveries?: number;
+};
+
+// @public
+export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
+
+// @public
+export type ScriptedTextStep = {
+    readonly text?: string;
+    readonly toolCalls?: readonly ScriptedToolCall[];
+};
+
+// @public
+export type ScriptedToolCall = {
+    readonly name: string;
+    readonly input?: Record<string, unknown>;
+    readonly id?: string;
+};
+
+// @public
+export type SleepEntry = SleepRecord & {
+    key: string;
+};
+
+// @public
+export type SleepRecord = {
+    wakeAt: number;
+    woken: boolean;
+    correlationId?: string | undefined;
+    kind: "sleep" | "hookTimeout";
+};
+
+// @public
+export type StepEntry = {
+    key: string;
+    name: string;
+    status: "ok" | "failed";
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+    attempts: number;
+    startedAt?: number | undefined;
+    finishedAt: number;
+};
+
+// @public
+interface TextAgentOptions {
+    agent: AgentDef;
+    db?: Db | undefined;
+    env?: AgentEnv;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    model?: LanguageModel;
+    onEvent?: (event: SessionEvent) => void;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    sessionId?: string;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+export type TextAgentTestRun = {
+    readonly text: string;
+    readonly texts: readonly string[];
+    readonly toolCalls: readonly TextAgentTestToolCall[];
+    readonly steps: readonly StepResult<ToolSet>[];
+    readonly messages: readonly ModelMessage[];
+    readonly events: readonly SessionEvent[];
+};
+
+// @public
+export type TextAgentTestToolCall = {
+    readonly name: string;
+    readonly id: string;
+    readonly args: unknown;
+    readonly result: unknown;
+};
+
+// @public
+interface TextTurnOptions {
+    maxSteps?: number;
+    messages: ModelMessage[];
+    onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
+    prepareStep?: PrepareStepFunction<ToolSet>;
+    signal?: AbortSignal;
+    stopWhen?: readonly ((options: {
+        steps: readonly StepResult<ToolSet>[];
+    }) => boolean | PromiseLike<boolean>)[];
+    systemPrompt?: string;
+    temperature?: number;
+    toolChoice?: ToolChoice;
+}
+
+// @public
+export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
+    advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
+    signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    readonly signalled: boolean;
+    expireWaits(): Promise<WorkflowTestHandle<R>>;
+    restart(): Promise<WorkflowTestHandle<R>>;
+    readonly journal: JournalStore;
+    close(): Promise<void>;
+};
+
+// @public
+export type WorkflowTestRead = {
+    readonly key: string;
+    readonly kind: DeterminismKind;
+    readonly value: unknown;
+};
+
+// @public
+export type WorkflowTestRun<R> = {
+    readonly runId: string;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly steps: readonly WorkflowTestStep[];
+    readonly reads: readonly WorkflowTestRead[];
+    readonly wakeAt: number | undefined;
+    readonly deliveries: number;
+    readonly crashed: boolean;
+};
+
+// @public
+export type WorkflowTestStep = {
+    readonly key: string;
+    readonly name: string;
+    readonly status: "ok" | "failed";
+    readonly output?: unknown;
+    readonly error?: string | undefined;
+    readonly attempts: number;
+};

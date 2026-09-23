@@ -213,9 +213,16 @@ describe("the markdown config", () => {
     // itself going undocumented, which is the whole reference disappearing with
     // this gate still green.
     const denied: Record<string, readonly string[]> = {
-      aai: ["./host-internal", "./internal", "./slugify", "./testing/vite", "./workspace-files"],
+      aai: [
+        "./experimental",
+        "./host-internal",
+        "./internal",
+        "./slugify",
+        "./testing/vite",
+        "./workspace-files",
+      ],
       "aai-ui": ["./internal"],
-      "aai-runtime": [".", "./internal", "./tracing"],
+      "aai-runtime": [".", "./auth", "./internal", "./metrics", "./tracing"],
     };
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = packageDirOf(globKey);

@@ -1,0 +1,95 @@
+import { LanguageModel } from 'ai';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
+import { SttError } from '@alexkroman1/aai/host-internal';
+import { SttEvents } from '@alexkroman1/aai/host-internal';
+import { SttOpener } from '@alexkroman1/aai/host-internal';
+import { SttOpenOptions } from '@alexkroman1/aai/host-internal';
+import { SttSession } from '@alexkroman1/aai/host-internal';
+import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
+import { ToolCallRepairFunction } from 'ai';
+import { ToolSet } from 'ai';
+import { TtsError } from '@alexkroman1/aai/host-internal';
+import { TtsEvents } from '@alexkroman1/aai/host-internal';
+import { TtsOpener } from '@alexkroman1/aai/host-internal';
+import { TtsOpenOptions } from '@alexkroman1/aai/host-internal';
+import { TtsSession } from '@alexkroman1/aai/host-internal';
+import { TtsWordTiming } from '@alexkroman1/aai/host-internal';
+import { Unsubscribe } from '@alexkroman1/aai/host-internal';
+
+// @public
+export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+
+// @public
+export type LlmRegistryEntry = {
+    readonly envVar: string;
+    readonly label: string;
+    readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
+};
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export type OpenerRegistryEntry<Opener> = {
+    readonly envVar: string;
+    readonly open: (descriptor: {
+        options: Record<string, unknown>;
+    }) => Opener;
+};
+
+// @public
+export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void;
+
+// @public
+export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
+
+// @public
+export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
+
+// @public
+export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
+
+// @public
+export type S2sConfig = {
+    wssUrl: string;
+    inputSampleRate: number;
+    outputSampleRate: number;
+};
+
+// @public
+export function salvageJson(input: string): Promise<string | null>;
+
+export { SttError }
+
+export { SttEvents }
+
+export { SttOpener }
+
+export { SttOpenOptions }
+
+export { SttSession }
+
+export { SttTurnMeta }
+
+export { TtsError }
+
+export { TtsEvents }
+
+export { TtsOpener }
+
+export { TtsOpenOptions }
+
+export { TtsSession }
+
+export { TtsWordTiming }
+
+export { Unsubscribe }

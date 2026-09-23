@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Push-to-talk's three edges on the browser session — `startUserTurn`,
- * `commitUserTurn`, `clearUserTurn` — for an agent that declares
+ * Push-to-talk's three edges on the browser session — `session.userTurn`'s
+ * `start`, `commit` and `clear` — for an agent that declares
  * `turnDetection: "manual"`.
  *
  * Split out of `session-core.ts` at the source-length cap. Each is a frame to
@@ -16,7 +16,7 @@
 
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { SessionStateMachine } from "./session-core-state.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { SessionSnapshot, UserTurnControls } from "./session-core-types.ts";
 
 /** What the three edges need from the session around them. @internal */
 export type UserTurnDeps = {
@@ -31,13 +31,9 @@ export type UserTurnDeps = {
 };
 
 /** Build the three push-to-talk edges. @internal */
-export function createUserTurnActions(deps: UserTurnDeps): {
-  startUserTurn(): void;
-  commitUserTurn(): void;
-  clearUserTurn(): void;
-} {
+export function createUserTurnActions(deps: UserTurnDeps): UserTurnControls {
   return {
-    startUserTurn(): void {
+    start(): void {
       if (!deps.connected()) return;
       // The agent stops the moment the button goes down, the same local
       // barge-in `cancel()` makes — only when there is something to stop, so a
@@ -50,11 +46,11 @@ export function createUserTurnActions(deps: UserTurnDeps): {
       }
       deps.sendJson({ type: "user_turn_start" });
     },
-    commitUserTurn(): void {
+    commit(): void {
       if (!deps.connected()) return;
       deps.sendJson({ type: "user_turn_commit" });
     },
-    clearUserTurn(): void {
+    clear(): void {
       if (!deps.connected()) return;
       // The server shows nothing more of a discarded turn, so the caption it
       // left behind is cleared here rather than waiting for a transcript that

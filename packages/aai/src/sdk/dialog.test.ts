@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { setup } from "xstate";
 import { z } from "zod";
+import { agentToolsToSchemas } from "./_internal-types.ts";
 import { runToolDef } from "./_test-utils.ts";
 import { dialog } from "./dialog.ts";
 import { createToolContext } from "./testing.ts";
@@ -340,6 +341,29 @@ describe("tool transitions", () => {
       },
     });
     expect(() => verify.onError?.(boom, createToolContext())).toThrow(boom);
+  });
+
+  test("carries `messages` to the wire declaration, so a gated tool can SPEAK", () => {
+    // `DialogToolDef` restated `ToolDef` field by field and left `messages`
+    // out. Built from `ToolDef` now; this pins that the gate wrapper's spread
+    // delivers the lines to `agentToolsToSchemas`, which is where the runtime
+    // reads them — and that the gate's own fields do NOT ride along.
+    const claim = dialog("claim", claimMachine());
+    const verify = claim.tool({
+      description: "Verify the policy",
+      when: "verifying",
+      send: { type: "VERIFIED" },
+      execute: () => "ok",
+      messages: {
+        start: "Checking your policy.",
+        failed: [{ role: "system", content: "Explain what has to happen first." }],
+      },
+    });
+    expect(verify).not.toHaveProperty("when");
+    expect(agentToolsToSchemas({ verify })[0]?.messages).toEqual({
+      start: [{ content: "Checking your policy." }],
+      failed: [{ role: "system", content: "Explain what has to happen first." }],
+    });
   });
 
   test("a throw does NOT advance the dialog, so onError classifies a call that moved nothing", async () => {

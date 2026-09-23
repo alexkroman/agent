@@ -1,0 +1,87 @@
+// @public
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
+
+// @public
+export const ASSEMBLYAI_TTS_LANGUAGES: {
+    readonly en: "english";
+    readonly fr: "french";
+    readonly de: "german";
+    readonly it: "italian";
+    readonly pt: "portuguese";
+    readonly es: "spanish";
+};
+
+// @public
+export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+
+// @public
+export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
+
+// @public
+export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
+
+// @public (undocumented)
+export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
+    host?: string;
+    language?: AssemblyAITtsLanguage;
+    voice?: AssemblyAITtsVoice;
+}
+
+// @public
+export type AssemblyAITtsVoice = AssemblyAITtsVoiceId | (string & Record<never, never>);
+
+// @public
+export type AssemblyAITtsVoiceId = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle";
+
+// @public
+export interface AssemblyAITtsVoiceInfo {
+    readonly accent: string;
+    readonly language: AssemblyAITtsLanguage;
+}
+
+// @public
+export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+
+// @public
+export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
+
+// @public
+export interface CartesiaTtsOptions extends ProviderCredentialOptions {
+    language?: string;
+    model?: string;
+    voice?: string;
+}
+
+// @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+export const RIME_DEFAULT_VOICE = "cove";
+
+// @public
+export function rimeTts(options?: RimeTtsOptions): TtsProvider;
+
+// @public
+export interface RimeTtsOptions extends ProviderCredentialOptions {
+    language?: string;
+    model?: string;
+    voice?: string;
+}
+
+// @public
+export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "tts";
+};
+
+// @public
+export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];

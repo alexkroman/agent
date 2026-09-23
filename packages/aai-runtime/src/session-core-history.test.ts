@@ -9,8 +9,8 @@
  * next door is about the session's lifecycle and its inbound surfaces.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeCore } from "./_session-core-harness.ts";
 

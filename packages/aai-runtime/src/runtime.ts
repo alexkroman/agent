@@ -12,15 +12,14 @@ import { createOwnedMap, invariant } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
-import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import pTimeout, { TimeoutError } from "p-timeout";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
-import { connectSession } from "./runtime-connect.ts";
+import { registerConnector } from "./runtime-connect.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
-import { openSessionWiring } from "./runtime-session-controls.ts";
+import { openSessionWiring, stopSessionsWithin } from "./runtime-session-controls.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
@@ -30,7 +29,13 @@ import {
   type TransportSessionOpts,
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
-import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
+import type {
+  HostRuntimeOptions,
+  Runtime,
+  RuntimeOptions,
+  runtimeBrand,
+  SessionStartOptions,
+} from "./runtime-types.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
@@ -43,6 +48,7 @@ export type {
   AgentRuntime,
   Runtime,
   RuntimeOptions,
+  runtimeBrand,
   SessionStartOptions,
 } from "./runtime-types.ts";
 
@@ -74,6 +80,17 @@ export type {
  * @public
  */
 export function createRuntime(options: RuntimeOptions): Runtime {
+  return createRuntimeWithSeams(options);
+}
+
+/**
+ * {@link createRuntime} plus the host-only seams of `HostRuntimeOptions`.
+ * Reached by relative import from this package's own eval harness; never
+ * re-exported.
+ *
+ * @internal
+ */
+export function createRuntimeWithSeams(options: HostRuntimeOptions): Runtime {
   const {
     agent,
     env,
@@ -440,44 +457,17 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   }
 
   async function shutdown(): Promise<void> {
-    if (sessions.size === 0) {
-      releaseResources();
-      return;
-    }
-    try {
-      const results = await pTimeout(
-        Promise.allSettled([...sessions.values()].map((s) => s.stop())),
-        { milliseconds: shutdownTimeoutMs },
-      );
-      for (const r of results) {
-        if (r.status === "rejected")
-          logger.warn(`Session stop failed during shutdown: ${r.reason}`);
-      }
-    } catch (err) {
-      // allSettled never rejects, so this is normally pTimeout's TimeoutError
-      // — but don't mislabel anything else (e.g. a throwing logger above).
-      logger.warn(
-        err instanceof TimeoutError
-          ? `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`
-          : `Shutdown failed: ${errorMessage(err)} — force-closing ${sessions.size} remaining session(s)`,
-      );
-    }
+    await stopSessionsWithin(sessions, shutdownTimeoutMs, logger);
     releaseResources();
   }
 
-  return {
+  // Built WITHOUT the seal and cast once: the brand is type-only (see
+  // `runtimeBrand`), which is what makes this the one place a `Runtime` exists.
+  const runtime = {
     executeTool,
     toolSchemas,
     createSession,
     startSession,
-    connect: (sink, connectOpts) =>
-      connectSession(sink, connectOpts, {
-        sessions,
-        readyConfig,
-        logger,
-        sessionStartTimeoutMs,
-        createSession: (id, client, o) => createSession({ id, agent: agent.name, client, ...o }),
-      }),
     shutdown,
     readyConfig,
     // The event log, exposed for the same reason `workflows` below is: a surface
@@ -496,5 +486,13 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     // engine, so there is nothing here to re-walk a run with, and answering a
     // delivery from someone else's client would be a guess.
     deliverWorkflow: builtWorkflows?.execute,
-  };
+  } satisfies Omit<Runtime, typeof runtimeBrand> as Runtime;
+  registerConnector(runtime, {
+    sessions,
+    readyConfig,
+    logger,
+    sessionStartTimeoutMs,
+    createSession: (id, client, o) => createSession({ id, agent: agent.name, client, ...o }),
+  });
+  return runtime;
 }

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `runtime.connect` — a session over caller-owned audio I/O, with no socket.
+ * `connectSession` — a session over caller-owned audio I/O, with no socket.
  *
  * Driven through the REAL runtime and pipeline transport over the in-memory
  * provider fakes, because what `connect` promises is that a sink gets the whole
@@ -8,7 +8,8 @@
  * the wiring, not that a turn actually completes.
  */
 
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createFakeLanguageModel,
@@ -18,6 +19,7 @@ import {
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
+import { connectSession } from "./runtime-connect.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 
@@ -50,12 +52,12 @@ function eventTypes(sink: ClientSink): string[] {
   return (sink.event as ReturnType<typeof vi.fn>).mock.calls.map(([e]) => (e as SessionEvent).type);
 }
 
-describe("runtime.connect", () => {
+describe("connectSession", () => {
   test("announces the session on the sink before it returns", () => {
     const { runtime } = setup();
     const sink = makeClientSink();
 
-    const connection = runtime.connect(sink);
+    const connection = connectSession(runtime, sink);
 
     expect(connection.readyConfig).toEqual(runtime.readyConfig);
     const [configured] = (sink.event as ReturnType<typeof vi.fn>).mock.calls[0] as [SessionEvent];
@@ -69,7 +71,7 @@ describe("runtime.connect", () => {
 
   test("user audio sent while the session is starting reaches STT once it is ready", async () => {
     const { runtime, stt } = setup();
-    const connection = runtime.connect(makeClientSink());
+    const connection = connectSession(runtime, makeClientSink());
 
     // Sent synchronously, before `start()` has opened the STT stream — the
     // attached session buffers it rather than dropping it.
@@ -84,7 +86,7 @@ describe("runtime.connect", () => {
   test("a committed user turn produces a reply on the sink", async () => {
     const { runtime, stt, tts } = setup();
     const sink = makeClientSink();
-    const connection = runtime.connect(sink);
+    const connection = connectSession(runtime, sink);
     connection.sendCommand({ type: "audio_ready" });
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
 
@@ -101,7 +103,7 @@ describe("runtime.connect", () => {
     const { runtime, stt } = setup();
     const onSessionEnd = vi.fn();
     const sink = makeClientSink();
-    const connection = runtime.connect(sink, { onSessionEnd });
+    const connection = connectSession(runtime, sink, { onSessionEnd });
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
 
     connection.close();
@@ -115,7 +117,7 @@ describe("runtime.connect", () => {
 
   test("input after close is dropped rather than reaching a stopped session", async () => {
     const { runtime, stt } = setup();
-    const connection = runtime.connect(makeClientSink());
+    const connection = connectSession(runtime, makeClientSink());
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
     connection.close();
     await connection.ended;
@@ -129,10 +131,10 @@ describe("runtime.connect", () => {
   test("a resume by id evicts the previous connection and ends it", async () => {
     const { runtime, stt } = setup();
     const first = makeClientSink({ close: vi.fn() });
-    const one = runtime.connect(first);
+    const one = connectSession(runtime, first);
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
 
-    const two = runtime.connect(makeClientSink(), { resumeFrom: one.id });
+    const two = connectSession(runtime, makeClientSink(), { resumeFrom: one.id });
 
     expect(two.id).toBe(one.id);
     expect(first.close).toHaveBeenCalledWith("session resumed by another connection");
@@ -147,7 +149,7 @@ describe("runtime.connect", () => {
     const { runtime, stt } = setup();
     const onSessionEnd = vi.fn();
     const sink = makeClientSink();
-    const connection = runtime.connect(sink, { onSessionEnd });
+    const connection = connectSession(runtime, sink, { onSessionEnd });
     await vi.waitFor(() => expect(stt.last()).toBeDefined());
 
     await runtime.shutdown();
@@ -159,7 +161,7 @@ describe("runtime.connect", () => {
 
   test("an invalid command is dropped, not thrown", () => {
     const { runtime } = setup();
-    const connection = runtime.connect(makeClientSink());
+    const connection = connectSession(runtime, makeClientSink());
     expect(() =>
       connection.sendCommand({ type: "playback_progress", bufferedMs: -1 }),
     ).not.toThrow();

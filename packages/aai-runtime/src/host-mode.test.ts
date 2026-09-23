@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
@@ -17,7 +17,7 @@ import {
   withHostCredentials,
 } from "./host-mode.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
-import type { Runtime, RuntimeOptions } from "./runtime.ts";
+import type { Runtime, RuntimeOptions, runtimeBrand } from "./runtime.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -45,15 +45,17 @@ function makeFakeRuntime(o: RuntimeOptions): {
   startSession: ReturnType<typeof vi.fn>;
 } {
   const startSession = vi.fn();
-  const runtime = {
+  const members: Omit<Runtime, typeof runtimeBrand> = {
     startSession,
     shutdown: vi.fn(() => Promise.resolve()),
     readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
     executeTool: o.executeTool ?? (() => Promise.resolve("")),
     toolSchemas: o.toolSchemas ?? [],
     createSession: vi.fn(),
-  } as unknown as Runtime;
-  return { runtime, startSession };
+  };
+  // Every member but the seal is CHECKED above; the one cast left is the brand,
+  // the same shape `createRuntime` itself uses.
+  return { runtime: members as Runtime, startSession };
 }
 
 function makeFakeTransport(): Transport {
@@ -356,10 +358,7 @@ describe("startHostSession (deferred host handshake)", () => {
       expect(createRuntime).not.toHaveBeenCalled();
       const err = ws
         .sentJson()
-        .find(
-          (e): e is Extract<SessionEvent, { type: "error.reported" }> =>
-            e.type === "error.reported",
-        );
+        .find((e): e is SessionEvent<"error.reported"> => e.type === "error.reported");
       expect(err?.code).toBe("protocol");
       // Names both offending fields and what to send instead.
       expect(err?.message).toContain("sampleRate=8000");

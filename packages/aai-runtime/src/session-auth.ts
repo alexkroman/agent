@@ -39,6 +39,14 @@
  * No `secret`, no `verify` and no `AAI_SESSION_SECRET` means no ticket check, as
  * before. `allowedOrigins` works on its own.
  *
+ * ## A handle, on its own subpath
+ *
+ * What a server takes is a {@link SessionAuth} from {@link createSessionAuth},
+ * published on `@alexkroman1/aai-runtime/auth` with the ticket helpers — never
+ * the options bag. The gate's machinery (`resolveSessionGate`,
+ * `admitSessionUpgrade`) stays unexported: the server resolves the handle
+ * against its own env and logger once, at construction.
+ *
  * @module session-auth
  */
 
@@ -122,7 +130,7 @@ function requireSecret(secret: string): void {
  * check, and hand the result to the browser.
  *
  * ```ts
- * import { createSessionToken } from "@alexkroman1/aai-runtime";
+ * import { createSessionToken } from "@alexkroman1/aai-runtime/auth";
  *
  * const token = createSessionToken({
  *   secret: process.env.AAI_SESSION_SECRET ?? "",
@@ -213,7 +221,7 @@ export type SessionVerifier = (
 ) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
 
 /**
- * `auth` on `createRuntimeServer` / `createAgentServer`.
+ * What {@link createSessionAuth} takes.
  *
  * Give `secret` for the built-in ticket ({@link createSessionToken}), or
  * `verify` to check tokens yourself; with neither, `AAI_SESSION_SECRET` in the
@@ -230,6 +238,70 @@ export type SessionAuthOptions = {
    */
   allowedOrigins?: readonly string[] | undefined;
 };
+
+/**
+ * The seal on a {@link SessionAuth}. TYPE-ONLY: there is no value, so only
+ * {@link createSessionAuth} mints one.
+ *
+ * @public
+ */
+export declare const sessionAuthBrand: unique symbol;
+
+/**
+ * Who may open a session on a server — `auth` on `createAgentServer`,
+ * `createRuntimeServer` and `createHostServer`. Opaque: build one with
+ * {@link createSessionAuth}.
+ *
+ * @sealed
+ * @public
+ */
+export type SessionAuth = { readonly [sessionAuthBrand]: true };
+
+/** What each handle was built from — the handle itself carries nothing a caller can read. */
+const authOptions = new WeakMap<SessionAuth, SessionAuthOptions>();
+
+/**
+ * Build the session gate a server applies to `WS /websocket`: a ticket check,
+ * an `Origin` allowlist, and resume bound to the identity that opened the
+ * session. Pass the result as `auth` to a server.
+ *
+ * Checked here, at construction, rather than at the first upgrade: a blank
+ * `secret` throws, and so does a handle that would check nothing at all.
+ *
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { createAgentServer } from "@alexkroman1/aai-runtime";
+ * import { createSessionAuth } from "@alexkroman1/aai-runtime/auth";
+ *
+ * const server = createAgentServer({
+ *   agent: agent({ name: "Support" }),
+ *   env: {},
+ *   auth: createSessionAuth({
+ *     secret: process.env.AAI_SESSION_SECRET ?? "",
+ *     allowedOrigins: ["https://app.example.com"],
+ *   }),
+ * });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
+ */
+export function createSessionAuth(options: SessionAuthOptions): SessionAuth {
+  if (options.secret !== undefined) requireSecret(options.secret);
+  if (
+    options.secret === undefined &&
+    options.verify === undefined &&
+    options.allowedOrigins === undefined
+  ) {
+    throw new TypeError(
+      "createSessionAuth: pass `secret`, `verify` or `allowedOrigins` — a gate with none of " +
+        "them checks nothing (AAI_SESSION_SECRET in the server env needs no handle at all)",
+    );
+  }
+  const handle = Object.freeze({}) as SessionAuth;
+  authOptions.set(handle, { ...options });
+  return handle;
+}
 
 /** The outcome of {@link SessionGate.admits}. */
 export type SessionAdmission =
@@ -296,12 +368,17 @@ export function selectSessionProtocol(protocols: Set<string>): string | false {
  * not opted in.
  */
 export function resolveSessionGate(
-  auth: SessionAuthOptions | undefined,
+  handle: SessionAuth | undefined,
   env: Record<string, string> | undefined,
   logger: Logger,
 ): SessionGate | undefined {
+  const auth = handle === undefined ? undefined : authOptions.get(handle);
+  if (handle !== undefined && auth === undefined) {
+    throw new TypeError(
+      "auth: pass a handle from createSessionAuth() on @alexkroman1/aai-runtime/auth",
+    );
+  }
   const secret = auth?.secret ?? agentGateToken(env, SESSION_SECRET_ENV, logger);
-  if (auth?.secret !== undefined) requireSecret(auth.secret);
   const verify: SessionVerifier | undefined =
     auth?.verify ?? (secret !== undefined ? (t) => verifySessionToken(t, { secret }) : undefined);
   const origins = auth?.allowedOrigins;

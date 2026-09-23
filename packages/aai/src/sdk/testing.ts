@@ -84,6 +84,7 @@ export {
   type StubDelegateCall,
   type StubDelegateReply,
   type StubDelegateRoute,
+  type StubDelegateScript,
   type StubStepDelegate,
   stubDelegate,
   stubStepDelegate,
@@ -99,6 +100,9 @@ export {
   deployedAgent,
   type ProjectFiles,
 } from "./testing-discovery.ts";
+// A subagent's guardrail, called as the runtime calls it — the one piece of a
+// subagent a spec can test without a model.
+export { eventsOf, isEvent } from "./testing-events.ts";
 export {
   type StubGateway,
   type StubGatewayCall,
@@ -112,12 +116,9 @@ export {
   type StubGenerateCall,
   type StubGenerateReply,
   type StubGenerateRoute,
-  type StubGenerateRoutes,
   type StubGenerateScript,
   stubGenerate,
 } from "./testing-generate.ts";
-// A subagent's guardrail, called as the runtime calls it — the one piece of a
-// subagent a spec can test without a model.
 export { runGuardrail } from "./testing-guardrail.ts";
 // Both model seams scripted in one call, for a tool that reasons.
 export {

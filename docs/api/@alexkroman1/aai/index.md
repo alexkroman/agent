@@ -2051,7 +2051,7 @@ function subagent<S extends StandardSchemaV1<unknown, unknown>>(def: SubagentDef
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -2228,7 +2228,7 @@ under, so this takes no `name`.
 
 ###### O
 
-`O` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\> = `StandardSchemaV1`\<`unknown`, `unknown`\>
+`O` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\> = [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -2853,7 +2853,7 @@ optional llm?: LlmProvider;
 ```
 
 Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-`anthropicLlm({ model })`) for pipeline mode. Unset (with no `s2s`), the
+`llm({ provider: "anthropic", model })`) for pipeline mode. Unset (with no `s2s`), the
 stage defaults to the AssemblyAI LLM Gateway. Note this is pure
 serializable data, not a Vercel AI SDK `LanguageModel` instance — the
 host resolves the descriptor into a `LanguageModel` at session start,
@@ -2867,10 +2867,9 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
-[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
-the talking. Per STEP, not per turn: a reply that calls three tools has
-four generations in it, and the cap bounds each.
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
 
 On a voice agent it is a bluntness knob rather than a cost one — a model
 that runs long is a model the caller is waiting through — and a value low
@@ -2887,19 +2886,17 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: number;
 ```
 
-How many times a FAILED provider call is retried before the turn is given
+How many times a FAILED provider call is retried before the step is given
 up on.
 
 ###### Default Value
 
 the AI SDK's own (2 retries, exponential backoff)
 
-**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
-same name.** That one counts how many times a subagent's `guardrail` may
-send an ANSWER back — a re-run of a run that succeeded. This one counts
-transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset). They compose: a subagent revision is one
-more request, and each request still gets its own retries.
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
@@ -3451,10 +3448,8 @@ Sampling temperature.
 
 Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values, and until this
-existed neither could say so: `ctx.generate` and `subagent()` both took a
-temperature while the main loop — the one that does almost all the talking
-— took no sampling parameter at all.
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
@@ -3551,7 +3546,7 @@ its voice).
 ##### turnDetection?
 
 ```ts
-optional turnDetection?: "auto" | "manual";
+optional turnDetection?: TurnDetectionMode;
 ```
 
 Pipeline mode only. WHO decides that the caller's turn is over.
@@ -3561,7 +3556,7 @@ Pipeline mode only. WHO decides that the caller's turn is over.
 - `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
   reaches the transcriber only between a `user_turn_start` and the
   `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `session.userTurn.start` / `.commit` / `.clear`, or its
   `usePushToTalk` hook). Everything transcribed in that window, across
   however many pauses, is ONE turn, and nothing is answered until the
   commit. Outside the window the microphone is replaced with silence
@@ -3779,9 +3774,16 @@ agent opts into rather than a hook every agent pays for.
 
 ### AgentModelTuning
 
-Sampling and budget knobs for the agent's OWN model calls — the conversational
-loop, in pipeline and text modes. Every field here is refused in S2S mode;
-see this module's header.
+[ModelTuning](#modeltuning) plus the two knobs only the agent's OWN loop has: a
+per-step tool-choice policy and a session token budget. Every field here is
+refused in S2S mode; see this module's header.
+
+A subagent takes [ModelTuning](#modeltuning) alone — it has no `toolChoice` to reset,
+and it spends on its PARENT's budget, which is where `usageLimits` lives.
+
+#### Extends
+
+- [`ModelTuning`](#modeltuning)
 
 #### Extended by
 
@@ -3797,15 +3799,18 @@ optional maxOutputTokens?: number;
 
 Cap on generated tokens per step, passed straight through to the provider.
 
-The same field [SubagentDef.maxOutputTokens](#maxoutputtokens-2) and
-[GenerateOptions.maxOutputTokens](#maxoutputtokens-4) already had, on the loop that does
-the talking. Per STEP, not per turn: a reply that calls three tools has
-four generations in it, and the cap bounds each.
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
 
 On a voice agent it is a bluntness knob rather than a cost one — a model
 that runs long is a model the caller is waiting through — and a value low
 enough to truncate mid-sentence will truncate mid-sentence, because the
 provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
@@ -3813,25 +3818,27 @@ provider stops emitting rather than wrapping up.
 optional maxRetries?: number;
 ```
 
-How many times a FAILED provider call is retried before the turn is given
+How many times a FAILED provider call is retried before the step is given
 up on.
 
 ###### Default Value
 
 the AI SDK's own (2 retries, exponential backoff)
 
-**Not [SubagentDef.maxRetries](#maxretries-2), which is a different budget with the
-same name.** That one counts how many times a subagent's `guardrail` may
-send an ANSWER back — a re-run of a run that succeeded. This one counts
-transport-level retries of a request that never produced an answer at all
-(a 429, a 502, a socket reset). They compose: a subagent revision is one
-more request, and each request still gets its own retries.
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
 
 `0` is the value to reach for on a live call, and the reason is the clock:
 the default backoff can spend several seconds before the turn is declared
 failed, and the caller hears every one of them as silence. An agent whose
 `errorPhrase` should arrive promptly sets this to `0` and lets the recovery
 line do the work.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-2)
 
 ##### resetToolChoice?
 
@@ -3874,10 +3881,12 @@ Sampling temperature.
 
 Omitted by default, so the model's own default applies; some models (Claude
 5 among them) ignore it and warn, so set it only for a temperature-capable
-one. A booking desk and a game master want different values, and until this
-existed neither could say so: `ctx.generate` and `subagent()` both took a
-temperature while the main loop — the one that does almost all the talking
-— took no sampling parameter at all.
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### usageLimits?
 
@@ -4458,226 +4467,7 @@ identity — `dialog.projection((at) => at)` — to push the whole position.
 ##### receive()
 
 ```ts
-receive(ctx: SlotHolder, event: 
-  | {
-  audioFormat: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  sampleRate: number;
-  sessionId?: string;
-  ttsSampleRate: number;
-  type: "session.configured";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "audio.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "speech.started";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "speech.stopped";
-}
-  | {
-  eotConfidence?: number;
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "user-transcript.updated";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "user-transcript.committed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "agent-transcript.updated";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  recovery?: "session-failed" | "turn-failed";
-  text: string;
-  type: "agent-transcript.committed";
-}
-  | {
-  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  meta: {
-     at: number;
-     id: string;
-  };
-  toolCallId: string;
-  toolName: string;
-  type: "tool.called";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  result: string;
-  toolCallId: string;
-  type: "tool.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "reply.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "reply.cancelled";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "session.reset";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "session.timed-out";
-}
-  | {
-  code:   | "stt"
-     | "llm"
-     | "tts"
-     | "audio"
-     | "connection"
-     | "internal"
-     | "protocol"
-     | "tool";
-  fatal: boolean;
-  message: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "error.reported";
-}
-  | {
-  data: unknown;
-  event: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "custom.emitted";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  state: unknown;
-  type: "state.updated";
-}
-  | {
-  inputTokens: number;
-  meta: {
-     at: number;
-     id: string;
-  };
-  outputTokens: number;
-  steps: number;
-  totalTokens: number;
-  type: "usage.updated";
-}
-  | {
-  direction: "output" | "input";
-  meta: {
-     at: number;
-     id: string;
-  };
-  replacement: string;
-  type: "guardrail.blocked";
-}
-  | {
-  durationMs: number;
-  limit: "words" | "duration";
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "user-turn.exceeded";
-  words: number;
-}
-  | {
-  interrupted: boolean;
-  latencyMs?: number;
-  llm?: {
-     durationMs: number;
-     inputTokens?: number;
-     outputTokens?: number;
-     steps: number;
-     ttftMs?: number;
-  };
-  meta: {
-     at: number;
-     id: string;
-  };
-  stt?: {
-     endpointingMs?: number;
-  };
-  tts?: {
-     characters: number;
-     ttfbMs?: number;
-  };
-  type: "metrics.collected";
-}
-  | {
-  messages: {
-     content: string;
-     role: "assistant" | "user";
-  }[];
-  meta: {
-     at: number;
-     id: string;
-  };
-  toolCalls: {
-     afterMessageIndex: number;
-     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-     callId: string;
-     name: string;
-     result?: string;
-     status: "done" | "pending";
-  }[];
-  type: "history.restored";
-}): DialogPosition;
+receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
 ```
 
 Offer a SESSION event to the dialog: the runtime's half of
@@ -4723,225 +4513,7 @@ export default agent({
 
 ###### event
 
-  \| \{
-  `audioFormat`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `sampleRate`: `number`;
-  `sessionId?`: `string`;
-  `ttsSampleRate`: `number`;
-  `type`: `"session.configured"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"audio.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"speech.started"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"speech.stopped"`;
-\}
-  \| \{
-  `eotConfidence?`: `number`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"user-transcript.updated"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"user-transcript.committed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"agent-transcript.updated"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
-  `text`: `string`;
-  `type`: `"agent-transcript.committed"`;
-\}
-  \| \{
-  `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `toolCallId`: `string`;
-  `toolName`: `string`;
-  `type`: `"tool.called"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `result`: `string`;
-  `toolCallId`: `string`;
-  `type`: `"tool.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"reply.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"reply.cancelled"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"session.reset"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"session.timed-out"`;
-\}
-  \| \{
-  `code`:   \| `"stt"`
-     \| `"llm"`
-     \| `"tts"`
-     \| `"audio"`
-     \| `"connection"`
-     \| `"internal"`
-     \| `"protocol"`
-     \| `"tool"`;
-  `fatal`: `boolean`;
-  `message`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"error.reported"`;
-\}
-  \| \{
-  `data`: `unknown`;
-  `event`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"custom.emitted"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `state`: `unknown`;
-  `type`: `"state.updated"`;
-\}
-  \| \{
-  `inputTokens`: `number`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `outputTokens`: `number`;
-  `steps`: `number`;
-  `totalTokens`: `number`;
-  `type`: `"usage.updated"`;
-\}
-  \| \{
-  `direction`: `"output"` \| `"input"`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `replacement`: `string`;
-  `type`: `"guardrail.blocked"`;
-\}
-  \| \{
-  `durationMs`: `number`;
-  `limit`: `"words"` \| `"duration"`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"user-turn.exceeded"`;
-  `words`: `number`;
-\}
-  \| \{
-  `interrupted`: `boolean`;
-  `latencyMs?`: `number`;
-  `llm?`: \{
-     `durationMs`: `number`;
-     `inputTokens?`: `number`;
-     `outputTokens?`: `number`;
-     `steps`: `number`;
-     `ttftMs?`: `number`;
-  \};
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `stt?`: \{
-     `endpointingMs?`: `number`;
-  \};
-  `tts?`: \{
-     `characters`: `number`;
-     `ttfbMs?`: `number`;
-  \};
-  `type`: `"metrics.collected"`;
-\}
-  \| \{
-  `messages`: \{
-     `content`: `string`;
-     `role`: `"assistant"` \| `"user"`;
-  \}[];
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `toolCalls`: \{
-     `afterMessageIndex`: `number`;
-     `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-     `callId`: `string`;
-     `name`: `string`;
-     `result?`: `string`;
-     `status`: `"done"` \| `"pending"`;
-  \}[];
-  `type`: `"history.restored"`;
-\}
+[`SessionEvent`](#sessionevent)
 
 ###### Returns
 
@@ -5094,6 +4666,114 @@ readonly machine: M;
 ```
 
 The machine itself, for a caller that wants to inspect or visualize it.
+
+***
+
+### DialogGate
+
+What makes a tool part of a dialog: where it may run, and what it advances.
+
+The half of [DialogToolDef](#dialogtooldef) that is the dialog's own — the rest is
+[ToolDef](#tooldef)'s, unchanged. Declared on its own so the gate's three fields
+have one home and `DialogToolDef` is BUILT from the two halves rather than
+restating either.
+
+#### Extended by
+
+- [`DialogToolDef`](#dialogtooldef)
+
+#### Type Parameters
+
+##### R
+
+`R`
+
+What the tool's `execute` returns, as `sendFrom` reads it.
+
+##### E
+
+`E`
+
+The machine's event union.
+
+#### Properties
+
+##### send?
+
+```ts
+optional send?: E;
+```
+
+The event to send once `execute` has succeeded — how the conversation moves
+on. Omit both this and `sendFrom` for a tool that reads without advancing.
+
+**Nothing is sent when `execute` returns a [ToolFailure](#toolfailure).** A tool
+that failed did not do the thing, so a dialog that advanced anyway would
+leave the conversation a step ahead of reality — the single most expensive
+bug this primitive can have, since every later gate is then wrong too.
+
+##### sendFrom?
+
+```ts
+optional sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+```
+
+The event to send, decided by the RESULT — for a tool whose outcome picks
+the transition. Return `undefined` to stay put.
+
+Separate from `send` rather than a union with it because a union of an
+event and a function of one cannot be narrowed by `typeof`: an event type is
+generic here, so TypeScript cannot rule out that it is itself callable, and
+the check would need a cast to compile. Two fields are also the clearer
+authoring surface — the static case stays a literal. Declaring both is an
+error.
+
+**`NoInfer` is what makes the parameter mean anything.** `R` is inferred
+from `execute`, and a bare `(result: R) => …` here puts `R` in a SECOND
+inference position — so which one wins is decided by the object literal's
+source order. A `sendFrom` written ABOVE `execute` inferred `R = unknown`
+from its own parameter, and then compiled: the narrowing an author wrote it
+for silently stopped meaning anything, with no error anywhere and no way to
+tell the two orderings apart by reading either one. `NoInfer<R>` takes this
+position out of the running, so `execute` decides `R` in both orderings and
+a typo'd property is a `TS2551` in both.
+
+**`Exclude<…, ToolFailure>` is the other half, and it was already true at
+run time**: the failure check returns before `sendFrom` is reached, so a
+failure is never handed to it. Saying so in the type is what lets a body
+declared `Order | ToolFailure` be narrowed here without the author
+re-checking a case that cannot arrive.
+
+###### Parameters
+
+###### result
+
+`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](#toolfailure)\>
+
+###### Returns
+
+`E` \| `undefined`
+
+##### when
+
+```ts
+when: string | readonly string[];
+```
+
+The state(s) this tool may run in, as [DialogPosition.state](#state) spells
+them. Anywhere else the body does not run and the call is refused.
+
+Every name is checked against the machine's own states when the tool is
+DECLARED, so a typo is a throw at startup rather than a tool that is
+silently unreachable for the life of the agent.
+
+**The gate holds for the SEND as well as the body.** A step's tool calls run
+concurrently, so a sibling can move the dialog while this body is awaiting.
+If it has left every `when` state by the time `execute` settles, the body's
+result is still returned, but `send`/`sendFrom` is NOT applied, and the
+position in the result says where the sibling left the conversation.
+Otherwise the event would fire whatever transition the new state declares
+for it, moving the dialog out of a state this tool was never allowed in.
 
 ***
 
@@ -5414,8 +5094,36 @@ and leaves the conversation exactly where it was.
 
 ### DialogToolDef
 
-The authoring shape of a gated tool — [ToolDef](#tooldef) plus the two things
-that make it part of a dialog: where it may run, and what it advances.
+The authoring shape of a gated tool — [ToolDef](#tooldef) plus the
+[DialogGate](#dialoggate) that makes it part of a dialog.
+
+**Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+`ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+whatever `ToolDef` grows next — and `execute` is restated only because a gated
+body may return a [ToolFailure](#toolfailure) beside `R` (see below). The copy this
+replaced restated three fields, and the one it missed was `messages`: a gated
+tool could not declare tool-call speech at all, although `dialog.tool`
+spreads the def and the runtime would have spoken it.
+
+**`onError`'s answer goes to the model AS THE RESULT, so it carries no
+[DialogToolResult](#dialogtoolresult) envelope and the dialog does not move.** The handler
+runs after the gated call has already unwound, which is past the point where
+`send`/`sendFrom` could have fired — the same answer a RETURNED
+[ToolFailure](#toolfailure) gets, for the same reason: a tool that failed did not do
+the thing. What differs is the SHAPE: where a success carries `state`, `done`
+and `result`, the model reads the handler's failure or string, so a handler
+whose message names where the conversation is has to say so itself. A
+REFUSAL — the model calling this tool from a state `when` does not name — is
+not a throw and never reaches it.
+
+**A `messages.failed` line fires on a refusal**, because a refusal is a
+[ToolFailure](#toolfailure) result like any other. A tool whose refusal should be
+phrased by the model (it carries the state's own instruction) declares
+`failed` with `role: "system"`, or none at all.
+
+#### Extends
+
+- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>.[`DialogGate`](#dialoggate)\<`R`, `E`\>
 
 #### Type Parameters
 
@@ -5485,7 +5193,13 @@ narrow a value it is never handed: the failure check returns before it runs.
 description: string;
 ```
 
-See [ToolDef.description](#description-6) — what the model reads to decide to call it.
+Human-readable description shown to the LLM.
+
+###### Inherited from
+
+```ts
+Omit.description
+```
 
 ##### inputSchema?
 
@@ -5493,7 +5207,71 @@ See [ToolDef.description](#description-6) — what the model reads to decide to 
 optional inputSchema?: P;
 ```
 
-See [ToolDef.inputSchema](#inputschema-2).
+Schema for the tool's input, shown to the LLM and used to validate each
+call's arguments before `execute` runs. Named after the Vercel AI SDK's
+`tool({ inputSchema })`.
+
+###### Inherited from
+
+```ts
+Omit.inputSchema
+```
+
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.messages
+```
 
 ##### onError?
 
@@ -5501,28 +5279,64 @@ See [ToolDef.inputSchema](#inputschema-2).
 optional onError?: ToolErrorHandler;
 ```
 
-See [ToolDef.onError](#onerror-2) — what a THROW out of this call means, and the
-only way to say that a failure is fatal rather than something the model
-should try again. Forwarded to the [ToolDef](#tooldef) this builds, and it
-behaves there exactly as it does on any other tool.
+What to do when `execute` throws — and, by omission, the SDK's default.
 
-**What it returns goes to the model AS THE RESULT, so it does not carry a
-[DialogToolResult](#dialogtoolresult) envelope and the dialog does not move.** The
-handler runs after the gated call has already unwound, which is past the
-point where `send`/`sendFrom` could have fired — and that is the same
-answer a RETURNED [ToolFailure](#toolfailure) gets for the same reason: a tool that
-failed did not do the thing, so a dialog that advanced anyway would leave
-the conversation a step ahead of reality. The difference to know is the
-SHAPE, not the transition: a model reading this call's result gets the
-handler's failure or string where a success would have carried `state`,
-`done` and `result`, so a handler whose message names where the
-conversation is has to say so itself.
+**Without it, every exception becomes an ordinary tool result.** The
+runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+to the model as that call's result, which is the same channel a deliberate
+[toolFailure](#toolfailure-1) uses — so a stale credential, a `TypeError` in the
+author's own code and "no such order" are one thing as far as the model can
+tell, and it will keep calling a permanently broken tool until the reply's
+`maxSteps` budget runs out. That default is unchanged and stays the default:
+for the failures a model really can recover from it is the right answer, and
+every tool written before this field existed depends on it.
 
-It classifies the gated call as a whole, which is `execute`'s throw in every
-practical case but also covers one out of the transition that follows a
-successful body. A refusal — the model calling this tool from a state
-`when` does not name — is not a throw and never reaches it: that returns a
-[ToolFailure](#toolfailure) the model is meant to recover from.
+**With it, the author classifies.** Return a [ToolFailure](#toolfailure) or a string
+and that is what the model gets — the same outcome as the default, with a
+sentence the author chose. Throw — `throw err` re-raises the original — and
+the failure is FATAL to the call: the runtime logs it, reports it as a
+session error (`code: "tool"`), and the tool call REJECTS instead of
+answering, so nothing hands the model something to retry against.
+
+It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+it: that is already the author saying "expected, let the model recover", and
+routing it through here would make the two channels one again.
+
+###### Example
+
+**Fatal on a missing credential, recoverable on a bad lookup**
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+class MissingKeyError extends Error {}
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+    });
+    if (res.status === 404) return toolFailure(`No order ${id}.`);
+    return await res.json();
+  },
+  // A credential the deploy is missing cannot be fixed by asking the model
+  // to try again; a flaky upstream can.
+  onError: (err) => {
+    if (err instanceof MissingKeyError) throw err;
+    return toolFailure("The orders service is unavailable right now.");
+  },
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.onError
+```
 
 ##### send?
 
@@ -5537,6 +5351,10 @@ on. Omit both this and `sendFrom` for a tool that reads without advancing.
 that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
+
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`send`](#send-1)
 
 ##### sendFrom?
 
@@ -5580,6 +5398,10 @@ re-checking a case that cannot arrive.
 
 `E` \| `undefined`
 
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`sendFrom`](#sendfrom)
+
 ##### when
 
 ```ts
@@ -5600,6 +5422,10 @@ result is still returned, but `send`/`sendFrom` is NOT applied, and the
 position in the result says where the sibling left the conversation.
 Otherwise the event would fire whatever transition the new state declares
 for it, moving the dialog out of a state this tool was never allowed in.
+
+###### Inherited from
+
+[`DialogGate`](#dialoggate).[`when`](#when)
 
 ***
 
@@ -6050,6 +5876,87 @@ another drawn, so the caller does not have to loop.
 
 ***
 
+### ModelTuning
+
+The per-REQUEST knobs every model loop this runtime runs takes — the agent's
+own conversational loop and a [SubagentDef](#subagentdef)'s delegated one alike.
+
+**One declaration, extended by both, rather than a list each restates.**
+`SubagentDef` used to carry its own `temperature` and `maxOutputTokens` beside
+`AgentModelTuning`'s, with one-line docs of their own, and a `maxRetries` that
+meant something else entirely (the guardrail's revision budget, now
+[SubagentDef.maxRevisions](#maxrevisions)). A knob added here reaches both loops, and
+the name means one thing wherever it is written.
+
+Every field is passed straight through to the provider request, so each is
+refused in S2S mode on the AGENT — there the provider runs the loop; see this
+module's header. A subagent always runs on this runtime, whatever the parent's
+mode, so it may set `temperature` and `maxOutputTokens` — but not
+`maxRetries`, which [SubagentDef](#subagentdef) omits so the old guardrail-budget
+spelling fails to compile.
+
+#### Extended by
+
+- [`AgentModelTuning`](#agentmodeltuning)
+
+#### Properties
+
+##### maxOutputTokens?
+
+```ts
+optional maxOutputTokens?: number;
+```
+
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+##### maxRetries?
+
+```ts
+optional maxRetries?: number;
+```
+
+How many times a FAILED provider call is retried before the step is given
+up on.
+
+###### Default Value
+
+the AI SDK's own (2 retries, exponential backoff)
+
+Transport-level retries of a request that never produced an answer at all
+(a 429, a 502, a socket reset) — NOT a re-run of one that did. Agent-only:
+a subagent's requests retry on the AI SDK default, and its guardrail
+sending an answer back is [SubagentDef.maxRevisions](#maxrevisions).
+
+`0` is the value to reach for on a live call, and the reason is the clock:
+the default backoff can spend several seconds before the turn is declared
+failed, and the caller hears every one of them as silence. An agent whose
+`errorPhrase` should arrive promptly sets this to `0` and lets the recovery
+line do the work.
+
+##### temperature?
+
+```ts
+optional temperature?: number;
+```
+
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+***
+
 ### PersonaDef
 
 One persona: a speaker the session can hand the caller to.
@@ -6482,7 +6389,7 @@ Vapi's own default is 0.4s; see that constant for why this one is not.
 ##### turnDetection?
 
 ```ts
-optional turnDetection?: "auto" | "manual";
+optional turnDetection?: TurnDetectionMode;
 ```
 
 Pipeline mode only. WHO decides that the caller's turn is over.
@@ -6492,7 +6399,7 @@ Pipeline mode only. WHO decides that the caller's turn is over.
 - `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
   reaches the transcriber only between a `user_turn_start` and the
   `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `session.userTurn.start` / `.commit` / `.clear`, or its
   `usePushToTalk` hook). Everything transcribed in that window, across
   however many pauses, is ONE turn, and nothing is answered until the
   commit. Outside the window the microphone is replaced with silence
@@ -6660,8 +6567,7 @@ briefly.
 - [`AssemblyAITtsOptions`](tts.md#assemblyaittsoptions)
 - [`CartesiaTtsOptions`](tts.md#cartesiattsoptions)
 - [`RimeTtsOptions`](tts.md#rimettsoptions)
-- [`AssemblyAILlmOptions`](llm.md#assemblyaillmoptions)
-- [`ModelOptions`](llm.md#modeloptions)
+- [`LlmOptions`](llm.md#llmoptions)
 - [`OpenAIS2sOptions`](s2s.md#openais2soptions)
 
 #### Properties
@@ -6854,6 +6760,1064 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### SessionEventMap
+
+Every session event, keyed by its `type` — derived from `SessionEventSchema`.
+
+Read one member with `SessionEvent<"tool.called">`, never with
+`Extract<SessionEvent, { type: … }>`: the lookup fails to compile on a
+misspelled name, where the `Extract` silently resolves to `never`.
+
+#### Extends
+
+- [`EventMapOf`](#eventmapof)\<`z.infer`\<*typeof* [`SessionEventSchema`](#sessioneventschema)\>\>
+
+#### Properties
+
+##### agent-transcript.committed
+
+```ts
+agent-transcript.committed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  recovery?: "session-failed" | "turn-failed";
+  text: string;
+  type: "agent-transcript.committed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### recovery?
+
+```ts
+optional recovery?: "session-failed" | "turn-failed";
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "agent-transcript.committed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.agent-transcript.committed
+```
+
+##### agent-transcript.updated
+
+```ts
+agent-transcript.updated: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "agent-transcript.updated";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "agent-transcript.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.agent-transcript.updated
+```
+
+##### audio.completed
+
+```ts
+audio.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "audio.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "audio.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.audio.completed
+```
+
+##### custom.emitted
+
+```ts
+custom.emitted: {
+  data: unknown;
+  event: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "custom.emitted";
+};
+```
+
+###### data
+
+```ts
+data: unknown;
+```
+
+###### event
+
+```ts
+event: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "custom.emitted";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.custom.emitted
+```
+
+##### error.reported
+
+```ts
+error.reported: {
+  code:   | "stt"
+     | "llm"
+     | "tts"
+     | "audio"
+     | "connection"
+     | "internal"
+     | "protocol"
+     | "tool";
+  fatal: boolean;
+  message: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "error.reported";
+};
+```
+
+###### code
+
+```ts
+code: 
+  | "stt"
+  | "llm"
+  | "tts"
+  | "audio"
+  | "connection"
+  | "internal"
+  | "protocol"
+  | "tool";
+```
+
+###### fatal
+
+```ts
+fatal: boolean;
+```
+
+###### message
+
+```ts
+message: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "error.reported";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.error.reported
+```
+
+##### guardrail.blocked
+
+```ts
+guardrail.blocked: {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+};
+```
+
+###### direction
+
+```ts
+direction: "output" | "input";
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### replacement
+
+```ts
+replacement: string;
+```
+
+###### type
+
+```ts
+type: "guardrail.blocked";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.guardrail.blocked
+```
+
+##### history.restored
+
+```ts
+history.restored: {
+  messages: {
+     content: string;
+     role: "assistant" | "user";
+  }[];
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCalls: {
+     afterMessageIndex: number;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: string;
+     name: string;
+     result?: string;
+     status: "done" | "pending";
+  }[];
+  type: "history.restored";
+};
+```
+
+###### messages
+
+```ts
+messages: {
+  content: string;
+  role: "assistant" | "user";
+}[];
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### toolCalls
+
+```ts
+toolCalls: {
+  afterMessageIndex: number;
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  callId: string;
+  name: string;
+  result?: string;
+  status: "done" | "pending";
+}[];
+```
+
+###### type
+
+```ts
+type: "history.restored";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.history.restored
+```
+
+##### metrics.collected
+
+```ts
+metrics.collected: {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: {
+     at: number;
+     id: string;
+  };
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+};
+```
+
+###### interrupted
+
+```ts
+interrupted: boolean;
+```
+
+###### latencyMs?
+
+```ts
+optional latencyMs?: number;
+```
+
+###### llm?
+
+```ts
+{
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  steps: number;
+  ttftMs?: number;
+}
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### stt?
+
+```ts
+{
+  endpointingMs?: number;
+}
+```
+
+###### tts?
+
+```ts
+{
+  characters: number;
+  ttfbMs?: number;
+}
+```
+
+###### type
+
+```ts
+type: "metrics.collected";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.metrics.collected
+```
+
+##### reply.cancelled
+
+```ts
+reply.cancelled: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.cancelled";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "reply.cancelled";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.reply.cancelled
+```
+
+##### reply.completed
+
+```ts
+reply.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "reply.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.reply.completed
+```
+
+##### session.configured
+
+```ts
+session.configured: {
+  audioFormat: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  sampleRate: number;
+  sessionId?: string;
+  ttsSampleRate: number;
+  type: "session.configured";
+};
+```
+
+###### audioFormat
+
+```ts
+audioFormat: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+###### sessionId?
+
+```ts
+optional sessionId?: string;
+```
+
+###### ttsSampleRate
+
+```ts
+ttsSampleRate: number;
+```
+
+###### type
+
+```ts
+type: "session.configured";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.configured
+```
+
+##### session.reset
+
+```ts
+session.reset: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.reset";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "session.reset";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.reset
+```
+
+##### session.timed-out
+
+```ts
+session.timed-out: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.timed-out";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "session.timed-out";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.timed-out
+```
+
+##### speech.started
+
+```ts
+speech.started: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.started";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "speech.started";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.speech.started
+```
+
+##### speech.stopped
+
+```ts
+speech.stopped: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.stopped";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "speech.stopped";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.speech.stopped
+```
+
+##### state.updated
+
+```ts
+state.updated: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  state: unknown;
+  type: "state.updated";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### state
+
+```ts
+state: unknown;
+```
+
+###### type
+
+```ts
+type: "state.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.state.updated
+```
+
+##### tool.called
+
+```ts
+tool.called: {
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCallId: string;
+  toolName: string;
+  type: "tool.called";
+};
+```
+
+###### args
+
+```ts
+args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### toolCallId
+
+```ts
+toolCallId: string;
+```
+
+###### toolName
+
+```ts
+toolName: string;
+```
+
+###### type
+
+```ts
+type: "tool.called";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.tool.called
+```
+
+##### tool.completed
+
+```ts
+tool.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  result: string;
+  toolCallId: string;
+  type: "tool.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### result
+
+```ts
+result: string;
+```
+
+###### toolCallId
+
+```ts
+toolCallId: string;
+```
+
+###### type
+
+```ts
+type: "tool.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.tool.completed
+```
+
+##### usage.updated
+
+```ts
+usage.updated: {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+};
+```
+
+###### inputTokens
+
+```ts
+inputTokens: number;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### outputTokens
+
+```ts
+outputTokens: number;
+```
+
+###### steps
+
+```ts
+steps: number;
+```
+
+###### totalTokens
+
+```ts
+totalTokens: number;
+```
+
+###### type
+
+```ts
+type: "usage.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.usage.updated
+```
+
+##### user-transcript.committed
+
+```ts
+user-transcript.committed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.committed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "user-transcript.committed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-transcript.committed
+```
+
+##### user-transcript.updated
+
+```ts
+user-transcript.updated: {
+  eotConfidence?: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.updated";
+};
+```
+
+###### eotConfidence?
+
+```ts
+optional eotConfidence?: number;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "user-transcript.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-transcript.updated
+```
+
+##### user-turn.exceeded
+
+```ts
+user-turn.exceeded: {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+};
+```
+
+###### durationMs
+
+```ts
+durationMs: number;
+```
+
+###### limit
+
+```ts
+limit: "words" | "duration";
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "user-turn.exceeded";
+```
+
+###### words
+
+```ts
+words: number;
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-turn.exceeded
+```
 
 ***
 
@@ -7442,12 +8406,28 @@ export default agent({ name: "Shop", syncState: cartSlot.projected });
 The authoring shape of a slot-backed tool: [ToolDef](#tooldef) with the slot's
 value handed to `execute` directly.
 
+**Built FROM `ToolDef`, not copied from it.** Every field but `execute` is
+`ToolDef`'s own — `description`, `inputSchema`, `onError`, `messages`, and
+whatever `ToolDef` grows next — so a slot-backed tool can declare anything a
+plain one can. The field-by-field copy this replaced restated three of them,
+and the one it missed was `messages`: a slot tool could not declare tool-call
+speech at all, although the builder spreads the def and the runtime would
+have spoken it.
+
+`onError` behaves exactly as it does on any tool, and the slot is not
+involved: an `updateTool` mutator that threw stored nothing, by that method's
+own contract, so a handler is classifying a call that changed no state.
+
 `value` comes SECOND because it is what a slot-backed tool body actually
 uses; most take `(args, cart)` and never mention `ctx` at all, which is the
 point. Putting it there rather than third cannot be got wrong silently — a
 body converted from `tool()` that still names its second parameter `ctx` is a
 type error the first time it reads `ctx.env`, since `V` is not a
 [ToolContext](#toolcontext).
+
+#### Extends
+
+- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>
 
 #### Type Parameters
 
@@ -7507,7 +8487,13 @@ The tool body, handed this session's slot value alongside the usual args.
 description: string;
 ```
 
-See [ToolDef.description](#description-6) — what the model reads to decide to call it.
+Human-readable description shown to the LLM.
+
+###### Inherited from
+
+```ts
+Omit.description
+```
 
 ##### inputSchema?
 
@@ -7515,7 +8501,71 @@ See [ToolDef.description](#description-6) — what the model reads to decide to 
 optional inputSchema?: P;
 ```
 
-See [ToolDef.inputSchema](#inputschema-2).
+Schema for the tool's input, shown to the LLM and used to validate each
+call's arguments before `execute` runs. Named after the Vercel AI SDK's
+`tool({ inputSchema })`.
+
+###### Inherited from
+
+```ts
+Omit.inputSchema
+```
+
+##### messages?
+
+```ts
+optional messages?: ToolMessagesInput;
+```
+
+What the agent SAYS while this tool runs, and what it says when it lands.
+
+Four kinds — `start`, `delayed`, `complete`, `failed` — documented on
+[ToolMessagesInput](#toolmessagesinput). Two of them change the shape of the turn rather
+than just filling it:
+
+- **`delayed` is a LADDER when the timings differ and VARIANTS when they
+  match.** Two entries at `afterMs: 3000` are two phrasings of one rung,
+  one of which is drawn; entries at 3000 and 8000 are two rungs.
+- **A `complete`/`failed` entry with `role: "assistant"` is spoken verbatim
+  and the model is NOT CALLED.** For a deterministic outcome that removes a
+  whole LLM round-trip from the turn. `role: "system"` is the other arm:
+  the content rides back as a hint and the model writes the sentence.
+
+`start` and `delayed` are filler — they are heard, and they are never
+recorded into `ctx.messages`, the model's view or the committed transcript,
+and never count as the agent having spoken (so a caller talking over one
+does not interrupt the reply being generated behind it). `complete` and
+`failed` with `role: "assistant"` are the opposite on every count: that IS
+the agent's answer.
+
+###### Example
+
+**A hold line, a two-rung ladder, and an error the model phrases**
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ orderId: z.string() }),
+  messages: {
+    start: ["Let me pull that up.", "One second while I check."],
+    delayed: [
+      { afterMs: 3000, content: "Still looking." },
+      { afterMs: 9000, content: "Sorry, the order system is slow today." },
+    ],
+    failed: [{ role: "system", content: "Order lookup failed. Apologize and offer a callback." }],
+  },
+  execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.messages
+```
 
 ##### onError?
 
@@ -7523,14 +8573,204 @@ See [ToolDef.inputSchema](#inputschema-2).
 optional onError?: ToolErrorHandler;
 ```
 
-See [ToolDef.onError](#onerror-2) — what a THROW out of this body means, and the
-only way to say that a failure is fatal rather than something the model
-should try again.
+What to do when `execute` throws — and, by omission, the SDK's default.
 
-It is forwarded to the [ToolDef](#tooldef) this builds and behaves identically:
-the slot is not involved, because there is nothing left to hand a handler —
-an `updateTool` mutator that threw stored nothing, by that method's own
-contract, so `onError` is classifying a call that changed no state.
+**Without it, every exception becomes an ordinary tool result.** The
+runtime catches whatever `execute` threw and hands `errorMessage(err)` back
+to the model as that call's result, which is the same channel a deliberate
+[toolFailure](#toolfailure-1) uses — so a stale credential, a `TypeError` in the
+author's own code and "no such order" are one thing as far as the model can
+tell, and it will keep calling a permanently broken tool until the reply's
+`maxSteps` budget runs out. That default is unchanged and stays the default:
+for the failures a model really can recover from it is the right answer, and
+every tool written before this field existed depends on it.
+
+**With it, the author classifies.** Return a [ToolFailure](#toolfailure) or a string
+and that is what the model gets — the same outcome as the default, with a
+sentence the author chose. Throw — `throw err` re-raises the original — and
+the failure is FATAL to the call: the runtime logs it, reports it as a
+session error (`code: "tool"`), and the tool call REJECTS instead of
+answering, so nothing hands the model something to retry against.
+
+It sees only a THROW. A `ToolFailure` that `execute` RETURNED never reaches
+it: that is already the author saying "expected, let the model recover", and
+routing it through here would make the two channels one again.
+
+###### Example
+
+**Fatal on a missing credential, recoverable on a bad lookup**
+
+```ts
+import { tool, toolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
+
+class MissingKeyError extends Error {}
+
+export default tool({
+  description: "Look up an order",
+  inputSchema: z.object({ id: z.string() }),
+  execute: async ({ id }, ctx) => {
+    if (!ctx.env.ORDERS_API_KEY) throw new MissingKeyError("ORDERS_API_KEY is unset");
+    const res = await fetch(`https://api.example.com/orders/${id}`, {
+      headers: { authorization: `Bearer ${ctx.env.ORDERS_API_KEY}` },
+    });
+    if (res.status === 404) return toolFailure(`No order ${id}.`);
+    return await res.json();
+  },
+  // A credential the deploy is missing cannot be fixed by asking the model
+  // to try again; a flaky upstream can.
+  onError: (err) => {
+    if (err instanceof MissingKeyError) throw err;
+    return toolFailure("The orders service is unavailable right now.");
+  },
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.onError
+```
+
+***
+
+### StandardSchemaIssue
+
+One validation issue in a failed Standard Schema result.
+
+#### Properties
+
+##### errors?
+
+```ts
+readonly optional errors?: unknown;
+```
+
+A union's per-branch issues, one entry per branch — an off-spec VENDOR
+EXTENSION, which is why it is typed `unknown` rather than described.
+
+Standard Schema declares a flat `{ message, path }`, so a validator with
+alternatives has nowhere to put the reason each one was rejected. Zod
+therefore passes an `errors` array through the `~standard` interface
+anyway, and its parent issue's own `message` is the placeholder
+`"Invalid input"`. `formatSchemaIssues` reads this when it is
+shaped like branches and ignores it otherwise; nothing in this SDK
+requires a vendor to supply it, and no caller should produce it.
+
+##### issues?
+
+```ts
+readonly optional issues?: unknown;
+```
+
+The issues a vendor nested inside this one as its CAUSE — a second
+off-spec extension, typed `unknown` for the same reason as `errors`.
+
+Zod 4 wraps a record's failed KEY this way: the outer issue is
+`invalid_key` carrying the generic `"Invalid key in record"`, and the key
+schema's own issues — including any custom `error` its author wrote — sit
+here. Without reading it, a message written FOR an author is replaced by
+one that does not say what is wrong: `mcpServers.my-docs` reported
+`Invalid key in record` while `agent-config.ts` had spelled out the key
+grammar and the reason for it.
+
+Unlike `errors` these are not alternatives, so `formatSchemaIssues`
+APPENDS rather than replaces — see `renderIssue`.
+
+##### message
+
+```ts
+readonly message: string;
+```
+
+##### path?
+
+```ts
+readonly optional path?: readonly (
+  | PropertyKey
+  | {
+  key: PropertyKey;
+})[];
+```
+
+***
+
+### StandardSchemaV1
+
+The [Standard Schema](https://standardschema.dev) V1 interface, inlined as
+the spec recommends (it is a types-only contract). A Zod, ArkType, or
+Valibot schema all satisfy it.
+
+#### Type Parameters
+
+##### Input
+
+`Input` = `unknown`
+
+The type the schema accepts for validation.
+
+##### Output
+
+`Output` = `Input`
+
+The type validation produces.
+
+#### Properties
+
+##### ~standard
+
+```ts
+readonly ~standard: {
+  types?: {
+     input: Input;
+     output: Output;
+  };
+  validate: (value: unknown) => 
+     | StandardSchemaResult<Output>
+    | Promise<StandardSchemaResult<Output>>;
+  vendor: string;
+  version: 1;
+};
+```
+
+The Standard Schema properties object.
+
+###### types?
+
+```ts
+{
+  input: Input;
+  output: Output;
+}
+```
+
+Inferred types, when the vendor exposes them.
+
+###### validate
+
+```ts
+(value: unknown) => 
+  | StandardSchemaResult<Output>
+| Promise<StandardSchemaResult<Output>>
+```
+
+Validate `value`, returning the typed value or issues.
+
+###### vendor
+
+```ts
+readonly vendor: string;
+```
+
+The vendor name, e.g. `"zod"`, `"arktype"`, `"valibot"`.
+
+###### version
+
+```ts
+readonly version: 1;
+```
+
+The version of the standard implemented (always 1).
 
 ***
 
@@ -7649,6 +8889,18 @@ Every field except `name` and `systemPrompt` is optional, and the defaults
 are the parent agent's: the same LLM descriptor, no tools, and
 the framework default (`DEFAULT_MAX_STEPS`) steps.
 
+It takes [ModelTuning](#modeltuning) WITHOUT `maxRetries`, deliberately. That name
+was this def's guardrail budget before the knobs were unified, and on
+`ModelTuning` it means provider retries; accepting it here would have kept
+`subagent({ guardrail, maxRetries: 3 })` compiling while silently changing
+what the 3 bounds. Refused instead, it is a compile error whose message
+names [SubagentDef.maxRevisions](#maxrevisions). A subagent's provider requests
+retry on the AI SDK's default.
+
+#### Extends
+
+- `Omit`\<[`ModelTuning`](#modeltuning), `"maxRetries"`\>
+
 #### Extended by
 
 - [`TypedSubagentDef`](#typedsubagentdef)
@@ -7731,7 +8983,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
+exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -7779,19 +9031,49 @@ reasoning.
 optional maxOutputTokens?: number;
 ```
 
-Cap on generated tokens per step, passed through to the provider.
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: number;
+optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+```
+
+Not a field. Typed as the message that names the rename, so
+`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SubagentDef.maxRevisions](#maxrevisions).
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
 ```
 
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
-`1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -7894,7 +9176,16 @@ here; `expectedOutput` is the field that remembers it for them.
 optional temperature?: number;
 ```
 
-Sampling temperature passed through to the provider.
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
+
+###### Inherited from
+
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### tools?
 
@@ -8175,7 +9466,7 @@ Return `true` to accept. Return a STRING to reject: the string is the
 complaint, and the runtime re-runs the subagent with its own rejected
 answer and that complaint appended to the conversation it already has — so
 the retry keeps every tool result the first attempt paid for and is told
-exactly what to fix. Bounded by [SubagentDef.maxRetries](#maxretries-2).
+exactly what to fix. Bounded by [SubagentDef.maxRevisions](#maxrevisions).
 
 **A schema is not this.** `ctx.generate({ schema })` constrains the SHAPE
 of an answer and cannot say that a citation is missing, that the sources
@@ -8231,23 +9522,53 @@ reasoning.
 optional maxOutputTokens?: number;
 ```
 
-Cap on generated tokens per step, passed through to the provider.
+Cap on generated tokens per step, passed straight through to the provider.
+
+The same field [GenerateOptions.maxOutputTokens](#maxoutputtokens-5) has for a one-shot
+call. Per STEP, not per turn: a reply that calls three tools has four
+generations in it, and the cap bounds each.
+
+On a voice agent it is a bluntness knob rather than a cost one — a model
+that runs long is a model the caller is waiting through — and a value low
+enough to truncate mid-sentence will truncate mid-sentence, because the
+provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxOutputTokens`](#maxoutputtokens-2)
+[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-2)
 
 ##### maxRetries?
 
 ```ts
-optional maxRetries?: number;
+optional maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+```
+
+Not a field. Typed as the message that names the rename, so
+`subagent({ maxRetries: 3 })` fails to compile with the fix in the error
+rather than with a bare excess-property one — the idiom `agent({ tools })`
+uses. See [SubagentDef.maxRevisions](#maxrevisions).
+
+###### Inherited from
+
+[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-3)
+
+##### maxRevisions?
+
+```ts
+optional maxRevisions?: number;
 ```
 
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back.
 
 ###### Default Value
 
-`1` (`DEFAULT_GUARDRAIL_MAX_RETRIES`)
+`1` (`DEFAULT_GUARDRAIL_MAX_REVISIONS`)
+
+**Was `maxRetries`.** Renamed because [ModelTuning.maxRetries](#maxretries-2) retries
+a provider REQUEST that failed (a 429, a socket reset), where this re-runs a
+delegation that SUCCEEDED and was judged not good enough. A subagent does
+not accept `maxRetries` at all, so code written against the old name fails
+to compile rather than quietly meaning something else.
 
 One, not CrewAI's three, because a revision is another FULL run of the
 subagent and the caller is on a live phone call — the third attempt at a
@@ -8262,7 +9583,7 @@ not the runtime — that decides what.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`maxRetries`](#maxretries-2)
+[`SubagentDef`](#subagentdef).[`maxRevisions`](#maxrevisions)
 
 ##### maxSteps?
 
@@ -8370,11 +9691,16 @@ here; `expectedOutput` is the field that remembers it for them.
 optional temperature?: number;
 ```
 
-Sampling temperature passed through to the provider.
+Sampling temperature.
+
+Omitted by default, so the model's own default applies; some models (Claude
+5 among them) ignore it and warn, so set it only for a temperature-capable
+one. A booking desk and a game master want different values; so do a
+researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`SubagentDef`](#subagentdef).[`temperature`](#temperature-5)
+[`ModelTuning`](#modeltuning).[`temperature`](#temperature-4)
 
 ##### tools?
 
@@ -8704,44 +10030,19 @@ take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
 
 ```ts
 type AssemblyAIGatewayModel = 
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-opus-5"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gemini-3.7-flash"
-  | "gemini-3.8-flash"
-  | "gemma-4-31b"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-sol"
-  | "gpt-5.6-terra"
-  | "gpt-6-astra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "qwen3-32B"
-  | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-fast";
+  | KnownGatewayModel
+  | string & {
+};
 ```
 
-An id the gateway advertises.
+A model id on AssemblyAI's LLM Gateway — one of [KnownGatewayModel](llm.md#knowngatewaymodel),
+or any other string.
+
+The known half is GENERATED from what the gateway advertises, so it is a
+snapshot of a service that ships models faster than this package releases:
+a model added upstream after this release is still a legal id, and a
+regeneration that drops one breaks no author's build. Autocomplete, not a
+guard.
 
 ***
 
@@ -8996,7 +10297,9 @@ Words in an interim transcript before a barge-in counts.
 ### DialogEvent
 
 ```ts
-type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
+type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+  type: N;
+} : never : never;
 ```
 
 The event union a [DialogSpec](#dialogspec) declares — synthesized from its `on`
@@ -9024,6 +10327,43 @@ send by hand into the autocomplete for the one they must. See
 
 ***
 
+### DialogEventNames
+
+```ts
+type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? 
+  | C extends {
+  on: infer O;
+} ? Extract<keyof O, string> : never
+  | C extends {
+  states: infer N;
+} ? DialogEventNames<N> : never : never : never : never;
+```
+
+Every event name the `on` maps of a `states` map declare, at every depth.
+
+Exported, and owned by the `dialog` capability, because [DialogEvent](#dialogevent) is
+written in terms of it and a type a signature reaches but nobody can import is
+a shape an author has to satisfy without being able to name.
+
+Distributed over the map's VALUES first, because `keyof` a UNION of `on` maps
+is the INTERSECTION of their keys — i.e. `never` for any dialog with more than
+one state, which is a spec whose events all type-check as nothing at all.
+
+The recursion is bounded by [DialogStateSpec](#dialogstatespec) declaring `states` as
+OPTIONAL: `{ states?: … }` does not match `{ states: infer N }`, so walking
+the bare constraint — which is what `dialog<const S extends DialogSpec>` makes
+the compiler do while checking the overload — stops at the first level instead
+of chasing a self-referential type forever. Making that property required
+would reintroduce a `TS2589` on a declaration nobody has written yet.
+
+#### Type Parameters
+
+##### M
+
+`M`
+
+***
+
 ### DialogSessionEventName
 
 ```ts
@@ -9042,6 +10382,29 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDef.dialogs](#dialogs).
+
+***
+
+### EventMapOf
+
+```ts
+type EventMapOf<U extends {
+  type: string;
+}> = { [E in U as E["type"]]: E };
+```
+
+Key a union of `{ type }` members by their `type`.
+
+What [SessionEventMap](#sessioneventmap) is derived through, and exported so a host with
+a vocabulary of its own can build the same shape for it.
+
+#### Type Parameters
+
+##### U
+
+`U` *extends* \{
+  `type`: `string`;
+\}
 
 ***
 
@@ -9073,7 +10436,7 @@ schema and non-optional; a plain-JSON-Schema or schemaless call returns
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -9425,16 +10788,46 @@ Give up waiting after this long and reject with
 
 ***
 
+### KnownTurnDetectionMode
+
+```ts
+type KnownTurnDetectionMode = "auto" | "manual";
+```
+
+The turn-detection modes this release implements — the autocomplete half of
+[TurnDetectionMode](#turndetectionmode). See [PipelineVoiceTuning.turnDetection](#turndetection).
+
+***
+
+### KnownVoicePresetName
+
+```ts
+type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+```
+
+One of the opt-in prompt presets THIS release ships — see
+[VOICE\_PRESETS](#voice_presets) for what each one says and what it costs. The
+autocomplete half of [VoicePresetName](#voicepresetname).
+
+Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
+which would be the shorter way round: a derived alias renders in the API
+report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
+internal constant a reader cannot import and TypeDoc refuses to link. The
+union renders as the strings, which is the answer to the only question
+anybody asks of this type.
+
+***
+
 ### LlmProvider
 
 ```ts
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
   __stage?: "llm";
 };
 ```
 
 Descriptor for an LLM provider. Returned by factories like
-`anthropicLlm(...)` from `@alexkroman1/aai/llm`.
+`llm({ provider: "anthropic", ... })` from `@alexkroman1/aai/llm`.
 
 #### Type Declaration
 
@@ -9545,7 +10938,7 @@ type Message = {
 A single message in the conversation history.
 
 Messages are passed to tool `execute` functions via
-[ToolContext.messages](#messages) to provide conversation context.
+[ToolContext.messages](#messages-2) to provide conversation context.
 
 **The `"tool"` arm carries what an EARLIER tool answered**, which is the one
 thing a tool could not see before. Its two extra fields say WHICH call the
@@ -9611,9 +11004,7 @@ uses the same string it would put in `ctx.messages`' own tool schemas.
 ### MetricsCollectedEvent
 
 ```ts
-type MetricsCollectedEvent = Extract<SessionEvent, {
-  type: "metrics.collected";
-}>;
+type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 ```
 
 One `metrics.collected` frame, envelope included — what an
@@ -9692,7 +11083,7 @@ Gateway, `"creator/model"` for the Vercel AI Gateway. Unset → the default
 AssemblyAI LLM Gateway model.
 
 **Typed against the generated union so a typo is caught where it is
-written**, which is the same job `assemblyAILlm({ model })` has done all
+written**, which is the same job `llm({ provider: "assemblyai", model })` has done all
 along — `from-string.ts` desugars this field straight into that factory,
 so one field had two types and only the longer spelling checked anything.
 A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
@@ -9860,6 +11251,46 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SessionEvent
+
+```ts
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+```
+
+One **server→client** session event, envelope included: a fact the session
+reports, in the shape it takes on the wire and in the retained stream.
+
+Bare, it is the whole union — what a `"*"` handler receives and what a client
+parses. With a name (or a union of names) it is just those members.
+Host code EMITS a [SessionEventBody](#sessioneventbody) and the session's emitter stamps
+the envelope — see `protocol-events.ts`.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](#sessioneventtype) = [`SessionEventType`](#sessioneventtype)
+
+***
+
+### SessionEventBody
+
+```ts
+type SessionEventBody<K extends SessionEventType = SessionEventType> = { [T in K]: Omit<SessionEventMap[T], "meta"> }[K];
+```
+
+A session event as its EMITTER writes it — everything but the `meta`
+envelope, which the session stamps exactly once. Distributes over `K`, so
+each member keeps its own `type`.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](#sessioneventtype) = [`SessionEventType`](#sessioneventtype)
+
+***
+
 ### SessionEventContext
 
 ```ts
@@ -9942,6 +11373,9 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 One handler: an event of the type it was declared under, plus the context.
 
+Parameterized by the EVENT, as it always was; name one member with the map
+rather than an `Extract` — `SessionEventHandler<SessionEvent<"tool.called">>`.
+
 The return type is `unknown`, and that is deliberate rather than lazy.
 `void | Promise<void>` reads better and does not compile for the most obvious
 handler anyone writes: TypeScript's rule that a value-returning function is
@@ -9956,7 +11390,7 @@ handler.
 
 ##### E
 
-`E` *extends* [`SessionEvent`](protocol.md#sessionevent) = [`SessionEvent`](protocol.md#sessionevent)
+`E` *extends* [`SessionEvent`](#sessionevent) = [`SessionEvent`](#sessionevent)
 
 #### Parameters
 
@@ -9977,7 +11411,7 @@ handler.
 ### SessionEventHandlers
 
 ```ts
-type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, { type: K }>> } & {
+type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>> } & {
   *?: SessionEventHandler;
 };
 ```
@@ -10005,21 +11439,28 @@ Runs for every event, AFTER the typed handler for that event.
 ### SessionEventType
 
 ```ts
-type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 ```
 
-Every event name a handler map may be keyed by, as a union.
+Every event name a handler map, a dialog's `@` keys or a spec may name.
 
-The keys of [SessionEventHandlers](#sessioneventhandlers) are computed from the wire union, so
-without this alias the only way to read the list is the event schema itself —
-which renders as one long type expression. Name it to get an autocompletable
-union, and to write a handler map's key type down in your own code:
+Name it to write a list of event names down in your own code:
 
 ```ts
 import type { SessionEventType } from "@alexkroman1/aai";
 
 const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
 ```
+
+***
+
+### SessionSourcedEventType
+
+```ts
+type SessionSourcedEventType = typeof SESSION_SOURCED_EVENT_TYPES[number];
+```
+
+One of [SESSION\_SOURCED\_EVENT\_TYPES](#session_sourced_event_types).
 
 ***
 
@@ -10226,6 +11667,29 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 ***
 
+### StandardSchemaResult
+
+```ts
+type StandardSchemaResult<Output> = 
+  | {
+  issues?: undefined;
+  value: Output;
+}
+  | {
+  issues: readonly StandardSchemaIssue[];
+};
+```
+
+A successful or failed Standard Schema validation.
+
+#### Type Parameters
+
+##### Output
+
+`Output`
+
+***
+
 ### StaticAgentParams
 
 ```ts
@@ -10275,7 +11739,7 @@ steps; passing nothing is the common case.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 The schema [StepOptions.schema](#schema-3) carries, when one is
   given. Defaulted, so `StepOptions` is still spellable without an argument —
@@ -10360,7 +11824,7 @@ The shape — see [StepOptions.schema](#schema-3).
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 ***
 
@@ -11667,21 +13131,39 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### TurnDetectionMode
+
+```ts
+type TurnDetectionMode = 
+  | KnownTurnDetectionMode
+  | string & {
+};
+```
+
+A turn-detection mode — one of [KnownTurnDetectionMode](#knownturndetectionmode), or any other
+string.
+
+OPEN so a mode a later release adds compiles against this one. The runtime
+treats every value but `"manual"` as `"auto"`, and `aai build` / `aai dev`
+warn about a value it does not know, rather than the type refusing it.
+
+***
+
 ### VoicePresetName
 
 ```ts
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = 
+  | KnownVoicePresetName
+  | string & {
+};
 ```
 
-One of the four opt-in prompt presets — see [VOICE\_PRESETS](#voice_presets) for what
-each one says and what it costs.
+A preset name — one of [KnownVoicePresetName](#knownvoicepresetname), or any other string.
 
-Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
-which would be the shorter way round: a derived alias renders in the API
-report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
-internal constant a reader cannot import and TypeDoc refuses to link. The
-union renders as the four strings, which is the answer to the only question
-anybody asks of this type.
+OPEN so an agent naming a preset a later release adds compiles against this
+one. An unknown name emits no text (the prompt is assembled from the known
+names only), and `aai build` / `aai dev` warn about it rather than the type
+refusing it.
 
 ***
 
@@ -11706,7 +13188,7 @@ way to end unanswered.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 #### Properties
 
@@ -11804,7 +13286,7 @@ its result must not carry `| undefined`.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 #### Properties
 
@@ -12657,7 +14139,7 @@ for what each side catches, and why a read-side failure is not the step's.
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Name
 
@@ -12830,7 +14312,7 @@ review window beside a retry backoff), not to put a deadline on one wait.
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Parameters
 
@@ -12867,7 +14349,7 @@ waitFor<S extends StandardSchemaV1<unknown, unknown>>(token: string, options: Wa
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Parameters
 
@@ -12981,7 +14463,7 @@ Input schema (any Standard Schema, Zod by convention),
 `R` = `unknown`
 
 What the body resolves with — inferred from the declared
-  [WorkflowDef.output](#output) schema when there is one, and from the function
+  [WorkflowDef.output](#output-2) schema when there is one, and from the function
   otherwise. It reaches a caller as `WorkflowRunSnapshot`'s `output`, so
   passing the workflow to `start`/`get`/`find` is what makes a completed
   run's result typed instead of `unknown`.
@@ -13209,14 +14691,14 @@ someone guessing, which is the failure being prevented.
 
 ***
 
-### DEFAULT\_GUARDRAIL\_MAX\_RETRIES
+### DEFAULT\_GUARDRAIL\_MAX\_REVISIONS
 
 ```ts
-const DEFAULT_GUARDRAIL_MAX_RETRIES: 1 = 1;
+const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 ```
 
 How many times a [SubagentDef.guardrail](#guardrail) may send an answer back when
-the subagent names no [SubagentDef.maxRetries](#maxretries-2) of its own.
+the subagent names no [SubagentDef.maxRevisions](#maxrevisions) of its own.
 
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
@@ -13227,7 +14709,7 @@ only reader is one field is documented by sitting next to it.
 ### DEFAULT\_STEP\_MAX\_ATTEMPTS
 
 ```ts
-const DEFAULT_STEP_MAX_ATTEMPTS: 3 = 3;
+const DEFAULT_STEP_MAX_ATTEMPTS: number;
 ```
 
 Attempts a step gets when [StepOptions.maxAttempts](#maxattempts) says nothing.
@@ -13242,7 +14724,7 @@ run its body; that was true before this change and is unchanged by it.
 ### DEFAULT\_SYSTEM\_PROMPT
 
 ```ts
-const DEFAULT_SYSTEM_PROMPT: "You are a voice agent in a real-time spoken conversation. What you\nreceive is a live speech transcript, and everything you write will be\nspoken aloud by a text-to-speech system and shown as plain text.\nAgent-specific instructions may follow these defaults. They decide WHAT\nyou do — policy, persona, scope, what to collect and when — and they win\non all of it. They do not change how this channel works: the LISTENING\nand SPEAKING sections below, and the recovery procedure in TOOLS for a\nlookup that fails on a spoken value, are facts about a live transcript\nand a real-time voice, not preferences, and they hold whatever a later\ninstruction says. When a later instruction asks for something those\nfacts make useless — most often asking the caller to repeat or spell\nsomething you already have — honour what it is trying to achieve and\nfollow the section's method for achieving it. An instruction to ask the\ncaller to spell something again is exactly that: it wants a mis-hearing\nresolved, and the ladder in TOOLS is how you resolve one. Work it first\nand ask only at the step that says to.\n\n## PERSONALITY\n- Unless the agent's instructions say otherwise: warm, calm, and\n  competent. Sound like a capable person, not a phone tree.\n\n## SPEAKING\n- Keep the whole reply to two sentences, about thirty spoken words.\n  Going long is the single most expensive habit on a phone call: the\n  longer you talk, the more likely the caller cuts in, and everything\n  after that point is never heard.\n- Your FIRST sentence is at most eight words and carries the answer or\n  the next question — never a preface, an acknowledgment, or a\n  restatement of what the caller just said.\n  Too long: \"Thanks for that. I will look up your account now. I found\n  your account, and I can see two orders on it.\"\n  Say instead: \"Found your account. Two orders — which has the water\n  bottle?\"\n- Write exactly as you would say it out loud to a friend. Contractions\n  sound better spoken (\"I'll\", \"it's\", \"don't\"). No markdown, bullet\n  points, code, headings, emoji, stage directions, or sound effects —\n  none of it can be spoken.\n- When the caller asks HOW MANY, lead with the number that answers what\n  they asked — how many records actually match their question, not how\n  big the list you looked at was. Leave the ones that don't qualify out\n  of the number and never make the caller do the subtraction; a total\n  plus an exclusion is not an answer.\n  Asked \"how many can I still pick from?\": say \"Ten to choose from.\"\n  Not: \"There are twelve, and two are out.\"\n- To list things, say \"First,\" \"Next,\" \"Finally.\" Never read out a long\n  list: give the count that matches what they asked for, name at most\n  two, and ask which one they mean (\"Five items on that order — the\n  headphones and the vacuum, plus three more. Which one?\").\n- Say numbers, amounts, and dates the way a person says them (\"one\n  hundred fifty-four dollars, on March third\"). An amount under a\n  dollar is cents alone — \"twenty-six cents\", never \"$0.26\", which is\n  read out as \"zero dollars twenty-six cents\". Write a date in words\n  (\"May twelfth\"), never slashed — \"05/12\" is read \"zero five one\n  twelve\".\n- An IDENTIFIER is the exception, and the rule is about how you WRITE\n  it: hyphenate it, one character per hyphen, end to end, and drop any\n  \"#\". That spelling is what makes the voice read a code out instead of\n  adding it up, and it is the whole rule — a code you paste unchanged\n  is a code the caller loses.\n  Anything that names one record rather than counting something is an\n  identifier: an order, item, or product number, a card's last four, a\n  ZIP, a phone number, a confirmation code.\n  Right: \"W-2-3-7-8-1-5-6\", \"A-B-C-1-2-3\", \"ending in 2-4-7-8\".\n  Wrong: \"W2378156\", \"#W2378156\", \"2478\", \"7747408585\" — each is read\n  as a quantity (\"W two million three hundred seventy-eight\n  thousand...\", \"twenty-four seventy-eight\"), and even when it isn't\n  the caller cannot tell \"123\" from \"one two three\" from \"one twenty\n  three\".\n  Wrong: \"774, 740, 8585\" — commas turn one code into three numbers.\n  One unbroken hyphen run is the only form that survives.\n  Wrong: \"Delive\" — a code is never pronounced as if it were a word.\n  When a quantity sits next to a code, put the unit between them, or\n  they run together into one unsayable token: \"two of K-2\", never\n  \"two K2\".\n- An EMAIL ADDRESS is never written as one token. Say the name as\n  ordinary words, hyphenate the digits, and speak the separators:\n  \"yusuf dot rossi, 7-3-0-1, at example dot com\". Written whole,\n  \"yusuf.rossi7301@example.com\" comes out as \"yusuf rossi seven\n  thousand three hundred one at example com\", and another address came\n  out as different words entirely. Don't spell the letters either —\n  that loses the \"at\". Spell one character only to settle an ambiguity.\n- Put a value the caller has to write down — an identifier, an amount,\n  an address, an email — in your FIRST sentence. Most of a long reply\n  is never heard, and a value saved for the end is the part that goes\n  missing.\n- Speak the language the caller is speaking. Switch only when they do —\n  never on your own.\n- Ask at most one question per turn, and make it the one that unblocks\n  the most.\n- Vary your openers — don't start consecutive replies with the same\n  acknowledgment. If the caller interrupts, stop and address what they\n  said.\n- Never verbalize internal reasoning, tool names, system mechanics, or\n  technical failures.\n\n## LISTENING\n- The transcript carries fillers, pauses, false starts, and\n  self-corrections. Read through the noise to the caller's final intent\n  and act on it. When they correct themselves (\"Boston... actually,\n  Chicago\"), use only the last value.\n- Respond only to speech directed at you. If a turn is empty, garbled,\n  or clearly background noise or a side conversation, say briefly that\n  you didn't catch that — never act on it. Otherwise act on your best\n  understanding rather than stalling.\n- Take a value the way a person says it, in one piece, and TRY it before\n  asking for it spelled. A spelling request costs a full round trip and\n  transcribes no better: spelled letters lose their word boundaries and\n  lose their tail to a pause, a cough, or a breath, which reads as a\n  valid value and is not. If the caller volunteers something you didn't\n  ask for, use it; never re-collect what you already have in another\n  form.\n- Write spoken identifiers in their normal written form, not as they\n  were said. Drop spoken separators (\"K dash 2\" is K2, \"P dash five\n  dash two\" is P52), join spelled-out characters (\"A B C one two three\"\n  is ABC123), and add nothing the caller did not say (\"Z K 3 F F W\" is\n  ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in\n  ordinary title case (Maria Garza, not MARIA GARZA).\n- Don't read spelled input back letter by letter — it's slow and\n  invites interruption. Confirm briefly and move on (\"Okay, Yusuf\n  Rossi, ZIP 1-9-1-2-2 — one moment\"). Re-spell a single character only\n  to resolve a genuine ambiguity (\"Was that F or S?\"). The one time to\n  read an identifier back in full is right before an action that's hard\n  to undo.\n\n## TOOLS\n- Never fabricate. If you don't know something, look it up with a tool;\n  if no tool can answer it, say so. Never state data from memory that a\n  tool can retrieve: every confirmation number, price, total, seat, or\n  other detail you speak must come from a tool result.\n- Act first, ask second: if the caller's words contain everything a\n  tool needs, call it immediately. Ask only when a required value is\n  genuinely missing — and never fill one with a placeholder or a guess.\n  A date, time, or priority the caller hasn't stated is theirs to give,\n  not yours to pick.\n- Report RESULTS, never intentions. Don't announce what you're about\n  to do — the caller can't act on a plan, and each announcement is\n  another sentence they can interrupt. Stay silent while the calls run\n  and speak once you have the answer.\n  Wrong: \"I will look up your account now. I found your account. I\n  will check that order now.\"\n  Right: nothing, until the calls are done — then: \"Your order's\n  delivered. Both items can be exchanged.\"\n- Never say an action is done unless a tool call returned success for\n  it. Announcing an action is not performing it: if you say you're\n  looking up, booking, changing, or cancelling something, make the\n  matching tool call in that same turn. Carrying something over (a\n  seat, a bag allowance, a preference) is itself an action — it needs\n  its own tool call and doesn't happen because a related call\n  succeeded.\n- Copy values from prior tool results exactly into what you SEND a\n  tool. Never retype, reformat, or construct an ID from a pattern — if\n  you don't have it, look it up first, then use it. This is about tool\n  arguments only: what you SAY is respelled for the voice under\n  SPEAKING, which changes no characters, only where the hyphens go.\n- The same rule covers MONEY and COUNTS, and it is the one most often\n  broken: speak the figure from the field that holds it. A total you\n  worked out yourself is a total you invented, and the caller acts on\n  it.\n- A lookup that fails on a spoken value is a MIS-HEARING until proven\n  otherwise, not a missing record. Before you say a word about it, work\n  this list in order and stop at the first step that succeeds:\n  1. Re-read the conversation. If the caller gave this value more than\n     once, or you said it back and they agreed, retry EACH earlier\n     version before anything else. An earlier turn is evidence you\n     already hold, not history.\n  2. Retry the plausible confusions of what you have — F/S, B/P/V,\n     D/G/T, M/N, and a missing or doubled final letter.\n  3. Retry with a different identifier you already hold. Digits\n     transcribe better than names — prefer a number when one is\n     accepted.\n  4. Only now ask the caller, and ask for something DIFFERENT: a new\n     identifier, or the single character you're unsure of (\"M as in\n     Mike?\"). Asking for the same value again produces the same\n     transcript, so it is never step one and never repeats.\n  When every identifier is exhausted, say what you can still do.\n- On a tool error, read the message. Fix the specific problem and retry\n  with something actually different — never resend arguments that\n  already failed, and never pretend a failed call succeeded. A lookup on\n  a spoken value gets the whole ladder above before you say anything;\n  every other error gets one retry. If it still fails or returns\n  nothing, don't mention tools, APIs, or errors: say plainly what you\n  couldn't get and offer a next step.\n- Finish the whole request, ACROSS TURNS. When the caller asks for\n  several things, keep the ones you haven't answered and come back to\n  them the moment you can — a question they had to repeat is a question\n  you dropped. If one has to wait on a step in progress, say so in a\n  clause rather than letting it fall away. Never stop halfway and ask\n  \"shall I continue?\".\n- Before an action that's hard to undo, state what you're about to do\n  and get a clear yes. When the caller's request already says exactly\n  what to do, that request is the authorization — execute it.\n- Any number you are about to say that you worked out yourself — a\n  count, a total, a difference, a date offset — comes from enumerating\n  the records one at a time, or from a calculator tool if one exists.\n  Counting how many records meet a condition is arithmetic. A number\n  you did not enumerate is a guess; don't say it.\n- If the caller questions a number or a fact you already gave, re-derive\n  it from the tool result before answering, and say the corrected value\n  plainly. Your own previous reply is not a source, and agreeing with\n  yourself is not confirming. Call the tool again if the record no\n  longer covers it.\n- If you're stuck after exhausting the retries above, say so, offer what\n  you can do instead, and hand off if a transfer or escalation tool\n  exists.";
+const DEFAULT_SYSTEM_PROMPT: string;
 ```
 
 Default system prompt used when `systemPrompt` is not provided.
@@ -13351,7 +14833,7 @@ onto one name.
 ### MCP\_TOOL\_NAME\_MAX
 
 ```ts
-const MCP_TOOL_NAME_MAX: 64 = 64;
+const MCP_TOOL_NAME_MAX: number;
 ```
 
 Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the
@@ -13380,14 +14862,255 @@ themselves, and even that loses: the native tool wins and the drop is logged
 
 ***
 
+### SESSION\_SOURCED\_EVENT\_TYPES
+
+```ts
+const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+```
+
+The events only the SESSION itself can be the source of — never a transport.
+
+The complement of what `aai-runtime`'s `TransportEventBody` accepts, and the
+one place that decision is written down, so a new event is REPORTABLE by
+default — the session publishes a report it has no `case` for — and needs
+no edit to a list in another package. Each is here for a reason:
+`session.configured` is the handshake, `session.reset` and
+`session.timed-out` come from the client and the idle watchdog,
+`custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
+`usage.updated` and `guardrail.blocked` are the session's own accounting and
+refusals, and `history.restored` is a resume.
+
+***
+
+### SessionEventSchema
+
+```ts
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+  audioFormat: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  sampleRate: z.ZodNumber;
+  sessionId: z.ZodOptional<z.ZodString>;
+  ttsSampleRate: z.ZodNumber;
+  type: z.ZodLiteral<"session.configured">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"audio.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"speech.started">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"speech.stopped">;
+}, z.core.$strip>, z.ZodObject<{
+  eotConfidence: z.ZodOptional<z.ZodNumber>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"user-transcript.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"user-transcript.committed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"agent-transcript.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  recovery: z.ZodOptional<z.ZodEnum<{
+     session-failed: "session-failed";
+     turn-failed: "turn-failed";
+  }>>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"agent-transcript.committed">;
+}, z.core.$strip>, z.ZodObject<{
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  toolCallId: z.ZodString;
+  toolName: z.ZodString;
+  type: z.ZodLiteral<"tool.called">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  result: z.ZodString;
+  toolCallId: z.ZodString;
+  type: z.ZodLiteral<"tool.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"reply.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"reply.cancelled">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"session.reset">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"session.timed-out">;
+}, z.core.$strip>, z.ZodObject<{
+  code: z.ZodEnum<{
+     audio: "audio";
+     connection: "connection";
+     internal: "internal";
+     llm: "llm";
+     protocol: "protocol";
+     stt: "stt";
+     tool: "tool";
+     tts: "tts";
+  }>;
+  fatal: z.ZodBoolean;
+  message: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"error.reported">;
+}, z.core.$strip>, z.ZodObject<{
+  data: z.ZodUnknown;
+  event: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"custom.emitted">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  state: z.ZodUnknown;
+  type: z.ZodLiteral<"state.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  inputTokens: z.ZodNumber;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  outputTokens: z.ZodNumber;
+  steps: z.ZodNumber;
+  totalTokens: z.ZodNumber;
+  type: z.ZodLiteral<"usage.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  direction: z.ZodEnum<{
+     input: "input";
+     output: "output";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  replacement: z.ZodString;
+  type: z.ZodLiteral<"guardrail.blocked">;
+}, z.core.$strip>, z.ZodObject<{
+  durationMs: z.ZodNumber;
+  limit: z.ZodEnum<{
+     duration: "duration";
+     words: "words";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"user-turn.exceeded">;
+  words: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+  interrupted: z.ZodBoolean;
+  latencyMs: z.ZodOptional<z.ZodNumber>;
+  llm: z.ZodOptional<z.ZodObject<{
+     durationMs: z.ZodNumber;
+     inputTokens: z.ZodOptional<z.ZodNumber>;
+     outputTokens: z.ZodOptional<z.ZodNumber>;
+     steps: z.ZodNumber;
+     ttftMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  stt: z.ZodOptional<z.ZodObject<{
+     endpointingMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  tts: z.ZodOptional<z.ZodObject<{
+     characters: z.ZodNumber;
+     ttfbMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  type: z.ZodLiteral<"metrics.collected">;
+}, z.core.$strip>, z.ZodObject<{
+  messages: z.ZodArray<z.ZodObject<{
+     content: z.ZodString;
+     role: z.ZodEnum<{
+        assistant: "assistant";
+        user: "user";
+     }>;
+  }, z.core.$strip>>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  toolCalls: z.ZodArray<z.ZodObject<{
+     afterMessageIndex: z.ZodNumber;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: z.ZodString;
+     name: z.ZodString;
+     result: z.ZodOptional<z.ZodString>;
+     status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+     }>;
+  }, z.core.$strip>>;
+  type: z.ZodLiteral<"history.restored">;
+}, z.core.$strip>], "type">;
+```
+
+The session event vocabulary — the ONE source of truth. `SessionEventMap`,
+`SessionEvent` and `SessionEventType` are all derived from it.
+
+***
+
 ### VOICE\_PRESETS
 
 ```ts
-const VOICE_PRESETS: {
-  echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
-  natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
-  speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
-};
+const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
 ```
 
 The shipped text of every preset, keyed by the name `agent({ voicePresets })`
@@ -13402,31 +15125,14 @@ warning applies in reverse: do NOT interpolate a value here into your
 the framework emits it once, above your instructions, under a stated
 precedence.
 
-Un-annotated and `as const`, so the declaration's TYPE is the prompt text:
-the rolled-up `.d.ts` then carries every word, which is what puts a prompt
-change in `etc/index.api.md` where a reviewer reads it. `satisfies` is what
-keeps the record total — a fifth name in `VOICE_PRESET_NAMES` with no
-text here is a compile error.
-
-#### Type Declaration
-
-##### echoVerification
-
-```ts
-readonly echoVerification: "## ECHO VERIFICATION\n- Read every critical value back before you act on it or save it: names,\n  phone numbers, emails, dates, times, addresses, amounts, and\n  confirmation or reference codes.\n- Group the values that belong together into ONE read-back, then ask one\n  closed question. \"Just to confirm, your first name is Ryan, last name\n  is Ashford — is that correct?\" Three values confirmed in three turns\n  is three chances to be cut off.\n- Spell an uncommon or ambiguous name letter by letter as you read it\n  back: \"That's A-S-H-F-O-R-D, Ashford.\" A common name read back as a\n  word is enough — don't spell what nobody mishears.\n- If the caller corrects part of it, read back only the corrected value.\n  Never re-confirm what they already agreed to, and never ask again for\n  a value they have confirmed.";
-```
-
-##### natoAlphabet
-
-```ts
-readonly natoAlphabet: "## NATO PHONETIC ALPHABET\n- When you spell anything out, use NATO phonetics: Alfa, Bravo, Charlie,\n  Delta, Echo, Foxtrot, Golf, Hotel, India, Juliett, Kilo, Lima, Mike,\n  November, Oscar, Papa, Quebec, Romeo, Sierra, Tango, Uniform, Victor,\n  Whiskey, X-ray, Yankee, Zulu.\n- Say the letter and then its word — \"B as in Bravo\", never \"Bravo\"\n  alone. Digits are said as themselves.\n- Separate the characters with commas so the voice pauses between them,\n  and close with a confirmation question.\n  \"That's B as in Bravo, 7, K as in Kilo, 2 — correct?\"\n- Use it for confirmation codes, reference numbers, emails and postal\n  codes, and spell the whole value or none of it.";
-```
-
-##### speechNormalization
-
-```ts
-readonly speechNormalization: "## SPEECH NORMALIZATION\nEverything you write is read aloud verbatim, so write the WORDS, never\nthe written form. Convert before you speak, in these categories.\n\n**Numbers.** Say a quantity as a person says it: \"1,247\" is \"twelve\nhundred forty-seven\", \"0.5\" is \"point five\", \"3/4\" is \"three quarters\",\n\"2x\" is \"two times\". Years are spoken in pairs — \"2026\" is \"twenty\ntwenty-six\", \"1908\" is \"nineteen oh eight\". Ordinals are words: \"3rd\" is\n\"third\". Ranges take \"to\": \"10-15\" is \"ten to fifteen\". Keep a number\nthat is an IDENTIFIER digit by digit instead — see codes below.\n\n**Money.** \"$758.08\" is \"seven fifty-eight dollars and eight cents\".\n\"$1,200\" is \"twelve hundred dollars\". \"$0.99\" is \"ninety-nine cents\".\n\"$1.5M\" is \"one point five million dollars\". Lead with the word \"minus\"\nfor a negative: \"-$40\" is \"minus forty dollars\". Never say the symbol,\nnever say \"point\" between dollars and cents.\n\n**Dates.** \"3/5/2026\" is \"March fifth, twenty twenty-six\". Month first,\nday as an ordinal, year in pairs. Drop the year when it is this year:\n\"June 8\" is \"June eighth\". \"2026-06-08\" is spoken the same way — never\nread the hyphens.\n\n**Times.** \"3:30 PM\" is \"Three thirty PM\". \"9:00 AM\" is \"Nine AM\" —\nnever \"o'clock\", never \"nine hundred hours\", never \"nine zero zero\".\n\"12:05\" is \"twelve oh five\". A duration is words: \"1h 30m\" is \"an hour\nand a half\".\n\n**Phone numbers.** Read them digit by digit, grouped, with a dash and a\nSPACE on each side of it to make the voice pause: \"415-892-3245\" is\n\"four one five - eight nine two - three two four five\". Don't omit the\nspace around the dash when speaking — the spaced dash is what produces\nthe pause. Say \"oh\" or \"zero\" consistently, and never group digits into\nnumbers (\"eight ninety-two\" is wrong). An extension follows as\n\"extension two two three\".\n\n**Emails.** Spell the local part character by character, say \"at\" for\n\"@\", and \"dot\" for \".\": \"name@company.com\" is\n\"n-a-m-e-@-c-o-m-p-a-n-y-dot-com\". Say a well-known domain as a word if\nit is one (\"gmail dot com\"), spell an unfamiliar one. \"_\" is\n\"underscore\", \"-\" is \"dash\".\n\n**Addresses.** \"123 Main St, Apt 4B\" is \"one twenty-three Main Street,\napartment four B\". Expand every abbreviation — St is Street, Ave is\nAvenue, Blvd is Boulevard, Dr is Drive or Doctor by context, Ste is\nSuite. A house number under 10,000 is said in pairs: \"1420\" is \"fourteen\ntwenty\". A ZIP code is digit by digit: \"19122\" is \"one nine one two\ntwo\". Say a state's full name, not its two letters.\n\n**Codes and identifiers.** Anything mixing letters and digits, or that\nis not a word, goes one character at a time end to end: \"ABC123\" is\n\"A-B-C-one-two-three\", never \"ABC one twenty-three\". Say the letters in\nthe same breath as the digits, and never pronounce a code as a word.\n\n**Symbols, units and abbreviations.** Say them: \"%\" is \"percent\", \"&\" is\n\"and\", \"#\" is \"number\", \"/\" is \"slash\" or \"per\" by sense, \"°F\" is\n\"degrees Fahrenheit\", \"kg\" is \"kilograms\", \"5'9\"\" is \"five foot nine\".\nExpand a title (\"Dr.\" is \"Doctor\", \"Mr.\" is \"Mister\") and spell an\nacronym that is not a word (\"FAQ\" is \"F-A-Q\", \"NASA\" is \"NASA\").";
-```
+Typed as a record of STRINGS, not as its own text. It used to be
+un-annotated and `as const`, so the declaration's TYPE was the prompt text —
+which made every wording change a change to the published TYPE, and every
+such change a contract decision about nothing an author's code can observe.
+A preset's words are a behaviour: they are reviewed in this file's diff, held
+to a token band by `voice-presets.test.ts`, and owed a changeset, the same
+treatment `DEFAULT_SYSTEM_PROMPT` gets. The annotation also keeps the record
+total — a name in `VOICE_PRESET_NAMES` with no text here is a compile error.
 
 #### Example
 

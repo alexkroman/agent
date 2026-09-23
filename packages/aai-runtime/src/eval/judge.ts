@@ -173,8 +173,8 @@ function verdictOf(
  * Have a model rule on `criteria` over `input`, and hand back the verdict.
  *
  * ```ts
- * import { anthropicLlm } from "@alexkroman1/aai/llm";
- * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval";
+ * import { llm } from "@alexkroman1/aai/llm";
+ * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval/simulate";
  *
  * export async function grade(call: SimulatedCall): Promise<void> {
  *   const verdict = await judgeCall(call, {
@@ -182,7 +182,7 @@ function verdictOf(
  *       "The agent looked the order up before saying whether it shipped.",
  *       "The agent never asked for a card number.",
  *     ],
- *     llm: anthropicLlm({ model: "claude-sonnet-5" }),
+ *     llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
  *   });
  *   if (!verdict.pass) throw new Error(verdict.explain());
  * }

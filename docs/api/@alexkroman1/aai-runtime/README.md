@@ -166,5 +166,6 @@ host implementation were split apart. Two things came out of that:
 ## Modules
 
 - [eval](eval.md)
+- [eval/simulate](eval/simulate.md)
 - [eval/vitest](eval/vitest.md)
 - [testing](testing.md)

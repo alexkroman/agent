@@ -46,7 +46,7 @@ import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcrib
 import { stubTranscribe } from "./_testing-transcribe.ts";
 import type { StubReporter } from "./testing.ts";
 import { stubReporter } from "./testing.ts";
-import type { StubDelegateRoute, StubStepDelegate } from "./testing-delegate.ts";
+import type { StubDelegateScript, StubStepDelegate } from "./testing-delegate.ts";
 import { stubStepDelegate } from "./testing-delegate.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
 import { stubGateway } from "./testing-gateway.ts";
@@ -192,9 +192,7 @@ export function installStubReporter(): StubReporter {
  *
  * @public
  */
-export function installStubStepDelegate(
-  script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute,
-): StubStepDelegate {
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate {
   const delegated = stubStepDelegate(script);
   restoreAfterThisTest(delegated.restore);
   return delegated;

@@ -7,12 +7,12 @@
  * it into an openable `SttOpener` during `createRuntime`.
  *
  * The three AssemblyAI stage factories have distinct names
- * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
+ * (`assemblyAIStt`, `llm({ provider: "assemblyai" })`, `assemblyAITts`), so they can be
  * imported side by side:
  *
  * ```ts
  * import { assemblyAIStt } from "@alexkroman1/aai/stt";
- * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { llm } from "@alexkroman1/aai/llm";
  * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
@@ -40,7 +40,7 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 /** EU data-residency streaming endpoint. */
-export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
+export const ASSEMBLYAI_STT_EU_URL: string = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 /** Options for {@link assemblyAIStt}. */
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
@@ -189,7 +189,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * descriptor stays free of secrets and safe to serialize.
  *
  * Named `assemblyAIStt` (not `assemblyAI`) so the STT, LLM
- * (`assemblyAILlm`), and TTS (`assemblyAITts`) factories can be imported
+ * (`llm({ provider: "assemblyai" })`), and TTS (`assemblyAITts`) factories can be imported
  * side by side without aliasing.
  *
  * @example

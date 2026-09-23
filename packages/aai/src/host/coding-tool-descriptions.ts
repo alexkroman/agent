@@ -20,14 +20,14 @@
  */
 
 /** `read_file` paging default and hard cap, in lines. */
-export const READ_LIMIT = 2000;
+export const READ_LIMIT: number = 2000;
 
 /** Max `glob` results before the list is truncated, newest first. */
-export const GLOB_LIMIT = 100;
+export const GLOB_LIMIT: number = 100;
 
 /** Default and maximum wall-clock for one `bash` command. */
-export const BASH_TIMEOUT_MS = 60_000;
-export const BASH_TIMEOUT_MAX_MS = 300_000;
+export const BASH_TIMEOUT_MS: number = 60_000;
+export const BASH_TIMEOUT_MAX_MS: number = 300_000;
 
 /** Every tool {@link createCodingTools} can build, by the name the model calls. */
 export type CodingToolName =

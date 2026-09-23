@@ -1,69 +1,76 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Unit tests for the AssemblyAI LLM Gateway descriptor factory. */
+/** Unit tests for the AssemblyAI LLM Gateway constants and its reasoning-effort rule. */
 
 import { describe, expect, it } from "vitest";
-import { ASSEMBLYAI_LLM_DEFAULT_MODEL, assemblyAILlm } from "./assemblyai.ts";
+import {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  ASSEMBLYAI_LLM_KIND,
+  type AssemblyAIReasoningEffort,
+  assemblyAIReasoningEffort,
+  readAssemblyAILlmProviderOptions,
+} from "./assemblyai.ts";
 
-// Mirrors the module-private TOOLS_REQUIRE_NO_REASONING. Duplicated rather
-// than exported: the set is an implementation detail of the factory, and the
-// spec only needs to know which side of it the default falls on.
-const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"];
-
-describe("assemblyAILlm (LLM factory)", () => {
-  it("defaults the model to gpt-5.6-luna, with reasoning off", () => {
-    expect(ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(assemblyAILlm().options.model).toBe("gpt-5.6-luna");
-    // The second assertion is the load-bearing one. This id is INSIDE
-    // TOOLS_REQUIRE_NO_REASONING, so the bare factory fills `"none"` — and
-    // without that fill the gateway answers 400 to a tool-carrying request and
-    // a bare 500 on the streaming path this SDK uses. A default in the set with
-    // the fill missing type-checks, deploys, connects, and answers nothing.
-    expect(assemblyAILlm().options.reasoningEffort).toBe("none");
+describe("assemblyAIReasoningEffort", () => {
+  it("fills `none` for a model that rejects tools with reasoning on", () => {
+    for (const model of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
+      expect(assemblyAIReasoningEffort(model, undefined)).toBe("none");
+    }
   });
 
-  it("keeps an explicit model", () => {
-    expect(assemblyAILlm({ model: "claude-sonnet-4-6" }).options.model).toBe("claude-sonnet-4-6");
+  it("covers the default model, since every agent carries a tool", () => {
+    // `think` is a default built-in, so a default outside the set would 500 on
+    // every turn — the failure the set exists to prevent.
+    expect(assemblyAIReasoningEffort(ASSEMBLYAI_LLM_DEFAULT_MODEL, undefined)).toBe("none");
   });
 
-  it("carries reasoningEffort through as descriptor data", () => {
-    expect(assemblyAILlm({ reasoningEffort: "none" }).options.reasoningEffort).toBe("none");
-    expect(assemblyAILlm({ model: "gpt-5.5" }).options.reasoningEffort).toBeUndefined();
+  it("leaves a model outside the set unset — `none` is a 400 on some of them", () => {
+    expect(assemblyAIReasoningEffort("gemini-3.7-flash", undefined)).toBeUndefined();
+    expect(assemblyAIReasoningEffort("qwen3-next-80b-a3b", undefined)).toBeUndefined();
   });
 
-  // The gateway rejects a tool-carrying request on the 5.6 models at any
-  // non-"none" reasoning effort — including the server-side default, i.e.
-  // sending no reasoning_effort at all — and streaming reports that as a bare
-  // 500. Nearly every agent sends tools (DEFAULT_BUILTIN_TOOLS), so an unset
-  // effort is not a usable descriptor state for these models.
-  describe("models that reject tools unless reasoning is off", () => {
-    it.each(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"])('defaults %s to "none"', (model) => {
-      expect(assemblyAILlm({ model }).options.reasoningEffort).toBe("none");
-    });
+  it("keeps an EXPLICIT effort on every model, inside the set or not", () => {
+    const efforts: AssemblyAIReasoningEffort[] = ["none", "minimal", "low", "medium", "high"];
+    for (const effort of efforts) {
+      expect(assemblyAIReasoningEffort("gpt-5.6-luna", effort)).toBe(effort);
+      expect(assemblyAIReasoningEffort("gemini-3.7-flash", effort)).toBe(effort);
+    }
+  });
 
-    // The default model IS one of them, so the bare factory carries the fill
-    // too — `assemblyAILlm()` with no arguments has to be a descriptor that can
-    // call tools, since that is what the string shorthand and every unset
-    // pipeline stage resolve to.
-    it("leaves the bare factory tool-capable, whichever side of the set the default sits", () => {
-      // The invariant, not the incidental fact: `assemblyAILlm()` with no
-      // arguments must be able to call tools, because that is what the string
-      // shorthand and every unset pipeline stage resolve to. Two ways to
-      // satisfy it — a default INSIDE the set with `"none"` filled in, or one
-      // OUTSIDE it that needs no switch. Pinned this way so changing the
-      // default id cannot silently produce the third, broken combination.
-      const { model, reasoningEffort } = assemblyAILlm().options;
-      const requiresNone = TOOLS_REQUIRE_NO_REASONING_IDS.includes(model as string);
-      expect(requiresNone ? reasoningEffort : "none").toBe("none");
-    });
+  it("matches the model id exactly, not by prefix", () => {
+    expect(assemblyAIReasoningEffort("gpt-5.6-luna-preview", undefined)).toBeUndefined();
+    expect(assemblyAIReasoningEffort("GPT-5.6-LUNA", undefined)).toBeUndefined();
+  });
+});
 
-    it("leaves an explicit effort alone — naming a value is deliberate", () => {
-      expect(
-        assemblyAILlm({ model: "gpt-5.6-luna", reasoningEffort: "low" }).options,
-      ).toMatchObject({ reasoningEffort: "low" });
-    });
+describe("gateway constants", () => {
+  it("name the kind, the shared STT key, and two HTTPS /v1 endpoints", () => {
+    expect(ASSEMBLYAI_LLM_KIND).toBe("assemblyai");
+    expect(ASSEMBLYAI_LLM_API_KEY_ENV).toBe("ASSEMBLYAI_API_KEY");
+    for (const url of [ASSEMBLYAI_LLM_GATEWAY_URL, ASSEMBLYAI_LLM_GATEWAY_EU_URL]) {
+      const parsed = new URL(url);
+      expect(parsed.protocol).toBe("https:");
+      expect(parsed.pathname).toBe("/v1");
+    }
+    expect(new URL(ASSEMBLYAI_LLM_GATEWAY_EU_URL).hostname).toMatch(/\.eu\./);
+    expect(new URL(ASSEMBLYAI_LLM_GATEWAY_URL).hostname).not.toMatch(/\.eu\./);
+  });
+});
 
-    it("does not touch models with no such constraint", () => {
-      expect(assemblyAILlm({ model: "claude-sonnet-5" }).options.reasoningEffort).toBeUndefined();
+describe("readAssemblyAILlmProviderOptions", () => {
+  it("reads the two fields it knows, by value", () => {
+    expect(readAssemblyAILlmProviderOptions({ region: "eu", reasoningEffort: "low" })).toEqual({
+      region: "eu",
+      reasoningEffort: "low",
     });
+  });
+
+  it("drops a value outside either vocabulary, and anything else in the bag", () => {
+    expect(
+      readAssemblyAILlmProviderOptions({ region: "asia", reasoningEffort: 3, extra: true }),
+    ).toEqual({});
+    expect(readAssemblyAILlmProviderOptions(undefined)).toEqual({});
   });
 });

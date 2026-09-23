@@ -119,7 +119,7 @@ function toAgentConfig(source: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -127,7 +127,7 @@ function toAgentConfig(source: AgentConfigSource): {
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 };
 ```
 
@@ -211,7 +211,7 @@ the runtime.
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -219,7 +219,7 @@ the runtime.
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 }
 ```
 
@@ -462,7 +462,7 @@ optional toolChoice?:
 ##### turnDetection?
 
 ```ts
-optional turnDetection?: "auto" | "manual";
+optional turnDetection?: string;
 ```
 
 ##### usageLimits?
@@ -485,7 +485,7 @@ optional turnDetection?: "auto" | "manual";
 ##### voicePresets?
 
 ```ts
-optional voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+optional voicePresets?: readonly string[];
 ```
 
 ***

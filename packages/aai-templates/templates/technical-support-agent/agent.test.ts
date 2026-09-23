@@ -80,27 +80,33 @@ function scriptedModel(script: Script = {}) {
     };
 
   const { generate } = stubGenerate({
-    [DOC_GRADER_SYSTEM]: (call) => {
-      const id = /\[(D\d+)\]/.exec(call.prompt)?.[1] ?? "?";
-      calls.push(`grade_documents:${id}`);
-      const pass = script.relevant ? script.relevant(id, attempt) : true;
-      return { object: { score: pass ? "yes" : "no", reason: `graded ${id}` } };
+    routes: {
+      [DOC_GRADER_SYSTEM]: (call) => {
+        const id = /\[(D\d+)\]/.exec(call.prompt)?.[1] ?? "?";
+        calls.push(`grade_documents:${id}`);
+        const pass = script.relevant ? script.relevant(id, attempt) : true;
+        return { object: { score: pass ? "yes" : "no", reason: `graded ${id}` } };
+      },
+      [REWRITE_SYSTEM]: () => {
+        calls.push("transform_query");
+        attempt++;
+        return script.rewrite ?? "rewritten query";
+      },
+      [ANSWER_SYSTEM]: () => {
+        calls.push("generate");
+        return answers.shift() ?? "The documented answer.";
+      },
+      [GROUNDED_SYSTEM]: verdictRoute(
+        "grade_generation_v_documents",
+        grounded,
+        "not in the documents",
+      ),
+      [ANSWERS_SYSTEM]: verdictRoute(
+        "grade_generation_v_question",
+        useful,
+        "answers something else",
+      ),
     },
-    [REWRITE_SYSTEM]: () => {
-      calls.push("transform_query");
-      attempt++;
-      return script.rewrite ?? "rewritten query";
-    },
-    [ANSWER_SYSTEM]: () => {
-      calls.push("generate");
-      return answers.shift() ?? "The documented answer.";
-    },
-    [GROUNDED_SYSTEM]: verdictRoute(
-      "grade_generation_v_documents",
-      grounded,
-      "not in the documents",
-    ),
-    [ANSWERS_SYSTEM]: verdictRoute("grade_generation_v_question", useful, "answers something else"),
   });
 
   return { generate, calls };

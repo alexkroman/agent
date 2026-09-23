@@ -15,18 +15,9 @@ import type {
   Unsubscribe,
 } from "@alexkroman1/aai/host-internal";
 import {
-  ANTHROPIC_KIND,
   ASSEMBLYAI_LLM_KIND,
   ASSEMBLYAI_S2S_KIND,
-  CEREBRAS_KIND,
-  GATEWAY_KIND,
-  GOOGLE_KIND,
-  GROQ_KIND,
-  MISTRAL_KIND,
-  OPENAI_KIND,
   OPENAI_S2S_KIND,
-  OPENROUTER_KIND,
-  XAI_KIND,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
@@ -61,42 +52,42 @@ type ProviderCase = {
 
 const cases: ProviderCase[] = [
   {
-    provider: { kind: ANTHROPIC_KIND, options: { model: "claude-haiku-4-5" } },
+    provider: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
     envVar: "ANTHROPIC_API_KEY",
     label: "Anthropic",
     sdkProvider: "anthropic.messages",
     modelId: "claude-haiku-4-5",
   },
   {
-    provider: { kind: OPENAI_KIND, options: { model: "gpt-4o" } },
+    provider: { kind: "openai", options: { model: "gpt-4o" } },
     envVar: "OPENAI_API_KEY",
     label: "OpenAI",
     sdkProvider: "openai.responses",
     modelId: "gpt-4o",
   },
   {
-    provider: { kind: GOOGLE_KIND, options: { model: "gemini-2.0-flash" } },
+    provider: { kind: "google", options: { model: "gemini-2.0-flash" } },
     envVar: "GOOGLE_GENERATIVE_AI_API_KEY",
     label: "Google",
     sdkProvider: "google.generative-ai",
     modelId: "gemini-2.0-flash",
   },
   {
-    provider: { kind: MISTRAL_KIND, options: { model: "mistral-large-latest" } },
+    provider: { kind: "mistral", options: { model: "mistral-large-latest" } },
     envVar: "MISTRAL_API_KEY",
     label: "Mistral",
     sdkProvider: "mistral.chat",
     modelId: "mistral-large-latest",
   },
   {
-    provider: { kind: XAI_KIND, options: { model: "grok-2-1212" } },
+    provider: { kind: "xai", options: { model: "grok-2-1212" } },
     envVar: "XAI_API_KEY",
     label: "xAI",
     sdkProvider: "xai.responses",
     modelId: "grok-2-1212",
   },
   {
-    provider: { kind: GROQ_KIND, options: { model: "llama-3.3-70b-versatile" } },
+    provider: { kind: "groq", options: { model: "llama-3.3-70b-versatile" } },
     envVar: "GROQ_API_KEY",
     label: "Groq",
     sdkProvider: "groq.chat",
@@ -110,7 +101,7 @@ const cases: ProviderCase[] = [
     modelId: "claude-sonnet-4-6",
   },
   {
-    provider: { kind: OPENROUTER_KIND, options: { model: "meta-llama/llama-3.3-70b-instruct" } },
+    provider: { kind: "openrouter", options: { model: "meta-llama/llama-3.3-70b-instruct" } },
     envVar: "OPENROUTER_API_KEY",
     label: "OpenRouter",
     sdkProvider: "openrouter.chat",
@@ -119,14 +110,14 @@ const cases: ProviderCase[] = [
   {
     // A BARE model id, unlike the two aggregators either side of it — which is
     // the one thing about this vendor a call site sees.
-    provider: { kind: CEREBRAS_KIND, options: { model: "qwen-3.8-27b" } },
+    provider: { kind: "cerebras", options: { model: "qwen-3.8-27b" } },
     envVar: "CEREBRAS_API_KEY",
     label: "Cerebras",
     sdkProvider: "cerebras.chat",
     modelId: "qwen-3.8-27b",
   },
   {
-    provider: { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
+    provider: { kind: "gateway", options: { model: "zai/glm-4.6" } },
     envVar: "AI_GATEWAY_API_KEY",
     label: "Vercel AI Gateway",
     sdkProvider: "gateway",
@@ -147,6 +138,16 @@ const cases: ProviderCase[] = [
  * thing it doubles.
  */
 const unsubscribe: Unsubscribe = () => undefined;
+
+/**
+ * An AssemblyAI descriptor as the resolver receives one off the wire — through
+ * a JSON round-trip, so a bag `llm()` would never build (no `model`) reaches it
+ * the way an older bundle or a hand-built config does, without a cast claiming
+ * it is well-formed.
+ */
+function wireLlm(options: Record<string, unknown>): LlmProvider {
+  return JSON.parse(JSON.stringify({ kind: ASSEMBLYAI_LLM_KIND, options }));
+}
 
 function stubSttSession(): SttSession {
   return {
@@ -196,8 +197,25 @@ describe("resolveLlm", () => {
     });
   }
 
+  it("forwards JSON providerOptions to a native client, and refuses a non-JSON bag", () => {
+    const withOptions = (providerOptions: Record<string, unknown>): LlmProvider => ({
+      kind: "anthropic",
+      options: { model: "claude-sonnet-4-6", providerOptions },
+    });
+    const env = { ANTHROPIC_API_KEY: "fake-key" };
+    expect(() =>
+      resolveLlm(withOptions({ thinking: { type: "enabled", budgetTokens: 1024 } }), env),
+    ).not.toThrow();
+    expect(() => resolveLlm(withOptions({ onChunk: () => undefined }), env)).toThrowError(
+      /providerOptions must be JSON/,
+    );
+    expect(() => resolveLlm(withOptions({ at: new Date(0) }), env)).toThrowError(
+      /providerOptions must be JSON/,
+    );
+  });
+
   it("throws a useful error for an unknown kind, listing supported kinds", () => {
-    const bogus = { kind: "claude-direct", options: {} } as unknown as LlmProvider;
+    const bogus: LlmProvider = { kind: "claude-direct", options: { model: "m" } };
     expect(() => resolveLlm(bogus, {})).toThrow(/Unknown LLM provider kind: "claude-direct"/);
     expect(() => resolveLlm(bogus, {})).toThrow(
       /anthropic.*openai.*google.*mistral.*xai.*groq.*openrouter.*gateway.*assemblyai/,
@@ -207,7 +225,7 @@ describe("resolveLlm", () => {
   describe("Vercel AI Gateway", () => {
     it("resolves a creator/model id to a gateway LanguageModel", () => {
       const model = resolveLlm(
-        { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
+        { kind: "gateway", options: { model: "zai/glm-4.6" } },
         { AI_GATEWAY_API_KEY: "fake-key" },
       );
       // The gateway keeps the full "creator/model" string as the model id
@@ -216,10 +234,32 @@ describe("resolveLlm", () => {
     });
   });
 
+  describe("a provider with no registered entry", () => {
+    it("resolves as an OpenAI-compatible chat endpoint when the descriptor names a baseUrl", () => {
+      const model = resolveLlm(
+        {
+          kind: "my-vendor",
+          options: { model: "m", baseUrl: "https://llm.example.test/v1", apiKeyEnv: "MY_KEY" },
+        },
+        { MY_KEY: "fake-key" },
+      );
+      expect(model).toMatchObject({ provider: "my-vendor.chat", modelId: "m" });
+    });
+
+    it("reads <PROVIDER>_API_KEY when the descriptor names no apiKeyEnv", () => {
+      const descriptor = {
+        kind: "together-ai",
+        options: { model: "m", baseUrl: "https://llm.example.test/v1" },
+      };
+      expect(() => resolveLlm(descriptor, {})).toThrow(/TOGETHER_AI_API_KEY/);
+      expect(requiredProviderEnvVars({ llm: descriptor })).toContain("TOGETHER_AI_API_KEY");
+    });
+  });
+
   describe("OpenRouter", () => {
     it("resolves a creator/model id to a chat-completions model", () => {
       const model = resolveLlm(
-        { kind: OPENROUTER_KIND, options: { model: "meta-llama/llama-3.3-70b-instruct" } },
+        { kind: "openrouter", options: { model: "meta-llama/llama-3.3-70b-instruct" } },
         { OPENROUTER_API_KEY: "fake-key" },
       );
       // OpenRouter implements /chat/completions; the `.chat` suffix in the
@@ -245,17 +285,17 @@ describe("resolveLlm", () => {
 
     it("accepts the eu region option", () => {
       const model = resolveLlm(
-        { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6", region: "eu" } },
+        {
+          kind: ASSEMBLYAI_LLM_KIND,
+          options: { model: "claude-sonnet-4-6", providerOptions: { region: "eu" } },
+        },
         { ASSEMBLYAI_API_KEY: "fake-key" },
       );
       expect(model).toHaveProperty("specificationVersion");
     });
 
     it("defaults to ASSEMBLYAI_LLM_DEFAULT_MODEL when the descriptor names no model", () => {
-      const model = resolveLlm(
-        { kind: ASSEMBLYAI_LLM_KIND, options: {} },
-        { ASSEMBLYAI_API_KEY: "fake-key" },
-      );
+      const model = resolveLlm(wireLlm({}), { ASSEMBLYAI_API_KEY: "fake-key" });
       expect(model).toMatchObject({ modelId: ASSEMBLYAI_LLM_DEFAULT_MODEL });
     });
 
@@ -268,10 +308,9 @@ describe("resolveLlm", () => {
       options: Record<string, unknown>,
       tools?: readonly unknown[],
     ): Promise<string> {
-      const model = resolveLlm(
-        { kind: ASSEMBLYAI_LLM_KIND, options },
-        { ASSEMBLYAI_API_KEY: "fake-key" },
-      ) as unknown as { doGenerate: (opts: unknown) => Promise<unknown> };
+      const model = resolveLlm(wireLlm(options), { ASSEMBLYAI_API_KEY: "fake-key" }) as unknown as {
+        doGenerate: (opts: unknown) => Promise<unknown>;
+      };
       let body = "";
       const fakeFetch = async (_input: unknown, init?: { body?: unknown }): Promise<Response> => {
         body = String(init?.body ?? "");
@@ -302,7 +341,7 @@ describe("resolveLlm", () => {
     }
 
     // Note this goes through `resolveLlm` on a RAW descriptor, not through
-    // `assemblyAILlm()` — so the factory's per-model reasoning default (see
+    // `llm()` — so the factory's per-model reasoning default (see
     // TOOLS_REQUIRE_NO_REASONING) is not in play and the resolver's own
     // "unset means unset" rule is what is under test — it must hold whether or
     // not the current default model happens to carry a factory default.
@@ -319,12 +358,15 @@ describe("resolveLlm", () => {
       // Raw descriptor, so the factory's per-model fill never ran: the
       // resolver defaults the id and nothing else, even though this id is in
       // TOOLS_REQUIRE_NO_REASONING. Every real path builds the descriptor
-      // through `assemblyAILlm()`, which is where the `"none"` comes from.
+      // through `llm()`, which is where the `"none"` comes from.
       expect(parsed).not.toHaveProperty("reasoning_effort");
     });
 
     it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {
-      const body = await requestBodyFor({ model: "gpt-5.5", reasoningEffort: "none" });
+      const body = await requestBodyFor({
+        model: "gpt-5.5",
+        providerOptions: { reasoningEffort: "none" },
+      });
       expect(JSON.parse(body)).toMatchObject({ reasoning_effort: "none" });
     });
 
@@ -560,18 +602,16 @@ describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
   });
 
   it("unregister restores a shadowed built-in kind rather than deleting it", () => {
-    const unregister = registerLlmKind(ANTHROPIC_KIND, {
+    const unregister = registerLlmKind("anthropic", {
       envVar: "SHADOW_KEY",
       label: "Shadow",
       create: () => "shadow-model",
     });
-    expect(resolveLlm({ kind: ANTHROPIC_KIND, options: { model: "m" } }, { SHADOW_KEY: "k" })).toBe(
+    expect(resolveLlm({ kind: "anthropic", options: { model: "m" } }, { SHADOW_KEY: "k" })).toBe(
       "shadow-model",
     );
     unregister();
     // The real Anthropic entry is back, not deleted.
-    expect(requiredProviderEnvVars({ llm: { kind: ANTHROPIC_KIND } })).toContain(
-      "ANTHROPIC_API_KEY",
-    );
+    expect(requiredProviderEnvVars({ llm: { kind: "anthropic" } })).toContain("ANTHROPIC_API_KEY");
   });
 });

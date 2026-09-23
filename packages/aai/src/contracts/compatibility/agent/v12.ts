@@ -22,7 +22,12 @@
  * @module
  */
 
-import type { AgentDef, SessionEventHandlers, SessionEventType } from "../../../index.ts";
+import type {
+  AgentDef,
+  SessionEventHandlers,
+  SessionEventType,
+  UserTurnLimit,
+} from "../../../index.ts";
 import { agent, personas } from "../../../index.ts";
 
 /** A roster, as epoch 11 added it: who answers, and who a caller is handed to. */
@@ -50,12 +55,20 @@ const events: SessionEventHandlers = {
   },
 };
 
+/**
+ * A cap on one held turn, as an epoch-12 author wrote it. Named here since the
+ * retire of epoch 10 (whose example was the only one importing it): the
+ * coverage gate needs every name a retained epoch promised to be exercised.
+ */
+const cap: UserTurnLimit = { maxDurationMs: 60_000 };
+
 export const frontDesk: AgentDef = agent({
   name: "Front desk",
   systemPrompt: "Answer in one or two sentences.",
   personas: desk,
   // Epoch 12's own field: the client ends each turn (push-to-talk).
   turnDetection: "manual",
+  userTurnLimit: cap,
   events,
 });
 

@@ -11,10 +11,9 @@
  * @module
  */
 
-import type { AgentDef, ToolChoice } from "@alexkroman1/aai";
+import type { AgentDef, SessionEvent, ToolChoice } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type {
   LanguageModel,

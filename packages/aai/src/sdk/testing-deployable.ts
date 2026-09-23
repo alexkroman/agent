@@ -40,10 +40,15 @@
 
 import { createToolContext } from "./_testing-context.ts";
 import { type AgentConfig, type AgentConfigSource, toAgentConfig } from "./agent-config.ts";
-import { systemPromptResolver } from "./agent-instructions.ts";
+import {
+  type AgentSystemPrompt,
+  staticSystemPrompt,
+  systemPromptResolver,
+} from "./agent-instructions.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { BuiltinToolSchema } from "./type-schemas.ts";
 import { errorMessage } from "./utils.ts";
 
@@ -213,6 +218,9 @@ function isBuiltin(name: string): name is BuiltinTool {
  * file: that is what a deploy carries, and it is where `system-prompt.md` lands
  * only if the build applied it.
  *
+ * Takes only the field it reads, so an `AgentConfig` passes and so does a
+ * `{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
+ *
  * A reader, not an assertion — {@link expectPromptBuiltinsDeclared} is the
  * claim most specs want. This is exported for the spec that wants to say more:
  * that a particular builtin is among the commanded ones, or that the prompt
@@ -227,7 +235,7 @@ function isBuiltin(name: string): name is BuiltinTool {
  * whose author simply wrote no prompt; the def can, which is why the check that
  * refuses is {@link expectPromptBuiltinsDeclared} and not this reader. To scan a
  * resolver's own text, resolve it and substitute it:
- * `commandedBuiltins({ ...toAgentConfig(def), systemPrompt: resolver(ctx) })`.
+ * `commandedBuiltins({ systemPrompt: resolver(ctx) })`.
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
@@ -242,7 +250,7 @@ function isBuiltin(name: string): name is BuiltinTool {
  *
  * @public
  */
-export function commandedBuiltins(config: AgentConfig): BuiltinTool[] {
+export function commandedBuiltins(config: { readonly systemPrompt: string }): BuiltinTool[] {
   const tokens = new Set(config.systemPrompt.match(SNAKE_CASE) ?? []);
   return [...tokens].filter(isBuiltin);
 }
@@ -300,16 +308,22 @@ export function commandedBuiltins(config: AgentConfig): BuiltinTool[] {
  * console.log(commanded); // ["run_code"]
  * ```
  *
- * @param def - The agent under test, converted through `toAgentConfig` so the
- *   scan reads the prompt a deploy carries.
+ * @param def - The agent under test — only its `systemPrompt` and
+ *   `builtinTools` are read, so an `agent()` def passes as it is. Whether the
+ *   WHOLE def converts is {@link expectDeployable}'s claim, not this one's.
  * @returns The commanded builtins, for a spec that wants to say more about them.
  * @throws When the prompt names no builtin, when it names one `builtinTools`
  * lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
  *
  * @public
  */
-export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[] {
-  const config = withResolvedPrompt(def, toAgentConfig(def));
+export function expectPromptBuiltinsDeclared(
+  def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">,
+): BuiltinTool[] {
+  // What `toAgentConfig` would carry, read off the two fields directly: a
+  // string prompt as written, the schema's default when there is none, and a
+  // resolver's own answer — see `resolvedPrompt`.
+  const config = { systemPrompt: resolvedPrompt(def.systemPrompt) };
   const commanded = commandedBuiltins(config);
   if (commanded.length === 0) {
     // Composed from short pieces: Biome's `noSecrets` reads one long,
@@ -328,7 +342,7 @@ export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinToo
     );
   }
   // Unset means the default surface, which is what a deploy serves.
-  const declared = new Set<string>(config.builtinTools ?? DEFAULT_BUILTIN_TOOLS);
+  const declared = new Set<string>(def.builtinTools ?? DEFAULT_BUILTIN_TOOLS);
   const missing = commanded.filter((name) => !declared.has(name));
   if (missing.length > 0) {
     throw new Error(
@@ -341,7 +355,8 @@ export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinToo
 }
 
 /**
- * The config to SCAN: the converted one, or a copy carrying what the agent's
+ * The prompt to SCAN: the string as written, the framework default when there
+ * is none (what `toAgentConfig`'s schema fills in), or what the agent's
  * `systemPrompt` resolver answers.
  *
  * Separate from {@link commandedBuiltins} because only a caller holding the DEF
@@ -352,9 +367,9 @@ export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinToo
  * context. Refusing is the point: the alternative is scanning
  * `DEFAULT_SYSTEM_PROMPT` and reporting on a prompt the agent never sends.
  */
-function withResolvedPrompt(def: AgentConfigSource, config: AgentConfig): AgentConfig {
-  const resolver = systemPromptResolver(def.systemPrompt);
-  if (resolver === undefined) return config;
+function resolvedPrompt(prompt: AgentSystemPrompt | undefined): string {
+  const resolver = systemPromptResolver(prompt);
+  if (resolver === undefined) return staticSystemPrompt(prompt) ?? DEFAULT_SYSTEM_PROMPT;
   let resolved: unknown;
   try {
     // A bare session: a fresh id, no env, an empty slot store. Every slot read
@@ -367,7 +382,7 @@ function withResolvedPrompt(def: AgentConfigSource, config: AgentConfig): AgentC
   if (typeof resolved !== "string" || resolved.trim() === "") {
     throw new Error(refusal(`it answered ${JSON.stringify(resolved)} rather than a prompt`));
   }
-  return { ...config, systemPrompt: resolved };
+  return resolved;
 }
 
 /**
@@ -383,8 +398,7 @@ function refusal(what: string): string {
     "There is nothing to scan, and the converted config carries the FRAMEWORK's",
     "default prompt rather than yours — checking that one would report on a prompt",
     "this agent never sends. Seed a context, call the resolver yourself, and scan",
-    "its text — hand `commandedBuiltins` a config of your own, built as",
-    "`toAgentConfig(def)` with that text as its `systemPrompt`.",
+    "its text — hand `commandedBuiltins` a `{ systemPrompt }` of your own.",
     "Or assert on `builtinTools` directly.",
   ].join(" ");
   return `${head}resolver and ${what}. ${out}`;

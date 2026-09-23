@@ -1,0 +1,200 @@
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import { SessionErrorCode } from '@alexkroman1/aai/protocol';
+
+// @public
+export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
+
+// @public
+export type AgentCustomEvent = {
+    readonly id: number;
+    readonly event: string;
+    readonly data: unknown;
+};
+
+// @public
+export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+
+// @public
+export type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    startUserTurn(): void;
+    commitUserTurn(): void;
+    clearUserTurn(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
+export type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+export type ConversationItem = {
+    kind: "message";
+    message: ChatMessage;
+} | {
+    kind: "tool";
+    toolCall: ToolCallInfo;
+};
+
+// @public
+export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
+
+// @public
+export type Session = SessionSnapshot & SessionActions;
+
+// @public
+export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "startUserTurn" | "commitUserTurn" | "clearUserTurn" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+
+// @public
+export type SessionError = {
+    readonly code: SessionErrorCode;
+    readonly message: string;
+    readonly fatal: boolean;
+};
+
+export { SessionErrorCode }
+
+// @public
+export type SessionSnapshot = {
+    readonly state: AgentState;
+    readonly recording: boolean;
+    readonly apiUrl: string;
+    readonly contentVersion: number;
+    readonly messages: ChatMessage[];
+    readonly toolCalls: ToolCallInfo[];
+    readonly customEvents: AgentCustomEvent[];
+    readonly agentState: unknown;
+    readonly userTranscript: string | null;
+    readonly agentTranscript: string | null;
+    readonly error: SessionError | null;
+    readonly started: boolean;
+    readonly running: boolean;
+};
+
+// @public
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+export function useConversation(): UseConversationResult;
+
+// @public
+export type UseConversationResult = {
+    items: readonly ConversationItem[];
+    streaming: string | null;
+    transcript: UseUserTranscriptResult;
+    thinking: boolean;
+};
+
+// @public
+export function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
+
+// @public
+export type UsePushToTalkOptions = {
+    holdKey?: string | false;
+};
+
+// @public
+export type UsePushToTalkResult = {
+    talking: boolean;
+    ready: boolean;
+    press: () => void;
+    release: () => void;
+    cancel: () => void;
+    buttonProps: {
+        onPointerDown: (event: {
+            currentTarget: Element;
+            pointerId: number;
+        }) => void;
+        onPointerUp: () => void;
+        onPointerCancel: () => void;
+        onKeyDown: (event: {
+            key: string;
+            repeat: boolean;
+            preventDefault(): void;
+        }) => void;
+        onKeyUp: (event: {
+            key: string;
+            preventDefault(): void;
+        }) => void;
+        onContextMenu: (event: {
+            preventDefault(): void;
+        }) => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
+};
+
+// @public
+export function useSession(): Session;
+
+// @public
+export function useSessionActions(): SessionActions;
+
+// @public
+export function useSessionControls(): UseSessionControlsResult;
+
+// @public
+export type UseSessionControlsResult = {
+    started: boolean;
+    running: boolean;
+    start: () => void;
+    toggle: () => void;
+    restart: () => void;
+    end: () => void;
+};
+
+// @public
+export function useSessionError(): SessionError | null;
+
+// @public
+export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T, isEqual?: (a: T, b: T) => boolean): T;
+
+// @public
+export function useSessionStatus(): AgentState;
+
+// @public
+export function useUserTranscript(): UseUserTranscriptResult;
+
+// @public
+export interface UseUserTranscriptResult {
+    partial: string | null;
+    speaking: boolean;
+    text: string;
+}
+
+// @public
+export type VoiceSessionOptions = {
+    platformUrl: string;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public
+export type WebSocketConstructor = {
+    new (url: string | URL, protocols?: string | string[]): WebSocket;
+    readonly OPEN: number;
+};

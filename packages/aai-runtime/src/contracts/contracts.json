@@ -1,12 +1,29 @@
 {
+  "auth": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "db": {
     "current": 1,
     "supported": [1],
     "dropped": {}
   },
   "eval": {
-    "current": 6,
-    "supported": [1, 2, 3, 4, 5, 6],
+    "current": 7,
+    "supported": [1, 2, 3, 4, 5, 7],
+    "dropped": {
+      "6": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed. Also: The simulated caller and the judge (simulateCall, judgeCall, their types, EvalSimulation*) moved to /eval/simulate as the eval-simulate capability, and expectCalled/lastToolResultIn to the eval-assert capability; EvalTestContext/EvalTextTestContext no longer carry simulate()/judge(), EvalCaseOptions no longer carries stubCaller/stubJudge, and the suite options no longer carry callerLlm/judgeLlm. An epoch-6 case destructuring simulate/judge, or importing those names from /eval, no longer compiles."
+    }
+  },
+  "eval-assert": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "eval-simulate": {
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "keys": {
@@ -19,25 +36,39 @@
     "supported": [1],
     "dropped": {}
   },
+  "metrics": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "providers": {
     "current": 1,
     "supported": [1],
     "dropped": {}
   },
   "runtime": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
-    "dropped": {}
+    "current": 5,
+    "supported": [5],
+    "dropped": {
+      "1": "RuntimeOptions.generate, which this epoch's frozen starter passes, is no longer a RuntimeOptions member: it moved to the host-only HostRuntimeOptions (a relative import from the eval harness), so the starter no longer compiles.",
+      "2": "RuntimeOptions.generate, which this epoch's frozen starter passes, is no longer a RuntimeOptions member: it moved to the host-only HostRuntimeOptions (a relative import from the eval harness), so the starter no longer compiles.",
+      "3": "Epoch 3's RuntimeOptions still carried generate, which moved to the host-only HostRuntimeOptions, so an epoch-3 host passing it no longer compiles; and the names its frozen starter did not exercise were covered only by the v1/v2 starters, which were dropped for the same move.",
+      "4": "Runtime is SEALED (a type-only runtimeBrand only createRuntime mints) and Runtime.connect(sink, options) became the free function connectSession(runtime, sink, options); RuntimeOptions.generate moved to the host-only HostRuntimeOptions behind a relative import. An epoch-4 caller of runtime.connect, or a hand-written Runtime, no longer compiles."
+    }
   },
   "server": {
-    "current": 4,
-    "supported": [1, 2, 3, 4],
-    "dropped": {}
+    "current": 5,
+    "supported": [1, 2, 3, 5],
+    "dropped": {
+      "4": "Session tickets moved to the /auth subpath (auth capability): createSessionToken, verifySessionToken, the three SESSION_* constants and the ticket types are no longer on the root barrel, and the servers' auth option takes an opaque SessionAuth from createSessionAuth() instead of a SessionAuthOptions literal. An epoch-4 server passing auth: { secret } no longer compiles."
+    }
   },
   "session": {
-    "current": 3,
-    "supported": [1, 2, 3],
-    "dropped": {}
+    "current": 4,
+    "supported": [1, 2, 4],
+    "dropped": {
+      "3": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
+    }
   },
   "session-state": {
     "current": 1,
@@ -50,14 +81,18 @@
     "dropped": {}
   },
   "testing": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
+    }
   },
   "text": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "SessionEvent and SessionEventBody left @alexkroman1/aai/protocol for the root barrel, where the new aai:events capability owns them (on /protocol they were owned by nothing and hashed in full by every capability that reached them). This epoch rollup imports them from /protocol, so it no longer compiles, and neither does a host that wrote against this surface importing either name from there: import them from @alexkroman1/aai. Nothing about this capability own signatures changed."
+    }
   },
   "tools": {
     "current": 1,
@@ -65,9 +100,11 @@
     "dropped": {}
   },
   "tracing": {
-    "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "current": 3,
+    "supported": [1, 3],
+    "dropped": {
+      "2": "Metric export's names (the sink registry, otelMetricsSink, OtelMeterLike, OTEL_METRIC_NAMES, the metrics env gate) moved to the /metrics subpath as the metrics capability. An epoch-2 import of any of them from /tracing no longer resolves; startTracing still arms metric export."
+    }
   },
   "uploads": {
     "current": 1,

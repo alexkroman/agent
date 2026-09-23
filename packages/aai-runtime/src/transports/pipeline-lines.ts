@@ -38,8 +38,8 @@
  * @module
  */
 
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import { type PipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -48,9 +48,7 @@ import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { SendTtsText, TransportCallbacks } from "./types.ts";
 
 /** The tag a failure phrase's caption carries — `AgentTranscriptRecovery`. */
-type Recovery = NonNullable<
-  Extract<SessionEventBody, { type: "agent-transcript.committed" }>["recovery"]
->;
+type Recovery = NonNullable<SessionEventBody<"agent-transcript.committed">["recovery"]>;
 
 /**
  * One fixed line. The union is the rule: a line is either on the RECORD or a

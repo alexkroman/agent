@@ -51,7 +51,7 @@ export type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.
  * (S2S refuses all of them). Split off this file at the source-length cap, on
  * the seam {@link PipelineVoiceTuning} established.
  */
-export type { AgentModelTuning, UsageLimits } from "./agent-model-tuning.ts";
+export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 /**
  * The two observe-only declarations (`syncState`, `events`), split off this
  * file at the cap. `agent-observation.ts` argues why they are one group and
@@ -60,23 +60,18 @@ export type { AgentModelTuning, UsageLimits } from "./agent-model-tuning.ts";
 export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
-export type { PipelineVoiceTuning, UserTurnLimit } from "./agent-voice-tuning.ts";
+export type {
+  KnownTurnDetectionMode,
+  PipelineVoiceTuning,
+  TurnDetectionMode,
+  UserTurnLimit,
+} from "./agent-voice-tuning.ts";
 /**
  * The built-in tool vocabulary. A re-export because this module is the import
  * path everything already uses; the union itself moved when this file reached
  * the source-length cap.
  */
 export type { BuiltinTool } from "./builtin-tools.ts";
-// The MCP declaration an `agent.ts` writes. The client that reads it is
-// `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
-export {
-  MCP_SERVER_KEY_RE,
-  MCP_TOOL_NAME_MAX,
-  MCP_TOOL_PREFIX,
-  type McpServerConfig,
-  type McpServers,
-  mcpToolName,
-} from "./mcp-config.ts";
 // What the agent is LOOKING AT, split off as this file reached the 500-line cap
 // — the fifth such split, and re-exported here like the other four so no import
 // moved. See `sdk/message.ts` for the seam.
@@ -135,7 +130,12 @@ export type {
  * moved. `voice-presets.ts` carries the shipped text of each, what it costs on
  * every model request, and which default it overrides.
  */
-export { type AgentVoicePresets, VOICE_PRESETS, type VoicePresetName } from "./voice-presets.ts";
+export {
+  type AgentVoicePresets,
+  type KnownVoicePresetName,
+  VOICE_PRESETS,
+  type VoicePresetName,
+} from "./voice-presets.ts";
 
 /**
  * Fully resolved agent definition.
@@ -400,7 +400,7 @@ export interface AgentDef
   stt?: SttProvider;
   /**
    * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-   * `anthropicLlm({ model })`) for pipeline mode. Unset (with no `s2s`), the
+   * `llm({ provider: "anthropic", model })`) for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to the AssemblyAI LLM Gateway. Note this is pure
    * serializable data, not a Vercel AI SDK `LanguageModel` instance — the
    * host resolves the descriptor into a `LanguageModel` at session start,

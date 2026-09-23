@@ -23,7 +23,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
-import type { RuntimeOptions } from "./runtime-types.ts";
+import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
@@ -130,7 +130,7 @@ type ToolSurface = ToolSetup;
 /** Runtime state the tool-setup paths close over. */
 type ToolSetupDeps = {
   agent: AgentDef;
-  options: RuntimeOptions;
+  options: HostRuntimeOptions;
   /**
    * The agent's EFFECTIVE LLM descriptor, already resolved by
    * `resolveEffectiveProviders` in runtime.ts — the one owner of the
@@ -188,7 +188,7 @@ type ToolSetupDeps = {
  * effective LLM descriptor with credentials from `providerEnv`.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
-  // A caller-supplied one wins — see `RuntimeOptions.generate`.
+  // A caller-supplied one wins — see `HostRuntimeOptions.generate`.
   return (
     deps.options.generate ??
     createGenerateFn({

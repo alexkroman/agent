@@ -17,18 +17,8 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
-import {
-  type StubDelegate,
-  type StubDelegateReply,
-  type StubDelegateRoute,
-  stubDelegate,
-} from "./testing-delegate.ts";
-import {
-  type StubGenerate,
-  type StubGenerateReply,
-  type StubGenerateRoutes,
-  stubGenerate,
-} from "./testing-generate.ts";
+import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
+import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
 import type { ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
@@ -75,8 +65,8 @@ export type TestToolContext = ToolContext & {
 };
 
 /**
- * What {@link createToolContext} accepts: any field of a {@link ToolContext},
- * and `undefined` for one the caller does not have.
+ * What {@link createToolContext} accepts: a field per {@link ToolContext} field,
+ * each also taking `undefined` for one the caller does not have.
  *
  * **Not `Partial<ToolContext>`, and the difference is the whole point.** Under
  * `exactOptionalPropertyTypes` — which this repo and the scaffold both set —
@@ -96,49 +86,64 @@ export type TestToolContext = ToolContext & {
  * both fall through to the default, because {@link createToolContext} takes the
  * overrides through `omitUndefined` before spreading them) and strictly widens what compiles.
  *
- * The two MODEL seams are widened rather than mapped, because each also accepts
- * the SCRIPT its fake is built from — see their own docs below.
+ * **Every field is NAMED rather than mapped over `keyof ToolContext`.** A mapped
+ * type is one a reader cannot see the members of without expanding it, and one
+ * that silently grows a field when `ToolContext` does — which is the moment a
+ * test double should have to decide what its default is. `testing.test-d.ts`
+ * pins that the two key sets agree, so a new `ToolContext` field fails there
+ * rather than being unoverridable.
+ *
+ * The two MODEL seams also accept the SCRIPT their fake is built from — see
+ * their own docs below.
  *
  * @public
  */
 export type ToolContextOverrides = {
-  [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] | undefined;
-} & {
+  /** See {@link ToolContext.env}. Defaults to `{}`. */
+  env?: ToolContext["env"] | undefined;
+  /** See {@link ToolContext.slots}. Defaults to a fresh, empty, REAL slot store. */
+  slots?: ToolContext["slots"] | undefined;
+  /** See {@link ToolContext.messages}. Defaults to `[]`. */
+  messages?: ToolContext["messages"] | undefined;
+  /** See {@link ToolContext.sessionId}. Defaults to a fresh id per call. */
+  sessionId?: ToolContext["sessionId"] | undefined;
+  /** See {@link ToolContext.send}. Defaults to the recorder behind `TestToolContext.sent`. */
+  send?: ToolContext["send"] | undefined;
+  /** See {@link ToolContext.signal}. Defaults to a signal that never aborts. */
+  signal?: ToolContext["signal"] | undefined;
+  /** See {@link ToolContext.deadlineAt}. Defaults to the runtime's tool deadline, from now. */
+  deadlineAt?: ToolContext["deadlineAt"] | undefined;
+  /** See {@link ToolContext.workflows}. Defaults to a client whose every method rejects. */
+  workflows?: ToolContext["workflows"] | undefined;
+  /** See {@link ToolContext.random}. Defaults to a SEEDED source. */
+  random?: ToolContext["random"] | undefined;
   /**
-   * A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — a table of routes
-   * keyed by system prompt, a bare string, or one `{ text, object }` reply.
+   * A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — `{ reply }` or
+   * `{ routes }`.
    *
    * A script is built into the fake here, so the two-step every spec wrote —
    * `stubGenerate(script)`, destructure, `createToolContext({ generate })` — is
    * one call, and the fake comes back on `TestToolContext.model`.
    *
-   * **A FUNCTION in this position is the seam itself**, never a top-level
-   * function route: `GenerateFn` and `(call) => StubGenerateReply` are both
-   * `(x) => y` and nothing at runtime can tell them apart. A spec that wants a
-   * computed single route builds the fake and passes both halves —
-   * `createToolContext({ generate: model.generate, model })` — which is what
-   * `scriptedToolContext` does.
+   * **A FUNCTION in this position is always the seam itself**, and nothing else
+   * can be one: a computed route is written `{ reply: (call) => … }`, so it
+   * cannot be mistaken for a `GenerateFn` the way a bare function route used to
+   * be.
    */
-  generate?: ToolContext["generate"] | StubGenerateRoutes | StubGenerateReply | undefined;
+  generate?: ToolContext["generate"] | StubGenerateScript | undefined;
   /**
-   * A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — a table of routes
-   * keyed by subagent name, or one reply. A function is the seam, on the same
-   * rule as `generate` above; the fake comes back on
-   * `TestToolContext.desk`.
+   * A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — `{ reply }` or
+   * `{ routes }` keyed by subagent name. A function is the seam, on the same
+   * rule as `generate` above; the fake comes back on `TestToolContext.desk`.
    */
-  delegate?:
-    | ToolContext["delegate"]
-    | Readonly<Record<string, StubDelegateRoute>>
-    | StubDelegateReply
-    | undefined;
+  delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
   /**
    * A fake this spec built itself, to be exposed as `TestToolContext.model`
    * — and, unless `generate` also names a function, INSTALLED as the seam.
    *
    * The escape hatch under the script sugar: a caller holding a `stubGenerate`
-   * it wants to share across two contexts, or one built from a top-level
-   * function route, names it here rather than leaving `ctx.model` pointing at a
-   * fake nothing reaches.
+   * it wants to share across two contexts names it here rather than leaving
+   * `ctx.model` pointing at a fake nothing reaches.
    */
   model?: StubGenerate | undefined;
   /** The `stubDelegate` twin of `ToolContextOverrides.model`. */
@@ -243,6 +248,9 @@ function delegateSeam(
   return fake.delegate;
 }
 
+/** A script with no routes: the fake a context builds when nothing scripted it. */
+const NO_ROUTES = { routes: {} } as const;
+
 /**
  * Build a {@link ToolContext} for testing a tool's `execute` in isolation.
  *
@@ -303,9 +311,9 @@ function delegateSeam(
  * ```ts
  * import { createToolContext } from "@alexkroman1/aai/testing";
  *
- * // A bare string answers every call; a table keyed by system prompt answers a
- * // tool that plays more than one model role.
- * const ctx = createToolContext({ generate: "A short summary." });
+ * // `{ reply }` answers every call; `{ routes }`, keyed by system prompt,
+ * // answers a tool that plays more than one model role.
+ * const ctx = createToolContext({ generate: { reply: "A short summary." } });
  * // … run the tool, then assert on what it asked:
  * // expect(ctx.model.calls.map((call) => call.prompt)).toEqual([…]);
  * ```
@@ -321,10 +329,12 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   // spreads last, so an override still wins.
   const { generate, delegate, model, desk, ...rest } = overrides;
   // Built either way, so `ctx.model`/`ctx.desk` need no null check at an
-  // assertion. `{}` is a route table with no routes, which is what an unwired
-  // fake is: it records nothing because nothing reaches it.
-  const modelFake = model ?? stubGenerate(typeof generate === "function" ? {} : (generate ?? {}));
-  const deskFake = desk ?? stubDelegate(typeof delegate === "function" ? {} : (delegate ?? {}));
+  // assertion. An empty route table is what an unwired fake is: it records
+  // nothing because nothing reaches it.
+  const modelFake =
+    model ?? stubGenerate(typeof generate === "function" ? NO_ROUTES : (generate ?? NO_ROUTES));
+  const deskFake =
+    desk ?? stubDelegate(typeof delegate === "function" ? NO_ROUTES : (delegate ?? NO_ROUTES));
   // Spread LAST so an override wins, including `send` — a test wanting
   // call-order assertions passes `vi.fn()` and reads that instead of `sent`.
   // An override whose value is `undefined` is DROPPED rather than spread —

@@ -20,7 +20,7 @@
  * - **The credential gate is `evalTextCredentials`.** `evalCredentials`
  *   answers about a VOICE agent and adds the default AssemblyAI STT key to any
  *   agent without a complete pipeline — which every text agent is — so a suite
- *   for an agent declaring `anthropicLlm()` skipped over a key it would never
+ *   for an agent declaring `llm({ provider: "anthropic", ... })` skipped over a key it would never
  *   read.
  *
  * There is no workflow engine opened here, where `describeEval` opens one for
@@ -44,11 +44,6 @@ import {
 } from "./_announce.ts";
 import type { EvalCaseOptions } from "./describe.ts";
 import { modeFrom } from "./eval-mode.ts";
-import {
-  type EvalSimulationContext,
-  type EvalSimulationSuiteOptions,
-  simulationContext,
-} from "./simulation-context.ts";
 import { installStubLlm } from "./stub-llm.ts";
 import {
   type EvalTextAgent,
@@ -58,10 +53,11 @@ import {
 } from "./text-agent.ts";
 
 /**
- * What a text case body is handed: its own conversation, the mode, and the
- * same `simulate()`/`judge()` pair a voice case gets.
+ * What a text case body is handed: its own conversation and the mode. A
+ * simulated caller is `evalSimulation({ target: agent, … })` on
+ * `@alexkroman1/aai-runtime/eval/simulate`, as for a voice case.
  */
-export type EvalTextTestContext = EvalSimulationContext & {
+export type EvalTextTestContext = {
   /** Opened for this case, released after it. */
   readonly agent: EvalTextAgent;
   /** Which model this run got. A case may branch on it, and most should not. */
@@ -76,8 +72,7 @@ export type EvalTextTest = (
 ) => void;
 
 /** What {@link describeTextEval} takes beyond the agent. */
-export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent"> &
-  EvalSimulationSuiteOptions;
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 
 /** What a stub-mode model says when a case scripts nothing. */
 const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
@@ -138,23 +133,15 @@ export function describeTextEval(
           mode === "stub"
             ? installStubLlm(caseOptions?.stubReply ?? DEFAULT_STUB_REPLY)
             : undefined;
-        const { callerLlm: _caller, judgeLlm: _judge, ...agentOptions } = options ?? {};
         const textAgent = await openEvalTextAgent({
-          ...agentOptions,
+          ...options,
           agent,
           ...(stub === undefined
             ? {}
             : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
         });
         try {
-          const simulation = simulationContext({
-            agent,
-            mode,
-            target: textAgent,
-            suite: options ?? {},
-            caseOptions,
-          });
-          await body({ agent: textAgent, mode, ...simulation });
+          await body({ agent: textAgent, mode });
         } finally {
           await textAgent.close();
           stub?.release();

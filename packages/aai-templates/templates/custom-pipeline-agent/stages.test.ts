@@ -2,9 +2,9 @@
  * The provider catalog: every stage, every vendor, as compiling code.
  *
  * `agent.ts` declares ONE stage, because an agent should. This file is the menu
- * it picked that line off — the shape of each of the other twenty-odd provider
- * factories, the option type each takes, and the published constants an author
- * needs to spell a default out loud.
+ * it picked that line off — the shape of each of the other provider factories,
+ * the option type each takes, and the published constants an author needs to
+ * spell a default out loud.
  *
  * It lives in the spec rather than in `agent.ts` for a reason worth copying: a
  * deployed agent needs a key per vendor it names, and the all-AssemblyAI
@@ -21,32 +21,14 @@
 import type { ProviderCredentialOptions, ProviderDescriptor } from "@alexkroman1/aai";
 import { agent } from "@alexkroman1/aai";
 import {
-  type AnthropicLlmOptions,
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
-  ASSEMBLYAI_LLM_GATEWAY_URL,
   type AssemblyAIGatewayModel,
-  type AssemblyAILlmOptions,
+  type AssemblyAILlmProviderOptions,
   type AssemblyAIReasoningEffort,
-  anthropicLlm,
-  assemblyAILlm,
-  type GatewayLlmOptions,
-  type GoogleLlmOptions,
-  type GroqLlmOptions,
-  gatewayLlm,
-  googleLlm,
-  groqLlm,
+  type KnownLlmProvider,
+  type LlmOptions,
   type LlmProvider,
-  type MistralLlmOptions,
-  type ModelOptions,
-  mistralLlm,
-  OPENROUTER_BASE_URL,
-  type OpenAILlmOptions,
-  type OpenRouterLlmOptions,
-  openAILlm,
-  openRouterLlm,
-  type XAILlmOptions,
-  xAILlm,
+  llm,
 } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import {
@@ -107,41 +89,54 @@ function shape(stage: ProviderDescriptor<string, Record<string, unknown>>): stri
   return `${stage.kind}(${Object.keys(stage.options).sort().join(", ")})`;
 }
 
-describe("the LLM stage: nine vendors, one field", () => {
-  test("each factory returns a descriptor whose `kind` names the vendor", () => {
-    // Keyed BY the kind, so the table is its own assertion: a factory returning
-    // the wrong kind fails on its own row rather than in an aggregate.
-    const byKind: Record<string, LlmProvider> = {
-      anthropic: anthropicLlm({ model: "claude-haiku-4-5" } satisfies AnthropicLlmOptions),
-      assemblyai: assemblyAILlm({} satisfies AssemblyAILlmOptions),
-      gateway: gatewayLlm({ model: "zai/glm-4.6" } satisfies GatewayLlmOptions),
-      google: googleLlm({ model: "gemini-2.5-flash" } satisfies GoogleLlmOptions),
-      groq: groqLlm({ model: "llama-3.3-70b-versatile" } satisfies GroqLlmOptions),
-      mistral: mistralLlm({ model: "mistral-large-latest" } satisfies MistralLlmOptions),
-      openai: openAILlm({ model: "gpt-5-mini" } satisfies OpenAILlmOptions),
-      openrouter: openRouterLlm({
-        model: "meta-llama/llama-3.3-70b-instruct",
-      } satisfies OpenRouterLlmOptions),
-      xai: xAILlm({ model: "grok-4" } satisfies XAILlmOptions),
+describe("the LLM stage: one factory, the provider is data", () => {
+  test("`llm({ provider })` returns a descriptor whose `kind` IS the provider", () => {
+    // Keyed BY the provider, so the table is its own assertion: a descriptor
+    // with the wrong kind fails on its own row rather than in an aggregate.
+    // `KnownLlmProvider` is the autocomplete; the field itself is open.
+    const byProvider: Record<KnownLlmProvider, LlmProvider> = {
+      anthropic: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
+      assemblyai: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
+      cerebras: llm({ provider: "cerebras", model: "qwen-3.8-27b" }),
+      gateway: llm({ provider: "gateway", model: "zai/glm-4.6" }),
+      google: llm({ provider: "google", model: "gemini-2.5-flash" }),
+      groq: llm({ provider: "groq", model: "llama-3.3-70b-versatile" }),
+      mistral: llm({ provider: "mistral", model: "mistral-large-latest" }),
+      openai: llm({ provider: "openai", model: "gpt-5-mini" }),
+      openrouter: llm({ provider: "openrouter", model: "meta-llama/llama-3.3-70b-instruct" }),
+      xai: llm({ provider: "xai", model: "grok-4" }),
     };
 
-    for (const [kind, llm] of Object.entries(byKind)) {
-      expect(llm.kind, kind).toBe(kind);
+    for (const [kind, stage] of Object.entries(byProvider)) {
+      expect(stage.kind, kind).toBe(kind);
       // And it survives the conversion a deploy runs, which is the claim that
       // matters: a descriptor the config drops is a stage that silently isn't.
-      expect(toAgentConfig(agent({ name: NAME, llm })).llm?.kind, kind).toBe(kind);
+      expect(toAgentConfig(agent({ name: NAME, llm: stage })).llm?.kind, kind).toBe(kind);
     }
   });
 
-  test("eight of the nine take exactly `ModelOptions` — one id, one key name", () => {
-    // The shared base is why swapping vendors is a one-word edit: everything
-    // except the AssemblyAI gateway is reached by naming a model and nothing
-    // else. Each vendor still gets its own NAME for that options type so its
-    // first vendor-specific setting is an additive field rather than a re-split
-    // of the shared interface across eight call sites.
-    const options: ModelOptions = { model: "gpt-5-mini" };
-    expect(shape(openAILlm(options))).toBe("openai(model)");
-    expect(shape(googleLlm({ ...options, model: "gemini-2.5-flash" }))).toBe("google(model)");
+  test("swapping vendors is a one-word edit: every provider takes the same options", () => {
+    // One options type for all of them — a model id, plus the optional
+    // `baseUrl`, `apiKeyEnv` and `providerOptions` — which is why there is no
+    // per-vendor factory to learn.
+    const options: LlmOptions<"openai"> = { provider: "openai", model: "gpt-5-mini" };
+    expect(shape(llm(options))).toBe("openai(model)");
+    expect(shape(llm({ ...options, provider: "google", model: "gemini-2.5-flash" }))).toBe(
+      "google(model)",
+    );
+  });
+
+  test("an unlisted provider is reached by naming its OpenAI-compatible endpoint", () => {
+    // `provider` is open (`KnownLlmProvider | (string & {})`): a vendor this
+    // release has not heard of compiles, and `baseUrl` is what the host
+    // resolver dials it through. `aai build` warns about one with neither.
+    const stage = llm({
+      provider: "my-inference-host",
+      model: "my-model",
+      baseUrl: "https://inference.example.com/v1",
+      apiKeyEnv: "MY_INFERENCE_KEY",
+    });
+    expect(shape(stage)).toBe("my-inference-host(apiKeyEnv, baseUrl, model)");
   });
 
   test("`apiKeyEnv` renames the variable the platform reads for this stage", () => {
@@ -153,32 +148,31 @@ describe("the LLM stage: nine vendors, one field", () => {
     // field only changes WHICH variable it reads, for an agent that keeps two
     // OpenAI keys, or names the vendor's key something of its own.
     const credential: ProviderCredentialOptions = { apiKeyEnv: "TEAM_OPENAI_KEY" };
-    const llm = openAILlm({ model: "gpt-5-mini", ...credential });
-    expect(llm.options.apiKeyEnv).toBe("TEAM_OPENAI_KEY");
+    const stage = llm({ provider: "openai", model: "gpt-5-mini", ...credential });
+    expect(stage.options.apiKeyEnv).toBe("TEAM_OPENAI_KEY");
     // Not a secret and not a value — the NAME of an env var, so it is safe in
     // the bundle. Nothing here reads `process.env`.
-    expect(llm.options.model).toBe("gpt-5-mini");
+    expect(stage.options.model).toBe("gpt-5-mini");
   });
 
-  test("the AssemblyAI gateway is the one that needs no model id", () => {
+  test("the AssemblyAI gateway is the one with a published default model", () => {
     // The stage `agent.ts` leaves unset. It bills to `ASSEMBLYAI_API_KEY` — the
     // one key a published agent is guaranteed to have — so its default model is
-    // published rather than implied: a bare call is a REAL model id in the
-    // descriptor, not an empty options bag the service has to guess at.
-    expect(assemblyAILlm().options.model).toBe(ASSEMBLYAI_LLM_DEFAULT_MODEL);
+    // published rather than implied.
+    expect(typeof ASSEMBLYAI_LLM_DEFAULT_MODEL).toBe("string");
     // A gateway id is a free-form string the service rejects with a 400 at the
-    // first session — no compile-time check, no deploy-time check — so an
-    // invented one ships. `AssemblyAIGatewayModel` is the id set this release
-    // knows, and the union stays open so a model shipped after it still
-    // compiles.
+    // first session, so an invented one ships. `AssemblyAIGatewayModel`
+    // autocompletes the ids this release knows, and stays open so a model
+    // shipped after it still compiles.
     const model: AssemblyAIGatewayModel = "claude-sonnet-4-6";
     // On a voice line, time-to-first-token IS the quality: the measured cost of
     // leaving a reasoning model on its server-side default was 1786ms p50
     // against 999ms with reasoning off.
     const reasoningEffort: AssemblyAIReasoningEffort = "none";
-    expect(assemblyAILlm({ model, reasoningEffort }).options).toMatchObject({
+    const providerOptions: AssemblyAILlmProviderOptions = { reasoningEffort };
+    expect(llm({ provider: "assemblyai", model, providerOptions }).options).toMatchObject({
       model,
-      reasoningEffort,
+      providerOptions: { reasoningEffort },
     });
   });
 });
@@ -186,33 +180,31 @@ describe("the LLM stage: nine vendors, one field", () => {
 describe("EU residency: a shorthand, and the URL it is short for", () => {
   test("`region` sets STT and the LLM gateway; TTS has a single endpoint", () => {
     expect(assemblyAIStt({ region: "eu" }).options.region).toBe("eu");
-    expect(assemblyAILlm({ region: "eu" }).options.region).toBe("eu");
+    const stage = llm({
+      provider: "assemblyai",
+      model: "claude-sonnet-4-6",
+      providerOptions: { region: "eu" },
+    });
+    expect(stage.options.providerOptions).toEqual({ region: "eu" });
   });
 
   test("an explicit endpoint is the long form, and it WINS over `region`", () => {
     // Naming a URL is deliberate, so the residency shorthand must not silently
-    // overwrite it. Both endpoints are published so the long form is a constant
-    // rather than a string an author retypes — and an EU agent must also pick a
-    // model the EU gateway carries (Claude and most Gemini ids), which is the
-    // half a bare `region: "eu"` cannot do for you.
+    // overwrite it — and an EU agent must also pick a model the EU gateway
+    // carries (Claude and most Gemini ids), which is the half a bare
+    // `region: "eu"` cannot do for you.
     const stt = assemblyAIStt({
       streamingUrl: ASSEMBLYAI_STT_EU_URL,
     } satisfies AssemblyAISttOptions);
-    const llm = assemblyAILlm({
-      gatewayUrl: ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+    const stage = llm({
+      provider: "assemblyai",
       model: "claude-sonnet-4-6",
+      baseUrl: "https://llm-gateway.eu.assemblyai.com/v1",
     });
     expect(stt.options.streamingUrl).toBe(ASSEMBLYAI_STT_EU_URL);
-    expect(llm.options.gatewayUrl).toBe(ASSEMBLYAI_LLM_GATEWAY_EU_URL);
-    // The US gateway is published for the same reason: a tool body calling the
-    // same endpoint directly should not retype it. Both are OpenAI-compatible
-    // bases and carry the version path, so they drop into an OpenAI client as
-    // they are; `OPENROUTER_BASE_URL` is the third of that shape. The streaming
-    // one is a WebSocket URL and carries its own versioned path.
-    for (const url of [ASSEMBLYAI_LLM_GATEWAY_URL, OPENROUTER_BASE_URL]) {
-      expect(new URL(url).protocol).toBe("https:");
-      expect(url.endsWith("/v1"), url).toBe(true);
-    }
+    // An OpenAI-compatible base carries the version path; the client appends
+    // `/chat/completions`. The streaming one is a WebSocket URL.
+    expect(stage.options.baseUrl?.toString().endsWith("/v1")).toBe(true);
     expect(new URL(ASSEMBLYAI_STT_EU_URL).protocol).toBe("wss:");
   });
 });

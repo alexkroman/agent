@@ -300,7 +300,7 @@ export function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCa
     afterStop("reply.cancelled");
   }
 
-  function onErrorReported(event: Extract<TransportEventBody, { type: "error.reported" }>): void {
+  function onErrorReported(event: TransportEventBody<"error.reported">): void {
     mon.hit(`error:${event.code}`);
     if (event.fatal === false) mon.hit(`nonFatal:${event.code}`);
     else mon.declaredDead ??= event.code;

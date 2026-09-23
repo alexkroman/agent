@@ -20,7 +20,7 @@
 
 import type { StaticAgentParamsCore } from "./agent-params-static.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-import type { AssemblyAIGatewayModel } from "./providers/llm/shared/gateway-models.ts";
+import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
 import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
@@ -256,7 +256,7 @@ export type PipelineAgentParams = SharedAgentParams &
      * AssemblyAI LLM Gateway model.
      *
      * **Typed against the generated union so a typo is caught where it is
-     * written**, which is the same job `assemblyAILlm({ model })` has done all
+     * written**, which is the same job `llm({ provider: "assemblyai", model })` has done all
      * along — `from-string.ts` desugars this field straight into that factory,
      * so one field had two types and only the longer spelling checked anything.
      * A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no

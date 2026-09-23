@@ -191,8 +191,14 @@ result, and that is still the right answer for a flaky upstream.
 field being unreachable from the agents most likely to need it: `tool()`,
 `slot.tool` / `slot.updateTool`, and `dialog.tool`. All three carry it on the
 same `...rest` spread `description` rides, and each has a spec asserting nothing
-eats it. On a GATED tool there is one thing extra to know, and it is on
-`DialogToolDef.onError`: the handler runs after the gated call has unwound,
+eats it. `SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`
+(`Omit<ToolDef, "execute">`), so `onError` and `messages` — and whatever
+`ToolDef` grows next — reach both builders by construction;
+`transports/pipeline-tool-messages.test.ts` runs a real `slot.updateTool` and
+`dialog.tool` through a turn. A dialog REFUSAL is a returned `ToolFailure`, so it
+takes the tool's `messages.failed` line. On a GATED tool there is one thing extra
+to know, and it is on `DialogToolDef`'s doc: the handler runs after the gated
+call has unwound,
 which is past `send`/`sendFrom`, so what it returns reaches the model as a bare
 failure or string rather than inside a `DialogToolResult`, and the dialog stays
 where it was — the same answer a returned `ToolFailure` gets, for the same

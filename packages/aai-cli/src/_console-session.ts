@@ -2,7 +2,7 @@
 /**
  * `aai console`'s session wiring, with the audio devices abstracted away.
  *
- * The console is a {@link ClientSink} for `runtime.connect` — the same seam any
+ * The console is a {@link ClientSink} for `connectSession` — the same seam any
  * embedder uses to run a session over its own audio I/O — and nothing more. It
  * speaks no protocol and opens no socket: the session writes events and agent
  * audio to the sink, and the microphone is fed straight into the connection.
@@ -11,7 +11,8 @@
  * sound card; `_console-audio.ts` is the SoX implementation the command uses.
  */
 
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { SessionConnection } from "@alexkroman1/aai-runtime";
 
 /** A running speaker: PCM16LE mono at the rate it was opened with. */

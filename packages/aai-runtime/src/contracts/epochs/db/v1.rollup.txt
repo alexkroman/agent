@@ -1,0 +1,28 @@
+import type { Db } from '@alexkroman1/aai/internal';
+
+// @public
+export type CloseableDb = Db & {
+    reserve(): Promise<ReservedDb>;
+    listen(channel: string, onNotify: () => void): Promise<() => void>;
+    close(): Promise<void>;
+};
+
+// @public
+export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb;
+
+// @public
+export type CreatePostgresDbOptions = {
+    url: string;
+    max?: number;
+    idleTimeoutSeconds?: number;
+    onNotice?: (notice: unknown) => void;
+    connectTimeoutSeconds?: number;
+    queryTimeoutMs?: number;
+    reservedQueryTimeoutMs?: number;
+    reserveTimeoutMs?: number;
+};
+
+// @public
+export type ReservedDb = Db & {
+    release(): void;
+};

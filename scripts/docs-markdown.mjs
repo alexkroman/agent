@@ -142,6 +142,12 @@ const UNDOCUMENTED_SUBPATHS = {
       "a Vite plugin serving `virtual:aai/agent`. Its consumer is a `vitest.config.ts`, not an " +
       "agent.ts or a spec body, and its one exported function is documented at its own source — " +
       "a reference page here would sit under the authoring API describing build wiring.",
+    "./experimental":
+      "The lane an UNMEASURED feature ships in before promotion, with no " +
+      "semver promise. A reference page would present a feature that may " +
+      "change in a patch as documented API; its module doc says so where an " +
+      "author importing it will read it, and a feature gets its page when it " +
+      "is promoted to the subpath that owns the surface.",
     "./internal":
       "The escape hatch, not an API. Its 49 exports are `@internal` by " +
       "intent — the subpath exists so they are reachable without sitting in " +
@@ -174,6 +180,20 @@ const UNDOCUMENTED_SUBPATHS = {
       "under 'Other subpaths'.",
   },
   "aai-runtime": {
+    "./auth":
+      "Who may open a session on a self-hosted server: `createSessionAuth`, the " +
+      "session ticket helpers and the close code a refusal ends with. An EMBEDDER " +
+      "surface, for the same reason as '.' below — the reader is somebody standing " +
+      "up a server behind their own login, not somebody writing an agent.ts — and " +
+      "its orientation is the module doc on `auth-barrel.ts` and `session-auth.ts`, " +
+      "with the signatures in etc/auth.api.md. Revisit with '.'.",
+    "./metrics":
+      "The process-wide metrics SINKS and the env gate that arms metric export — " +
+      "split from ./tracing, and undocumented for that entry's reason: the switch " +
+      "is `OTEL_EXPORTER_OTLP_ENDPOINT` in the environment and the front doors arm " +
+      "it on the operator's behalf, so the reader who calls `registerMetricsSink` " +
+      "is a self-hoster embedding the runtime. Its module doc carries the worked " +
+      "example; revisit with ./tracing.",
     "./tracing":
       "OTLP span export, configured through the ENVIRONMENT rather than in " +
       "code: `OTEL_EXPORTER_OTLP_ENDPOINT` is the whole switch, and the three " +

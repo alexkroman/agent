@@ -188,7 +188,7 @@ so say what to do about it and not only what is wrong.
 ### BASH\_TIMEOUT\_MAX\_MS
 
 ```ts
-const BASH_TIMEOUT_MAX_MS: 300000 = 300000;
+const BASH_TIMEOUT_MAX_MS: number;
 ```
 
 ***
@@ -196,7 +196,7 @@ const BASH_TIMEOUT_MAX_MS: 300000 = 300000;
 ### BASH\_TIMEOUT\_MS
 
 ```ts
-const BASH_TIMEOUT_MS: 60000 = 60000;
+const BASH_TIMEOUT_MS: number;
 ```
 
 Default and maximum wall-clock for one `bash` command.
@@ -214,7 +214,7 @@ const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
 ### GLOB\_LIMIT
 
 ```ts
-const GLOB_LIMIT: 100 = 100;
+const GLOB_LIMIT: number;
 ```
 
 Max `glob` results before the list is truncated, newest first.
@@ -224,7 +224,7 @@ Max `glob` results before the list is truncated, newest first.
 ### READ\_LIMIT
 
 ```ts
-const READ_LIMIT: 2000 = 2000;
+const READ_LIMIT: number;
 ```
 
 `read_file` paging default and hard cap, in lines.

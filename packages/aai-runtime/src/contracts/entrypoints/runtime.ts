@@ -13,6 +13,7 @@
 
 export {
   type AgentRuntime,
+  connectSession,
   createRuntime,
   type ExecuteTool,
   type ExecuteToolOptions,
@@ -20,6 +21,7 @@ export {
   type Runtime,
   type RuntimeOptions,
   rejectingRuntime,
+  type runtimeBrand,
   type SessionConnection,
   type SessionConnectOptions,
   type SessionRuntime,

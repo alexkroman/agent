@@ -43,10 +43,10 @@
  * different hat. `import.meta.glob` keeps every module in one graph.
  */
 
+import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import { withSystemPrompt } from "./system-prompt-file.ts";
 import type { ToolBearingAgent } from "./testing-tools.ts";
 import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
-import type { AgentDef } from "./types.ts";
 
 /**
  * The tools half of {@link deployedAgent}: the def `agent.ts` exports, plus the
@@ -154,9 +154,16 @@ export type ProjectFiles = {
  * `system-prompt.md` that exists while `agent.ts` declares a different prompt
  * STRING — the "I edited the prompt and nothing changed" failure.
  *
+ * **Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
+ * def satisfies it and comes back as its own type, so a template keeps its
+ * exported workflow types; the bound says what the function reads, and keeps
+ * `AgentDef` and everything behind it off `@alexkroman1/aai/testing`'s contract.
+ *
  * @public
  */
-export function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D {
+export function deployedAgent<
+  D extends ToolBearingAgent & { readonly systemPrompt: AgentSystemPrompt },
+>(authored: D, project: ProjectFiles): D {
   const { tools, systemPrompt } = project;
   if (tools === undefined && systemPrompt === undefined) {
     throw new Error(

@@ -75,7 +75,9 @@ describe("agent({ subagents })", () => {
   });
 
   it("routes the task to the subagent the model named", async () => {
-    const model = stubDelegate({ billing: "Refunded on the 3rd.", tech: "Reboot the modem." });
+    const model = stubDelegate({
+      routes: { billing: "Refunded on the 3rd.", tech: "Reboot the modem." },
+    });
     const ctx = createToolContext({ delegate: model.delegate });
 
     const result = await delegateTool().execute(
@@ -93,7 +95,9 @@ describe("agent({ subagents })", () => {
 
   it("reports the lookups a run made, so the agent can narrate the wait", async () => {
     const model = stubDelegate({
-      tech: { text: "Reboot the modem.", toolCalls: [{ name: "kb_search", input: {} }] },
+      routes: {
+        tech: { text: "Reboot the modem.", toolCalls: [{ name: "kb_search", input: {} }] },
+      },
     });
 
     const result = await delegateTool().execute(
@@ -106,7 +110,9 @@ describe("agent({ subagents })", () => {
 
   it("surfaces an answer the subagent's own guardrail never accepted", async () => {
     const model = stubDelegate({
-      tech: { text: "Try turning it off.", complaint: "No diagnostic step was run." },
+      routes: {
+        tech: { text: "Try turning it off.", complaint: "No diagnostic step was run." },
+      },
     });
 
     const result = await delegateTool().execute(
@@ -122,7 +128,7 @@ describe("agent({ subagents })", () => {
   });
 
   it("refuses a subagent the roster does not hold, naming the ones it does", async () => {
-    const model = stubDelegate({ billing: "x" });
+    const model = stubDelegate({ routes: { billing: "x" } });
 
     // The enum makes this unreachable through a well-behaved provider; a
     // repaired or salvaged tool call is not one.

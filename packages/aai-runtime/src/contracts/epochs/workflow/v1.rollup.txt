@@ -1,0 +1,80 @@
+import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
+
+// @public
+export function ensureWorkflowJournalSchema(options: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export const MAX_WORKFLOW_FIND_LIMIT = 100;
+
+// @public
+export const MAX_WORKFLOW_INPUT_BYTES: number;
+
+// @public
+export type WdkAdapter = {
+    start(workflowId: string, args: unknown[]): Promise<string>;
+    getRun(runId: string): Promise<WdkRunRecord | undefined>;
+    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+    signal(token: string, payload: unknown): Promise<boolean>;
+    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
+    readOutput(runId: string): Promise<unknown>;
+};
+
+// @public
+export type WdkRunRecord = {
+    runId: string;
+    workflowName: string;
+    status: "pending" | "running" | "completed" | "failed" | "cancelled";
+    createdAt: Date | number;
+    output?: unknown;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+export type WdkStreamOptions = {
+    namespace?: string | undefined;
+    startIndex?: number | undefined;
+};
+
+export { WORKFLOW_API_PREFIX }
+
+// @public
+export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
+
+// @public
+export type WorkflowClientOptions = {
+    workflows: Readonly<Record<string, WorkflowDef>>;
+    keys: WorkflowKeyStore;
+    wdk: WdkAdapter;
+    publicUrl?: string | undefined;
+    logger: Logger;
+};
+
+// @public
+type WorkflowKeyStore = {
+    record(workflow: string, key: string, runId: string): Promise<void>;
+    lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};

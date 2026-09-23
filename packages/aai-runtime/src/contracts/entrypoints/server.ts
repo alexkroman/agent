@@ -4,8 +4,9 @@
  *
  * Serving an agent over HTTP and a WebSocket: the three entry points a
  * self-hosted deployment picks between, and the credential fallback that lets a
- * container pass a provider key without it becoming `ctx.env` — and who may
- * open a session on one (the session ticket and `auth`).
+ * container pass a provider key without it becoming `ctx.env`. WHO may open a
+ * session is the `auth` capability's (`/auth`); the options here name its
+ * opaque `SessionAuth` handle and nothing behind it.
  *
  * Re-exported from `@alexkroman1/aai-runtime`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -20,7 +21,6 @@ export {
   createAgentServer,
   createHostServer,
   createRuntimeServer,
-  createSessionToken,
   DEFAULT_LISTEN_HOST,
   type HostCredentialEnv,
   type HostServerOptions,
@@ -28,15 +28,8 @@ export {
   type ProviderEnv,
   type RuntimeServerOptions,
   requiredProviderEnvVars,
-  SESSION_AUTH_PROTOCOL_PREFIX,
-  SESSION_SECRET_ENV,
-  SESSION_UNAUTHORIZED_CLOSE_CODE,
-  type SessionAuthOptions,
-  type SessionIdentity,
-  type SessionTokenInput,
-  type SessionVerifier,
+  type ServerRequestHook,
+  type ServerUpgradeHook,
   type SharedServerOptions,
-  type VerifySessionTokenOptions,
-  verifySessionToken,
   withHostCredentialFallback,
 } from "../../runtime-barrel.ts";

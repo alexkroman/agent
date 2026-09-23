@@ -2,96 +2,87 @@
 
 /**
  * Versioned contracts over the AUTHORING surface of the published packages —
- * `@alexkroman1/aai` and `@alexkroman1/aai-ui`.
+ * `@alexkroman1/aai`, `@alexkroman1/aai-ui` and `@alexkroman1/aai-runtime`.
  *
  * ## The gap this closes
  *
- * `api-report.mjs` turns a signature change into a diff, which is most of the
- * battle — but it answers "did anything move", and the question a reviewer
- * actually has to answer is "is this breaking, and for whom". That decision is
- * the changeset bump type, and this repo's own guide describes how it is made:
- * a judgement from memory, where a `patch` that was really a `major` is
- * discovered by the consumer whose build breaks.
+ * `api-report.mjs` turns a signature change into a diff, which answers "did
+ * anything move". The question a reviewer has to answer is "is this breaking,
+ * and for whom" — the changeset bump type — and that used to be a judgement
+ * from memory, found wrong by the consumer whose build breaks.
  *
- * So the report is not the artifact here. Each CAPABILITY — a named slice of
- * one package's authoring API, declared by a file under
- * `<package>/contracts/entrypoints/` — gets its own report, and what is
- * committed is that report's hash plus its export list, at
- * `<package>/contracts/epochs/<capability>/v<N>.json`. When a capability's shape
- * moves, the hash stops matching and the change cannot be committed without
- * being CLASSIFIED:
+ * So each CAPABILITY — a named slice of one package's authoring API, declared
+ * by a file under `<package>/src/contracts/entrypoints/` — gets its own report,
+ * and what is committed is that report's hash, export list and rollup, at
+ * `<package>/src/contracts/epochs/<capability>/v<N>.json` + `v<N>.rollup.txt`.
+ * When a capability's hash moves, the check FAILS (the record is stale, like a
+ * stale API report) and says which command settles it:
  *
- *   * `--bump <capability> --retain` keeps the previous epoch supported, which
- *     obliges a frozen authoring example under `contracts/compatibility/` that
- *     must still compile against current source. That is a test of backward
- *     compatibility rather than a claim about it.
- *   * `--bump <capability> --drop "<reason>"` records, in the tree, that the
- *     previous epoch no longer works and why.
+ *   * `--update` when the change is PROVABLY backward compatible
+ *     (`_api-contracts-compat.mjs` compiles the epoch's rollup against the new
+ *     one): it becomes a REVISION of the same epoch — no new epoch, no example.
+ *   * `--bump <capability> --drop "<reason>"` when it is not: the previous
+ *     epoch no longer works, and the tree records why.
+ *   * `--bump <capability> --retain` when the probe could not prove it but the
+ *     author can: the previous epoch stays supported and owes a frozen example
+ *     under `src/contracts/compatibility/` that must keep compiling.
  *
- * Old epoch metadata is immutable and retained, so "when did this break, and
- * what did we say about it" is answerable from the tree rather than from a
- * changelog nobody wrote.
+ * At most one epoch and one revision per capability per BRANCH, measured
+ * against the merge-base (`_api-contracts-base.mjs`); every hashed declaration
+ * has exactly one owner (`_api-contracts-ownership.mjs`). Old epoch metadata
+ * is retained, so "when did this break, and what did we say" is in the tree.
  *
- * ## Capabilities, not entry points
+ * ## Capabilities, not entry points, and QUALIFIED
  *
- * The API reports cover every published subpath, which is right for review and
- * wrong for this. `@alexkroman1/aai` exports 174 symbols from its root, 71 of
- * them tagged `@internal` — tuning constants like `PLAYBACK_CONCEAL_FLOOR` and
- * `MIC_SILENCE_PROBE_MS` sitting in an agent author's autocomplete on the same
- * barrel as `agent()` and `tool()`. Versioning that as one unit would bump the
- * authoring contract every time a playback constant moved.
- *
- * A capability names the surface instead: `agent`, `tool`, `state`, `workflow`,
- * `defaults`, `utils`, `testing`, `builtins` and one per provider stage for the
- * SDK; `client`, `page`, `session`, `hooks`, `components`, `forms`, `workflow`,
- * `theme` and `client-dir` for the browser client. The gate then asserts the
- * naming is EXHAUSTIVE — every `@public` export of every authoring subpath
- * belongs to exactly one of its package's capabilities — with the
- * `@internal`-tagged names as an explicit, committed exemption that may shrink
- * and may never grow (`contracts/internal-surface.json`). The tag documented
- * that problem; this counts it.
- *
- * ## Two packages, so a capability is QUALIFIED
- *
- * Capability names are unique within a package and not across them: `workflow`
- * is a capability of both, and they are different contracts — the SDK's
- * `workflow()` declaration and the browser's `createWorkflowApi` client. So
- * anything a human reads or types is `aai-ui:workflow`, while the epoch files
- * stay unqualified because their path already names the package.
+ * The API reports cover every published subpath; a capability names the
+ * surface an author writes against instead, and the gate asserts the naming is
+ * EXHAUSTIVE — every `@public` export of every authoring subpath belongs to
+ * exactly one capability of its package, with `@internal` names as a committed
+ * shrink-only exemption (`contracts/internal-surface.json`). Names are unique
+ * only within a package (`workflow` is three contracts), so anything a human
+ * types is `aai-ui:workflow`; a bare name works when unambiguous.
  *
  * ## Usage
  *
  *   node scripts/api-contracts.mjs                              # the gate
+ *   node scripts/api-contracts.mjs --update                     # record compatible changes
+ *   node scripts/api-contracts.mjs --bump aai:tool --drop "…"   # classify a break
  *   node scripts/api-contracts.mjs --bump aai-ui:forms --retain
- *   node scripts/api-contracts.mjs --bump aai:tool --drop "…"
- *   node scripts/api-contracts.mjs --update-internal             # lower the ratchet
- *   node scripts/api-contracts.mjs --init                        # bootstrap epoch 1
- *   node scripts/api-contracts.mjs --rehash --because "…"        # the hash RULE moved
- *
- * A bare capability name works whenever it is unambiguous; `aai:tool` and
- * `aai-ui:forms` always do.
+ *   node scripts/api-contracts.mjs --retire aai:step --epoch 3 --drop "…"
+ *   node scripts/api-contracts.mjs --update-internal            # lower the ratchets
+ *   node scripts/api-contracts.mjs --init                       # bootstrap epoch 1
+ *   node scripts/api-contracts.mjs --rehash --because "…"       # the hash RULE moved
+ *   … --base <ref|none>                                         # measure against <ref>
  *
  * It reads `dist/*.d.ts` and the committed reports, so it runs after the build
  * and after `check:api-report`.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, rmSync } from "node:fs";
 import { authoringSurface, generateCapabilityReports, parseEntrypoint } from "./_api-contracts.mjs";
+import { hasBase, useBase } from "./_api-contracts-base.mjs";
 import { classify, internalSurfaceSnapshot, runChecks } from "./_api-contracts-checks.mjs";
+import { applyUpdate, fixtureFiles, planBump, verdict } from "./_api-contracts-mint.mjs";
+import {
+  lowerOwnershipBaseline,
+  ownershipBlockers,
+  ownershipFindings,
+  seedOwnershipBaseline,
+} from "./_api-contracts-ownership.mjs";
 import { rehash } from "./_api-contracts-rehash.mjs";
 import {
   capabilities,
   capabilityId,
   contractPackages,
   epochRecord,
-  FIXTURE_PLACEHOLDER,
   fixturePath,
   readEpoch,
   readTable,
+  recordShas,
   rel,
   writeEpoch,
   writeInternalSurface,
+  writeRollup,
   writeTable,
 } from "./_api-contracts-tree.mjs";
 import { parseScriptArgs } from "./_args.mjs";
@@ -117,9 +108,13 @@ const { values: FLAGS } = parseScriptArgs({
     init: { type: "boolean" },
     "update-internal": { type: "boolean" },
     rehash: { type: "boolean" },
+    update: { type: "boolean" },
+    base: { type: "string" },
     because: { type: "string" },
   },
 });
+
+if (FLAGS.base !== undefined) useBase(FLAGS.base);
 
 const packages = contractPackages();
 if (packages.length === 0) {
@@ -134,46 +129,6 @@ if (packages.length === 0) {
 // Mutating modes
 // ---------------------------------------------------------------------------
 
-function scaffoldFixture(pkg, capability, version) {
-  const path = fixturePath(pkg, capability, version);
-  if (existsSync(path)) return path;
-  const id = capabilityId(pkg, capability);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(
-    path,
-    "// Copyright 2025 the AAI authors. MIT license.\n" +
-      "/**\n" +
-      ` * Frozen authoring example: \`${id}\` epoch ${version}.\n` +
-      " *\n" +
-      ` * Replace this scaffold with a representative example of how the ${id}\n` +
-      ` * capability was authored at epoch ${version}. It must keep compiling against\n` +
-      " * current source for as long as that epoch is advertised as supported —\n" +
-      ` * ${FIXTURE_PLACEHOLDER}\n` +
-      " */\n\nexport {};\n",
-  );
-  return path;
-}
-
-/**
- * Every frozen-example file for one epoch, not just the canonical `v<N>.ts`.
- *
- * An example may be SPLIT across modules: `aai:testing` epoch 20 shipped as
- * `v20.ts` plus `v20-slots.ts`, whose own header calls it "part of the SAME
- * frozen example", split only because the pair outgrew the 500-line source cap.
- * Removing the canonical path alone left that second half behind as evidence
- * for a promise that had just been withdrawn — and nothing noticed, because no
- * check ties an example file back to a live epoch. So a drop takes the whole
- * set: `v<N>.ts`, `v<N>.tsx`, and any `v<N>-*.ts(x)` beside them.
- */
-function fixtureFiles(pkg, capability, epoch) {
-  const dir = dirname(fixturePath(pkg, capability, epoch));
-  if (!existsSync(dir)) return [];
-  const re = new RegExp(`^v${epoch}(-[A-Za-z0-9-]+)?\\.tsx?$`);
-  return readdirSync(dir)
-    .filter((name) => re.test(name))
-    .map((name) => join(dir, name));
-}
-
 function init() {
   let created = 0;
   for (const pkg of packages) {
@@ -183,10 +138,12 @@ function init() {
       if (table[capability] !== undefined) continue;
       table[capability] = { current: 1, supported: [1], dropped: {} };
       writeEpoch(pkg, capability, 1, epochRecord(capability, 1, generated));
+      writeRollup(pkg, capability, 1, generated.body);
       created += 1;
     }
     writeTable(pkg, Object.fromEntries(Object.entries(table).sort()));
     writeInternalSurface(pkg, internalSurfaceSnapshot(authoringSurface(pkg).internalNames));
+    seedOwnershipBaseline(pkg, ownershipFindings(pkg, reports));
   }
   console.log(`api-contracts: bootstrapped ${created} capability contract(s) at epoch 1.`);
 }
@@ -292,6 +249,13 @@ function retire(target) {
   );
 }
 
+/**
+ * `--bump`: classify a change `--update` could not prove compatible.
+ *
+ * `planBump` (`_api-contracts-mint.mjs`) decides WHERE it lands: at most one
+ * new epoch per branch, measured against the merge-base, and back onto a
+ * supported epoch whose hash the surface returned to rather than a copy of it.
+ */
 function bump(target) {
   const { pkg, capability } = resolveTarget(target);
   const id = capabilityId(pkg, capability);
@@ -316,67 +280,82 @@ function bump(target) {
     process.exit(1);
   }
 
-  const generated = generateCapabilityReports(pkg, [capability]).get(capability);
+  const reports = generateCapabilityReports(pkg);
+  const generated = reports.get(capability);
+  const blockers = ownershipBlockers(pkg, ownershipFindings(pkg, reports), capability);
+  if (blockers.length > 0) {
+    console.error(
+      `api-contracts: refusing to bump "${id}": its surface reaches ownerless ${blockers.join(", ")}.\n` +
+        "  An epoch minted over a type nobody owns is re-minted the moment somebody exports it " +
+        "(that is how aai-runtime:eval went v4 then v5). Give it an owner first — run the check " +
+        "for the remedy.",
+    );
+    process.exit(1);
+  }
   const committed = readEpoch(pkg, capability, contract.current);
-  if (committed.sha256 === generated.sha256) {
+  if (recordShas(committed).has(generated.sha256)) {
     console.error(
       `api-contracts: "${id}" still matches epoch ${contract.current}; nothing to bump.`,
     );
     process.exit(1);
   }
+  const outcome = verdict(pkg, capability, contract, generated);
+  if (["revision", "restore", "unmint"].includes(outcome.kind)) {
+    console.error(
+      `api-contracts: "${id}"'s change is backward compatible with epoch ${contract.current} — ` +
+        "record it with `node scripts/api-contracts.mjs --update`, no bump needed.",
+    );
+    process.exit(1);
+  }
 
-  const next = contract.current + 1;
-  table[capability] = {
-    current: next,
-    supported: retain
-      ? [...contract.supported, next]
-      : [...contract.supported.filter((version) => version !== contract.current), next],
-    dropped: retain ? contract.dropped : { ...contract.dropped, [contract.current]: reason },
-  };
-  writeEpoch(pkg, capability, next, epochRecord(capability, next, generated));
+  const plan = planBump(pkg, capability, contract, generated, { retain, reason });
+  table[capability] = plan.contract;
   writeTable(pkg, table);
-  // The RETAINED epoch is the one that just became a promise, so it is the one
-  // that owes an example. The new epoch is current and owes none until it is
-  // superseded and retained in its turn.
-  const fixture = retain ? scaffoldFixture(pkg, capability, contract.current) : undefined;
-
-  // A dropped epoch's example does not compile — that is what "dropped" MEANS —
-  // and it sits under the package tsconfig, so leaving it behind turns the
-  // classification into a red `pnpm typecheck`. The epoch metadata is immutable
-  // and keeps the record; the example was only ever the evidence for a promise
-  // that is now withdrawn.
-  const retired = fixturePath(pkg, capability, contract.current);
-  if (!retain) for (const f of fixtureFiles(pkg, capability, contract.current)) rmSync(f);
-
+  if (plan.restored) {
+    console.log(`api-contracts: "${id}" matches main's epoch ${plan.target} again; restored it.`);
+    return;
+  }
   const { added, removed, bump: suggested } = classify(committed.exports ?? [], generated.exports);
   console.log(
-    `api-contracts: "${id}" is now epoch ${next}.\n` +
+    `api-contracts: "${id}" is now epoch ${plan.target}` +
+      (plan.pointedBack ? " (pointed BACK: the surface matches that supported epoch again)" : "") +
+      ".\n" +
       (removed.length > 0 ? `  removed: ${removed.join(", ")}\n` : "") +
       (added.length > 0 ? `  added:   ${added.join(", ")}\n` : "") +
-      bumpVerdict({ contract, fixture, retain, reason, retired, suggested }),
+      (retain
+        ? `  epoch ${plan.previous}: RETAINED as supported\n` +
+          `  Write epoch ${plan.previous}'s example — it is a promise now: ` +
+          `${rel(fixturePath(pkg, capability, plan.previous))}\n  Suggested changeset bump: ${suggested}.`
+        : `  epoch ${plan.previous}: DROPPED — ${reason}\n  Suggested changeset bump: major.`),
   );
 }
 
 /**
- * The classification half of what `bump` prints — extracted so `bump` itself
- * stays under the cognitive-complexity cap, which the epoch-vs-fixture
- * branching pushed it over.
+ * `--update`: re-verify every stale capability and record what needs no human
+ * decision — a revision, an in-place rewrite of an epoch minted on this
+ * branch, or a restore to the merge-base. Exits non-zero naming whatever is
+ * left for `--bump`.
  */
-function bumpVerdict({ contract, fixture, retain, reason, retired, suggested }) {
-  const previous = contract.current;
-  if (retain) {
-    return (
-      `  epoch ${previous}: RETAINED as supported\n` +
-      `  Write epoch ${previous}'s example — it is a promise now: ${rel(fixture)}\n` +
-      `  Suggested changeset bump: ${suggested}.`
+function update() {
+  let failed = false;
+  for (const pkg of packages) {
+    const reports = generateCapabilityReports(pkg);
+    const findings = ownershipFindings(pkg, reports);
+    const { lines, unresolved } = applyUpdate(pkg, readTable(pkg), reports, (capability) =>
+      ownershipBlockers(pkg, findings, capability),
     );
+    for (const line of lines) console.log(`api-contracts: ${line}`);
+    for (const line of unresolved) console.error(`api-contracts: ${line}`);
+    if (unresolved.length > 0) failed = true;
   }
-  const removedNote = existsSync(retired) ? ` (removed ${rel(retired)})` : "";
-  return (
-    `  epoch ${previous}: DROPPED — ${reason}\n` +
-    `  Epoch ${previous} evidences nothing now${removedNote}.\n` +
-    "  Suggested changeset bump: major."
-  );
+  if (failed) {
+    console.error(
+      '\napi-contracts: classify what is left with --bump <capability> --drop "<reason>", or ' +
+        "--retain with a frozen example if you can show it still compiles.",
+    );
+    process.exit(1);
+  }
+  console.log("api-contracts: every capability is recorded.");
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +370,14 @@ if (FLAGS.init === true) {
 if (FLAGS["update-internal"] === true) {
   for (const pkg of packages) {
     writeInternalSurface(pkg, internalSurfaceSnapshot(authoringSurface(pkg).internalNames));
+    lowerOwnershipBaseline(pkg, ownershipFindings(pkg, generateCapabilityReports(pkg)));
   }
-  console.log("api-contracts: internal-surface baselines lowered to match the tree.");
+  console.log("api-contracts: internal-surface and ownerless baselines lowered to match the tree.");
+  process.exit(0);
+}
+
+if (FLAGS.update === true) {
+  update();
   process.exit(0);
 }
 
@@ -443,6 +428,15 @@ for (const pkg of packages) {
   for (const warning of outcome.warnings) {
     console.warn(`\napi-contracts: ${warning.replaceAll("\n", "\n  ")}\n`);
   }
+}
+
+if (!hasBase()) {
+  // Never a checkmark over a comparison that could not be made: the tree was
+  // fully checked, but "one epoch per branch" needs a merge-base.
+  console.warn(
+    "\napi-contracts: no merge-base with origin/main or main, so the one-epoch-per-branch " +
+      "check did NOT run. Fetch main, or pass --base <ref>.\n",
+  );
 }
 
 if (issues.length > 0) {

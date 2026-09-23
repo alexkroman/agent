@@ -1,0 +1,53 @@
+// @public
+export function readUploadToFile(uploadId: string, path: string, options?: ReadUploadToFileOptions): Promise<number>;
+
+// @public
+export type ReadUploadToFileOptions = {
+    size?: number | undefined;
+    windowBytes?: number | undefined;
+    concurrency?: number | undefined;
+};
+
+// @public
+export const STEP_FILE_READ_CONCURRENCY = 4;
+
+// @public
+export const STEP_FILE_WINDOW_BYTES = 8388608;
+
+// @public
+type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
+};
+
+// @public
+type UploadRange = {
+    start: number;
+    end: number;
+};
+
+// @public
+export function withTempDir<T>(work: (dir: string) => Promise<T>, options?: WithTempDirOptions): Promise<T>;
+
+// @public
+export type WithTempDirOptions = {
+    prefix?: string | undefined;
+};
+
+// @public
+export function writeUploadFromFile(path: string, options?: WriteUploadFromFileOptions): Promise<UploadInfo>;
+
+// @public
+export type WriteUploadFromFileOptions = WriteUploadOptions & {
+    windowBytes?: number | undefined;
+};
+
+// @public
+type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};

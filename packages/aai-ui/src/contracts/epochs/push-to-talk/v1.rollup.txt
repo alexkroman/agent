@@ -1,0 +1,45 @@
+// @public
+export function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
+
+// @public
+export type UsePushToTalkOptions = {
+    holdKey?: string | false;
+};
+
+// @public
+export type UsePushToTalkResult = {
+    talking: boolean;
+    ready: boolean;
+    press: () => void;
+    release: () => void;
+    cancel: () => void;
+    buttonProps: {
+        onPointerDown: (event: {
+            currentTarget: Element;
+            pointerId: number;
+        }) => void;
+        onPointerUp: () => void;
+        onPointerCancel: () => void;
+        onKeyDown: (event: {
+            key: string;
+            repeat: boolean;
+            preventDefault(): void;
+        }) => void;
+        onKeyUp: (event: {
+            key: string;
+            preventDefault(): void;
+        }) => void;
+        onContextMenu: (event: {
+            preventDefault(): void;
+        }) => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
+};
+
+// @public
+export type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};

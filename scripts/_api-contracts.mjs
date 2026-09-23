@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
-import { hashableBody } from "./_api-contracts-hash.mjs";
+import { analyzeBody } from "./_api-contracts-hash.mjs";
 import {
   authoringSubpaths,
   capabilities,
@@ -265,10 +265,11 @@ export function generateCapabilityReports(pkg, names = capabilities(pkg)) {
       if (body === "") {
         throw new Error(`The ${capabilityId(pkg, capability)} capability rolled up to nothing.`);
       }
-      const hashable = hashableBody(body, foreignNames.get(capability) ?? new Set());
+      const { hashable, unowned } = analyzeBody(body, foreignNames.get(capability) ?? new Set());
       reports.set(capability, {
         body,
         hashable,
+        unowned,
         exports: collectExports(text, label)
           .map((entry) => entry.name)
           .sort(),

@@ -2,7 +2,8 @@
 /**
  * Capability contract: `llm`.
  *
- * Pipeline-mode LLM provider descriptors.
+ * Pipeline-mode LLM provider descriptors: ONE factory, `llm()`, whose
+ * `provider` is data rather than a function name.
  *
  * `ProviderDescriptor` is the `agent` capability's — see `stt.ts` for why.
  * `LlmProvider` stays here, published on the root as well but owned by the narrower
@@ -10,8 +11,16 @@
  * `GatewayModelInfo`, `gatewayModelIds`) is on
  * `@alexkroman1/aai/host-internal`, which is not contracted: it is generated
  * from the service on whatever afternoon someone regenerates it, and hashing
- * a generated data table made routine ops a classification decision. The id
- * UNION it produces is contracted here, because that is what an author names.
+ * a generated data table made routine ops a classification decision.
+ * `KnownGatewayModel` — the id snapshot it produces — IS contracted here,
+ * because the open `AssemblyAIGatewayModel` names it for autocomplete; being
+ * one half of `KnownGatewayModel | (string & {})`, a regeneration that adds or
+ * drops an id is a change the compatibility probe proves, so it lands as a
+ * REVISION rather than an epoch.
+ *
+ * Neither the providers' key variables nor their base URLs are here: both
+ * live in the host resolver's table (`aai-runtime`'s
+ * `providers/_llm-registry.ts`).
  *
  * Re-exported from `@alexkroman1/aai/llm`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -20,33 +29,15 @@
  */
 
 export {
-  type AnthropicLlmOptions,
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
-  ASSEMBLYAI_LLM_GATEWAY_URL,
   type AssemblyAIGatewayModel,
-  type AssemblyAILlmOptions,
+  type AssemblyAILlmProviderOptions,
   type AssemblyAIReasoningEffort,
-  anthropicLlm,
-  assemblyAILlm,
-  CEREBRAS_BASE_URL,
-  type CerebrasLlmOptions,
-  cerebrasLlm,
-  type GatewayLlmOptions,
-  type GoogleLlmOptions,
-  type GroqLlmOptions,
-  gatewayLlm,
-  googleLlm,
-  groqLlm,
+  type KnownGatewayModel,
+  type KnownLlmProvider,
+  type LlmDescriptorOptions,
+  type LlmOptions,
   type LlmProvider,
-  type MistralLlmOptions,
-  type ModelOptions,
-  mistralLlm,
-  OPENROUTER_BASE_URL,
-  type OpenAILlmOptions,
-  type OpenRouterLlmOptions,
-  openAILlm,
-  openRouterLlm,
-  type XAILlmOptions,
-  xAILlm,
+  type LlmProviderName,
+  llm,
 } from "../../sdk/providers/llm-barrel.ts";

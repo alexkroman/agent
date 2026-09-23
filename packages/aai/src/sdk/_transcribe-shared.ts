@@ -29,7 +29,7 @@ import { isTransientStatus, retryAfter } from "./step-retry.ts";
  * carries its own budget. Nothing in the async API blocks: a submit answers
  * with an id and a poll answers with a status, both immediately.
  */
-export const TRANSCRIBE_TIMEOUT_MS = 60_000;
+export const TRANSCRIBE_TIMEOUT_MS: number = 60_000;
 
 /** Options every call in this family accepts. */
 export type TranscribeRequestOptions = {

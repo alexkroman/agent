@@ -14,10 +14,10 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public (undocumented)
-export const BASH_TIMEOUT_MAX_MS = 300000;
+export const BASH_TIMEOUT_MAX_MS: number;
 
 // @public
-export const BASH_TIMEOUT_MS = 60000;
+export const BASH_TIMEOUT_MS: number;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -97,7 +97,7 @@ type GenerateResult = {
 };
 
 // @public
-export const GLOB_LIMIT = 100;
+export const GLOB_LIMIT: number;
 
 // @public
 type GuardrailVerdict = true | string;
@@ -109,7 +109,15 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -120,6 +128,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -133,7 +148,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 type RandomSource = () => number;
 
 // @public
-export const READ_LIMIT = 2000;
+export const READ_LIMIT: number;
 
 // @public
 type SleepOptions = {
@@ -210,19 +225,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

@@ -1,0 +1,14 @@
+// @public
+export function createSeededRandom(seed: number): RandomSource;
+
+// @public
+export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
+
+// @public
+export function randomInt(maxExclusive: number, random?: RandomSource): number;
+
+// @public
+export type RandomSource = () => number;
+
+// @public
+export function shuffled<T>(items: readonly T[], random?: RandomSource): T[];

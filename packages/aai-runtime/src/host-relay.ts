@@ -12,12 +12,12 @@
  * keep both under the file-length cap; the two have no shared state.
  */
 
+import type { SessionEventBody } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_RELAY_TOOL_TIMEOUT_MS,
   serializeToolFailure,
 } from "@alexkroman1/aai/host-internal";
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 
@@ -51,7 +51,7 @@ export type RelayExecuteTool = {
  * is the session's `executeTool`), so it has no emitter to record through and its
  * caller stamps. See `host-mode.ts`'s `sendEvent`.
  */
-type ToolCallEvent = Extract<SessionEventBody, { type: "tool.called" }>;
+type ToolCallEvent = SessionEventBody<"tool.called">;
 
 /**
  * A relay's `result` field arrives as a string on the wire. Clients commonly

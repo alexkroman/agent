@@ -79,36 +79,16 @@
  */
 
 import { setRequestTraceAdopter } from "./_request-trace.ts";
-
-// The process-wide metrics sinks, on the same subpath as the exporter that
-// fills one — see `metrics-sink.ts`.
-export {
-  type MetricsContext,
-  type MetricsSink,
-  OTEL_METRIC_NAMES,
-  type OtelMeterLike,
-  otelMetricsSink,
-  registerMetricsSink,
-} from "./metrics-sink.ts";
+// METRIC export rides this gate — `startTracing` arms it off the same
+// environment — but its names are `@alexkroman1/aai-runtime/metrics`
+// (`metrics-barrel.ts`), their own subpath and capability.
+import { metricsEndpoint } from "./metrics-env.ts";
 
 /** The standard variables that name a collector. Either one arms this. */
 export const OTEL_ENDPOINT_ENVS = [
   "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
 ] as const;
-
-/**
- * The standard variables that name a METRICS collector. Either one arms metric
- * export — the generic one arms traces and metrics together, which is what an
- * operator pointing everything at one collector expects.
- */
-export const OTEL_METRICS_ENDPOINT_ENVS = [
-  "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
-  "OTEL_EXPORTER_OTLP_ENDPOINT",
-] as const;
-
-/** The standard switch: `none` turns metric export off whatever the endpoint. */
-export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
 
 /** The standard variable naming this service on every exported span. */
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
@@ -187,21 +167,6 @@ export async function startTracing(
     await Promise.all(handles.map(pick));
   };
   return { forceFlush: all((h) => h.forceFlush()), shutdown: all((h) => h.shutdown()) };
-}
-
-/**
- * The collector this environment names for METRICS, or `undefined`.
- *
- * `OTEL_METRICS_EXPORTER=none` closes it, which is the standard spelling for
- * "traces, but not metrics" when both share `OTEL_EXPORTER_OTLP_ENDPOINT`.
- */
-export function metricsEndpoint(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  if (env[OTEL_METRICS_EXPORTER_ENV]?.trim().toLowerCase() === "none") return undefined;
-  for (const name of OTEL_METRICS_ENDPOINT_ENVS) {
-    const value = env[name]?.trim();
-    if (value) return value;
-  }
-  return undefined;
 }
 
 /**

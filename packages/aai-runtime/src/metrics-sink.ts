@@ -13,7 +13,7 @@
  *   type OtelMeterLike,
  *   otelMetricsSink,
  *   registerMetricsSink,
- * } from "@alexkroman1/aai-runtime/tracing";
+ * } from "@alexkroman1/aai-runtime/metrics";
  *
  * // A meter from your own MeterProvider — a Prometheus exporter, say:
  * // `metrics.getMeter("my-agent")` from `@opentelemetry/api`.

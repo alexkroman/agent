@@ -1,0 +1,60 @@
+import type { MetricsCollectedEvent } from '@alexkroman1/aai';
+
+// @public
+export interface MetricsContext {
+    // (undocumented)
+    agent: string;
+    // (undocumented)
+    sessionId: string;
+}
+
+// @public
+export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
+
+// @public
+export interface MetricsSink {
+    // (undocumented)
+    record(event: MetricsCollectedEvent, context: MetricsContext): void;
+}
+
+// @public
+export const OTEL_METRIC_NAMES: {
+    readonly replies: "aai.replies";
+    readonly latency: "aai.reply.latency";
+    readonly sttEndpointing: "aai.stt.endpointing_delay";
+    readonly llmTtft: "aai.llm.time_to_first_token";
+    readonly llmDuration: "aai.llm.duration";
+    readonly llmTokens: "aai.llm.tokens";
+    readonly ttsTtfb: "aai.tts.time_to_first_byte";
+    readonly ttsCharacters: "aai.tts.characters";
+};
+
+// @public
+export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+// @public
+export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
+
+// @public
+export interface OtelMeterLike {
+    // (undocumented)
+    createCounter(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        add(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+    // (undocumented)
+    createHistogram(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        record(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+}
+
+// @public
+export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
+
+// @public
+export function registerMetricsSink(sink: MetricsSink): () => void;

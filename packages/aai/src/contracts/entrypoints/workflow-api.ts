@@ -67,6 +67,7 @@ export {
   type AgentClient,
   type AnyWorkflowDef,
   type ClientConfigResponse,
+  ClientConfigResponseSchema,
   createAgentClient,
   createWorkflowApiClient,
   type EventStreamFrame,

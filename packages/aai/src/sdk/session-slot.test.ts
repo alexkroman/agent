@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { agentToolsToSchemas } from "./_internal-types.ts";
 import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
@@ -437,6 +438,35 @@ describe("sessionSlot", () => {
         },
       });
       expect(() => send.onError?.(boom, createToolContext())).toThrow(boom);
+    });
+
+    test("carries `messages` to the wire declaration, so a slot tool can SPEAK", () => {
+      // `SlotToolDef` restated `ToolDef` field by field and left `messages` out,
+      // so tool-call speech was a type error on exactly the tools a stateful
+      // agent writes. It is built from `ToolDef` now; this pins the runtime half —
+      // the builder's spread reaches `agentToolsToSchemas`, which is what the
+      // runtime reads the lines from.
+      const count = cartSlot.tool({
+        description: "Count",
+        execute: (_args, cart) => cart.items.length,
+        messages: { start: "Counting.", complete: [{ role: "assistant", content: "Counted." }] },
+      });
+      const add = cartSlot.updateTool({
+        description: "Add",
+        execute: (_args, cart) => {
+          cart.items.push("x");
+          return cart.items.length;
+        },
+        messages: { failed: [{ role: "system", content: "Say the cart is unavailable." }] },
+      });
+      const [countSchema, addSchema] = agentToolsToSchemas({ count, add });
+      expect(countSchema?.messages).toEqual({
+        start: [{ content: "Counting." }],
+        complete: [{ role: "assistant", content: "Counted." }],
+      });
+      expect(addSchema?.messages).toEqual({
+        failed: [{ role: "system", content: "Say the cart is unavailable." }],
+      });
     });
   });
 

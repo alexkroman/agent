@@ -431,7 +431,7 @@ describe("konsistent.json", () => {
   test("case-map entries are only there for names the defaults get wrong", () => {
     // The camel map is DERIVED from the pascal map when absent, so declaring
     // `openai: OpenAI` for the type names also makes the factory function
-    // `openAILlm`. That derivation is wanted here — the identity entries that
+    // `openAIS2s`. That derivation is wanted here — the identity entries that
     // used to suppress it (`openai: openai`, `openrouter: openrouter`) are
     // gone with the lowercase factory spellings they kept alive.
     for (const [kebab, pascal] of Object.entries(config.kebabToPascalMap ?? {})) {

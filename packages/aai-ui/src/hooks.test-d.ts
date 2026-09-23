@@ -17,6 +17,7 @@ import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
 import { expectTypeOf, test } from "vitest";
 import type { FormValues } from "./components/form-types.ts";
 import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+import type { BrowserSession, browserSessionBrand } from "./session-core-types.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";
@@ -244,4 +245,11 @@ test("submitForm is the door for DOM-scraped values, and stays loose on purpose"
   // the workflow's schema. Tightening this would be a lie.
   const submission = useWorkflowSubmit("digest");
   expectTypeOf(submission.submitForm).parameter(0).toEqualTypeOf<FormValues>();
+});
+
+test("BrowserSession is sealed: every member but the brand is not one", () => {
+  // `browserSessionBrand` is type-only, so a hand-written session double cannot
+  // satisfy the type — only `createBrowserSession` mints one.
+  expectTypeOf<Omit<BrowserSession, typeof browserSessionBrand>>().not.toExtend<BrowserSession>();
+  expectTypeOf<BrowserSession>().toExtend<Omit<BrowserSession, typeof browserSessionBrand>>();
 });

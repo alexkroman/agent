@@ -177,7 +177,7 @@ export interface PipelineVoiceTuning {
    * - `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
    *   reaches the transcriber only between a `user_turn_start` and the
    *   `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-   *   `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+   *   `session.userTurn.start` / `.commit` / `.clear`, or its
    *   `usePushToTalk` hook). Everything transcribed in that window, across
    *   however many pauses, is ONE turn, and nothing is answered until the
    *   commit. Outside the window the microphone is replaced with silence
@@ -202,8 +202,38 @@ export interface PipelineVoiceTuning {
    * });
    * ```
    */
-  turnDetection?: "auto" | "manual";
+  turnDetection?: TurnDetectionMode;
 }
+
+/**
+ * The turn-detection modes this release implements — the autocomplete half of
+ * {@link TurnDetectionMode}. See {@link PipelineVoiceTuning.turnDetection}.
+ *
+ * @public
+ */
+export type KnownTurnDetectionMode = "auto" | "manual";
+
+/**
+ * A turn-detection mode — one of {@link KnownTurnDetectionMode}, or any other
+ * string.
+ *
+ * OPEN so a mode a later release adds compiles against this one. The runtime
+ * treats every value but `"manual"` as `"auto"`, and `aai build` / `aai dev`
+ * warn about a value it does not know, rather than the type refusing it.
+ *
+ * @public
+ */
+export type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+/**
+ * {@link KnownTurnDetectionMode} as a runtime list, for the config warning.
+ *
+ * @internal
+ */
+export const KNOWN_TURN_DETECTION_MODES = [
+  "auto",
+  "manual",
+] as const satisfies readonly KnownTurnDetectionMode[];
 
 /**
  * A cap on ONE user turn — see {@link PipelineVoiceTuning.userTurnLimit}.

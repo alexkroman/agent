@@ -8,7 +8,7 @@
 import { act } from "react";
 import { vi } from "vitest";
 import { CLEARED_SESSION_STATE } from "./session-core-messages.ts";
-import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, browserSessionBrand, SessionSnapshot } from "./session-core-types.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
@@ -17,6 +17,10 @@ import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
  * Returns a `BrowserSession`-compatible object with mutable snapshot. Call
  * `core.update(partial)` to mutate the snapshot and notify subscribers,
  * triggering React re-renders.
+ *
+ * `BrowserSession` is SEALED (`browserSessionBrand`), so this double is built
+ * without the seal and cast once — the in-package privilege a consumer's own
+ * double does not have, which is the point of the seal.
  */
 export function createMockSessionCore(
   overrides?: Partial<SessionSnapshot>,
@@ -41,7 +45,8 @@ export function createMockSessionCore(
     for (const sub of subscribers) sub();
   }
 
-  const core: BrowserSession & { update(partial: Partial<SessionSnapshot>): void } = {
+  type MockCore = BrowserSession & { update(partial: Partial<SessionSnapshot>): void };
+  const core: Omit<MockCore, typeof browserSessionBrand> = {
     getSnapshot() {
       return snapshot;
     },
@@ -57,14 +62,16 @@ export function createMockSessionCore(
     cancel() {
       /* noop */
     },
-    startUserTurn() {
-      /* noop */
-    },
-    commitUserTurn() {
-      /* noop */
-    },
-    clearUserTurn() {
-      /* noop */
+    userTurn: {
+      start() {
+        /* noop */
+      },
+      commit() {
+        /* noop */
+      },
+      clear() {
+        /* noop */
+      },
     },
     resetState() {
       /* noop */
@@ -105,7 +112,7 @@ export function createMockSessionCore(
     },
   };
 
-  return core;
+  return core as MockCore;
 }
 
 /**

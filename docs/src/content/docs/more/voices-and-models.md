@@ -77,20 +77,25 @@ Each factory reads one key from the environment:
 
 | Factory | Import from | Key it reads |
 | --- | --- | --- |
-| `assemblyAIStt`, `assemblyAITts`, `assemblyAILlm` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY` |
+| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY` |
 | `deepgramStt` | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY` |
 | `elevenLabsStt` | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY` |
 | `sonioxStt` | `@alexkroman1/aai/stt` | `SONIOX_API_KEY` |
 | `cartesiaTts` | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY` |
 | `rimeTts` | `@alexkroman1/aai/tts` | `RIME_API_KEY` |
-| `anthropicLlm` | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY` |
-| `openAILlm` | `@alexkroman1/aai/llm` | `OPENAI_API_KEY` |
-| `googleLlm` | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `mistralLlm` | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY` |
-| `xAILlm` | `@alexkroman1/aai/llm` | `XAI_API_KEY` |
-| `groqLlm` | `@alexkroman1/aai/llm` | `GROQ_API_KEY` |
-| `openRouterLlm` | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY` |
-| `gatewayLlm` | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY` |
+| `llm({ provider: "anthropic" })` | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY` |
+| `llm({ provider: "openai" })` | `@alexkroman1/aai/llm` | `OPENAI_API_KEY` |
+| `llm({ provider: "google" })` | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `llm({ provider: "mistral" })` | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY` |
+| `llm({ provider: "xai" })` | `@alexkroman1/aai/llm` | `XAI_API_KEY` |
+| `llm({ provider: "groq" })` | `@alexkroman1/aai/llm` | `GROQ_API_KEY` |
+| `llm({ provider: "cerebras" })` | `@alexkroman1/aai/llm` | `CEREBRAS_API_KEY` |
+| `llm({ provider: "openrouter" })` | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY` |
+| `llm({ provider: "gateway" })` | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY` |
+
+The LLM stage is one factory: `llm({ provider, model })`, where `provider` is a
+string. Any other provider name also compiles — give it a `baseUrl` (and an
+`apiKeyEnv` naming its key) and it is called as an OpenAI-compatible endpoint.
 
 Put that key in `.env` locally, and in your agent's secrets in production — see
 [Publish](/agent/deploy/publish/). It is read on the server and never reaches

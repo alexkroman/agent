@@ -86,6 +86,17 @@ export * from "./sdk/generate.ts";
  * Per-reply metrics, folded — what an `events: { "metrics.collected" }` hook
  * hands its frames to, and `MetricsCollectedEvent`, the frame itself.
  */
+// The MCP declaration an `agent.ts` writes. The client that reads it is
+// `withMcpTools` on `@alexkroman1/aai-runtime` — this package opens no sockets.
+// Exported here rather than through `sdk/types.ts`, which is at its length cap.
+export {
+  MCP_SERVER_KEY_RE,
+  MCP_TOOL_NAME_MAX,
+  MCP_TOOL_PREFIX,
+  type McpServerConfig,
+  type McpServers,
+  mcpToolName,
+} from "./sdk/mcp-config.ts";
 export * from "./sdk/metrics-collector.ts";
 /**
  * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and
@@ -110,6 +121,19 @@ export {
  * needs to see the other to pick correctly.
  */
 export * from "./sdk/procedure.ts";
+/**
+ * The session event vocabulary, and the types an `agent({ events })` handler is
+ * written against.
+ *
+ * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
+ * moment a handler is extracted from the literal into a function of its own, which
+ * is the first thing an author does once one grows past a line — and `SessionEvent`
+ * and its schema came with them, off `/protocol`, so the vocabulary has exactly one
+ * owner: the `aai:events` capability. On `/protocol` it was contracted by NOTHING,
+ * so its body was hashed in every capability that reached it and one new event
+ * minted four epochs. A client parsing frames imports the schema from here too.
+ */
+export { SessionEventSchema } from "./sdk/protocol-events.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
@@ -118,19 +142,17 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  * The gateway model ids `agent({ llm })` is written against — the same
  * forgotten-export defect as `AssemblyAITtsVoice` below, one field over.
  *
- * `AgentParams.llm` accepts this union (a bare id routes through the AssemblyAI
- * LLM Gateway on the key every agent already has), and until now it was typed
- * bare `string` while the identical `assemblyAILlm({ model })` next door was
- * typed against the union — so `llm: "claude-sonnet-4-6"`, which is how the
- * docs write it, had no autocomplete and a typo reached the author as a gateway
- * 400 at the first live session. Autocomplete, not a guard: the catalog is
- * GENERATED from what `/v1/models` advertises, so a model shipped after this
- * release still compiles and still runs.
+ * `AgentParams.llm` accepts this type (a bare id routes through the AssemblyAI
+ * LLM Gateway on the key every agent already has), so `llm: "some-model"`
+ * autocompletes the gateway's ids. Autocomplete, not a guard: the known half is
+ * GENERATED from what `/v1/models` advertises and the type is OPEN
+ * (`KnownGatewayModel | (string & {})`), so a model shipped after this release
+ * still compiles and still runs.
  *
  * `@alexkroman1/aai/llm` keeps it too — that is where an explicit
- * `assemblyAILlm({ model })` stage is written.
+ * `llm({ provider: "assemblyai", model })` stage is written.
  */
-export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/shared/gateway-models.ts";
+export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/llm.ts";
 /**
  * S2S is opt-in now that the pipeline is the default mode, so the opt-in
  * descriptor lives next to `agent()` too.
@@ -138,8 +160,8 @@ export type { AssemblyAIGatewayModel } from "./sdk/providers/llm/shared/gateway-
  * By NAME rather than `export *`: that module also exports
  * `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV`, which an `agent.ts`
  * never writes — the descriptor sets the kind, and credentials resolve
- * server-side. Those two, and the seventeen `*_KIND`/`*_API_KEY_ENV` constants
- * of the other provider modules, are on `@alexkroman1/aai/host-internal` with
+ * server-side. Those two, and the `*_KIND`/`*_API_KEY_ENV` constants of the
+ * other provider modules, are on `@alexkroman1/aai/host-internal` with
  * the `resolve*Settings` helpers that read them.
  */
 export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./sdk/providers/s2s/assemblyai.ts";
@@ -251,28 +273,37 @@ export * from "./sdk/random.ts";
  */
 export { requireEnv } from "./sdk/require-env.ts";
 /**
- * Standard Schema acceptance — the two an author names.
+ * Standard Schema acceptance — the two an author names, and the SPEC they are
+ * written in terms of.
  *
- * `StandardSchemaV1` and its result/issue types are the ecosystem SPEC that
- * `tool()` happens to accept, not something an agent declares; they stay in
- * `sdk/schema.ts` for the signatures that reference them.
+ * `StandardSchemaV1` and its result/issue types are the ecosystem spec that
+ * `tool()`, `ctx.generate`, `step()` and `workflow()` all accept. They used to be
+ * reachable from those signatures without being on any authoring subpath, which
+ * made them OWNERLESS to the capability contracts: their bodies were hashed in
+ * eight capabilities at once. They are on the root now and owned by the
+ * `standard-schema` capability alone — a vendor-neutral type an author may name
+ * when writing a helper that accepts any schema.
  */
-export type { InferSchemaOutput, ToolInputSchema } from "./sdk/schema.ts";
-/**
- * The types an `agent({ events })` handler is written against.
- *
- * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
- * moment a handler is extracted from the literal into a function of its own, which
- * is the first thing an author does once one grows past a line. `SessionEvent`
- * itself is not here: it is the wire union and lives on
- * `@alexkroman1/aai/protocol`, so a handler that needs to name one imports it
- * there, exactly as a client does.
- */
+export type {
+  InferSchemaOutput,
+  StandardSchemaIssue,
+  StandardSchemaResult,
+  StandardSchemaV1,
+  ToolInputSchema,
+} from "./sdk/schema.ts";
+export {
+  type EventMapOf,
+  SESSION_SOURCED_EVENT_TYPES,
+  type SessionEvent,
+  type SessionEventBody,
+  type SessionEventMap,
+  type SessionEventType,
+  type SessionSourcedEventType,
+} from "./sdk/session-event-map.ts";
 export type {
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
-  SessionEventType,
 } from "./sdk/session-events.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.

@@ -21,9 +21,8 @@
  */
 
 import agentDef from "virtual:aai/agent";
-import type { InferToolInput, ToolContext } from "@alexkroman1/aai";
+import type { InferToolInput, SessionEvent, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure, resolveOne } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { createToolContext, expectDialogOk, toolRunner } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";

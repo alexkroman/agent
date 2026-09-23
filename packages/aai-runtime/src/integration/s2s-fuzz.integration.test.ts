@@ -54,8 +54,8 @@
  * draft did.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { S2S_MAX_RESUME_ATTEMPTS } from "@alexkroman1/aai/host-internal";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import pTimeout, { TimeoutError } from "p-timeout";

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step-errors",
   "epoch": 1,
-  "sha256": "3321c3777e9d4c3df17be2f73260b1e33d12626a478f9369708096a3c34ab983",
+  "rule": 2,
+  "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
   "exports": [
     "DEFAULT_RETRY_DELAY_MS",
     "FatalError",
@@ -20,5 +21,21 @@
     "throwFfmpegStepError",
     "throwStepError",
     "toStepError"
+  ],
+  "rollup": "751e87990ca1c7404a731ec6fc012bd6ce8f0139ecb8ae3228bb11094a2e592e",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "8d3c43d6b679af7d5ba963cfbecdeb26315661c270a69c0acf1ebcd403ea373e",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
   ]
 }

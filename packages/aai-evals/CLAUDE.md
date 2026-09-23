@@ -159,8 +159,9 @@ blocks merges is worse than an unreliable number nobody is forced to believe.
 `AAI_EVAL_MIN_SCORE` makes it assert, and it asserts `score.min` — the spread's
 LOWER bound — because a mean over a flipping suite passes on a lucky repeat.
 
-**A model-graded judge now exists, and it lives in `aai-runtime/eval`, not
-here.** `judgeCall` (and `judge()` on a `describeEval` case) rules on each
+**A model-graded judge now exists, and it lives in `aai-runtime/eval/simulate`,
+not here.** `judgeCall` (and `evalSimulation(...).judge` in a `describeEval`
+case) rules on each
 criterion separately and computes the verdict itself, so a skipped criterion is
 a FAIL rather than a silent pass — see `aai-runtime/TEXT-AGENT-CLAUDE.md`,
 "A simulated caller, and a judge". The caution that kept it unbuilt still holds

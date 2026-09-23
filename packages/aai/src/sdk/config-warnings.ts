@@ -12,7 +12,10 @@
  * with nowhere to put a warning ignores it without a channel to thread.
  */
 
+import { KNOWN_TURN_DETECTION_MODES } from "./agent-voice-tuning.ts";
+import { isKnown } from "./is-known.ts";
 import { isRecord } from "./is-record.ts";
+import { KNOWN_LLM_PROVIDERS } from "./providers/llm/llm.ts";
 import {
   ASSEMBLYAI_TTS_HOST,
   type AssemblyAITtsOptions,
@@ -20,6 +23,7 @@ import {
 } from "./providers/tts/assemblyai.ts";
 import { CARTESIA_DEFAULT_VOICE, CARTESIA_KIND } from "./providers/tts/cartesia.ts";
 import { RIME_DEFAULT_VOICE, RIME_KIND } from "./providers/tts/rime.ts";
+import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
 
 /**
  * Every line worth printing about one agent config.
@@ -46,13 +50,76 @@ export function agentConfigWarnings(config: {
   s2s?: unknown;
   stt?: unknown;
   llm?: unknown;
+  voicePresets?: unknown;
+  turnDetection?: unknown;
 }): string[] {
   return [
     assemblyAIVoiceWarning(config.tts),
     assemblyAIVoiceWarning(config.s2s),
     uncatalogedVoiceWarning(config.tts),
     euResidencyWarning(config),
+    unknownLlmProviderWarning(config.llm),
+    ...unknownVoicePresetWarnings(config.voicePresets),
+    unknownTurnDetectionWarning(config.turnDetection),
   ].filter((warning): warning is string => warning !== undefined);
+}
+
+/**
+ * An `llm({ provider })` the runtime has no built-in entry for, carrying no
+ * `baseUrl` to reach it by.
+ *
+ * `provider` is OPEN in the type (`KnownLlmProvider | (string & {})`), because
+ * a vendor this release has not heard of is legal twice over: with a `baseUrl`
+ * it resolves as an OpenAI-compatible endpoint, and a host may have registered
+ * the name with `registerLlmKind`. What neither covers is a TYPO of a known
+ * name, which would otherwise surface as "Unknown LLM provider kind" at the
+ * first session — so it is said here, once per build, and never refused.
+ */
+function unknownLlmProviderWarning(descriptor: unknown): string | undefined {
+  if (!isRecord(descriptor) || typeof descriptor.kind !== "string") return undefined;
+  const { kind } = descriptor;
+  if (isKnown(KNOWN_LLM_PROVIDERS, kind)) return undefined;
+  if (isRecord(descriptor.options) && typeof descriptor.options.baseUrl === "string") {
+    return undefined;
+  }
+  return (
+    `LLM provider "${kind}" has no built-in resolver (known: ${KNOWN_LLM_PROVIDERS.join(", ")}) ` +
+    "and the descriptor carries no `baseUrl`. Unless your host registers it with " +
+    "`registerLlmKind`, the first session fails — pass `baseUrl` (and `apiKeyEnv`) to reach an " +
+    "OpenAI-compatible endpoint, or check the spelling."
+  );
+}
+
+/**
+ * A `voicePresets` entry this release has no text for. The type is open so a
+ * preset added later compiles against an older SDK; the runtime emits only the
+ * names it knows, so an unknown one is a preset that silently does nothing.
+ */
+function unknownVoicePresetWarnings(presets: unknown): string[] {
+  if (!Array.isArray(presets)) return [];
+  return presets
+    .filter(
+      (name): name is string => typeof name === "string" && !isKnown(VOICE_PRESET_NAMES, name),
+    )
+    .map(
+      (name) =>
+        `Voice preset "${name}" is not one this SDK knows (${VOICE_PRESET_NAMES.join(", ")}), so it adds ` +
+        "nothing to the prompt. Check the spelling, or upgrade @alexkroman1/aai.",
+    );
+}
+
+/**
+ * A `turnDetection` mode this release does not implement. The runtime treats
+ * anything but `"manual"` as `"auto"`, so an unknown mode runs as automatic
+ * end-of-turn detection — said here rather than refused.
+ */
+function unknownTurnDetectionWarning(mode: unknown): string | undefined {
+  if (typeof mode !== "string") return undefined;
+  if (isKnown(KNOWN_TURN_DETECTION_MODES, mode)) return undefined;
+  return (
+    `turnDetection "${mode}" is not a mode this SDK implements ` +
+    `(${KNOWN_TURN_DETECTION_MODES.join(", ")}); the session runs with "auto".`
+  );
 }
 
 /**
@@ -144,8 +211,13 @@ function euResidencyWarning(config: {
   llm?: unknown;
   tts?: unknown;
 }): string | undefined {
+  // STT carries `region` on its options; an `llm()` descriptor carries it in
+  // `providerOptions`, where every provider-specific setting of that factory is.
   const inEu = (stage: unknown): boolean =>
-    isRecord(stage) && isRecord(stage.options) && stage.options.region === "eu";
+    isRecord(stage) &&
+    isRecord(stage.options) &&
+    (stage.options.region === "eu" ||
+      (isRecord(stage.options.providerOptions) && stage.options.providerOptions.region === "eu"));
   if (!(inEu(config.stt) || inEu(config.llm))) return undefined;
   if (config.tts === undefined) return undefined;
   // The remedy names `assemblyAITts`'s own option rather than spelling the call

@@ -1,0 +1,91 @@
+// @public
+export function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+
+// @public
+export function stepTranscribeSubmit(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
+    id: string;
+}>;
+
+// @public
+export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
+    text: string;
+}>;
+
+// @public
+export function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
+    audioUrl: string;
+}>;
+
+// @public
+export const TRANSCRIBE_API = "https://api.assemblyai.com";
+
+// @public
+export const TRANSCRIBE_MODELS: readonly ["universal-3-5-pro"];
+
+// @public
+export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+
+// @public
+export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+
+// @public
+export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 1800000;
+
+// @public
+export const TRANSCRIBE_WINDOW_BYTES = 4194304;
+
+// @public
+export class TranscribeError extends Error {
+    constructor(message: string, init: {
+        status?: number | undefined;
+        retryable: boolean;
+        retryAfter?: Date | undefined;
+    });
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export type TranscribeProgress = {
+    done: false;
+    status: string;
+} | {
+    done: true;
+    status: string;
+    transcript: Transcript;
+};
+
+// @public
+export type TranscribeRequestOptions = {
+    apiKeyEnv?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type TranscribeSubmitOptions = TranscribeRequestOptions & {
+    models?: readonly string[] | undefined;
+    params?: Record<string, unknown> | undefined;
+};
+
+// @public
+export type TranscribeSyncOptions = TranscribeRequestOptions & {
+    model?: string | undefined;
+    filename?: string | undefined;
+    type?: string | undefined;
+    label?: string | undefined;
+};
+
+// @public
+export type Transcript = {
+    id: string;
+    text: string;
+    durationMs: number;
+};

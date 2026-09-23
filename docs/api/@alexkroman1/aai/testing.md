@@ -19,80 +19,7 @@ suppression the escape-hatch ratchet only lets move down.
 
 ```ts
 function commandedBuiltins(config: {
-  builtinTools?: readonly (
-     | "web_search"
-     | "visit_webpage"
-     | "get_page_design"
-     | "fetch_json"
-     | "run_code"
-     | "think"
-     | "remember"
-     | "recall"
-    | "calculate")[];
-  deadAirCoverMs?: number;
-  description?: string;
-  errorPhrase?: string;
-  greeting: string;
-  idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
-  llm?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  maxOutputTokens?: number;
-  maxRetries?: number;
-  maxSteps?: number;
-  mcpServers?: Record<string, {
-     pinnedTools?: Record<string, string>;
-     tokenEnv?: string;
-     url: string;
-  }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
-  name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
-  requiredEnv?: readonly string[];
-  resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
-  s2s?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
-  startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
-  stt?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  sttPrompt?: string;
   systemPrompt: string;
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
-  temperature?: number;
-  text?: true;
-  toolChoice?:   | "auto"
-     | "required"
-     | "none"
-     | {
-     toolName: string;
-     type: "tool";
-   };
-  tts?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  turnDetection?: "auto" | "manual";
-  usageLimits?: {
-     totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
-  };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
 }): BuiltinTool[];
 ```
 
@@ -104,6 +31,9 @@ builtin schema — so `run_code` and `fetch_json` are found, and the
 endpoints and formulas are not. Reading the CONFIG's prompt rather than a
 file: that is what a deploy carries, and it is where `system-prompt.md` lands
 only if the build applied it.
+
+Takes only the field it reads, so an `AgentConfig` passes and so does a
+`{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
 
 A reader, not an assertion — [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) is the
 claim most specs want. This is exported for the spec that wants to say more:
@@ -119,7 +49,7 @@ true answer to the wrong question. Nothing here can tell that config from one
 whose author simply wrote no prompt; the def can, which is why the check that
 refuses is [expectPromptBuiltinsDeclared](#expectpromptbuiltinsdeclared) and not this reader. To scan a
 resolver's own text, resolve it and substitute it:
-`commandedBuiltins({ ...toAgentConfig(def), systemPrompt: resolver(ctx) })`.
+`commandedBuiltins({ systemPrompt: resolver(ctx) })`.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -136,237 +66,9 @@ console.log(commandedBuiltins(config)); // ["fetch_json"]
 
 ##### config
 
-###### builtinTools?
-
-readonly (
-  \| `"web_search"`
-  \| `"visit_webpage"`
-  \| `"get_page_design"`
-  \| `"fetch_json"`
-  \| `"run_code"`
-  \| `"think"`
-  \| `"remember"`
-  \| `"recall"`
-  \| `"calculate"`)[]
-
-###### deadAirCoverMs?
-
-`number`
-
-###### description?
-
-`string`
-
-###### errorPhrase?
-
-`string`
-
-###### greeting
-
-`string`
-
-###### idleTimeoutMs?
-
-`number`
-
-###### interruptionBackoffMs?
-
-`number`
-
-###### interruptionMinDurationMs?
-
-`number`
-
-###### llm?
-
-\{
-  `kind`: `string`;
-  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-\}
-
-###### llm.kind
-
-`string`
-
-###### llm.options
-
-`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### maxOutputTokens?
-
-`number`
-
-###### maxRetries?
-
-`number`
-
-###### maxSteps?
-
-`number`
-
-###### mcpServers?
-
-`Record`\<`string`, \{
-  `pinnedTools?`: `Record`\<`string`, `string`\>;
-  `tokenEnv?`: `string`;
-  `url`: `string`;
-\}\>
-
-###### minBargeInWords?
-
-`number`
-
-###### mode?
-
-`"s2s"` \| `"text"` \| `"pipeline"`
-
-###### name
-
-`string`
-
-###### page?
-
-`"voice"` \| `"static"`
-
-###### preemptiveGeneration?
-
-`boolean`
-
-###### requiredEnv?
-
-readonly `string`[]
-
-###### resetToolChoice?
-
-`boolean`
-
-###### resumeFalseInterruption?
-
-`boolean`
-
-###### s2s?
-
-\{
-  `kind`: `string`;
-  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-\}
-
-###### s2s.kind
-
-`string`
-
-###### s2s.options
-
-`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### silencePrompt?
-
-`string`
-
-###### silenceTimeoutMs?
-
-`number`
-
-###### startFailurePhrase?
-
-`string`
-
-###### startSpeakingFloorMs?
-
-`number`
-
-###### stt?
-
-\{
-  `kind`: `string`;
-  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-\}
-
-###### stt.kind
-
-`string`
-
-###### stt.options
-
-`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### sttPrompt?
-
-`string`
-
 ###### systemPrompt
 
 `string`
-
-###### telephony?
-
-`boolean` \| readonly (`"twilio"` \| `"telnyx"`)[]
-
-###### temperature?
-
-`number`
-
-###### text?
-
-`true`
-
-###### toolChoice?
-
-  \| `"auto"`
-  \| `"required"`
-  \| `"none"`
-  \| \{
-  `toolName`: `string`;
-  `type`: `"tool"`;
-\}
-
-###### tts?
-
-\{
-  `kind`: `string`;
-  `options`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-\}
-
-###### tts.kind
-
-`string`
-
-###### tts.options
-
-`z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>
-
-###### turnDetection?
-
-`"auto"` \| `"manual"`
-
-###### usageLimits?
-
-\{
-  `totalTokens?`: `number`;
-\}
-
-###### usageLimits.totalTokens?
-
-`number`
-
-###### userTurnLimit?
-
-\{
-  `maxDurationMs?`: `number`;
-  `maxWords?`: `number`;
-\}
-
-###### userTurnLimit.maxDurationMs?
-
-`number`
-
-###### userTurnLimit.maxWords?
-
-`number`
-
-###### voicePresets?
-
-readonly (`"echoVerification"` \| `"speechNormalization"` \| `"natoAlphabet"`)[]
 
 #### Returns
 
@@ -569,9 +271,9 @@ test("recommend pushes its picks to the client", async () => {
 ```ts
 import { createToolContext } from "@alexkroman1/aai/testing";
 
-// A bare string answers every call; a table keyed by system prompt answers a
-// tool that plays more than one model role.
-const ctx = createToolContext({ generate: "A short summary." });
+// `{ reply }` answers every call; `{ routes }`, keyed by system prompt,
+// answers a tool that plays more than one model role.
+const ctx = createToolContext({ generate: { reply: "A short summary." } });
 // … run the tool, then assert on what it asked:
 // expect(ctx.model.calls.map((call) => call.prompt)).toEqual([…]);
 ```
@@ -612,7 +314,9 @@ expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
 ### deployedAgent()
 
 ```ts
-function deployedAgent<D extends AgentDef>(authored: D, project: ProjectFiles): D;
+function deployedAgent<D extends ToolBearingAgent & {
+  systemPrompt: AgentSystemPrompt;
+}>(authored: D, project: ProjectFiles): D;
 ```
 
 The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
@@ -663,11 +367,18 @@ files, a name declared twice, an empty prompt file, and a
 `system-prompt.md` that exists while `agent.ts` declares a different prompt
 STRING — the "I edited the prompt and nothing changed" failure.
 
+**Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
+def satisfies it and comes back as its own type, so a template keeps its
+exported workflow types; the bound says what the function reads, and keeps
+`AgentDef` and everything behind it off `@alexkroman1/aai/testing`'s contract.
+
 #### Type Parameters
 
 ##### D
 
-`D` *extends* [`AgentDef`](index.md#agentdef)
+`D` *extends* [`ToolBearingAgent`](#toolbearingagent) & \{
+  `systemPrompt`: [`AgentSystemPrompt`](index.md#agentsystemprompt);
+\}
 
 #### Parameters
 
@@ -804,6 +515,57 @@ stay.result.options; // "garden view"
 
 ***
 
+### eventsOf()
+
+```ts
+function eventsOf<E extends {
+  type: string;
+}, K extends string>(events: Iterable<E>, type: K): Extract<E, {
+  type: K;
+}>[];
+```
+
+Every event in `events` named `type`, in order, typed as that member.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { eventsOf } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const calls = eventsOf(recorded, "tool.called");
+console.log(calls.map((e) => e.toolName));
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### events
+
+`Iterable`\<`E`\>
+
+##### type
+
+`K`
+
+#### Returns
+
+`Extract`\<`E`, \{
+  `type`: `K`;
+\}\>[]
+
+***
+
 ### expectDeployable()
 
 ```ts
@@ -873,7 +635,7 @@ function expectDeployable(def: AgentConfigSource): {
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -881,7 +643,7 @@ function expectDeployable(def: AgentConfigSource): {
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 };
 ```
 
@@ -1000,7 +762,7 @@ The agent under test — an `agent()` definition, or the raw
      kind: string;
      options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
   };
-  turnDetection?: "auto" | "manual";
+  turnDetection?: string;
   usageLimits?: {
      totalTokens?: number;
   };
@@ -1008,7 +770,7 @@ The agent under test — an `agent()` definition, or the raw
      maxDurationMs?: number;
      maxWords?: number;
   };
-  voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+  voicePresets?: readonly string[];
 }
 ```
 
@@ -1253,7 +1015,7 @@ optional toolChoice?:
 ##### turnDetection?
 
 ```ts
-optional turnDetection?: "auto" | "manual";
+optional turnDetection?: string;
 ```
 
 ##### usageLimits?
@@ -1276,7 +1038,7 @@ optional turnDetection?: "auto" | "manual";
 ##### voicePresets?
 
 ```ts
-optional voicePresets?: readonly ("echoVerification" | "speechNormalization" | "natoAlphabet")[];
+optional voicePresets?: readonly string[];
 ```
 
 #### Throws
@@ -1401,7 +1163,7 @@ refused.error.includes("start_plan"); // true — the instruction the model reco
 ### expectPromptBuiltinsDeclared()
 
 ```ts
-function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinTool[];
+function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
 ```
 
 Every builtin the prompt commands is one `builtinTools` declares — or a throw
@@ -1460,10 +1222,11 @@ console.log(commanded); // ["run_code"]
 
 ##### def
 
-[`AgentConfigSource`](manifest.md#agentconfigsource)
+`Pick`\<[`AgentConfigSource`](manifest.md#agentconfigsource), `"systemPrompt"` \| `"builtinTools"`\>
 
-The agent under test, converted through `toAgentConfig` so the
-  scan reads the prompt a deploy carries.
+The agent under test — only its `systemPrompt` and
+  `builtinTools` are read, so an `agent()` def passes as it is. Whether the
+  WHOLE def converts is [expectDeployable](#expectdeployable)'s claim, not this one's.
 
 #### Returns
 
@@ -1534,11 +1297,61 @@ expect(order.id).toBe("ord_1");
 
 ***
 
+### isEvent()
+
+```ts
+function isEvent<E extends {
+  type: string;
+}, K extends string>(event: E, type: K): event is Extract<E, { type: K }>;
+```
+
+Whether `event` is the one named `type` — a type guard, so the branch it
+guards reads that member's fields without a cast.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { isEvent } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const last = recorded.at(-1);
+if (last && isEvent(last, "tool.called")) console.log(last.toolName);
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### event
+
+`E`
+
+##### type
+
+`K`
+
+#### Returns
+
+`event is Extract<E, { type: K }>`
+
+***
+
 ### parseSchemaInput()
 
 ```ts
 function parseSchemaInput<T = Record<string, unknown>>(
-   schema: StandardSchemaV1<unknown, unknown> | undefined, 
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
    value: unknown, 
    what?: string
 ): Promise<T>;
@@ -1559,7 +1372,8 @@ What the schema produces. Defaults to
 
 ##### schema
 
-`StandardSchemaV1`\<`unknown`, `unknown`\> \| `undefined`
+  \| [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
 
 A Standard Schema, or `undefined` — the shape
   `tool.inputSchema` and `workflow.input` both have. `undefined` is an ERROR
@@ -1874,10 +1688,14 @@ expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] })
 
 ```ts
 function schemaInputIssues(
-   schema: StandardSchemaV1<unknown, unknown> | undefined, 
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
    value: unknown, 
    what?: string
-): Promise<readonly StandardSchemaIssue[] | undefined>;
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
 ```
 
 The issues `schema` found in `value`, or `undefined` when it accepted it.
@@ -1891,7 +1709,8 @@ hand-rolled site was already writing against `.issues`.
 
 ##### schema
 
-`StandardSchemaV1`\<`unknown`, `unknown`\> \| `undefined`
+  \| [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
 
 As [parseSchemaInput](#parseschemainput): `undefined` throws rather than
   reporting "no issues", which would make a negative test pass for a schema
@@ -1909,7 +1728,9 @@ How the schema is named in that error.
 
 #### Returns
 
-`Promise`\<readonly `StandardSchemaIssue`[] \| `undefined`\>
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](index.md#standardschemaissue)[]
+  \| `undefined`\>
 
 #### Example
 
@@ -1934,8 +1755,7 @@ scripted, and hand back the fakes beside it.
 the same scripts and expose the same fakes on the context (`ctx.model`,
 `ctx.desk`), so one call covers scripting either seam, both, or neither. This
 stays for the spec that reads the two fakes by name — `const { ctx, model,
-desk } = scriptedToolContext(…)` — and for the one script shape the context's
-own field cannot express, a top-level function route.
+desk } = scriptedToolContext(…)`.
 
 Each call is a distinct session, as with `createToolContext`. A spec that
 wants two sessions sharing one script calls this twice with the same routes
@@ -1959,8 +1779,8 @@ import { scriptedToolContext } from "@alexkroman1/aai/testing";
 
 const TRIAGE = "You triage email.";
 const { ctx, model, desk } = scriptedToolContext({
-  generate: { [TRIAGE]: { object: { response: "email" } } },
-  delegate: { "meeting-assistant": "Free Wednesday 1pm." },
+  generate: { routes: { [TRIAGE]: { object: { response: "email" } } } },
+  delegate: { routes: { "meeting-assistant": "Free Wednesday 1pm." } },
 });
 // … run the tool against `ctx`, then:
 // expect(model.calls.map((call) => call.system)).toEqual([TRIAGE]);
@@ -1972,22 +1792,20 @@ const { ctx, model, desk } = scriptedToolContext({
 ### stubDelegate()
 
 ```ts
-function stubDelegate(script: 
-  | StubDelegateRoute
-  | Readonly<Record<string, StubDelegateRoute>>): StubDelegate;
+function stubDelegate(script: StubDelegateScript): StubDelegate;
 ```
 
-Build a fake `ctx.delegate` from a script keyed by subagent name.
+Build a fake `ctx.delegate` from a script: one reply, or routes keyed by
+subagent name.
 
-Pass a single route (not a record) to answer every delegation the same way,
-which is what a one-subagent tool wants.
+Pass `{ reply }` to answer every delegation the same way, which is what a
+one-subagent tool wants.
 
 #### Parameters
 
 ##### script
 
-  \| [`StubDelegateRoute`](#stubdelegateroute)
-  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](#stubdelegateroute)\>\>
+[`StubDelegateScript`](#stubdelegatescript)
 
 #### Returns
 
@@ -2002,8 +1820,10 @@ import { createToolContext, stubDelegate } from "@alexkroman1/aai/testing";
 
 const findings = ["Rain on Tuesday.", "Clear on Wednesday."];
 const desk = stubDelegate({
-  researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
-  "fact-checker": "Both claims check out.",
+  routes: {
+    researcher: () => ({ text: findings.shift() ?? "Nothing found.", steps: 3 }),
+    "fact-checker": "Both claims check out.",
+  },
 });
 const ctx = createToolContext({ delegate: desk.delegate });
 // … run the tool, then assert on who was asked what:
@@ -2131,12 +1951,13 @@ Completion contents, in order; the last repeats. A bare
 function stubGenerate(script: StubGenerateScript): StubGenerate;
 ```
 
-Build a fake `ctx.generate` from a script keyed by system prompt.
+Build a fake `ctx.generate` from a script: one reply, or routes keyed by
+system prompt.
 
 A call whose system prompt names no route throws, naming it — an unscripted
 model call is a spec that has drifted from the tool, not a case to paper over.
-Pass a single route (not a record) to answer every call the same way, which is
-what a one-model tool wants.
+Pass `{ reply }` to answer every call the same way, which is what a one-model
+tool wants.
 
 #### Parameters
 
@@ -2157,8 +1978,10 @@ import { createToolContext, stubGenerate } from "@alexkroman1/aai/testing";
 
 const verdicts = ["yes", "no"];
 const model = stubGenerate({
-  "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
-  "You answer questions.": "The documented answer.",
+  routes: {
+    "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
+    "You answer questions.": "The documented answer.",
+  },
 });
 const ctx = createToolContext({ generate: model.generate });
 // … run the tool, then assert on the roles it played:
@@ -2170,10 +1993,8 @@ const ctx = createToolContext({ generate: model.generate });
 ```ts
 import { stubGenerate } from "@alexkroman1/aai/testing";
 
-const model = stubGenerate({ object: { steps: ["Only step"] } });
-// A text-only answer is the STRING, never `{ text }` alone — that shape is a
-// route table keyed "text", and `StubGenerateRoutes` makes it a compile error.
-const answerer = stubGenerate("The documented answer.");
+const model = stubGenerate({ reply: { object: { steps: ["Only step"] } } });
+const answerer = stubGenerate({ reply: "The documented answer." });
 ```
 
 ***
@@ -2244,9 +2065,7 @@ went. Generating audible audio would only make the fixtures bigger.
 ### stubStepDelegate()
 
 ```ts
-function stubStepDelegate(script: 
-  | StubDelegateRoute
-  | Readonly<Record<string, StubDelegateRoute>>): StubStepDelegate;
+function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 ```
 
 PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be
@@ -2265,8 +2084,7 @@ an author meets first names this function.
 
 ##### script
 
-  \| [`StubDelegateRoute`](#stubdelegateroute)
-  \| `Readonly`\<`Record`\<`string`, [`StubDelegateRoute`](#stubdelegateroute)\>\>
+[`StubDelegateScript`](#stubdelegatescript)
 
 #### Returns
 
@@ -2277,7 +2095,7 @@ an author meets first names this function.
 ```ts
 import { stubStepDelegate } from "@alexkroman1/aai/testing";
 
-const desk = stubStepDelegate({ researcher: "Prices fell 12% in 2025." });
+const desk = stubStepDelegate({ routes: { researcher: "Prices fell 12% in 2025." } });
 try {
   // … call the exported step, then assert on `desk.calls`
 } finally {
@@ -2551,7 +2369,9 @@ function toolInputIssues(
    agent: ToolBearingAgent, 
    name: string, 
    value: unknown
-): Promise<readonly StandardSchemaIssue[] | undefined>;
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
 ```
 
 The issues the tool `name`'s input schema found in `value`, or `undefined`.
@@ -2576,7 +2396,9 @@ between an LLM's untyped tool call and the tool body.
 
 #### Returns
 
-`Promise`\<readonly `StandardSchemaIssue`[] \| `undefined`\>
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](index.md#standardschemaissue)[]
+  \| `undefined`\>
 
 #### Throws
 
@@ -3218,8 +3040,7 @@ The workflow's return type, when the caller names it.
 
 ```ts
 type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
-  delegate?:   | Readonly<Record<string, StubDelegateRoute>>
-     | StubDelegateRoute;
+  delegate?: StubDelegateScript;
   generate?: StubGenerateScript;
 };
 ```
@@ -3243,12 +3064,10 @@ one, which failed the docs build as three unresolved links.
 ##### delegate?
 
 ```ts
-optional delegate?: 
-  | Readonly<Record<string, StubDelegateRoute>>
-  | StubDelegateRoute;
+optional delegate?: StubDelegateScript;
 ```
 
-The script `stubDelegate` takes — routes keyed by subagent name, or one route.
+The script `stubDelegate` takes — `{ reply }`, or `{ routes }` keyed by subagent name.
 
 ##### generate?
 
@@ -3256,9 +3075,7 @@ The script `stubDelegate` takes — routes keyed by subagent name, or one route.
 optional generate?: StubGenerateScript;
 ```
 
-The script `stubGenerate` takes — routes keyed by system prompt, or one
-route. Named through [StubGenerateScript](#stubgeneratescript) rather than restated, so the
-`{ text }`-only misuse arm that type refuses is refused here too.
+The script `stubGenerate` takes — `{ reply }`, or `{ routes }` keyed by system prompt.
 
 ***
 
@@ -3397,6 +3214,82 @@ needs in order to shift its own script.
 
 ***
 
+### StubDelegateScript
+
+```ts
+type StubDelegateScript = 
+  | {
+  reply: StubDelegateRoute;
+  routes?: never;
+}
+  | {
+  reply?: never;
+  routes: Readonly<Record<string, StubDelegateRoute>>;
+};
+```
+
+Everything [stubDelegate](#stubdelegate-1) and [stubStepDelegate](#stubstepdelegate-1) accept: ONE route
+answering every delegation, or a table of routes keyed by subagent name —
+each under a key that says which.
+
+The same two shapes [StubGenerateScript](#stubgeneratescript) takes, for the same reason: a
+bare "a table, or a reply" union is told apart at runtime by the reply's
+shape, so a subagent named `text` could never be routed and a reply object
+could be read as a table. Named, there is nothing to guess.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  reply: StubDelegateRoute;
+  routes?: never;
+}
+```
+
+###### reply
+
+```ts
+readonly reply: StubDelegateRoute;
+```
+
+Answers EVERY delegation, whichever subagent it names.
+
+###### routes?
+
+```ts
+readonly optional routes?: never;
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  reply?: never;
+  routes: Readonly<Record<string, StubDelegateRoute>>;
+}
+```
+
+###### reply?
+
+```ts
+readonly optional reply?: never;
+```
+
+###### routes
+
+```ts
+readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+```
+
+One route per subagent, keyed by its `name`. A delegation naming no
+route rejects, naming the subagent.
+
+***
+
 ### StubEmitted
 
 ```ts
@@ -3463,75 +3356,97 @@ document, an executor asked once per turn — since it can shift its own script.
 
 ***
 
-### StubGenerateRoutes
-
-```ts
-type StubGenerateRoutes = Readonly<Record<string, StubGenerateRoute>> & {
-  text?: "a bare `{ text }` is read as a route TABLE keyed \"text\", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
-};
-```
-
-A table of routes keyed by system prompt — with the one key that cannot mean
-what it looks like typed as the RULE it breaks.
-
-The `text` arm is a misuse message, on the same pattern as `AgentParams`'
-misuse arms and `SyncMutationMisuse`: a string literal type nothing an author
-can pass satisfies. It is written INLINE rather than as its own exported
-alias, because a misuse arm is machinery an author meets as a message and
-never by name — the argument `packages/aai/typedoc.json`'s
-`intentionallyNotExported` makes for the twenty-odd others.
-
-The misuse it names is the one `isRouteTable` cannot see. A record without an
-`object` key IS a route table, so `stubGenerate({ text: "…" })` type-checked
-as a table with one route named `text` — a system prompt no tool carries —
-and then rejected every call with "no route for this call's system prompt".
-
-**This arm does not reach `tsc`'s output, and the reason generalizes.** A
-misuse arm only prints when no SIBLING arm of the union shape-competes for
-the same object literal. Here [StubGenerateReply](#stubgeneratereply)'s
-`{ text?: string; object: unknown }` declares an OPTIONAL `text`, so
-TypeScript scores it the closer match for `{ text: "…" }` and elaborates
-against it — printing "Property 'object' is missing", which points at the
-wrong remedy: the author wanted a bare string, not an added `object`.
-Measured against the real declarations; three repair attempts (an extra
-`{ text: Misuse; object?: never }` arm, splitting the object arm, both) leave
-the output unchanged, because TS picks any arm requiring `object`. The only
-shape that surfaces the literal is one where no reply arm declares `text` at
-all, which would drop the legal `{ text, object }` reply.
-
-So the arm is kept for the shape it documents, and the RUNTIME guard in
-[stubGenerate](#stubgenerate-1) is what actually names the rule for a caller who gets
-past the compiler. `docs/src/content/docs/build/testing.md` describes the
-misleading message rather than promising this one.
-
-The cost is that a route table can no longer be keyed by a system prompt whose
-whole text is `"text"`, which is not a system prompt, and which the runtime
-guard in [stubGenerate](#stubgenerate-1) refuses anyway.
-
-#### Type Declaration
-
-##### text?
-
-```ts
-readonly optional text?: "a bare `{ text }` is read as a route TABLE keyed \"text\", not as a reply — pass the string on its own for a text answer, or `{ text, object }` when the tool reads both";
-```
-
-***
-
 ### StubGenerateScript
 
 ```ts
 type StubGenerateScript = 
-  | StubGenerateRoutes
-  | StubGenerateRoute;
+  | {
+  reply: StubGenerateRoute;
+  routes?: never;
+}
+  | {
+  reply?: never;
+  routes: Readonly<Record<string, StubGenerateRoute>>;
+};
 ```
 
-Everything [stubGenerate](#stubgenerate-1) accepts: a table of routes, or one route.
+Everything [stubGenerate](#stubgenerate-1) accepts: ONE route answering every call, or a
+table of routes keyed by system prompt — each under a key that says which.
+
+```ts
+import { stubGenerate } from "@alexkroman1/aai/testing";
+
+stubGenerate({ reply: "The documented answer." });
+stubGenerate({ routes: { "You grade documents.": { object: { score: 1 } } } });
+```
+
+**Why two keys rather than "a record, or a route".** The bare form was a union
+of a route table and a single reply, told apart at runtime by whether the
+object had an `object` key — so `stubGenerate({ text: "…" })` type-checked as
+a table with one route named `text` and rejected every call. A misuse arm in
+the type was meant to refuse it, and could not SPEAK: the reply arm's
+optional `text` out-scored it, so `tsc` printed "Property 'object' is
+missing" — the wrong remedy. With the shape named, there is nothing to
+disambiguate: `{ reply: { text } }` is a reply, and a function under `reply`
+is a computed route, never mistaken for the seam itself (see
+`ToolContextOverrides.generate`).
 
 Named because it is written down in three places — that function, the
 `generate` field of `createToolContext`'s overrides, and
 `ScriptedToolContextOptions` — and a union restated at each of them is a union
 that drifts.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  reply: StubGenerateRoute;
+  routes?: never;
+}
+```
+
+###### reply
+
+```ts
+readonly reply: StubGenerateRoute;
+```
+
+Answers EVERY call, whatever its system prompt.
+
+###### routes?
+
+```ts
+readonly optional routes?: never;
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  reply?: never;
+  routes: Readonly<Record<string, StubGenerateRoute>>;
+}
+```
+
+###### reply?
+
+```ts
+readonly optional reply?: never;
+```
+
+###### routes
+
+```ts
+readonly routes: Readonly<Record<string, StubGenerateRoute>>;
+```
+
+One route per model ROLE, keyed by the call's system prompt. A call
+whose system prompt names no route rejects, naming it; `""` is the
+route for a call that carries none.
 
 ***
 
@@ -4416,20 +4331,27 @@ readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 ### ToolContextOverrides
 
 ```ts
-type ToolContextOverrides = { [K in Exclude<keyof ToolContext, "generate" | "delegate">]?: ToolContext[K] } & {
+type ToolContextOverrides = {
+  deadlineAt?: ToolContext["deadlineAt"];
   delegate?:   | ToolContext["delegate"]
-     | Readonly<Record<string, StubDelegateRoute>>
-     | StubDelegateReply;
+     | StubDelegateScript;
   desk?: StubDelegate;
+  env?: ToolContext["env"];
   generate?:   | ToolContext["generate"]
-     | StubGenerateRoutes
-     | StubGenerateReply;
+     | StubGenerateScript;
+  messages?: ToolContext["messages"];
   model?: StubGenerate;
+  random?: ToolContext["random"];
+  send?: ToolContext["send"];
+  sessionId?: ToolContext["sessionId"];
+  signal?: ToolContext["signal"];
+  slots?: ToolContext["slots"];
+  workflows?: ToolContext["workflows"];
 };
 ```
 
-What [createToolContext](#createtoolcontext) accepts: any field of a [ToolContext](index.md#toolcontext),
-and `undefined` for one the caller does not have.
+What [createToolContext](#createtoolcontext) accepts: a field per [ToolContext](index.md#toolcontext) field,
+each also taking `undefined` for one the caller does not have.
 
 **Not `Partial<ToolContext>`, and the difference is the whole point.** Under
 `exactOptionalPropertyTypes` — which this repo and the scaffold both set —
@@ -4449,24 +4371,37 @@ every field costs nothing (an explicit `undefined` and an absent key
 both fall through to the default, because [createToolContext](#createtoolcontext) takes the
 overrides through `omitUndefined` before spreading them) and strictly widens what compiles.
 
-The two MODEL seams are widened rather than mapped, because each also accepts
-the SCRIPT its fake is built from — see their own docs below.
+**Every field is NAMED rather than mapped over `keyof ToolContext`.** A mapped
+type is one a reader cannot see the members of without expanding it, and one
+that silently grows a field when `ToolContext` does — which is the moment a
+test double should have to decide what its default is. `testing.test-d.ts`
+pins that the two key sets agree, so a new `ToolContext` field fails there
+rather than being unoverridable.
 
-#### Type Declaration
+The two MODEL seams also accept the SCRIPT their fake is built from — see
+their own docs below.
+
+#### Properties
+
+##### deadlineAt?
+
+```ts
+optional deadlineAt?: ToolContext["deadlineAt"];
+```
+
+See [ToolContext.deadlineAt](index.md#deadlineat). Defaults to the runtime's tool deadline, from now.
 
 ##### delegate?
 
 ```ts
 optional delegate?: 
   | ToolContext["delegate"]
-  | Readonly<Record<string, StubDelegateRoute>>
-  | StubDelegateReply;
+  | StubDelegateScript;
 ```
 
-A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — a table of routes
-keyed by subagent name, or one reply. A function is the seam, on the same
-rule as `generate` above; the fake comes back on
-`TestToolContext.desk`.
+A real `ctx.delegate`, or `stubDelegate`'s own SCRIPT — `{ reply }` or
+`{ routes }` keyed by subagent name. A function is the seam, on the same
+rule as `generate` above; the fake comes back on `TestToolContext.desk`.
 
 ##### desk?
 
@@ -4476,28 +4411,41 @@ optional desk?: StubDelegate;
 
 The `stubDelegate` twin of `ToolContextOverrides.model`.
 
+##### env?
+
+```ts
+optional env?: ToolContext["env"];
+```
+
+See [ToolContext.env](index.md#env-2). Defaults to `{}`.
+
 ##### generate?
 
 ```ts
 optional generate?: 
   | ToolContext["generate"]
-  | StubGenerateRoutes
-  | StubGenerateReply;
+  | StubGenerateScript;
 ```
 
-A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — a table of routes
-keyed by system prompt, a bare string, or one `{ text, object }` reply.
+A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — `{ reply }` or
+`{ routes }`.
 
 A script is built into the fake here, so the two-step every spec wrote —
 `stubGenerate(script)`, destructure, `createToolContext({ generate })` — is
 one call, and the fake comes back on `TestToolContext.model`.
 
-**A FUNCTION in this position is the seam itself**, never a top-level
-function route: `GenerateFn` and `(call) => StubGenerateReply` are both
-`(x) => y` and nothing at runtime can tell them apart. A spec that wants a
-computed single route builds the fake and passes both halves —
-`createToolContext({ generate: model.generate, model })` — which is what
-`scriptedToolContext` does.
+**A FUNCTION in this position is always the seam itself**, and nothing else
+can be one: a computed route is written `{ reply: (call) => … }`, so it
+cannot be mistaken for a `GenerateFn` the way a bare function route used to
+be.
+
+##### messages?
+
+```ts
+optional messages?: ToolContext["messages"];
+```
+
+See [ToolContext.messages](index.md#messages-2). Defaults to `[]`.
 
 ##### model?
 
@@ -4509,9 +4457,56 @@ A fake this spec built itself, to be exposed as `TestToolContext.model`
 — and, unless `generate` also names a function, INSTALLED as the seam.
 
 The escape hatch under the script sugar: a caller holding a `stubGenerate`
-it wants to share across two contexts, or one built from a top-level
-function route, names it here rather than leaving `ctx.model` pointing at a
-fake nothing reaches.
+it wants to share across two contexts names it here rather than leaving
+`ctx.model` pointing at a fake nothing reaches.
+
+##### random?
+
+```ts
+optional random?: ToolContext["random"];
+```
+
+See [ToolContext.random](index.md#random-1). Defaults to a SEEDED source.
+
+##### send?
+
+```ts
+optional send?: ToolContext["send"];
+```
+
+See [ToolContext.send](index.md#send-4). Defaults to the recorder behind `TestToolContext.sent`.
+
+##### sessionId?
+
+```ts
+optional sessionId?: ToolContext["sessionId"];
+```
+
+See [ToolContext.sessionId](index.md#sessionid-3). Defaults to a fresh id per call.
+
+##### signal?
+
+```ts
+optional signal?: ToolContext["signal"];
+```
+
+See [ToolContext.signal](index.md#signal-1). Defaults to a signal that never aborts.
+
+##### slots?
+
+```ts
+optional slots?: ToolContext["slots"];
+```
+
+See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+
+##### workflows?
+
+```ts
+optional workflows?: ToolContext["workflows"];
+```
+
+See [ToolContext.workflows](index.md#workflows-1). Defaults to a client whose every method rejects.
 
 ***
 

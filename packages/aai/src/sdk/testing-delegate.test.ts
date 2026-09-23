@@ -17,7 +17,7 @@ describe("subagent", () => {
 
 describe("stubDelegate", () => {
   it("answers a single route for every subagent", async () => {
-    const desk = stubDelegate("Found it.");
+    const desk = stubDelegate({ reply: "Found it." });
     const result = await desk.delegate(researcher, { task: "look" });
     expect(result).toEqual({
       text: "Found it.",
@@ -30,7 +30,9 @@ describe("stubDelegate", () => {
   });
 
   it("stages a run the subagent's guardrail never accepted", async () => {
-    const desk = stubDelegate({ researcher: { text: "thin", complaint: "no sources" } });
+    const desk = stubDelegate({
+      routes: { researcher: { text: "thin", complaint: "no sources" } },
+    });
 
     // The complaint IS the rejection — a spec cannot describe one without the
     // other, because the runtime never produces one without the other.
@@ -42,7 +44,9 @@ describe("stubDelegate", () => {
   });
 
   it("routes by subagent name and records every call", async () => {
-    const desk = stubDelegate({ researcher: "A finding.", "fact-checker": "It checks out." });
+    const desk = stubDelegate({
+      routes: { researcher: "A finding.", "fact-checker": "It checks out." },
+    });
 
     expect((await desk.delegate(researcher, { task: "look" })).text).toBe("A finding.");
     expect((await desk.delegate(checker, { task: "verify", context: "be strict" })).text).toBe(
@@ -56,7 +60,7 @@ describe("stubDelegate", () => {
 
   it("lets a route shift its own script", async () => {
     const queue = ["first", "second"];
-    const desk = stubDelegate({ researcher: () => queue.shift() ?? "empty" });
+    const desk = stubDelegate({ routes: { researcher: () => queue.shift() ?? "empty" } });
     expect((await desk.delegate(researcher, { task: "a" })).text).toBe("first");
     expect((await desk.delegate(researcher, { task: "b" })).text).toBe("second");
     expect((await desk.delegate(researcher, { task: "c" })).text).toBe("empty");
@@ -64,7 +68,9 @@ describe("stubDelegate", () => {
 
   it("fills a cost report from the tool calls a route declares", async () => {
     const desk = stubDelegate({
-      researcher: { text: "Two lookups.", toolCalls: [{ name: "search", input: { q: "a" } }] },
+      routes: {
+        researcher: { text: "Two lookups.", toolCalls: [{ name: "search", input: { q: "a" } }] },
+      },
     });
     const result = await desk.delegate(researcher, { task: "a" });
     // One more step than tool calls — the answering step. See `envelope`.
@@ -73,7 +79,7 @@ describe("stubDelegate", () => {
   });
 
   it("rejects an unrouted subagent, naming it and the routes there are", async () => {
-    const desk = stubDelegate({ researcher: "A finding." });
+    const desk = stubDelegate({ routes: { researcher: "A finding." } });
     await expect(desk.delegate(checker, { task: "verify" })).rejects.toThrow(
       /no route for subagent "fact-checker".*Routed subagents: researcher/s,
     );
@@ -87,7 +93,7 @@ describe("createToolContext", () => {
   });
 
   it("takes a stubbed delegate", async () => {
-    const desk = stubDelegate("Found it.");
+    const desk = stubDelegate({ reply: "Found it." });
     const ctx = createToolContext({ delegate: desk.delegate });
     expect((await ctx.delegate(researcher, { task: "look" })).text).toBe("Found it.");
   });

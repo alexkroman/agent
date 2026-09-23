@@ -39,7 +39,7 @@ is the security boundary.
 
 ## Package exports
 
-Twenty-two subpaths, nineteen of them mapped below. What decides which
+Twenty-three subpaths, twenty of them mapped below. What decides which
 one a symbol lives on:
 
 ### The root barrel is CURATED, and `export *` is what broke it
@@ -80,6 +80,32 @@ Nothing was deleted: budgets and defaults went to `./internal`, the slug/CLI
 contracts and wire helpers to `./utils`. **`index.ts`'s module doc holds the
 test in full and is the only thing enforcing membership — keep it accurate.**
 
+## New features ship in `/experimental` first
+
+**No inert knobs on the contracted surface.** A field that is typed and
+documented but not honoured end to end — or honoured without a measurement
+saying it helps — is a behaviour an author declares and never gets, and every
+one shipped so far cost an epoch to remove. So a NEW, UNMEASURED feature lands on
+`@alexkroman1/aai/experimental` (`src/experimental.ts`), which is on
+`NON_AUTHORING_SUBPATHS` (no capability, no epoch) and on `docs-markdown.mjs`'s
+`UNDOCUMENTED_SUBPATHS`. Promotion is a MOVE to the subpath that owns the surface,
+joining that capability — never a re-export from both. A contracted type may not
+name an experimental one (it would be an UNOWNED declaration, which the gate
+refuses), so an experimental feature is reachable only by importing it.
+
+**Open vocabularies are `Known… | (string & {})`** — `AssemblyAIGatewayModel`,
+`LlmProviderName`, `VoicePresetName`, `TurnDetectionMode`, like
+`AssemblyAITtsVoice` before them. The known half autocompletes; an unknown value
+compiles, is accepted by `AgentConfigSchema`, and is WARNED about by
+`agentConfigWarnings` at build. A regenerated known list is then a compatible
+change the probe proves (a revision, not an epoch).
+
+**A published constant is typed as its primitive**, never its literal
+(`DEFAULT_SYSTEM_PROMPT: string`, `VOICE_PRESETS: Readonly<Record<…, string>>`,
+the `*_TIMEOUT_MS: number` family): a value is a behaviour, reviewed in its
+module's diff and owed a changeset, not a type an author's code can pin.
+Identifiers (`DELEGATE_TOOL_NAME`, `SLACK_CHANNEL_KIND`) stay literal.
+
 ## One epoch classification the tool cannot make
 
 A worked example for the epoch rules in the root `AGENTS.md`. **`aai:defaults`**
@@ -103,7 +129,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/src/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, and `assemblyAIPipeline()`/`assemblyAIS2s()`. One constant, `DEFAULT_SYSTEM_PROMPT`, because an author READS it. See "The root barrel is CURATED" above |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT (`import.meta.glob` cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Four more shipped for the templates (a spec cannot import from a sibling): **`expectToolOk`/`expectDialogOk`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them, for a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. **`expectDialogRefused`/`dialogRefusalPattern`** are the unwrap's mirror; `_dialog-refusal.ts` owns the sentence both read. **`dialogResultSchema`** is that envelope as a zod schema, for an eval reading a serialized result through `toolResultIn`. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE, an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. **`createToolContext`'s `generate`/`delegate` also take a SCRIPT**, not only a function — the fake is built for you and exposed as `ctx.model`/`ctx.desk`, so the `stubGenerate` → destructure → `createToolContext` three-step is one call. A FUNCTION in either position is always the seam itself, since a `GenerateFn` and a top-level route function are indistinguishable at runtime. `ctx.model`/`ctx.desk` are always present and simply unwired (empty `calls`) when the caller brought its own function, the rule `sent` already follows for `send`. **`scriptedToolContext({ generate?, delegate?, …overrides })`** predates that and still answers `{ ctx, model, desk }` — three template specs had hand-rolled it — but `createToolContext` is the way in now. A `{ text }`-only script is refused at COMPILE time and at bind: it used to type-check and then read as a route table keyed by the system prompt `"text"`, rejecting every call. The compile refusal is NOT the misuse arm speaking — see "A misuse arm is defeated by a shape-competing sibling" below. **`runGuardrail(def, text, answer?)`** calls a subagent's guardrail the way the runtime does and THROWS on a def with none or a verdict that is a promise, so a spec asserts on `true \| string` rather than a union with `Promise`. Each helper's own doc carries the rest |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createStubWorkflows()` is the rejecting `ctx.workflows` it defaults to (the rejecting `db` is internal now). Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`deployedAgent(def, { tools, systemPrompt })`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs, system prompt included. It takes the glob's RESULT (`import.meta.glob` cannot take a variable), and a `readdir` + `import()` is refused: that resolves the tools through Node and hands them a second copy of this SDK. Bounded by the two fields it lowers onto (`ToolBearingAgent & { systemPrompt }`), which keeps `AgentDef` and everything behind it — `SessionEvent`, `Dialog`, the providers — off this subpath's contract; `commandedBuiltins`/`expectPromptBuiltinsDeclared` likewise take only `{ systemPrompt }` / `Pick<…, "systemPrompt" \| "builtinTools">`, and `ToolContextOverrides` NAMES each field (`testing.test-d.ts` pins the key set to `ToolContext`'s). That cut the `aai:testing` rollup from 1472 lines to ~1020; what is left is `ToolContext` (a `TestToolContext` is one) and `AgentConfigSchema` (`expectDeployable` returns an `AgentConfig`). Four more shipped for the templates (a spec cannot import from a sibling): **`expectToolOk`/`expectDialogOk`** unwrap a dialog tool's envelope and FAIL at the call quoting the refusal, where the cast they replace reads `undefined` off a `ToolFailure` and dies several assertions later; **`parseToolInput`/`toolInputIssues`** (plus `parseSchemaInput`/`schemaInputIssues` under them, for a WORKFLOW's input) replace reaching through `["~standard"].validate`, which may be sync or async, so a missing `await` leaves `.issues` undefined and the negative test passes for the wrong reason; and **`stubTranscribe`**, staging a refusal as an HTTP STATUS so the SDK's own `transcribeFailure` sets `retryable`/`retryAfter` — a fake minting that error would assert the classification the spec is testing. **`expectDialogRefused`/`dialogRefusalPattern`** are the unwrap's mirror; `_dialog-refusal.ts` owns the sentence both read. **`dialogResultSchema`** is that envelope as a zod schema, for an eval reading a serialized result through `toolResultIn`. `createToolContext` takes `ToolContextOverrides` (each field also accepting `undefined`, run through `omitUndefined`), because `Partial<ToolContext>` under `exactOptionalPropertyTypes` forced specs into the conditional spread rule 22 counts as debt; `runTool`'s args and ctx are optional, told apart by SHAPE, an omitted context being a DISTINCT session. `stubUploads` answers `{ restore, writes, read }` like its three siblings rather than a bare thunk — the breaking change that dropped the `aai:testing` epoch. **`createToolContext`'s `generate`/`delegate` also take a SCRIPT**, not only a function — the fake is built for you and exposed as `ctx.model`/`ctx.desk`, so the `stubGenerate` → destructure → `createToolContext` three-step is one call. A FUNCTION in either position is always the seam itself, since a `GenerateFn` and a top-level route function are indistinguishable at runtime. `ctx.model`/`ctx.desk` are always present and simply unwired (empty `calls`) when the caller brought its own function, the rule `sent` already follows for `send`. **`scriptedToolContext({ generate?, delegate?, …overrides })`** predates that and still answers `{ ctx, model, desk }` — three template specs had hand-rolled it — but `createToolContext` is the way in now. **A script NAMES its shape — `{ reply }` or `{ routes }`** — in every position that takes one (`stubGenerate`, `stubDelegate`, `stubStepDelegate`, `installStubStepDelegate`, and the two context builders' `generate`/`delegate`). The bare "a table, or a reply" union it replaced read `{ text: "…" }` as a table with one route named `text`, and the misuse arm meant to refuse it could not make `tsc` print its rule (see "A misuse arm is defeated by a shape-competing sibling" below); a bare shape reaching the runtime untyped now throws at bind. A computed route is `{ reply: (call) => … }`, so a FUNCTION in `createToolContext({ generate })` is always the seam. **`runGuardrail(def, text, answer?)`** calls a subagent's guardrail the way the runtime does and THROWS on a def with none or a verdict that is a promise, so a spec asserts on `true \| string` rather than a union with `Promise`. Each helper's own doc carries the rest |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, and the four narration formatters `formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`), plus `decodeHtmlEntities`. Twenty exports. The fifteen helpers are on the ROOT too, so this is the path for a tool body that wants one without naming the root; **the four formatters and `decodeHtmlEntities` are reachable only here**, and deliberately — their reader is BOTH a `workflows/*.ts` step and a `client.tsx` (a run narrates itself, a page renders the same run), and `/utils` is the path a browser bundle takes without pulling zod's graph. Non-localized permanently, each output pinned to the character in `format.test.ts`: `Intl` answers to the host's ICU default, so one run would render differently on a laptop and in a sandbox. The duplication they replace was a live bug — `call-audit-workflow` printed one recording as `1:04:09` from a step and `64:09` from `client.tsx`. `plural(n, one, many?)` returns the WORD, not the count. **It was 79**: the membership rule was a BUILD property (zod-free), a fact about its graph rather than an audience. The STEP vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
 | `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a step is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor) and `mapSettled`/`partitionSettled` (the same window settling each item into a `Settled<T, R>` beside it, for a tool on a live call; `Infinity` is the `allSettled` width), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepDelegate`** (a whole tool LOOP — `ctx.delegate` for a body, on a published slot), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned), `stepReport`/`stepEmit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`stepWriteUpload`**/`stepReadUpload`/`stepUploadInfo`/`stepRequireCompleteUpload`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. **The module doc owns the rest** |
@@ -112,10 +138,11 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai-runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/workflow-api` | `sdk/workflow-api-barrel.ts` → 4 modules | The CLIENT of everything a deployed agent answers — the surface for a caller OUTSIDE the agent (a page, a script, a cron job). **`createAgentClient` is the one to reach for**: one object over `config()` and every workflow route. The page that bundles it is why `sdk/client-config-path.ts` exists. **The SERVER's half left for `/internal`** (`clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES`, `WORKFLOW_API_PREFIX`) — nothing a caller writes. **A lone in-repo importer is NOT the test**: six more names have only `aai-runtime` too and stay, being the parameter and member types of `WorkflowClient`/`WorkflowDef`, so moving them fails the docs build. The barrel's doc argues it — read that before trimming further. `aai-ui`'s guide owns the HTTP surface and the iterators over it; each module's doc carries why |
-| `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, `SessionEvent` |
+| `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `SessionCommand`, the event envelope. **The event VOCABULARY is not here** — `SessionEventSchema`, `SessionEvent<K>`, `SessionEventBody<K>` and the derived `SessionEventMap` are on the ROOT, owned by `aai:events` (see `sdk/session-event-map.ts`); specs pick members with `eventsOf`/`isEvent` from `/testing` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + options (`assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`) |
-| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories (`anthropicLlm`, `openAILlm`, `googleLlm`, `mistralLlm`, `xAILlm`, `groqLlm`, `openRouterLlm`, `cerebrasLlm`, `gatewayLlm`, `assemblyAILlm`); nine of the ten take one shared `ModelOptions` rather than nine byte-identical `{ model: string }` interfaces |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })` — the provider is DATA (`KnownLlmProvider \| (string & {})`), not a function name. It replaced ten per-vendor factories, their options types and two exported base URLs; key variables and endpoints live in `aai-runtime`'s resolver table. An unregistered provider with a `baseUrl` resolves as OpenAI-compatible |
+| `@alexkroman1/aai/experimental` | `experimental.ts` | The lane an UNMEASURED feature ships in before promotion — see "New features ship in `/experimental` first" below. Uncontracted and undocumented by deny-list entry, not by omission |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + options (`cartesiaTts`, `rimeTts`, `assemblyAITts`), the voice catalog, and `ttsVoiceIds(language?)` — the catalog as the non-empty tuple `z.enum` takes, falling back to the default voice on an empty filter |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + their options (`openAIS2s`; the root re-exports `assemblyAIS2s`) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
@@ -140,7 +167,7 @@ DevKit builder that compiled a `workflows/*.ts` module's remainder as a
 `packages/aai-templates/CLAUDE.md` carries the two templates that paid for
 getting the old rule wrong.
 
-**Not on those four subpaths**, each barrel's doc saying why: the eighteen
+**Not on those four subpaths**, each barrel's doc saying why: the
 `*_KIND`/`*_API_KEY_ENV` pairs (`/host-internal`, beside the `resolve*Settings`
 helpers reading them), the eighteen narrowed `*Provider` aliases (gone), and
 `ProviderDescriptor` (the root alone).
@@ -162,7 +189,19 @@ group cannot skip the gate.
 `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
 total over `AgentModelTuning`, so a sixth knob that skips the table fails to
 compile. `resetToolChoice` defaults **true** (OpenAI's `reset_tool_choice`) and
-is inert unless `toolChoice` demands a call.
+is inert unless `toolChoice` demands a call. **`AgentModelTuning` extends
+`ModelTuning`** (`temperature`, `maxOutputTokens`, `maxRetries` — the
+per-request half), which `SubagentDef` extends too MINUS `maxRetries`, so a
+knob added there reaches both loops. A subagent's guardrail budget is
+`maxRevisions`; `maxRetries` was its old name, so `SubagentDef` re-types it as
+a message naming the rename (the `InlineToolsMisuse` idiom) and old code fails
+to compile instead of silently budgeting provider retries.
+
+**`SlotToolDef` and `DialogToolDef` are BUILT from `ToolDef`**
+(`Omit<ToolDef, "execute">` plus their own `execute`; the dialog's
+`when`/`send`/`sendFrom` are `DialogGate`), so a new `ToolDef` field reaches
+both builders — the field-by-field copies left `messages` out, and neither
+could declare tool-call speech.
 
 **A guardrail is pipeline-only, and the two refusals are different claims** —
 s2s has already spoken the sentence, text mode hands its caller the model stream
@@ -226,7 +265,8 @@ The default injection runs at every mode-derivation site — `toAgentConfig`
 provider resolution — before `assertProviderTriple`.
 Partial provider configs are FILLED, not rejected: `defaultProviders`
 supplies the AssemblyAI default for each unset stage of `stt`/`llm`/`tts`
-(when `s2s` is unset), so `agent({ llm: anthropicLlm(...) })` means "the
+(when `s2s` is unset), so
+`agent({ llm: llm({ provider: "anthropic", model }) })` means "the
 default pipeline with that LLM". The compile-time union (`AgentParams` in
 `sdk/define.ts`) matches: any subset of the triple is legal, while `s2s`
 combined with a pipeline provider or a pipeline-only tuning field still
@@ -238,7 +278,10 @@ only guards raw wire shapes that skipped the fill.
   a union arm typed as a string literal nothing satisfies, so `tsc` prints the
   RULE — only works when no other arm of that union scores as a closer match
   for the offending literal. `StubGenerateRoutes.text`
-  (`sdk/testing-generate.ts`) is the case where it does not: the sibling
+  (`sdk/testing-generate.ts`, since REMOVED) was the case where it did not,
+  and the fix was to NAME the union's arms (`{ reply }` / `{ routes }`) so
+  nothing is left to disambiguate — a misuse arm nothing can print is a sign
+  the union itself is the bug. The measurement, kept for the next one: the sibling
   `StubGenerateReply` is `string | { text?: string; object: unknown }`, and
   that OPTIONAL `text` makes it the closer match for `{ text: "…" }`, so
   TypeScript elaborates against it and prints "Property 'object' is missing"
@@ -307,33 +350,32 @@ Reference providers shipped today:
   endpoint and WINS over `region`, and **`languages`, whose unset value is
   "detect per turn", NOT "English"** — read that one before changing it.
 
-- **LLM**: one of the typed factories below — each returns a pure
-  descriptor; the `@ai-sdk/*` package is only imported by the host-side
-  resolver (`host/providers/resolve.ts`), never by the agent bundle:
-  - `anthropicLlm({ model })` — `ANTHROPIC_API_KEY`
-  - `openAILlm({ model })` — `OPENAI_API_KEY`
-  - `googleLlm({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
-  - `mistralLlm({ model })` — `MISTRAL_API_KEY`
-  - `xAILlm({ model })` — `XAI_API_KEY`
-  - `groqLlm({ model })` — `GROQ_API_KEY`
-  - `openRouterLlm({ model })` — `OPENROUTER_API_KEY`; and
-  - `gatewayLlm({ model })` — `AI_GATEWAY_API_KEY`. Both are AGGREGATORS
-    addressed as `"creator/model"`, and neither needs an extra `@ai-sdk/*`
-    dependency (`@ai-sdk/openai`'s `.chat()` client repointed, and
-    `createGateway` from `ai`). Each module's doc carries the rest.
-  - `cerebrasLlm({ model })` — `CEREBRAS_API_KEY`. Also `@ai-sdk/openai`'s
-    `.chat()` client repointed, so also no extra dependency — but NOT an
-    aggregator: the catalogue is a handful of open-weight models and the ids
-    are BARE (`"qwen-3.8-27b"`), not `"creator/model"`. **The reason to name
-    this vendor is serving LATENCY** — the same `qwen-3.8-27b` answered a
-    complete tool call in ~0.55s here against ~0.95s on a self-hosted vLLM
-    endpoint, and on a voice pipeline that is paid every turn. Its module doc
-    carries the rest.
-  - `assemblyAILlm({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
+- **LLM**: ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?,
+  providerOptions? })` (`sdk/providers/llm/llm.ts`), returning a pure
+  descriptor whose `kind` IS the provider. The `@ai-sdk/*` package is only
+  imported by the host-side resolver, never by the agent bundle, and
+  **`aai-runtime`'s `providers/_llm-registry.ts` is where each provider's key
+  variable, base URL and client live** — `anthropic`, `openai`, `google`,
+  `mistral`, `xai`, `groq`, `cerebras` and `openrouter` (both on
+  `@ai-sdk/openai`'s `.chat()` client repointed), `gateway` (`createGateway`
+  from `ai`) and `assemblyai`. `baseUrl` repoints any of them; an UNREGISTERED
+  provider carrying one resolves as an OpenAI-compatible chat endpoint keyed by
+  `apiKeyEnv` (else `<PROVIDER>_API_KEY`). `providerOptions` is a native
+  client's AI SDK `providerOptions` entry (typed — unknown keys are dropped),
+  but on the OpenAI-compatible ones (`openrouter`, `cerebras`, any `baseUrl`
+  provider) it is merged into the request BODY by a `fetch` wrapper
+  (`_request-body-extras.ts`), SDK-built fields winning a collision, because
+  `@ai-sdk/openai`'s chat schema strips every vendor key. Cerebras is worth
+  naming for serving LATENCY (~0.55s to a complete tool call against ~0.95s
+  self-hosted for the same open-weight model).
+  - `provider: "assemblyai"` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
-    `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
-    endpoint. The client is built with a `fetch` wrapper,
+    `@ai-sdk/openai`'s `.chat()` client. `providerOptions: { region: "eu" }`
+    selects the EU endpoint (a `baseUrl` wins over it), and
+    `providerOptions.reasoningEffort` is consumed by the resolver rather than
+    forwarded. The gateway endpoints are on `/host-internal` because
+    `stepGenerate` dials them itself. The client is built with a `fetch` wrapper,
     `repairOpenAiStream` — the gateway documents streamed responses for OpenAI
     models only, and its Claude streams break two AI SDK expectations, each
     fatal to a turn. **Both defects, and why bytes are the only place they can
@@ -352,7 +394,7 @@ Reference providers shipped today:
     **Two things are keyed to the id, they disagree between model families, and
     getting either wrong fails SILENTLY.** That constant's doc carries the full
     matrix; the rule is that `TOOLS_REQUIRE_NO_REASONING` membership decides
-    whether a bare `assemblyAILlm()` fills `reasoningEffort: "none"`, and
+    whether `llm({ provider: "assemblyai" })` fills `reasoningEffort: "none"`, and
     `assemblyAIPipeline()`'s explicit effort must be a value the id ACCEPTS —
     a rejected one is a 400 that the streaming path this SDK uses turns into a
     bare `500 {"message":"something went wrong"}` with the explanation
@@ -429,12 +471,14 @@ Reference providers shipped today:
     delta reintroduces the whole-turn lag whenever no next delta comes.
 
 `host-internal.ts` publishes a provider's `KIND` tag and
-`<PROVIDER>_API_KEY_ENV` constant, never a stage subpath. Adding a provider
-means: descriptor factory in its `sdk/providers/{stt,tts,llm,s2s}/<name>.ts`
+`<PROVIDER>_API_KEY_ENV` constant, never a stage subpath. Adding an STT/TTS/S2S
+provider means: descriptor factory in its `sdk/providers/{stt,tts,s2s}/<name>.ts`
 module, its two constants in `host-internal.ts`, an opener in
 `aai-runtime`'s `providers/{stt,tts}/` (built on the shared session shell in
 `providers/_utils.ts`), and one entry in the matching registry in
-`providers/resolve.ts`.
+`providers/resolve.ts`. Adding an LLM provider is ONE entry in
+`_llm-registry.ts` plus its name in `KnownLlmProvider`/`KNOWN_LLM_PROVIDERS`
+(the registry's `satisfies Record<KnownLlmProvider, …>` holds the two together).
 
 **Reach for `createSttSessionShell` / `createTtsSessionShell`, not
 `createSessionShell` directly.** The raw factory also takes `cleanCloseIsFatal`,
@@ -741,7 +785,7 @@ tools and CONTEXT WINDOW, and hands back only what it concluded. `subagent()`
 `executeToolCall` for a subagent's own tools, the one-level rule and the
 isolated `ctx.messages` are in `packages/aai-runtime/CLAUDE.md`, "Subagents".
 
-It also owns `expectedOutput`, `guardrail`/`maxRetries` and
+It also owns `expectedOutput`, `guardrail`/`maxRevisions` and
 `agent({ subagents })` — the ROSTER a MODEL routes over, where
 `ctx.delegate(x, …)` is the author choosing in code.
 
@@ -1551,7 +1595,8 @@ Session mode resolved {
   stt: { kind: 'assemblyai', model: 'universal-3-5-pro', minTurnSilenceMs: 1600,
          maxTurnSilenceMs: 3000, voiceFocus: 'near-field',
          voiceFocusThreshold: 0.9, connectTimeoutMs: 2500, maxConnectRetries: 2 },
-  llm: { kind: 'assemblyai', reasoningEffort: 'none', model: 'gpt-5.6-luna' },
+  llm: { kind: 'assemblyai', model: 'gpt-5.6-luna',
+         providerOptions: { reasoningEffort: 'none' } },
   tts: { kind: 'assemblyai', voice: 'jane' }
 }
 ```

@@ -87,7 +87,7 @@ export function installStubReporter(): StubReporter;
 export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
 
 // @public
-export function installStubStepDelegate(script: Readonly<Record<string, StubDelegateRoute>> | StubDelegateRoute): StubStepDelegate;
+export function installStubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
 // @public
 export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
@@ -105,7 +105,15 @@ export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowCl
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -116,6 +124,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -213,6 +228,15 @@ type StubDelegateReply = string | {
 
 // @public
 type StubDelegateRoute = StubDelegateReply | ((call: StubDelegateCall) => StubDelegateReply);
+
+// @public
+type StubDelegateScript = {
+    readonly reply: StubDelegateRoute;
+    readonly routes?: never;
+} | {
+    readonly routes: Readonly<Record<string, StubDelegateRoute>>;
+    readonly reply?: never;
+};
 
 // @public
 type StubEmitted = {
@@ -369,19 +393,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 

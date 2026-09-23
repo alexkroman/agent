@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";

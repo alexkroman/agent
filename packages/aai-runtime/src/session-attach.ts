@@ -17,7 +17,7 @@
  *
  * So the lifecycle takes a {@link ClientSink} for the output half and hands back
  * an {@link AttachedSession} for the input half. `wireSessionSocket` is now one
- * adapter over it, and `runtime.connect` is another — the one a caller with its
+ * adapter over it, and `connectSession` is another — the one a caller with its
  * own audio I/O (a console, a WebRTC peer, a test) reaches for.
  *
  * The phase machine is still `ws-session-lifecycle.ts`; its `SOCKET_CLOSED`

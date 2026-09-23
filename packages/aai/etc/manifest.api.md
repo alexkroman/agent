@@ -46,11 +46,7 @@ export const AgentConfigSchema: z.ZodObject<{
         visit_webpage: "visit_webpage";
         web_search: "web_search";
     }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        echoVerification: "echoVerification";
-        natoAlphabet: "natoAlphabet";
-        speechNormalization: "speechNormalization";
-    }>>>>;
+    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silencePrompt: z.ZodOptional<z.ZodString>;
@@ -67,10 +63,7 @@ export const AgentConfigSchema: z.ZodObject<{
         maxWords: z.ZodOptional<z.ZodNumber>;
         maxDurationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodEnum<{
-        auto: "auto";
-        manual: "manual";
-    }>>;
+    turnDetection: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodObject<{
         kind: z.ZodString;
         options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -122,6 +115,8 @@ export function agentConfigWarnings(config: {
     s2s?: unknown;
     stt?: unknown;
     llm?: unknown;
+    voicePresets?: unknown;
+    turnDetection?: unknown;
 }): string[];
 
 // @public
@@ -166,11 +161,8 @@ interface AgentGuardrails {
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
 // @public
-interface AgentModelTuning {
-    maxOutputTokens?: number;
-    maxRetries?: number;
+interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
-    temperature?: number;
     usageLimits?: UsageLimits;
 }
 
@@ -261,6 +253,13 @@ type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
+interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -277,14 +276,8 @@ interface DialogTimeout {
 }
 
 // @public
-interface DialogToolDef<P extends ToolInputSchema, R, E> {
-    description: string;
+interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-    inputSchema?: P;
-    onError?: ToolErrorHandler;
-    send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
 }
 
 // @public
@@ -299,6 +292,13 @@ interface DialogVoiceConfig {
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
+
+// @public
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 type FindOptions = {
@@ -361,11 +361,25 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+type KnownTurnDetectionMode = "auto" | "manual";
+
+// @public
+type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+type LlmDescriptorOptions = {
+    readonly model: string;
+    readonly baseUrl?: string;
+    readonly apiKeyEnv?: string;
+    readonly providerOptions?: Readonly<Record<string, unknown>>;
+};
+
+// @public
+type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
@@ -386,6 +400,13 @@ type Message = {
     toolName?: string;
     toolCallId?: string;
 };
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
 
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
@@ -436,7 +457,7 @@ const PIPELINE_ONLY_TUNING: {
 
 // @internal
 export type PipelineTuning = {
-    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? "auto" | "manual" : readonly string[]) | undefined;
+    [K in PipelineTuningField]?: ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : (typeof PIPELINE_ONLY_TUNING)[K] extends "boolean" ? boolean : (typeof PIPELINE_ONLY_TUNING)[K] extends "string" ? string : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit" ? UserTurnLimit : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection" ? TurnDetectionMode : readonly string[]) | undefined;
 };
 
 // @public (undocumented)
@@ -453,7 +474,7 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
     startSpeakingFloorMs?: number;
-    turnDetection?: "auto" | "manual";
+    turnDetection?: TurnDetectionMode;
     userTurnLimit?: UserTurnLimit;
 }
 
@@ -480,7 +501,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
 type SessionEventContext = {
@@ -494,14 +515,16 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -719,7 +742,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
@@ -817,19 +840,18 @@ interface SubagentAnswer {
 }
 
 // @public
-interface SubagentDef {
+interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
     llm?: LlmProvider | string;
-    maxOutputTokens?: number;
-    maxRetries?: number;
+    maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
+    maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    temperature?: number;
     tools?: Readonly<Record<string, ToolDef>>;
 }
 
@@ -1046,6 +1068,9 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -1068,7 +1093,7 @@ interface UserTurnLimit {
 }
 
 // @public
-type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
+type VoicePresetName = KnownVoicePresetName | (string & {});
 
 // @public
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -1087,7 +1112,7 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt<D extends AgentDef>(def: D, prompt: string): D;
+export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(def: D, prompt: string): D;
 
 // @public
 export function withTools<D extends {

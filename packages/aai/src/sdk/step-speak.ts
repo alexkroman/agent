@@ -66,7 +66,7 @@ import { requireStepEnv } from "./step-env.ts";
 import { encodeWav, pcmDurationMs } from "./wav.ts";
 
 /** Sample rate {@link stepSpeak} asks for when a caller names none. */
-export const STEP_SPEAK_SAMPLE_RATE = 24_000;
+export const STEP_SPEAK_SAMPLE_RATE: number = 24_000;
 
 /**
  * How long one {@link stepSpeak} call may take before it is abandoned.
@@ -78,7 +78,7 @@ export const STEP_SPEAK_SAMPLE_RATE = 24_000;
  * which without a deadline is a step that hangs until the run's own budget
  * runs out with nothing anywhere naming the cause.
  */
-export const STEP_SPEAK_TIMEOUT_MS = 120_000;
+export const STEP_SPEAK_TIMEOUT_MS: number = 120_000;
 
 /** What {@link stepSpeak} accepts. */
 export type SpeakOptions = {

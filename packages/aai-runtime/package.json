@@ -21,10 +21,20 @@
       "types": "./dist/runtime-barrel.d.ts",
       "import": "./dist/runtime-barrel.js"
     },
+    "./auth": {
+      "@dev/source": "./src/auth-barrel.ts",
+      "types": "./dist/auth-barrel.d.ts",
+      "import": "./dist/auth-barrel.js"
+    },
     "./tracing": {
       "@dev/source": "./src/tracing.ts",
       "types": "./dist/tracing.d.ts",
       "import": "./dist/tracing.js"
+    },
+    "./metrics": {
+      "@dev/source": "./src/metrics-barrel.ts",
+      "types": "./dist/metrics-barrel.d.ts",
+      "import": "./dist/metrics-barrel.js"
     },
     "./eval": {
       "@dev/source": "./src/eval-barrel.ts",
@@ -35,6 +45,11 @@
       "@dev/source": "./src/eval-vitest-barrel.ts",
       "types": "./dist/eval-vitest-barrel.d.ts",
       "import": "./dist/eval-vitest-barrel.js"
+    },
+    "./eval/simulate": {
+      "@dev/source": "./src/eval-simulate-barrel.ts",
+      "types": "./dist/eval-simulate-barrel.d.ts",
+      "import": "./dist/eval-simulate-barrel.js"
     },
     "./testing": {
       "@dev/source": "./src/testing-barrel.ts",

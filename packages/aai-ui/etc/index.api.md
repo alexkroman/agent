@@ -79,17 +79,16 @@ export function AutoScroll(input: {
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
 
-// @public
+// @public @sealed
 export type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -99,6 +98,9 @@ export type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+export const browserSessionBrand: unique symbol;
 
 // @public
 export function BulletList(input: BulletListProps): ReactNode;
@@ -358,7 +360,16 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "startUserTurn" | "commitUserTurn" | "clearUserTurn" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = {
+    start(): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    restart(): void;
+    disconnect(): void;
+    toggle(): void;
+    end(): void;
+};
 
 // @public
 export type SessionControlAction = "start" | "toggle" | "restart" | "end";
@@ -620,6 +631,13 @@ export type UsePushToTalkResult = {
         disabled: boolean;
         "aria-pressed": boolean;
     };
+};
+
+// @public
+export type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
 };
 
 // @public

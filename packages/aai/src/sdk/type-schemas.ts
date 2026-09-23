@@ -10,7 +10,6 @@
  */
 
 import { z } from "zod";
-import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
 
 /**
  * A `RegExp` source string that actually compiles.
@@ -37,11 +36,12 @@ export const BuiltinToolSchema = z.enum([
 ]);
 
 /**
- * @internal Zod schema for `VoicePresetName`, DERIVED from the tuple that is
- * also the emit order — the one list, so a fifth preset cannot reach the prompt
- * while the wire schema rejects it.
+ * @internal Zod schema for `VoicePresetName` — ANY non-empty string, because
+ * the name is an open vocabulary: a config naming a preset a later SDK ships
+ * must still deploy on this one. An unknown name emits no text and is WARNED
+ * about at build time (`agentConfigWarnings`), never refused here.
  */
-export const VoicePresetNameSchema = z.enum(VOICE_PRESET_NAMES);
+export const VoicePresetNameSchema = z.string().min(1);
 
 /** @internal Zod schema for `ToolChoice`. Exported for reuse in internal schemas. */
 export const ToolChoiceSchema = z.union([

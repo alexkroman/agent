@@ -1,0 +1,34 @@
+// @public
+export type FeedItem = {
+    id: string | undefined;
+    title: string | undefined;
+    link: string | undefined;
+    description: string | undefined;
+    published: string | undefined;
+    enclosureUrl: string | undefined;
+    enclosureType: string | undefined;
+};
+
+// @public
+export function htmlToText(html: string, options?: {
+    maxChars?: number;
+}): string;
+
+// @public
+export type PageMetadata = {
+    title: string | undefined;
+    description: string | undefined;
+    feedUrls: string[];
+};
+
+// @public
+export function pageMetadata(html: string): PageMetadata;
+
+// @public
+export type ParsedFeed = {
+    title: string | undefined;
+    items: FeedItem[];
+};
+
+// @public
+export function parseFeed(xml: string): ParsedFeed | undefined;

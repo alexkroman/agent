@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow",
   "epoch": 1,
-  "sha256": "c369ae6339afe6ace42f4d8e52fd5136e091c8f84b007a2c81c85fe07c8fb35f",
+  "rule": 2,
+  "sha256": "88519b0308ea481eacd1ff821a4163d91e33bdeb7cfce2069c4b99838e158dee",
   "exports": [
     "DEFAULT_WORKFLOW_FIND_LIMIT",
     "MAX_WORKFLOW_FIND_LIMIT",
@@ -14,5 +15,6 @@
     "WdkStreamOptions",
     "WorkflowClientOptions",
     "ensureWorkflowJournalSchema"
-  ]
+  ],
+  "rollup": "487624465ecef608f619b8d1d9f549f5e7c604a127a8d5bb6f447cf86f695541"
 }

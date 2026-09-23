@@ -10,7 +10,7 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export const CHANNEL_POST_TIMEOUT_MS = 30000;
+export const CHANNEL_POST_TIMEOUT_MS: number;
 
 // @public
 export class ChannelDeliveryError extends Error {

@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { EVENT_ID_PREFIX, SessionEventSchema } from "@alexkroman1/aai/protocol";
+import { SessionEventSchema } from "@alexkroman1/aai";
+import { EVENT_ID_PREFIX } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import {

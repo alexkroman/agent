@@ -1,9 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-import {
-  ReadyConfigSchema,
-  SessionCommandSchema,
-  SessionEventSchema,
-} from "@alexkroman1/aai/protocol";
+
+import { SessionEventSchema } from "@alexkroman1/aai";
+import { ReadyConfigSchema, SessionCommandSchema } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { MAX_WORKER_SIZE } from "./constants.ts";
 import {

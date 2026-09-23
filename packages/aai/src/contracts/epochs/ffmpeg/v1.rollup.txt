@@ -1,0 +1,117 @@
+// @public
+export function describeMedia(info: MediaInfo): string;
+
+// @public
+export function ffmpegBaseArgs(options?: {
+    loglevel?: string;
+}): string[];
+
+// @public
+export class FfmpegError extends Error {
+    constructor(options: {
+        kind: FfmpegFailureKind;
+        message: string;
+        binary: string;
+        argv: readonly string[];
+        exitCode?: number | null;
+        signal?: NodeJS.Signals | null;
+        stderr?: string;
+        cause?: unknown;
+    });
+    // (undocumented)
+    readonly argv: readonly string[];
+    readonly binary: string;
+    readonly exitCode: number | null;
+    // (undocumented)
+    readonly kind: FfmpegFailureKind;
+    readonly signal: NodeJS.Signals | null;
+    readonly stderr: string;
+}
+
+// @public
+export type FfmpegFailureKind =
+/** The binary ran and exited non-zero. Almost always the input, not the run. */
+"exit"
+/** Killed at `timeoutMs`. */
+| "timeout"
+/** Killed because the caller's `signal` aborted. */
+| "aborted"
+/** The binary is not installed, or `AAI_FFMPEG_PATH` points at nothing. */
+| "missing-binary"
+/** Piped output passed `maxOutputBytes`; the child was killed. */
+| "output-too-large";
+
+// @public (undocumented)
+export type FfmpegRunOptions = {
+    binary?: string;
+    cwd?: string;
+    stdin?: Uint8Array;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+};
+
+// @public (undocumented)
+export type FfmpegRunResult = {
+    stdout: Uint8Array;
+    stderr: string;
+    durationMs: number;
+};
+
+// @public
+export type FfmpegSource = string | Uint8Array;
+
+// @public
+export function isFfmpegError(value: unknown): value is FfmpegError;
+
+// @public
+export type MediaInfo = {
+    durationSec?: number;
+    format?: string;
+    bitRate?: number;
+    sizeBytes?: number;
+    streams: MediaStreamInfo[];
+    audio?: MediaStreamInfo;
+    video?: MediaStreamInfo;
+    raw: unknown;
+};
+
+// @public
+export type MediaStreamInfo = {
+    index: number;
+    kind: string;
+    codec?: string;
+    sampleRate?: number;
+    channels?: number;
+    sampleFormat?: string;
+    width?: number;
+    height?: number;
+    durationSec?: number;
+};
+
+// @public
+export function probeMedia(source: FfmpegSource, options?: ProbeOptions): Promise<MediaInfo>;
+
+// @public (undocumented)
+export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
+    binary?: string;
+};
+
+// @public
+export function runFfmpeg(args: readonly string[], options?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+
+// @public
+export function transcodeToWav(source: FfmpegSource, options?: TranscodeToWavOptions): Promise<Uint8Array>;
+
+// @public (undocumented)
+export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;
+
+// @public
+export function wavEncodeArgs(options?: WavEncodeOptions): string[];
+
+// @public (undocumented)
+export type WavEncodeOptions = {
+    sampleRate?: number;
+    channels?: number;
+    bitsPerSample?: 16 | 24 | 32;
+};

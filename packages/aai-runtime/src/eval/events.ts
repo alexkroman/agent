@@ -37,8 +37,8 @@
  * @module
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { formatSchemaIssues, type StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 
 /** One tool call, paired with its result when the stream carries one. */
@@ -95,10 +95,8 @@ export function saidIn(events: readonly SessionEvent[]): readonly string[] {
  */
 export function errorsIn(
   events: readonly SessionEvent[],
-): readonly Extract<SessionEvent, { type: "error.reported" }>[] {
-  return events.filter(
-    (e): e is Extract<SessionEvent, { type: "error.reported" }> => e.type === "error.reported",
-  );
+): readonly SessionEvent<"error.reported">[] {
+  return events.filter((e): e is SessionEvent<"error.reported"> => e.type === "error.reported");
 }
 
 /**

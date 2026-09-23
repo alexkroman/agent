@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "push-to-talk",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "695c6ca2dd4d1032fe326afd957adc02f218b2c9868cd5004635eac2f8e7fadd",
+  "exports": ["UsePushToTalkOptions", "UsePushToTalkResult", "UserTurnControls", "usePushToTalk"],
+  "rollup": "898801ad1bc3221c8b5e5133490eacd28af85cd4028da189cbce4f0387d60adc"
+}

@@ -1,0 +1,765 @@
+import { AnyStateMachine } from 'xstate';
+import type { EventFromLogic } from 'xstate';
+import { z } from 'zod';
+
+// @public
+export type AnyDialog = Dialog<AnyStateMachine, unknown>;
+
+// @public
+type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+
+// @public
+type DelegateFn = {
+    <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
+    (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
+};
+
+// @public
+interface DelegateOptions {
+    context?: string;
+    maxSteps?: number;
+    task: string;
+}
+
+// @public
+interface DelegateResult extends SubagentAnswer {
+    accepted: boolean;
+    complaint?: string;
+    revisions: number;
+}
+
+// @public
+export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+    readonly key: string;
+    readonly machine: M;
+    matches(ctx: SlotHolder, state: string): boolean;
+    position(ctx: SlotHolder): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
+    reset(ctx: SlotHolder): DialogPosition;
+    send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
+}
+
+// @public
+export function dialog<M extends AnyStateMachine>(key: string, machine: M, options?: DialogOptions): Dialog<M>;
+
+// @public
+export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
+
+// @public
+export type DialogBargeIn = "default" | "off" | {
+    minWords?: number;
+    minDurationMs?: number;
+};
+
+// @public
+export type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+    type: N;
+} : never : never;
+
+// @public
+export type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? (C extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (C extends {
+    states: infer N;
+} ? DialogEventNames<N> : never) : never : never : never;
+
+// @public
+export interface DialogGate<R, E> {
+    send?: E;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
+export interface DialogOptions {
+    durable?: boolean;
+}
+
+// @public
+export interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly persona?: string;
+    readonly state: string;
+}
+
+// @public
+export type DialogSessionEventName = `@${SessionEventType}`;
+
+// @public
+export interface DialogSpec {
+    initial: string;
+    states: Record<string, DialogStateSpec>;
+}
+
+// @public
+export interface DialogStateSpec {
+    bargeIn?: DialogBargeIn;
+    final?: true;
+    initial?: string;
+    instruction?: string;
+    on?: Record<string, string>;
+    persona?: string;
+    states?: Record<string, DialogStateSpec>;
+    temperature?: number;
+    timeout?: DialogTimeoutSpec;
+    toolChoice?: ToolChoice;
+    voice?: string;
+}
+
+// @public
+export interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public
+export interface DialogTimeoutSpec {
+    afterMs: number;
+    send: string;
+}
+
+// @public
+export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+}
+
+// @public
+export interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
+
+// @public
+export interface DialogVoiceConfig {
+    readonly bargeIn?: DialogBargeIn;
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
+}
+
+// @public
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type GenerateFn = {
+    <S extends StandardSchemaV1>(options: GenerateOptions & {
+        schema: S;
+    }): Promise<GenerateObjectResult<InferSchemaOutput<S>>>;
+    (options: GenerateOptions): Promise<GenerateResult>;
+};
+
+// @public
+type GenerateObjectResult<T> = {
+    text: string;
+    object: T;
+};
+
+// @public
+type GenerateOptions = {
+    prompt: string;
+    system?: string;
+    llm?: LlmProvider | string;
+    schema?: StandardSchemaV1 | Record<string, unknown>;
+    temperature?: number;
+    maxOutputTokens?: number;
+};
+
+// @public
+type GenerateResult = {
+    text: string;
+    object?: unknown;
+};
+
+// @public
+type GuardrailVerdict = true | string;
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "llm";
+};
+
+// @public
+type Message = {
+    role: "user" | "assistant" | "tool";
+    content: string;
+    toolName?: string;
+    toolCallId?: string;
+};
+
+// @public
+interface ModelTuning {
+    maxOutputTokens?: number;
+    maxRetries?: number;
+    temperature?: number;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+type RandomSource = () => number;
+
+// @public
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"session.configured">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    audioFormat: z.ZodString;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+    sessionId: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"audio.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.started">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.stopped">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+    eotConfidence: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+    recovery: z.ZodOptional<z.ZodEnum<{
+        "session-failed": "session-failed";
+        "turn-failed": "turn-failed";
+    }>>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.called">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    toolName: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    result: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.cancelled">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.reset">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.timed-out">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"error.reported">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    code: z.ZodEnum<{
+        audio: "audio";
+        connection: "connection";
+        internal: "internal";
+        llm: "llm";
+        protocol: "protocol";
+        stt: "stt";
+        tool: "tool";
+        tts: "tts";
+    }>;
+    message: z.ZodString;
+    fatal: z.ZodBoolean;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"custom.emitted">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    event: z.ZodString;
+    data: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"state.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    state: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"usage.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    inputTokens: z.ZodNumber;
+    outputTokens: z.ZodNumber;
+    totalTokens: z.ZodNumber;
+    steps: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"guardrail.blocked">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    direction: z.ZodEnum<{
+        input: "input";
+        output: "output";
+    }>;
+    replacement: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-turn.exceeded">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    limit: z.ZodEnum<{
+        duration: "duration";
+        words: "words";
+    }>;
+    words: z.ZodNumber;
+    durationMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"metrics.collected">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    interrupted: z.ZodBoolean;
+    latencyMs: z.ZodOptional<z.ZodNumber>;
+    stt: z.ZodOptional<z.ZodObject<{
+        endpointingMs: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    llm: z.ZodOptional<z.ZodObject<{
+        ttftMs: z.ZodOptional<z.ZodNumber>;
+        durationMs: z.ZodNumber;
+        steps: z.ZodNumber;
+        inputTokens: z.ZodOptional<z.ZodNumber>;
+        outputTokens: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    tts: z.ZodOptional<z.ZodObject<{
+        ttfbMs: z.ZodOptional<z.ZodNumber>;
+        characters: z.ZodNumber;
+    }, z.core.$strip>>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"history.restored">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    messages: z.ZodArray<z.ZodObject<{
+        role: z.ZodEnum<{
+            assistant: "assistant";
+            user: "user";
+        }>;
+        content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
+    }, z.core.$strip>>;
+}, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;
+
+// @public
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+type SlotHolder = {
+    readonly slots: SlotStore;
+    readonly sessionId: string;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
+// @public
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    schema?: S | undefined;
+};
+
+// @public
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public
+type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+interface SubagentAnswer {
+    steps: number;
+    text: string;
+    toolCalls: readonly SubagentToolCall[];
+}
+
+// @public
+interface SubagentDef extends ModelTuning {
+    builtinTools?: readonly BuiltinTool[];
+    description?: string;
+    expectedOutput?: string;
+    guardrail?: SubagentGuardrail;
+    llm?: LlmProvider | string;
+    maxRevisions?: number;
+    maxSteps?: number;
+    name: string;
+    schema?: StandardSchemaV1;
+    systemPrompt: string;
+    tools?: Readonly<Record<string, ToolDef>>;
+}
+
+// @public
+type SubagentGuardrail = (answer: SubagentAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
+
+// @public
+interface SubagentToolCall {
+    input: unknown;
+    name: string;
+}
+
+// @public
+type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
+
+// @public
+type ToolCompletionMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    role?: "assistant" | "system" | undefined;
+};
+
+// @public
+type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
+
+// @public
+type ToolContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    generate: GenerateFn;
+    delegate: DelegateFn;
+    messages: readonly Message[];
+    sessionId: string;
+    send(event: string, data: unknown): void;
+    signal: AbortSignal;
+    deadlineAt: number;
+    workflows: WorkflowClient;
+    random: RandomSource;
+};
+
+// @public
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description: string;
+    inputSchema?: P;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    onError?: ToolErrorHandler;
+    messages?: ToolMessagesInput;
+};
+
+// @public
+type ToolDelayedMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    afterMs: number;
+};
+
+// @public
+type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+type ToolMessageCondition = {
+    arg: string;
+    op?: ToolConditionOperator | undefined;
+    value: string | number | boolean | null;
+};
+
+// @public
+type ToolMessagesInput = {
+    start?: boolean | string | readonly (string | ToolStartMessage)[];
+    delayed?: readonly ToolDelayedMessage[];
+    complete?: string | readonly (string | ToolCompletionMessage)[];
+    failed?: string | readonly (string | ToolCompletionMessage)[];
+};
+
+// @public
+type ToolStartMessage = {
+    content: string;
+    when?: ToolMessageCondition[] | undefined;
+    blocking?: boolean | undefined;
+};
+
+// @public
+interface TypedDelegateResult<T> extends DelegateResult {
+    object: T;
+}
+
+// @public
+interface TypedSubagentDef<T> extends SubagentDef {
+    // (undocumented)
+    schema: StandardSchemaV1<unknown, T>;
+}
+
+// @public
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public
+type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
+type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public
+type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, workflow: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public
+type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+};
+
+// @public
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};

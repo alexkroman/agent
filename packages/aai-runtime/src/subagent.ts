@@ -49,7 +49,7 @@ import type {
   SubagentToolCall,
   ToolDef,
 } from "@alexkroman1/aai";
-import { DEFAULT_GUARDRAIL_MAX_RETRIES } from "@alexkroman1/aai";
+import { DEFAULT_GUARDRAIL_MAX_REVISIONS } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS, formatSchemaIssues } from "@alexkroman1/aai/internal";
@@ -130,7 +130,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
 
   return async (sub, delegateOptions, parent) => {
     const model = resolveModel(sub);
-    const maxRetries = sub.maxRetries ?? DEFAULT_GUARDRAIL_MAX_RETRIES;
+    const maxRevisions = sub.maxRevisions ?? DEFAULT_GUARDRAIL_MAX_REVISIONS;
     const maxSteps = delegateOptions.maxSteps ?? sub.maxSteps ?? DEFAULT_MAX_STEPS;
     const sessionId = parent.sessionId ?? "";
 
@@ -175,14 +175,19 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       // somewhere to run — the same arithmetic as `createTextAgent`.
       stopWhen: stepCountIs(maxSteps + 1),
       prepareStep: forceFinalAnswer(maxSteps, logger, sessionId),
-      ...omitUndefined({ temperature: sub.temperature }),
-      ...omitUndefined({ maxOutputTokens: sub.maxOutputTokens }),
+      // The subagent's `ModelTuning` — `SubagentDef` omits `maxRetries`, so
+      // its requests retry on the AI SDK default; the guardrail's budget is
+      // `maxRevisions`, read above.
+      ...omitUndefined({
+        temperature: sub.temperature,
+        maxOutputTokens: sub.maxOutputTokens,
+      }),
     });
 
     return runUntilAccepted({
       agent,
       sub,
-      maxRetries,
+      maxRevisions,
       logger,
       ...omitUndefined({ signal: parent.signal }),
       // The PARENT's meter, off the bag the tool call already carried: a
@@ -231,7 +236,7 @@ type GuardedRun = {
   agent: ToolLoopAgent;
   sub: SubagentDef;
   task: string;
-  maxRetries: number;
+  maxRevisions: number;
   logger: Logger;
   signal?: AbortSignal | undefined;
   /** The delegating session's meter — every step of every attempt reports here. */
@@ -277,7 +282,7 @@ async function checkShape(
  * so the loop costs it one comparison.
  */
 async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
-  const { agent, sub, maxRetries, logger, usage } = run;
+  const { agent, sub, maxRevisions, logger, usage } = run;
   // The conversation this delegation is, GROWN across revisions rather than
   // restarted: a rejected attempt keeps its own tool results, so the retry does
   // not pay again for the four pages it already read. See `reviseRequest` for
@@ -311,7 +316,7 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
     const complaint = shape.issue ?? (await judgeAnswer(sub, answer));
     if (complaint === undefined) return { ...answer, ...parsed, revisions, accepted: true };
 
-    if (revisions >= maxRetries) {
+    if (revisions >= maxRevisions) {
       // Naming WHICH check rejected: "guardrail" and "schema" are different
       // problems for whoever reads the log — one is a judgement the answer
       // failed, the other is a reply that never had the right shape.

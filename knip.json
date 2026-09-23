@@ -16,7 +16,10 @@
     // from the root fine. The entry suppressed nothing, and knip reports a
     // redundant ignore as a configuration hint — which is the same
     // dead-config shape as the `.size-limit.json` nobody ran.
-    "scripts/loadtest-workflow-agent/**"
+    "scripts/loadtest-workflow-agent/**",
+    // Claude Code subagent worktrees (gitignored under `.claude/*`): each is a
+    // full checkout, and knip would otherwise lint their scratch files.
+    ".claude/worktrees/**"
   ],
   "ignoreBinaries": [
     "safe-chain",

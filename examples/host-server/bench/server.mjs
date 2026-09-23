@@ -7,7 +7,7 @@
 // the real per-connection runtime, the real pipeline transport, the real
 // audio pacer.
 
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { createHostServer } from "@alexkroman1/aai-runtime";
@@ -26,7 +26,7 @@ const server = createHostServer({
     // option and one explicitly `undefined` are different types, and these
     // two come from `process.env`.
     stt: assemblyAIStt(BENCH_STT_URL === undefined ? {} : { streamingUrl: BENCH_STT_URL }),
-    llm: assemblyAILlm({}),
+    llm: llm({ provider: "assemblyai", model: ASSEMBLYAI_LLM_DEFAULT_MODEL }),
     tts: assemblyAITts(BENCH_TTS_HOST === undefined ? {} : { host: BENCH_TTS_HOST }),
   },
 });

@@ -35,9 +35,9 @@
  * @module
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { generateText, jsonSchema, type ModelMessage, type Tool } from "ai";
 import { createLlmModelCache } from "../_llm-model-cache.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
@@ -271,8 +271,9 @@ async function nextMove(
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { anthropicLlm } from "@alexkroman1/aai/llm";
- * import { openEvalSession, simulateCall } from "@alexkroman1/aai-runtime/eval";
+ * import { llm } from "@alexkroman1/aai/llm";
+ * import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
+ * import { simulateCall } from "@alexkroman1/aai-runtime/eval/simulate";
  *
  * export async function hurriedCaller(): Promise<void> {
  *   const session = await openEvalSession({ agent: agent({ name: "Order Desk" }) });
@@ -282,7 +283,7 @@ async function nextMove(
  *         persona: "a polite but hurried customer",
  *         goal: "find out whether order W1234 has shipped",
  *       },
- *       llm: anthropicLlm({ model: "claude-haiku-4-5" }),
+ *       llm: llm({ provider: "anthropic", model: "claude-haiku-4-5" }),
  *     });
  *     if (call.endedBy !== "caller") throw new Error(call.transcript());
  *     console.log(call.metrics.toolCallCounts, call.metrics.latencyMs);

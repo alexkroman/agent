@@ -11,7 +11,7 @@
  * (`session-core-history.test.ts`, `session-event-history.test.ts`).
  */
 
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { recordingTts } from "../_pipeline-test-fakes.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";

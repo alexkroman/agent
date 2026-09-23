@@ -77,7 +77,7 @@ describe("stepDelegate", () => {
 
 describe("stubStepDelegate", () => {
   it("fills the slot and records what the step asked for", async () => {
-    const desk = stubStepDelegate({ researcher: "Prices fell 12% in 2025." });
+    const desk = stubStepDelegate({ routes: { researcher: "Prices fell 12% in 2025." } });
 
     const result = await stepDelegate(researcher, { task: "battery prices" });
 
@@ -88,13 +88,15 @@ describe("stubStepDelegate", () => {
   });
 
   it("gives the slot back, so one file's stub cannot answer the next one's step", async () => {
-    const desk = stubStepDelegate({ researcher: "x" });
+    const desk = stubStepDelegate({ routes: { researcher: "x" } });
     desk.restore();
     await expect(stepDelegate(researcher, { task: "x" })).rejects.toThrow(/no runner is published/);
   });
 
   it("routes by subagent name, exactly as the tool-side stub does", async () => {
-    const desk = stubStepDelegate({ researcher: "a finding", checker: "Confirmed: yes." });
+    const desk = stubStepDelegate({
+      routes: { researcher: "a finding", checker: "Confirmed: yes." },
+    });
     const checker = subagent({ name: "checker", systemPrompt: "Check it." });
 
     expect((await stepDelegate(researcher, { task: "x" })).text).toBe("a finding");

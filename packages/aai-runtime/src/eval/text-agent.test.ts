@@ -43,7 +43,7 @@ function scriptedLlm(steps: Parameters<typeof createFakeLanguageModel>[0]) {
     },
   });
   return {
-    llm: { kind: SPEC_LLM_KIND, options: {} },
+    llm: { kind: SPEC_LLM_KIND, options: { model: "stub" } },
     providerEnv: { [SPEC_LLM_ENV]: "spec-key" },
     models,
     release,

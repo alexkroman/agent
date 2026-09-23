@@ -4,7 +4,7 @@
  * speakers, with the conversation printed in the terminal. No server, no
  * browser, no socket.
  *
- * It is the smallest real consumer of `runtime.connect`: the agent is loaded
+ * It is the smallest real consumer of `connectSession`: the agent is loaded
  * exactly as `aai dev` loads it (same bundle, same `.env` resolution, same
  * shell-credential fallback), a runtime is built in-process, and the session
  * runs over a {@link ClientSink} that plays audio and prints transcripts. Every
@@ -14,6 +14,7 @@
 
 import { styleText } from "node:util";
 import {
+  connectSession,
   createRuntime,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
@@ -191,7 +192,7 @@ export async function executeConsole(opts: {
     },
   });
 
-  const connection = runtime.connect(sink, {
+  const connection = connectSession(runtime, sink, {
     audioLeadMs: CONSOLE_AUDIO_LEAD_MS,
     logContext: { transport: "console" },
   });

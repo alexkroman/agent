@@ -1,0 +1,254 @@
+import { AgentClient } from '@alexkroman1/aai/workflow-api';
+import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { isTerminal } from '@alexkroman1/aai/workflow-api';
+import { ReactNode } from 'react';
+import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
+import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
+import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
+
+export { AgentClient }
+
+// @public
+export function AudioResult(input: AudioResultProps): ReactNode;
+
+// @public
+export type AudioResultCaptions = {
+    text: string;
+    durationMs: number;
+    label?: string | undefined;
+    srcLang?: string | undefined;
+};
+
+// @public
+export type AudioResultProps = {
+    download: UseDownloadUrlResult;
+    filename: string;
+    label: string;
+    heading?: ReactNode | undefined;
+    captions?: AudioResultCaptions | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
+export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
+
+// @public
+type FormValues = Record<string, unknown>;
+
+export { isTerminal }
+
+// @public
+export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
+
+// @public
+export function UploadProgressBar(input: {
+    upload?: UploadStatus | undefined;
+    onPause?: (() => void) | undefined;
+    onResume?: (() => void) | undefined;
+    className?: string | undefined;
+}): ReactNode;
+
+// @public
+export type UploadStatus = UploadProgress & {
+    name: string;
+    index: number;
+    count: number;
+    paused: boolean;
+};
+
+// @public
+export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
+
+// @public
+export type UseDownloadUrlOptions = {
+    api?: WorkflowApi;
+};
+
+// @public
+export type UseDownloadUrlResult = {
+    url?: string;
+    error?: string;
+    pending: boolean;
+};
+
+// @public
+export function useRunKey(options?: {
+    storage?: "session" | "local";
+}): string;
+
+// @public
+export function useWorkflowProgress<T = string>(runId: string | undefined, options?: {
+    api?: WorkflowApi;
+    namespace?: string;
+    startIndex?: number;
+    intervalMs?: number;
+}): UseWorkflowProgressResult<T>;
+
+// @public (undocumented)
+export type UseWorkflowProgressResult<T = string> = {
+    progress: T[];
+    latest: T | undefined;
+    streaming: boolean;
+    supported: boolean;
+};
+
+// @public
+export function useWorkflowRun<R = unknown>(runId: string | undefined, options?: {
+    api?: WorkflowApi;
+    intervalMs?: number;
+}): UseWorkflowRunResult<R>;
+
+// @public (undocumented)
+export type UseWorkflowRunResult<R = unknown> = {
+    run: WorkflowRun<R> | undefined;
+    error: string | undefined;
+    polling: boolean;
+};
+
+// @public
+export function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+
+// @public
+export type UseWorkflowRunsOptions = {
+    api?: WorkflowApi;
+    limit?: number;
+    key?: string;
+    skip?: boolean;
+};
+
+// @public
+export type UseWorkflowRunsResult<R = unknown> = {
+    runs: WorkflowRun<R>[];
+    loading: boolean;
+    error: string | undefined;
+    refresh: () => void;
+};
+
+// @public
+export function useWorkflows(options?: UseWorkflowsOptions): UseWorkflowsResult;
+
+// @public
+export type UseWorkflowsOptions = {
+    api?: WorkflowApi;
+    skip?: boolean;
+};
+
+// @public
+export type UseWorkflowsResult = {
+    workflows: WorkflowSummary[];
+    loading: boolean;
+    error: string | undefined;
+};
+
+// @public
+export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+
+// @public
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
+
+// @public
+export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+
+// @public
+export type UseWorkflowSubmitOptions = {
+    api?: WorkflowApi;
+    key?: string;
+    recover?: boolean;
+    wait?: number;
+    intervalMs?: number;
+    parallel?: UploadParallelOption;
+};
+
+// @public
+export const WORKFLOW_STATUS_LABELS: Readonly<Record<WorkflowRunStatus, string>>;
+
+export { WorkflowApi }
+
+// @public (undocumented)
+export type WorkflowApiOptions = {
+    baseUrl?: string;
+    token?: string;
+};
+
+export { WorkflowInputOf }
+
+export { WorkflowOutputOf }
+
+// @public
+export function WorkflowPendingNote(input: WorkflowPendingNoteProps): ReactNode;
+
+// @public
+export type WorkflowPendingNoteProps = {
+    submission: {
+        readonly pending: boolean;
+        readonly startedHere: boolean;
+        readonly run: WorkflowRun | undefined;
+    };
+    subject?: string | undefined;
+    scope?: "tab" | "browser" | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function WorkflowProgress(input: {
+    runId?: string | undefined;
+    api?: WorkflowApi | undefined;
+    className?: string | undefined;
+    placeholder?: ReactNode | undefined;
+    lines?: number | undefined;
+}): ReactNode;
+
+// @public
+export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+// @public
+export function WorkflowRunError(input: WorkflowRunErrorProps): ReactNode;
+
+// @public
+export type WorkflowRunErrorProps = {
+    run: WorkflowRun | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function WorkflowRunPanel<O = unknown>(input: WorkflowRunPanelProps<O>): ReactNode;
+
+// @public
+export type WorkflowRunPanelProps<O> = {
+    run: WorkflowRun<O>;
+    statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>> | undefined;
+    onClear?: (() => void) | undefined;
+    api?: WorkflowApi | undefined;
+    live?: ReactNode | undefined;
+    children?: ReactNode | ((output: O) => ReactNode) | undefined;
+    className?: string | undefined;
+};
+
+export { WorkflowRunStatus }
+
+// @public
+export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
+
+// @public
+export type WorkflowSubmission<R = unknown, I = unknown> = {
+    submit: (input: I) => Promise<void>;
+    submitForm: (values: FormValues) => Promise<void>;
+    reset: () => void;
+    wake: () => Promise<number>;
+    cancel: () => Promise<boolean>;
+    run: WorkflowRun<R> | undefined;
+    startedHere: boolean;
+    pending: boolean;
+    upload: UploadStatus | undefined;
+    pauseUpload: () => void;
+    resumeUpload: () => void;
+    error: string | undefined;
+};
+
+export { WorkflowSummary }

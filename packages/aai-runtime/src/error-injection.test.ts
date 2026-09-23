@@ -65,7 +65,7 @@ import type { TransportEventBody } from "./transports/types.ts";
 type StreamingModel = Extract<LanguageModel, { specificationVersion: "v3" }>;
 
 /** One reported session error, narrowed off the event union. */
-type ErrorFrame = Extract<TransportEventBody, { type: "error.reported" }>;
+type ErrorFrame = TransportEventBody<"error.reported">;
 
 useVirtualTime();
 

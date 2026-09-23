@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "tracing",
+  "epoch": 3,
+  "rule": 2,
+  "sha256": "d5b7b1dda02b22f45e06f6e5e31f5fbcb9bbd2f3f9c83e649d7c939a943b996c",
+  "exports": [
+    "DEFAULT_SERVICE_NAME",
+    "OTEL_ENDPOINT_ENVS",
+    "OTEL_SERVICE_NAME_ENV",
+    "RuntimeTracing",
+    "startTracing",
+    "startTracingDetached",
+    "tracingEndpoint"
+  ],
+  "rollup": "6d169ee87a6ad659280bdb4187a9be629b5d85c38ccde1d0b2e05c2f6a6e30d7"
+}

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "llm",
   "epoch": 8,
-  "sha256": "6fa8ea9887947e4c49912717c6e20f52c39c54d0cec1a19a3d038d6dd258432d",
+  "rule": 2,
+  "sha256": "f7ae89f6f7fdc12e2c751034e86ba18354cf9a392e6e67e742178cb91136f885",
   "exports": [
     "ASSEMBLYAI_LLM_DEFAULT_MODEL",
     "ASSEMBLYAI_LLM_GATEWAY_EU_URL",
@@ -33,5 +34,6 @@
     "openAILlm",
     "openRouterLlm",
     "xAILlm"
-  ]
+  ],
+  "rollup": "cc5c91df5e5992fd15298d5e7a97bbe5c845e3db3bc5572531ed4e1b8d0be9e8"
 }

@@ -140,13 +140,13 @@
  * @module
  */
 
+import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import {
   capToolResult,
   clientEventDropMessage,
   decideClientEvent,
   toArgsRecord,
 } from "@alexkroman1/aai/internal";
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StreamTextOnChunkCallback, TextStreamPart, ToolSet } from "ai";
 import type { Logger } from "./runtime-config.ts";

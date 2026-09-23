@@ -3,7 +3,7 @@
  * `executeConsole`'s orchestration, with the agent loader and the runtime
  * faked: which devices open at which rates, that `audio_ready` releases the
  * greeting, and that every way the session ends tears the devices down and
- * reports the right result. The session itself is `runtime.connect`'s, and is
+ * reports the right result. The session itself is `connectSession`'s, and is
  * specced in `aai-runtime`.
  */
 
@@ -33,22 +33,22 @@ vi.mock("@alexkroman1/aai-runtime", () => ({
   createRuntime: vi.fn(() => ({
     readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
     shutdown: state.shutdown,
-    connect: vi.fn((sink: ClientSink) => {
-      state.sink = sink;
-      const ended = new Promise<void>((resolve) => {
-        state.resolveEnded = resolve;
-      });
-      const connection = {
-        id: "sess-1",
-        sendCommand: vi.fn(),
-        sendAudio: vi.fn(),
-        close: vi.fn(() => state.resolveEnded?.()),
-        ended,
-      };
-      state.connection = connection;
-      return connection;
-    }),
   })),
+  connectSession: vi.fn((_runtime: unknown, sink: ClientSink) => {
+    state.sink = sink;
+    const ended = new Promise<void>((resolve) => {
+      state.resolveEnded = resolve;
+    });
+    const connection = {
+      id: "sess-1",
+      sendCommand: vi.fn(),
+      sendAudio: vi.fn(),
+      close: vi.fn(() => state.resolveEnded?.()),
+      ended,
+    };
+    state.connection = connection;
+    return connection;
+  }),
 }));
 
 const { executeConsole, terminalPrinter } = await import("./console.ts");

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `Runtime.connect` — a session over a caller-owned {@link ClientSink}.
+ * `connectSession` — a session over a caller-owned {@link ClientSink}.
  *
  * The public adapter over `session-attach.ts`, beside the WebSocket one in
  * `ws-handler.ts`. It adds two things a socket adapter gets elsewhere: the
@@ -12,7 +12,7 @@
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createPacedClientSink } from "./paced-client-sink.ts";
-import type { SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
+import type { Runtime, SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
 import {
   type AttachedSession,
   type AttachSessionOptions,
@@ -31,8 +31,81 @@ export type ConnectDeps = Pick<AttachSessionOptions, "sessions" | "readyConfig" 
   ): ServerSession;
 };
 
-/** Attach a session to `sink` and hand back its input half. */
+/**
+ * What each runtime `createRuntime` built hands this module, keyed by the
+ * handle. A `WeakMap` rather than a member on {@link Runtime}: the handle is
+ * sealed, and a connection needs the runtime's session table and factory, which
+ * are not the caller's business to see.
+ */
+const connectors = new WeakMap<Runtime, ConnectDeps>();
+
+/** Record what {@link connectSession} needs for `runtime`. Called once, by `createRuntime`. */
+export function registerConnector(runtime: Runtime, deps: ConnectDeps): void {
+  connectors.set(runtime, deps);
+}
+
+/**
+ * Run a session over your OWN audio I/O — anything that is not a WebSocket.
+ *
+ * `runtime.startSession` takes a socket speaking the client protocol; this
+ * takes the two halves of that protocol directly. The session writes to `sink`
+ * (events, and agent audio as PCM16 mono at `readyConfig.ttsSampleRate`) and
+ * you write to the returned {@link SessionConnection} (user audio as PCM16 mono
+ * at `readyConfig.sampleRate`, plus client commands). Everything else a browser
+ * session gets comes with it: the start deadline, input buffered while the
+ * session starts, real-time pacing of agent audio with its barge-in ordering
+ * rules, resume by id, and end-of-session cleanup.
+ *
+ * The session announces itself on `sink` (`session.configured`) before this
+ * returns. Send `{ type: "audio_ready" }` once you can play audio — that is
+ * what releases the greeting — and call `close()` when your end goes away.
+ *
+ * A free function over the handle rather than a `Runtime.connect` method, so
+ * the handle a caller receives stays sealed and this is versioned on its own
+ * signature.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { connectSession, createRuntime } from "@alexkroman1/aai-runtime";
+ *
+ * const runtime = createRuntime({ agent: agent({ name: "Desk" }), env: {} });
+ * declare function play(pcm: Uint8Array): void;
+ * declare function flushPlayback(): void;
+ *
+ * const connection = connectSession(runtime, {
+ *   open: true,
+ *   event(e) {
+ *     if (e.type === "reply.cancelled") flushPlayback();
+ *   },
+ *   playAudioChunk: play,
+ * });
+ * connection.sendCommand({ type: "audio_ready" });
+ * // …feed microphone PCM16 at runtime.readyConfig.sampleRate:
+ * connection.sendAudio(new Uint8Array(3200));
+ * connection.close();
+ * await connection.ended;
+ * ```
+ *
+ * @public
+ */
 export function connectSession(
+  runtime: Runtime,
+  sink: ClientSink,
+  options?: SessionConnectOptions,
+): SessionConnection {
+  const deps = connectors.get(runtime);
+  if (deps === undefined) {
+    throw new TypeError(
+      "connectSession: this runtime was not built by createRuntime() from this copy of " +
+        "@alexkroman1/aai-runtime",
+    );
+  }
+  return attachConnection(sink, options, deps);
+}
+
+/** Attach a session to `sink` and hand back its input half. */
+function attachConnection(
   sink: ClientSink,
   options: SessionConnectOptions | undefined,
   deps: ConnectDeps,

@@ -1895,6 +1895,25 @@ Served alongside the schema because a form is rendered from BOTH: the schema
 says the property is a string, and this says the string is a file the page
 has to upload first.
 
+## Variables
+
+### ClientConfigResponseSchema
+
+```ts
+const ClientConfigResponseSchema: z.ZodObject<{
+  greeting: z.ZodOptional<z.ZodString>;
+  name: z.ZodOptional<z.ZodString>;
+  page: z.ZodEnum<{
+     static: "static";
+     voice: "voice";
+  }>;
+  sessionUrl: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+```
+
+Body of `GET /client-config`. Unknown fields are stripped, so a response
+from an older server still parses.
+
 ## References
 
 ### SleepOptions

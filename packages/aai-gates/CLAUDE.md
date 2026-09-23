@@ -98,6 +98,27 @@ split is true by construction: this package is not a dependency of anything.
 The shared-helper shape is right here and wrong inside a
 template.
 
+## The capability-contract gate is specced by BEHAVIOUR, in pairs
+
+Four specs hold `scripts/api-contracts.mjs`. `api-contracts-gate.test.ts` reads
+the contract tree as text and re-derives what the script believes (including
+each current epoch's pinned rollup sha, via `crypto.subtle`). The other three
+import the gate's PURE modules as real values — the one exception to "never
+import the script you guard", taken for the reason `guard-invariants-scanner-
+rules.test.ts` takes it: the subject is a function from text to text, and
+scraping it would test the scrape. `api-contracts-hash.test.ts` holds the hash
+normalizations, `api-contracts-compat.test.ts` the compatibility probe (a real
+TypeScript program over two in-memory rollups; it reads lib files and writes
+nothing), and `api-contracts-epochs.test.ts` the revision/one-per-branch
+arithmetic and the one-owner baseline. Every one is written in PAIRS: each
+change the gate lets through beside the neighbouring break it must still catch,
+because an over-eager normalization or probe ships a breaking change under a
+checkmark. What reads files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is
+kept thin over those pure modules and has NO spec here — a unit spec may not
+write files or spawn git — so its flows (revise, collapse, restore, re-mint in
+place, un-mint, point back) were exercised by hand against an edited `dist` when
+it landed. That is a known gap, not a guarantee.
+
 ## A new guard-invariants rule, and what the linter cannot do for you
 
 Two things any new rule must respect, and `guard-invariants-gate.test.ts` is

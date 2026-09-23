@@ -39,9 +39,6 @@ export {
   SessionCommandSchema,
   type SessionErrorCode,
   SessionErrorCodeSchema,
-  type SessionEvent,
-  type SessionEventBody,
   type SessionEventMeta,
   SessionEventMetaSchema,
-  SessionEventSchema,
 } from "./protocol.ts";

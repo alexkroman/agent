@@ -35,10 +35,12 @@ const run = toolRunner(agentDef);
 const desk = () =>
   scriptedToolContext({
     generate: {
-      [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } },
-      [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } },
+      routes: {
+        [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } },
+        [CHOOSE_MEMORY_SYSTEM]: { object: { memoryTypesToUpdate: [] } },
+      },
     },
-    delegate: { "meeting-assistant": "Maya is free Wednesday 1pm-3pm." },
+    delegate: { routes: { "meeting-assistant": "Maya is free Wednesday 1pm-3pm." } },
   });
 
 const openM4 = async () => {
@@ -109,11 +111,15 @@ describe("the meeting assistant's calendar tool", () => {
 
   test("a report the guardrail never accepted comes back marked unusable", async () => {
     const { ctx } = scriptedToolContext({
-      generate: { [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } } },
+      generate: {
+        routes: { [TRIAGE_SYSTEM]: { object: { logic: "scripted", response: "email" } } },
+      },
       delegate: {
-        "meeting-assistant": {
-          text: "I looked at her calendar.",
-          complaint: "Name the open slots as clock times.",
+        routes: {
+          "meeting-assistant": {
+            text: "I looked at her calendar.",
+            complaint: "Name the open slots as clock times.",
+          },
         },
       },
     });

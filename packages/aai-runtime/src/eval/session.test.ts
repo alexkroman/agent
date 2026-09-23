@@ -30,7 +30,7 @@ function scriptedAgent(steps: Parameters<typeof createFakeLanguageModel>[0]) {
     create: () => createFakeLanguageModel(steps),
   });
   return {
-    llm: { kind: SPEC_LLM_KIND, options: {} },
+    llm: { kind: SPEC_LLM_KIND, options: { model: "stub" } },
     providerEnv: { [SPEC_LLM_ENV]: "spec-key" },
     release,
   };
@@ -77,7 +77,7 @@ describe("openEvalSession", () => {
     // is the path that used to orphan a process-global kind pair per attempt.
     await expect(
       openEvalSession({
-        agent: agent({ name: "Broken", llm: { kind: "no-such-llm", options: {} } }),
+        agent: agent({ name: "Broken", llm: { kind: "no-such-llm", options: { model: "stub" } } }),
         providerEnv: {},
       }),
     ).rejects.toThrow();

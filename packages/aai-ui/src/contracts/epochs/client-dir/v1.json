@@ -2,6 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "client-dir",
   "epoch": 1,
-  "sha256": "a48636465f540b25c0c8c27ab93756ac0f0b8deae3a70d2f1aa81e5704c7e125",
-  "exports": ["defaultClientDir"]
+  "rule": 2,
+  "sha256": "25d8395b4265fa75272c7cd6256b8dba7e9992e236a8143d269041873aff7016",
+  "exports": ["defaultClientDir"],
+  "rollup": "a48636465f540b25c0c8c27ab93756ac0f0b8deae3a70d2f1aa81e5704c7e125"
 }
