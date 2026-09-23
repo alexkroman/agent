@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * The one-sided-`any` walk behind `_api-contracts-compat.mjs`: `any` is
- * assignable both ways, so a probed position that is `any` on one side only
- * proves nothing, and this reports each one by path. The argument is in that
+ * The two walks over a probed pair behind `_api-contracts-compat.mjs`: the
+ * one-sided `any` (assignable both ways, so a position that is `any` on one
+ * side only proves nothing) and the REMOVED member (which assignability cannot
+ * see when it was optional). Each is reported by path; the argument is in that
  * module's header.
  */
 
@@ -121,13 +122,12 @@ function* childPairs(checker, o, n, path) {
 }
 
 /**
- * Every position where exactly ONE of `oldType` / `newType` is `any`, as a
- * path from the probed name, walking the pair in parallel (`childPairs`),
- * `T | undefined` read as `T`. A pair that is the SAME type cannot differ and
- * is skipped.
+ * Walk a probed pair in parallel (`childPairs`), `T | undefined` read as `T`,
+ * calling `visit(before, after, path)` at each position; a truthy return stops
+ * the descent there. A pair that is the SAME type cannot differ and is
+ * skipped, and so is one seen already (the types are recursive).
  */
-export function oneSidedAny(checker, oldType, newType) {
-  const found = [];
+function walkPairs(checker, oldType, newType, visit, full) {
   const seen = new Map();
   const visited = (before, after) => {
     const pairs = seen.get(before) ?? new Set();
@@ -135,22 +135,86 @@ export function oneSidedAny(checker, oldType, newType) {
     seen.set(before, pairs.add(after));
     return was;
   };
-  const report = (before, path) => {
-    const at = path === "" ? "the top level" : path.replace(/^\./, "");
-    found.push(`\`any\` at ${at} on the ${isAny(before) ? "OLD" : "NEW"} side only`);
-  };
-  const settled = (before, after, depth) =>
-    isAny(before) || before === after || depth > ANY_WALK_DEPTH || visited(before, after);
   const walk = (before, after, path, depth) => {
-    if (found.length >= ANY_FINDINGS_PER_NAME) return;
-    if (isAny(before) !== isAny(after)) return report(before, path);
-    if (settled(before, after, depth)) return;
+    if (full() || visit(before, after, path)) return;
+    if (before === after || depth > ANY_WALK_DEPTH || visited(before, after)) return;
     const o = withoutNullish(before);
     const n = withoutNullish(after);
     if (o !== before || n !== after) return walk(o, n, path, depth);
     for (const [x, y, at] of childPairs(checker, o, n, path)) walk(x, y, at, depth + 1);
   };
   walk(oldType, newType, "", 0);
+}
+
+const where = (path) => (path === "" ? "the top level" : path.replace(/^\./, ""));
+
+/**
+ * Every position where exactly ONE of `oldType` / `newType` is `any`, as a
+ * path from the probed name.
+ */
+export function oneSidedAny(checker, oldType, newType) {
+  const found = [];
+  walkPairs(
+    checker,
+    oldType,
+    newType,
+    (before, after, path) => {
+      if (isAny(before) !== isAny(after)) {
+        found.push(`\`any\` at ${where(path)} on the ${isAny(before) ? "OLD" : "NEW"} side only`);
+        return true;
+      }
+      return isAny(before);
+    },
+    () => found.length >= ANY_FINDINGS_PER_NAME,
+  );
+  return found;
+}
+
+/** The members of object type `o` that `n` lacks, where both are objects and `n` is not a map. */
+function membersGone(checker, o, n) {
+  if (o === n || !(isStructured(o) && isStructured(n))) return [];
+  if (sharedGenericArguments(checker, o, n) !== undefined) return [];
+  const stringKey = checker.getStringType();
+  if (checker.getIndexInfosOfType(n).some((info) => info.keyType === stringKey)) return [];
+  // A symbol-keyed member's name embeds the symbol's id, which differs per
+  // side even for a shared brand; its removal is required-ness the
+  // assignability checks already see.
+  return checker
+    .getPropertiesOfType(o)
+    .map((property) => property.name)
+    .filter((name) => !name.startsWith("__@") && checker.getPropertyOfType(n, name) === undefined);
+}
+
+/**
+ * Every member the OLD side of a paired object position has and the new side
+ * does not, as a path from the probed name.
+ *
+ * Assignability cannot see an OPTIONAL one go: `{ name: string }` is
+ * assignable to `{ name: string; retries?: number }` and back, so dropping
+ * `retries` passed both directions of the type probe — and breaks every author
+ * who passes it, since an object literal naming a member its target lacks is
+ * an excess-property error, and every reader of it. That is how
+ * `EvalSessionOptions` losing `generate` probed compatible while two frozen
+ * examples passing it stopped compiling. The same holds for a REQUIRED member
+ * dropped from a parameter's type, which new-to-old assignability accepts. A
+ * new side with a string index signature still accepts the key and is skipped.
+ */
+export function removedMembers(checker, oldType, newType) {
+  const found = [];
+  walkPairs(
+    checker,
+    oldType,
+    newType,
+    (before, after, path) => {
+      if (isAny(before) || isAny(after)) return true;
+      for (const name of membersGone(checker, withoutNullish(before), withoutNullish(after))) {
+        const at = path === "" ? name : `${where(path)}.${name}`;
+        found.push(`member \`${at}\` removed (an author passing or reading it no longer compiles)`);
+      }
+      return false;
+    },
+    () => found.length >= ANY_FINDINGS_PER_NAME,
+  );
   return found;
 }
 

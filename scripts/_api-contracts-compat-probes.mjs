@@ -121,3 +121,32 @@ export function agreements(before, after, foreign = new Set()) {
   });
   return { brands, sealed, masked, shared };
 }
+
+/**
+ * Every declaration whose closure is byte-identical on both sides becomes ONE
+ * declaration too, taken from the new rollup as another capability's is.
+ *
+ * Closure identity already passes an unchanged name that is PROBED; this is
+ * the same fact where the name is only REACHED. A generic conditional type
+ * declared twice is two unrelated types to the checker, so an unchanged
+ * `SessionSlotOptions<T>` — whose `after` reads `RejectThenable<After>` —
+ * failed the probe of `sessionSlot` as soon as anything else in that
+ * signature moved (the `@sealed` handle it returns gaining `snapshot`). Equal
+ * text reaching equal text is the same type, so nothing is hidden: a name
+ * that reaches anything that changed has a changed closure and stays two.
+ * Never for the self-probe (identical bodies): sharing everything there would
+ * leave the old module nothing of its own to compile.
+ */
+export function shareUnchanged(agreed, { before, after, changed, identical }) {
+  if (identical) return;
+  const already = new Set(agreed.shared);
+  const unchanged = [...before.declared.keys()].filter(
+    (name) =>
+      after.declared.has(name) && !already.has(name) && !agreed.brands.has(name) && !changed(name),
+  );
+  if (unchanged.length === 0) return;
+  const isUnchanged = new Set(unchanged);
+  agreed.shared = [...agreed.shared, ...unchanged].sort(compareNames);
+  agreed.sealed = new Set([...agreed.sealed].filter((name) => !isUnchanged.has(name)));
+  agreed.masked = agreed.masked.filter((name) => !isUnchanged.has(name));
+}

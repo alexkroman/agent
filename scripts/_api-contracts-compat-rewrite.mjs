@@ -170,8 +170,9 @@ function maskedAlias(statement, sourceFile, name) {
  *   sealed names to re-export under `__sealed_<name>`, so the other side can
  *   reach an unexported one; `mask`: the sealed names whose declaration here
  *   becomes an alias of `old.ts`'s `__sealed_<name>` (the masked module only);
- *   `useShared`: the other-capability names whose declarations here are
- *   dropped for an import of the NEW module's copy; `exportShared`: the same
+ *   `useShared`: the names whose declarations here are dropped for an
+ *   import of the NEW module's copy (another capability's, or one whose
+ *   closure is byte-identical on both sides); `exportShared`: the same
  *   names, re-exported by the new module under `__foreign_<name>`.
  */
 export function rewriteForProbe(
@@ -193,18 +194,30 @@ export function rewriteForProbe(
   return `${out}\n\n${tail.join("\n")}\n`;
 }
 
+/**
+ * What a declaration taken from the new module leaves behind: nothing, or —
+ * for an EXPORTED one — an export of the imported binding (once, however many
+ * statements a merged declaration spans).
+ */
+function sharedExport(statement, names, reExported) {
+  const fresh = names.filter((declared) => !reExported.has(declared));
+  for (const declared of fresh) reExported.add(declared);
+  return isExported(statement) && fresh.length > 0 ? `export { ${fresh.join(", ")} };` : "";
+}
+
 /** Every edit {@link rewriteForProbe} makes inside the body, statement by statement. */
 function statementEdits(sourceFile, { brands, mask, useShared }) {
   const toMask = new Set(mask);
   const fromNew = new Set(useShared);
   const masked = new Set();
+  const reExported = new Set();
   const edits = [];
   for (const statement of sourceFile.statements) {
     const symbols = uniqueSymbolNames(statement);
     const names = declarationNames(statement);
     const [name] = names;
     if (names.length > 0 && names.every((declared) => fromNew.has(declared))) {
-      edits.push(replace(statement, sourceFile, ""));
+      edits.push(replace(statement, sourceFile, sharedExport(statement, names, reExported)));
     } else if (symbols.length > 0 && symbols.every((symbol) => brands.has(symbol))) {
       edits.push(replace(statement, sourceFile, brandImport(statement, symbols)));
     } else if (name !== undefined && toMask.has(name)) {

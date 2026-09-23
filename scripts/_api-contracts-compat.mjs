@@ -84,30 +84,26 @@
  * arguments — its members are those arguments substituted into one
  * declaration, and walking them reports the `any`s lib wrote.
  *
+ * **A REMOVED member is a break even when it was optional**, which
+ * assignability cannot see (`{ a: string }` and `{ a: string; b?: number }` are
+ * assignable both ways): the same parallel walk reports each by path.
+ *
  * **Both rollups are rewritten to AGREE first** (`_api-contracts-compat-rewrite.mjs`):
  * a same-named `unique symbol` brand is one shared symbol, a long misuse
- * message literal is one marker type, and a `@sealed` type is probed
- * new-to-old only (`_api-contracts-compat-probes.mjs`) while every other probe
- * reads it through a MASKED new module in which it aliases the old one.
+ * message literal is one marker type, a declaration whose closure is
+ * byte-identical on both sides is ONE declaration (taken from the new rollup),
+ * and a `@sealed` type is probed new-to-old only (`_api-contracts-compat-probes.mjs`)
+ * while every other probe reads it through a MASKED new module in which it
+ * aliases the old one.
  *
- * **Which TypeScript.** The repo builds with `typescript@7`, which ships no
- * in-process compiler API: its root export is `lib/version.cjs`, and the
- * `typescript/unstable/sync` client it does ship drives the native `tsgo`
- * binary as a SUBPROCESS (verified: it can check a virtual program in ~0.4s).
- * That is ruled out twice here — the API is explicitly unstable, and a
- * subprocess would move `api-contracts-compat.test.ts` out of the unit tier,
- * which `aai-gates` does not have. So the CHECKER is `typescript-6` (the root's
- * alias of the `typedoc` catalog's `typescript@~6.0`, the same compiler `docs`
- * pins for TypeDoc): the last release with the JS compiler API, and the one
- * TypeScript shipped as the bridge to 7.0, whose type-checking semantics it is
- * meant to match. The PARSER stays
- * api-extractor's bundled TypeScript (5.9.3 at this writing): the rollups are
- * its output, and the node-walking helpers this shares with
- * `_api-contracts-hash.mjs` read that instance's `SyntaxKind`s. The two meet
- * only as TEXT — nothing crosses from one AST to the other. What the mismatch
- * leaves is a 7.x-only checker change (a bug fix, a new strictness) that 6.0
- * does not share; it would reach this gate one release late, and `pnpm
- * typecheck` on the frozen examples still runs 7.x over every retained epoch.
+ * **Which TypeScript.** The CHECKER is `typescript-6` (the root's alias of the
+ * `typedoc` catalog's `typescript@~6.0`): `typescript@7` ships no in-process
+ * compiler API, only an unstable subprocess client that would move this
+ * module's spec out of the unit tier. The PARSER stays api-extractor's bundled
+ * TypeScript, which wrote the rollups; the two meet only as TEXT. A 7.x-only
+ * checker change reaches this gate one release late, and `pnpm typecheck` on
+ * the frozen examples still runs 7.x over every retained epoch
+ * (`docs/CLAUDE.md` carries the rest of the argument).
  *
  * Known blind spots, which is why `--bump --retain` still exists:
  * - `any` NESTED inside a union (`string | any` collapses to `any` and is
@@ -130,9 +126,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { oneSidedAny, probedPairs } from "./_api-contracts-compat-any.mjs";
+import { oneSidedAny, probedPairs, removedMembers } from "./_api-contracts-compat-any.mjs";
 import { methodsAsProperties } from "./_api-contracts-compat-methods.mjs";
-import { agreements, CTOR, probeFor, WIDEN } from "./_api-contracts-compat-probes.mjs";
+import {
+  agreements,
+  CTOR,
+  probeFor,
+  shareUnchanged,
+  WIDEN,
+} from "./_api-contracts-compat-probes.mjs";
 import {
   rewriteForProbe,
   SHARED_MODULE,
@@ -344,6 +346,7 @@ function planProbes(oldBody, newBody, foreign) {
   const problems = [];
   const probes = [];
   const changed = (name) => oldClosure(name) !== newClosure(name);
+  shareUnchanged(agreed, { before, after, changed, identical: oldBody === newBody });
   for (const entry of oldExports.values()) {
     const next = newExports.get(entry.name);
     const problem = exportProblem(entry, next);
@@ -479,6 +482,9 @@ export function probeCompatibility({ oldBody, newBody, dir, foreign = new Set() 
       unproven.push(
         `${pair.name}: ${position} — \`any\` is assignable both ways, so nothing about that position is proven`,
       );
+    }
+    for (const finding of removedMembers(checker, pair.before, pair.after)) {
+      problems.push(`${pair.name}: ${finding}`);
     }
   }
   const unique = [...new Set([...problems, ...unproven])];
