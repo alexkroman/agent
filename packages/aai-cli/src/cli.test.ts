@@ -2,6 +2,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { renderUsage } from "citty";
 import { execa } from "execa";
 import { describe, expect, test } from "vitest";
@@ -30,10 +31,7 @@ async function runBin(
 
 /** Strip ANSI escape codes and normalize the version string for stable snapshots. */
 function normalize(s: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional ANSI escape stripping
-  const ansi = /\x1b\[[0-9;]*m/g;
-  return s
-    .replace(ansi, "")
+  return stripVTControlCharacters(s)
     .replace(/v\d+\.\d+\.\d+/g, "vX.X.X") // normalize version
     .replace(/\s+$/gm, ""); // strip trailing whitespace per line
 }

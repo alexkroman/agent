@@ -48,7 +48,8 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
+import { loadWorker, startDevServer } from "./_dev-server.ts";
+import { watchDirectory } from "./_dev-watch.ts";
 import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
@@ -160,7 +161,8 @@ describe("startDevServer", () => {
         // The run store, built once for the process and handed to every build:
         // a rebuild replaces the workflow ENGINE (that is what reloads a body)
         // and must not replace the runs underneath it. Identity across rebuilds
-        // is asserted in `_dev-server-restart.test.ts`, which drives one.
+        // is asserted in `_dev-server-restart.test.ts`, which drives one
+        // through the `serve` seam.
         journal: expect.anything(),
         // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
         // which with no `client.tsx` is the port passed in — because the DevKit's

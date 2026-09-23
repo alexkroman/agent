@@ -22,6 +22,9 @@ import {
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
+  type Runtime,
+  type RuntimeOptions,
+  type RuntimeServerOptions,
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
@@ -32,9 +35,8 @@ import {
   WORKFLOW_DATA_DIR_ENV,
 } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
-import { type FSWatcher, watch } from "chokidar";
+import { watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
-import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
@@ -42,9 +44,10 @@ import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_d
 import { createRestartSupervisor } from "./_dev-restart.ts";
 import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
+import { type DevWatcher, type DevWatchFn, watchDirectory } from "./_dev-watch.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
-import { errorCode, errorMessage } from "./_utils.ts";
+import { errorMessage } from "./_utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
@@ -168,68 +171,6 @@ export async function loadWorker(
   return evaluate(await buildWorker(cwd, { runtime: false }));
 }
 
-// ─── File watching ──────────────────────────────────────────────────────────
-
-/**
- * True for paths that should never trigger a restart: anything inside
- * `node_modules/` and any dot-entry (`.git/`, `.aai/`, `.DS_Store`, …).
- * `.git/` especially matters — commits and status checks churn the index
- * and would otherwise cause spurious full backend restarts.
- *
- * Exception: `.env` / `.env.*` files stay watched — env edits should
- * restart the server with the new values.
- */
-export function isIgnoredPath(dir: string, filePath: string): boolean {
-  const rel = path.relative(dir, filePath);
-  if (!rel || rel.startsWith("..")) return false;
-  return rel.split(path.sep).some((segment) => {
-    if (segment === "node_modules") return true;
-    if (segment === ".env" || segment.startsWith(".env.")) return false;
-    return segment.startsWith(".");
-  });
-}
-
-/**
- * Watch the agent directory for changes and call `onChange` when detected.
- * Debounces to avoid rapid restarts. Uses chokidar for reliable recursive
- * watching across platforms (raw `fs.watch` misses events on Linux).
- */
-export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
-  const DEBOUNCE_MS = 300;
-
-  const debouncedChange = pDebounce(() => {
-    notify("info", "File change detected, restarting...");
-    onChange();
-  }, DEBOUNCE_MS);
-
-  const watcher = watch(dir, {
-    ignored: (filePath: string) => isIgnoredPath(dir, filePath),
-    ignoreInitial: true,
-    persistent: false,
-  });
-  // Without an 'error' listener an ENOSPC/EMFILE from the OS watcher would
-  // either crash the process (unhandled 'error') or kill watching silently.
-  watcher.on("error", (err: unknown) => {
-    const hint =
-      errorCode(err) === "ENOSPC"
-        ? " The inotify watch limit was reached — raise the fs.inotify max_user_watches sysctl."
-        : "";
-    notify(
-      "error",
-      `File watcher error: ${errorMessage(err)}.${hint} ` +
-        "Auto-restart on file changes may have stopped; restart `aai dev` after fixing.",
-    );
-  });
-  watcher.on("all", () => {
-    // debouncedChange resolves after onChange runs — a throw there must not
-    // become an unhandled rejection that kills the dev server.
-    debouncedChange().catch((err: unknown) => {
-      notify("error", `Watch handler failed: ${errorMessage(err)}`);
-    });
-  });
-  return watcher;
-}
-
 // ─── Dev server ─────────────────────────────────────────────────────────────
 
 export type DevServerOptions = {
@@ -243,13 +184,46 @@ export type DevServerOptions = {
   watch?: boolean | undefined;
 };
 
+/** The part of an {@link AgentServer} the watch loop drives. */
+export type DevBackend = Pick<AgentServer, "listen" | "close">;
+
+/**
+ * The two collaborators `startDevServer` reaches the outside world through,
+ * injectable so its WIRING — a watcher event reaching the supervisor, one
+ * journal across rebuilds, teardown closing the watcher — can be specced
+ * against fakes instead of a module mock per import. `dev.ts` passes none.
+ */
+export type DevServerSeams = {
+  /** Start the file watcher. Defaults to chokidar's `watch`. */
+  watch: DevWatchFn;
+  /**
+   * Build one backend: the runtime from `runtimeOptions`, then the server over
+   * it. The server options are a function of the runtime because the workflow
+   * delivery door reads `runtime.deliverWorkflow`.
+   */
+  serve: (
+    runtimeOptions: RuntimeOptions,
+    serverOptions: (runtime: Runtime) => RuntimeServerOptions,
+  ) => DevBackend;
+};
+
+const REAL_SEAMS: DevServerSeams = {
+  watch,
+  serve: (runtimeOptions, serverOptions) =>
+    createRuntimeServer(serverOptions(createRuntime(runtimeOptions))),
+};
+
 /**
  * Start the dev server for a directory-based agent.
  *
  * Returns a cleanup function to shut down the server and watchers.
  */
-export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
+export async function startDevServer(
+  opts: DevServerOptions,
+  seams: Partial<DevServerSeams> = {},
+): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
+  const { watch: watchFn, serve } = { ...REAL_SEAMS, ...seams };
 
   // Where this project's local workflow state lives — the uploads a databaseless
   // agent's runs read (`aai-runtime/workflow-data-dir.ts`).
@@ -310,7 +284,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const journal = createMemoryJournal();
 
   /** Full build sequence, shared by initial startup and every restart. */
-  async function buildServer(): Promise<AgentServer> {
+  async function buildServer(): Promise<DevBackend> {
     const agentDef = await loadWorker(cwd, evaluateWorker);
     const env = await resolveAgentEnv(cwd, agentDef);
 
@@ -342,7 +316,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // the platform (only what `.env` / `aai secret put` declares) and so can't
     // come to depend on a host-level variable that won't exist there.
     const providerEnv = withHostCredentialFallback(env);
-    const runtime = createRuntime({
+    const runtimeOptions: RuntimeOptions = {
       agent: agentDef,
       env,
       providerEnv,
@@ -358,9 +332,9 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // the case that actually needs one: a tunnel, when a real third party has
       // to reach a webhook on this machine.
       publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
-    });
+    };
 
-    return createRuntimeServer({
+    return serve(runtimeOptions, (runtime) => ({
       runtime,
       name: agentDef.name,
       // Makes host mode *available* in the dev server — it stays off unless
@@ -409,17 +383,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
           logger: devLogger,
         }),
       ...clientDirOpt,
-    });
+    }));
   }
 
   let viteServer: ViteDevServer | undefined;
-  let watcher: FSWatcher | undefined;
+  let watcher: DevWatcher | undefined;
 
   // The restart state machine — queueing, build-before-close ordering, listen
   // retries, teardown races — lives in _dev-restart.ts, driven by the three
   // operations below. Its invariants are specced there directly; this function
   // only supplies the real build/listen/close and the surrounding wiring.
-  const supervisor = createRestartSupervisor<AgentServer>({
+  const supervisor = createRestartSupervisor<DevBackend>({
     build: buildServer,
     // Bind host matches the initial listen — a restart must not silently
     // widen the dev server's exposure.
@@ -444,16 +418,20 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const devTypecheck = createDevTypecheck(cwd);
   devTypecheck.request();
   watcher = devWatchEnabled(opts.watch)
-    ? watchDirectory(cwd, () => {
-        devTypecheck.request();
-        supervisor.request();
-      })
+    ? watchDirectory(
+        cwd,
+        () => {
+          devTypecheck.request();
+          supervisor.request();
+        },
+        watchFn,
+      )
     : undefined;
 
   // Set once the backend has bound but before the supervisor owns it: if Vite
   // then fails to boot, this is the only handle on a server already holding
   // the port, and startDevServer throws. It used to leak.
-  let boundServer: AgentServer | undefined;
+  let boundServer: DevBackend | undefined;
   try {
     const initialServer = await buildServer();
     // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the

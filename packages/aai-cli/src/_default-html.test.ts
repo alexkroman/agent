@@ -3,9 +3,14 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Connect, ViteDevServer } from "vite";
 import { describe, expect, test, vi } from "vitest";
-import { DEFAULT_HTML, fallbackHtmlPlugin, writeTempHtml } from "./_default-html.ts";
+import {
+  DEFAULT_HTML,
+  type FallbackHtmlMiddleware,
+  type FallbackHtmlServer,
+  fallbackHtmlPlugin,
+  writeTempHtml,
+} from "./_default-html.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 describe("DEFAULT_HTML", () => {
@@ -49,40 +54,28 @@ describe("writeTempHtml", () => {
 });
 
 describe("fallbackHtmlPlugin", () => {
-  type FakeRes = { setHeader: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
-
   function makeFakeServer() {
-    const use = vi.fn();
+    const use = vi.fn<(fn: FallbackHtmlMiddleware) => void>();
     const transformIndexHtml = vi.fn(async () => "<html>transformed</html>");
-    const server = { middlewares: { use }, transformIndexHtml } as unknown as ViteDevServer;
+    const server: FallbackHtmlServer = { middlewares: { use }, transformIndexHtml };
     return { server, use, transformIndexHtml };
   }
 
-  function getMiddleware(use: ReturnType<typeof vi.fn>): Connect.NextHandleFunction {
-    return use.mock.calls[0]?.[0] as Connect.NextHandleFunction;
+  function getMiddleware(use: ReturnType<typeof makeFakeServer>["use"]): FallbackHtmlMiddleware {
+    const middleware = use.mock.calls[0]?.[0];
+    if (!middleware) throw new Error("the plugin installed no middleware");
+    return middleware;
   }
 
-  /**
-   * A response double: `res` for assertions, `res.asServerResponse` for the
-   * middleware call. Connect's handler wants a real `ServerResponse`, which
-   * the double does not satisfy — that narrowing lives here rather than at
-   * each call; the escape-hatch ratchet counts every occurrence.
-   */
-  function makeRes(onEnd?: () => void): FakeRes & {
-    asServerResponse: Parameters<Connect.NextHandleFunction>[1];
-  } {
-    const res = { setHeader: vi.fn(), end: vi.fn(onEnd) };
-    return {
-      ...res,
-      asServerResponse: res as unknown as Parameters<Connect.NextHandleFunction>[1],
-    };
+  /** A response double — the middleware's `res` slice needs nothing more. */
+  function makeRes(onEnd?: () => void) {
+    return { setHeader: vi.fn(), end: vi.fn(onEnd) };
   }
 
   async function runPlugin(dir: string) {
     const plugin = fallbackHtmlPlugin(dir);
     const fake = makeFakeServer();
-    const hook = plugin.configureServer as (server: ViteDevServer) => void;
-    hook(fake.server);
+    plugin.configureServer(fake.server);
     return { plugin, ...fake };
   }
 
@@ -102,7 +95,7 @@ describe("fallbackHtmlPlugin", () => {
       for (const url of ["/", "/index.html"]) {
         const res = makeRes();
         const next = vi.fn();
-        middleware({ url } as Connect.IncomingMessage, res.asServerResponse, next);
+        middleware({ url }, res, next);
         await vi.waitFor(() => expect(res.end).toHaveBeenCalledWith("<html>transformed</html>"));
         expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "text/html");
         expect(next).not.toHaveBeenCalled();
@@ -117,7 +110,7 @@ describe("fallbackHtmlPlugin", () => {
       const middleware = getMiddleware(use);
       const res = makeRes();
       const next = vi.fn();
-      middleware({ url: "/assets/app.js" } as Connect.IncomingMessage, res.asServerResponse, next);
+      middleware({ url: "/assets/app.js" }, res, next);
       expect(next).toHaveBeenCalled();
       expect(res.end).not.toHaveBeenCalled();
     });
@@ -131,7 +124,7 @@ describe("fallbackHtmlPlugin", () => {
       const middleware = getMiddleware(use);
       const res = makeRes();
       const next = vi.fn();
-      middleware({ url: "/" } as Connect.IncomingMessage, res.asServerResponse, next);
+      middleware({ url: "/" }, res, next);
       await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
       expect(res.end).not.toHaveBeenCalled();
     });
@@ -146,7 +139,7 @@ describe("fallbackHtmlPlugin", () => {
         throw error;
       });
       const next = vi.fn();
-      middleware({ url: "/" } as Connect.IncomingMessage, res.asServerResponse, next);
+      middleware({ url: "/" }, res, next);
       await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
     });
   });

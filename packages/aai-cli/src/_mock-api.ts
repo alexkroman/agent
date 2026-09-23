@@ -66,7 +66,62 @@ export async function startMockApi(): Promise<MockApi> {
     return inflated.toString("utf-8");
   }
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mock server routes are intentionally flat
+  /** The 401 message for a request this server refuses, or undefined to admit it. */
+  function authError(auth: string | undefined): string | undefined {
+    if (!auth?.startsWith("Bearer ")) return "Unauthorized";
+    if (auth === "Bearer invalid-key") return "Invalid API key";
+    return undefined;
+  }
+
+  type Reply = { status: number; payload: unknown };
+
+  /** The agent routes (deploy, delete), or undefined when none matches. */
+  function agentRoute(method: string, path: string, body: string): Reply | undefined {
+    // Route: POST /deploy — slug is optional in body, server generates if missing
+    if (method === "POST" && path === "/deploy") {
+      const parsed = body ? (JSON.parse(body) as Record<string, unknown>) : {};
+      const slug = (parsed.slug as string) ?? `generated-${Date.now()}`;
+      return { status: 200, payload: { ok: true, slug } };
+    }
+
+    // Route: DELETE /{slug}  (but not /{slug}/secret/*)
+    if (method === "DELETE" && path.match(/^\/[^/]+$/) && !path.includes("/secret")) {
+      return { status: 200, payload: { ok: true } };
+    }
+    return undefined;
+  }
+
+  /** The secret routes, or undefined when none matches. */
+  function secretRoute(method: string, path: string, body: string): Reply | undefined {
+    // Route: GET /{slug}/secret — list secrets
+    if (method === "GET" && path.match(/^\/[^/]+\/secret$/)) {
+      return { status: 200, payload: { vars: Object.keys(secrets) } };
+    }
+
+    // Route: PUT /{slug}/secret — put secret
+    if (method === "PUT" && path.match(/^\/[^/]+\/secret$/)) {
+      const parsed = JSON.parse(body) as Record<string, string>;
+      Object.assign(secrets, parsed);
+      return { status: 200, payload: { ok: true } };
+    }
+
+    // Route: DELETE /{slug}/secret/{name}
+    const secretDeleteMatch = path.match(/^\/[^/]+\/secret\/(.+)$/);
+    if (method === "DELETE" && secretDeleteMatch?.[1]) {
+      const name = secretDeleteMatch[1];
+      delete secrets[name];
+      return { status: 200, payload: { ok: true } };
+    }
+    return undefined;
+  }
+
+  const NOT_FOUND: Reply = { status: 404, payload: { error: "Not found" } };
+
+  /** The built-in routes, for a request no override matched; 404 for an unknown one. */
+  function route(method: string, path: string, body: string): Reply {
+    return agentRoute(method, path, body) ?? secretRoute(method, path, body) ?? NOT_FOUND;
+  }
+
   async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? "GET";
     const path = req.url ?? "/";
@@ -75,14 +130,9 @@ export async function startMockApi(): Promise<MockApi> {
     requests.push({ method, path, headers: req.headers, body });
 
     // Check auth
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      json(res, 401, { error: "Unauthorized" });
-      return;
-    }
-
-    if (auth === "Bearer invalid-key") {
-      json(res, 401, { error: "Invalid API key" });
+    const refused = authError(req.headers.authorization);
+    if (refused) {
+      json(res, 401, { error: refused });
       return;
     }
 
@@ -93,45 +143,8 @@ export async function startMockApi(): Promise<MockApi> {
       return;
     }
 
-    // Route: POST /deploy — slug is optional in body, server generates if missing
-    if (method === "POST" && path === "/deploy") {
-      const parsed = body ? (JSON.parse(body) as Record<string, unknown>) : {};
-      const slug = (parsed.slug as string) ?? `generated-${Date.now()}`;
-      json(res, 200, { ok: true, slug });
-      return;
-    }
-
-    // Route: DELETE /{slug}  (but not /{slug}/secret/*)
-    if (method === "DELETE" && path.match(/^\/[^/]+$/) && !path.includes("/secret")) {
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    // Route: GET /{slug}/secret — list secrets
-    if (method === "GET" && path.match(/^\/[^/]+\/secret$/)) {
-      json(res, 200, { vars: Object.keys(secrets) });
-      return;
-    }
-
-    // Route: PUT /{slug}/secret — put secret
-    if (method === "PUT" && path.match(/^\/[^/]+\/secret$/)) {
-      const parsed = JSON.parse(body) as Record<string, string>;
-      Object.assign(secrets, parsed);
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    // Route: DELETE /{slug}/secret/{name}
-    const secretDeleteMatch = path.match(/^\/[^/]+\/secret\/(.+)$/);
-    if (method === "DELETE" && secretDeleteMatch?.[1]) {
-      const name = secretDeleteMatch[1];
-      delete secrets[name];
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    // Unknown route
-    json(res, 404, { error: "Not found" });
+    const { status, payload } = route(method, path, body);
+    json(res, status, payload);
   }
 
   const server: Server = createServer((req, res) => {

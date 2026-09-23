@@ -99,7 +99,7 @@ export async function executeDeploy(opts: {
     // must win — matching the server's own defaultEnv merge semantics.
     env: uploadEnv,
     ...omitUndefined({ slug }),
-    ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
+    ...omitUndefined({ allowPreviewSlug: opts.allowPreviewSlug ? true : undefined }),
     apiKey,
   });
 

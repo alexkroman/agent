@@ -33,7 +33,8 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = gzipSync(
     JSON.stringify({
       ...omitUndefined({ slug: opts.slug }),
-      ...(opts.allowPreviewSlug ? { allowPreviewSlug: true } : {}),
+      // `false` is sent as absent, exactly like `undefined`.
+      ...omitUndefined({ allowPreviewSlug: opts.allowPreviewSlug ? true : undefined }),
       env: opts.env,
       worker: opts.bundle.worker,
       clientFiles: opts.bundle.clientFiles,
@@ -52,7 +53,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     // fresh slug per request, so retrying a request that succeeded but lost
     // its response would create a second, orphaned agent. Redeploys target a
     // fixed slug and stay retried.
-    ...(opts.slug ? {} : { retry: 0 }),
+    ...omitUndefined({ retry: opts.slug ? undefined : 0 }),
     ...apiTestSeam(opts),
   });
 

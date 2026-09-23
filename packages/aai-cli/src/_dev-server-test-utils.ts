@@ -4,7 +4,10 @@
  *
  * `_dev-server.test.ts` and `_dev-server-restart.test.ts` used to carry a
  * verbatim ~120-line copy of this each — the chokidar fake in particular is
- * subtle enough to want exactly one copy.
+ * subtle enough to want exactly one copy. `_dev-server-restart.test.ts` needs
+ * none of it any more: it hands `startDevServer` a fake watcher and backend
+ * through `DevServerSeams`, and only borrows `writeAgentTs` from here. That is
+ * the shape to prefer for a new wiring spec.
  *
  * Usage: each test file keeps its own `vi.mock(...)` calls (they must be
  * top-level in the test file for vitest's hoisting), but every factory is a
@@ -67,10 +70,11 @@ export const mockValidateAgentExport = vi.fn();
  * The process-scoped run journal `startDevServer` builds once and hands every
  * rebuild's `createRuntime`.
  *
- * A FRESH object per call deliberately, which is what makes the identity
- * assertion in `_dev-server-restart.test.ts` mean something: called per build,
- * every rebuild would hand out a different store and a run started before a save
- * would be unreadable after it — the bug the seam exists to close.
+ * A FRESH object per call deliberately: called per build, every rebuild would
+ * hand out a different store and a run started before a save would be
+ * unreadable after it — the bug the seam exists to close. The identity across
+ * rebuilds is asserted in `_dev-server-restart.test.ts`, against the REAL
+ * journal, through `startDevServer`'s `serve` seam.
  */
 export const mockCreateMemoryJournal = vi.fn(() => ({ journal: "memory" }));
 

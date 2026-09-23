@@ -225,7 +225,8 @@ async function pushProject(opts: {
 
   const result = await pushStudioSource(serverUrl, apiKey, project, {
     files,
-    ...(opts.force ? {} : { baseHash }),
+    // `--force` overwrites, so it sends no fast-forward token at all.
+    ...omitUndefined({ baseHash: opts.force ? undefined : baseHash }),
   });
   await updateProjectConfig(opts.cwd, {
     serverUrl,

@@ -32,9 +32,12 @@ export function isEexist(err: unknown): boolean {
 }
 
 /** Validate that a module's default export is a valid agent definition. Throws if invalid. */
-// biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
-export function validateAgentExport(mod: any): void {
-  if (!mod?.name || typeof mod.name !== "string") {
+export function validateAgentExport(mod: unknown): void {
+  // `new Object(mod)` is the boxing a property read on a primitive does
+  // implicitly, so this reads `name` exactly as `mod?.name` did.
+  const name: unknown =
+    mod === null || mod === undefined ? undefined : Reflect.get(new Object(mod), "name");
+  if (!name || typeof name !== "string") {
     throw new Error("agent.ts must export default agent({ name: ... })");
   }
 }
@@ -135,10 +138,10 @@ export async function writeJson(
   data: unknown,
   opts: { mode?: number } = {},
 ): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), {
-    recursive: true,
-    ...(opts.mode !== undefined ? { mode: 0o700 } : {}),
-  });
+  // The directory's mode is not the file's: any requested file mode means a
+  // private (0o700) parent, so the guard and the value differ on purpose.
+  const dirMode = opts.mode === undefined ? undefined : 0o700;
+  await fs.mkdir(path.dirname(filePath), { recursive: true, ...omitUndefined({ mode: dirMode }) });
   const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
   await fs.writeFile(
     tmpPath,

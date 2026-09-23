@@ -31,31 +31,37 @@ describe("getOutputMode", () => {
 });
 
 describe("installStdoutGuard", () => {
-  function makeStream(): NodeJS.WriteStream {
-    return new EventEmitter() as unknown as NodeJS.WriteStream;
+  // A stub that THROWS rather than one cast to `never`: `process.exit` is typed
+  // `never` and a body that only throws is inferred that way, so no cast is
+  // needed — and nothing in the guard runs after the exit call, so the throw
+  // (out of the synchronous `emit`) is the only thing it changes.
+  function stubExit() {
+    return vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`process.exit(${String(code)})`);
+    });
   }
 
   it("exits 0 quietly on EPIPE (consumer closed the pipe)", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const exitSpy = stubExit();
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const stream = makeStream();
+    const stream = new EventEmitter();
     installStdoutGuard(stream);
 
     const err = new Error("broken pipe") as NodeJS.ErrnoException;
     err.code = "EPIPE";
-    stream.emit("error", err);
+    expect(() => stream.emit("error", err)).toThrow("process.exit(0)");
 
     expect(exitSpy).toHaveBeenCalledWith(0);
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
   it("reports other stream errors on stderr and exits 1", () => {
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const exitSpy = stubExit();
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const stream = makeStream();
+    const stream = new EventEmitter();
     installStdoutGuard(stream);
 
-    stream.emit("error", new Error("disk full"));
+    expect(() => stream.emit("error", new Error("disk full"))).toThrow("process.exit(1)");
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(stderrSpy).toHaveBeenCalledWith("stdout error: disk full\n");

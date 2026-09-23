@@ -5,7 +5,7 @@ import path from "node:path";
 import { type ArgsDef, type CommandDef, runCommand as runCittyCommand } from "citty";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { CliError, fail, ok } from "./_output.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { stubProcessExit, withTempDir } from "./_test-utils.ts";
 
 const logMock = vi.hoisted(() => ({
   error: vi.fn(),
@@ -179,7 +179,7 @@ describe("runCommand", () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    exitSpy = stubProcessExit();
     stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation((_chunk, cb?: unknown) => {
       if (typeof cb === "function") (cb as () => void)();
       return true;
@@ -290,7 +290,7 @@ describe("defineExec", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    exitSpy = stubProcessExit();
     vi.spyOn(process.stdout, "write").mockImplementation((_chunk, cb?: unknown) => {
       if (typeof cb === "function") (cb as () => void)();
       return true;

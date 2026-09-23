@@ -8,7 +8,7 @@
 
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ViteDevServer } from "vite";
 import { errorMessage } from "./_utils.ts";
 
 export const DEFAULT_HTML = `<!DOCTYPE html>
@@ -26,15 +26,31 @@ export const DEFAULT_HTML = `<!DOCTYPE html>
   </body>
 </html>`;
 
+/** The one middleware {@link fallbackHtmlPlugin} installs, typed to what it touches. */
+export type FallbackHtmlMiddleware = (
+  req: { url?: string | undefined; originalUrl?: string | undefined },
+  res: { setHeader(name: string, value: string): unknown; end(body: string): unknown },
+  next: (err?: unknown) => void,
+) => void;
+
+/**
+ * The slice of Vite's dev server the plugin uses. `ViteDevServer` satisfies it
+ * structurally; naming the slice is what lets a spec hand the hook a plain
+ * double instead of casting one to the whole server.
+ */
+export type FallbackHtmlServer = Pick<ViteDevServer, "transformIndexHtml"> & {
+  middlewares: { use(fn: FallbackHtmlMiddleware): unknown };
+};
+
 /**
  * Vite plugin that serves a fallback index.html in dev mode when one doesn't
  * exist on disk. No-op if index.html exists (user override).
  */
-export function fallbackHtmlPlugin(root: string): Plugin {
+export function fallbackHtmlPlugin(root: string) {
   const htmlExists = existsSync(path.join(root, "index.html"));
   return {
     name: "aai-fallback-html",
-    configureServer(server) {
+    configureServer(server: FallbackHtmlServer) {
       if (htmlExists) return;
       server.middlewares.use((req, res, next) => {
         if (req.url === "/" || req.url === "/index.html") {
@@ -52,7 +68,7 @@ export function fallbackHtmlPlugin(root: string): Plugin {
         next();
       });
     },
-  };
+  } satisfies Plugin;
 }
 
 /**
