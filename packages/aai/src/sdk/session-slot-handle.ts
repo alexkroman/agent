@@ -32,6 +32,7 @@ import type { ToolDef } from "./types.ts";
  *   {@link SessionSlotOptions.view}, or the whole value when no view was
  *   declared.
  *
+ * @sealed
  * @public
  */
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
@@ -55,6 +56,20 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * {@link DeepReadonly} for why the type is deep rather than shallow.
    */
   get(ctx: SlotHolder): DeepReadonly<T>;
+  /**
+   * A MUTABLE deep copy of this session's value — `structuredClone` of what
+   * {@link SessionSlot.get} returns, typed as the slot's own `T` rather than
+   * its readonly view, installing the default on first access like `get`.
+   *
+   * For the caller that wants to hold a value BESIDE the slot: a spec recording
+   * the state before a tool runs so it can restore it with
+   * {@link SessionSlot.set}, or a tool building a modified candidate it may
+   * never store. Mutating the copy changes nothing stored — every write still
+   * goes through `update` or `set`. It replaces
+   * `structuredClone(slot.get(ctx)) as Parameters<typeof slot.set>[1]`, whose
+   * cast was the only way back from `DeepReadonly<T>` to `T`.
+   */
+  snapshot(ctx: SlotHolder): T;
   /**
    * Mutate this session's value, and store the result.
    *

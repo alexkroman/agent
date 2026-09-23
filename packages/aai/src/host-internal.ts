@@ -118,7 +118,9 @@ export { defaultProviders } from "./sdk/providers/_default-providers.ts";
  * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in
  * the runtime's resolver table alone), the validating reader for an
  * AssemblyAI descriptor's `providerOptions`, and the known-provider list (held
- * equal to `KnownLlmProvider` by `llm.test.ts`). Every OTHER provider's key
+ * equal to `KnownLlmProvider` by `llm.test.ts`) plus that closed union itself —
+ * the literal half of the open `LlmProviderName`, for the host registry's
+ * `satisfies Record<KnownLlmProvider, …>`. Every OTHER provider's key
  * variable and base URL lives in that table (`aai-runtime`'s
  * `providers/_llm-registry.ts`), beside the client it configures.
  */
@@ -129,13 +131,14 @@ export {
   ASSEMBLYAI_LLM_KIND,
   readAssemblyAILlmProviderOptions,
 } from "./sdk/providers/llm/assemblyai.ts";
-export { KNOWN_LLM_PROVIDERS } from "./sdk/providers/llm/llm.ts";
+export { KNOWN_LLM_PROVIDERS, type KnownLlmProvider } from "./sdk/providers/llm/llm.ts";
 export { normalizeLlm } from "./sdk/providers/llm/shared/from-string.ts";
 /**
  * The generated gateway catalog and its row type.
  *
- * The OPEN id type (`AssemblyAIGatewayModel`) and its known half
- * (`KnownGatewayModel`) are on `@alexkroman1/aai/llm`. The catalog itself is a
+ * The OPEN id type (`AssemblyAIGatewayModel`) is on `@alexkroman1/aai/llm`,
+ * its literals inline; `KnownGatewayModel`, the closed half derived from it,
+ * is here with the catalog it keys. The catalog itself is a
  * capability table read by the studio's model selection and by this repo's own
  * gate, and inlining it into the published `.d.ts` made a routine regeneration
  * a classification decision.
@@ -144,6 +147,7 @@ export {
   ASSEMBLYAI_GATEWAY_MODELS,
   type GatewayModelInfo,
   gatewayModelIds,
+  type KnownGatewayModel,
 } from "./sdk/providers/llm/shared/gateway-models.ts";
 /**
  * The `*_KIND` / `*_API_KEY_ENV` pairs of the STT, TTS and S2S provider modules.
@@ -208,23 +212,6 @@ export {
   RIME_KIND,
   resolveRimeTtsSettings,
 } from "./sdk/providers/tts/rime.ts";
-export {
-  createSttError,
-  createTtsError,
-  type SttError,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
-  type SttTurnMeta,
-  type TtsError,
-  type TtsEvents,
-  type TtsOpener,
-  type TtsOpenOptions,
-  type TtsSession,
-  type TtsWordTiming,
-  type Unsubscribe,
-} from "./sdk/providers.ts";
 export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./sdk/s2s-constants.ts";
 export { isConvertibleSchema, toToolJsonSchema } from "./sdk/schema.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";

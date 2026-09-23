@@ -12,6 +12,7 @@ import {
   expectDialogRefused,
   expectToolOk,
   parseToolInput,
+  runTool,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
@@ -33,7 +34,28 @@ import {
   rollAction,
   storyFlow,
 } from "./shared.ts";
-import type setupCharacter from "./tools/setup_character.ts";
+import checkState from "./tools/check_state.ts";
+import oracle from "./tools/oracle.ts";
+import setupCharacter from "./tools/setup_character.ts";
+
+/**
+ * The `oracle` answer carrying `key`, or a throw naming what came back.
+ *
+ * `oracle` answers one of five shapes, one per `type`, and they are told apart
+ * by which field is PRESENT rather than by a literal discriminant — so a test
+ * about one branch names the field it is about, and the result is narrowed to
+ * that arm of the tool's own return type rather than cast to a shape retyped
+ * here.
+ */
+function arm<T extends object, K extends string>(
+  result: T,
+  key: K,
+): Extract<T, Record<K, unknown>> {
+  if (!(key in result))
+    throw new Error(`expected an answer with "${key}", got ${JSON.stringify(result)}`);
+  // `in` does not narrow a generic union; the check above is what makes this true.
+  return result as Extract<T, Record<K, unknown>>;
+}
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 
@@ -109,27 +131,6 @@ const SWING = {
   purpose: "swing",
 } as const;
 
-/**
- * What the two ungated tools answer with.
- *
- * A plain `tool()` returns its own value, so there is no envelope to unwrap and
- * `expectToolOk` would (correctly) refuse one. The by-name lookup is a STRING,
- * so the author's return type cannot be recovered from it — the SDK says so in
- * `expectToolOk`'s own doc — and naming the fields a spec reads is the honest
- * substitute. Only what is asserted below is listed.
- */
-type Answered = {
-  state: string;
-  instruction?: string;
-  done: boolean;
-  initialized: boolean;
-  playerName: string;
-  gameOver: boolean;
-  health: number;
-  momentum: number;
-  chaosFactor: number;
-};
-
 function playingState(): GameState {
   const state = structuredClone(DEFAULT_STATE);
   state.initialized = true;
@@ -181,11 +182,7 @@ describe("setup_character", () => {
       played.sceneCount = 42;
     });
 
-    const result = (await run(
-      "setup_character",
-      { ...SETUP_ARGS, playerName: "Luna" },
-      ctx,
-    )) as Answered;
+    const result = await runTool(setupCharacter, { ...SETUP_ARGS, playerName: "Luna" }, ctx);
 
     const state = gameSlot.get(ctx);
     expect(state.npcs).toHaveLength(1);
@@ -223,7 +220,7 @@ describe("setup_character", () => {
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
     await run("setup_character", SETUP_ARGS, createToolContext());
-    const other = (await run("check_state", createToolContext())) as Answered;
+    const other = await runTool(checkState, createToolContext());
     expect(other.initialized).toBe(false);
   });
 });
@@ -522,11 +519,7 @@ describe("oracle", () => {
     state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
     seedPlaying(ctx, state);
 
-    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
-      interrupted: boolean;
-      interruptType: string | null;
-      chaosFactor: number;
-    };
+    const result = arm(await runTool(oracle, { type: "chaos_check" }, ctx), "interrupted");
 
     expect(result.interrupted).toBe(true);
     expect(result.interruptType).toBeTruthy();
@@ -541,10 +534,7 @@ describe("oracle", () => {
     state.chaosFactor = 3; // threshold 0 — `checkChaosInterrupt` returns early
     seedPlaying(ctx, state);
 
-    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
-      interrupted: boolean;
-      chaosFactor: number;
-    };
+    const result = arm(await runTool(oracle, { type: "chaos_check" }, ctx), "interrupted");
     expect(result.interrupted).toBe(false);
     expect(gameSlot.get(ctx).chaosFactor).toBe(3);
   });
@@ -555,10 +545,7 @@ describe("oracle", () => {
     state.chaosFactor = 5; // threshold 2
     seedPlaying(ctx, state);
 
-    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as {
-      interrupted: boolean;
-      chaosFactor: number;
-    };
+    const result = arm(await runTool(oracle, { type: "chaos_check" }, ctx), "interrupted");
     expect(result.interrupted).toBe(false);
     expect(result.chaosFactor).toBe(5);
     expect(gameSlot.get(ctx).chaosFactor).toBe(5);
@@ -567,7 +554,7 @@ describe("oracle", () => {
   test("a chaos check on an untouched session starts from the default factor", async () => {
     // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — a roll of 1 lands.
     const ctx = rolling(1, 10);
-    const result = (await run("oracle", { type: "chaos_check" }, ctx)) as { chaosFactor: number };
+    const result = arm(await runTool(oracle, { type: "chaos_check" }, ctx), "interrupted");
     expect(result.chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
     expect(gameSlot.get(ctx).chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
   });
@@ -581,10 +568,7 @@ describe("oracle", () => {
       [5, "Yes"],
       [6, "Yes"],
     ] as const) {
-      const result = (await run("oracle", { type: "yes_no" }, rolling(roll, 6))) as {
-        roll: number;
-        answer: string;
-      };
+      const result = await runTool(oracle, { type: "yes_no" }, rolling(roll, 6));
       expect.soft(result, `roll ${roll}`).toEqual({ type: "yes_no", roll, answer });
     }
   });
@@ -594,13 +578,9 @@ describe("oracle", () => {
     seedPlaying(ctx);
     const before = structuredClone(gameSlot.get(ctx));
 
-    const reaction = (await run("oracle", { type: "npc_reaction" }, ctx)) as { reaction: string };
-    const twist = (await run("oracle", { type: "scene_twist" }, ctx)) as { twist: string };
-    const theme = (await run("oracle", { type: "action_theme" }, ctx)) as {
-      action: string;
-      theme: string;
-      seed: string;
-    };
+    const reaction = arm(await runTool(oracle, { type: "npc_reaction" }, ctx), "reaction");
+    const twist = arm(await runTool(oracle, { type: "scene_twist" }, ctx), "twist");
+    const theme = arm(await runTool(oracle, { type: "action_theme" }, ctx), "theme");
 
     expect(reaction.reaction).toBeTruthy();
     expect(twist.twist).toBeTruthy();
@@ -811,7 +791,7 @@ describe("the story flow", () => {
     // `DialogPosition` verbatim now, so they report their position under the
     // same keys every gated tool's result carries — which is what the system
     // prompt already claimed.
-    const created = (await run("setup_character", SETUP_ARGS, ctx)) as Answered;
+    const created = await runTool(setupCharacter, SETUP_ARGS, ctx);
     expect(created.state).toBe("playing.awaitingRoll");
     expect(created.instruction).toMatch(/action_roll/);
 
@@ -826,7 +806,7 @@ describe("the story flow", () => {
 
   test("check_state reports the position and is legal before setup", async () => {
     const ctx = createToolContext();
-    const before = (await run("check_state", ctx)) as Answered;
+    const before = await runTool(checkState, ctx);
     expect(before.state).toBe("awaitingSetup");
     expect(before.instruction).toMatch(/setup_character/);
     expect(before.done).toBe(false);
@@ -853,7 +833,7 @@ describe("the story flow", () => {
     expectDialogRefused(await run("action_roll", SWING, ctx), "gameOver");
 
     // Starting over is legal from anywhere, the ending included.
-    const restarted = (await run("setup_character", SETUP_ARGS, ctx)) as Answered;
+    const restarted = await runTool(setupCharacter, SETUP_ARGS, ctx);
     expect(restarted.state).toBe("playing.awaitingRoll");
   });
 

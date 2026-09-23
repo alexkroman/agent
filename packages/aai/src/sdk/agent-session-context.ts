@@ -37,6 +37,7 @@ import type { SlotStore } from "./session-state.ts";
 /**
  * The session a per-session author function is running for.
  *
+ * @sealed
  * @public
  */
 export interface AgentSessionContext {

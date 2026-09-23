@@ -164,10 +164,10 @@ export function toStepError(cause: unknown, message?: string): Error;
 // @public
 type TranscribeProgress = {
     done: false;
-    status: string;
+    status: "queued" | "processing" | (string & {});
 } | {
     done: true;
-    status: string;
+    status: "completed" | (string & {});
     transcript: Transcript;
 };
 
@@ -192,7 +192,7 @@ type TranscribeSyncOptions = TranscribeRequestOptions & {
     label?: string | undefined;
 };
 
-// @public
+// @public @sealed
 type Transcript = {
     id: string;
     text: string;

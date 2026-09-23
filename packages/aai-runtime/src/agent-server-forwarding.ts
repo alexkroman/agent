@@ -76,32 +76,24 @@ export type UnforwardedRuntimeOption =
   | "llm"
   | "tts"
   /**
-   * The TESTING and SANDBOX seams. Every one replaces a piece of the engine
-   * wholesale — the tool executor, the schemas it advertises, the sockets it
-   * opens, the `run_code` sandbox, the egress `fetch`, the tool-result hook,
-   * the guidance injected into a prompt — and a caller
-   * filling one is embedding the runtime rather than serving an agent, which
-   * is `createRuntime` + `createRuntimeServer`. They are `@internal` or
-   * platform-harness only.
+   * The SANDBOX seams. Each replaces a piece of the engine wholesale — the
+   * `run_code` sandbox, the egress `fetch`, the `ctx.workflows` client — and a
+   * caller filling one is embedding the runtime rather than serving an agent,
+   * which is `createRuntime` + `createRuntimeServer`. (The testing and relay
+   * seams that used to sit here — the tool executor and its schemas, the two
+   * S2S socket factories, the tool-result hook, the prompt guidance — are not
+   * `RuntimeOptions` members any more: they are `HostRuntimeOptions`.)
    */
-  | "executeTool"
-  | "toolSchemas"
-  | "createWebSocket"
-  | "createOpenaiRealtimeWebSocket"
   | "runCode"
   | "fetch"
-  | "onToolResult"
-  | "toolGuidance"
   | "workflows"
   /**
    * The TUNING numbers. Each is a default the framework enforces on its own
-   * and no shipped deployment sets: a speech-to-speech config, the session
-   * start deadline, the shutdown grace, the per-tool-call deadline. Forwarding
-   * one would put a knob on the front door for a value nobody has needed to
-   * move — the dead-config shape this repo keeps paying for.
+   * and no shipped deployment sets: the shutdown grace and the per-tool-call
+   * deadline. Forwarding one would put a knob on the front door for a value
+   * nobody has needed to move — the dead-config shape this repo keeps paying
+   * for.
    */
-  | "s2sConfig"
-  | "sessionStartTimeoutMs"
   | "shutdownTimeoutMs"
   | "toolTimeoutMs";
 

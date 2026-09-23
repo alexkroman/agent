@@ -95,9 +95,12 @@ export type AgentDef = {
    * `AgentDef`, and a bundle built with an older SDK carries none — which reads
    * as no carrier, the same refusal an explicit `false` makes. A carrier name a
    * newer SDK adds is carried at run time regardless, the bundle's agent being
-   * asserted to this type rather than validated against it.
+   * asserted to this type rather than validated against it — which is why the
+   * names are `string` rather than a copy of this build's carrier union: the
+   * runtime's `enabledCarriers` is the validation, and drops a name it has no
+   * codec for.
    */
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  telephony?: boolean | readonly string[];
 };
 
 // ---- Bundle-shipped runtime --------------------------------------------------

@@ -13,6 +13,9 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
 // @public (undocumented)
 export const BASH_TIMEOUT_MAX_MS: number;
 
@@ -20,7 +23,14 @@ export const BASH_TIMEOUT_MAX_MS: number;
 export const BASH_TIMEOUT_MS: number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public (undocumented)
 export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
@@ -54,7 +64,7 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
@@ -84,13 +94,13 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -120,6 +130,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type Message = {
@@ -230,14 +243,14 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -259,7 +272,7 @@ type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -267,7 +280,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -315,6 +328,9 @@ type ToolMessagesInput = {
     complete?: string | readonly (string | ToolCompletionMessage)[];
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
+
+// @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {

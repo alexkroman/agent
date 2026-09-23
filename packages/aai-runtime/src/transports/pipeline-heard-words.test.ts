@@ -2,8 +2,8 @@
 // Unit specs for the heard cursor's word alignment. The cursor built on it is
 // specced in pipeline-heard.test.ts.
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
+import type { TtsWordTiming } from "../providers/openers.ts";
 import { alignedEnd, alignWords, lastHeardWord, snapToWord } from "./pipeline-heard-words.ts";
 
 const word = (text: string, startMs: number, endMs: number): TtsWordTiming => ({

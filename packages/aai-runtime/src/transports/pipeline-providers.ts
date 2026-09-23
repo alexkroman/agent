@@ -3,6 +3,8 @@
 // sessions, adopting them as they land, routing their events to the turn
 // orchestrator (pipeline-transport.ts), and tearing them down again.
 
+import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import type {
   SttError,
   SttOpener,
@@ -13,9 +15,7 @@ import type {
   TtsSession,
   TtsWordTiming,
   Unsubscribe,
-} from "@alexkroman1/aai/host-internal";
-import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
-import { errorMessage } from "@alexkroman1/aai/utils";
+} from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 
 /** Configuration for {@link createPipelineProviderSessions}. */

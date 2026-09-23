@@ -89,7 +89,7 @@ import type { AnyDialog } from "./dialog-handle.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { SlotHolder } from "./session-state.ts";
-import type { ToolChoice, ToolDef } from "./tool-def.ts";
+import type { ToolChoice, ToolSet } from "./tool-def.ts";
 
 /**
  * One persona: a speaker the session can hand the caller to.
@@ -99,14 +99,19 @@ import type { ToolChoice, ToolDef } from "./tool-def.ts";
  * `description` routes badly and reads as the model being unreliable; one with
  * no `systemPrompt` speaks as the agent and nobody can tell it took over.
  *
+ * @typeParam N - The persona's `name`, as a literal when {@link persona}
+ *   infers it — what lets {@link Personas.handoff} refuse a misspelled target
+ *   at compile time. Defaults to `string`, which is every persona written
+ *   before the parameter existed.
+ *
  * @public
  */
-export interface PersonaDef {
+export interface PersonaDef<N extends string = string> {
   /**
    * What this persona is called — the value of the `handoff` tool's `persona`
    * argument, the name a log line carries, and what `position(ctx).name` is.
    */
-  name: string;
+  name: N;
   /**
    * What this persona is FOR, in one line, written for whoever is choosing
    * between personas: the `handoff` tool's description is these lines and
@@ -129,7 +134,7 @@ export interface PersonaDef {
    * Each name must be unique across the roster and must not collide with a
    * `tools/` file — one tool has one owner, or the gate cannot say whose it is.
    */
-  tools?: Readonly<Record<string, ToolDef>>;
+  tools?: ToolSet;
   /** The model's tool-choice policy while this persona is speaking. */
   toolChoice?: ToolChoice;
   /** The model's sampling temperature while this persona is speaking. */
@@ -142,9 +147,12 @@ export interface PersonaDef {
  * declared at module scope where both the roster and a tool that hands off to
  * it can import it.
  *
+ * The name is inferred as a LITERAL (`const N`), so a roster built from these
+ * knows its own names and a handoff to one that is not on it fails to compile.
+ *
  * @public
  */
-export function persona(def: PersonaDef): PersonaDef {
+export function persona<const N extends string>(def: PersonaDef<N>): PersonaDef<N> {
   return def;
 }
 
@@ -166,11 +174,14 @@ export interface HandoffOptions {
  * Where a session is, persona-wise — the position {@link Personas.position}
  * answers, the shape `DialogPosition` has for a dialog.
  *
+ * @typeParam N - The roster's persona names — see {@link Personas}.
+ *
+ * @sealed
  * @public
  */
-export interface PersonaPosition {
+export interface PersonaPosition<N extends string = string> {
   /** The persona speaking now. */
-  readonly persona: PersonaDef;
+  readonly persona: PersonaDef<N>;
   /** Who handed off to it, when a handoff has happened this session. */
   readonly from?: string;
   /** The {@link HandoffOptions.note} that came with that handoff. */
@@ -187,6 +198,7 @@ export interface PersonaPosition {
  * What a handoff returns — the shape a tool hands back as its result so the
  * model learns, in the same turn, who is speaking now.
  *
+ * @sealed
  * @public
  */
 export interface HandoffResult {
@@ -215,15 +227,22 @@ export interface HandoffResult {
  * roster to name who it came FROM and to refuse a target that is not on it, and
  * a bare array gives a tool body neither.
  *
+ * @typeParam N - The roster's persona names, inferred by {@link personas} from
+ *   the literal names {@link persona} gives each entry, so
+ *   `desk.handoff(ctx, "biling")` is a compile error rather than a throw on a
+ *   live call. Defaults to `string`, so a `Personas` annotation written before
+ *   the parameter existed still accepts any roster.
+ *
+ * @sealed
  * @public
  */
-export interface Personas {
+export interface Personas<N extends string = string> {
   /** The roster, in declaration order. The first entry is the ENTRY persona. */
-  readonly list: readonly PersonaDef[];
+  readonly list: readonly PersonaDef<N>[];
   /** Who is speaking, and how they came to be — see {@link PersonaPosition}. */
-  position(ctx: SlotHolder): PersonaPosition;
+  position(ctx: SlotHolder): PersonaPosition<N>;
   /** The persona speaking now: `position(ctx).persona`. */
-  active(ctx: SlotHolder): PersonaDef;
+  active(ctx: SlotHolder): PersonaDef<N>;
   /**
    * Make `to` the speaker from the next model step on.
    *
@@ -238,7 +257,7 @@ export interface Personas {
    * authoring mistakes a tool body should not have to defend against; the
    * minted `handoff` tool turns them into a `ToolFailure` for the model.
    */
-  handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
+  handoff(ctx: SlotHolder, to: PersonaDef<N> | N, options?: HandoffOptions): HandoffResult;
 }
 
 /**
@@ -289,12 +308,12 @@ export function bindPersonaDialogs(roster: Personas, dialogs: readonly AnyDialog
  *
  * @public
  */
-export function personas(list: readonly PersonaDef[]): Personas {
+export function personas<const N extends string>(list: readonly PersonaDef<N>[]): Personas<N> {
   assertRoster(list);
-  const entry = list[0] as PersonaDef;
-  const byName = new Map(list.map((one) => [one.name, one]));
+  const entry = list[0] as PersonaDef<N>;
+  const byName = new Map<string, PersonaDef<N>>(list.map((one) => [one.name, one]));
 
-  const lookup = (name: string): PersonaDef => {
+  const lookup = (name: string): PersonaDef<N> => {
     const found = byName.get(name);
     if (found) return found;
     throw new Error(
@@ -304,7 +323,7 @@ export function personas(list: readonly PersonaDef[]): Personas {
 
   const pinned = (
     ctx: SlotHolder,
-  ): { persona: PersonaDef; dialog: string; state: string } | undefined => {
+  ): { persona: PersonaDef<N>; dialog: string; state: string } | undefined => {
     for (const dialog of boundDialogs.get(handle) ?? []) {
       const at = dialog.position(ctx);
       if (at.persona !== undefined) {
@@ -314,7 +333,7 @@ export function personas(list: readonly PersonaDef[]): Personas {
     return undefined;
   };
 
-  const position = (ctx: SlotHolder): PersonaPosition => {
+  const position = (ctx: SlotHolder): PersonaPosition<N> => {
     const pin = pinned(ctx);
     const stored = record.get(ctx);
     if (pin) {
@@ -329,7 +348,7 @@ export function personas(list: readonly PersonaDef[]): Personas {
     };
   };
 
-  const handle: Personas = {
+  const handle: Personas<N> = {
     list,
     position,
     active: (ctx) => position(ctx).persona,

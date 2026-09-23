@@ -13,7 +13,7 @@ export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 // @public
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
 
-// @public
+// @public @sealed
 export type RuntimeTracing = {
     forceFlush: () => Promise<void>;
     shutdown: () => Promise<void>;

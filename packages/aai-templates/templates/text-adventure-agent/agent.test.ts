@@ -6,8 +6,14 @@ import {
   type RandomSource,
   type SessionEventContext,
 } from "@alexkroman1/aai";
-import { createToolContext, parseToolInput, toolOf, toolRunner } from "@alexkroman1/aai/testing";
-import { isToolFailure } from "@alexkroman1/aai/utils";
+import {
+  createToolContext,
+  parseToolInput,
+  runTool,
+  toolOf,
+  toolRunner,
+} from "@alexkroman1/aai/testing";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -21,6 +27,13 @@ import {
   statusBlock,
   statusLine,
 } from "./shared.ts";
+import gameStateDrop from "./tools/game_state_drop.ts";
+import gameStateFlag from "./tools/game_state_flag.ts";
+import gameStateGet from "./tools/game_state_get.ts";
+import gameStateMove from "./tools/game_state_move.ts";
+import gameStateRestart from "./tools/game_state_restart.ts";
+import gameStateScore from "./tools/game_state_score.ts";
+import gameStateTake from "./tools/game_state_take.ts";
 
 /** A tool by the name the model calls it by, bound to this agent. */
 const run = toolRunner(agentDef);
@@ -34,10 +47,16 @@ const run = toolRunner(agentDef);
  * reads `undefined` off a `ToolFailure` and dies three assertions later, with
  * the sentence the tool wrote thrown away. `game_state_drop` can refuse now, so
  * every unwrap in this file goes through the guard rather than through `as`.
+ *
+ * TYPED by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm — no shape is restated
+ * here, and a tool whose return changes breaks the spec that reads it.
  */
-const ok = <T>(result: unknown): T => {
+const ok = <T>(result: T): Exclude<T, ToolFailure> => {
   if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return result as T;
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
 };
 
 /**
@@ -73,18 +92,14 @@ describe("the mutating tools actually mutate", () => {
   test("game_state_take adds to the inventory and does not double an item", async () => {
     const ctx = createToolContext();
 
-    const first = ok<{ inventory: string[] }>(
-      await run("game_state_take", { value: "lantern" }, ctx),
-    );
+    const first = ok(await runTool(gameStateTake, { value: "lantern" }, ctx));
     expect(first.inventory).toEqual(["lantern"]);
     // The stored value, not the one the body returned — a body handed a frozen
     // value would have thrown, and a body handed a copy nothing stores would
     // report success here and leave the slot empty.
     expect(gameSlot.get(ctx).inventory).toEqual(["lantern"]);
 
-    const again = ok<{ inventory: string[] }>(
-      await run("game_state_take", { value: "lantern" }, ctx),
-    );
+    const again = ok(await runTool(gameStateTake, { value: "lantern" }, ctx));
     expect(again.inventory).toEqual(["lantern"]);
   });
 
@@ -92,9 +107,7 @@ describe("the mutating tools actually mutate", () => {
     const ctx = createToolContext();
 
     await run("game_state_flag", { value: "gate_opened" }, ctx);
-    const both = ok<{ flags: Record<string, boolean> }>(
-      await run("game_state_flag", { value: "rope_cut" }, ctx),
-    );
+    const both = ok(await runTool(gameStateFlag, { value: "rope_cut" }, ctx));
 
     expect(both.flags).toEqual({ gate_opened: true, rope_cut: true });
     expect(gameSlot.get(ctx).flags).toEqual({ gate_opened: true, rope_cut: true });
@@ -120,9 +133,7 @@ describe("the adventure's tools", () => {
     await run("game_state_take", { value: "lantern" }, ctx);
     await run("game_state_take", { value: "rope" }, ctx);
 
-    const dropped = ok<{ inventory: string[] }>(
-      await run("game_state_drop", { value: "lantern" }, ctx),
-    );
+    const dropped = ok(await runTool(gameStateDrop, { value: "lantern" }, ctx));
     expect(dropped.inventory).toEqual(["rope"]);
 
     // A `ToolFailure`, not a silent no-op reporting the unchanged inventory:
@@ -134,9 +145,7 @@ describe("the adventure's tools", () => {
 
   test("move sets the room and reports the turn count without touching it", async () => {
     const ctx = createToolContext();
-    const moved = ok<{ currentRoom: string; moves: number }>(
-      await run("game_state_move", { value: "Echo Chamber" }, ctx),
-    );
+    const moved = ok(await runTool(gameStateMove, { value: "Echo Chamber" }, ctx));
     // `moves` is 0 because nobody has SAID anything — see `recordTurn`. It is
     // still reported, because it is what the narrator wants back.
     expect(moved).toEqual({ currentRoom: "Echo Chamber", moves: 0 });
@@ -146,7 +155,7 @@ describe("the adventure's tools", () => {
   test("score accumulates rather than replacing", async () => {
     const ctx = createToolContext();
     await run("game_state_score", { value: 10 }, ctx);
-    const total = ok<{ score: number }>(await run("game_state_score", { value: 5 }, ctx));
+    const total = ok(await runTool(gameStateScore, { value: 5 }, ctx));
     expect(total.score).toBe(15);
   });
 
@@ -161,9 +170,7 @@ describe("the adventure's tools", () => {
 
     // And the narrator reads it back through the ordinary state tool — the hook
     // writes, the model reads, and the two never have to agree about who counts.
-    const read = ok<{ moves: number; recentHistory: string[] }>(
-      await run("game_state_get", {}, ctx),
-    );
+    const read = ok(await runTool(gameStateGet, {}, ctx));
     expect(read.moves).toBe(REPORTED_HISTORY + 3);
     expect(read.recentHistory).toHaveLength(REPORTED_HISTORY);
   });
@@ -217,9 +224,7 @@ describe("the adventure's tools", () => {
     await run("game_state_score", { value: 30 }, ctx);
     await run("game_state_move", { value: "Echo Chamber" }, ctx);
 
-    const restarted = ok<{ restarted: boolean; currentRoom: string }>(
-      await run("game_state_restart", ctx),
-    );
+    const restarted = ok(await runTool(gameStateRestart, ctx));
     expect(restarted).toEqual({ restarted: true, currentRoom: DEFAULT_GAME_STATE.currentRoom });
     expect(gameSlot.get(ctx)).toEqual(DEFAULT_GAME_STATE);
   });
@@ -249,9 +254,7 @@ describe("what the game works out for itself", () => {
     // EARNED, not the one it had. `after` runs after the body, so a result
     // built from `game.rank` would announce this promotion one call late — the
     // whole reason `rankFor` is a predicate the writer can call.
-    const scored = ok<{ score: number; rank: string }>(
-      await run("game_state_score", { value: 30 }, ctx),
-    );
+    const scored = ok(await runTool(gameStateScore, { value: 30 }, ctx));
     expect(scored).toEqual({ score: 30, rank: "Amateur Adventurer" });
     expect(gameSlot.get(ctx).rank).toBe("Amateur Adventurer");
 
@@ -272,9 +275,7 @@ describe("what the game works out for itself", () => {
   test("the scavenger's threshold is a number the spec can state", async () => {
     const always = createToolContext({ random: () => 0 });
     await run("game_state_take", { value: "scarab" }, always);
-    const taken = ok<{ takenByScavenger: boolean }>(
-      await run("game_state_drop", { value: "scarab" }, always),
-    );
+    const taken = ok(await runTool(gameStateDrop, { value: "scarab" }, always));
     expect(taken.takenByScavenger).toBe(true);
     expect(gameSlot.get(always).flags[SCAVENGER_FLAG]).toBe(true);
 
@@ -282,9 +283,7 @@ describe("what the game works out for itself", () => {
     // well inside what a stub does — the comparison has to leave it out.
     const never = createToolContext({ random: () => 1 });
     await run("game_state_take", { value: "scarab" }, never);
-    const kept = ok<{ takenByScavenger: boolean }>(
-      await run("game_state_drop", { value: "scarab" }, never),
-    );
+    const kept = ok(await runTool(gameStateDrop, { value: "scarab" }, never));
     expect(kept.takenByScavenger).toBe(false);
     expect(gameSlot.get(never).flags[SCAVENGER_FLAG]).toBeUndefined();
   });
@@ -302,9 +301,7 @@ describe("what the game works out for itself", () => {
       const struck: boolean[] = [];
       for (let i = 0; i < drops; i++) {
         await run("game_state_take", { value: `treasure ${i}` }, ctx);
-        const dropped = ok<{ takenByScavenger: boolean }>(
-          await run("game_state_drop", { value: `treasure ${i}` }, ctx),
-        );
+        const dropped = ok(await runTool(gameStateDrop, { value: `treasure ${i}` }, ctx));
         struck.push(dropped.takenByScavenger);
       }
       return struck;
@@ -340,7 +337,7 @@ describe("the status line", () => {
     await run("game_state_move", { value: "Echoing Hall" }, ctx);
     await run("game_state_score", { value: 60 }, ctx);
 
-    const board = ok<Record<string, unknown>>(await run("game_state_get", ctx));
+    const board = ok(await runTool(gameStateGet, ctx));
     const bar = statusLine(gameSlot.get(ctx));
 
     expect(bar).toEqual({

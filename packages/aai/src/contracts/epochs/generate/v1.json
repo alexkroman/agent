@@ -3,10 +3,10 @@
   "capability": "generate",
   "epoch": 1,
   "rule": 2,
-  "sha256": "a872cc187cae210a19f6ff1678efadd7772c8bfd63a19097b474685288cc01e3",
+  "sha256": "2d72fca032f3f081d01bfa4c3b2d3ef2eafbd072f34b29451509543239f1034b",
   "exports": ["GenerateFn", "GenerateObjectResult", "GenerateOptions", "GenerateResult"],
   "rollup": "cb68f5bac48e81bc4e01c8161c2b4f1ba09530b71ff52ee53168283cf38f65e2",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -18,6 +18,12 @@
       "revision": 1,
       "rule": 2,
       "sha256": "a872cc187cae210a19f6ff1678efadd7772c8bfd63a19097b474685288cc01e3",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "2d72fca032f3f081d01bfa4c3b2d3ef2eafbd072f34b29451509543239f1034b",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

@@ -87,21 +87,28 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
  * rather than an internal shape inside `send.ts`, where it started with Slack's
  * option-narrowing spelled out beside the dispatch table.
  *
- * `render` and `advice` are handed the descriptor's RAW options, because a
- * descriptor round-trips through a durable run's journal and arrives as
- * whatever was written there. Narrowing them is the kind's own job and the
- * reason it owns this function: a cast here would fail as `POST undefined`
- * rather than naming the field that is missing.
+ * The descriptor's options arrive RAW, because a descriptor round-trips
+ * through a durable run's journal and arrives as whatever was written there.
+ * Narrowing them is the kind's own job and the reason it owns this value: a
+ * cast would fail as `POST undefined` rather than naming the field that is
+ * missing. `O` is what that narrowing produces: register a
+ * `ChannelHandler<MyOptions>` together with the function that narrows the raw
+ * record into `MyOptions` (see `registerChannelHandler`) and `render`/`advice`
+ * are handed its answer, typed; leave `O` at its default and they are handed
+ * the raw record to narrow themselves.
+ *
+ * @typeParam O - The options `render` and `advice` read, as `options` narrows
+ *   them. Defaults to the raw record.
  *
  * @public
  */
-export interface ChannelHandler {
+export interface ChannelHandler<O = Record<string, unknown>> {
   /** The `kind` tag its descriptors carry, e.g. `"slack"`. */
   readonly kind: string;
   /** Turn a message into this platform's request. */
-  readonly render: (message: ChannelMessage, options: Record<string, unknown>) => ChannelPayload;
+  readonly render: (message: ChannelMessage, options: O) => ChannelPayload;
   /** What to tell an author when the platform refuses a post. */
-  readonly advice: (options: Record<string, unknown>, detail: string) => string;
+  readonly advice: (options: O, detail: string) => string;
 }
 
 /**

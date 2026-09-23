@@ -5,7 +5,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { makeAgent, makeTool, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 
 describe("runtime executeTool — cancellation (self-hosted tools)", () => {
   test("ctx.signal follows the turn signal", async () => {
@@ -14,7 +14,7 @@ describe("runtime executeTool — cancellation (self-hosted tools)", () => {
     // signal must still reach the tool.
     let seen: AbortSignal | undefined;
     const gate = Promise.withResolvers<string>();
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({
         tools: {
           probe: makeTool({
@@ -44,7 +44,7 @@ describe("runtime executeTool — cancellation (self-hosted tools)", () => {
   });
 
   test("aborting the signal settles a hung tool with a tool error", async () => {
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({
         tools: {
           hang: makeTool({

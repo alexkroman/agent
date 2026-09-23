@@ -48,6 +48,7 @@ export {
   type ToolMessageCondition,
   type ToolMessages,
   type ToolMessagesInput,
+  type ToolSet,
   type ToolStartMessage,
   tool,
   toolFailure,

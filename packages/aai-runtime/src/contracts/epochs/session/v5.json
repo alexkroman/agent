@@ -1,0 +1,14 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session",
+  "epoch": 5,
+  "rule": 2,
+  "sha256": "c93e10ef7480b350c03401cc98f10bfd212f78a7c1f6285f87d27b0a8b5595a5",
+  "exports": [
+    "SESSION_EVENTS_TOKEN_ENV",
+    "SessionEventPage",
+    "SessionEventStream",
+    "SessionWebSocket"
+  ],
+  "rollup": "bb98b0ffac46b42169b41444d21d6ad244195cf6f0dc2e10e237e4922f6cac7c"
+}

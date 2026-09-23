@@ -173,7 +173,8 @@ describe('region: "eu" with a TTS stage that has no EU endpoint', () => {
 });
 
 describe("open vocabularies warn rather than refuse", () => {
-  // `provider`, `voicePresets` and `turnDetection` are typed `Known | (string & {})`,
+  // `provider`, `voicePresets`, `turnDetection`, `builtinTools` and `telephony`
+  // are typed as known literals `| (string & {})`,
   // so a value this release has not heard of COMPILES. What keeps a typo from
   // becoming a silent no-op (or a first-session failure) is this line.
   test("an unknown LLM provider with no baseUrl is named, with the remedy", () => {
@@ -201,6 +202,23 @@ describe("open vocabularies warn rather than refuse", () => {
     expect(agentConfigWarnings({ turnDetection: "manual" })).toEqual([]);
     expect(agentConfigWarnings({ turnDetection: "semantic" })).toEqual([
       expect.stringContaining('runs with "auto"'),
+    ]);
+  });
+
+  test("an unknown builtin is named once per entry, with what it costs; known ones are silent", () => {
+    expect(agentConfigWarnings({ builtinTools: ["web_search", "think"] })).toEqual([]);
+    expect(agentConfigWarnings({ builtinTools: ["web_search", "web_serch"] })).toEqual([
+      expect.stringContaining('Builtin tool "web_serch"'),
+    ]);
+    expect(agentConfigWarnings({ builtinTools: ["web_serch"] })[0]).toContain("never be offered");
+  });
+
+  test("an unknown telephony carrier is named; true, false and known carriers are silent", () => {
+    expect(agentConfigWarnings({ telephony: true })).toEqual([]);
+    expect(agentConfigWarnings({ telephony: false })).toEqual([]);
+    expect(agentConfigWarnings({ telephony: ["twilio", "telnyx"] })).toEqual([]);
+    expect(agentConfigWarnings({ telephony: ["twilio", "vonage"] })).toEqual([
+      expect.stringContaining('Telephony carrier "vonage"'),
     ]);
   });
 });

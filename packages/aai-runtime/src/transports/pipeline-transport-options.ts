@@ -6,7 +6,7 @@
 // re-applied at the point of use.
 
 import type { ToolChoice, TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
-import type { ExecuteTool, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
+import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
@@ -26,6 +26,7 @@ import {
 } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
+import type { SttOpener, TtsOpener } from "../providers/openers.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 import type { DialogTurnSource } from "./pipeline-dialog-knobs.ts";

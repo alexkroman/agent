@@ -16,7 +16,7 @@
  * setter, so there is still exactly one flag.
  */
 
-import type { SttError, TtsError } from "@alexkroman1/aai/host-internal";
+import type { SttError, TtsError } from "../providers/openers.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";

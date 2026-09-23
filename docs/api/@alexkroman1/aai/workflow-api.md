@@ -210,6 +210,8 @@ type AgentClient = WorkflowApi & {
 };
 ```
 
+**`Sealed`**
+
 Everything one agent answers: every [WorkflowApi](#workflowapi) call, plus the front
 door.
 
@@ -415,7 +417,11 @@ type StartOptions = {
 };
 ```
 
-Per-run options for `WorkflowClient.start`.
+Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a
+TOOL. A caller OUTSIDE the agent (a page, a script) starts a run through
+`WorkflowApi.start`, whose options are `WorkflowStartOptions`: the same
+`key`, and a `signal` where this carries `notify`, which needs a session to
+speak into.
 
 #### Properties
 
@@ -888,6 +894,8 @@ type WorkflowApi = {
 };
 ```
 
+**`Sealed`**
+
 The calls the API offers — one method per route, and nothing beyond them.
 
 The width is the constraint: a route needing more than a tool can do is the
@@ -900,9 +908,7 @@ query.
 ##### cancel()
 
 ```ts
-cancel(runId: string, options?: {
-  signal?: AbortSignal;
-}): Promise<boolean>;
+cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
 ```
 
 Stop a run, resolving whether this call is what ended it. A run that had
@@ -917,9 +923,7 @@ is ordinary.
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
+[`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -928,9 +932,7 @@ is ordinary.
 ##### download()
 
 ```ts
-download(id: string, options?: {
-  signal?: AbortSignal;
-}): Promise<Blob>;
+download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
 ```
 
 Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
@@ -947,9 +949,7 @@ here does and neither `<audio src>` nor `<a href>` can send one;
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
+[`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -961,10 +961,7 @@ here does and neither `<audio src>` nor `<a href>` can send one;
 find(
    workflow: string, 
    key: string, 
-   options?: {
-  limit?: number;
-  signal?: AbortSignal;
-}
+   options?: WorkflowRunListOptions
 ): Promise<WorkflowRunSnapshot[]>;
 ```
 
@@ -982,13 +979,7 @@ Runs of `workflow` started with `key`, newest first.
 
 ###### options?
 
-###### limit?
-
-`number`
-
-###### signal?
-
-`AbortSignal`
+[`WorkflowRunListOptions`](#workflowrunlistoptions)
 
 ###### Returns
 
@@ -997,9 +988,7 @@ Runs of `workflow` started with `key`, newest first.
 ##### follow()
 
 ```ts
-follow(runId: string, options?: {
-  signal?: AbortSignal;
-}): AsyncIterable<WorkflowRunSnapshot>;
+follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
 ```
 
 Every snapshot of a run, until it settles — the call `watch` is the raw
@@ -1031,9 +1020,7 @@ instead is the caller [WorkflowApi.watch](#watch) exists for.
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
+[`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -1042,11 +1029,7 @@ instead is the caller [WorkflowApi.watch](#watch) exists for.
 ##### followOutput()
 
 ```ts
-followOutput(runId: string, options?: {
-  fromIndex?: number;
-  namespace?: string;
-  signal?: AbortSignal;
-}): AsyncIterable<unknown>;
+followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
 ```
 
 Everything a run WRITES, in order, until it settles.
@@ -1074,17 +1057,7 @@ no position a re-open could resume from.
 
 ###### options?
 
-###### fromIndex?
-
-`number`
-
-###### namespace?
-
-`string`
-
-###### signal?
-
-`AbortSignal`
+[`WorkflowFollowOutputOptions`](#workflowfollowoutputoptions)
 
 ###### Returns
 
@@ -1093,10 +1066,7 @@ no position a re-open could resume from.
 ##### get()
 
 ```ts
-get(runId: string, options?: {
-  signal?: AbortSignal;
-  wait?: number;
-}): Promise<WorkflowRunSnapshot | undefined>;
+get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
 ```
 
 Read a run's state. Resolves undefined for an unknown id.
@@ -1116,13 +1086,7 @@ script reads `output`.
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
-
-###### wait?
-
-`number`
+[`WorkflowGetOptions`](#workflowgetoptions)
 
 ###### Returns
 
@@ -1131,9 +1095,7 @@ script reads `output`.
 ##### list()
 
 ```ts
-list(options?: {
-  signal?: AbortSignal;
-}): Promise<WorkflowSummary[]>;
+list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
 ```
 
 Declared workflows: name, description, and the input schema to render.
@@ -1142,9 +1104,7 @@ Declared workflows: name, description, and the input schema to render.
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
+[`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -1153,10 +1113,7 @@ Declared workflows: name, description, and the input schema to render.
 ##### recent()
 
 ```ts
-recent(workflow: string, options?: {
-  limit?: number;
-  signal?: AbortSignal;
-}): Promise<WorkflowRunSnapshot[]>;
+recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
 ```
 
 Runs of `workflow`, newest first, whatever key they carry.
@@ -1174,13 +1131,7 @@ meaning "this user's runs" cannot silently widen to every user's.
 
 ###### options?
 
-###### limit?
-
-`number`
-
-###### signal?
-
-`AbortSignal`
+[`WorkflowRunListOptions`](#workflowrunlistoptions)
 
 ###### Returns
 
@@ -1192,10 +1143,7 @@ meaning "this user's runs" cannot silently widen to every user's.
 start(
    workflow: string, 
    input?: unknown, 
-   options?: {
-  key?: string;
-  signal?: AbortSignal;
-}
+   options?: WorkflowStartOptions
 ): Promise<string>;
 ```
 
@@ -1220,13 +1168,7 @@ look it up than remember the id.
 
 ###### options?
 
-###### key?
-
-`string`
-
-###### signal?
-
-`AbortSignal`
+[`WorkflowStartOptions`](#workflowstartoptions)
 
 ###### Returns
 
@@ -1238,11 +1180,7 @@ look it up than remember the id.
 startAndWait(
    workflow: string, 
    input?: unknown, 
-   options?: {
-  key?: string;
-  signal?: AbortSignal;
-  wait?: number;
-}
+   options?: WorkflowStartAndWaitOptions
 ): Promise<WorkflowRunSnapshot>;
 ```
 
@@ -1270,17 +1208,7 @@ answered.
 
 ###### options?
 
-###### key?
-
-`string`
-
-###### signal?
-
-`AbortSignal`
-
-###### wait?
-
-`number`
+[`WorkflowStartAndWaitOptions`](#workflowstartandwaitoptions)
 
 ###### Returns
 
@@ -1289,11 +1217,7 @@ answered.
 ##### streamOutput()
 
 ```ts
-streamOutput(runId: string, options?: {
-  namespace?: string;
-  signal?: AbortSignal;
-  startIndex?: number;
-}): Promise<Response>;
+streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
 ```
 
 Open a server-sent-event stream of what the run has WRITTEN — its progress,
@@ -1316,17 +1240,7 @@ position.
 
 ###### options?
 
-###### namespace?
-
-`string`
-
-###### signal?
-
-`AbortSignal`
-
-###### startIndex?
-
-`number`
+[`WorkflowStreamOutputOptions`](#workflowstreamoutputoptions)
 
 ###### Returns
 
@@ -1372,9 +1286,7 @@ recording over a long link wants — see [UploadOptions.parallel](#parallel).
 ##### uploadInfo()
 
 ```ts
-uploadInfo(id: string, options?: {
-  signal?: AbortSignal;
-}): Promise<UploadInfo>;
+uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
 ```
 
 Read an upload's record: its name, how much has ARRIVED, and `complete`.
@@ -1391,9 +1303,7 @@ which a slow link and a dead client both produce.
 
 ###### options?
 
-###### signal?
-
-`AbortSignal`
+[`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -1445,9 +1355,7 @@ exactly as it reads a single streaming `PUT`.
 ##### wake()
 
 ```ts
-wake(runId: string, options?: WakeUpOptions & {
-  signal?: AbortSignal;
-}): Promise<number>;
+wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
 ```
 
 End a run's `sleep()` early, resolving how many pending sleeps were
@@ -1477,9 +1385,7 @@ had to make a round trip for.
 
 ###### options?
 
-[`WakeUpOptions`](#wakeupoptions) & \{
-  `signal?`: `AbortSignal`;
-\}
+[`WakeUpOptions`](#wakeupoptions) & [`WorkflowApiCallOptions`](#workflowapicalloptions)
 
 ###### Returns
 
@@ -1511,6 +1417,26 @@ path rather than an error.
 ###### Returns
 
 `Promise`\<`Response`\>
+
+***
+
+### WorkflowApiCallOptions
+
+```ts
+type WorkflowApiCallOptions = {
+  signal?: AbortSignal;
+};
+```
+
+What every [WorkflowApi](#workflowapi) call takes: an abort signal, and nothing else.
+
+#### Properties
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
 
 ***
 
@@ -1633,12 +1559,73 @@ What the body returns.
 
 ***
 
+### WorkflowFollowOutputOptions
+
+```ts
+type WorkflowFollowOutputOptions = {
+  fromIndex?: number;
+  namespace?: string;
+  signal?: AbortSignal;
+};
+```
+
+[WorkflowApi.followOutput](#followoutput)'s options: which channel, from which chunk.
+
+#### Properties
+
+##### fromIndex?
+
+```ts
+optional fromIndex?: number;
+```
+
+##### namespace?
+
+```ts
+optional namespace?: string;
+```
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+***
+
+### WorkflowGetOptions
+
+```ts
+type WorkflowGetOptions = {
+  signal?: AbortSignal;
+  wait?: number;
+};
+```
+
+[WorkflowApi.get](#get)'s options: an optional `wait` for the run to settle.
+
+#### Properties
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+##### wait?
+
+```ts
+optional wait?: number;
+```
+
+***
+
 ### WorkflowOutputOf
 
 ```ts
 type WorkflowOutputOf<D> = D extends {
   output?: StandardSchemaV1<unknown, infer O>;
-  run: WorkflowBody<never, infer R>;
+  run: (input: never, ctx: never) => infer R;
 } ? Awaited<unknown extends O ? R : O> : never;
 ```
 
@@ -1692,8 +1679,18 @@ function PARAMETER — so a def carrying an input schema is not assignable to
 one taking the open `Record<string, unknown>`, and the conditional silently
 fell to `never`. It is the same contravariance `AnyWorkflowDef` was
 written for, reached by the other route, and it is why the test below matches
-`run` as `WorkflowBody<never, infer R>` — `never` is assignable to every
-parameter type.
+`run` as `(input: never, ctx: never) => infer R` — `never` is assignable to
+every parameter type.
+
+## It matches a SHAPE, not a named declaration
+
+Both readings test `run`'s signature structurally rather than naming
+`WorkflowDef`, `WorkflowBody` or `WorkflowContext`. A reading answers the
+same type either way — `WorkflowDef.run` IS `(input: InferSchemaOutput<P>,
+ctx: WorkflowContext) => …` — but a reading that names the declaration
+carries it (and everything `WorkflowContext` reaches) into the contract of
+every capability that publishes the reading, so a new member on the context
+a body receives moved a PAGE's type.
 
 `unknown extends O` is how "declared nothing" is told from "declared a
 schema": a def with no output schema still HAS the optional property in its
@@ -1764,6 +1761,34 @@ Key the workflow is declared under in `agent({ workflows })`.
 
 ***
 
+### WorkflowRunListOptions
+
+```ts
+type WorkflowRunListOptions = {
+  limit?: number;
+  signal?: AbortSignal;
+};
+```
+
+[WorkflowApi.find](#find) and [WorkflowApi.recent](#recent)'s options: how many
+runs to answer.
+
+#### Properties
+
+##### limit?
+
+```ts
+optional limit?: number;
+```
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+***
+
 ### WorkflowRunSnapshot
 
 ```ts
@@ -1815,6 +1840,108 @@ Lifecycle of one workflow run.
 - `pending` — created, not yet picked up by the queue.
 - `running` — executing, or suspended at a `sleep`/hook waiting to resume.
 - `completed` / `failed` / `cancelled` — terminal.
+
+***
+
+### WorkflowStartAndWaitOptions
+
+```ts
+type WorkflowStartAndWaitOptions = {
+  key?: string;
+  signal?: AbortSignal;
+  wait?: number;
+};
+```
+
+[WorkflowApi.startAndWait](#startandwait)'s options: [WorkflowStartOptions](#workflowstartoptions) plus
+the `wait` budget, clamped to `MAX_WORKFLOW_WAIT_MS` at both ends.
+
+#### Properties
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+##### wait?
+
+```ts
+optional wait?: number;
+```
+
+***
+
+### WorkflowStartOptions
+
+```ts
+type WorkflowStartOptions = {
+  key?: string;
+  signal?: AbortSignal;
+};
+```
+
+[WorkflowApi.start](#start)'s options — a correlation `key` and a signal.
+
+**Not `StartOptions`**, which is the same verb one side over:
+`ctx.workflows.start` takes `{ key, notify }` from a TOOL, where `notify`
+has a session to speak into. A caller outside the agent has none, so this
+one carries `signal` where that one carries `notify`; the two share only
+`key`, and its meaning.
+
+#### Properties
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+***
+
+### WorkflowStreamOutputOptions
+
+```ts
+type WorkflowStreamOutputOptions = {
+  namespace?: string;
+  signal?: AbortSignal;
+  startIndex?: number;
+};
+```
+
+[WorkflowApi.streamOutput](#streamoutput)'s options: which channel, from which chunk.
+
+#### Properties
+
+##### namespace?
+
+```ts
+optional namespace?: string;
+```
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+##### startIndex?
+
+```ts
+optional startIndex?: number;
+```
 
 ***
 

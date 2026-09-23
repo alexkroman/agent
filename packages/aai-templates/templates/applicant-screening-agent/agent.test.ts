@@ -8,6 +8,7 @@ import {
   expectDialogRefused,
   parseSchemaInput,
   runGuardrail,
+  runTool,
   type SentEvent,
   type StubDelegateCall,
   type StubGenerateCall,
@@ -16,6 +17,7 @@ import {
   type TestToolContext,
   toolRunner,
 } from "@alexkroman1/aai/testing";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   COORDINATOR_NAME,
@@ -49,6 +51,23 @@ import {
   SHORTLIST_SIZE,
   stageLabel,
 } from "./shared.ts";
+import candidateDetails from "./tools/candidate_details.ts";
+import readEmail from "./tools/read_email.ts";
+import screenCandidates from "./tools/screen_candidates.ts";
+import screeningStatus from "./tools/screening_status.ts";
+
+/**
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 // ─── A scripted desk ─────────────────────────────────────────────────────────
 //
@@ -161,15 +180,6 @@ async function screened(script: Script = {}) {
   return desk;
 }
 
-interface ScreenResult {
-  job: string;
-  screened: number;
-  top: { rank: number; name: string; score: number; reason: string }[];
-  unscored?: string;
-  message: string;
-  state: string;
-}
-
 // ─── The flow ────────────────────────────────────────────────────────────────
 
 describe("the flow", () => {
@@ -203,7 +213,7 @@ describe("screen_candidates (their load_leads + score_leads)", () => {
   test("scores every applicant once, through the evaluator, and lands in reviewing", async () => {
     const { ctx, model } = scriptedDesk();
 
-    const result = (await run("screen_candidates", {}, ctx)) as ScreenResult;
+    const result = ok(await runTool(screenCandidates, {}, ctx));
 
     expect(model.calls).toHaveLength(LEADS.length);
     expect(new Set(model.calls.map((call) => call.system))).toEqual(new Set([EVALUATOR_SYSTEM]));
@@ -216,7 +226,7 @@ describe("screen_candidates (their load_leads + score_leads)", () => {
 
   test("reads back the top three, best first, with the evaluator's reasoning", async () => {
     const { ctx } = scriptedDesk();
-    const result = (await run("screen_candidates", {}, ctx)) as ScreenResult;
+    const result = ok(await runTool(screenCandidates, {}, ctx));
 
     expect(result.top.map((one) => one.name)).toEqual([
       "Priya Raman",
@@ -232,7 +242,7 @@ describe("screen_candidates (their load_leads + score_leads)", () => {
 
   test("screens against the shipped role unless the caller named another", async () => {
     const { ctx, model } = scriptedDesk();
-    const result = (await run("screen_candidates", {}, ctx)) as ScreenResult;
+    const result = ok(await runTool(screenCandidates, {}, ctx));
     expect(result.job).toBe(DEFAULT_JOB.title);
     expect(stateOf(ctx).job).toEqual(DEFAULT_JOB);
     for (const call of model.calls) {
@@ -315,7 +325,7 @@ describe("screen_candidates (their load_leads + score_leads)", () => {
   test("one applicant the evaluator could not score does not sink the screening", async () => {
     const { ctx } = scriptedDesk({ failScoring: ["c07"] });
 
-    const result = (await run("screen_candidates", {}, ctx)) as ScreenResult;
+    const result = ok(await runTool(screenCandidates, {}, ctx));
 
     expect(result.screened).toBe(LEADS.length - 1);
     expect(result.unscored).toBe("Sofia Lindqvist");
@@ -716,13 +726,7 @@ describe("candidate_details", () => {
 
   test("resolves 'the second one' against the RANKING the caller was read", async () => {
     const { ctx } = await screened();
-    const second = (await run("candidate_details", { candidate: "the second one" }, ctx)) as {
-      rank: number;
-      name: string;
-      score: number;
-      bio: string;
-      emailDrafted: string | null;
-    };
+    const second = ok(await runTool(candidateDetails, { candidate: "the second one" }, ctx));
     expect(second.rank).toBe(2);
     expect(second.name).toBe(nameAt(ctx, 2));
     expect(second.score).toBe(84);
@@ -733,20 +737,13 @@ describe("candidate_details", () => {
   test("resolves a surname, and reports the draft once one exists", async () => {
     const { ctx } = await screened();
     await run("proceed_to_emails", {}, ctx);
-    const rahul = (await run("candidate_details", { candidate: "Mehta" }, ctx)) as {
-      name: string;
-      shortlisted: boolean;
-      emailDrafted: string | null;
-    };
+    const rahul = await runTool(candidateDetails, { candidate: "Mehta" }, ctx);
     expect(rahul).toMatchObject({
       name: "Rahul Mehta",
       shortlisted: false,
       emailDrafted: "decline",
     });
-    const priya = (await run("candidate_details", { candidate: "Priya" }, ctx)) as {
-      shortlisted: boolean;
-      emailDrafted: string | null;
-    };
+    const priya = await runTool(candidateDetails, { candidate: "Priya" }, ctx);
     expect(priya).toMatchObject({ shortlisted: true, emailDrafted: "invitation" });
   });
 
@@ -769,13 +766,7 @@ describe("read_email", () => {
   test("reads back a draft's subject and body, saying which kind it is", async () => {
     const { ctx } = await screened();
     await run("proceed_to_emails", {}, ctx);
-    const invite = (await run("read_email", { candidate: "the first one" }, ctx)) as {
-      to: string;
-      kind: string;
-      subject: string;
-      body: string;
-      message: string;
-    };
+    const invite = ok(await runTool(readEmail, { candidate: "the first one" }, ctx));
     expect(invite).toMatchObject({
       to: "Priya Raman",
       kind: "invitation",
@@ -783,7 +774,7 @@ describe("read_email", () => {
     });
     expect(invite.body).toMatch(/availability/);
     expect(invite.message).toMatch(/subject line/);
-    const decline = (await run("read_email", { candidate: "Kowalski" }, ctx)) as { kind: string };
+    const decline = ok(await runTool(readEmail, { candidate: "Kowalski" }, ctx));
     expect(decline.kind).toBe("decline");
   });
 
@@ -795,10 +786,7 @@ describe("read_email", () => {
           : emailFor(call),
     });
     await run("proceed_to_emails", {}, ctx);
-    const flagged = (await run("read_email", { candidate: "Priya" }, ctx)) as {
-      accepted: boolean;
-      message: string;
-    };
+    const flagged = ok(await runTool(readEmail, { candidate: "Priya" }, ctx));
     expect(flagged.accepted).toBe(false);
     expect(flagged.message).toMatch(/did not pass/);
   });
@@ -815,13 +803,7 @@ describe("read_email", () => {
 describe("screening_status", () => {
   test("reads the stage off the flow, not off the data", async () => {
     const { ctx, model } = scriptedDesk();
-    const idle = (await run("screening_status", ctx)) as {
-      stage: string;
-      state: string;
-      screened: number;
-      top: string[];
-      message: string;
-    };
+    const idle = await runTool(screeningStatus, ctx);
     expect(idle).toMatchObject({
       stage: "nothing screened yet",
       state: "idle",
@@ -836,15 +818,7 @@ describe("screening_status", () => {
     const { ctx } = await screened({ failScoring: ["c06"] });
     await run("rescore_with_feedback", { feedback: "more TypeScript" }, ctx);
     await run("proceed_to_emails", {}, ctx);
-    const status = (await run("screening_status", ctx)) as {
-      stage: string;
-      job: string;
-      screened: number;
-      unscored: number;
-      feedbackRounds: string;
-      feedback: string[];
-      drafts: number;
-    };
+    const status = await runTool(screeningStatus, ctx);
     expect(status).toMatchObject({
       stage: "emails drafted",
       job: DEFAULT_JOB.title,

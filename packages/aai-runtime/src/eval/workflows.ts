@@ -136,7 +136,11 @@ export function evalWorkflowCredentials(
   };
 }
 
-/** What one eval run did. */
+/**
+ * What one eval run did.
+ *
+ * @sealed
+ */
 export type EvalWorkflowRun<R = unknown> = {
   readonly runId: string;
   /** The key the workflow is declared under in `agent({ workflows })`. */
@@ -220,7 +224,11 @@ export type EvalWorkflowsOptions = {
   readonly logger?: Logger | undefined;
 };
 
-/** One open eval workflow app. */
+/**
+ * One open eval workflow app.
+ *
+ * @sealed
+ */
 export type EvalWorkflows = {
   /**
    * The real `ctx.workflows` for this agent, over the in-process engine.

@@ -74,6 +74,8 @@
  * @module testing
  */
 
+// And what `TextAgentOptions` extends, for the same reason.
+export type { HostAgentOptions } from "./host-agent-options.ts";
 export {
   type RunTextAgentOptions,
   runTextAgent,

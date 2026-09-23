@@ -16,9 +16,10 @@
  *   new and new to old, under the old declaration's own type parameters. An
  *   author both BUILDS these (config objects, test fakes) and RECEIVES them
  *   (`ctx`, results), and the rollup does not say which, so both directions
- *   are required. Adding an optional member passes both; a required member, a
- *   widened or narrowed union, a changed member type, a removed member, or a
- *   stricter constraint fails one;
+ *   are required (a `@sealed` one is probed like a value — below). Adding an
+ *   optional member passes both; a required member, a widened or narrowed
+ *   union, a changed member type, a removed member, or a stricter constraint
+ *   fails one;
  * - **a value** (function, const, class constructor): NEW assignable to OLD —
  *   everything a caller wrote against the old signature still type-checks.
  *   A widened parameter or a narrowed return passes; an added required
@@ -83,24 +84,26 @@
  * arguments — its members are those arguments substituted into one
  * declaration, and walking them reports the `any`s lib wrote.
  *
- * **Which TypeScript.** The repo builds with `typescript@7`, which ships no
- * in-process compiler API: its root export is `lib/version.cjs`, and the
- * `typescript/unstable/sync` client it does ship drives the native `tsgo`
- * binary as a SUBPROCESS (verified: it can check a virtual program in ~0.4s).
- * That is ruled out twice here — the API is explicitly unstable, and a
- * subprocess would move `api-contracts-compat.test.ts` out of the unit tier,
- * which `aai-gates` does not have. So the CHECKER is `typescript-6` (the root's
- * alias of the `typedoc` catalog's `typescript@~6.0`, the same compiler `docs`
- * pins for TypeDoc): the last release with the JS compiler API, and the one
- * TypeScript shipped as the bridge to 7.0, whose type-checking semantics it is
- * meant to match. The PARSER stays
- * api-extractor's bundled TypeScript (5.9.3 at this writing): the rollups are
- * its output, and the node-walking helpers this shares with
- * `_api-contracts-hash.mjs` read that instance's `SyntaxKind`s. The two meet
- * only as TEXT — nothing crosses from one AST to the other. What the mismatch
- * leaves is a 7.x-only checker change (a bug fix, a new strictness) that 6.0
- * does not share; it would reach this gate one release late, and `pnpm
- * typecheck` on the frozen examples still runs 7.x over every retained epoch.
+ * **A REMOVED member is a break even when it was optional**, which
+ * assignability cannot see (`{ a: string }` and `{ a: string; b?: number }` are
+ * assignable both ways): the same parallel walk reports each by path.
+ *
+ * **Both rollups are rewritten to AGREE first** (`_api-contracts-compat-rewrite.mjs`):
+ * a same-named `unique symbol` brand is one shared symbol, a long misuse
+ * message literal is one marker type, a declaration whose closure is
+ * byte-identical on both sides is ONE declaration (taken from the new rollup),
+ * and a `@sealed` type is probed new-to-old only (`_api-contracts-compat-probes.mjs`)
+ * while every other probe reads it through a MASKED new module in which it
+ * aliases the old one.
+ *
+ * **Which TypeScript.** The CHECKER is `typescript-6` (the root's alias of the
+ * `typedoc` catalog's `typescript@~6.0`): `typescript@7` ships no in-process
+ * compiler API, only an unstable subprocess client that would move this
+ * module's spec out of the unit tier. The PARSER stays api-extractor's bundled
+ * TypeScript, which wrote the rollups; the two meet only as TEXT. A 7.x-only
+ * checker change reaches this gate one release late, and `pnpm typecheck` on
+ * the frozen examples still runs 7.x over every retained epoch
+ * (`docs/CLAUDE.md` carries the rest of the argument).
  *
  * Known blind spots, which is why `--bump --retain` still exists:
  * - `any` NESTED inside a union (`string | any` collapses to `any` and is
@@ -123,8 +126,21 @@
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { oneSidedAny, probedPairs } from "./_api-contracts-compat-any.mjs";
+import { oneSidedAny, probedPairs, removedMembers } from "./_api-contracts-compat-any.mjs";
 import { methodsAsProperties } from "./_api-contracts-compat-methods.mjs";
+import {
+  agreements,
+  CTOR,
+  probeFor,
+  shareUnchanged,
+  WIDEN,
+} from "./_api-contracts-compat-probes.mjs";
+import {
+  rewriteForProbe,
+  SHARED_MODULE,
+  sealedAlias,
+  sharedModule,
+} from "./_api-contracts-compat-rewrite.mjs";
 import { referencedNames } from "./_api-contracts-hash.mjs";
 import { compareNames, declarationNames } from "./_api-surface.mjs";
 
@@ -275,9 +291,14 @@ function exportsOf(parsedBody) {
  * declarations to the checker, so an UNCHANGED generic one would otherwise read
  * as a break forever.
  */
-function closureOf(parsedBody) {
+function closureOf(parsedBody, leaves = new Set()) {
   const { sourceFile, imports, declared } = parsedBody;
   const known = (name) => declared.has(name) || imports.has(name);
+  const unseen = (statement, seen) => {
+    const next = [...referencedNames(statement)].filter((ref) => !seen.has(ref) && known(ref));
+    for (const ref of next) seen.add(ref);
+    return next;
+  };
   return (root) => {
     const seen = new Set([root]);
     const queue = [root];
@@ -285,59 +306,27 @@ function closureOf(parsedBody) {
     while (queue.length > 0) {
       const current = queue.shift();
       if (imports.has(current)) parts.push(`${current} <- ${imports.get(current)}`);
+      // A shared declaration is ONE declaration on both sides: its name is
+      // the whole of what can differ, as in the hash.
+      if (current !== root && leaves.has(current)) {
+        parts.push(`${current} <- (shared)`);
+        continue;
+      }
       for (const statement of declared.get(current) ?? []) {
         parts.push(statement.getText(sourceFile));
-        const next = [...referencedNames(statement)].filter((ref) => !seen.has(ref) && known(ref));
-        for (const ref of next) seen.add(ref);
-        queue.push(...next);
+        queue.push(...unseen(statement, seen));
       }
     }
     return parts.sort(compareNames).join("\n");
   };
 }
 
-const WIDEN =
-  "type __Widen<T> = T extends string ? string : T extends number ? number : " +
-  "T extends boolean ? boolean : T extends bigint ? bigint : " +
-  "T extends (...args: never) => unknown ? T : T extends object ? { [K in keyof T]: __Widen<T[K]> } : T;";
-
-/**
- * A class's constructor parameters as a FUNCTION type. TypeScript relates the
- * construct signatures of a class declaration bivariantly, like methods, so
- * `typeof Old = New` passes a narrowed constructor parameter; a function type
- * built from the same parameters is checked contravariantly. `infer` reads the
- * LAST overload only (see the header's blind spots).
- */
-const CTOR =
-  "type __Ctor<C> = C extends abstract new (...args: infer A) => unknown ? (...args: A) => void : never;";
-
-/** The probe for one exported name, as source text in the OLD module's scope. */
-function probeFor(entry, index) {
-  const lines = [];
-  const params = entry.typeParameters;
-  const list =
-    params === undefined ? "" : `<${params.map((p) => p.getText(entry.sourceFile)).join(", ")}>`;
-  const args = params === undefined ? "" : `<${params.map((p) => p.name.text).join(", ")}>`;
-  const { name } = entry;
-  if (entry.type || entry.klass) {
-    lines.push(
-      `export function __type${index}${list}(o: ${name}${args}, n: __N.${name}${args}): void {`,
-      `  const a: __N.${name}${args} = o; const b: ${name}${args} = n; void a; void b;`,
-      "}",
-    );
-  }
-  if (entry.value || entry.klass) {
-    const target = entry.isConst ? `__Widen<typeof ${name}>` : `typeof ${name}`;
-    lines.push(`export const __value${index}: ${target} = __N.${name};`);
-  }
-  if (entry.klass) {
-    lines.push(
-      `export function __ctor${index}(n: __Ctor<typeof __N.${name}>): void {`,
-      `  const o: __Ctor<typeof ${name}> = n; void o;`,
-      "}",
-    );
-  }
-  return lines.join("\n");
+/** A removed export, or a re-export whose source moved; `undefined` when neither. */
+function exportProblem(entry, next) {
+  if (next === undefined) return `${entry.name}: removed from the capability`;
+  if (entry.reExport === undefined && next.reExport === undefined) return;
+  if (next.reExport === entry.reExport) return;
+  return `${entry.name}: now ${next.reExport ?? "declared here"}, was ${entry.reExport ?? "declared here"}`;
 }
 
 /**
@@ -345,31 +334,39 @@ function probeFor(entry, index) {
  * a re-export whose source moved, and one probe per name whose closure is not
  * byte-identical on both sides.
  */
-function planProbes(oldBody, newBody) {
+function planProbes(oldBody, newBody, foreign) {
   const before = parseBody(oldBody);
   const after = parseBody(newBody);
   const oldExports = exportsOf(before);
   const newExports = exportsOf(after);
-  const oldClosure = closureOf(before);
-  const newClosure = closureOf(after);
+  const agreed = agreements(before, after, foreign);
+  const foreignShared = new Set(agreed.shared);
+  const oldClosure = closureOf(before, foreignShared);
+  const newClosure = closureOf(after, foreignShared);
   const problems = [];
   const probes = [];
+  const changed = (name) => oldClosure(name) !== newClosure(name);
+  shareUnchanged(agreed, { before, after, changed, identical: oldBody === newBody });
   for (const entry of oldExports.values()) {
     const next = newExports.get(entry.name);
-    if (next === undefined) {
-      problems.push(`${entry.name}: removed from the capability`);
-    } else if (entry.reExport !== undefined || next.reExport !== undefined) {
-      if (next.reExport !== entry.reExport) {
-        problems.push(
-          `${entry.name}: now ${next.reExport ?? "declared here"}, was ${entry.reExport ?? "declared here"}`,
-        );
-      }
-    } else if (oldClosure(entry.name) !== newClosure(entry.name)) {
-      probes.push({ name: entry.name, text: probeFor(entry, probes.length) });
+    const problem = exportProblem(entry, next);
+    if (problem !== undefined) problems.push(problem);
+    else if (entry.reExport === undefined && changed(entry.name)) {
+      const sealed = agreed.sealed.has(entry.name) && (entry.type || entry.klass);
+      const options = sealed ? { sealed, target: `__N.${sealedAlias(entry.name)}` } : {};
+      probes.push({ name: entry.name, text: probeFor(entry, probes.length, options) });
     }
   }
+  // A masked UNEXPORTED sealed type is otherwise probed nowhere: every export
+  // reaching it now sees the old declaration.
+  for (const name of agreed.masked) {
+    if (oldExports.has(name) || !changed(name)) continue;
+    const entry = kindOf(name, before.declared.get(name), before.sourceFile);
+    const options = { sealed: true, target: `__N.${sealedAlias(name)}` };
+    probes.push({ name, text: probeFor(entry, probes.length, options) });
+  }
   const added = [...newExports.keys()].filter((name) => !oldExports.has(name)).sort(compareNames);
-  return { problems, probes, added };
+  return { problems, probes, added, agreed };
 }
 
 /** A compiler host over two virtual modules, reading everything else from disk (cached). */
@@ -403,7 +400,8 @@ function describeDiagnostic(diagnostic, probeDir) {
     .slice(0, 3)
     .join(" / ")
     .replaceAll(`import("${probeDir}/old")`, "old")
-    .replaceAll(`import("${probeDir}/new")`, "new");
+    .replaceAll(`import("${probeDir}/new")`, "new")
+    .replaceAll(`import("${probeDir}/masked")`, "new");
 }
 
 /** Which probe (or which side's rollup) a diagnostic belongs to. */
@@ -418,6 +416,8 @@ function locate(diagnostic, isOld, spans) {
  *
  * `dir` is where the two virtual modules pretend to live, so their own
  * imports (`zod`, `react`, a sibling package) resolve from that package.
+ * `foreign` is the names ANOTHER capability of the package contracts (the
+ * hash's own set); each one both rollups declare is taken from the new copy.
  *
  * `unproven` is the subset of `problems` that is not a failed check but a
  * position the probe cannot decide (a one-sided `any`); a result whose every
@@ -425,15 +425,21 @@ function locate(diagnostic, isOld, spans) {
  *
  * @returns {{ compatible: boolean, problems: string[], unproven: string[], added: string[] }}
  */
-export function probeCompatibility({ oldBody, newBody, dir }) {
+export function probeCompatibility({ oldBody, newBody, dir, foreign = new Set() }) {
   const before = methodsAsProperties(oldBody);
   const after = methodsAsProperties(newBody);
-  const { problems, probes, added } = planProbes(before, after);
+  const { problems, probes, added, agreed } = planProbes(before, after, foreign);
   const probeDir = join(dir, ".api-contracts-probe");
   const oldPath = join(probeDir, "old.ts");
   const newPath = join(probeDir, "new.ts");
+  const maskedPath = join(probeDir, "masked.ts");
+  const { brands, sealed, masked, shared } = agreed;
+  const exportSealed = [...sealed];
+  const maskedModule = masked.length > 0 ? "./masked.ts" : "./new.ts";
   const spans = [];
-  let oldText = `${asModule(before)}\n\nimport * as __N from "./new.ts";\n${WIDEN}\n${CTOR}\n`;
+  let oldText =
+    `${asModule(rewriteForProbe(before, { brands, exportSealed: masked, useShared: shared }))}\n\n` +
+    `import * as __N from "./new.ts";\nimport * as __M from "${maskedModule}";\n${WIDEN}\n${CTOR}\n`;
   for (const probe of probes) {
     const start = oldText.length;
     oldText += `${probe.text}\n`;
@@ -441,14 +447,23 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
   }
   const virtual = new Map([
     [oldPath, oldText],
-    [newPath, asModule(after)],
+    [newPath, asModule(rewriteForProbe(after, { brands, exportSealed, exportShared: shared }))],
+    [join(probeDir, SHARED_MODULE), sharedModule(brands)],
   ]);
+  if (masked.length > 0) {
+    virtual.set(
+      maskedPath,
+      asModule(rewriteForProbe(after, { brands, mask: masked, useShared: shared })),
+    );
+  }
   const program = checkerTs.createProgram({
     rootNames: [oldPath, newPath],
     options: OPTIONS,
     host: virtualHost(virtual, probeDir),
   });
-  for (const path of [oldPath, newPath]) {
+  // Identical sides (the gate's self-probe of every pinned rollup) would only
+  // repeat the old module's diagnostics, at the cost of checking it twice.
+  for (const path of oldBody === newBody ? [oldPath] : [oldPath, newPath]) {
     const file = program.getSourceFile(path);
     const diagnostics = [
       ...program.getSyntacticDiagnostics(file),
@@ -467,6 +482,9 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
       unproven.push(
         `${pair.name}: ${position} — \`any\` is assignable both ways, so nothing about that position is proven`,
       );
+    }
+    for (const finding of removedMembers(checker, pair.before, pair.after)) {
+      problems.push(`${pair.name}: ${finding}`);
     }
   }
   const unique = [...new Set([...problems, ...unproven])];

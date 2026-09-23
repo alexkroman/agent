@@ -569,82 +569,12 @@ console.log(calls.map((e) => e.toolName));
 ### expectDeployable()
 
 ```ts
-function expectDeployable(def: AgentConfigSource): {
-  builtinTools?: readonly (
-     | "web_search"
-     | "visit_webpage"
-     | "get_page_design"
-     | "fetch_json"
-     | "run_code"
-     | "think"
-     | "remember"
-     | "recall"
-    | "calculate")[];
-  deadAirCoverMs?: number;
-  description?: string;
-  errorPhrase?: string;
-  greeting: string;
-  idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
-  llm?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  maxOutputTokens?: number;
-  maxRetries?: number;
-  maxSteps?: number;
-  mcpServers?: Record<string, {
-     pinnedTools?: Record<string, string>;
-     tokenEnv?: string;
-     url: string;
-  }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
-  name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
-  requiredEnv?: readonly string[];
-  resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
-  s2s?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
-  startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
-  stt?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  sttPrompt?: string;
-  systemPrompt: string;
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
-  temperature?: number;
-  text?: true;
-  toolChoice?:   | "auto"
-     | "required"
-     | "none"
-     | {
-     toolName: string;
-     type: "tool";
-   };
-  tts?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  turnDetection?: string;
-  usageLimits?: {
-     totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
-  };
-  voicePresets?: readonly string[];
-};
+function expectDeployable<D extends {
+  llm?: unknown;
+  name: unknown;
+  stt?: unknown;
+  tts?: unknown;
+}>(def: D): DeployedConfig;
 ```
 
 Run the invariants a deployable agent owes, and hand back the RESOLVED config
@@ -684,362 +614,36 @@ const config = expectDeployable(agent({ name: "Desk", builtinTools: ["run_code"]
 console.log(config.builtinTools); // ["run_code"]
 ```
 
+#### Type Parameters
+
+##### D
+
+`D` *extends* \{
+  `llm?`: `unknown`;
+  `name`: `unknown`;
+  `stt?`: `unknown`;
+  `tts?`: `unknown`;
+\}
+
 #### Parameters
 
 ##### def
 
-[`AgentConfigSource`](manifest.md#agentconfigsource)
+`D`
 
 The agent under test — an `agent()` definition, or the raw
-  default export of an `agent.ts`. Structural, like `toAgentConfig`.
+  default export of an `agent.ts`. Structural: only `name` is required of
+  the TYPE, because validating the rest is this helper's job at run time —
+  the same `toAgentConfig` a deploy runs. Generic only so a spread literal
+  carrying a field this type does not name (`{ ...def, maxSteps: 0 }`) is
+  not an excess-property error.
 
 #### Returns
 
-```ts
-{
-  builtinTools?: readonly (
-     | "web_search"
-     | "visit_webpage"
-     | "get_page_design"
-     | "fetch_json"
-     | "run_code"
-     | "think"
-     | "remember"
-     | "recall"
-    | "calculate")[];
-  deadAirCoverMs?: number;
-  description?: string;
-  errorPhrase?: string;
-  greeting: string;
-  idleTimeoutMs?: number;
-  interruptionBackoffMs?: number;
-  interruptionMinDurationMs?: number;
-  llm?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  maxOutputTokens?: number;
-  maxRetries?: number;
-  maxSteps?: number;
-  mcpServers?: Record<string, {
-     pinnedTools?: Record<string, string>;
-     tokenEnv?: string;
-     url: string;
-  }>;
-  minBargeInWords?: number;
-  mode?: "s2s" | "text" | "pipeline";
-  name: string;
-  page?: "voice" | "static";
-  preemptiveGeneration?: boolean;
-  requiredEnv?: readonly string[];
-  resetToolChoice?: boolean;
-  resumeFalseInterruption?: boolean;
-  s2s?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  silencePrompt?: string;
-  silenceTimeoutMs?: number;
-  startFailurePhrase?: string;
-  startSpeakingFloorMs?: number;
-  stt?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  sttPrompt?: string;
-  systemPrompt: string;
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
-  temperature?: number;
-  text?: true;
-  toolChoice?:   | "auto"
-     | "required"
-     | "none"
-     | {
-     toolName: string;
-     type: "tool";
-   };
-  tts?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
-  turnDetection?: string;
-  usageLimits?: {
-     totalTokens?: number;
-  };
-  userTurnLimit?: {
-     maxDurationMs?: number;
-     maxWords?: number;
-  };
-  voicePresets?: readonly string[];
-}
-```
+[`DeployedConfig`](#deployedconfig)
 
-The config a deploy carries, mode derived and defaults injected.
-
-##### builtinTools?
-
-```ts
-optional builtinTools?: readonly (
-  | "web_search"
-  | "visit_webpage"
-  | "get_page_design"
-  | "fetch_json"
-  | "run_code"
-  | "think"
-  | "remember"
-  | "recall"
-  | "calculate")[];
-```
-
-##### deadAirCoverMs?
-
-```ts
-optional deadAirCoverMs?: number;
-```
-
-##### description?
-
-```ts
-optional description?: string;
-```
-
-##### errorPhrase?
-
-```ts
-optional errorPhrase?: string;
-```
-
-##### greeting
-
-```ts
-greeting: string;
-```
-
-##### idleTimeoutMs?
-
-```ts
-optional idleTimeoutMs?: number;
-```
-
-##### interruptionBackoffMs?
-
-```ts
-optional interruptionBackoffMs?: number;
-```
-
-##### interruptionMinDurationMs?
-
-```ts
-optional interruptionMinDurationMs?: number;
-```
-
-##### llm?
-
-```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### maxOutputTokens?
-
-```ts
-optional maxOutputTokens?: number;
-```
-
-##### maxRetries?
-
-```ts
-optional maxRetries?: number;
-```
-
-##### maxSteps?
-
-```ts
-optional maxSteps?: number;
-```
-
-##### mcpServers?
-
-```ts
-optional mcpServers?: Record<string, {
-  pinnedTools?: Record<string, string>;
-  tokenEnv?: string;
-  url: string;
-}>;
-```
-
-##### minBargeInWords?
-
-```ts
-optional minBargeInWords?: number;
-```
-
-##### mode?
-
-```ts
-optional mode?: "s2s" | "text" | "pipeline";
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-##### page?
-
-```ts
-optional page?: "voice" | "static";
-```
-
-##### preemptiveGeneration?
-
-```ts
-optional preemptiveGeneration?: boolean;
-```
-
-##### requiredEnv?
-
-```ts
-optional requiredEnv?: readonly string[];
-```
-
-##### resetToolChoice?
-
-```ts
-optional resetToolChoice?: boolean;
-```
-
-##### resumeFalseInterruption?
-
-```ts
-optional resumeFalseInterruption?: boolean;
-```
-
-##### s2s?
-
-```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### silencePrompt?
-
-```ts
-optional silencePrompt?: string;
-```
-
-##### silenceTimeoutMs?
-
-```ts
-optional silenceTimeoutMs?: number;
-```
-
-##### startFailurePhrase?
-
-```ts
-optional startFailurePhrase?: string;
-```
-
-##### startSpeakingFloorMs?
-
-```ts
-optional startSpeakingFloorMs?: number;
-```
-
-##### stt?
-
-```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### sttPrompt?
-
-```ts
-optional sttPrompt?: string;
-```
-
-##### systemPrompt
-
-```ts
-systemPrompt: string;
-```
-
-##### telephony?
-
-```ts
-optional telephony?: boolean | readonly ("twilio" | "telnyx")[];
-```
-
-##### temperature?
-
-```ts
-optional temperature?: number;
-```
-
-##### text?
-
-```ts
-optional text?: true;
-```
-
-##### toolChoice?
-
-```ts
-optional toolChoice?: 
-  | "auto"
-  | "required"
-  | "none"
-  | {
-  toolName: string;
-  type: "tool";
-};
-```
-
-##### tts?
-
-```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
-```
-
-##### turnDetection?
-
-```ts
-optional turnDetection?: string;
-```
-
-##### usageLimits?
-
-```ts
-{
-  totalTokens?: number;
-}
-```
-
-##### userTurnLimit?
-
-```ts
-{
-  maxDurationMs?: number;
-  maxWords?: number;
-}
-```
-
-##### voicePresets?
-
-```ts
-optional voicePresets?: readonly string[];
-```
+The config a deploy carries, mode derived and defaults injected —
+  see [DeployedConfig](#deployedconfig) for the fields it names.
 
 #### Throws
 
@@ -1163,7 +767,10 @@ refused.error.includes("start_plan"); // true — the instruction the model reco
 ### expectPromptBuiltinsDeclared()
 
 ```ts
-function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
+function expectPromptBuiltinsDeclared(def: {
+  builtinTools?: readonly BuiltinTool[];
+  systemPrompt?: AgentSystemPrompt;
+}): BuiltinTool[];
 ```
 
 Every builtin the prompt commands is one `builtinTools` declares — or a throw
@@ -1222,11 +829,17 @@ console.log(commanded); // ["run_code"]
 
 ##### def
 
-`Pick`\<[`AgentConfigSource`](manifest.md#agentconfigsource), `"systemPrompt"` \| `"builtinTools"`\>
-
 The agent under test — only its `systemPrompt` and
   `builtinTools` are read, so an `agent()` def passes as it is. Whether the
   WHOLE def converts is [expectDeployable](#expectdeployable)'s claim, not this one's.
+
+###### builtinTools?
+
+readonly [`BuiltinTool`](index.md#builtintool)[]
+
+###### systemPrompt?
+
+[`AgentSystemPrompt`](index.md#agentsystemprompt)
 
 #### Returns
 
@@ -1601,6 +1214,82 @@ runGuardrail(checker, "It seems prices fell."); // "Open with a verdict word."
 
 ### runTool()
 
+#### Call Signature
+
+```ts
+function runTool<T extends {
+  execute: (...args: never[]) => unknown;
+}>(
+   tool: T, 
+   argsOrCtx?: 
+  | ToolContext
+  | Parameters<T["execute"]>[0], 
+   ctx?: ToolContext
+): Promise<Awaited<ReturnType<T["execute"]>>>;
+```
+
+Run a tool — the tool DEF itself, or by the name the model calls it by.
+
+**Handed the tool, it is TYPED end to end**: the arguments are checked
+against what `execute` takes and the result is what it returns, so
+`await runTool(addItem, { item: "apple" }, ctx)` needs no cast. The name
+form below answers `unknown`, because a name is a string and nothing can
+type what it looks up; a spec reading fields off that result used to cast it
+(`(await run("add_item", ctx)) as { added: string }`), which is an unchecked
+claim that stops meaning anything the day the tool's return changes. A tool
+FILE's default export is the very object a deployed agent registers under its
+name, so importing it runs the same code the name would reach.
+
+Matched on `execute` alone rather than on `ToolDef`, so any tool shape —
+`tool()`, `slot.tool()`, `dialog.tool()` — is accepted and keeps its own
+result type.
+
+##### Type Parameters
+
+###### T
+
+`T` *extends* \{
+  `execute`: (...`args`: `never`[]) => `unknown`;
+\}
+
+##### Parameters
+
+###### tool
+
+`T`
+
+###### argsOrCtx?
+
+  \| [`ToolContext`](index.md#toolcontext)
+  \| `Parameters`\<`T`\[`"execute"`\]\>\[`0`\]
+
+###### ctx?
+
+[`ToolContext`](index.md#toolcontext)
+
+##### Returns
+
+`Promise`\<`Awaited`\<`ReturnType`\<`T`\[`"execute"`\]\>\>\>
+
+##### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { createToolContext, runTool } from "@alexkroman1/aai/testing";
+import { z } from "zod";
+
+// In a spec this is `import addItem from "./tools/add_item.ts"`.
+const addItem = tool({
+  description: "Add an item",
+  inputSchema: z.object({ item: z.string() }),
+  execute: async ({ item }) => ({ added: item }),
+});
+const { added } = await runTool(addItem, { item: "apple" }, createToolContext());
+console.log(added.toUpperCase()); // typed: `added` is a string
+```
+
+#### Call Signature
+
 ```ts
 function runTool(
    agent: ToolBearingAgent, 
@@ -1637,21 +1326,21 @@ a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
 a `send` function, and tool arguments arrive as JSON from a model, which
 cannot contain a function. A context is never a plausible argument object.
 
-#### Parameters
+##### Parameters
 
-##### agent
+###### agent
 
 [`ToolBearingAgent`](#toolbearingagent)
 
-##### name
+###### name
 
 `string`
 
-##### argsOrCtx?
+###### argsOrCtx?
 
 `Record`\<`string`, `unknown`\> \| [`ToolContext`](index.md#toolcontext)
 
-##### ctx?
+###### ctx?
 
 [`ToolContext`](index.md#toolcontext)
 
@@ -1661,11 +1350,11 @@ The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
   explicitly wherever the second call is supposed to see the first call's
   work.
 
-#### Returns
+##### Returns
 
 `Promise`\<`unknown`\>
 
-#### Example
+##### Example
 
 ```ts
 import agentDef from "virtual:aai/agent";
@@ -2530,6 +2219,169 @@ names to reach. Reach for [toolOf](#toolof) or [runTool](#runtool) directly if a
 really means to assert on an empty table.
 
 ## Interfaces
+
+### DeployedConfig
+
+**`Sealed`**
+
+What [expectDeployable](#expectdeployable) hands back: the RESOLVED config a deploy
+carries, narrowed to the fields a starter spec asserts on.
+
+Not the whole `AgentConfig`, on purpose. That type is inferred from the
+canonical config SCHEMA, so returning it put the schema — every serializable
+agent field, each with its own validation shape — into this subpath's
+contract, and a new agent field moved a TEST helper's hash. These are the
+fields the shipped specs read; the object returned is the real config, so a
+spec that needs one more can read it off `toAgentConfig`
+(`@alexkroman1/aai/manifest`) directly.
+
+`mode` is always present: [expectDeployable](#expectdeployable) refuses a conversion that
+derived none.
+
+#### Properties
+
+##### builtinTools?
+
+```ts
+readonly optional builtinTools?: readonly BuiltinTool[];
+```
+
+The builtins the agent declares (absent: the default surface).
+
+##### llm?
+
+```ts
+readonly optional llm?: DeployedStage;
+```
+
+The LLM stage — declared, or the injected default in pipeline mode.
+
+##### mcpServers?
+
+```ts
+readonly optional mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+```
+
+The MCP servers whose tools join the agent's own, by key.
+
+##### mode
+
+```ts
+readonly mode: "s2s" | "text" | "pipeline";
+```
+
+The session mode the conversion derived.
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+The name the platform lists the agent under.
+
+##### requiredEnv?
+
+```ts
+readonly optional requiredEnv?: readonly string[];
+```
+
+The env var names a deploy preflights.
+
+##### s2s?
+
+```ts
+readonly optional s2s?: DeployedStage;
+```
+
+The speech-to-speech descriptor, for an s2s agent.
+
+##### stt?
+
+```ts
+readonly optional stt?: DeployedStage;
+```
+
+The STT stage — declared, or the injected default in pipeline mode.
+
+##### systemPrompt
+
+```ts
+readonly systemPrompt: string;
+```
+
+The system prompt a deploy carries — the author's string, or the framework
+default when there is none. A RESOLVER is not carried (it cannot be
+serialized), so an agent with one reads the default here.
+
+##### text?
+
+```ts
+readonly optional text?: true;
+```
+
+`true` for a text agent.
+
+##### tts?
+
+```ts
+readonly optional tts?: DeployedStage;
+```
+
+The TTS stage — declared, or the injected default in pipeline mode.
+
+##### turnDetection?
+
+```ts
+readonly optional turnDetection?: string;
+```
+
+Who ends the caller's turn — `"manual"` for push-to-talk.
+
+##### usageLimits?
+
+```ts
+readonly optional usageLimits?: {
+  totalTokens?: number;
+};
+```
+
+The session's token budget, when it declares one.
+
+###### totalTokens?
+
+```ts
+readonly optional totalTokens?: number;
+```
+
+***
+
+### DeployedStage
+
+**`Sealed`**
+
+One provider stage of a [DeployedConfig](#deployedconfig) — the descriptor as it will be
+deployed: its `kind`, and its `options` exactly as serialized.
+
+#### Properties
+
+##### kind
+
+```ts
+readonly kind: string;
+```
+
+The provider the stage resolves through, e.g. `"assemblyai"`.
+
+##### options?
+
+```ts
+readonly optional options?: Readonly<Record<string, unknown>>;
+```
+
+The descriptor's options, as they cross the wire.
+
+***
 
 ### ScriptedToolContext
 

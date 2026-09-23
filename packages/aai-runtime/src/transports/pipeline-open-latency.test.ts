@@ -3,7 +3,6 @@
 // connects, so first greeting audio is not gated on the slower connect.
 // (Lives outside pipeline-transport.test.ts, which is near its length cap.)
 
-import type { SttOpener, SttOpenOptions, SttSession } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   createFakeLanguageModel,
@@ -11,6 +10,7 @@ import {
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
 import { silentLogger } from "../_test-utils.ts";
+import type { SttOpener, SttOpenOptions, SttSession } from "../providers/openers.ts";
 import { makeCallbacks } from "./_transport-recorder.ts";
 import { createPipelineTransport, type PipelineTransportOptions } from "./pipeline-transport.ts";
 

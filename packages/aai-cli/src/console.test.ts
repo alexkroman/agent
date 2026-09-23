@@ -27,7 +27,6 @@ vi.mock("./_dev-server.ts", () => ({
 }));
 
 vi.mock("@alexkroman1/aai-runtime", () => ({
-  withHostCredentialFallback: (env: Record<string, string>) => env,
   ensureSessionStateSchema: vi.fn(),
   ensureWorkflowJournalSchema: vi.fn(),
   createRuntime: vi.fn(() => ({

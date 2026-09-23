@@ -19,17 +19,18 @@
 // The spurious-barge-in hazard does not arise here because the driver waits for
 // `reply.completed` before speaking again (`scripts/loadtest-turns.mjs`).
 
-import type {
-  SttEvents,
-  SttOpener,
-  SttSession,
-  TtsEvents,
-  TtsOpener,
-  TtsSession,
-} from "@alexkroman1/aai/host-internal";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
-import { registerSttKind, registerTtsKind } from "@alexkroman1/aai-runtime";
+import {
+  registerSttKind,
+  registerTtsKind,
+  type SttEvents,
+  type SttOpener,
+  type SttSession,
+  type TtsEvents,
+  type TtsOpener,
+  type TtsSession,
+} from "@alexkroman1/aai-runtime";
 import { installStubLlm } from "@alexkroman1/aai-runtime/eval";
 
 /**

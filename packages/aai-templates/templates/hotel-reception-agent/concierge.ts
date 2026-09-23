@@ -10,7 +10,7 @@
  * the way `travel-concierge-agent`'s delegation tools do.
  */
 
-import type { InferSchemaOutput, ToolDef, ToolFailure } from "@alexkroman1/aai";
+import type { InferSchemaOutput, ToolFailure } from "@alexkroman1/aai";
 import { isClockTime, isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
@@ -64,7 +64,11 @@ const COMMON = z.object({
   guestPhone: z.string(),
 });
 
-export function catalogBookingTool<P extends z.ZodObject>(spec: CatalogBookingSpec<P>): ToolDef {
+// The return type is INFERRED (a `ToolDef<P, R>` carrying the booking's own
+// shape) rather than annotated `ToolDef`, which erased it to `unknown` and made
+// every spec reading `total` or `reference` cast. Narrowing a return type is
+// covariant, so the tool is still assignable wherever a `ToolDef` is expected.
+export function catalogBookingTool<P extends z.ZodObject>(spec: CatalogBookingSpec<P>) {
   return hotelSlot.updateTool({
     description: spec.description,
     inputSchema: spec.inputSchema,

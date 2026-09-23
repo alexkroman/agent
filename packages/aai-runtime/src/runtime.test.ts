@@ -24,7 +24,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent, makeLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 import { executeToolCall } from "./tool-executor.ts";
 
 describe("toAgentConfig", () => {
@@ -68,7 +68,7 @@ describe("toAgentConfig", () => {
 
 describe("createRuntime", () => {
   test("executeTool returns error for unknown tool", async () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
+    const exec = createRuntimeWithSeams({ agent: makeAgent(), env: {} });
     const result = await exec.executeTool("nonexistent", {}, "session-1", []);
     expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
   });
@@ -83,7 +83,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: {} });
+    const exec = createRuntimeWithSeams({ agent, env: {} });
     expect(await exec.executeTool("add", { a: 3, b: 4 }, "s1", [])).toBe("7");
   });
 
@@ -103,7 +103,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent,
       env: { APP_SETTING: "visible" },
       providerEnv: { APP_SETTING: "visible", ANTHROPIC_API_KEY: "shell-only" },
@@ -120,7 +120,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: { APP_SETTING: "visible" } });
+    const exec = createRuntimeWithSeams({ agent, env: { APP_SETTING: "visible" } });
     expect(await exec.executeTool("dump_env", {}, "s1", [])).toBe("APP_SETTING");
   });
 
@@ -131,7 +131,7 @@ describe("createRuntime", () => {
         custom: { description: "Custom", execute: () => "ok" },
       },
     });
-    const exec = createRuntime({ agent, env: {} });
+    const exec = createRuntimeWithSeams({ agent, env: {} });
     const names = exec.toolSchemas.map((s) => s.name);
     expect(names).toContain("custom");
     expect(names).toContain("run_code");
@@ -147,7 +147,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: {} });
+    const exec = createRuntimeWithSeams({ agent, env: {} });
     const result = await exec.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ counter: 0 });
   });
@@ -171,7 +171,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: {} });
+    const exec = createRuntimeWithSeams({ agent, env: {} });
     expect(await exec.executeTool("bump", {}, "s1", [])).toBe("1");
     expect(await exec.executeTool("bump", {}, "s1", [])).toBe("2");
     // A different session must not inherit it.
@@ -187,7 +187,7 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: {} });
+    const exec = createRuntimeWithSeams({ agent, env: {} });
     const msgs = [{ role: "user" as const, content: "hi" }];
     const result = await exec.executeTool("echo_messages", {}, "s1", msgs);
     expect(JSON.parse(result)).toEqual(msgs);
@@ -198,7 +198,7 @@ describe("createRuntime", () => {
     // relayed tool calls reached the client without a toolCallId and failed with
     // "invoked without a toolCallId" in pipeline mode.
     const rpcExecuteTool = vi.fn(async () => "ok");
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent: makeAgent({ tools: {} }),
       env: {},
       executeTool: rpcExecuteTool,
@@ -229,13 +229,13 @@ describe("createRuntime", () => {
         },
       },
     });
-    const exec = createRuntime({ agent, env: { MY_VAR: "hello" } });
+    const exec = createRuntimeWithSeams({ agent, env: { MY_VAR: "hello" } });
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
 
   test("readyConfig is present with audio format", () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
+    const exec = createRuntimeWithSeams({ agent: makeAgent(), env: {} });
     expect(exec.readyConfig).toEqual(
       expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
     );
@@ -250,7 +250,7 @@ describe("createRuntime", () => {
    * directly, who gets the warn.
    */
   test("readyConfig pins an AssemblyAI S2S session to the service's only rate", () => {
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent: makeAgent({ s2s: assemblyAIS2s() }),
       env: { ASSEMBLYAI_API_KEY: "k" },
       s2sConfig: {
@@ -267,7 +267,7 @@ describe("createRuntime", () => {
   });
 
   test("a pipeline agent's rates are left entirely alone", () => {
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent: makeAgent({
         stt: assemblyAIStt(),
         llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
@@ -284,7 +284,7 @@ describe("createRuntime", () => {
   });
 
   test("shutdown resolves immediately when no sessions exist", async () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
+    const exec = createRuntimeWithSeams({ agent: makeAgent(), env: {} });
     await expect(exec.shutdown()).resolves.toBeUndefined();
   });
 
@@ -446,7 +446,7 @@ describe("createRuntime sandbox mode", () => {
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
     ];
 
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: {},
       executeTool: mockExecuteTool,
@@ -467,7 +467,7 @@ describe("createRuntime sandbox mode", () => {
     // builtin runs in this process rather than being relayed to the client,
     // which has no implementation for it.
     const mockExecuteTool = vi.fn(async () => "relayed");
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({ builtinTools: ["calculate"] }),
       env: {},
       executeTool: mockExecuteTool,
@@ -481,7 +481,7 @@ describe("createRuntime sandbox mode", () => {
 
   test("a relayed tool with a builtin's name wins — the builtin is dropped", async () => {
     const mockExecuteTool = vi.fn(async () => "relayed");
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: {},
       executeTool: mockExecuteTool,
@@ -506,7 +506,7 @@ describe("createRuntime sandbox mode", () => {
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
     ];
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent({ builtinTools: [] }),
       env: {},
       executeTool: vi.fn(async () => "ok"),
@@ -525,7 +525,7 @@ describe("createRuntime sandbox mode", () => {
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
     ];
-    const runtime = createRuntime({
+    const runtime = createRuntimeWithSeams({
       agent: makeAgent(),
       env: {},
       executeTool: vi.fn(async () => "ok"),
@@ -539,7 +539,7 @@ describe("createRuntime sandbox mode", () => {
 
 // ── Shared conformance suite (same tests run against sandbox in integration) ─
 
-const directExec = createRuntime({
+const directExec = createRuntimeWithSeams({
   agent: CONFORMANCE_AGENT,
   // ASSEMBLYAI_API_KEY: a provider-less agent now defaults to the AssemblyAI
   // pipeline, whose LLM resolves (and requires its key) at runtime creation.
@@ -580,7 +580,7 @@ describe("createRuntime — provider resolution seams", () => {
     // llm, and tts all set)" while
     // `aai dev`, which does hand over the descriptors, worked fine.
     expect(() =>
-      createRuntime({
+      createRuntimeWithSeams({
         agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
         stt: assemblyAIStt({ model: "universal-3-5-pro" }),
@@ -595,7 +595,7 @@ describe("createRuntime — provider resolution seams", () => {
     // S2S session instead, so the mode must be readable from one log line
     // rather than inferred from the shape of the message stream.
     const logger = makeLogger();
-    createRuntime({
+    createRuntimeWithSeams({
       agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
@@ -616,7 +616,7 @@ describe("createRuntime — provider resolution seams", () => {
 
   test("logs pipeline mode for an agent that declares no providers (the default)", () => {
     const logger = makeLogger();
-    createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
+    createRuntimeWithSeams({ agent: baseAgent, env: PROVIDER_KEYS, logger });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
       expect.objectContaining({
@@ -633,7 +633,7 @@ describe("createRuntime — provider resolution seams", () => {
   // to a setting without re-deriving the `??` chains by hand.
   test("logs each stage's effective settings, defaults included", () => {
     const logger = makeLogger();
-    createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
+    createRuntimeWithSeams({ agent: baseAgent, env: PROVIDER_KEYS, logger });
     const settings = vi
       .mocked(logger.info)
       .mock.calls.find(([msg]) => msg === "Session mode resolved")?.[1] as
@@ -655,7 +655,11 @@ describe("createRuntime — provider resolution seams", () => {
 
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {
     const logger = makeLogger();
-    createRuntime({ agent: { ...baseAgent, s2s: assemblyAIS2s() }, env: PROVIDER_KEYS, logger });
+    createRuntimeWithSeams({
+      agent: { ...baseAgent, s2s: assemblyAIS2s() },
+      env: PROVIDER_KEYS,
+      logger,
+    });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
       expect.objectContaining({ mode: "s2s" }),
@@ -665,7 +669,7 @@ describe("createRuntime — provider resolution seams", () => {
   test("still rejects pipeline tuning on a genuine S2S agent", () => {
     // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
-      createRuntime({
+      createRuntimeWithSeams({
         agent: { ...baseAgent, s2s: assemblyAIS2s(), deadAirCoverMs: 2500 },
         env: PROVIDER_KEYS,
       }),

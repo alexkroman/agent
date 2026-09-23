@@ -8,12 +8,6 @@
  * They never call `streamText`, so no network traffic is generated.
  */
 
-import type {
-  SttOpener,
-  SttSession,
-  TtsSession,
-  Unsubscribe,
-} from "@alexkroman1/aai/host-internal";
 import {
   ASSEMBLYAI_LLM_KIND,
   ASSEMBLYAI_S2S_KIND,
@@ -24,6 +18,7 @@ import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, it, vi } from "vitest";
 import { PROVIDER_CREDENTIAL_ENVS } from "./host-env.ts";
+import type { SttOpener, SttSession, TtsSession, Unsubscribe } from "./openers.ts";
 import {
   ALL_PROVIDER_ENV_VARS,
   registerLlmKind,

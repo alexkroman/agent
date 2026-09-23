@@ -20,13 +20,15 @@
  * weaker claim than it working: `kimi-k2.5` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
  *
- * Only the id UNION is published, on `@alexkroman1/aai/llm`, as the
- * autocomplete half of the OPEN `AssemblyAIGatewayModel` (`KnownGatewayModel |
+ * Only the ids are published, on `@alexkroman1/aai/llm`, spelled inline as
+ * the literal half of the OPEN `AssemblyAIGatewayModel` (`"gpt-5" | … |
  * (string & {})`), so a regeneration that adds or drops an id is a compatible
  * change to every author's build. The catalog itself, its row type and
  * `gatewayModelIds` are on `@alexkroman1/aai/host-internal`: their reader is
  * the studio's model selection and this repo's own gate, never an `agent.ts`.
  */
+
+import type { KnownLiterals } from "../../../is-known.ts";
 
 export type GatewayModelInfo = {
   /** Accepts a `tools` array — required for any agent with tools. */
@@ -50,14 +52,16 @@ export type GatewayModelInfo = {
 };
 
 /**
- * An id the gateway advertised when this catalog was generated — the
- * autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other
- * string. A snapshot of a service that ships models faster than this package
- * releases, so it is never a closed set: a model added upstream after this
- * release is still a legal id, and a regeneration that drops one breaks no
- * build.
+ * A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this
+ * catalog was generated, or any other string.
+ *
+ * The literal half is GENERATED from what the gateway advertises, so it is a
+ * snapshot of a service that ships models faster than this package releases:
+ * a model added upstream after this release is still a legal id, and a
+ * regeneration that drops one breaks no author's build. Autocomplete, not a
+ * guard.
  */
-export type KnownGatewayModel =
+export type AssemblyAIGatewayModel =
   | "claude-haiku-4-5-20251001"
   | "claude-opus-4-5-20251101"
   | "claude-opus-4-6"
@@ -92,7 +96,16 @@ export type KnownGatewayModel =
   | "gpt-oss-20b"
   | "qwen3-32B"
   | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-fast";
+  | "qwen3.5-4b-32k-fast"
+  | (string & {});
+
+/**
+ * The ids this catalog was generated with — the literal half of
+ * {@link AssemblyAIGatewayModel}, derived rather than listed twice. Internal:
+ * a closed union an author could import would make every regeneration a
+ * breaking change to it.
+ */
+export type KnownGatewayModel = KnownLiterals<AssemblyAIGatewayModel>;
 
 export const ASSEMBLYAI_GATEWAY_MODELS = {
   "claude-haiku-4-5-20251001": {

@@ -39,6 +39,7 @@ import type { ToolFailure } from "./utils.ts";
  *   from a {@link DialogSpec} supplies it directly instead, because the machine
  *   it builds is an implementation detail and its type carries no events.
  *
+ * @sealed
  * @public
  */
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {

@@ -38,7 +38,7 @@ import {
   installStubTranscribe,
   installStubUploads,
 } from "@alexkroman1/aai/testing/vitest";
-import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ttsVoiceInfo } from "@alexkroman1/aai/tts";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { SUMMARY_LANGUAGE, spokenSummary, VOICES } from "./agent.ts";
@@ -125,7 +125,7 @@ describe("the declaration", () => {
     // no voice-id validation can see: the id is real, it is simply the wrong
     // one. Asked of the catalog rather than restated, so the answer stays true.
     expect(VOICES).toContain(ASSEMBLYAI_TTS_DEFAULT_VOICE);
-    expect(ASSEMBLYAI_TTS_VOICES[ASSEMBLYAI_TTS_DEFAULT_VOICE].language).toBe(SUMMARY_LANGUAGE);
+    expect(ttsVoiceInfo(ASSEMBLYAI_TTS_DEFAULT_VOICE)?.language).toBe(SUMMARY_LANGUAGE);
   });
 });
 

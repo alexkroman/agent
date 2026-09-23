@@ -43,8 +43,8 @@
  * all of which end with the client flushing its playback buffer — restarts it.
  */
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { HEARD_AUDIO_LAG_MS } from "@alexkroman1/aai/internal";
+import type { TtsWordTiming } from "../providers/openers.ts";
 import { alignedEnd, alignWords, lastHeardWord, snapToWord } from "./pipeline-heard-words.ts";
 import { createPlaybackClock } from "./pipeline-playback-clock.ts";
 import { buildTailResumePrompt, tailResumeWorthRunning } from "./pipeline-recovery.ts";

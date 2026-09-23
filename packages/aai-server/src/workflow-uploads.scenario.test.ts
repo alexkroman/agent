@@ -40,16 +40,14 @@
  */
 
 import { createHash } from "node:crypto";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import {
   createMemoryUploadBackend,
-  createPostgresDb,
-  UPLOADS_TABLE,
-  type UploadStore,
-} from "@alexkroman1/aai-runtime";
-import {
   createUploadStore,
   UPLOAD_CHUNK_BYTES,
   UPLOAD_PART_BYTES,
+  UPLOADS_TABLE,
+  type UploadStore,
 } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";

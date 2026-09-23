@@ -35,6 +35,7 @@ import type {
   GenerateFn,
   GuardrailVerdict,
   SubagentAnswer,
+  ToolSet,
   TypedDelegateResult,
   TypedSubagentDef,
 } from "@alexkroman1/aai";
@@ -111,6 +112,14 @@ export function executorGuardrail(answer: SubagentAnswer): GuardrailVerdict {
 }
 
 /**
+ * The executor's tool set, by the name the model calls each one — a
+ * {@link ToolSet}, the same map shape `agent({ tools })` and a persona's
+ * `tools` take. Named so a spec (or a second subagent) can see exactly what
+ * one delegated step can reach.
+ */
+export const EXECUTOR_TOOLS: ToolSet = { search: searchTool, read: readTool };
+
+/**
  * Their `execute_step` — a ReAct agent with a search tool.
  *
  * **It IS one now, rather than a loop that stands in for one.** This was fifty
@@ -145,7 +154,7 @@ export const executor: TypedSubagentDef<StepAnswer> = subagent({
   expectedOutput: EXECUTOR_OUTPUT,
   schema: stepAnswerSchema,
   guardrail: executorGuardrail,
-  tools: { search: searchTool, read: readTool },
+  tools: EXECUTOR_TOOLS,
   maxSteps: MAX_STEP_TURNS,
 });
 

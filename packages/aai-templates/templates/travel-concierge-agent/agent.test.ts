@@ -6,10 +6,11 @@ import {
   expectDialogOk,
   expectDialogRefused,
   expectToolOk,
+  runTool,
   toolRunner,
 } from "@alexkroman1/aai/testing";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-
 import {
   activeAssistant,
   departureClock,
@@ -22,6 +23,29 @@ import {
   tripSlot,
   tripView,
 } from "./shared.ts";
+import bookExcursion from "./tools/book_excursion.ts";
+import bookHotel from "./tools/book_hotel.ts";
+import cancelTicket from "./tools/cancel_ticket.ts";
+import completeOrEscalate from "./tools/complete_or_escalate.ts";
+import lookupBooking from "./tools/lookup_booking.ts";
+import searchExcursions from "./tools/search_excursions.ts";
+import searchFlights from "./tools/search_flights.ts";
+import searchHotels from "./tools/search_hotels.ts";
+import toHotelAssistant from "./tools/to_hotel_assistant.ts";
+import updateTicket from "./tools/update_ticket.ts";
+
+/**
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
@@ -57,14 +81,7 @@ describe("dialog stack (routing.ts)", () => {
     const ctx = createToolContext();
     expect(activeAssistant(stateOf(ctx))).toBe("primary");
 
-    const handoff = (await run(
-      "to_hotel_assistant",
-      { request: "somewhere near the water" },
-      ctx,
-    )) as {
-      desk: string;
-      instructions: string;
-    };
+    const handoff = await runTool(toHotelAssistant, { request: "somewhere near the water" }, ctx);
     expect(handoff.desk).toBe("hotel desk");
     // The brief IS the tool result — that is the whole port of their
     // per-assistant prompt onto a session whose prompt is fixed at connect.
@@ -83,10 +100,7 @@ describe("dialog stack (routing.ts)", () => {
     const ctx = createToolContext();
     await run("to_excursion_assistant", { request: "something to do" }, ctx);
 
-    const back = (await run("complete_or_escalate", { reason: "booked it" }, ctx)) as {
-      returnedFrom: string;
-      nowHandling: string;
-    };
+    const back = await runTool(completeOrEscalate, { reason: "booked it" }, ctx);
     expect(back.returnedFrom).toBe("excursions desk");
     expect(back.nowHandling).toBe("concierge");
     expect(activeAssistant(stateOf(ctx))).toBe("primary");
@@ -159,7 +173,7 @@ describe("the desk gate (requireDesk)", () => {
     // unable to answer "what am I holding?" from wherever the call is.
     const ctx = createToolContext();
     await atDesk("hotel", ctx);
-    const booking = (await run("lookup_booking", ctx)) as { passenger: string };
+    const booking = await runTool(lookupBooking, ctx);
     expect(booking.passenger).toBe("Nadia Rossi");
   });
 });
@@ -277,18 +291,15 @@ describe("sensitive tools stage rather than act", () => {
     // once, and one of the two changes was silently dropped forever.
     const ctx = createToolContext();
     await atDesk("flight", ctx);
-    const first = (await run("update_ticket", { flightId: "LX52" }, ctx)) as {
-      awaitingConfirmation: boolean;
-    };
+    const first = ok(await runTool(updateTicket, { flightId: "LX52" }, ctx));
     expect(first.awaitingConfirmation).toBe(true);
 
     // Both from ONE desk, which is what a concurrent pair looks like now that
     // `requireDesk` is enforced. Another desk's tool would be refused by the
     // DESK gate first, which is a different refusal and would leave this one
     // unexercised.
-    const second = (await run("cancel_ticket", ctx)) as {
-      error: string;
-    };
+    const second = await runTool(cancelTicket, ctx);
+    if (!isToolFailure(second)) throw new Error("expected the second staging to be refused");
     // The refusal NAMES what is already waiting, which is what lets the model
     // settle that one and come back rather than guess.
     expect(second.error).toContain("LX52");
@@ -307,9 +318,7 @@ describe("sensitive tools stage rather than act", () => {
 
     // Once the queue is clear, the next desk's booking can be staged after all.
     await atDesk("hotel", ctx);
-    const retried = (await run("book_hotel", { hotelId: "H1", nights: 2 }, ctx)) as {
-      awaitingConfirmation: boolean;
-    };
+    const retried = ok(await runTool(bookHotel, { hotelId: "H1", nights: 2 }, ctx));
     expect(retried.awaitingConfirmation).toBe(true);
   });
 
@@ -319,9 +328,7 @@ describe("sensitive tools stage rather than act", () => {
     await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
     await run("cancel_action", ctx);
     await atDesk("excursion", ctx);
-    const staged = (await run("book_excursion", { excursionId: "E2" }, ctx)) as {
-      awaitingConfirmation: boolean;
-    };
+    const staged = ok(await runTool(bookExcursion, { excursionId: "E2" }, ctx));
     expect(staged.awaitingConfirmation).toBe(true);
   });
 
@@ -353,17 +360,11 @@ describe("search tools", () => {
   test("an unmatched route widens to the whole schedule rather than answering nothing", async () => {
     const ctx = createToolContext();
     await atDesk("flight", ctx);
-    const hit = (await run("search_flights", { route: "Zurich to Boston" }, ctx)) as {
-      widened: boolean;
-      flights: unknown[];
-    };
+    const hit = ok(await runTool(searchFlights, { route: "Zurich to Boston" }, ctx));
     expect(hit.widened).toBe(false);
     expect(hit.flights).toHaveLength(3);
 
-    const miss = (await run("search_flights", { route: "Osaka" }, ctx)) as {
-      widened: boolean;
-      flights: unknown[];
-    };
+    const miss = ok(await runTool(searchFlights, { route: "Osaka" }, ctx));
     expect(miss.widened).toBe(true);
     expect(miss.flights).toHaveLength(FLIGHTS.length);
   });
@@ -374,20 +375,14 @@ describe("search tools", () => {
     // 17:40 and 21:15 and 19:55 are at or after 17:00; the two morning
     // departures are not. Compared as STRINGS, which is only legal because
     // every reading is zero-padded — the property `isClockTime` is asked for.
-    const evening = (await run("search_flights", { departsAfter: "17:00" }, ctx)) as {
-      widened: boolean;
-      flights: { flight: string }[];
-    };
+    const evening = ok(await runTool(searchFlights, { departsAfter: "17:00" }, ctx));
     expect(evening.widened).toBe(false);
     expect(evening.flights.map((f) => f.flight)).toEqual(["LX54", "LX15", "LX17"]);
 
     // Nothing that late, so the desk widens to the whole schedule rather than
     // telling the caller there is nothing — the same "be generous" arm the
     // route filter has.
-    const midnight = (await run("search_flights", { departsAfter: "23:30" }, ctx)) as {
-      widened: boolean;
-      flights: unknown[];
-    };
+    const midnight = ok(await runTool(searchFlights, { departsAfter: "23:30" }, ctx));
     expect(midnight.widened).toBe(true);
     expect(midnight.flights).toHaveLength(FLIGHTS.length);
 
@@ -401,17 +396,13 @@ describe("search tools", () => {
   test("hotels come back cheapest first, and a ceiling filters them", async () => {
     const ctx = createToolContext();
     await atDesk("hotel", ctx);
-    const all = (await run("search_hotels", { city: "Boston" }, ctx)) as {
-      hotels: { perNight: string }[];
-    };
+    const all = ok(await runTool(searchHotels, { city: "Boston" }, ctx));
     // Always to the cent: `formatMoney` is one shape at every desk, where
     // this template's own `toLocaleString` copy dropped `.00` on a round
     // number and kept it on a price with change.
     expect(all.hotels.map((h) => h.perNight)).toEqual(["$179.95", "$265.00", "$340.00"]);
 
-    const cheap = (await run("search_hotels", { city: "Boston", maxPerNight: 200 }, ctx)) as {
-      hotels: { name: string }[];
-    };
+    const cheap = ok(await runTool(searchHotels, { city: "Boston", maxPerNight: 200 }, ctx));
     expect(cheap.hotels).toHaveLength(1);
     expect(cheap.hotels[0]?.name).toBe("Cambridge Rooms");
   });
@@ -419,10 +410,7 @@ describe("search tools", () => {
   test("an excursion keyword that matches nothing falls back to the city", async () => {
     const ctx = createToolContext();
     await atDesk("excursion", ctx);
-    const result = (await run("search_excursions", { city: "Boston", keyword: "skiing" }, ctx)) as {
-      widened: boolean;
-      excursions: unknown[];
-    };
+    const result = ok(await runTool(searchExcursions, { city: "Boston", keyword: "skiing" }, ctx));
     expect(result.widened).toBe(true);
     expect(result.excursions).toHaveLength(3);
   });
@@ -432,10 +420,7 @@ describe("search tools", () => {
     await atDesk("flight", ctx);
     await run("update_ticket", { flightId: "LX52" }, ctx);
     await run("confirm_action", ctx);
-    const booking = (await run("lookup_booking", ctx)) as {
-      passenger: string;
-      ticket: { flight: string; departs: string } | null;
-    };
+    const booking = await runTool(lookupBooking, ctx);
     expect(booking.passenger).toBe("Nadia Rossi");
     expect(booking.ticket?.flight).toBe("LX52");
     expect(booking.ticket?.departs).toBe("Wed 09:20");

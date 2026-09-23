@@ -15,15 +15,7 @@
  * raw PCM16 LE that we view as a zero-copy `Int16Array`.
  */
 
-import {
-  createTtsError,
-  RIME_API_KEY_ENV,
-  resolveRimeTtsSettings,
-  type TtsEvents,
-  type TtsOpener,
-  type TtsOpenOptions,
-  type TtsSession,
-} from "@alexkroman1/aai/host-internal";
+import { RIME_API_KEY_ENV, resolveRimeTtsSettings } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { RimeTtsOptions } from "@alexkroman1/aai/tts";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
@@ -42,6 +34,13 @@ import {
   requireApiKey,
   type SessionShell,
 } from "../_utils.ts";
+import {
+  createTtsError,
+  type TtsEvents,
+  type TtsOpener,
+  type TtsOpenOptions,
+  type TtsSession,
+} from "../openers.ts";
 
 export interface RimeSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */

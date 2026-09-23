@@ -111,7 +111,7 @@ export function verifiedAccount(desk: DeepReadonly<Desk>): Account | ToolFailure
 // ─── The personas ────────────────────────────────────────────────────────────
 
 /** Who answers the phone. No tools of its own: `tools/verify_account.ts` is everyone's. */
-export const triage: PersonaDef = persona({
+export const triage: PersonaDef<"triage"> = persona({
   name: "triage",
   description: "Answers the phone, verifies the caller and works out which desk they need",
   systemPrompt: [
@@ -223,8 +223,17 @@ export const support = persona({
  * The roster. The FIRST entry answers the phone; the rest are who it can hand
  * the caller to, and each other. `agent.ts` declares it, every tool that hands
  * off imports it, and `agent.test.ts` reads who is speaking through it.
+ *
+ * `personas()` infers the three names from the literals `persona()` kept, so
+ * `desk.handoff(ctx, "biling")` in a tool body is a compile error rather than a
+ * throw on a live call. The annotation spells them out for the reader; a bare
+ * `Personas` would widen them back to `string` and lose that check.
  */
-export const desk: Personas = personas([triage, billing, support]);
+export const desk: Personas<"triage" | "billing" | "support"> = personas([
+  triage,
+  billing,
+  support,
+]);
 
 /** A tool the front desk itself carries, for a spec to reach `tool()` beside the slot forms. */
 export const whichDesk = tool({

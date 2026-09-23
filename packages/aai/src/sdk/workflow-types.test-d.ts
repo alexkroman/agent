@@ -214,3 +214,39 @@ test("a workflow that declares no output still infers from the body", () => {
   expectTypeOf<WorkflowOutputOf<typeof bare>>().toEqualTypeOf<{ ok: boolean }>();
   expectTypeOf<WorkflowOutputOf<typeof digest>>().toEqualTypeOf<{ summary: string }>();
 });
+
+/**
+ * The readings match `run`'s SHAPE, not the `WorkflowDef` declaration — so a
+ * def-shaped object answers the same types, and the readings keep answering
+ * the parameter `WorkflowDef.run` declares (the schema's OUTPUT) rather than
+ * whatever wider type a hand-written body parameter says.
+ */
+test("the readings match run's shape, not the WorkflowDef declaration", () => {
+  type Shaped = {
+    readonly run: (input: { a: number }, ctx: WorkflowContext) => Promise<{ b: string }>;
+  };
+  expectTypeOf<WorkflowInputOf<Shaped>>().toEqualTypeOf<{ a: number }>();
+  expectTypeOf<WorkflowOutputOf<Shaped>>().toEqualTypeOf<{ b: string }>();
+
+  // A sync body settles to the same output as an async one.
+  type Sync = { run: (input: { a: number }) => { b: string } };
+  expectTypeOf<WorkflowOutputOf<Sync>>().toEqualTypeOf<{ b: string }>();
+
+  // A body declaring a WIDER parameter than its schema still reads as the
+  // schema's output, because `WorkflowDef.run` is typed from the schema.
+  const wide = workflow({
+    input: z.object({ topic: z.string() }),
+    run: async (input: { topic: string; extra?: number }) => input.topic,
+  });
+  expectTypeOf<WorkflowInputOf<typeof wide>>().toEqualTypeOf<{ topic: string }>();
+  expectTypeOf<WorkflowOutputOf<typeof wide>>().toEqualTypeOf<string>();
+
+  // An annotated def reads identically to an inferred one.
+  const schema = z.object({ q: z.string(), n: z.number().default(1) });
+  const annotatedDef: WorkflowDef<typeof schema, { hits: number }> = {
+    input: schema,
+    run: async (input) => ({ hits: input.n }),
+  };
+  expectTypeOf<WorkflowInputOf<typeof annotatedDef>>().toEqualTypeOf<{ q: string; n: number }>();
+  expectTypeOf<WorkflowOutputOf<typeof annotatedDef>>().toEqualTypeOf<{ hits: number }>();
+});

@@ -28,6 +28,7 @@ import type { ToolFailure } from "./utils.ts";
 /**
  * Where a dialog currently is.
  *
+ * @sealed
  * @public
  */
 export interface DialogPosition {
@@ -58,6 +59,7 @@ export interface DialogPosition {
  *
  * @typeParam R - The author's own `execute` return type, under `result`.
  *
+ * @sealed
  * @public
  */
 export interface DialogToolResult<R> extends DialogPosition {

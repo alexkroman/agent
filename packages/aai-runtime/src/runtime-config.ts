@@ -41,7 +41,12 @@ export type LogFn = (message: string, ctx?: LogContext) => void;
  * createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
  * ```
  */
-export type Logger = Record<LogLevel, LogFn>;
+export interface Logger {
+  info: LogFn;
+  warn: LogFn;
+  error: LogFn;
+  debug: LogFn;
+}
 
 function consoleLog(fn: typeof console.log): LogFn {
   // ISO-8601 prefix on every line. Without it these logs answer "what

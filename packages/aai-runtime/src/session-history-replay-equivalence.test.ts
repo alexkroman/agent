@@ -109,12 +109,12 @@
  */
 
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
-import type { TtsSession } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { recordingTts } from "./_pipeline-test-fakes.ts";
+import type { TtsSession } from "./providers/openers.ts";
 import { messagesFromEvents } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createPipelineHistory } from "./transports/pipeline-history.ts";

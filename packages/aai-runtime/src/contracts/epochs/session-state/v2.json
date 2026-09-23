@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session-state",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "2858360ece1381a80339927cdbb229b9353d9596a6edb3cba41499298c0f9643",
+  "exports": ["ensureSessionStateSchema"],
+  "rollup": "29d3eae95c6dbc2602b9da27aad9efee46501b6dc8a4bd33436fa127cefe4fbc"
+}

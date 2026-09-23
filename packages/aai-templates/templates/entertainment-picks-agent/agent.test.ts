@@ -1,35 +1,50 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { InferToolInput, InferToolOutput } from "@alexkroman1/aai";
+import type { InferToolInput } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDeployable,
   expectPromptBuiltinsDeclared,
   parseToolInput,
+  runTool,
   toolInputIssues,
   toolRunner,
 } from "@alexkroman1/aai/testing";
 // The failure vocabulary from the subpath that DECLARES it — `/utils` is the
 // zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
 // takes the same guard from the same place.
-import { isToolFailure } from "@alexkroman1/aai/utils";
+import { isToolFailure, type ToolFailure } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { CATEGORIES, MAX_RECS, MOODS, nightProjection, nightSlot } from "./shared.ts";
-import type recommend from "./tools/recommend.ts";
+import recommend from "./tools/recommend.ts";
+import revisit from "./tools/revisit.ts";
 
 /**
- * What `recommend` takes and answers, read off the tool itself.
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
+
+/**
+ * What `recommend` takes, read off the tool itself — and what it answers,
+ * which `runTool(recommend, …)` types from the same place.
  *
- * `InferToolInput`/`InferToolOutput` rather than the `{ category: string; mood:
- * string }` and `{ picks: string[] }` this spec used to hand-type: those are a
- * restatement of a schema declared two files away, they are WEAKER than it
- * (`string`, not the two enums), and nothing makes them fail when the schema
- * moves. Imported as a MODULE for it — `virtual:aai/agent` is the def a deploy
- * ships and is what every assertion below still drives, but a def erases which
- * tool has which shape.
+ * `InferToolInput` rather than the `{ category: string; mood: string }` this
+ * spec used to hand-type: that is a restatement of a schema declared two files
+ * away, it is WEAKER than it (`string`, not the two enums), and nothing makes
+ * it fail when the schema moves. Imported as a MODULE for it — a tool file's
+ * default export is the very object `virtual:aai/agent` registers under its
+ * name, so handing it to `runTool` drives the same code, and a def looked up
+ * by name erases which tool has which shape.
  */
 type RecommendInput = InferToolInput<typeof recommend>;
-type RecommendResult = InferToolOutput<typeof recommend>;
 
 /**
  * `runTool` takes the context in the ARGUMENTS' place when a tool needs none,
@@ -88,7 +103,7 @@ describe("entertainment-picks-agent template", () => {
 
 describe("recommend", () => {
   test("answers with picks for the category and mood asked for", async () => {
-    const result = (await run("recommend", { category: "movie", mood: "cozy" })) as RecommendResult;
+    const result = await runTool(recommend, { category: "movie", mood: "cozy" });
     expect(result).toMatchObject({ category: "movie", mood: "cozy" });
     expect(result.picks.length).toBeGreaterThan(0);
   });
@@ -155,7 +170,7 @@ describe("recommend", () => {
     // package's guide records three shipped tools having.
     for (const category of CATEGORIES) {
       for (const mood of MOODS) {
-        const result = (await run("recommend", { category, mood })) as RecommendResult;
+        const result = await runTool(recommend, { category, mood });
         expect(result.picks, `${category}/${mood}`).not.toHaveLength(0);
       }
     }
@@ -211,12 +226,12 @@ describe("revisit", () => {
   test("the listener's own words pick one out when they name no position", async () => {
     const ctx = createToolContext();
     await threePicks(ctx);
-    const found = (await run("revisit", { which: "those spooky books" }, ctx)) as RecommendResult;
+    const found = ok(await runTool(revisit, { which: "those spooky books" }, ctx));
     expect(found).toMatchObject({ category: "book", mood: "spooky" });
     // It answers with the shelf's own picks, which is what makes this a lookup
     // rather than the model recalling three titles from a trimmed transcript.
     expect(found.picks).toEqual(
-      ((await run("recommend", { category: "book", mood: "spooky" })) as RecommendResult).picks,
+      (await runTool(recommend, { category: "book", mood: "spooky" })).picks,
     );
   });
 

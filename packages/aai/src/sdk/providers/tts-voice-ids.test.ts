@@ -7,6 +7,7 @@ import {
   ASSEMBLYAI_TTS_LANGUAGES,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsLanguage,
+  ttsVoiceInfo,
 } from "./tts/assemblyai.ts";
 import { ttsVoiceIds } from "./tts-voice-ids.ts";
 
@@ -19,7 +20,7 @@ describe("ttsVoiceIds", () => {
     const english = ttsVoiceIds("en");
     expect(english.length).toBeGreaterThan(1);
     for (const id of english) {
-      expect(ASSEMBLYAI_TTS_VOICES[id as keyof typeof ASSEMBLYAI_TTS_VOICES]?.language).toBe("en");
+      expect(ttsVoiceInfo(id)?.language).toBe("en");
     }
     expect(ttsVoiceIds("fr")).toEqual(["estelle"]);
   });
@@ -30,9 +31,7 @@ describe("ttsVoiceIds", () => {
     for (const code of Object.keys(ASSEMBLYAI_TTS_LANGUAGES) as AssemblyAITtsLanguage[]) {
       const ids = ttsVoiceIds(code);
       expect(ids.length).toBeGreaterThan(0);
-      expect(ASSEMBLYAI_TTS_VOICES[ids[0] as keyof typeof ASSEMBLYAI_TTS_VOICES]?.language).toBe(
-        code,
-      );
+      expect(ttsVoiceInfo(ids[0])?.language).toBe(code);
     }
   });
 

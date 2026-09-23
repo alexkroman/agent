@@ -44,7 +44,10 @@ import {
  * specialist needs what the caller actually asked for, not just that they were
  * transferred.
  */
-export function delegationTool(id: SpecialistId): ToolDef {
+// Return type INFERRED rather than annotated `ToolDef`, which erased the
+// result to `unknown` and made a spec reading it cast; narrowing a return type
+// is covariant, so it still registers wherever a `ToolDef` is expected.
+export function delegationTool(id: SpecialistId) {
   const specialist = SPECIALISTS[id];
   return tripSlot.updateTool({
     description:
@@ -79,7 +82,10 @@ export function delegationTool(id: SpecialistId): ToolDef {
  * a `done` tool will keep trying to answer things the desk has no tools for.
  * The `reason` is what the concierge is handed on the way back up.
  */
-export function completeOrEscalateTool(): ToolDef {
+// Return type INFERRED rather than annotated `ToolDef`, which erased the
+// result to `unknown` and made a spec reading it cast; narrowing a return type
+// is covariant, so it still registers wherever a `ToolDef` is expected.
+export function completeOrEscalateTool() {
   return tripSlot.updateTool({
     description:
       "Hand the call back to the main concierge. Use this when the current desk's " +

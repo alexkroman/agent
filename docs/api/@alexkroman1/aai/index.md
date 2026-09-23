@@ -1177,7 +1177,7 @@ const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 ### persona()
 
 ```ts
-function persona(def: PersonaDef): PersonaDef;
+function persona<N extends string>(def: PersonaDef<N>): PersonaDef<N>;
 ```
 
 Define a persona. An identity function, like [tool](#tool-2) and [subagent](#subagent):
@@ -1185,22 +1185,31 @@ it exists for the type, for the name to grep for, and so a persona is
 declared at module scope where both the roster and a tool that hands off to
 it can import it.
 
+The name is inferred as a LITERAL (`const N`), so a roster built from these
+knows its own names and a handoff to one that is not on it fails to compile.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
 #### Parameters
 
 ##### def
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 #### Returns
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 ***
 
 ### personas()
 
 ```ts
-function personas(list: readonly PersonaDef[]): Personas;
+function personas<N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
 ```
 
 Declare the roster.
@@ -1211,15 +1220,21 @@ with no symptom otherwise: two personas with one name route to whichever the
 lookup finds; a tool two personas both declare is gated by whichever wrapper
 landed last.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string`
+
 #### Parameters
 
 ##### list
 
-readonly [`PersonaDef`](#personadef)[]
+readonly [`PersonaDef`](#personadef)\<`N`\>[]
 
 #### Returns
 
-[`Personas`](#personas-1)
+[`Personas`](#personas-1)\<`N`\>
 
 ***
 
@@ -3049,7 +3064,7 @@ declare tools it never reaches. This field is only about the surface.
 ##### personas?
 
 ```ts
-optional personas?: Personas;
+optional personas?: Personas<string>;
 ```
 
 WHO speaks: a roster handed between mid-call over one history; mints `handoff` and each persona's tools into `tools`. Host-only. See `sdk/persona.ts`.
@@ -3510,7 +3525,7 @@ take a tool-choice parameter.
 ##### tools
 
 ```ts
-tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+tools: ToolSet;
 ```
 
 The tools the agent may invoke, keyed by the name the model calls.
@@ -4017,6 +4032,8 @@ tool and mirrored into `useState`; 58% of generated agents built one.
 
 ### AgentSessionContext
 
+**`Sealed`**
+
 The session a per-session author function is running for.
 
 #### Properties
@@ -4244,6 +4261,43 @@ speaks.
 
 ***
 
+### ClientEventMap
+
+The agent's OWN custom events — what `ctx.send(event, data)` pushes to the
+browser — keyed by event name, and EMPTY until the agent declares some.
+
+An interface so an agent can augment it, exactly like
+[SessionEventMap](#sessioneventmap). Once a name is declared, `ctx.send` type-checks its
+payload: a misspelled field or a wrong type is a compile error in the tool
+that sends it, rather than a client handler that silently reads `undefined`.
+A name nobody declared still sends `unknown`, so declaring one event never
+obliges the agent to declare the rest.
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+declare module "@alexkroman1/aai" {
+  interface ClientEventMap {
+    "order.progress": { done: number; total: number };
+  }
+}
+
+export default tool({
+  description: "Ship the order",
+  inputSchema: z.object({}),
+  execute: (_args, ctx) => {
+    ctx.send("order.progress", { done: 1, total: 3 });
+    return { ok: true };
+  },
+});
+```
+
+The payload is typed on the SENDING side only: on the wire it is still a
+`custom.emitted` frame whose `data` the schema admits as any JSON value.
+
+***
+
 ### DelegateOptions
 
 Per-call options for [DelegateFn](#delegatefn).
@@ -4282,6 +4336,8 @@ conversation and knows nothing the task does not say.
 ***
 
 ### DelegateResult
+
+**`Sealed`**
 
 What one delegated run returns: the accepted attempt, plus what getting there
 took.
@@ -4372,6 +4428,8 @@ Every tool call this attempt made, in order.
 ***
 
 ### Dialog
+
+**`Sealed`**
 
 A dialog statechart bound to a session, created by [dialog](#dialog-1).
 
@@ -4796,6 +4854,8 @@ construction, so there is nothing here that cannot be stored.
 ***
 
 ### DialogPosition
+
+**`Sealed`**
 
 Where a dialog currently is.
 
@@ -5431,6 +5491,8 @@ for it, moving the dialog out of a state this tool was never allowed in.
 
 ### DialogToolResult
 
+**`Sealed`**
+
 What a [Dialog.tool](#tool) answers on success.
 
 #### Extends
@@ -5577,6 +5639,8 @@ turn that made it rather than living only in one tool result.
 
 ### HandoffResult
 
+**`Sealed`**
+
 What a handoff returns — the shape a tool hands back as its result so the
 model learns, in the same turn, who is speaking now.
 
@@ -5627,6 +5691,8 @@ The persona speaking now.
 ***
 
 ### MetricsCollector
+
+**`Sealed`**
 
 A running summary of `metrics.collected` frames — see
 [createMetricsCollector](#createmetricscollector).
@@ -5695,6 +5761,8 @@ over. Default 1000.
 ***
 
 ### MetricsSummary
+
+**`Sealed`**
 
 Everything collected so far. A stat is absent until its first sample,
 never a row of zeroes.
@@ -5966,6 +6034,17 @@ requirement is a failure with no symptom otherwise: a persona with no
 `description` routes badly and reads as the model being unreliable; one with
 no `systemPrompt` speaks as the agent and nobody can tell it took over.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The persona's `name`, as a literal when [persona](#persona-4)
+  infers it — what lets [Personas.handoff](#handoff-1) refuse a misspelled target
+  at compile time. Defaults to `string`, which is every persona written
+  before the parameter existed.
+
 #### Properties
 
 ##### description
@@ -5982,7 +6061,7 @@ not the mechanism.
 ##### name
 
 ```ts
-name: string;
+name: N;
 ```
 
 What this persona is called — the value of the `handoff` tool's `persona`
@@ -6017,7 +6096,7 @@ The model's tool-choice policy while this persona is speaking.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools only this persona may call, by the name the model calls them by.
@@ -6032,8 +6111,18 @@ Each name must be unique across the roster and must not collide with a
 
 ### PersonaPosition
 
+**`Sealed`**
+
 Where a session is, persona-wise — the position [Personas.position](#position-1)
 answers, the shape `DialogPosition` has for a dialog.
+
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's persona names — see [Personas](#personas-1).
 
 #### Properties
 
@@ -6056,7 +6145,7 @@ The [HandoffOptions.note](#note) that came with that handoff.
 ##### persona
 
 ```ts
-readonly persona: PersonaDef;
+readonly persona: PersonaDef<N>;
 ```
 
 The persona speaking now.
@@ -6090,6 +6179,8 @@ readonly state: string;
 
 ### Personas
 
+**`Sealed`**
+
 The roster the agent declares and every tool reaches for — what
 [personas](#personas-2) returns.
 
@@ -6098,12 +6189,24 @@ a bare array like `agent({ subagents })`: a handoff has to know the whole
 roster to name who it came FROM and to refuse a target that is not on it, and
 a bare array gives a tool body neither.
 
+#### Type Parameters
+
+##### N
+
+`N` *extends* `string` = `string`
+
+The roster's persona names, inferred by [personas](#personas-2) from
+  the literal names [persona](#persona-4) gives each entry, so
+  `desk.handoff(ctx, "biling")` is a compile error rather than a throw on a
+  live call. Defaults to `string`, so a `Personas` annotation written before
+  the parameter existed still accepts any roster.
+
 #### Methods
 
 ##### active()
 
 ```ts
-active(ctx: SlotHolder): PersonaDef;
+active(ctx: SlotHolder): PersonaDef<N>;
 ```
 
 The persona speaking now: `position(ctx).persona`.
@@ -6116,14 +6219,14 @@ The persona speaking now: `position(ctx).persona`.
 
 ###### Returns
 
-[`PersonaDef`](#personadef)
+[`PersonaDef`](#personadef)\<`N`\>
 
 ##### handoff()
 
 ```ts
 handoff(
    ctx: SlotHolder, 
-   to: string | PersonaDef, 
+   to: N | PersonaDef<N>, 
    options?: HandoffOptions
 ): HandoffResult;
 ```
@@ -6149,7 +6252,7 @@ minted `handoff` tool turns them into a `ToolFailure` for the model.
 
 ###### to
 
-`string` \| [`PersonaDef`](#personadef)
+`N` \| [`PersonaDef`](#personadef)\<`N`\>
 
 ###### options?
 
@@ -6162,7 +6265,7 @@ minted `handoff` tool turns them into a `ToolFailure` for the model.
 ##### position()
 
 ```ts
-position(ctx: SlotHolder): PersonaPosition;
+position(ctx: SlotHolder): PersonaPosition<N>;
 ```
 
 Who is speaking, and how they came to be — see [PersonaPosition](#personaposition).
@@ -6175,14 +6278,14 @@ Who is speaking, and how they came to be — see [PersonaPosition](#personaposit
 
 ###### Returns
 
-[`PersonaPosition`](#personaposition)
+[`PersonaPosition`](#personaposition)\<`N`\>
 
 #### Properties
 
 ##### list
 
 ```ts
-readonly list: readonly PersonaDef[];
+readonly list: readonly PersonaDef<N>[];
 ```
 
 The roster, in declaration order. The first entry is the ENTRY persona.
@@ -6452,6 +6555,8 @@ export default agent({
 ***
 
 ### Procedure
+
+**`Sealed`**
 
 A machine that can be run as a unit of work, created by [procedure](#procedure-2).
 
@@ -7823,6 +7928,8 @@ EventMapOf.user-turn.exceeded
 
 ### SessionSlot
 
+**`Sealed`**
+
 A named slot of per-session state, created by [sessionSlot](#sessionslot-1).
 
 #### Type Parameters
@@ -7986,6 +8093,34 @@ its draft is a copy; this is the same rule applied to the other writer.
 ###### Returns
 
 [`DeepReadonly`](#deepreadonly)\<`T`\>
+
+##### snapshot()
+
+```ts
+snapshot(ctx: SlotHolder): T;
+```
+
+A MUTABLE deep copy of this session's value — `structuredClone` of what
+[SessionSlot.get](#get) returns, typed as the slot's own `T` rather than
+its readonly view, installing the default on first access like `get`.
+
+For the caller that wants to hold a value BESIDE the slot: a spec recording
+the state before a tool runs so it can restore it with
+[SessionSlot.set](#set), or a tool building a modified candidate it may
+never store. Mutating the copy changes nothing stored — every write still
+goes through `update` or `set`. It replaces
+`structuredClone(slot.get(ctx)) as Parameters<typeof slot.set>[1]`, whose
+cast was the only way back from `DeepReadonly<T>` to `T`.
+
+###### Parameters
+
+###### ctx
+
+[`SlotHolder`](#slotholder)
+
+###### Returns
+
+`T`
 
 ##### tool()
 
@@ -9014,7 +9149,7 @@ const researcher = subagent({
 ##### llm?
 
 ```ts
-optional llm?: string | LlmProvider;
+optional llm?: LlmSpec;
 ```
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
@@ -9190,7 +9325,7 @@ researcher subagent and the voice that relays what it found.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools this subagent may call, by the name the model calls them by.
@@ -9501,7 +9636,7 @@ const researcher = subagent({
 ##### llm?
 
 ```ts
-optional llm?: string | LlmProvider;
+optional llm?: LlmSpec;
 ```
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
@@ -9705,7 +9840,7 @@ researcher subagent and the voice that relays what it found.
 ##### tools?
 
 ```ts
-optional tools?: Readonly<Record<string, ToolDef>>;
+optional tools?: Readonly<Record<string, ToolDef<ToolInputSchema, unknown>>>;
 ```
 
 The tools this subagent may call, by the name the model calls them by.
@@ -10030,15 +10165,49 @@ take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
 
 ```ts
 type AssemblyAIGatewayModel = 
-  | KnownGatewayModel
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-opus-5"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
+  | "gemma-4-31b"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
+  | "gpt-5.6-terra"
+  | "gpt-6-astra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "qwen3-32B"
+  | "qwen3-next-80b-a3b"
+  | "qwen3.5-4b-32k-fast"
   | string & {
 };
 ```
 
-A model id on AssemblyAI's LLM Gateway — one of [KnownGatewayModel](llm.md#knowngatewaymodel),
-or any other string.
+A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this
+catalog was generated, or any other string.
 
-The known half is GENERATED from what the gateway advertises, so it is a
+The literal half is GENERATED from what the gateway advertises, so it is a
 snapshot of a service that ships models faster than this package releases:
 a model added upstream after this release is still a legal id, and a
 regeneration that drops one breaks no author's build. Autocomplete, not a
@@ -10050,8 +10219,24 @@ guard.
 
 ```ts
 type AssemblyAITtsVoice = 
-  | AssemblyAITtsVoiceId
-| string & Record<never, never>;
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+  | "estelle"
+  | string & {
+};
 ```
 
 A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
@@ -10087,7 +10272,9 @@ type BuiltinTool =
   | "think"
   | "remember"
   | "recall"
-  | "calculate";
+  | "calculate"
+  | string & {
+};
 ```
 
 Identifier for a built-in server-side tool.
@@ -10110,6 +10297,57 @@ When `builtinTools` is not set, only `think` is enabled
 (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
 for by name. Setting the field replaces the default rather than extending
 it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
+
+OPEN, like `VoicePresetName`: the names above are written inline as the
+autocomplete half, and any other string compiles, so an agent naming a
+builtin a later release adds still builds against this one. The runtime
+resolves only the names it ships and skips the rest, so an unknown name is a
+tool that silently never appears — which is why `aai build` / `aai dev` warn
+about it (`agentConfigWarnings`) rather than the type refusing it. Inline
+rather than an exported closed `Known…` half, so a builtin added here is a
+compatible change to this type.
+
+***
+
+### ClientEventSender
+
+```ts
+type ClientEventSender = <K>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+```
+
+What `ctx.send` is: push one custom event to the connected browser client,
+typed by [ClientEventMap](#clienteventmap).
+
+A name declared in the map must be sent with its declared payload; any other
+name takes `unknown`. ONE conditional signature rather than a typed overload
+in front of a `(string, unknown)` fallback, deliberately: with overloads, a
+DECLARED name sent with the wrong payload fails the first signature and
+silently resolves against the fallback, so the declaration would type
+nothing. Any `(event: string, data: unknown) => void` is one of these, which
+is how the runtime and the test doubles implement it.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* 
+  \| keyof [`ClientEventMap`](#clienteventmap)
+  \| `string` & \{
+\}
+
+#### Parameters
+
+##### event
+
+`K`
+
+##### data
+
+`K` *extends* keyof [`ClientEventMap`](#clienteventmap) ? [`ClientEventMap`](#clienteventmap)\[`K`\] : `unknown`
+
+#### Returns
+
+`void`
 
 ***
 
@@ -10517,7 +10755,7 @@ The generated text — the JSON-stringified object.
 
 ```ts
 type GenerateOptions = {
-  llm?: LlmProvider | string;
+  llm?: LlmSpec;
   maxOutputTokens?: number;
   prompt: string;
   schema?: StandardSchemaV1 | Record<string, unknown>;
@@ -10536,7 +10774,7 @@ the module doc for why a field here would be a second, competing one.
 ##### llm?
 
 ```ts
-optional llm?: LlmProvider | string;
+optional llm?: LlmSpec;
 ```
 
 LLM provider for this call: a descriptor from `@alexkroman1/aai/llm`,
@@ -10600,6 +10838,8 @@ type GenerateResult = {
   text: string;
 };
 ```
+
+**`Sealed`**
 
 Result of one LLM generation call without a Standard Schema — text only.
 
@@ -10788,36 +11028,6 @@ Give up waiting after this long and reject with
 
 ***
 
-### KnownTurnDetectionMode
-
-```ts
-type KnownTurnDetectionMode = "auto" | "manual";
-```
-
-The turn-detection modes this release implements — the autocomplete half of
-[TurnDetectionMode](#turndetectionmode). See [PipelineVoiceTuning.turnDetection](#turndetection).
-
-***
-
-### KnownVoicePresetName
-
-```ts
-type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
-```
-
-One of the opt-in prompt presets THIS release ships — see
-[VOICE\_PRESETS](#voice_presets) for what each one says and what it costs. The
-autocomplete half of [VoicePresetName](#voicepresetname).
-
-Spelled as a union rather than derived from `VOICE_PRESET_NAMES`,
-which would be the shorter way round: a derived alias renders in the API
-report and the docs as `(typeof VOICE_PRESET_NAMES)[number]`, naming an
-internal constant a reader cannot import and TypeDoc refuses to link. The
-union renders as the strings, which is the answer to the only question
-anybody asks of this type.
-
-***
-
 ### LlmProvider
 
 ```ts
@@ -10838,6 +11048,33 @@ readonly optional __stage?: "llm";
 ```
 
 Compile-time stage tag; never present at runtime.
+
+***
+
+### LlmSpec
+
+```ts
+type LlmSpec = 
+  | LlmProvider
+  | AssemblyAIGatewayModel
+  | `${string}/${string}`
+  | string & {
+};
+```
+
+What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+`ctx.generate({ llm })`: a descriptor from [llm](llm.md#llm), or a model-id string.
+
+A bare id routes through AssemblyAI's LLM Gateway (so
+[AssemblyAIGatewayModel](#assemblyaigatewaymodel)'s ids autocomplete), a `"creator/model"` id
+through the Vercel AI Gateway. Typed against the generated ids so a typo is
+caught where it is written, the job `llm({ provider: "assemblyai", model })`
+has always done — and OPEN (`string & {}`), because the catalog is a
+snapshot of a service that ships models faster than this package releases.
+
+ONE named type because three fields are one field to an author: two inline
+copies of this union and a drifted `LlmProvider | string` (no autocomplete at
+all) were what it replaced.
 
 ***
 
@@ -11031,10 +11268,7 @@ without its envelope, so a hook's event and a transport's body both fit.
 
 ```ts
 type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
-  llm?:   | LlmProvider
-     | AssemblyAIGatewayModel
-     | `${string}/${string}`
-     | string & Record<never, never>;
+  llm?: LlmSpec;
   page?: "voice" | StaticFrontDoorMisuse;
   s2s?: undefined;
   text?: undefined;
@@ -11070,11 +11304,7 @@ the rule.
 ##### llm?
 
 ```ts
-optional llm?: 
-  | LlmProvider
-  | AssemblyAIGatewayModel
-  | `${string}/${string}`
-| string & Record<never, never>;
+optional llm?: LlmSpec;
 ```
 
 See [AgentDef.llm](#llm); a string is gateway model-id shorthand —
@@ -11089,7 +11319,7 @@ so one field had two types and only the longer spelling checked anything.
 A bare `string` here made `llm: "claude-sonnet-4-6"` a name with no
 autocomplete and a typo a gateway 400 at the first live session.
 
-The `string & Record<never, never>` arm keeps it a WIDENING: the catalog
+The `string & {}` arm of [LlmSpec](#llmspec) keeps it a WIDENING: the catalog
 is a snapshot of a service that ships models faster than this package
 releases, so every id that compiled before still compiles — see
 [AssemblyAITtsVoice](#assemblyaittsvoice), which is autocomplete over its catalog for
@@ -11300,6 +11530,8 @@ type SessionEventContext = {
   slots: SlotStore;
 };
 ```
+
+**`Sealed`**
 
 What a session event handler is handed alongside the event.
 
@@ -11912,10 +12144,25 @@ carrier does not sign the WebSocket upgrade this gates.
 ### TelephonyCarrier
 
 ```ts
-type TelephonyCarrier = "twilio" | "telnyx";
+type TelephonyCarrier = 
+  | "twilio"
+  | "telnyx"
+  | string & {
+};
 ```
 
-A phone carrier that can open a media stream against an agent.
+A phone carrier that can open a media stream against an agent — `"twilio"`
+or `"telnyx"`, the two this release ships a codec for, or any other string.
+
+OPEN, like `VoicePresetName`: the known carriers are written inline as the
+autocomplete half, so a declaration naming a carrier a later release adds
+still compiles and deploys against this one. The runtime serves only the
+carriers it ships a codec for and DROPS the rest (`enabledCarriers`), so an
+unknown name mounts nothing — which is why `aai build` / `aai dev` warn about
+it (`agentConfigWarnings`) rather than the type refusing it. Inline rather
+than an exported closed `Known…` half, so a carrier added here is a
+compatible change to this type; code that must be TOTAL over the shipped
+carriers keys off `TELEPHONY_CARRIERS` (`@alexkroman1/aai/internal`) instead.
 
 ***
 
@@ -11923,10 +12170,7 @@ A phone carrier that can open a media stream against an agent.
 
 ```ts
 type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
-  llm?:   | LlmProvider
-     | AssemblyAIGatewayModel
-     | `${string}/${string}`
-     | string & Record<never, never>;
+  llm?: LlmSpec;
   maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   page?: "voice" | StaticFrontDoorMisuse;
@@ -11958,11 +12202,7 @@ so a knob added to [PipelineVoiceTuning](#pipelinevoicetuning) is rejected here 
 ##### llm?
 
 ```ts
-optional llm?: 
-  | LlmProvider
-  | AssemblyAIGatewayModel
-  | `${string}/${string}`
-| string & Record<never, never>;
+optional llm?: LlmSpec;
 ```
 
 See [AgentDef.llm](#llm); a string is gateway model-id shorthand. Unset →
@@ -12191,13 +12431,15 @@ type ToolContext = {
   generate: GenerateFn;
   messages: readonly Message[];
   random: RandomSource;
+  send: ClientEventSender;
   sessionId: string;
   signal: AbortSignal;
   slots: SlotStore;
   workflows: WorkflowClient;
-  send: void;
 };
 ```
+
+**`Sealed`**
 
 Context passed to tool `execute` functions.
 
@@ -12247,33 +12489,6 @@ const lookupNote = tool({
   },
 });
 ```
-
-#### Methods
-
-##### send()
-
-```ts
-send(event: string, data: unknown): void;
-```
-
-Push a custom event to the connected browser client. Fire-and-forget:
-events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
-serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
-dropped (with a warning log), not thrown.
-
-###### Parameters
-
-###### event
-
-`string`
-
-###### data
-
-`unknown`
-
-###### Returns
-
-`void`
 
 #### Properties
 
@@ -12449,6 +12664,25 @@ export default tool({
   execute: (_args, ctx) => ({ pick: pickOne(["Luigi's", "The Anchor"], ctx.random) }),
 });
 ```
+
+##### send
+
+```ts
+send: ClientEventSender;
+```
+
+Push a custom event to the connected browser client. Fire-and-forget:
+events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
+serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
+dropped (with a warning log), not thrown.
+
+**Typed by [ClientEventMap](#clienteventmap).** An event name the agent declared there
+(by module augmentation) must be sent with that payload — a wrong shape is
+a compile error here rather than a client handler reading `undefined`. Any
+other name still takes `unknown`, so the map is opt-in per event.
+
+See [ClientEventSender](#clienteventsender) for the signature, and for why it is one
+conditional signature rather than a typed overload.
 
 ##### sessionId
 
@@ -13057,6 +13291,22 @@ optional start?:
 
 ***
 
+### ToolSet
+
+```ts
+type ToolSet = Readonly<Record<string, ToolDef>>;
+```
+
+A map of tools by the name the model calls them by — the shape every field
+that DECLARES a set of tools takes: [AgentDef.tools](#tools) (what `tools/`
+lowers to), [PersonaDef.tools](#tools-1) and [SubagentDef.tools](#tools-2).
+
+Named once so the three cannot drift, and so a helper that builds or filters
+a set of tools has one type to be written against rather than restating
+`Readonly<Record<string, ToolDef>>`.
+
+***
+
 ### ToolStartMessage
 
 ```ts
@@ -13135,17 +13385,24 @@ Compile-time stage tag; never present at runtime.
 
 ```ts
 type TurnDetectionMode = 
-  | KnownTurnDetectionMode
+  | "auto"
+  | "manual"
   | string & {
 };
 ```
 
-A turn-detection mode — one of [KnownTurnDetectionMode](#knownturndetectionmode), or any other
+A turn-detection mode — `"auto"` or `"manual"`, the two this release
+implements (see [PipelineVoiceTuning.turnDetection](#turndetection)), or any other
 string.
 
 OPEN so a mode a later release adds compiles against this one. The runtime
 treats every value but `"manual"` as `"auto"`, and `aai build` / `aai dev`
 warn about a value it does not know, rather than the type refusing it.
+
+The known modes are written INLINE rather than as an exported closed
+`KnownTurnDetectionMode` half: inline they are only the autocomplete of an
+open type, so a mode added here is a compatible change, where a published
+closed union that grows is not assignable back to the one it grew from.
 
 ***
 
@@ -13153,17 +13410,31 @@ warn about a value it does not know, rather than the type refusing it.
 
 ```ts
 type VoicePresetName = 
-  | KnownVoicePresetName
+  | "echoVerification"
+  | "speechNormalization"
+  | "natoAlphabet"
   | string & {
 };
 ```
 
-A preset name — one of [KnownVoicePresetName](#knownvoicepresetname), or any other string.
+A preset name — one of the opt-in prompt presets THIS release ships (see
+[VOICE\_PRESETS](#voice_presets) for what each one says and what it costs), or any
+other string.
 
 OPEN so an agent naming a preset a later release adds compiles against this
 one. An unknown name emits no text (the prompt is assembled from the known
 names only), and `aai build` / `aai dev` warn about it rather than the type
 refusing it.
+
+The known names are written INLINE rather than as an exported
+`KnownVoicePresetName` half. A closed union on the published surface is a
+type an author's code can pin, so a preset added to it changed a published
+type in a way no probe can call compatible (a union that grows is not
+assignable back to the one it grew from). Inline, the literals are only the
+autocomplete of an open type — `"a" | "b" | (string & {})` and
+`"a" | "b" | "c" | (string & {})` are the same set — so a regenerated list is
+a compatible change. Spelled as literals rather than derived from
+`VOICE_PRESET_NAMES` so the API report and the docs render the strings.
 
 ***
 
@@ -14558,20 +14829,26 @@ that happened to carry it. The property itself stays an ordinary
 ### WorkflowInputOf
 
 ```ts
-type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+type WorkflowInputOf<D> = D extends {
+  run: (input: infer I, ctx: never) => unknown;
+} ? I : never;
 ```
 
 A workflow's INPUT type — what its declared schema parses to, which is
 exactly what the body's parameter should be.
 
 **The reason it exists is that nothing checks a hand-written parameter.**
-[WorkflowBody](workflow-api.md#workflowbody) takes its input as a function PARAMETER, so it is
+`WorkflowBody` takes its input as a function PARAMETER, so it is
 contravariant: a body declaring a WIDER shape than the schema produces is
 assignable, and a body declaring the same shape with a field's optionality or
 a default's type subtly different is assignable too. Both compile. A
 `z.number().default(5)` against a body that writes `input.limit ?? 3` is the
 sharp version — the schema guarantees `limit` is present, the `??` is dead,
 and the two numbers disagree with nothing to report it.
+
+It reads the parameter `WorkflowDef.run` declares, which IS the schema's
+output (`InferSchemaOutput<P>`), by matching `run`'s shape — see
+[WorkflowOutputOf](workflow-api.md#workflowoutputof) for why a reading matches a shape.
 
 Two details a restated shape gets wrong by hand, both of which this gets
 right for free. A zod `.optional()` infers a property that may be PRESENT AND
@@ -14663,12 +14940,28 @@ erased, and a tool importing it is importing the client half on purpose.
 ### ASSEMBLYAI\_TTS\_VOICES
 
 ```ts
-const ASSEMBLYAI_TTS_VOICES: Readonly<Record<AssemblyAITtsVoiceId, AssemblyAITtsVoiceInfo>>;
+const ASSEMBLYAI_TTS_VOICES: Readonly<Record<
+  | "alba"
+  | "anna"
+  | "charles"
+  | "eve"
+  | "george"
+  | "jane"
+  | "jean"
+  | "mary"
+  | "michael"
+  | "paul"
+  | "vera"
+  | "giovanni"
+  | "lola"
+  | "juergen"
+  | "rafael"
+| "estelle", AssemblyAITtsVoiceInfo>>;
 ```
 
 The voice catalog — voice id → the language it speaks and its accent.
 The accent is descriptive metadata for choosing a voice, not a settable
-option: [AssemblyAITtsOptions](tts.md#assemblyaittsoptions) has no `accent` field.
+option: `AssemblyAITtsOptions` has no `accent` field.
 
 A constant rather than a sentence in a doc comment, because a wrong voice
 id is a *silent* failure: it is a free-form string the service rejects
@@ -14687,7 +14980,14 @@ Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
 
 Anything that shows an author their choices — the scaffold guide, a picker
 — should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented.
+someone guessing, which is the failure being prevented. To look a voice up by
+a value typed [AssemblyAITtsVoice](#assemblyaittsvoice), use [ttsVoiceInfo](tts.md#ttsvoiceinfo).
+
+The keys are spelled out in the annotation rather than named as a closed
+`AssemblyAITtsVoiceId` union: a closed union an author can import is one a
+catalog refresh breaks, and the open [AssemblyAITtsVoice](#assemblyaittsvoice) carries the
+same literals for autocomplete. `tts-voice-ids.test.ts` holds the two lists
+equal.
 
 ***
 
@@ -15110,7 +15410,7 @@ The session event vocabulary — the ONE source of truth. `SessionEventMap`,
 ### VOICE\_PRESETS
 
 ```ts
-const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
+const VOICE_PRESETS: Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>;
 ```
 
 The shipped text of every preset, keyed by the name `agent({ voicePresets })`

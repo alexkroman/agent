@@ -11,10 +11,9 @@
  * @module
  */
 
-import type { AgentDef, SessionEvent, ToolChoice } from "@alexkroman1/aai";
-import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+import type { SessionEvent, ToolChoice } from "@alexkroman1/aai";
+import type { AgentEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
-import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type {
   LanguageModel,
   ModelMessage,
@@ -23,7 +22,7 @@ import type {
   streamText,
   ToolSet,
 } from "ai";
-import type { Logger } from "./runtime-config.ts";
+import type { HostAgentOptions } from "./host-agent-options.ts";
 
 /**
  * What one turn hands back: the AI SDK's own `streamText` result, with this
@@ -37,21 +36,24 @@ import type { Logger } from "./runtime-config.ts";
  */
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
-/** Session-fixed configuration for `createTextAgent`. */
-export interface TextAgentOptions {
-  /** The agent definition. Must declare `text: true`. */
-  agent: AgentDef;
+/**
+ * Session-fixed configuration for `createTextAgent`.
+ *
+ * The fields every way of running an agent shares are {@link HostAgentOptions}.
+ * Here: `agent` must declare `text: true`; `providerEnv` defaults to `env`, split
+ * for the reason `RuntimeOptions` splits them (a host-fallback env may resolve a
+ * model and must never become `ctx.env`); an absent `workflows` substitutes a
+ * client that rejects with the reason; `fetch` is for tests (see
+ * `BuiltinToolOptions`); `logger` defaults to `consoleLogger`; and a text agent
+ * whose tools install packages or type-check a workspace wants a larger
+ * `toolTimeoutMs` than the 30s voice-turn default.
+ */
+export interface TextAgentOptions extends HostAgentOptions {
   /**
    * Tenant-owned env: what tool code reads as `ctx.env`, and — unless
    * `providerEnv` overrides it — where the LLM credential is read from.
    */
   env?: AgentEnv;
-  /**
-   * Env used for provider-credential resolution only. Defaults to `env`.
-   * Split for the same reason `RuntimeOptions` splits them: a host-fallback
-   * env may resolve a model and must never become `ctx.env`.
-   */
-  providerEnv?: ProviderEnv;
   /**
    * Pre-resolved model, bypassing descriptor resolution entirely. For a
    * caller that already holds a `LanguageModel` (and for tests, which is the
@@ -66,14 +68,6 @@ export interface TextAgentOptions {
    * options bag so a caller that already passes one still compiles.
    */
   db?: Db | undefined;
-  /** `ctx.workflows`. Absent substitutes a client that rejects with the reason. */
-  workflows?: WorkflowClient | undefined;
-  /** In-sandbox `run_code` executor, for an agent that enables that builtin. */
-  runCode?: RunCodeExecutor;
-  /** Override the builtins' fetch. Tests only — see `BuiltinToolOptions`. */
-  fetch?: typeof globalThis.fetch;
-  /** Defaults to `consoleLogger`. */
-  logger?: Logger;
   /**
    * Where this conversation's typed events go — the same {@link SessionEvent}
    * stream a voice session emits, narrowed to what a text agent can honestly
@@ -99,12 +93,6 @@ export interface TextAgentOptions {
    * which is what makes a slot mean the same thing here as in a session.
    */
   sessionId?: string;
-  /**
-   * Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS`
-   * (30s), which is a voice-turn budget; a text agent whose tools install
-   * packages or type-check a workspace wants a larger one.
-   */
-  toolTimeoutMs?: number;
 }
 
 /** Per-turn parameters for {@link TextAgent.stream}. */
@@ -141,7 +129,11 @@ export interface TextTurnOptions {
   onStepFinish?: (step: StepResult<ToolSet>) => void | Promise<void>;
 }
 
-/** A text agent bound to one conversation — see {@link createTextAgent}. */
+/**
+ * A text agent bound to one conversation — see {@link createTextAgent}.
+ *
+ * @sealed
+ */
 export interface TextAgent {
   /** The resolved model every turn runs on. */
   readonly model: LanguageModel;

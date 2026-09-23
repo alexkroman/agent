@@ -8,7 +8,6 @@
  * Realtime, or AssemblyAI S2S based on the agent's declaration.
  */
 
-import type { SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
 import { ASSEMBLYAI_S2S_KIND, OPENAI_S2S_KIND } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_TOOL_CHOICE } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
@@ -16,6 +15,7 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
+import type { SttOpener, TtsOpener } from "./providers/openers.ts";
 import {
   descriptorKind,
   isS2sKind,
@@ -24,7 +24,7 @@ import {
   resolveS2sEnvVar,
 } from "./providers/resolve.ts";
 import type { Logger, S2sConfig } from "./runtime-config.ts";
-import type { RuntimeOptions } from "./runtime-types.ts";
+import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import type { DialogTurnSource } from "./transports/pipeline-dialog-knobs.ts";
@@ -178,8 +178,8 @@ export interface TransportFactoryDeps {
    * "no transport for session".
    */
   pipelineProviders: () => ResolvedPipelineProviders | null;
-  createWebSocket: RuntimeOptions["createWebSocket"];
-  createOpenaiRealtimeWebSocket: RuntimeOptions["createOpenaiRealtimeWebSocket"];
+  createWebSocket: HostRuntimeOptions["createWebSocket"];
+  createOpenaiRealtimeWebSocket: HostRuntimeOptions["createOpenaiRealtimeWebSocket"];
   logger: Logger;
 }
 

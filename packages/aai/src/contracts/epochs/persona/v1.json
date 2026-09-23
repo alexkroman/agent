@@ -3,7 +3,7 @@
   "capability": "persona",
   "epoch": 1,
   "rule": 2,
-  "sha256": "5bc3d04925f069a78ee72a083c40cfae0ed85e91dc7f1beef2fe554689e75503",
+  "sha256": "d47e597f33371806ba64c9ee5007bef95d194da12ff6e9015098a8cba51aae32",
   "exports": [
     "HANDOFF_TOOL_NAME",
     "HandoffOptions",
@@ -14,5 +14,20 @@
     "persona",
     "personas"
   ],
-  "rollup": "30508bd28094ebd93c9b85913c90a7e49d895b73784640399cde36458f97f873"
+  "rollup": "30508bd28094ebd93c9b85913c90a7e49d895b73784640399cde36458f97f873",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "5bc3d04925f069a78ee72a083c40cfae0ed85e91dc7f1beef2fe554689e75503",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "d47e597f33371806ba64c9ee5007bef95d194da12ff6e9015098a8cba51aae32",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

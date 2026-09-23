@@ -48,7 +48,7 @@
  */
 
 import type http from "node:http";
-import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
@@ -59,6 +59,7 @@ import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
+import type { CarrierName } from "./telephony/carriers.ts";
 import { enabledCarriers } from "./telephony/telephony-server.ts";
 import type { JournalStore } from "./workflow/journal/types.ts";
 import { handleWorkflowRequest } from "./workflow/serve.ts";
@@ -171,7 +172,7 @@ export interface AgentServerOptions extends SharedServerOptions {
    * as a voice agent, because nothing carried the declaration through. Set it
    * here only to override what the agent says.
    */
-  page?: "voice" | "static" | undefined;
+  page?: AgentDef["page"] | undefined;
   /**
    * Which phone carriers may open a media stream on `WS /phone` — see
    * `AgentDef.telephony`. Defaults to the agent's own declaration, so
@@ -182,7 +183,7 @@ export interface AgentServerOptions extends SharedServerOptions {
    * override what the agent says — an operator who wants the surface gone from
    * one deployment of an agent that does declare a carrier passes `false`.
    */
-  telephony?: TelephonyAccess | undefined;
+  telephony?: boolean | readonly CarrierName[] | undefined;
   /**
    * Base URL of a PLATFORM that serves this agent's upload bytes for it — see
    * `RuntimeServerOptions.uploadBroker`. Absent, this process talks to a bucket

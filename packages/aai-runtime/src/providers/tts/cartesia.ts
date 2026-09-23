@@ -21,15 +21,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  CARTESIA_API_KEY_ENV,
-  createTtsError,
-  resolveCartesiaTtsSettings,
-  type TtsEvents,
-  type TtsOpener,
-  type TtsOpenOptions,
-  type TtsSession,
-} from "@alexkroman1/aai/host-internal";
+import { CARTESIA_API_KEY_ENV, resolveCartesiaTtsSettings } from "@alexkroman1/aai/host-internal";
 import type { CartesiaTtsOptions } from "@alexkroman1/aai/tts";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import { Cartesia } from "@cartesia/cartesia-js";
@@ -46,6 +38,13 @@ import {
   type Pcm16Rate,
   requireApiKey,
 } from "../_utils.ts";
+import {
+  createTtsError,
+  type TtsEvents,
+  type TtsOpener,
+  type TtsOpenOptions,
+  type TtsSession,
+} from "../openers.ts";
 
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {

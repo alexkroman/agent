@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { getMaxListeners } from "node:events";
-import type { SttOpener, SttSession } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   createFailingSttProvider,
@@ -10,6 +9,7 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
+import type { SttOpener, SttSession } from "../providers/openers.ts";
 import { firstCallArg, llmCalls, makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { makeCallbacks } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";

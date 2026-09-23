@@ -12,11 +12,15 @@
  * `@alexkroman1/aai/host-internal`, which is not contracted: it is generated
  * from the service on whatever afternoon someone regenerates it, and hashing
  * a generated data table made routine ops a classification decision.
- * `KnownGatewayModel` — the id snapshot it produces — IS contracted here,
- * because the open `AssemblyAIGatewayModel` names it for autocomplete; being
- * one half of `KnownGatewayModel | (string & {})`, a regeneration that adds or
- * drops an id is a change the compatibility probe proves, so it lands as a
- * REVISION rather than an epoch.
+ * The id snapshot it produces IS contracted here, as the literals spelled
+ * inline in the open `AssemblyAIGatewayModel` (`"gpt-5" | … | (string & {})`).
+ * That spelling is what makes a regeneration a REVISION rather than an epoch:
+ * the open type accepts every string before and after, so the probe proves it
+ * mutually assignable. It was NOT true while the literals sat in an exported
+ * closed `KnownGatewayModel` beside it — that union changed what it accepted
+ * on every regeneration, and so could never be proven compatible. It and
+ * `KnownLlmProvider` (the same shape for `LlmProviderName`) are on
+ * `@alexkroman1/aai/host-internal` now, which is not contracted.
  *
  * Neither the providers' key variables nor their base URLs are here: both
  * live in the host resolver's table (`aai-runtime`'s
@@ -33,11 +37,10 @@ export {
   type AssemblyAIGatewayModel,
   type AssemblyAILlmProviderOptions,
   type AssemblyAIReasoningEffort,
-  type KnownGatewayModel,
-  type KnownLlmProvider,
   type LlmDescriptorOptions,
   type LlmOptions,
   type LlmProvider,
   type LlmProviderName,
+  type LlmSpec,
   llm,
 } from "../../sdk/providers/llm-barrel.ts";

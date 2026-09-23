@@ -52,6 +52,71 @@ import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { BuiltinToolSchema } from "./type-schemas.ts";
 import { errorMessage } from "./utils.ts";
 
+/**
+ * One provider stage of a {@link DeployedConfig} — the descriptor as it will be
+ * deployed: its `kind`, and its `options` exactly as serialized.
+ *
+ * @sealed
+ * @public
+ */
+export interface DeployedStage {
+  /** The provider the stage resolves through, e.g. `"assemblyai"`. */
+  readonly kind: string;
+  /** The descriptor's options, as they cross the wire. */
+  readonly options?: Readonly<Record<string, unknown>> | undefined;
+}
+
+/**
+ * What {@link expectDeployable} hands back: the RESOLVED config a deploy
+ * carries, narrowed to the fields a starter spec asserts on.
+ *
+ * Not the whole `AgentConfig`, on purpose. That type is inferred from the
+ * canonical config SCHEMA, so returning it put the schema — every serializable
+ * agent field, each with its own validation shape — into this subpath's
+ * contract, and a new agent field moved a TEST helper's hash. These are the
+ * fields the shipped specs read; the object returned is the real config, so a
+ * spec that needs one more can read it off `toAgentConfig`
+ * (`@alexkroman1/aai/manifest`) directly.
+ *
+ * `mode` is always present: {@link expectDeployable} refuses a conversion that
+ * derived none.
+ *
+ * @sealed
+ * @public
+ */
+export interface DeployedConfig {
+  /** The name the platform lists the agent under. */
+  readonly name: string;
+  /**
+   * The system prompt a deploy carries — the author's string, or the framework
+   * default when there is none. A RESOLVER is not carried (it cannot be
+   * serialized), so an agent with one reads the default here.
+   */
+  readonly systemPrompt: string;
+  /** The session mode the conversion derived. */
+  readonly mode: "pipeline" | "s2s" | "text";
+  /** `true` for a text agent. */
+  readonly text?: true | undefined;
+  /** The STT stage — declared, or the injected default in pipeline mode. */
+  readonly stt?: DeployedStage | undefined;
+  /** The LLM stage — declared, or the injected default in pipeline mode. */
+  readonly llm?: DeployedStage | undefined;
+  /** The TTS stage — declared, or the injected default in pipeline mode. */
+  readonly tts?: DeployedStage | undefined;
+  /** The speech-to-speech descriptor, for an s2s agent. */
+  readonly s2s?: DeployedStage | undefined;
+  /** The builtins the agent declares (absent: the default surface). */
+  readonly builtinTools?: readonly BuiltinTool[] | undefined;
+  /** Who ends the caller's turn — `"manual"` for push-to-talk. */
+  readonly turnDetection?: string | undefined;
+  /** The session's token budget, when it declares one. */
+  readonly usageLimits?: { readonly totalTokens?: number | undefined } | undefined;
+  /** The MCP servers whose tools join the agent's own, by key. */
+  readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
+  /** The env var names a deploy preflights. */
+  readonly requiredEnv?: readonly string[] | undefined;
+}
+
 /** The three pipeline stages, in the order a failure names them. */
 const PIPELINE_STAGES = ["stt", "llm", "tts"] as const;
 
@@ -101,14 +166,26 @@ const SNAKE_CASE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;
  * ```
  *
  * @param def - The agent under test — an `agent()` definition, or the raw
- *   default export of an `agent.ts`. Structural, like `toAgentConfig`.
- * @returns The config a deploy carries, mode derived and defaults injected.
+ *   default export of an `agent.ts`. Structural: only `name` is required of
+ *   the TYPE, because validating the rest is this helper's job at run time —
+ *   the same `toAgentConfig` a deploy runs. Generic only so a spread literal
+ *   carrying a field this type does not name (`{ ...def, maxSteps: 0 }`) is
+ *   not an excess-property error.
+ * @returns The config a deploy carries, mode derived and defaults injected —
+ *   see {@link DeployedConfig} for the fields it names.
  * @throws Naming the invariant that failed, and — for the validation one — the
  *   sentence `toAgentConfig` wrote about the field.
  *
  * @public
  */
-export function expectDeployable(def: AgentConfigSource): AgentConfig {
+export function expectDeployable<
+  const D extends {
+    readonly name: unknown;
+    readonly stt?: unknown;
+    readonly llm?: unknown;
+    readonly tts?: unknown;
+  },
+>(def: D): DeployedConfig {
   // BEFORE the conversion: `toAgentConfig` refuses a blank name too, and its
   // message says "name must not be blank", which is right and is not this
   // spec's claim. The claim is that the platform has something to list.
@@ -120,7 +197,11 @@ export function expectDeployable(def: AgentConfigSource): AgentConfig {
   }
   let config: AgentConfig;
   try {
-    config = toAgentConfig(def);
+    // Typed by SHAPE only (see the parameter), and validated by the conversion
+    // itself — which is the claim under test — so the cast claims nothing the
+    // next line does not check.
+    const source: unknown = def;
+    config = toAgentConfig(source as AgentConfigSource);
   } catch (cause) {
     throw new Error(
       `expectDeployable: the config does not pass manifest validation — ${errorMessage(cause)}`,
@@ -133,22 +214,28 @@ export function expectDeployable(def: AgentConfigSource): AgentConfig {
         `${JSON.stringify(def.name)} and the config ${JSON.stringify(config.name)}`,
     );
   }
-  assertStagesFilled(def, config);
-  return config;
+  const mode = assertStagesFilled(def, config);
+  return { ...config, mode };
 }
 
-/** The third invariant: what the derived mode needs, and nothing it forbids. */
-function assertStagesFilled(def: AgentConfigSource, config: AgentConfig): void {
+/**
+ * The third invariant: what the derived mode needs, and nothing it forbids.
+ * Answers the mode, which is what makes {@link DeployedConfig.mode} required.
+ */
+function assertStagesFilled(
+  def: Readonly<Partial<Record<(typeof PIPELINE_STAGES)[number], unknown>>>,
+  config: AgentConfig,
+): DeployedConfig["mode"] {
   switch (config.mode) {
     case "s2s":
       assertS2sAlone(config);
-      break;
+      return config.mode;
     case "text":
       assertNoAudioPath(config, "text mode", "a text agent has no audio path");
-      break;
+      return config.mode;
     case "pipeline":
       assertPipelineFilled(def, config);
-      break;
+      return config.mode;
     default:
       throw new Error(
         `expectDeployable: the conversion derived no session mode (got ${JSON.stringify(config.mode)})`,
@@ -184,7 +271,10 @@ function assertNoAudioPath(config: AgentConfig, mode: string, why: string): void
 }
 
 /** pipeline: every stage has a kind, and a declared one survived as declared. */
-function assertPipelineFilled(def: AgentConfigSource, config: AgentConfig): void {
+function assertPipelineFilled(
+  def: Readonly<Partial<Record<(typeof PIPELINE_STAGES)[number], unknown>>>,
+  config: AgentConfig,
+): void {
   for (const stage of PIPELINE_STAGES) {
     const resolved = config[stage]?.kind;
     if (!resolved) {
@@ -317,9 +407,10 @@ export function commandedBuiltins(config: { readonly systemPrompt: string }): Bu
  *
  * @public
  */
-export function expectPromptBuiltinsDeclared(
-  def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">,
-): BuiltinTool[] {
+export function expectPromptBuiltinsDeclared(def: {
+  readonly systemPrompt?: AgentSystemPrompt | undefined;
+  readonly builtinTools?: readonly BuiltinTool[] | undefined;
+}): BuiltinTool[] {
   // What `toAgentConfig` would carry, read off the two fields directly: a
   // string prompt as written, the schema's default when there is none, and a
   // resolver's own answer — see `resolvedPrompt`.

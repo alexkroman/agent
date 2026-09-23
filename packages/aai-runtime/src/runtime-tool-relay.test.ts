@@ -13,7 +13,7 @@ import {
   registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 
 const toolCallStep = [
   [{ type: "tool-call" as const, toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
@@ -43,7 +43,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       llm: createFakeLanguageModel({ steps: toolCallStep }),
     });
     const client = makeClientSink();
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent: makeAgent(),
       env: fakes.env,
       stt: fakes.stt,
@@ -92,7 +92,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       llm: createFakeLanguageModel({ steps: toolCallStep }),
     });
     const client = makeClientSink();
-    const exec = createRuntime({
+    const exec = createRuntimeWithSeams({
       agent: makeAgent({ tools: { lookup: { description: "Look up", execute: () => "ok" } } }),
       env: fakes.env,
       stt: fakes.stt,
@@ -133,7 +133,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
 describe("createRuntime — the relay pair must be whole", () => {
   test("executeTool without toolSchemas is REFUSED, not silently ignored", () => {
     expect(() =>
-      createRuntime({
+      createRuntimeWithSeams({
         agent: makeAgent(),
         env: {},
         executeTool: vi.fn(async () => "relayed"),
@@ -144,7 +144,7 @@ describe("createRuntime — the relay pair must be whole", () => {
 
   test("toolSchemas without executeTool is REFUSED, not silently ignored", () => {
     expect(() =>
-      createRuntime({
+      createRuntimeWithSeams({
         agent: makeAgent(),
         env: {},
         toolSchemas: [{ type: "function", name: "lookup", description: "Look up", parameters: {} }],

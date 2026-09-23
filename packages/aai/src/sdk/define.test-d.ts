@@ -575,15 +575,19 @@ test("telephony is declarable on a voice agent and refused where there is no cal
   // the session, so the mode it runs in never reaches it.
   expectTypeOf<{ name: string; s2s: S2sProvider; telephony: true }>().toExtend<AgentParams>();
 
-  // The vocabulary and the list of it are the same set. `TELEPHONY_CARRIERS` is
-  // what the config schema validates against and what the runtime resolves a
-  // declaration through, and it is written out rather than derived from the
-  // type (see its own doc), so nothing but this stops a carrier being added to
-  // one and not the other.
-  expectTypeOf<(typeof TELEPHONY_CARRIERS)[number]>().toEqualTypeOf<TelephonyCarrier>();
+  // The known half written inline in the OPEN vocabulary and the list the
+  // runtime resolves a declaration through are the same set. `TELEPHONY_CARRIERS`
+  // is written out rather than derived from the type (see its own doc), so
+  // nothing but this stops a carrier being added to one and not the other.
+  expectTypeOf<
+    (typeof TELEPHONY_CARRIERS)[number] | (string & {})
+  >().toEqualTypeOf<TelephonyCarrier>();
+  expectTypeOf<(typeof TELEPHONY_CARRIERS)[number]>().toEqualTypeOf<"twilio" | "telnyx">();
 
-  // A carrier this build ships no codec for is not a declaration.
-  expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().not.toExtend<AgentParams>();
+  // A carrier this build ships no codec for COMPILES — the vocabulary is open,
+  // so a declaration written for a newer SDK builds on this one; the runtime
+  // drops it and `agentConfigWarnings` says so.
+  expectTypeOf<{ name: string; telephony: readonly ["vonage"] }>().toExtend<AgentParams>();
   // A text agent has no audio path, so a phone call has nothing to reach.
   expectTypeOf<{ name: string; text: true; telephony: true }>().not.toExtend<AgentParams>();
 });

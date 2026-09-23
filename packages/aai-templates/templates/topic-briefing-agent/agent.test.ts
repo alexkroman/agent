@@ -2,6 +2,7 @@ import type { DelegateOptions, SubagentDef } from "@alexkroman1/aai";
 import { DELEGATE_TOOL_NAME, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
+  runTool,
   type StubDelegateCall,
   scriptedToolContext,
   stubDelegate,
@@ -11,7 +12,7 @@ import {
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
-import type { AngleWork, Finding } from "./shared.ts";
+import type { AngleWork } from "./shared.ts";
 import {
   angleBrief,
   briefingSlot,
@@ -34,6 +35,24 @@ const NO_WORK: AngleWork = { searches: 0, reads: 0 };
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
+import briefingSoFar from "./tools/briefing_so_far.ts";
+import researchTopic from "./tools/research_topic.ts";
+import sendBriefing from "./tools/send_briefing.ts";
+import verifyClaim from "./tools/verify_claim.ts";
+
+/**
+ * What a tool answered, or a throw quoting the refusal — at the CALL, rather
+ * than as an `undefined` read off a `ToolFailure` several assertions later.
+ * Typed by what it is handed: `runTool(theTool, …)` answers the tool's own
+ * return type, so this only subtracts the failure arm and restates no shape.
+ */
+function ok<T>(result: T): Exclude<T, ToolFailure> {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  // Negating a type predicate does not subtract from a generic; the guard above
+  // is what makes this true.
+  return result as Exclude<T, ToolFailure>;
+}
 
 const run = toolRunner(agentDef);
 const deployed = agentDef;
@@ -207,9 +226,7 @@ describe("research_topic", () => {
       research: (call) => ({ text: `Answer to ${call.task}.`, searches: 3 }),
     });
 
-    const result = (await run("research_topic", { topic: "t", angles: ["a"] }, ctx)) as {
-      findings: Finding[];
-    };
+    const result = ok(await runTool(researchTopic, { topic: "t", angles: ["a"] }, ctx));
 
     expect(result.findings).toEqual([
       { angle: "a", summary: "Answer to a.", work: { searches: 3, reads: 0 } },
@@ -230,11 +247,7 @@ describe("research_topic", () => {
     });
     const ctx = createToolContext({ delegate: model.delegate });
 
-    const result = (await run("research_topic", { topic: "t", angles: ["a", "b", "c"] }, ctx)) as {
-      findings: { angle: string }[];
-      failed: { angle: string; error: string }[];
-      message: string;
-    };
+    const result = ok(await runTool(researchTopic, { topic: "t", angles: ["a", "b", "c"] }, ctx));
 
     expect(result.findings.map((one) => one.angle)).toEqual(["a", "c"]);
     expect(result.failed).toEqual([{ angle: "b", error: "provider is having a day" }]);
@@ -283,11 +296,7 @@ describe("verify_claim", () => {
       check: '{"verdict": "contradicted", "detail": "The figure is 12%."}',
     });
 
-    const result = (await run("verify_claim", { claim: "The figure is 40%." }, ctx)) as {
-      verdict: string | null;
-      detail: string;
-      checkedAgainst: string | null;
-    };
+    const result = ok(await runTool(verifyClaim, { claim: "The figure is 40%." }, ctx));
 
     expect(subagents.calls.map((call) => call.subagent.name)).toEqual(["fact-checker"]);
     // The WORD the desk branches on, parsed — not a sentence it must read one out of.
@@ -306,11 +315,9 @@ describe("verify_claim", () => {
       });
     });
 
-    const result = (await run(
-      "verify_claim",
-      { claim: "Installs take eight weeks.", about: "lead times" },
-      ctx,
-    )) as { checkedAgainst: string | null };
+    const result = ok(
+      await runTool(verifyClaim, { claim: "Installs take eight weeks.", about: "lead times" }, ctx),
+    );
 
     expect(subagents.calls[0]?.options.context).toContain("Installers quote eight weeks.");
     expect(result.checkedAgainst).toBe("install lead times");
@@ -330,11 +337,13 @@ describe("verify_claim", () => {
       },
     });
 
-    const result = (await run(
-      "verify_claim",
-      { claim: "Prices fell." },
-      createToolContext({ delegate: model.delegate }),
-    )) as { verdict: string | null; detail: string; unusable?: string; message: string };
+    const result = ok(
+      await runTool(
+        verifyClaim,
+        { claim: "Prices fell." },
+        createToolContext({ delegate: model.delegate }),
+      ),
+    );
 
     // Not a tool failure: there IS an answer, and the desk is on a live call.
     // What changes is the instruction — the desk must not round a hedge up to a
@@ -350,10 +359,7 @@ describe("verify_claim", () => {
       check: '{"verdict": "confirmed", "detail": "Two sources say so."}',
     });
 
-    const result = (await run("verify_claim", { claim: "Prices fell." }, ctx)) as {
-      unusable?: string;
-      message: string;
-    };
+    const result = ok(await runTool(verifyClaim, { claim: "Prices fell." }, ctx));
 
     expect(result.unusable).toBeUndefined();
     expect(result.message).toContain("correct what you told them earlier");
@@ -388,7 +394,7 @@ describe("verify_claim", () => {
 describe("briefing_so_far", () => {
   test("says so when there is nothing yet, and spends no subagent", async () => {
     const ctx = createToolContext();
-    const result = (await run("briefing_so_far", {}, ctx)) as { findings: unknown[] };
+    const result = await runTool(briefingSoFar, {}, ctx);
     expect(result.findings).toEqual([]);
   });
 
@@ -400,10 +406,7 @@ describe("briefing_so_far", () => {
       board.findings.push({ angle: "b", summary: "B.", work: { searches: 3, reads: 0 } });
     });
 
-    const result = (await run("briefing_so_far", {}, ctx)) as {
-      totalSearches: number;
-      totalReads: number;
-    };
+    const result = await runTool(briefingSoFar, {}, ctx);
     expect(result.totalSearches).toBe(5);
     expect(result.totalReads).toBe(1);
   });
@@ -571,11 +574,7 @@ describe("send_briefing", () => {
     // production does not take.
     const posted = installStubStepFetch(() => ({ body: "ok" }));
 
-    const result = (await run("send_briefing", {}, deskWithBoard())) as {
-      sent: number;
-      topic: string | null;
-      message: string;
-    };
+    const result = ok(await runTool(sendBriefing, {}, deskWithBoard()));
 
     expect(posted.calls).toHaveLength(1);
     expect(posted.calls[0]?.url).toBe(WEBHOOK);

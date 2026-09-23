@@ -37,10 +37,18 @@ URLs are published, since an author never types one.
 `provider` is OPEN ([LlmProviderName](#llmprovidername)): a provider this release does
 not know resolves as an OpenAI-compatible endpoint when the descriptor
 carries a `baseUrl`. [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel) is open the same way —
-the generated [KnownGatewayModel](#knowngatewaymodel) snapshot is autocomplete, not a
-guard; the capability CATALOG behind it (which model streams, calls tools,
-serves the EU) is on `@alexkroman1/aai/host-internal`, since its readers
-are the studio's model selection and this repo's own gate.
+its generated id literals are autocomplete, not a guard; the capability
+CATALOG behind them (which model streams, calls tools, serves the EU) is on
+`@alexkroman1/aai/host-internal`, since its readers are the studio's model
+selection and this repo's own gate.
+
+Both open types spell their literals INLINE, and neither closed half
+(`KnownLlmProvider`, `KnownGatewayModel`) is exported here: a closed union an
+author can import changes what it accepts on every regeneration, so the
+compatibility probe could never prove one compatible. Written into the open
+type, a regenerated catalog or a new built-in provider is a REVISION of
+this capability, not an epoch. The closed halves are on
+`@alexkroman1/aai/host-internal`, for the host's own totality checks.
 
 ## The descriptor type is on the ROOT barrel TOO
 
@@ -172,7 +180,7 @@ default is [ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model), and
 readonly provider: P;
 ```
 
-Which provider serves the model — see [KnownLlmProvider](#knownllmprovider).
+Which provider serves the model — see [LlmProviderName](#llmprovidername).
 
 ##### providerOptions?
 
@@ -227,92 +235,25 @@ residency shorthand.
 ### AssemblyAIReasoningEffort
 
 ```ts
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+type AssemblyAIReasoningEffort = 
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | string & {
+};
 ```
 
-Reasoning effort accepted by the gateway's GPT-5-family models, including
-the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the
-original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
+Reasoning effort forwarded to a gateway model — one of the levels the
+GPT-5 family accepts, or any other string. The literals include the two off
+switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the original
+`gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
 
-***
-
-### KnownGatewayModel
-
-```ts
-type KnownGatewayModel = 
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-opus-5"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gemini-3.7-flash"
-  | "gemini-3.8-flash"
-  | "gemma-4-31b"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-sol"
-  | "gpt-5.6-terra"
-  | "gpt-6-astra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "qwen3-32B"
-  | "qwen3-next-80b-a3b"
-  | "qwen3.5-4b-32k-fast";
-```
-
-An id the gateway advertised when this catalog was generated — the
-autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other
-string. A snapshot of a service that ships models faster than this package
-releases, so it is never a closed set: a model added upstream after this
-release is still a legal id, and a regeneration that drops one breaks no
-build.
-
-***
-
-### KnownLlmProvider
-
-```ts
-type KnownLlmProvider = 
-  | "assemblyai"
-  | "anthropic"
-  | "cerebras"
-  | "gateway"
-  | "google"
-  | "groq"
-  | "mistral"
-  | "openai"
-  | "openrouter"
-  | "xai";
-```
-
-The providers the runtime resolves with no registration — the autocomplete
-half of [LlmProviderName](#llmprovidername).
-
-- `"assemblyai"` — AssemblyAI's LLM Gateway, on the `ASSEMBLYAI_API_KEY`
-  every agent already has. The default stage, and the one a bare model-id
-  string (`llm: "some-model"`) routes to.
-- `"gateway"` — the Vercel AI Gateway, `"creator/model"` ids; what an
-  `llm: "creator/model"` string routes to.
-- `"openrouter"` — OpenRouter, `"creator/model"` ids.
-- `"anthropic"`, `"openai"`, `"google"`, `"mistral"`, `"xai"`, `"groq"`,
-  `"cerebras"` — each vendor's own API and model ids.
+OPEN, like the model id it is paired with: which levels a model accepts is
+the gateway's to decide and moves with its models (the Gemini ids refuse
+`"none"` outright), so a level this release has not heard of is forwarded
+rather than refused at compile time, and a rejected one is the gateway's 400.
 
 ***
 
@@ -380,16 +321,37 @@ Provider-specific settings, forwarded per the provider's entry.
 
 ```ts
 type LlmProviderName = 
-  | KnownLlmProvider
+  | "assemblyai"
+  | "anthropic"
+  | "cerebras"
+  | "gateway"
+  | "google"
+  | "groq"
+  | "mistral"
+  | "openai"
+  | "openrouter"
+  | "xai"
   | string & {
 };
 ```
 
-An LLM provider name — one of [KnownLlmProvider](#knownllmprovider), or any other string.
+An LLM provider name. The literals are the providers the runtime resolves
+with no registration; any other string is legal too.
+
+- `"assemblyai"` — AssemblyAI's LLM Gateway, on the `ASSEMBLYAI_API_KEY`
+  every agent already has. The default stage, and the one a bare model-id
+  string (`llm: "some-model"`) routes to.
+- `"gateway"` — the Vercel AI Gateway, `"creator/model"` ids; what an
+  `llm: "creator/model"` string routes to.
+- `"openrouter"` — OpenRouter, `"creator/model"` ids.
+- `"anthropic"`, `"openai"`, `"google"`, `"mistral"`, `"xai"`, `"groq"`,
+  `"cerebras"` — each vendor's own API and model ids.
 
 Open on purpose: a provider this release does not know is reached with a
 `baseUrl` (OpenAI-compatible) or a host's `registerLlmKind`, and a closed
-union would refuse it at compile time for no reason the runtime shares.
+union would refuse it at compile time for no reason the runtime shares. The
+literals are spelled HERE rather than in a named closed union beside it, so
+adding a provider is a compatible change to every author's build.
 
 ## Variables
 
@@ -476,6 +438,12 @@ Re-exports [AssemblyAIGatewayModel](index.md#assemblyaigatewaymodel)
 ### LlmProvider
 
 Re-exports [LlmProvider](index.md#llmprovider)
+
+***
+
+### LlmSpec
+
+Re-exports [LlmSpec](index.md#llmspec)
 
 ***
 

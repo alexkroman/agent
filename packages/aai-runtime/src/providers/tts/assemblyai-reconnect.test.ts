@@ -5,7 +5,6 @@
 // stop arriving. Dropping the connection is the fallback for a socket that
 // cannot carry the frame. See the adapter's module doc for the measurements.
 
-import type { TtsError } from "@alexkroman1/aai/host-internal";
 import {
   TTS_CANCEL_ACK_TIMEOUT_MS,
   TTS_RECONNECT_TIMEOUT_MS,
@@ -13,6 +12,7 @@ import {
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { tick } from "../../_test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+import type { TtsError } from "../openers.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";

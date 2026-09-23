@@ -1088,33 +1088,33 @@
     },
     {
       "name": "runtime-opener-contract-on-root-barrel",
-      "description": "The 17-name OPENER CONTRACT deliberately stays on `@alexkroman1/aai-runtime`'s ROOT barrel, and this is what refuses the tidy-up. `registerSttKind`/`registerTtsKind`/`registerLlmKind` live there \u2014 all three are `registerKind` under three names, which is why the LLM one joined them: it reached no published subpath at all while `resolveLlm`, the reader of the registry it writes, was already contracted. Moving their parameter types (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) onto `@alexkroman1/aai-runtime/internal` would make a custom provider \u2014 the documented use, and what `aai-evals/stub-speech.ts` really does \u2014 import from two subpaths, one of them labelled not-semver-covered, i.e. it would move half of one contract off every epoch this package has. The pull toward doing it is real and structural, which is why prose was not enough: those six types are re-exports of `@alexkroman1/aai/host-internal`, and fifty OTHER re-exports of that same module were correctly moved off this barrel for exactly the reason that would appear to apply here. The block's own comment already called these names one contract; this makes the claim checkable. Both halves matter and fail differently. The `from` on each entry is load-bearing rather than decoration: it is what catches the names being kept on the barrel while their SOURCE changes underneath, which is how a re-export quietly stops being the same symbol. And `resolveLlm` is checked beside the three registrars because it is the registry's reader \u2014 a writer published without its reader is a seam a host can fill and not use.",
+      "description": "The 17-name OPENER CONTRACT deliberately stays on `@alexkroman1/aai-runtime`'s ROOT barrel, and this is what refuses the tidy-up. `registerSttKind`/`registerTtsKind`/`registerLlmKind` live there \u2014 all three are `registerKind` under three names, which is why the LLM one joined them: it reached no published subpath at all while `resolveLlm`, the reader of the registry it writes, was already contracted. Moving their parameter types (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) onto `@alexkroman1/aai-runtime/internal` would make a custom provider \u2014 the documented use, and what `aai-evals/stub-speech.ts` really does \u2014 import from two subpaths, one of them labelled not-semver-covered, i.e. it would move half of one contract off every epoch this package has. The pull toward doing it is real and structural, which is why prose was not enough: those six types used to be re-exports of `@alexkroman1/aai/host-internal`, fifty OTHER re-exports of which were correctly moved off this barrel for exactly the reason that would appear to apply here. They are DECLARED in this package now (`providers/openers.ts`), so the `providers` capability owns and hashes them rather than naming another package's type. The block's own comment already called these names one contract; this makes the claim checkable. Both halves matter and fail differently. The `from` on each entry is load-bearing rather than decoration: it is what catches the names being kept on the barrel while their SOURCE changes underneath, which is how a re-export quietly stops being the same symbol. And `resolveLlm` is checked beside the three registrars because it is the registry's reader \u2014 a writer published without its reader is a seam a host can fill and not use.",
       "paths": ["packages/aai-runtime/src/runtime-barrel.ts"],
       "must": {
         "exportTypes": [
           {
             "name": "SttOpener",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           },
           {
             "name": "SttOpenOptions",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           },
           {
             "name": "SttSession",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           },
           {
             "name": "TtsOpener",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           },
           {
             "name": "TtsOpenOptions",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           },
           {
             "name": "TtsSession",
-            "from": "@alexkroman1/aai/host-internal"
+            "from": "./providers/openers.ts"
           }
         ],
         "export": [

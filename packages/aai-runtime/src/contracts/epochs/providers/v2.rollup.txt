@@ -1,0 +1,159 @@
+import { LanguageModel } from 'ai';
+import { LlmProvider } from '@alexkroman1/aai/llm';
+import { ToolCallRepairFunction } from 'ai';
+import { ToolSet } from 'ai';
+
+// @public
+export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+
+// @public
+export type LlmRegistryEntry = {
+    readonly envVar: string;
+    readonly label: string;
+    readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
+};
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public
+export type OpenerRegistryEntry<Opener, O extends object = Record<string, unknown>> = {
+    readonly envVar: string;
+    readonly open: (descriptor: {
+        options: O;
+    }) => Opener;
+};
+
+// @public
+export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void;
+
+// @public
+export function registerSttKind<O extends object = Record<string, unknown>>(kind: string, entry: OpenerRegistryEntry<SttOpener, O>): () => void;
+
+// @public
+export function registerTtsKind<O extends object = Record<string, unknown>>(kind: string, entry: OpenerRegistryEntry<TtsOpener, O>): () => void;
+
+// @public
+export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
+
+// @public
+export type S2sConfig = {
+    wssUrl: string;
+    inputSampleRate: number;
+    outputSampleRate: number;
+};
+
+// @public
+export function salvageJson(input: string): Promise<string | null>;
+
+// @public
+export interface SttError extends Error {
+    // (undocumented)
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+}
+
+// @public (undocumented)
+export type SttEvents = {
+    partial: (text: string, meta?: SttTurnMeta) => void;
+    final: (text: string, meta?: SttTurnMeta) => void;
+    error: (err: SttError) => void;
+};
+
+// @public
+export interface SttOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: SttOpenOptions): Promise<SttSession>;
+}
+
+// @public
+export interface SttOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    // (undocumented)
+    signal: AbortSignal;
+    // (undocumented)
+    sttPrompt?: string | undefined;
+}
+
+// @public
+export interface SttSession {
+    // (undocumented)
+    close(): Promise<void>;
+    forceEndOfTurn?(): void;
+    // (undocumented)
+    on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
+    sendAudio(pcm: Int16Array): void;
+    updateEndpointing?(minTurnSilenceMs: number): void;
+}
+
+// @public
+export type SttTurnMeta = {
+    endOfTurnConfidence?: number;
+};
+
+// @public
+export interface TtsError extends Error {
+    // (undocumented)
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+}
+
+// @public
+export type TtsEvents = {
+    audio: (pcm: Int16Array) => void;
+    words: (words: readonly TtsWordTiming[]) => void;
+    done: () => void;
+    error: (err: TtsError) => void;
+};
+
+// @public
+export interface TtsOpener {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    open(options: TtsOpenOptions): Promise<TtsSession>;
+}
+
+// @public
+export interface TtsOpenOptions {
+    apiKey: string;
+    sampleRate: number;
+    signal: AbortSignal;
+}
+
+// @public
+export interface TtsSession {
+    cancel(): void;
+    // (undocumented)
+    close(): Promise<void>;
+    flush(): void;
+    // (undocumented)
+    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
+    sendText(text: string): void;
+}
+
+// @public
+export interface TtsWordTiming {
+    readonly endMs: number;
+    readonly startMs: number;
+    readonly text: string;
+}
+
+// @public
+export type Unsubscribe = () => void;

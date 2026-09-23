@@ -11,7 +11,7 @@
  * now: a string the host resolver dispatches on, exactly as the descriptor's
  * `kind` always was.
  *
- * `provider` is OPEN — {@link KnownLlmProvider} is the autocomplete, and any
+ * `provider` is OPEN — {@link LlmProviderName}'s literals are the autocomplete, and any
  * other string is legal. A name the runtime has no built-in entry for resolves
  * through an OpenAI-compatible chat client when the descriptor carries a
  * `baseUrl` (and an `apiKeyEnv` naming its key), and through whatever a host
@@ -24,6 +24,7 @@
  * one descriptor; `apiKeyEnv` names the variable its key is read from.
  */
 
+import type { KnownLiterals } from "../../is-known.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { LlmProvider, ProviderCredentialOptions } from "../../providers.ts";
 import {
@@ -32,11 +33,13 @@ import {
   assemblyAIReasoningEffort,
   readAssemblyAILlmProviderOptions,
 } from "./assemblyai.ts";
-import type { KnownGatewayModel } from "./shared/gateway-models.ts";
+import type { AssemblyAIGatewayModel } from "./shared/gateway-models.ts";
+
+export type { AssemblyAIGatewayModel } from "./shared/gateway-models.ts";
 
 /**
- * The providers the runtime resolves with no registration — the autocomplete
- * half of {@link LlmProviderName}.
+ * An LLM provider name. The literals are the providers the runtime resolves
+ * with no registration; any other string is legal too.
  *
  * - `"assemblyai"` — AssemblyAI's LLM Gateway, on the `ASSEMBLYAI_API_KEY`
  *   every agent already has. The default stage, and the one a bare model-id
@@ -46,8 +49,14 @@ import type { KnownGatewayModel } from "./shared/gateway-models.ts";
  * - `"openrouter"` — OpenRouter, `"creator/model"` ids.
  * - `"anthropic"`, `"openai"`, `"google"`, `"mistral"`, `"xai"`, `"groq"`,
  *   `"cerebras"` — each vendor's own API and model ids.
+ *
+ * Open on purpose: a provider this release does not know is reached with a
+ * `baseUrl` (OpenAI-compatible) or a host's `registerLlmKind`, and a closed
+ * union would refuse it at compile time for no reason the runtime shares. The
+ * literals are spelled HERE rather than in a named closed union beside it, so
+ * adding a provider is a compatible change to every author's build.
  */
-export type KnownLlmProvider =
+export type LlmProviderName =
   | "assemblyai"
   | "anthropic"
   | "cerebras"
@@ -57,28 +66,35 @@ export type KnownLlmProvider =
   | "mistral"
   | "openai"
   | "openrouter"
-  | "xai";
+  | "xai"
+  | (string & {});
 
 /**
- * An LLM provider name — one of {@link KnownLlmProvider}, or any other string.
+ * The literal half of {@link LlmProviderName} — the providers with a built-in
+ * resolver entry. On `@alexkroman1/aai/host-internal`, for the host registry's
+ * `satisfies Record<KnownLlmProvider, …>`; not an authoring type, because a
+ * closed union an author could import is one adding a provider would break.
  *
- * Open on purpose: a provider this release does not know is reached with a
- * `baseUrl` (OpenAI-compatible) or a host's `registerLlmKind`, and a closed
- * union would refuse it at compile time for no reason the runtime shares.
+ * @internal
  */
-export type LlmProviderName = KnownLlmProvider | (string & {});
+export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
 
 /**
- * A model id on AssemblyAI's LLM Gateway — one of {@link KnownGatewayModel},
- * or any other string.
+ * What an `llm` FIELD takes — `agent({ llm })`, `subagent({ llm })`,
+ * `ctx.generate({ llm })`: a descriptor from {@link llm}, or a model-id string.
  *
- * The known half is GENERATED from what the gateway advertises, so it is a
- * snapshot of a service that ships models faster than this package releases:
- * a model added upstream after this release is still a legal id, and a
- * regeneration that drops one breaks no author's build. Autocomplete, not a
- * guard.
+ * A bare id routes through AssemblyAI's LLM Gateway (so
+ * {@link AssemblyAIGatewayModel}'s ids autocomplete), a `"creator/model"` id
+ * through the Vercel AI Gateway. Typed against the generated ids so a typo is
+ * caught where it is written, the job `llm({ provider: "assemblyai", model })`
+ * has always done — and OPEN (`string & {}`), because the catalog is a
+ * snapshot of a service that ships models faster than this package releases.
+ *
+ * ONE named type because three fields are one field to an author: two inline
+ * copies of this union and a drifted `LlmProvider | string` (no autocomplete at
+ * all) were what it replaced.
  */
-export type AssemblyAIGatewayModel = KnownGatewayModel | (string & {});
+export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 /** `providerOptions` for `provider: "assemblyai"`. */
 export type AssemblyAILlmProviderOptions = {
@@ -116,7 +132,7 @@ export type AssemblyAILlmProviderOptions = {
  */
 export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
   extends ProviderCredentialOptions {
-  /** Which provider serves the model — see {@link KnownLlmProvider}. */
+  /** Which provider serves the model — see {@link LlmProviderName}. */
   readonly provider: P;
   /**
    * The provider's own model id. `"gateway"` and `"openrouter"` address a
@@ -196,7 +212,7 @@ export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): Ll
 }
 
 /**
- * The names {@link KnownLlmProvider} spells, as a runtime list — what the
+ * The literals {@link LlmProviderName} spells, as a runtime list — what the
  * unknown-provider config warning reads. `llm.test.ts` holds it EQUAL to the
  * union (the `satisfies` below proves only a subset); the host registry is
  * held total against the union itself, by its own `satisfies Record<…>`.

@@ -109,7 +109,12 @@ function probeAgainst(pkg, capability, v, generated) {
       why: `${rel(rollupPath(pkg, capability, v))} is missing, so there is nothing to prove compatibility against`,
     };
   }
-  const probe = probeCompatibility({ oldBody, newBody: generated.body, dir: pkg.dir });
+  const probe = probeCompatibility({
+    oldBody,
+    newBody: generated.body,
+    dir: pkg.dir,
+    foreign: generated.foreign,
+  });
   if (probe.compatible) return { kind: "revision", epoch: v, added: probe.added };
   // Every finding a one-sided `any`: nothing FAILED, the probe just cannot
   // decide those positions — which a human classifies, not a "major" guess.

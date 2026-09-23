@@ -1,0 +1,39 @@
+import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
+
+// @public
+export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
+
+// @public
+export function ensureWorkflowJournalSchema(options: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public
+export const MAX_WORKFLOW_FIND_LIMIT = 100;
+
+// @public
+export const MAX_WORKFLOW_INPUT_BYTES: number;
+
+export { WORKFLOW_API_PREFIX }
+
+// @public
+export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";

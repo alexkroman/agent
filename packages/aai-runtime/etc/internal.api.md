@@ -4,6 +4,7 @@
 
 ```ts
 
+import type { AgentDef } from '@alexkroman1/aai';
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
@@ -11,6 +12,7 @@ import type { DelegateOptions } from '@alexkroman1/aai';
 import type { DelegateResult } from '@alexkroman1/aai';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
+import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
@@ -61,13 +63,22 @@ export type AttachSessionOptions = {
     closeAfterFailure?: () => void;
 };
 
+// @public
+export const CARRIER_PARAM = "carrier";
+
 // @internal
 export const consoleLogger: Logger;
 
 export { CONTAINED_ENV }
 
+// @public
+export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend;
+
 // @internal
 export function createMemoryJournal(): JournalStore;
+
+// @public
+export function createMemoryUploadBackend(): UploadBackend;
 
 // @internal
 export function createPlatformJournal(options: PlatformEndpoint): JournalStore;
@@ -202,6 +213,14 @@ type HostGenerateFn = (options: GenerateOptions, callOptions?: {
     onUsage?: ((usage: StepUsage) => void) | undefined;
 }) => Promise<GenerateResult>;
 
+// @public (undocumented)
+export type HttpUploadBackendOptions = {
+    url: string;
+    serviceKey: string;
+    bucket: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
+
 // @internal
 export function isPathInside(dir: string, target: string): boolean;
 
@@ -257,10 +276,16 @@ type LogContext = Record<string, unknown>;
 type LogFn = (message: string, ctx?: LogContext) => void;
 
 // @public
-type Logger = Record<LogLevel, LogFn>;
-
-// @public
-type LogLevel = "info" | "warn" | "error" | "debug";
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
 
 // @internal
 export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
@@ -273,6 +298,12 @@ export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | u
 
 // @internal
 export function parseTraceparent(header: string | null | undefined): TraceParent | undefined;
+
+// @public
+export function partKey(prefix: string, id: string, at: number): string;
+
+// @public
+export function partsOf(value: unknown): UploadPart[];
 
 // @internal
 export const PLATFORM_ROUTES: {
@@ -348,6 +379,15 @@ export function platformSocketUrl(base: string): string;
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
 
+// @public
+export type ProviderEnvVarsQuery = {
+    stt?: object | undefined;
+    llm?: object | undefined;
+    tts?: object | undefined;
+    s2s?: object | undefined;
+    page?: AgentDef["page"] | undefined;
+};
+
 export { publishStepEnv }
 
 // @internal
@@ -355,6 +395,9 @@ export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void;
 
 // @internal
 export function queueNameKind(queueName: string | null): "workflow" | "step" | undefined;
+
+// @public
+export function requiredProviderEnvVars(agent: ProviderEnvVarsQuery): string[];
 
 export { resolveAllBuiltins }
 
@@ -443,7 +486,7 @@ export type ServerRoute = {
 export type ServerRouteMatch = "exact" | "prefix";
 
 // @public
-type ServerSession = {
+export type ServerSession = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
@@ -490,7 +533,7 @@ type SessionStateArm = {
 };
 
 // @public
-type SessionStateBackend = {
+export type SessionStateBackend = {
     readonly name: "memory" | "postgres" | "platform";
     readonly durable: boolean;
     load(sessionId: string): Promise<Map<string, string>>;
@@ -511,7 +554,7 @@ export type SessionStateConformanceSuite = {
 export function sessionStateDdl(schema?: string): string[];
 
 // @public
-type SessionStateStore = {
+export type SessionStateStore = {
     viewFor(sessionId: string): SlotStore;
     hydrate(sessionId: string): Promise<void>;
     flush(sessionId: string): Promise<void>;
@@ -559,7 +602,7 @@ type SleepRecord = {
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @public
-type StateSyncSession = {
+export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
@@ -590,13 +633,16 @@ interface StepUsage {
 }
 
 // @public
-type StoredSessionEvent = {
+export type StoredSessionEvent = {
     index: number;
     json: string;
 };
 
 // @internal
 type SubagentRunner = (subagent: SubagentDef, options: DelegateOptions, parent: ToolCallDefaults) => Promise<DelegateResult>;
+
+// @public
+export const TELEPHONY_PATH = "/phone";
 
 // @internal
 type ToolCallDefaults = Omit<ExecuteToolCallOptions, "tool">;
@@ -612,10 +658,10 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
+export type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
 
 // @public
-type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
+export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { UPLOAD_CHUNK_BYTES }
 
@@ -624,7 +670,7 @@ export { UPLOAD_PART_BYTES }
 export { UPLOAD_TOKEN_RE }
 
 // @public
-type UploadBackend = {
+export type UploadBackend = {
     put(key: string, body: AsyncIterable<Uint8Array>, options?: {
         type?: string | undefined;
         limit?: number | undefined;
@@ -640,7 +686,16 @@ type UploadMeta = {
 };
 
 // @public
-type UploadStore = UploadReader & {
+type UploadPart = {
+    at: number;
+    bytes: number;
+};
+
+// @public
+export const UPLOADS_TABLE = "aai_workflow_uploads";
+
+// @public
+export type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
@@ -672,6 +727,9 @@ export interface UsageSnapshot {
 
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;
+
+// @public
+export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
 
 // @internal
 export const WORKFLOW_API_METHODS: readonly string[];

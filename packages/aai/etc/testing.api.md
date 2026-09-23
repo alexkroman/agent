@@ -7,109 +7,9 @@
 import { z } from 'zod';
 
 // @public
-type AgentConfig = z.infer<typeof AgentConfigSchema>;
-
-// @internal
-const AgentConfigSchema: z.ZodObject<{
-    name: z.ZodString;
-    description: z.ZodOptional<z.ZodString>;
-    systemPrompt: z.ZodDefault<z.ZodString>;
-    greeting: z.ZodDefault<z.ZodString>;
-    sttPrompt: z.ZodOptional<z.ZodString>;
-    maxSteps: z.ZodOptional<z.ZodNumber>;
-    temperature: z.ZodOptional<z.ZodNumber>;
-    maxOutputTokens: z.ZodOptional<z.ZodNumber>;
-    maxRetries: z.ZodOptional<z.ZodNumber>;
-    resetToolChoice: z.ZodOptional<z.ZodBoolean>;
-    usageLimits: z.ZodOptional<z.ZodObject<{
-        totalTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    toolChoice: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
-        auto: "auto";
-        none: "none";
-        required: "required";
-    }>, z.ZodObject<{
-        type: z.ZodLiteral<"tool">;
-        toolName: z.ZodString;
-    }, z.core.$strip>]>>;
-    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        calculate: "calculate";
-        fetch_json: "fetch_json";
-        get_page_design: "get_page_design";
-        recall: "recall";
-        remember: "remember";
-        run_code: "run_code";
-        think: "think";
-        visit_webpage: "visit_webpage";
-        web_search: "web_search";
-    }>>>>;
-    voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
-    silencePrompt: z.ZodOptional<z.ZodString>;
-    minBargeInWords: z.ZodOptional<z.ZodNumber>;
-    interruptionMinDurationMs: z.ZodOptional<z.ZodNumber>;
-    startSpeakingFloorMs: z.ZodOptional<z.ZodNumber>;
-    interruptionBackoffMs: z.ZodOptional<z.ZodNumber>;
-    deadAirCoverMs: z.ZodOptional<z.ZodNumber>;
-    errorPhrase: z.ZodOptional<z.ZodString>;
-    startFailurePhrase: z.ZodOptional<z.ZodString>;
-    resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
-    preemptiveGeneration: z.ZodOptional<z.ZodBoolean>;
-    userTurnLimit: z.ZodOptional<z.ZodObject<{
-        maxWords: z.ZodOptional<z.ZodNumber>;
-        maxDurationMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    turnDetection: z.ZodOptional<z.ZodString>;
-    stt: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    s2s: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    text: z.ZodOptional<z.ZodLiteral<true>>;
-    mode: z.ZodOptional<z.ZodEnum<{
-        pipeline: "pipeline";
-        s2s: "s2s";
-        text: "text";
-    }>>;
-    requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
-    mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-        url: z.ZodURL;
-        tokenEnv: z.ZodOptional<z.ZodString>;
-        pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
-    }, z.core.$strict>>>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
-    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        telnyx: "telnyx";
-        twilio: "twilio";
-    }>>>]>>;
-}, z.core.$strip>;
-
-// @public
-type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
-    systemPrompt?: AgentSystemPrompt;
-} & {
-    [K in HostOnlyAgentField]?: unknown;
-};
-
-// @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
-// @public
+// @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -129,7 +29,17 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+
+// @public
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
 export function commandedBuiltins(config: {
@@ -164,7 +74,7 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
@@ -176,7 +86,32 @@ export function deployedAgent<D extends ToolBearingAgent & {
     readonly systemPrompt: AgentSystemPrompt;
 }>(authored: D, project: ProjectFiles): D;
 
-// @public
+// @public @sealed
+export interface DeployedConfig {
+    readonly builtinTools?: readonly BuiltinTool[] | undefined;
+    readonly llm?: DeployedStage | undefined;
+    readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>> | undefined;
+    readonly mode: "pipeline" | "s2s" | "text";
+    readonly name: string;
+    readonly requiredEnv?: readonly string[] | undefined;
+    readonly s2s?: DeployedStage | undefined;
+    readonly stt?: DeployedStage | undefined;
+    readonly systemPrompt: string;
+    readonly text?: true | undefined;
+    readonly tts?: DeployedStage | undefined;
+    readonly turnDetection?: string | undefined;
+    readonly usageLimits?: {
+        readonly totalTokens?: number | undefined;
+    } | undefined;
+}
+
+// @public @sealed
+export interface DeployedStage {
+    readonly kind: string;
+    readonly options?: Readonly<Record<string, unknown>> | undefined;
+}
+
+// @public @sealed
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -195,7 +130,7 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
     instruction: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
-// @public
+// @public @sealed
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
@@ -208,7 +143,12 @@ export function eventsOf<E extends {
 }>[];
 
 // @public
-export function expectDeployable(def: AgentConfigSource): AgentConfig;
+export function expectDeployable<const D extends {
+    readonly name: unknown;
+    readonly stt?: unknown;
+    readonly llm?: unknown;
+    readonly tts?: unknown;
+}>(def: D): DeployedConfig;
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
@@ -217,7 +157,10 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
-export function expectPromptBuiltinsDeclared(def: Pick<AgentConfigSource, "systemPrompt" | "builtinTools">): BuiltinTool[];
+export function expectPromptBuiltinsDeclared(def: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly builtinTools?: readonly BuiltinTool[] | undefined;
+}): BuiltinTool[];
 
 // @public
 export function expectToolOk<T>(result: unknown): T;
@@ -245,13 +188,13 @@ type GenerateObjectResult<T> = {
 type GenerateOptions = {
     prompt: string;
     system?: string;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     schema?: StandardSchemaV1 | Record<string, unknown>;
     temperature?: number;
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -259,12 +202,6 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
-
-// @public
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
-
-// @public
-type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -291,6 +228,9 @@ type LlmDescriptorOptions = {
 type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
+
+// @public
+type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
 type Message = {
@@ -363,6 +303,11 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 } | {
     status: "cancelled";
 });
+
+// @public
+export function runTool<T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
 
 // @public
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
@@ -738,14 +683,14 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     description?: string;
     expectedOutput?: string;
     guardrail?: SubagentGuardrail;
-    llm?: LlmProvider | string;
+    llm?: LlmSpec;
     maxRetries?: "a subagent's guardrail budget is `maxRevisions` (was `maxRetries`); a subagent takes no provider-retry setting";
     maxRevisions?: number;
     maxSteps?: number;
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -779,7 +724,7 @@ type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -787,7 +732,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -867,6 +812,9 @@ export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputS
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {

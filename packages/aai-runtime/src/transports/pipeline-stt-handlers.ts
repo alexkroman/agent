@@ -12,9 +12,9 @@
  * construction.
  */
 
-import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { SttTurnMeta } from "../providers/openers.ts";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import { createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
 import type { ManualTurn } from "./pipeline-manual-turn.ts";
