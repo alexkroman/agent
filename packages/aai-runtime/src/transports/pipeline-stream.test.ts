@@ -3,7 +3,11 @@
 // `streamText` specs moved to pipeline-llm-stream.test.ts with the code; the
 // turn-level behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
-import { PIPELINE_FLUSH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import {
+  PIPELINE_FLUSH_TIMEOUT_MS,
+  type TtsEvents,
+  type TtsSession,
+} from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
@@ -170,16 +174,18 @@ describe("flushTtsAndWait", () => {
   /** A TTS session whose `done` fires (or never fires) on demand. */
   function fakeTts(opts: { emitDone: boolean }) {
     const calls: string[] = [];
-    let doneFn: (() => void) | undefined;
-    const tts = {
+    let doneFn: TtsEvents["done"] | undefined;
+    const tts: TtsSession = {
       sendText: () => undefined,
       flush: () => {
         calls.push("flush");
         if (opts.emitDone) doneFn?.();
       },
-      cancel: () => calls.push("cancel"),
-      on: (event: string, fn: () => void) => {
-        if (event === "done") doneFn = fn;
+      cancel: () => {
+        calls.push("cancel");
+      },
+      on: (event, fn) => {
+        if (event === "done") doneFn = fn as TtsEvents["done"];
         return () => undefined;
       },
       close: async () => undefined,
@@ -192,7 +198,7 @@ describe("flushTtsAndWait", () => {
     const emitError = vi.fn();
 
     await flushTtsAndWait({
-      tts: tts as never,
+      tts,
       signal: new AbortController().signal,
       log: silentLogger,
       sid: "s1",
@@ -215,7 +221,7 @@ describe("flushTtsAndWait", () => {
       const emitError = vi.fn();
 
       const pending = flushTtsAndWait({
-        tts: tts as never,
+        tts,
         signal: new AbortController().signal,
         log: silentLogger,
         sid: "s1",
@@ -248,7 +254,7 @@ describe("flushTtsAndWait", () => {
       const controller = new AbortController();
 
       const pending = flushTtsAndWait({
-        tts: tts as never,
+        tts,
         signal: controller.signal,
         log: silentLogger,
         sid: "s1",

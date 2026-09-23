@@ -58,9 +58,8 @@ import type { TransportEventBody } from "./transports/types.ts";
  * string, so a `doStream` wrapper written against the union has to satisfy V2,
  * V3 and V4 call options at once and satisfies none of them. `Extract` on the
  * discriminant the fake declares (`specificationVersion: "v3"`) is what makes
- * the override type-check — and it is the reason this is not the
- * `as unknown as` the two existing wrappers here reach for (`instrumentLlm`,
- * `llmCalls`), which the escape-hatch ratchet counts.
+ * the override type-check without an `as unknown as`, which the escape-hatch
+ * ratchet counts; `instrumentLlm` in the pipeline fuzz narrows the same way.
  */
 type StreamingModel = Extract<LanguageModel, { specificationVersion: "v3" }>;
 

@@ -32,8 +32,9 @@ export function spoken(tts: { last: () => { textChunks: string[] } | undefined }
 /**
  * The recorded calls of a {@link createFakeLanguageModel} passed through
  * `makeOpts`. `PipelineTransportOptions.llm` is the plain `LanguageModel`
- * type, which drops the fake's `calls` array — recovering it needs a cast, so
- * keep it at this one seam; the escape-hatch ratchet counts every occurrence.
+ * type, which drops the fake's `calls` array — recovered here by narrowing
+ * rather than a cast, so a spec that handed in some other model fails loudly
+ * instead of reading `undefined` as an empty call log.
  */
 export function llmCalls(opts: PipelineTransportOptions): {
   calls: Record<string, unknown>[];
@@ -43,7 +44,11 @@ export function llmCalls(opts: PipelineTransportOptions): {
   // `toolChoice` or `temperature` reads a key that narrower type does not have —
   // which would have meant a SECOND cast at that spec, which is exactly what
   // this one seam exists to stop.
-  return opts.llm as unknown as { calls: Record<string, unknown>[] };
+  const llm = opts.llm;
+  if (typeof llm === "string" || !("calls" in llm) || !Array.isArray(llm.calls)) {
+    throw new Error("llmCalls: opts.llm is not a createFakeLanguageModel fake");
+  }
+  return { calls: llm.calls };
 }
 
 export function makeOpts(
@@ -102,8 +107,9 @@ export function inFlightReplyScript(): ScriptedPart[] {
 }
 
 export function firstCallArg<T>(fn: unknown): T {
-  // biome-ignore lint/style/noNonNullAssertion: caller asserts the spy was invoked
-  return (fn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as T;
+  const first = (fn as ReturnType<typeof vi.fn>).mock.calls[0];
+  if (first === undefined) throw new Error("firstCallArg: the spy was never invoked");
+  return first[0] as T;
 }
 
 export const noopToolSchema = {
