@@ -40,6 +40,7 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import { type PipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
@@ -78,7 +79,7 @@ export function speakFixedLine(
   deps.callbacks.report({
     type: "agent-transcript.committed",
     text: line.text,
-    ...(line.recovery === undefined ? {} : { recovery: line.recovery }),
+    ...omitUndefined({ recovery: line.recovery }),
   });
   deps.sendTtsText(line.text, { publishTranscript: false });
 }
