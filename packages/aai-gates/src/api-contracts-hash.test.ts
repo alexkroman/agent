@@ -241,6 +241,15 @@ describe("G5 — presentation is not contract", () => {
     expect(b).toBe(a);
   });
 
+  test("tagging a declaration `@sealed` does not move it", () => {
+    // The compat probe reads the tag (a sealed type is probed new-to-old
+    // only), so the tag is free to add — it changes the question a later
+    // change is put to, never the hash of the change that adds it.
+    const a = normalized(`// @public\n${decl}`);
+    expect(normalized(`// @public @sealed\n${decl}`)).toBe(a);
+    expect(normalized(`/**\n * A handle.\n *\n * @sealed\n */\n${decl}`)).toBe(a);
+  });
+
   test("a string literal type longer than 80 characters reads as `string`", () => {
     const long = (text: string) => `// @public\nexport type Prompt = "${text}";`;
     expect(normalized(long("a".repeat(90)))).toBe(normalized(long("b".repeat(95))));

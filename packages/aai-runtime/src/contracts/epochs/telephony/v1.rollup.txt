@@ -1,7 +1,7 @@
 import type { ClientSink } from '@alexkroman1/aai/protocol';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 
 // @public

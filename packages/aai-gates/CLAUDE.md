@@ -100,18 +100,20 @@ template.
 
 ## The capability-contract gate is specced by BEHAVIOUR, in pairs
 
-Four specs hold `scripts/api-contracts.mjs`. `api-contracts-gate.test.ts` reads
+Five specs hold `scripts/api-contracts.mjs`. `api-contracts-gate.test.ts` reads
 the contract tree as text and re-derives what the script believes (including
-each current epoch's pinned rollup sha, via `crypto.subtle`). The other three
+each current epoch's pinned rollup sha, via `crypto.subtle`). The other four
 import the gate's PURE modules as real values — the one exception to "never
 import the script you guard", taken for the reason `guard-invariants-scanner-
 rules.test.ts` takes it: the subject is a function from text to text, and
 scraping it would test the scrape. `api-contracts-hash.test.ts` holds the hash
 normalizations, `api-contracts-compat.test.ts` the compatibility probe (a real
 TypeScript program over two in-memory rollups; it reads lib files and writes
-nothing), and `api-contracts-epochs.test.ts` the revision/one-per-branch
-arithmetic and the one-owner baseline. Every one is written in PAIRS: each
-change the gate lets through beside the neighbouring break it must still catch,
+nothing), `api-contracts-compat-rewrite.test.ts` what the probe makes both
+sides agree on first (shared brands, `@sealed`, misuse literals), and
+`api-contracts-epochs.test.ts` the revision/one-per-branch arithmetic and the
+one-owner baseline. Every one is written in PAIRS: each change the gate lets
+through beside the neighbouring break it must still catch,
 because an over-eager normalization or probe ships a breaking change under a
 checkmark. What reads files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is
 kept thin over those pure modules and has NO spec here — a unit spec may not

@@ -410,11 +410,12 @@ and the new one as two modules plus a generated probe in the OLD module's
 scope. Per name the epoch exported: it must still be exported; a TYPE must be
 MUTUALLY assignable (old to new and new to old, under the old declaration's own
 type parameters — an author both builds these and receives them, and the rollup
-does not say which); a VALUE must be assignable new-to-old (every old call still
-type-checks; a const's literal values are widened first, matching the hash). It
-runs under `strict` + `exactOptionalPropertyTypes`, the stricter of the settings
-a consumer might use. Proven, `--update` records revision `r+1` of the SAME
-epoch with an automatic reason (`additive (checked): +Foo`) — the epoch number
+does not say which — unless it is tagged `@sealed`, below); a VALUE must be
+assignable new-to-old (every old call still type-checks; a const's literal
+values are widened first, matching the hash). It runs under `strict` +
+`exactOptionalPropertyTypes`, the stricter of the settings a consumer might
+use. Proven, `--update` records revision `r+1` of the SAME epoch with an
+automatic reason (`additive (checked): +Foo`) — the epoch number
 and its rollup do not move, and every revision is proven against the epoch's
 ORIGINAL rollup, so a chain of compatible steps cannot walk away from it.
 `--bump` REFUSES a change the probe proved compatible — it would mint an epoch
@@ -443,6 +444,62 @@ each probed pair and reports every such position by path; the verdict is
 found a break", since a return loosened to `any` may break nobody. An `any` on
 both sides is unchanged and passes.
 
+**Three things are made to AGREE before either side is compiled**
+(`scripts/_api-contracts-compat-rewrite.mjs`), each because two separately
+compiled modules disagree about something a consumer's program has once:
+
+- **A same-named `unique symbol` is ONE symbol.** `declare const runtimeBrand:
+  unique symbol` was two symbols, so every branded type (`Runtime`,
+  `SessionAuth`, `BrowserSession`) was unrelated to its own twin and even an
+  added OPTIONAL member probed as a break ("Property '[sessionAuthBrand]' is
+  missing"). Both sides now import each brand the two share by name from one
+  generated module. A RENAMED brand is two names and still a break, and so is a
+  removed brand member.
+- **`@sealed` means "an author only RECEIVES this"**, and a sealed type is
+  probed like a value: new-to-old only, so gaining a required member is a
+  revision and losing one is still a break (the one-sided-`any` rule still
+  applies). Every OTHER probe sees the sealed type unchanged — they compare
+  against a masked copy of the new rollup where each sealed declaration aliases
+  the old one — because a position that takes it back
+  (`connectSession(runtime: Runtime)`) is holding the value the SDK handed over,
+  which is the new one; without the mask, the handle's own change failed every
+  function accepting it. The tag is read off the rollup, where API Extractor
+  writes the TSDoc modifier onto the release-tag line (`// @public @sealed`,
+  from `@sealed` in the declaration's doc comment in source), on EITHER side —
+  adding the tag is the claim, and it shows in the `etc/*.api.md` diff. The hash
+  strips comments, so tagging moves no capability (a hash spec pins that).
+  **Tag** what only the SDK constructs and an author holds, reads or passes
+  back: a branded handle (`Runtime`, `SessionAuth`, `BrowserSession`), a result
+  or `ctx` object the SDK builds. **Never tag** anything an author constructs,
+  spreads, returns, passes IN as their own value or implements — config and
+  options objects, a `ToolDef`, a provider an author may write, a callback's
+  parameter they must satisfy: there a new required member IS the break, and the
+  tag would ship it as a revision.
+- **A misuse-message literal reads as one marker type.** The hash reads a
+  string literal type over 80 characters as `string` (`isMessageLiteral` in
+  `_api-contracts-hash.mjs`), but the probe compared the literals, so rewording
+  one of `agent-params.ts`'s misuse diagnostics was a revision to the hash and a
+  break to the probe. Both rollups now read such a literal — and a TEMPLATE
+  literal type with that much literal text, the `${K}`-interpolated messages —
+  as `__AaiMisuse`, a `unique symbol` type shared by both. Not `string`, which
+  would hide a field that used to accept any string becoming FORBIDDEN. A
+  template misuse type still moves the hash (the hash rule is unchanged); the
+  probe is what now lets it land as a revision. `const` literals are skipped,
+  as the hash skips them.
+
+**Every current epoch's rollup must probe compatible with ITSELF**, checked on
+every `check:api-contracts` run (`scripts/_api-contracts-staleness.mjs`). A
+rollup imports its sibling packages by specifier, resolved to their CURRENT
+`dist`, so when `SessionEvent` moved off `@alexkroman1/aai/protocol` five
+`aai-runtime` rollups (`runtime@5`, `server@5`, `telephony@1`,
+`eval-simulate@1`, `eval-assert@1`) stopped compiling with no change of their
+own — and nothing noticed, because the hash comes from today's report. The first
+moved hash in any of them would have been probed against a baseline full of
+errors. The remedy is a RE-PIN, which is how those five were fixed: edit the
+rollup as little as compiling takes (the import's source, never a declaration)
+and set `rollup` in its `v<N>.json` to the new text's sha256 (the file minus its
+trailing newline). The capability `sha256` does not move. It costs ~5s per run.
+
 **The checker is TypeScript 6, not the 7 the repo builds with.** TS 7 ships no
 in-process compiler API — `typescript`'s root export is `lib/version.cjs`, and
 `typescript/unstable/*` drives the native binary as a subprocess, which is
@@ -459,8 +516,9 @@ every retained epoch's frozen example.
 `L & Literal<L>` methods above; generic overloads are related with their type
 parameters erased, as TypeScript relates overloads; an `any` inside a union or
 an unpaired position can still hide; a type from ANOTHER package is the same
-current type on both sides (its own package's capability reports it); and
-behaviour is never checked. The safe-direction miss: a CHANGED generic
+current type on both sides (its own package's capability reports it); a `@sealed`
+tag is TRUSTED (a type an author does build, tagged anyway, lands a break as a
+revision); and behaviour is never checked. The safe-direction miss: a CHANGED generic
 conditional or `as`-remapped type is reported incompatible even when it is not,
 because two separate declarations of one are unrelated to the checker (an
 UNCHANGED one passes by closure identity). `packages/aai-gates/src/

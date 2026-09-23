@@ -16,9 +16,10 @@
  *   new and new to old, under the old declaration's own type parameters. An
  *   author both BUILDS these (config objects, test fakes) and RECEIVES them
  *   (`ctx`, results), and the rollup does not say which, so both directions
- *   are required. Adding an optional member passes both; a required member, a
- *   widened or narrowed union, a changed member type, a removed member, or a
- *   stricter constraint fails one;
+ *   are required (a `@sealed` one is probed like a value — below). Adding an
+ *   optional member passes both; a required member, a widened or narrowed
+ *   union, a changed member type, a removed member, or a stricter constraint
+ *   fails one;
  * - **a value** (function, const, class constructor): NEW assignable to OLD —
  *   everything a caller wrote against the old signature still type-checks.
  *   A widened parameter or a narrowed return passes; an added required
@@ -83,6 +84,12 @@
  * arguments — its members are those arguments substituted into one
  * declaration, and walking them reports the `any`s lib wrote.
  *
+ * **Both rollups are rewritten to AGREE first** (`_api-contracts-compat-rewrite.mjs`):
+ * a same-named `unique symbol` brand is one shared symbol, a long misuse
+ * message literal is one marker type, and a `@sealed` type is probed
+ * new-to-old only (`_api-contracts-compat-probes.mjs`) while every other probe
+ * reads it through a MASKED new module in which it aliases the old one.
+ *
  * **Which TypeScript.** The repo builds with `typescript@7`, which ships no
  * in-process compiler API: its root export is `lib/version.cjs`, and the
  * `typescript/unstable/sync` client it does ship drives the native `tsgo`
@@ -125,6 +132,13 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { oneSidedAny, probedPairs } from "./_api-contracts-compat-any.mjs";
 import { methodsAsProperties } from "./_api-contracts-compat-methods.mjs";
+import { agreements, CTOR, probeFor, WIDEN } from "./_api-contracts-compat-probes.mjs";
+import {
+  rewriteForProbe,
+  SHARED_MODULE,
+  sealedAlias,
+  sharedModule,
+} from "./_api-contracts-compat-rewrite.mjs";
 import { referencedNames } from "./_api-contracts-hash.mjs";
 import { compareNames, declarationNames } from "./_api-surface.mjs";
 
@@ -296,48 +310,12 @@ function closureOf(parsedBody) {
   };
 }
 
-const WIDEN =
-  "type __Widen<T> = T extends string ? string : T extends number ? number : " +
-  "T extends boolean ? boolean : T extends bigint ? bigint : " +
-  "T extends (...args: never) => unknown ? T : T extends object ? { [K in keyof T]: __Widen<T[K]> } : T;";
-
-/**
- * A class's constructor parameters as a FUNCTION type. TypeScript relates the
- * construct signatures of a class declaration bivariantly, like methods, so
- * `typeof Old = New` passes a narrowed constructor parameter; a function type
- * built from the same parameters is checked contravariantly. `infer` reads the
- * LAST overload only (see the header's blind spots).
- */
-const CTOR =
-  "type __Ctor<C> = C extends abstract new (...args: infer A) => unknown ? (...args: A) => void : never;";
-
-/** The probe for one exported name, as source text in the OLD module's scope. */
-function probeFor(entry, index) {
-  const lines = [];
-  const params = entry.typeParameters;
-  const list =
-    params === undefined ? "" : `<${params.map((p) => p.getText(entry.sourceFile)).join(", ")}>`;
-  const args = params === undefined ? "" : `<${params.map((p) => p.name.text).join(", ")}>`;
-  const { name } = entry;
-  if (entry.type || entry.klass) {
-    lines.push(
-      `export function __type${index}${list}(o: ${name}${args}, n: __N.${name}${args}): void {`,
-      `  const a: __N.${name}${args} = o; const b: ${name}${args} = n; void a; void b;`,
-      "}",
-    );
-  }
-  if (entry.value || entry.klass) {
-    const target = entry.isConst ? `__Widen<typeof ${name}>` : `typeof ${name}`;
-    lines.push(`export const __value${index}: ${target} = __N.${name};`);
-  }
-  if (entry.klass) {
-    lines.push(
-      `export function __ctor${index}(n: __Ctor<typeof __N.${name}>): void {`,
-      `  const o: __Ctor<typeof ${name}> = n; void o;`,
-      "}",
-    );
-  }
-  return lines.join("\n");
+/** A removed export, or a re-export whose source moved; `undefined` when neither. */
+function exportProblem(entry, next) {
+  if (next === undefined) return `${entry.name}: removed from the capability`;
+  if (entry.reExport === undefined && next.reExport === undefined) return;
+  if (next.reExport === entry.reExport) return;
+  return `${entry.name}: now ${next.reExport ?? "declared here"}, was ${entry.reExport ?? "declared here"}`;
 }
 
 /**
@@ -352,24 +330,30 @@ function planProbes(oldBody, newBody) {
   const newExports = exportsOf(after);
   const oldClosure = closureOf(before);
   const newClosure = closureOf(after);
+  const agreed = agreements(before, after);
   const problems = [];
   const probes = [];
+  const changed = (name) => oldClosure(name) !== newClosure(name);
   for (const entry of oldExports.values()) {
     const next = newExports.get(entry.name);
-    if (next === undefined) {
-      problems.push(`${entry.name}: removed from the capability`);
-    } else if (entry.reExport !== undefined || next.reExport !== undefined) {
-      if (next.reExport !== entry.reExport) {
-        problems.push(
-          `${entry.name}: now ${next.reExport ?? "declared here"}, was ${entry.reExport ?? "declared here"}`,
-        );
-      }
-    } else if (oldClosure(entry.name) !== newClosure(entry.name)) {
-      probes.push({ name: entry.name, text: probeFor(entry, probes.length) });
+    const problem = exportProblem(entry, next);
+    if (problem !== undefined) problems.push(problem);
+    else if (entry.reExport === undefined && changed(entry.name)) {
+      const sealed = agreed.sealed.has(entry.name) && (entry.type || entry.klass);
+      const options = sealed ? { sealed, target: `__N.${sealedAlias(entry.name)}` } : {};
+      probes.push({ name: entry.name, text: probeFor(entry, probes.length, options) });
     }
   }
+  // A masked UNEXPORTED sealed type is otherwise probed nowhere: every export
+  // reaching it now sees the old declaration.
+  for (const name of agreed.masked) {
+    if (oldExports.has(name) || !changed(name)) continue;
+    const entry = kindOf(name, before.declared.get(name), before.sourceFile);
+    const options = { sealed: true, target: `__N.${sealedAlias(name)}` };
+    probes.push({ name, text: probeFor(entry, probes.length, options) });
+  }
   const added = [...newExports.keys()].filter((name) => !oldExports.has(name)).sort(compareNames);
-  return { problems, probes, added };
+  return { problems, probes, added, agreed };
 }
 
 /** A compiler host over two virtual modules, reading everything else from disk (cached). */
@@ -403,7 +387,8 @@ function describeDiagnostic(diagnostic, probeDir) {
     .slice(0, 3)
     .join(" / ")
     .replaceAll(`import("${probeDir}/old")`, "old")
-    .replaceAll(`import("${probeDir}/new")`, "new");
+    .replaceAll(`import("${probeDir}/new")`, "new")
+    .replaceAll(`import("${probeDir}/masked")`, "new");
 }
 
 /** Which probe (or which side's rollup) a diagnostic belongs to. */
@@ -428,12 +413,18 @@ function locate(diagnostic, isOld, spans) {
 export function probeCompatibility({ oldBody, newBody, dir }) {
   const before = methodsAsProperties(oldBody);
   const after = methodsAsProperties(newBody);
-  const { problems, probes, added } = planProbes(before, after);
+  const { problems, probes, added, agreed } = planProbes(before, after);
   const probeDir = join(dir, ".api-contracts-probe");
   const oldPath = join(probeDir, "old.ts");
   const newPath = join(probeDir, "new.ts");
+  const maskedPath = join(probeDir, "masked.ts");
+  const { brands, sealed, masked } = agreed;
+  const exportSealed = [...sealed];
+  const maskedModule = masked.length > 0 ? "./masked.ts" : "./new.ts";
   const spans = [];
-  let oldText = `${asModule(before)}\n\nimport * as __N from "./new.ts";\n${WIDEN}\n${CTOR}\n`;
+  let oldText =
+    `${asModule(rewriteForProbe(before, { brands, exportSealed: masked }))}\n\n` +
+    `import * as __N from "./new.ts";\nimport * as __M from "${maskedModule}";\n${WIDEN}\n${CTOR}\n`;
   for (const probe of probes) {
     const start = oldText.length;
     oldText += `${probe.text}\n`;
@@ -441,14 +432,20 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
   }
   const virtual = new Map([
     [oldPath, oldText],
-    [newPath, asModule(after)],
+    [newPath, asModule(rewriteForProbe(after, { brands, exportSealed }))],
+    [join(probeDir, SHARED_MODULE), sharedModule(brands)],
   ]);
+  if (masked.length > 0) {
+    virtual.set(maskedPath, asModule(rewriteForProbe(after, { brands, mask: masked })));
+  }
   const program = checkerTs.createProgram({
     rootNames: [oldPath, newPath],
     options: OPTIONS,
     host: virtualHost(virtual, probeDir),
   });
-  for (const path of [oldPath, newPath]) {
+  // Identical sides (the gate's self-probe of every pinned rollup) would only
+  // repeat the old module's diagnostics, at the cost of checking it twice.
+  for (const path of oldBody === newBody ? [oldPath] : [oldPath, newPath]) {
     const file = program.getSourceFile(path);
     const diagnostics = [
       ...program.getSyntacticDiagnostics(file),
