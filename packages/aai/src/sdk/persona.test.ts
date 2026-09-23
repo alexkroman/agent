@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import { dialog } from "./dialog.ts";
-import { HANDOFF_TOOL_NAME, type PersonaDef, persona, personas } from "./persona.ts";
+import { HANDOFF_TOOL_NAME, type PersonaDef, type Personas, persona, personas } from "./persona.ts";
 import { createToolContext } from "./testing.ts";
 
 const lookupInvoice = tool({
@@ -70,7 +70,10 @@ describe("personas()", () => {
 
   it("refuses a target that is not on the roster", () => {
     const ctx = createToolContext();
-    expect(() => desk.handoff(ctx, "shipping")).toThrow(/no persona called "shipping"/);
+    // Widened to the default `Personas`: the typed roster refuses the name at compile time.
+    expect(() => (desk as Personas).handoff(ctx, "shipping")).toThrow(
+      /no persona called "shipping"/,
+    );
   });
 
   describe("refuses a roster that cannot route", () => {

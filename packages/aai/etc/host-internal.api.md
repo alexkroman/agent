@@ -37,17 +37,7 @@ const AgentConfigSchema: z.ZodObject<{
         type: z.ZodLiteral<"tool">;
         toolName: z.ZodString;
     }, z.core.$strip>]>>;
-    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        calculate: "calculate";
-        fetch_json: "fetch_json";
-        get_page_design: "get_page_design";
-        recall: "recall";
-        remember: "remember";
-        run_code: "run_code";
-        think: "think";
-        visit_webpage: "visit_webpage";
-        web_search: "web_search";
-    }>>>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -98,10 +88,7 @@ const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
-    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        telnyx: "telnyx";
-        twilio: "twilio";
-    }>>>]>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -118,7 +105,7 @@ type AgentInstructions = (ctx: AgentSessionContext) => string;
 // @internal
 export function agentInstructionsSection(instructions: string): string;
 
-// @public
+// @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -501,7 +488,7 @@ export function buildSystemPrompt(config: AgentConfig, options: {
 }): string;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
 
 // @public
 export type BuiltinToolOptions = {
@@ -521,6 +508,13 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     model?: string;
     voice?: string;
 }
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
@@ -621,7 +615,7 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
@@ -714,7 +708,7 @@ type GenerateOptions = {
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -1291,7 +1285,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -1322,7 +1316,7 @@ type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1330,7 +1324,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -1404,6 +1398,9 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
 };
+
+// @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {

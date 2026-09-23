@@ -40,7 +40,7 @@ export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGu
     telephony?: TelephonyAccess;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+    tools: ToolSet;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -72,7 +72,7 @@ export interface AgentObservation {
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
 
-// @public
+// @public @sealed
 export interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -156,7 +156,14 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+export interface ClientEventMap {
+}
+
+// @public
+export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -209,14 +216,14 @@ export interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 export interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
     revisions: number;
 }
 
-// @public
+// @public @sealed
 export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
@@ -267,7 +274,7 @@ export interface DialogOptions {
     durable?: boolean;
 }
 
-// @public
+// @public @sealed
 export interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -318,7 +325,7 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<Too
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
-// @public
+// @public @sealed
 export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
@@ -385,7 +392,7 @@ export type GenerateOptions = {
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 export type GenerateResult = {
     text: string;
     object?: unknown;
@@ -402,7 +409,7 @@ export interface HandoffOptions {
     note?: string;
 }
 
-// @public
+// @public @sealed
 export interface HandoffResult {
     readonly from: string;
     readonly handoff: true;
@@ -463,12 +470,6 @@ export class KeyedLockTimeoutError extends Error {
 
 // @public
 type KnownGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast";
-
-// @public
-export type KnownTurnDetectionMode = "auto" | "manual";
-
-// @public
-export type KnownVoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet";
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -591,39 +592,39 @@ export function omitUndefined<T extends object>(obj: T): {
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
-export function persona(def: PersonaDef): PersonaDef;
+export function persona<const N extends string>(def: PersonaDef<N>): PersonaDef<N>;
 
 // @public
-export interface PersonaDef {
+export interface PersonaDef<N extends string = string> {
     description: string;
-    name: string;
+    name: N;
     systemPrompt: string;
     temperature?: number;
     toolChoice?: ToolChoice;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
-// @public
-export interface PersonaPosition {
+// @public @sealed
+export interface PersonaPosition<N extends string = string> {
     readonly from?: string;
     readonly note?: string;
-    readonly persona: PersonaDef;
+    readonly persona: PersonaDef<N>;
     readonly pinnedBy?: {
         readonly dialog: string;
         readonly state: string;
     };
 }
 
-// @public
-export interface Personas {
-    active(ctx: SlotHolder): PersonaDef;
-    handoff(ctx: SlotHolder, to: PersonaDef | string, options?: HandoffOptions): HandoffResult;
-    readonly list: readonly PersonaDef[];
-    position(ctx: SlotHolder): PersonaPosition;
+// @public @sealed
+export interface Personas<N extends string = string> {
+    active(ctx: SlotHolder): PersonaDef<N>;
+    handoff(ctx: SlotHolder, to: PersonaDef<N> | N, options?: HandoffOptions): HandoffResult;
+    readonly list: readonly PersonaDef<N>[];
+    position(ctx: SlotHolder): PersonaPosition<N>;
 }
 
 // @public
-export function personas(list: readonly PersonaDef[]): Personas;
+export function personas<const N extends string>(list: readonly PersonaDef<N>[]): Personas<N>;
 
 // @public
 export function pickOne<T>(items: readonly T[], random?: RandomSource): T | undefined;
@@ -671,7 +672,7 @@ export interface PipelineVoiceTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public
+// @public @sealed
 export interface Procedure<M extends AnyStateMachine> {
     readonly machine: M;
     run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;
@@ -777,7 +778,7 @@ export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
     [T in K]: Omit<SessionEventMap[T], "meta">;
 }[K];
 
-// @public
+// @public @sealed
 export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
@@ -1018,7 +1019,7 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 // @public
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
-// @public
+// @public @sealed
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     create(): T;
     readonly durable: boolean;
@@ -1028,6 +1029,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     projection<P>(project: (value: DeepReadonly<T>) => P): StateProjection<P>;
     reset(ctx: SlotHolder): DeepReadonly<T>;
     set(ctx: SlotHolder, value: T): DeepReadonly<T>;
+    snapshot(ctx: SlotHolder): T;
     tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R> & RejectThenable<R>): ToolDef<P, R>;
@@ -1227,7 +1229,7 @@ export interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -1249,7 +1251,7 @@ type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEF
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
 
 // @public
-export type TelephonyCarrier = "twilio" | "telnyx";
+export type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 
 // @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & {
@@ -1287,7 +1289,7 @@ export type ToolCompletionMessage = {
 // @public
 export type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 export type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -1295,7 +1297,7 @@ export type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -1356,6 +1358,9 @@ export type ToolMessagesInput = {
 };
 
 // @public
+export type ToolSet = Readonly<Record<string, ToolDef>>;
+
+// @public
 export type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1368,7 +1373,7 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+export type TurnDetectionMode = "auto" | "manual" | (string & {});
 
 // @public
 export interface TypedDelegateResult<T> extends DelegateResult {
@@ -1393,10 +1398,10 @@ export interface UserTurnLimit {
 }
 
 // @public
-export const VOICE_PRESETS: Readonly<Record<KnownVoicePresetName, string>>;
+export const VOICE_PRESETS: Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>;
 
 // @public
-export type VoicePresetName = KnownVoicePresetName | (string & {});
+export type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet" | (string & {});
 
 // @public
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

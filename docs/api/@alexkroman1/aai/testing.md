@@ -570,16 +570,7 @@ console.log(calls.map((e) => e.toolName));
 
 ```ts
 function expectDeployable(def: AgentConfigSource): {
-  builtinTools?: readonly (
-     | "web_search"
-     | "visit_webpage"
-     | "get_page_design"
-     | "fetch_json"
-     | "run_code"
-     | "think"
-     | "remember"
-     | "recall"
-    | "calculate")[];
+  builtinTools?: readonly string[];
   deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
@@ -621,7 +612,7 @@ function expectDeployable(def: AgentConfigSource): {
   };
   sttPrompt?: string;
   systemPrompt: string;
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  telephony?: boolean | readonly string[];
   temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
@@ -697,16 +688,7 @@ The agent under test — an `agent()` definition, or the raw
 
 ```ts
 {
-  builtinTools?: readonly (
-     | "web_search"
-     | "visit_webpage"
-     | "get_page_design"
-     | "fetch_json"
-     | "run_code"
-     | "think"
-     | "remember"
-     | "recall"
-    | "calculate")[];
+  builtinTools?: readonly string[];
   deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
@@ -748,7 +730,7 @@ The agent under test — an `agent()` definition, or the raw
   };
   sttPrompt?: string;
   systemPrompt: string;
-  telephony?: boolean | readonly ("twilio" | "telnyx")[];
+  telephony?: boolean | readonly string[];
   temperature?: number;
   text?: true;
   toolChoice?:   | "auto"
@@ -779,16 +761,7 @@ The config a deploy carries, mode derived and defaults injected.
 ##### builtinTools?
 
 ```ts
-optional builtinTools?: readonly (
-  | "web_search"
-  | "visit_webpage"
-  | "get_page_design"
-  | "fetch_json"
-  | "run_code"
-  | "think"
-  | "remember"
-  | "recall"
-  | "calculate")[];
+optional builtinTools?: readonly string[];
 ```
 
 ##### deadAirCoverMs?
@@ -975,7 +948,7 @@ systemPrompt: string;
 ##### telephony?
 
 ```ts
-optional telephony?: boolean | readonly ("twilio" | "telnyx")[];
+optional telephony?: boolean | readonly string[];
 ```
 
 ##### temperature?

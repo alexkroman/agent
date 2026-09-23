@@ -18,7 +18,7 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 423 names
+- [Agent authoring](#agent-authoring) — 424 names
 - [Browser client](#browser-client) — 138 names
 - [Testing and evals](#testing-and-evals) — 214 names
 - [Hosting and tooling](#hosting-and-tooling) — 254 names
@@ -71,6 +71,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ChannelSection` | interface | `@alexkroman1/aai/channels` | `aai:channels` | One block of a message: a titled chunk, optionally linked, with prose and bullets under it. |
 | `ClientConfigResponse` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | Parsed body of `GET /client-config`. |
 | `ClientConfigResponseSchema` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`) | `aai:workflow-api` | Body of `GET /client-config`. |
+| `ClientEventMap` | interface | `@alexkroman1/aai` | `aai:events` | The agent's OWN custom events — what `ctx.send(event, data)` pushes to the browser — keyed by event name, and EMPTY until the agent declares some. |
+| `ClientEventSender` | type | `@alexkroman1/aai` | `aai:events` | What `ctx.send` is: push one custom event to the connected browser client, typed by `ClientEventMap`. |
 | `CodingToolName` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | Every tool `createCodingTools` can build, by the name the model calls. |
 | `CodingToolsOptions` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | What `createCodingTools` takes. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/stt` | `aai:stt` | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
@@ -124,8 +126,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `KeyedLockTimeoutError` | class | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Thrown when an acquire deadline lapses before the key came free. |
 | `KnownGatewayModel` | type | `@alexkroman1/aai/llm` | `aai:llm` | An id the gateway advertised when this catalog was generated — the autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other string. |
 | `KnownLlmProvider` | type | `@alexkroman1/aai/llm` | `aai:llm` | The providers the runtime resolves with no registration — the autocomplete half of `LlmProviderName`. |
-| `KnownTurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | The turn-detection modes this release implements — the autocomplete half of `TurnDetectionMode`. |
-| `KnownVoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | One of the opt-in prompt presets THIS release ships — see `VOICE_PRESETS` for what each one says and what it costs. |
 | `LlmDescriptorOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | What an `LlmProvider` descriptor's `options` carry — the one shape `llm()` writes and the host resolver reads. |
 | `LlmProvider` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | Descriptor for an LLM provider. |
 | `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name — one of `KnownLlmProvider`, or any other string. |
@@ -222,7 +222,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TRANSCRIBE_UPLOAD_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Deadline for the upload leg. |
 | `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/step` | `aai:transcribe` | How much of a stored upload one outbound window carries. |
 | `TelephonyAccess` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about `WS /phone`. |
-| `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent. |
+| `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent — `"twilio"` or `"telnyx"`, the two this release ships a codec for, or any other string. |
 | `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run in a status nothing will change again. |
 | `TextAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Text-mode params: `text: true`, optionally an `llm`, and nothing else from the audio half of the agent shape. |
 | `ToolChoice` | type | `@alexkroman1/aai` | `aai:agent` | How the LLM should select tools. |
@@ -237,6 +237,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ToolMessageCondition` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | One test a tool call's ARGUMENTS must pass for the message carrying it to be eligible. |
 | `ToolMessages` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | A tool's messages in NORMALIZED form — what a `ToolSchema` carries and what the runtime reads. |
 | `ToolMessagesInput` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | What an author writes for `tool({ messages })` — every kind also accepts the shorthands, because the common declaration is one string. |
+| `ToolSet` | type | `@alexkroman1/aai` | `aai:tool` | A map of tools by the name the model calls them by — the shape every field that DECLARES a set of tools takes: `AgentDef.tools` (what `tools/` lowers to), … |
 | `ToolStartMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | Spoken as the tool call BEGINS. |
 | `TranscribeError` | class | `@alexkroman1/aai/step` | `aai:transcribe` | A failure from either endpoint, carrying what the caller needs to classify it. |
 | `TranscribeProgress` | type | `@alexkroman1/aai/step` | `aai:transcribe` | Where a submitted job has got to. |
@@ -245,7 +246,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TranscribeSyncOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `stepTranscribeSync` accepts. |
 | `Transcript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | A finished transcript, as `stepTranscribePoll` answers with one. |
 | `TtsProvider` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | Descriptor for a TTS provider. |
-| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — one of `KnownTurnDetectionMode`, or any other string. |
+| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — `"auto"` or `"manual"`, the two this release implements (see `PipelineVoiceTuning.turnDetection`), or any other string. |
 | `TypedDelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
 | `TypedSubagentDef` | interface | `@alexkroman1/aai` | `aai:subagent` | Define a subagent. |
 | `UnsupportedRecordingError` | class | `@alexkroman1/aai/step` | `aai:step` | A recording `parseWav` will not read. |
@@ -263,7 +264,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `UsageLimits` | interface | `@alexkroman1/aai` | `aai:agent` | The token budget a session may spend before the runtime stops it. |
 | `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `PipelineVoiceTuning.userTurnLimit`. |
 | `VOICE_PRESETS` | const | `@alexkroman1/aai` | `aai:agent` | The shipped text of every preset, keyed by the name `agent({ voicePresets })` takes. |
-| `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of `KnownVoicePresetName`, or any other string. |
+| `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of the opt-in prompt presets THIS release ships (see `VOICE_PRESETS` for what each one says and what it costs), or any other string. |
 | `WAV_HEADER_BYTES` | const | `@alexkroman1/aai/step` | `aai:step` | Bytes of WAV header `encodeWav` writes — `RIFF`, `fmt `, and `data`. |
 | `WaitForOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-wait options, for a wait that carries a DEADLINE. |
 | `WaitForSchemaOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | A wait that carries a schema and NO deadline — `ctx.waitFor(token, { schema })`. |

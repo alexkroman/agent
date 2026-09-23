@@ -95,6 +95,7 @@ export type GenerateOptions = {
  * `object` is declared as optional-and-`unknown` rather than omitted because
  * this is also what a PLAIN JSON Schema call returns: the host does produce an
  * object there, but nothing types it, so a caller must narrow before reading.
+ * @sealed
  */
 export type GenerateResult = {
   /** The generated text. For schema calls, the JSON-stringified object. */

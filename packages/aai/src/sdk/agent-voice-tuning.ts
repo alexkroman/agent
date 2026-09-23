@@ -206,34 +206,31 @@ export interface PipelineVoiceTuning {
 }
 
 /**
- * The turn-detection modes this release implements — the autocomplete half of
- * {@link TurnDetectionMode}. See {@link PipelineVoiceTuning.turnDetection}.
- *
- * @public
- */
-export type KnownTurnDetectionMode = "auto" | "manual";
-
-/**
- * A turn-detection mode — one of {@link KnownTurnDetectionMode}, or any other
+ * A turn-detection mode — `"auto"` or `"manual"`, the two this release
+ * implements (see {@link PipelineVoiceTuning.turnDetection}), or any other
  * string.
  *
  * OPEN so a mode a later release adds compiles against this one. The runtime
  * treats every value but `"manual"` as `"auto"`, and `aai build` / `aai dev`
  * warn about a value it does not know, rather than the type refusing it.
  *
+ * The known modes are written INLINE rather than as an exported closed
+ * `KnownTurnDetectionMode` half: inline they are only the autocomplete of an
+ * open type, so a mode added here is a compatible change, where a published
+ * closed union that grows is not assignable back to the one it grew from.
+ *
  * @public
  */
-export type TurnDetectionMode = KnownTurnDetectionMode | (string & {});
+export type TurnDetectionMode = "auto" | "manual" | (string & {});
 
 /**
- * {@link KnownTurnDetectionMode} as a runtime list, for the config warning.
+ * The modes this release implements, as a runtime list for the config warning.
+ * Deliberately CLOSED and internal — the published {@link TurnDetectionMode} is
+ * open, so nothing on the authoring surface names this set.
  *
  * @internal
  */
-export const KNOWN_TURN_DETECTION_MODES = [
-  "auto",
-  "manual",
-] as const satisfies readonly KnownTurnDetectionMode[];
+export const KNOWN_TURN_DETECTION_MODES = ["auto", "manual"] as const;
 
 /**
  * A cap on ONE user turn — see {@link PipelineVoiceTuning.userTurnLimit}.

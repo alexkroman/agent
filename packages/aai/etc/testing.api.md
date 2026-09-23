@@ -32,17 +32,7 @@ const AgentConfigSchema: z.ZodObject<{
         type: z.ZodLiteral<"tool">;
         toolName: z.ZodString;
     }, z.core.$strip>]>>;
-    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        calculate: "calculate";
-        fetch_json: "fetch_json";
-        get_page_design: "get_page_design";
-        recall: "recall";
-        remember: "remember";
-        run_code: "run_code";
-        think: "think";
-        visit_webpage: "visit_webpage";
-        web_search: "web_search";
-    }>>>>;
+    builtinTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     voicePresets: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     idleTimeoutMs: z.ZodOptional<z.ZodNumber>;
     silenceTimeoutMs: z.ZodOptional<z.ZodNumber>;
@@ -93,10 +83,7 @@ const AgentConfigSchema: z.ZodObject<{
         static: "static";
         voice: "voice";
     }>>;
-    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodEnum<{
-        telnyx: "telnyx";
-        twilio: "twilio";
-    }>>>]>>;
+    telephony: z.ZodOptional<z.ZodUnion<readonly [z.ZodBoolean, z.ZodReadonly<z.ZodArray<z.ZodString>>]>>;
 }, z.core.$strip>;
 
 // @public
@@ -109,7 +96,7 @@ type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
 // @public
 type AgentInstructions = (ctx: AgentSessionContext) => string;
 
-// @public
+// @public @sealed
 interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -129,7 +116,14 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
 export function commandedBuiltins(config: {
@@ -164,7 +158,7 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
@@ -176,7 +170,7 @@ export function deployedAgent<D extends ToolBearingAgent & {
     readonly systemPrompt: AgentSystemPrompt;
 }>(authored: D, project: ProjectFiles): D;
 
-// @public
+// @public @sealed
 interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
@@ -195,7 +189,7 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
     instruction: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
-// @public
+// @public @sealed
 interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
@@ -251,7 +245,7 @@ type GenerateOptions = {
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -745,7 +739,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -779,7 +773,7 @@ type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -787,7 +781,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -867,6 +861,9 @@ export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputS
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {

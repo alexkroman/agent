@@ -16,12 +16,11 @@ import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { Personas } from "./persona.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { ToolInputSchema } from "./schema.ts";
 import type { SubagentRoster } from "./subagent-roster.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
-// into this module's scope, and `AgentDef.tools` needs `ToolDef`.
-import type { ToolChoice, ToolDef } from "./tool-def.ts";
+// into this module's scope, and `AgentDef.tools` needs `ToolSet`.
+import type { ToolChoice, ToolSet } from "./tool-def.ts";
 // Imported as well as re-exported below, for the reason `PipelineVoiceTuning`
 // is: `AgentDef` extends it.
 import type { AgentVoicePresets } from "./voice-presets.ts";
@@ -61,7 +60,6 @@ export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
 export type {
-  KnownTurnDetectionMode,
   PipelineVoiceTuning,
   TurnDetectionMode,
   UserTurnLimit,
@@ -122,6 +120,7 @@ export type {
   ToolMessageCondition,
   ToolMessages,
   ToolMessagesInput,
+  ToolSet,
   ToolStartMessage,
 } from "./tool-def.ts";
 /**
@@ -132,7 +131,6 @@ export type {
  */
 export {
   type AgentVoicePresets,
-  type KnownVoicePresetName,
   VOICE_PRESETS,
   type VoicePresetName,
 } from "./voice-presets.ts";
@@ -286,7 +284,7 @@ export interface AgentDef
    * existed to keep a single un-annotated tool from dragging the agent's whole
    * state shape back to `unknown`, which is a problem a slot does not have.
    */
-  tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  tools: ToolSet;
   /**
    * Subagents the MODEL may hand a task to, published as one `delegate` tool.
    *

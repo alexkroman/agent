@@ -20,7 +20,14 @@ export const BASH_TIMEOUT_MAX_MS: number;
 export const BASH_TIMEOUT_MS: number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+
+// @public
+interface ClientEventMap {
+}
+
+// @public
+type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public (undocumented)
 export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
@@ -54,7 +61,7 @@ interface DelegateOptions {
     task: string;
 }
 
-// @public
+// @public @sealed
 interface DelegateResult extends SubagentAnswer {
     accepted: boolean;
     complaint?: string;
@@ -90,7 +97,7 @@ type GenerateOptions = {
     maxOutputTokens?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateResult = {
     text: string;
     object?: unknown;
@@ -237,7 +244,7 @@ interface SubagentDef extends Omit<ModelTuning, "maxRetries"> {
     name: string;
     schema?: StandardSchemaV1;
     systemPrompt: string;
-    tools?: Readonly<Record<string, ToolDef>>;
+    tools?: ToolSet;
 }
 
 // @public
@@ -259,7 +266,7 @@ type ToolCompletionMessage = {
 // @public
 type ToolConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
 
-// @public
+// @public @sealed
 type ToolContext = {
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
@@ -267,7 +274,7 @@ type ToolContext = {
     delegate: DelegateFn;
     messages: readonly Message[];
     sessionId: string;
-    send(event: string, data: unknown): void;
+    send: ClientEventSender;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -315,6 +322,9 @@ type ToolMessagesInput = {
     complete?: string | readonly (string | ToolCompletionMessage)[];
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
+
+// @public
+type ToolSet = Readonly<Record<string, ToolDef>>;
 
 // @public
 type ToolStartMessage = {

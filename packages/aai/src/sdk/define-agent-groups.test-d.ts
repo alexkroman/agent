@@ -19,9 +19,12 @@ import type { AgentGuardrail, GuardrailVerdict } from "./agent-guardrails.ts";
 import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { type AgentParams, agent } from "./define.ts";
+import { type PersonaDef, type Personas, persona, personas } from "./persona.ts";
 import type { S2sProvider } from "./providers.ts";
 import type { SessionEventContext } from "./session-events.ts";
-import type { AgentDef } from "./types.ts";
+import type { SubagentDef } from "./subagent.ts";
+import type { ToolSet } from "./tool-def.ts";
+import type { AgentDef, ToolContext } from "./types.ts";
 
 /**
  * The five model-tuning knobs, both guardrails and the `description` are on
@@ -145,3 +148,58 @@ test("AgentSessionContext and SessionEventContext are the same shape", () => {
   expectTypeOf<SessionEventContext>().toExtend<AgentSessionContext>();
   expectTypeOf<keyof AgentSessionContext>().toEqualTypeOf<keyof SessionEventContext>();
 });
+
+/**
+ * A roster knows its own names. `persona()` infers each `name` as a literal and
+ * `personas()` collects them, so a handoff to a desk that is not on the roster
+ * is a compile error in the tool body rather than a throw on a live call. The
+ * default parameter keeps a bare `Personas` annotation accepting any roster.
+ */
+test("persona names are inferred, and a mistyped handoff target does not compile", () => {
+  const triage = persona({ name: "triage", description: "d", systemPrompt: "p" });
+  const billing = persona({ name: "billing", description: "d", systemPrompt: "p" });
+  expectTypeOf(triage).toEqualTypeOf<PersonaDef<"triage">>();
+  const desk = personas([triage, billing]);
+  expectTypeOf(desk).toEqualTypeOf<Personas<"triage" | "billing">>();
+  const ctx = {} as ToolContext;
+  desk.handoff(ctx, "billing");
+  desk.handoff(ctx, billing);
+  // @ts-expect-error — "biling" is not on the roster.
+  desk.handoff(ctx, "biling");
+  // @ts-expect-error — nor is a persona declared for another roster.
+  desk.handoff(ctx, persona({ name: "sales", description: "d", systemPrompt: "p" }));
+  // Backward compatible: the default is `string`, and a typed roster fits it.
+  const loose: Personas = desk;
+  loose.handoff(ctx, "anyone");
+  expectTypeOf<PersonaDef>().toEqualTypeOf<PersonaDef<string>>();
+});
+
+/**
+ * `ClientEventMap` types `ctx.send` for the events an agent DECLARES, and only
+ * those: a declared name with the wrong payload fails, and an undeclared name
+ * still takes anything. The augmentation at the bottom of this file is the
+ * test's own event name.
+ */
+test("ctx.send is typed by ClientEventMap, per declared event", () => {
+  const ctx = {} as ToolContext;
+  ctx.send("typetest.progress", { done: 1, total: 2 });
+  // @ts-expect-error — a declared event's payload is checked.
+  ctx.send("typetest.progress", { done: "1", total: 2 });
+  // @ts-expect-error — including a missing field.
+  ctx.send("typetest.progress", { done: 1 });
+  ctx.send("anything.else", { whatever: true });
+  const name: string = "dynamic";
+  ctx.send(name, 42);
+});
+
+test("ToolSet is the one tool-map shape AgentDef, PersonaDef and SubagentDef share", () => {
+  expectTypeOf<AgentDef["tools"]>().toEqualTypeOf<ToolSet>();
+  expectTypeOf<NonNullable<PersonaDef["tools"]>>().toEqualTypeOf<ToolSet>();
+  expectTypeOf<NonNullable<SubagentDef["tools"]>>().toEqualTypeOf<ToolSet>();
+});
+
+declare module "./session-event-map.ts" {
+  interface ClientEventMap {
+    "typetest.progress": { done: number; total: number };
+  }
+}

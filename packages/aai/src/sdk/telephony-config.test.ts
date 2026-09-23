@@ -23,14 +23,15 @@ describe("TELEPHONY_CARRIERS", () => {
     expect(TELEPHONY_CARRIERS).toEqual(["twilio", "telnyx"]);
   });
 
-  test("is what the config schema validates a declaration against", () => {
-    // The list crosses the serialization boundary, so the schema is what stops
-    // a carrier this build ships no codec for from becoming a route that mounts
-    // and answers nothing.
+  test("the config schema accepts every shipped carrier, and an unknown one too", () => {
+    // The vocabulary is OPEN: a declaration naming a carrier a later SDK ships
+    // must still deploy on this one. The runtime drops a carrier it has no codec
+    // for (it mounts nothing) and `agentConfigWarnings` names it at build time.
     for (const carrier of TELEPHONY_CARRIERS) {
       expect(AgentConfigSchema.safeParse({ name: "A", telephony: [carrier] }).success).toBe(true);
     }
-    expect(AgentConfigSchema.safeParse({ name: "A", telephony: ["vonage"] }).success).toBe(false);
+    expect(AgentConfigSchema.safeParse({ name: "A", telephony: ["vonage"] }).success).toBe(true);
+    expect(AgentConfigSchema.safeParse({ name: "A", telephony: [""] }).success).toBe(false);
   });
 
   test.each([

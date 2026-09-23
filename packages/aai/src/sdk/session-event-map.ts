@@ -58,6 +58,64 @@ export type EventMapOf<U extends { type: string }> = { [E in U as E["type"]]: E 
 export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {}
 
 /**
+ * The agent's OWN custom events — what `ctx.send(event, data)` pushes to the
+ * browser — keyed by event name, and EMPTY until the agent declares some.
+ *
+ * An interface so an agent can augment it, exactly like
+ * {@link SessionEventMap}. Once a name is declared, `ctx.send` type-checks its
+ * payload: a misspelled field or a wrong type is a compile error in the tool
+ * that sends it, rather than a client handler that silently reads `undefined`.
+ * A name nobody declared still sends `unknown`, so declaring one event never
+ * obliges the agent to declare the rest.
+ *
+ * ```ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * declare module "@alexkroman1/aai" {
+ *   interface ClientEventMap {
+ *     "order.progress": { done: number; total: number };
+ *   }
+ * }
+ *
+ * export default tool({
+ *   description: "Ship the order",
+ *   inputSchema: z.object({}),
+ *   execute: (_args, ctx) => {
+ *     ctx.send("order.progress", { done: 1, total: 3 });
+ *     return { ok: true };
+ *   },
+ * });
+ * ```
+ *
+ * The payload is typed on the SENDING side only: on the wire it is still a
+ * `custom.emitted` frame whose `data` the schema admits as any JSON value.
+ *
+ * @public
+ */
+// biome-ignore lint/suspicious/noEmptyInterface: empty on purpose — the declaration authors augment.
+export interface ClientEventMap {}
+
+/**
+ * What `ctx.send` is: push one custom event to the connected browser client,
+ * typed by {@link ClientEventMap}.
+ *
+ * A name declared in the map must be sent with its declared payload; any other
+ * name takes `unknown`. ONE conditional signature rather than a typed overload
+ * in front of a `(string, unknown)` fallback, deliberately: with overloads, a
+ * DECLARED name sent with the wrong payload fails the first signature and
+ * silently resolves against the fallback, so the declaration would type
+ * nothing. Any `(event: string, data: unknown) => void` is one of these, which
+ * is how the runtime and the test doubles implement it.
+ *
+ * @public
+ */
+export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(
+  event: K,
+  data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown,
+) => void;
+
+/**
  * Every event name a handler map, a dialog's `@` keys or a spec may name.
  *
  * Name it to write a list of event names down in your own code:

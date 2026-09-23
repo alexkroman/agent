@@ -34,6 +34,8 @@
  */
 
 export {
+  type ClientEventMap,
+  type ClientEventSender,
   type EventMapOf,
   SESSION_SOURCED_EVENT_TYPES,
   type SessionEvent,

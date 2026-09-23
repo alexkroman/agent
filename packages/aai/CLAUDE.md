@@ -93,12 +93,21 @@ joining that capability — never a re-export from both. A contracted type may n
 name an experimental one (it would be an UNOWNED declaration, which the gate
 refuses), so an experimental feature is reachable only by importing it.
 
-**Open vocabularies are `Known… | (string & {})`** — `AssemblyAIGatewayModel`,
-`LlmProviderName`, `VoicePresetName`, `TurnDetectionMode`, like
-`AssemblyAITtsVoice` before them. The known half autocompletes; an unknown value
-compiles, is accepted by `AgentConfigSchema`, and is WARNED about by
-`agentConfigWarnings` at build. A regenerated known list is then a compatible
-change the probe proves (a revision, not an epoch).
+**Open vocabularies are known literals `| (string & {})`, written INLINE** —
+`VoicePresetName`, `TurnDetectionMode`, `BuiltinTool`, `TelephonyCarrier`. The
+literals autocomplete; an unknown value compiles, is accepted by
+`AgentConfigSchema`, and is WARNED about by `agentConfigWarnings` at build.
+**Only the inline form makes a changed list compatible.** This section used to
+say a regenerated known list was a revision whatever the spelling, and it was
+false for `Known… | (string & {})`: the exported CLOSED `Known…` half is a type
+of its own, and a union that grows is not assignable back to the one it grew
+from, so every added name was a break of that export. Inline, `"a" | "b" |
+(string & {})` and `"a" | "b" | "c" | (string & {})` are the same set and the
+probe proves the change mutually assignable. So no closed half is exported: a
+reader that must be TOTAL over the shipped names derives it privately
+(`keyof typeof VOICE_PRESETS`, `(typeof TELEPHONY_CARRIERS)[number]`) or reads
+the `@internal` runtime list. (`AssemblyAIGatewayModel` and `LlmProviderName`
+still export a `Known…` half; they are owned with the providers.)
 
 **A published constant is typed as its primitive**, never its literal
 (`DEFAULT_SYSTEM_PROMPT: string`, `VOICE_PRESETS: Readonly<Record<…, string>>`,
