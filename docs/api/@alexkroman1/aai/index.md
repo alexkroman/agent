@@ -2051,7 +2051,7 @@ function subagent<S extends StandardSchemaV1<unknown, unknown>>(def: SubagentDef
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -2228,7 +2228,7 @@ under, so this takes no `name`.
 
 ###### O
 
-`O` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\> = `StandardSchemaV1`\<`unknown`, `unknown`\>
+`O` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\> = [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -4469,226 +4469,7 @@ identity — `dialog.projection((at) => at)` — to push the whole position.
 ##### receive()
 
 ```ts
-receive(ctx: SlotHolder, event: 
-  | {
-  audioFormat: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  sampleRate: number;
-  sessionId?: string;
-  ttsSampleRate: number;
-  type: "session.configured";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "audio.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "speech.started";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "speech.stopped";
-}
-  | {
-  eotConfidence?: number;
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "user-transcript.updated";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "user-transcript.committed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  text: string;
-  type: "agent-transcript.updated";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  recovery?: "session-failed" | "turn-failed";
-  text: string;
-  type: "agent-transcript.committed";
-}
-  | {
-  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  meta: {
-     at: number;
-     id: string;
-  };
-  toolCallId: string;
-  toolName: string;
-  type: "tool.called";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  result: string;
-  toolCallId: string;
-  type: "tool.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "reply.completed";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "reply.cancelled";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "session.reset";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "session.timed-out";
-}
-  | {
-  code:   | "stt"
-     | "llm"
-     | "tts"
-     | "audio"
-     | "connection"
-     | "internal"
-     | "protocol"
-     | "tool";
-  fatal: boolean;
-  message: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "error.reported";
-}
-  | {
-  data: unknown;
-  event: string;
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "custom.emitted";
-}
-  | {
-  meta: {
-     at: number;
-     id: string;
-  };
-  state: unknown;
-  type: "state.updated";
-}
-  | {
-  inputTokens: number;
-  meta: {
-     at: number;
-     id: string;
-  };
-  outputTokens: number;
-  steps: number;
-  totalTokens: number;
-  type: "usage.updated";
-}
-  | {
-  direction: "output" | "input";
-  meta: {
-     at: number;
-     id: string;
-  };
-  replacement: string;
-  type: "guardrail.blocked";
-}
-  | {
-  durationMs: number;
-  limit: "words" | "duration";
-  meta: {
-     at: number;
-     id: string;
-  };
-  type: "user-turn.exceeded";
-  words: number;
-}
-  | {
-  interrupted: boolean;
-  latencyMs?: number;
-  llm?: {
-     durationMs: number;
-     inputTokens?: number;
-     outputTokens?: number;
-     steps: number;
-     ttftMs?: number;
-  };
-  meta: {
-     at: number;
-     id: string;
-  };
-  stt?: {
-     endpointingMs?: number;
-  };
-  tts?: {
-     characters: number;
-     ttfbMs?: number;
-  };
-  type: "metrics.collected";
-}
-  | {
-  messages: {
-     content: string;
-     role: "assistant" | "user";
-  }[];
-  meta: {
-     at: number;
-     id: string;
-  };
-  toolCalls: {
-     afterMessageIndex: number;
-     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-     callId: string;
-     name: string;
-     result?: string;
-     status: "done" | "pending";
-  }[];
-  type: "history.restored";
-}): DialogPosition;
+receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
 ```
 
 Offer a SESSION event to the dialog: the runtime's half of
@@ -4734,225 +4515,7 @@ export default agent({
 
 ###### event
 
-  \| \{
-  `audioFormat`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `sampleRate`: `number`;
-  `sessionId?`: `string`;
-  `ttsSampleRate`: `number`;
-  `type`: `"session.configured"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"audio.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"speech.started"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"speech.stopped"`;
-\}
-  \| \{
-  `eotConfidence?`: `number`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"user-transcript.updated"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"user-transcript.committed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `text`: `string`;
-  `type`: `"agent-transcript.updated"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `recovery?`: `"session-failed"` \| `"turn-failed"`;
-  `text`: `string`;
-  `type`: `"agent-transcript.committed"`;
-\}
-  \| \{
-  `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `toolCallId`: `string`;
-  `toolName`: `string`;
-  `type`: `"tool.called"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `result`: `string`;
-  `toolCallId`: `string`;
-  `type`: `"tool.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"reply.completed"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"reply.cancelled"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"session.reset"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"session.timed-out"`;
-\}
-  \| \{
-  `code`:   \| `"stt"`
-     \| `"llm"`
-     \| `"tts"`
-     \| `"audio"`
-     \| `"connection"`
-     \| `"internal"`
-     \| `"protocol"`
-     \| `"tool"`;
-  `fatal`: `boolean`;
-  `message`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"error.reported"`;
-\}
-  \| \{
-  `data`: `unknown`;
-  `event`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"custom.emitted"`;
-\}
-  \| \{
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `state`: `unknown`;
-  `type`: `"state.updated"`;
-\}
-  \| \{
-  `inputTokens`: `number`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `outputTokens`: `number`;
-  `steps`: `number`;
-  `totalTokens`: `number`;
-  `type`: `"usage.updated"`;
-\}
-  \| \{
-  `direction`: `"output"` \| `"input"`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `replacement`: `string`;
-  `type`: `"guardrail.blocked"`;
-\}
-  \| \{
-  `durationMs`: `number`;
-  `limit`: `"words"` \| `"duration"`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `type`: `"user-turn.exceeded"`;
-  `words`: `number`;
-\}
-  \| \{
-  `interrupted`: `boolean`;
-  `latencyMs?`: `number`;
-  `llm?`: \{
-     `durationMs`: `number`;
-     `inputTokens?`: `number`;
-     `outputTokens?`: `number`;
-     `steps`: `number`;
-     `ttftMs?`: `number`;
-  \};
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `stt?`: \{
-     `endpointingMs?`: `number`;
-  \};
-  `tts?`: \{
-     `characters`: `number`;
-     `ttfbMs?`: `number`;
-  \};
-  `type`: `"metrics.collected"`;
-\}
-  \| \{
-  `messages`: \{
-     `content`: `string`;
-     `role`: `"assistant"` \| `"user"`;
-  \}[];
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
-  `toolCalls`: \{
-     `afterMessageIndex`: `number`;
-     `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
-     `callId`: `string`;
-     `name`: `string`;
-     `result?`: `string`;
-     `status`: `"done"` \| `"pending"`;
-  \}[];
-  `type`: `"history.restored"`;
-\}
+[`SessionEvent`](#sessionevent)
 
 ###### Returns
 
@@ -7202,6 +6765,1064 @@ callers wrote this by hand to get.
 
 ***
 
+### SessionEventMap
+
+Every session event, keyed by its `type` — derived from `SessionEventSchema`.
+
+Read one member with `SessionEvent<"tool.called">`, never with
+`Extract<SessionEvent, { type: … }>`: the lookup fails to compile on a
+misspelled name, where the `Extract` silently resolves to `never`.
+
+#### Extends
+
+- [`EventMapOf`](#eventmapof)\<`z.infer`\<*typeof* [`SessionEventSchema`](#sessioneventschema)\>\>
+
+#### Properties
+
+##### agent-transcript.committed
+
+```ts
+agent-transcript.committed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  recovery?: "session-failed" | "turn-failed";
+  text: string;
+  type: "agent-transcript.committed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### recovery?
+
+```ts
+optional recovery?: "session-failed" | "turn-failed";
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "agent-transcript.committed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.agent-transcript.committed
+```
+
+##### agent-transcript.updated
+
+```ts
+agent-transcript.updated: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "agent-transcript.updated";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "agent-transcript.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.agent-transcript.updated
+```
+
+##### audio.completed
+
+```ts
+audio.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "audio.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "audio.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.audio.completed
+```
+
+##### custom.emitted
+
+```ts
+custom.emitted: {
+  data: unknown;
+  event: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "custom.emitted";
+};
+```
+
+###### data
+
+```ts
+data: unknown;
+```
+
+###### event
+
+```ts
+event: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "custom.emitted";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.custom.emitted
+```
+
+##### error.reported
+
+```ts
+error.reported: {
+  code:   | "stt"
+     | "llm"
+     | "tts"
+     | "audio"
+     | "connection"
+     | "internal"
+     | "protocol"
+     | "tool";
+  fatal: boolean;
+  message: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "error.reported";
+};
+```
+
+###### code
+
+```ts
+code: 
+  | "stt"
+  | "llm"
+  | "tts"
+  | "audio"
+  | "connection"
+  | "internal"
+  | "protocol"
+  | "tool";
+```
+
+###### fatal
+
+```ts
+fatal: boolean;
+```
+
+###### message
+
+```ts
+message: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "error.reported";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.error.reported
+```
+
+##### guardrail.blocked
+
+```ts
+guardrail.blocked: {
+  direction: "output" | "input";
+  meta: {
+     at: number;
+     id: string;
+  };
+  replacement: string;
+  type: "guardrail.blocked";
+};
+```
+
+###### direction
+
+```ts
+direction: "output" | "input";
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### replacement
+
+```ts
+replacement: string;
+```
+
+###### type
+
+```ts
+type: "guardrail.blocked";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.guardrail.blocked
+```
+
+##### history.restored
+
+```ts
+history.restored: {
+  messages: {
+     content: string;
+     role: "assistant" | "user";
+  }[];
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCalls: {
+     afterMessageIndex: number;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: string;
+     name: string;
+     result?: string;
+     status: "done" | "pending";
+  }[];
+  type: "history.restored";
+};
+```
+
+###### messages
+
+```ts
+messages: {
+  content: string;
+  role: "assistant" | "user";
+}[];
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### toolCalls
+
+```ts
+toolCalls: {
+  afterMessageIndex: number;
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  callId: string;
+  name: string;
+  result?: string;
+  status: "done" | "pending";
+}[];
+```
+
+###### type
+
+```ts
+type: "history.restored";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.history.restored
+```
+
+##### metrics.collected
+
+```ts
+metrics.collected: {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: {
+     at: number;
+     id: string;
+  };
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+};
+```
+
+###### interrupted
+
+```ts
+interrupted: boolean;
+```
+
+###### latencyMs?
+
+```ts
+optional latencyMs?: number;
+```
+
+###### llm?
+
+```ts
+{
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  steps: number;
+  ttftMs?: number;
+}
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### stt?
+
+```ts
+{
+  endpointingMs?: number;
+}
+```
+
+###### tts?
+
+```ts
+{
+  characters: number;
+  ttfbMs?: number;
+}
+```
+
+###### type
+
+```ts
+type: "metrics.collected";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.metrics.collected
+```
+
+##### reply.cancelled
+
+```ts
+reply.cancelled: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.cancelled";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "reply.cancelled";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.reply.cancelled
+```
+
+##### reply.completed
+
+```ts
+reply.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "reply.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "reply.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.reply.completed
+```
+
+##### session.configured
+
+```ts
+session.configured: {
+  audioFormat: string;
+  meta: {
+     at: number;
+     id: string;
+  };
+  sampleRate: number;
+  sessionId?: string;
+  ttsSampleRate: number;
+  type: "session.configured";
+};
+```
+
+###### audioFormat
+
+```ts
+audioFormat: string;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+###### sessionId?
+
+```ts
+optional sessionId?: string;
+```
+
+###### ttsSampleRate
+
+```ts
+ttsSampleRate: number;
+```
+
+###### type
+
+```ts
+type: "session.configured";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.configured
+```
+
+##### session.reset
+
+```ts
+session.reset: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.reset";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "session.reset";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.reset
+```
+
+##### session.timed-out
+
+```ts
+session.timed-out: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "session.timed-out";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "session.timed-out";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.session.timed-out
+```
+
+##### speech.started
+
+```ts
+speech.started: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.started";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "speech.started";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.speech.started
+```
+
+##### speech.stopped
+
+```ts
+speech.stopped: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "speech.stopped";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "speech.stopped";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.speech.stopped
+```
+
+##### state.updated
+
+```ts
+state.updated: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  state: unknown;
+  type: "state.updated";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### state
+
+```ts
+state: unknown;
+```
+
+###### type
+
+```ts
+type: "state.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.state.updated
+```
+
+##### tool.called
+
+```ts
+tool.called: {
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: {
+     at: number;
+     id: string;
+  };
+  toolCallId: string;
+  toolName: string;
+  type: "tool.called";
+};
+```
+
+###### args
+
+```ts
+args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### toolCallId
+
+```ts
+toolCallId: string;
+```
+
+###### toolName
+
+```ts
+toolName: string;
+```
+
+###### type
+
+```ts
+type: "tool.called";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.tool.called
+```
+
+##### tool.completed
+
+```ts
+tool.completed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  result: string;
+  toolCallId: string;
+  type: "tool.completed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### result
+
+```ts
+result: string;
+```
+
+###### toolCallId
+
+```ts
+toolCallId: string;
+```
+
+###### type
+
+```ts
+type: "tool.completed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.tool.completed
+```
+
+##### usage.updated
+
+```ts
+usage.updated: {
+  inputTokens: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  outputTokens: number;
+  steps: number;
+  totalTokens: number;
+  type: "usage.updated";
+};
+```
+
+###### inputTokens
+
+```ts
+inputTokens: number;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### outputTokens
+
+```ts
+outputTokens: number;
+```
+
+###### steps
+
+```ts
+steps: number;
+```
+
+###### totalTokens
+
+```ts
+totalTokens: number;
+```
+
+###### type
+
+```ts
+type: "usage.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.usage.updated
+```
+
+##### user-transcript.committed
+
+```ts
+user-transcript.committed: {
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.committed";
+};
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "user-transcript.committed";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-transcript.committed
+```
+
+##### user-transcript.updated
+
+```ts
+user-transcript.updated: {
+  eotConfidence?: number;
+  meta: {
+     at: number;
+     id: string;
+  };
+  text: string;
+  type: "user-transcript.updated";
+};
+```
+
+###### eotConfidence?
+
+```ts
+optional eotConfidence?: number;
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### text
+
+```ts
+text: string;
+```
+
+###### type
+
+```ts
+type: "user-transcript.updated";
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-transcript.updated
+```
+
+##### user-turn.exceeded
+
+```ts
+user-turn.exceeded: {
+  durationMs: number;
+  limit: "words" | "duration";
+  meta: {
+     at: number;
+     id: string;
+  };
+  type: "user-turn.exceeded";
+  words: number;
+};
+```
+
+###### durationMs
+
+```ts
+durationMs: number;
+```
+
+###### limit
+
+```ts
+limit: "words" | "duration";
+```
+
+###### meta
+
+```ts
+{
+  at: number;
+  id: string;
+}
+```
+
+###### type
+
+```ts
+type: "user-turn.exceeded";
+```
+
+###### words
+
+```ts
+words: number;
+```
+
+###### Inherited from
+
+```ts
+EventMapOf.user-turn.exceeded
+```
+
+***
+
 ### SessionSlot
 
 A named slot of per-session state, created by [sessionSlot](#sessionslot-1).
@@ -8012,6 +8633,146 @@ export default tool({
 ```ts
 Omit.onError
 ```
+
+***
+
+### StandardSchemaIssue
+
+One validation issue in a failed Standard Schema result.
+
+#### Properties
+
+##### errors?
+
+```ts
+readonly optional errors?: unknown;
+```
+
+A union's per-branch issues, one entry per branch — an off-spec VENDOR
+EXTENSION, which is why it is typed `unknown` rather than described.
+
+Standard Schema declares a flat `{ message, path }`, so a validator with
+alternatives has nowhere to put the reason each one was rejected. Zod
+therefore passes an `errors` array through the `~standard` interface
+anyway, and its parent issue's own `message` is the placeholder
+`"Invalid input"`. `formatSchemaIssues` reads this when it is
+shaped like branches and ignores it otherwise; nothing in this SDK
+requires a vendor to supply it, and no caller should produce it.
+
+##### issues?
+
+```ts
+readonly optional issues?: unknown;
+```
+
+The issues a vendor nested inside this one as its CAUSE — a second
+off-spec extension, typed `unknown` for the same reason as `errors`.
+
+Zod 4 wraps a record's failed KEY this way: the outer issue is
+`invalid_key` carrying the generic `"Invalid key in record"`, and the key
+schema's own issues — including any custom `error` its author wrote — sit
+here. Without reading it, a message written FOR an author is replaced by
+one that does not say what is wrong: `mcpServers.my-docs` reported
+`Invalid key in record` while `agent-config.ts` had spelled out the key
+grammar and the reason for it.
+
+Unlike `errors` these are not alternatives, so `formatSchemaIssues`
+APPENDS rather than replaces — see `renderIssue`.
+
+##### message
+
+```ts
+readonly message: string;
+```
+
+##### path?
+
+```ts
+readonly optional path?: readonly (
+  | PropertyKey
+  | {
+  key: PropertyKey;
+})[];
+```
+
+***
+
+### StandardSchemaV1
+
+The [Standard Schema](https://standardschema.dev) V1 interface, inlined as
+the spec recommends (it is a types-only contract). A Zod, ArkType, or
+Valibot schema all satisfy it.
+
+#### Type Parameters
+
+##### Input
+
+`Input` = `unknown`
+
+The type the schema accepts for validation.
+
+##### Output
+
+`Output` = `Input`
+
+The type validation produces.
+
+#### Properties
+
+##### ~standard
+
+```ts
+readonly ~standard: {
+  types?: {
+     input: Input;
+     output: Output;
+  };
+  validate: (value: unknown) => 
+     | StandardSchemaResult<Output>
+    | Promise<StandardSchemaResult<Output>>;
+  vendor: string;
+  version: 1;
+};
+```
+
+The Standard Schema properties object.
+
+###### types?
+
+```ts
+{
+  input: Input;
+  output: Output;
+}
+```
+
+Inferred types, when the vendor exposes them.
+
+###### validate
+
+```ts
+(value: unknown) => 
+  | StandardSchemaResult<Output>
+| Promise<StandardSchemaResult<Output>>
+```
+
+Validate `value`, returning the typed value or issues.
+
+###### vendor
+
+```ts
+readonly vendor: string;
+```
+
+The vendor name, e.g. `"zod"`, `"arktype"`, `"valibot"`.
+
+###### version
+
+```ts
+readonly version: 1;
+```
+
+The version of the standard implemented (always 1).
 
 ***
 
@@ -9562,7 +10323,9 @@ Words in an interim transcript before a barge-in counts.
 ### DialogEvent
 
 ```ts
-type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
+type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+  type: N;
+} : never : never;
 ```
 
 The event union a [DialogSpec](#dialogspec) declares — synthesized from its `on`
@@ -9590,6 +10353,43 @@ send by hand into the autocomplete for the one they must. See
 
 ***
 
+### DialogEventNames
+
+```ts
+type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? 
+  | C extends {
+  on: infer O;
+} ? Extract<keyof O, string> : never
+  | C extends {
+  states: infer N;
+} ? DialogEventNames<N> : never : never : never : never;
+```
+
+Every event name the `on` maps of a `states` map declare, at every depth.
+
+Exported, and owned by the `dialog` capability, because [DialogEvent](#dialogevent) is
+written in terms of it and a type a signature reaches but nobody can import is
+a shape an author has to satisfy without being able to name.
+
+Distributed over the map's VALUES first, because `keyof` a UNION of `on` maps
+is the INTERSECTION of their keys — i.e. `never` for any dialog with more than
+one state, which is a spec whose events all type-check as nothing at all.
+
+The recursion is bounded by [DialogStateSpec](#dialogstatespec) declaring `states` as
+OPTIONAL: `{ states?: … }` does not match `{ states: infer N }`, so walking
+the bare constraint — which is what `dialog<const S extends DialogSpec>` makes
+the compiler do while checking the overload — stops at the first level instead
+of chasing a self-referential type forever. Making that property required
+would reintroduce a `TS2589` on a declaration nobody has written yet.
+
+#### Type Parameters
+
+##### M
+
+`M`
+
+***
+
 ### DialogSessionEventName
 
 ```ts
@@ -9608,6 +10408,29 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDef.dialogs](#dialogs).
+
+***
+
+### EventMapOf
+
+```ts
+type EventMapOf<U extends {
+  type: string;
+}> = { [E in U as E["type"]]: E };
+```
+
+Key a union of `{ type }` members by their `type`.
+
+What [SessionEventMap](#sessioneventmap) is derived through, and exported so a host with
+a vocabulary of its own can build the same shape for it.
+
+#### Type Parameters
+
+##### U
+
+`U` *extends* \{
+  `type`: `string`;
+\}
 
 ***
 
@@ -9639,7 +10462,7 @@ schema and non-optional; a plain-JSON-Schema or schemaless call returns
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ##### Parameters
 
@@ -10207,9 +11030,7 @@ uses the same string it would put in `ctx.messages`' own tool schemas.
 ### MetricsCollectedEvent
 
 ```ts
-type MetricsCollectedEvent = Extract<SessionEvent, {
-  type: "metrics.collected";
-}>;
+type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 ```
 
 One `metrics.collected` frame, envelope included — what an
@@ -10456,6 +11277,46 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SessionEvent
+
+```ts
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+```
+
+One **server→client** session event, envelope included: a fact the session
+reports, in the shape it takes on the wire and in the retained stream.
+
+Bare, it is the whole union — what a `"*"` handler receives and what a client
+parses. With a name (or a union of names) it is just those members.
+Host code EMITS a [SessionEventBody](#sessioneventbody) and the session's emitter stamps
+the envelope — see `protocol-events.ts`.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](#sessioneventtype) = [`SessionEventType`](#sessioneventtype)
+
+***
+
+### SessionEventBody
+
+```ts
+type SessionEventBody<K extends SessionEventType = SessionEventType> = { [T in K]: Omit<SessionEventMap[T], "meta"> }[K];
+```
+
+A session event as its EMITTER writes it — everything but the `meta`
+envelope, which the session stamps exactly once. Distributes over `K`, so
+each member keeps its own `type`.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](#sessioneventtype) = [`SessionEventType`](#sessioneventtype)
+
+***
+
 ### SessionEventContext
 
 ```ts
@@ -10538,6 +11399,9 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 One handler: an event of the type it was declared under, plus the context.
 
+Parameterized by the EVENT, as it always was; name one member with the map
+rather than an `Extract` — `SessionEventHandler<SessionEvent<"tool.called">>`.
+
 The return type is `unknown`, and that is deliberate rather than lazy.
 `void | Promise<void>` reads better and does not compile for the most obvious
 handler anyone writes: TypeScript's rule that a value-returning function is
@@ -10552,7 +11416,7 @@ handler.
 
 ##### E
 
-`E` *extends* [`SessionEvent`](protocol.md#sessionevent) = [`SessionEvent`](protocol.md#sessionevent)
+`E` *extends* [`SessionEvent`](#sessionevent) = [`SessionEvent`](#sessionevent)
 
 #### Parameters
 
@@ -10573,7 +11437,7 @@ handler.
 ### SessionEventHandlers
 
 ```ts
-type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, { type: K }>> } & {
+type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>> } & {
   *?: SessionEventHandler;
 };
 ```
@@ -10601,21 +11465,28 @@ Runs for every event, AFTER the typed handler for that event.
 ### SessionEventType
 
 ```ts
-type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 ```
 
-Every event name a handler map may be keyed by, as a union.
+Every event name a handler map, a dialog's `@` keys or a spec may name.
 
-The keys of [SessionEventHandlers](#sessioneventhandlers) are computed from the wire union, so
-without this alias the only way to read the list is the event schema itself —
-which renders as one long type expression. Name it to get an autocompletable
-union, and to write a handler map's key type down in your own code:
+Name it to write a list of event names down in your own code:
 
 ```ts
 import type { SessionEventType } from "@alexkroman1/aai";
 
 const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
 ```
+
+***
+
+### SessionSourcedEventType
+
+```ts
+type SessionSourcedEventType = typeof SESSION_SOURCED_EVENT_TYPES[number];
+```
+
+One of [SESSION\_SOURCED\_EVENT\_TYPES](#session_sourced_event_types).
 
 ***
 
@@ -10822,6 +11693,29 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 ***
 
+### StandardSchemaResult
+
+```ts
+type StandardSchemaResult<Output> = 
+  | {
+  issues?: undefined;
+  value: Output;
+}
+  | {
+  issues: readonly StandardSchemaIssue[];
+};
+```
+
+A successful or failed Standard Schema validation.
+
+#### Type Parameters
+
+##### Output
+
+`Output`
+
+***
+
 ### StaticAgentParams
 
 ```ts
@@ -10871,7 +11765,7 @@ steps; passing nothing is the common case.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 The schema [StepOptions.schema](#schema-3) carries, when one is
   given. Defaulted, so `StepOptions` is still spellable without an argument —
@@ -10956,7 +11850,7 @@ The shape — see [StepOptions.schema](#schema-3).
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 ***
 
@@ -12320,7 +13214,7 @@ way to end unanswered.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 #### Properties
 
@@ -12418,7 +13312,7 @@ its result must not carry `| undefined`.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1` = `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)
 
 #### Properties
 
@@ -13271,7 +14165,7 @@ for what each side catches, and why a read-side failure is not the step's.
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Name
 
@@ -13444,7 +14338,7 @@ review window beside a retry backoff), not to put a deadline on one wait.
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Parameters
 
@@ -13481,7 +14375,7 @@ waitFor<S extends StandardSchemaV1<unknown, unknown>>(token: string, options: Wa
 
 ###### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
 
 ###### Parameters
 
@@ -13595,7 +14489,7 @@ Input schema (any Standard Schema, Zod by convention),
 `R` = `unknown`
 
 What the body resolves with — inferred from the declared
-  [WorkflowDef.output](#output) schema when there is one, and from the function
+  [WorkflowDef.output](#output-2) schema when there is one, and from the function
   otherwise. It reaches a caller as `WorkflowRunSnapshot`'s `output`, so
   passing the workflow to `start`/`get`/`find` is what makes a completed
   run's result typed instead of `unknown`.
@@ -13991,6 +14885,251 @@ stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
 (`registerTools`, in `@alexkroman1/aai-runtime`'s `mcp-tools.ts`).
+
+***
+
+### SESSION\_SOURCED\_EVENT\_TYPES
+
+```ts
+const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+```
+
+The events only the SESSION itself can be the source of — never a transport.
+
+The complement of what `aai-runtime`'s `TransportEventBody` accepts, and the
+one place that decision is written down, so a new event is REPORTABLE by
+default — the session publishes a report it has no `case` for — and needs
+no edit to a list in another package. Each is here for a reason:
+`session.configured` is the handshake, `session.reset` and
+`session.timed-out` come from the client and the idle watchdog,
+`custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
+`usage.updated` and `guardrail.blocked` are the session's own accounting and
+refusals, and `history.restored` is a resume.
+
+***
+
+### SessionEventSchema
+
+```ts
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+  audioFormat: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  sampleRate: z.ZodNumber;
+  sessionId: z.ZodOptional<z.ZodString>;
+  ttsSampleRate: z.ZodNumber;
+  type: z.ZodLiteral<"session.configured">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"audio.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"speech.started">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"speech.stopped">;
+}, z.core.$strip>, z.ZodObject<{
+  eotConfidence: z.ZodOptional<z.ZodNumber>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"user-transcript.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"user-transcript.committed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"agent-transcript.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  recovery: z.ZodOptional<z.ZodEnum<{
+     session-failed: "session-failed";
+     turn-failed: "turn-failed";
+  }>>;
+  text: z.ZodString;
+  type: z.ZodLiteral<"agent-transcript.committed">;
+}, z.core.$strip>, z.ZodObject<{
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  toolCallId: z.ZodString;
+  toolName: z.ZodString;
+  type: z.ZodLiteral<"tool.called">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  result: z.ZodString;
+  toolCallId: z.ZodString;
+  type: z.ZodLiteral<"tool.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"reply.completed">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"reply.cancelled">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"session.reset">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"session.timed-out">;
+}, z.core.$strip>, z.ZodObject<{
+  code: z.ZodEnum<{
+     audio: "audio";
+     connection: "connection";
+     internal: "internal";
+     llm: "llm";
+     protocol: "protocol";
+     stt: "stt";
+     tool: "tool";
+     tts: "tts";
+  }>;
+  fatal: z.ZodBoolean;
+  message: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"error.reported">;
+}, z.core.$strip>, z.ZodObject<{
+  data: z.ZodUnknown;
+  event: z.ZodString;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"custom.emitted">;
+}, z.core.$strip>, z.ZodObject<{
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  state: z.ZodUnknown;
+  type: z.ZodLiteral<"state.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  inputTokens: z.ZodNumber;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  outputTokens: z.ZodNumber;
+  steps: z.ZodNumber;
+  totalTokens: z.ZodNumber;
+  type: z.ZodLiteral<"usage.updated">;
+}, z.core.$strip>, z.ZodObject<{
+  direction: z.ZodEnum<{
+     input: "input";
+     output: "output";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  replacement: z.ZodString;
+  type: z.ZodLiteral<"guardrail.blocked">;
+}, z.core.$strip>, z.ZodObject<{
+  durationMs: z.ZodNumber;
+  limit: z.ZodEnum<{
+     duration: "duration";
+     words: "words";
+  }>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  type: z.ZodLiteral<"user-turn.exceeded">;
+  words: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+  interrupted: z.ZodBoolean;
+  latencyMs: z.ZodOptional<z.ZodNumber>;
+  llm: z.ZodOptional<z.ZodObject<{
+     durationMs: z.ZodNumber;
+     inputTokens: z.ZodOptional<z.ZodNumber>;
+     outputTokens: z.ZodOptional<z.ZodNumber>;
+     steps: z.ZodNumber;
+     ttftMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  stt: z.ZodOptional<z.ZodObject<{
+     endpointingMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  tts: z.ZodOptional<z.ZodObject<{
+     characters: z.ZodNumber;
+     ttfbMs: z.ZodOptional<z.ZodNumber>;
+  }, z.core.$strip>>;
+  type: z.ZodLiteral<"metrics.collected">;
+}, z.core.$strip>, z.ZodObject<{
+  messages: z.ZodArray<z.ZodObject<{
+     content: z.ZodString;
+     role: z.ZodEnum<{
+        assistant: "assistant";
+        user: "user";
+     }>;
+  }, z.core.$strip>>;
+  meta: z.ZodObject<{
+     at: z.ZodNumber;
+     id: z.ZodString;
+  }, z.core.$strip>;
+  toolCalls: z.ZodArray<z.ZodObject<{
+     afterMessageIndex: z.ZodNumber;
+     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+     callId: z.ZodString;
+     name: z.ZodString;
+     result: z.ZodOptional<z.ZodString>;
+     status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+     }>;
+  }, z.core.$strip>>;
+  type: z.ZodLiteral<"history.restored">;
+}, z.core.$strip>], "type">;
+```
+
+The session event vocabulary — the ONE source of truth. `SessionEventMap`,
+`SessionEvent` and `SessionEventType` are all derived from it.
 
 ***
 

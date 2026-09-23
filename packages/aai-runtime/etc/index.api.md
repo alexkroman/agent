@@ -28,8 +28,10 @@ import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { streamText } from 'ai';
@@ -240,11 +242,6 @@ export function ensureWorkflowJournalSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
-
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
 
 export { ExecuteTool }
 
@@ -899,10 +896,10 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+export type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
 
 // @public
-export type TransportEventType = TransportEventBody["type"];
+export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { TtsError }
 

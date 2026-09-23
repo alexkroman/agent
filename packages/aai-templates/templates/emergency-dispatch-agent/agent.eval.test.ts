@@ -14,7 +14,7 @@
  * this file SHIPS — it is what a scaffolded project runs.
  */
 import dispatchAgent from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 // An EVAL: does the desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly. What it cannot ask is whether the

@@ -9,7 +9,7 @@
  * and a message is exactly the thing a live eval never checks.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";

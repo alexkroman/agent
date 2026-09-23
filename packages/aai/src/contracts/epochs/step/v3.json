@@ -3,7 +3,7 @@
   "capability": "step",
   "epoch": 3,
   "rule": 2,
-  "sha256": "05b341cfd8c5f0030067cd729beaa482a02d4abd327bd4ed100b07237153050c",
+  "sha256": "18e9268376b7c328f8620e2bbf7e55b4e8c6714e6888ab55233356f554f20d2b",
   "exports": [
     "MultipartBody",
     "MultipartPart",
@@ -48,5 +48,20 @@
     "stripJsonFence",
     "wavHeader"
   ],
-  "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd"
+  "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "05b341cfd8c5f0030067cd729beaa482a02d4abd327bd4ed100b07237153050c",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "18e9268376b7c328f8620e2bbf7e55b4e8c6714e6888ab55233356f554f20d2b",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

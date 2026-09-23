@@ -3,7 +3,7 @@
   "capability": "workflow",
   "epoch": 1,
   "rule": 2,
-  "sha256": "62dbdb861b8842944444772700c095dadd267a7e1709c29c8e899c29a0b6b75a",
+  "sha256": "d5e1ba2d1c80d9e54bd295549a93f44e19eb0404856fb14ad392c4f4b05a8b06",
   "exports": [
     "DEFAULT_STEP_MAX_ATTEMPTS",
     "SleepOptions",
@@ -16,5 +16,20 @@
     "WorkflowDef",
     "workflow"
   ],
-  "rollup": "39bad585c74ab1b44f4285084bcb7853b94c172223c97b3ecc43f8fde08a5a7b"
+  "rollup": "39bad585c74ab1b44f4285084bcb7853b94c172223c97b3ecc43f8fde08a5a7b",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "62dbdb861b8842944444772700c095dadd267a7e1709c29c8e899c29a0b6b75a",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "d5e1ba2d1c80d9e54bd295549a93f44e19eb0404856fb14ad392c4f4b05a8b06",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

@@ -49,10 +49,14 @@ export interface ClientSink {
 }
 
 // @public
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export const EVENT_ID_PREFIX = "evt_";
 
 // @public
-export const EVENT_ID_PREFIX = "evt_";
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export type HostConfig = z.infer<typeof HostConfigSchema>;
@@ -325,10 +329,11 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
-export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
 
 // @public
 export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
@@ -339,8 +344,8 @@ export const SessionEventMetaSchema: z.ZodObject<{
     at: z.ZodNumber;
 }, z.core.$strip>;
 
-// @public (undocumented)
-export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -555,6 +560,9 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // (No @packageDocumentation comment for this package)
 

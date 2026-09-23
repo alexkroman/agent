@@ -204,6 +204,13 @@ interface DialogVoiceConfig {
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -379,7 +386,7 @@ type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silen
 type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 // @public
-export interface PipelineVoiceTuning {
+interface PipelineVoiceTuning {
     deadAirCoverMs?: number;
     errorPhrase?: string;
     interruptionBackoffMs?: number;
@@ -433,7 +440,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
 export type SessionEventContext = {
@@ -443,18 +450,20 @@ export type SessionEventContext = {
 };
 
 // @public
-export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
 
 // @public
-export type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+type SessionEventHandlers = {
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -672,7 +681,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-export type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
@@ -957,7 +966,7 @@ export interface UsageLimits {
 }
 
 // @public
-export interface UserTurnLimit {
+interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;
 }

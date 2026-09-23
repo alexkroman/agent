@@ -10,7 +10,7 @@
  * part-way through, and after a reset moved the conversation on.
  */
 
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { createHeardTracker } from "./pipeline-heard.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";

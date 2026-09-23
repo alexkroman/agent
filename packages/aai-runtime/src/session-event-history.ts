@@ -61,9 +61,9 @@
  * `AgentTranscriptRecovery` in `sdk/protocol-events.ts`) and one reader decides.
  */
 
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
-import type { RestoredToolCall, SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
 import { toolResultMessage } from "./_tool-result-message.ts";
 
 /**

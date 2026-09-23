@@ -6,11 +6,11 @@
  * were over the length cap after the rate-check and credential work landed.
  */
 
-import type { SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createRelayExecuteTool } from "./host-relay.ts";
 
-type ToolCallEvent = Extract<SessionEventBody, { type: "tool.called" }>;
+type ToolCallEvent = SessionEventBody<"tool.called">;
 
 function makeSend() {
   const events: ToolCallEvent[] = [];

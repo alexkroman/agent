@@ -8,7 +8,8 @@
  * the wiring, not that a turn actually completes.
  */
 
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createFakeLanguageModel,

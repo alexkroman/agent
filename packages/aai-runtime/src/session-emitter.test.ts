@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEventHandlers, SlotStore } from "@alexkroman1/aai";
+import type { SessionEvent, SessionEventHandlers, SlotStore } from "@alexkroman1/aai";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";

@@ -6,17 +6,18 @@
  * unions that make a mode mistake a compile error, and the shape a declaration
  * resolves to.
  *
- * The `events` handler types are here for the same reason `AgentDef` is: they are
- * the SHAPE of an `agent({ events })` declaration, so a change to them is a change
- * to what declaring an agent looks like. `SessionEvent` itself is still not — it
- * is the wire union, contracted nowhere here because `/protocol` is a
- * non-authoring subpath — but `SessionEventType`, its KEY SET, is, and that is a
- * deliberate narrowing of the same rule. `agent({ events: { "tool.called": … } })`
- * is authoring code and the string literal IS the API, so with only the handler
- * types contracted this capability covered the brackets and not the keys:
- * `SessionEvent` is an opaque `z.infer` alias in the rollup, so removing an event
- * name left the hash byte-identical and shipped as a `patch` that broke a build.
- * Contracting the union of names makes that a classification instead.
+ * **Three families that used to be here are capabilities of their own now**,
+ * because each moves for a reason unrelated to declaring an agent and every
+ * move renumbered this, the flagship contract every template imports:
+ *
+ * - the session EVENT vocabulary and the `events` handler types — `events`.
+ *   `AgentObservation` still names `SessionEventHandlers`, so adding or dropping
+ *   the field is visible here; a new EVENT is not.
+ * - the pipeline turn-taking field group, `PipelineVoiceTuning` and
+ *   `UserTurnLimit` — `turn-taking`. `AgentDef` still extends the group by name.
+ * - personas — `persona`, which already owned the roster.
+ *
+ * `SessionEventContext` stays: it is the twin of `AgentSessionContext`, below.
  *
  * `ProviderCredentialOptions` is here for the same reason as
  * `ProviderDescriptor`: every provider options interface on all four stages
@@ -46,11 +47,10 @@
  * them is `withMcpTools` on `@alexkroman1/aai-runtime` and belongs to that
  * package's own `tools` capability — this SDK opens no sockets.
  *
- * **The four FIELD-GROUP interfaces are here for the reason
- * `PipelineVoiceTuning` already was.** `AgentDef` is declared as an extension of
- * them — `AgentModelTuning`, `AgentGuardrails`, `AgentObservation` and the voice
- * tuning — each a set of `AgentDef` fields split out of `types.ts` so one shared
- * validation rule could be argued once where it applies. That split is an
+ * **The FIELD-GROUP interfaces are here.** `AgentDef` is declared as an
+ * extension of them — `AgentModelTuning`, `AgentGuardrails` and
+ * `AgentObservation` (the voice tuning is `turn-taking`'s, above) — each a
+ * set of `AgentDef` fields split out of `types.ts` so one shared validation rule could be argued once where it applies. That split is an
  * organization of the declaration, not a second surface: an author writes
  * `agent({ temperature })` and `agent({ outputGuardrails })` in the same object
  * literal they write `agent({ name })` in, so a signature change in any of them
@@ -133,14 +133,10 @@ export {
   type ModelTuning,
   mcpToolName,
   type PipelineAgentParams,
-  type PipelineVoiceTuning,
   type ProviderCredentialOptions,
   type ProviderDescriptor,
   type S2sAgentParams,
   type SessionEventContext,
-  type SessionEventHandler,
-  type SessionEventHandlers,
-  type SessionEventType,
   type SharedAgentParams,
   type StaticAgentParams,
   type TelephonyAccess,
@@ -149,7 +145,6 @@ export {
   type ToolChoice,
   type TurnDetectionMode,
   type UsageLimits,
-  type UserTurnLimit,
   VOICE_PRESETS,
   type VoicePresetName,
   workflowApp,

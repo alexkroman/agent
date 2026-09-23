@@ -8,7 +8,7 @@
  * readback and the one-customer-per-call rule all live in that file.
  */
 import retailAgent from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 // An EVAL: does this desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly and asserts about its result;

@@ -12,7 +12,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import type { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -191,9 +191,7 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public

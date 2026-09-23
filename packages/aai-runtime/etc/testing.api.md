@@ -12,7 +12,7 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';

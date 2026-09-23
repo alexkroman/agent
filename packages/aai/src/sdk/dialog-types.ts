@@ -20,7 +20,7 @@
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { SessionEventType } from "./session-events.ts";
+import type { SessionEventType } from "./session-event-map.ts";
 import type { ToolChoice } from "./tool-def.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
@@ -401,38 +401,36 @@ export interface DialogSpec {
   states: Record<string, DialogStateSpec>;
 }
 
-/** Every event name a state's `on` map declares, and its descendants' too. */
-type NamesIn<S> =
-  | (S extends { on: infer O } ? Extract<keyof O, string> : never)
-  | (S extends { states: infer M } ? NamesInMap<M> : never);
-
 /**
- * Distributed over a `states` map's VALUES.
+ * Every event name the `on` maps of a `states` map declare, at every depth.
  *
- * Written as its own distributive conditional rather than inlined, because
- * `keyof` a UNION of `on` maps is the INTERSECTION of their keys — i.e. `never`
- * for any dialog with more than one state, which is a spec whose events all
- * type-check as nothing at all. Distributing first is what makes the union a
- * union.
+ * Exported, and owned by the `dialog` capability, because {@link DialogEvent} is
+ * written in terms of it and a type a signature reaches but nobody can import is
+ * a shape an author has to satisfy without being able to name.
+ *
+ * Distributed over the map's VALUES first, because `keyof` a UNION of `on` maps
+ * is the INTERSECTION of their keys — i.e. `never` for any dialog with more than
+ * one state, which is a spec whose events all type-check as nothing at all.
  *
  * The recursion is bounded by {@link DialogStateSpec} declaring `states` as
- * OPTIONAL: `{ states?: … }` does not match `{ states: infer M }`, so walking
+ * OPTIONAL: `{ states?: … }` does not match `{ states: infer N }`, so walking
  * the bare constraint — which is what `dialog<const S extends DialogSpec>` makes
  * the compiler do while checking the overload — stops at the first level instead
  * of chasing a self-referential type forever. Making that property required
  * would reintroduce a `TS2589` on a declaration nobody has written yet.
+ *
+ * @public
  */
-type NamesInMap<M> =
+export type DialogEventNames<M> =
   M extends Record<string, unknown>
     ? M[keyof M] extends infer C
       ? C extends unknown
-        ? NamesIn<C>
+        ?
+            | (C extends { on: infer O } ? Extract<keyof O, string> : never)
+            | (C extends { states: infer N } ? DialogEventNames<N> : never)
         : never
       : never
     : never;
-
-/** One event object per name, so the union narrows by `type`. */
-type EventOf<N> = N extends string ? { type: N } : never;
 
 /**
  * The event union a {@link DialogSpec} declares — synthesized from its `on`
@@ -454,6 +452,9 @@ type EventOf<N> = N extends string ? { type: N } : never;
  *
  * @public
  */
-export type DialogEvent<S extends DialogSpec> = EventOf<
-  Exclude<NamesInMap<S["states"]>, `@${string}`>
->;
+export type DialogEvent<S extends DialogSpec> =
+  Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N
+    ? N extends string
+      ? { type: N }
+      : never
+    : never;

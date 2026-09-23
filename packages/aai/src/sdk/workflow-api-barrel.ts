@@ -71,6 +71,11 @@ export {
   type ClientConfigResponse,
   createAgentClient,
 } from "./agent-client.ts";
+// The schema `ClientConfigResponse` is inferred from, beside it: the type's own
+// declaration names it, so without this the `workflow-api` contract reached a
+// declaration no authoring subpath exported and hashed its body as ownerless.
+// It is on `/protocol` too, for the same reason the type is.
+export { ClientConfigResponseSchema } from "./client-config.ts";
 // The SSE parser both run streams are decoded with. Public because a caller that
 // took the raw `Response` from `watch` needs it, and because the browser client
 // would otherwise carry a second copy of a stream parser.

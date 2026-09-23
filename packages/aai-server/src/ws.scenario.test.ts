@@ -9,8 +9,9 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
+import type { SessionEvent } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
-import type { ClientSink, ReadyConfig, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink, ReadyConfig } from "@alexkroman1/aai/protocol";
 import type { ServerSession, SessionWebSocket } from "@alexkroman1/aai-runtime";
 import { stampSessionEvent, wireSessionSocket } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";

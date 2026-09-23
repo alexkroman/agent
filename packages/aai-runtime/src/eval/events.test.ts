@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";

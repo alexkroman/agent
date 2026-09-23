@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "turn-taking",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "5b96f93de9d23e6e96814f74b77e2a3726780d8d1572a3c2f82aa8c1965efdb0",
+  "exports": ["PipelineVoiceTuning", "UserTurnLimit"],
+  "rollup": "43831c99e6a85fc8cb5be520fbd86797ae930b77c69fb2ddc355ac39cfaa917e"
+}

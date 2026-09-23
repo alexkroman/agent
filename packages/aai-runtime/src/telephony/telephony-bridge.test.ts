@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { readFile } from "node:fs/promises";
-import type { SessionErrorCode, SessionEventBody } from "@alexkroman1/aai/protocol";
+import type { SessionEventBody } from "@alexkroman1/aai";
+import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
 import { makeLogger } from "../_test-utils.ts";

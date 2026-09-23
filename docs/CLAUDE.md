@@ -586,9 +586,21 @@ These properties are load-bearing:
   gone name WARNS). A name in either list satisfies either finding, so
   exporting a forgotten type from a non-authoring subpath is progress rather
   than a new failure. The remedy is an owner: select the name in the capability
-  it belongs to. `/protocol` is NOT contracted as an `events` capability — that
-  would make every `/protocol` export authoring surface and pull it into the
-  template-coverage ratchet, a decision about the SDK rather than this gate.
+  it belongs to. `/protocol` is NOT contracted — that would make every
+  `/protocol` export authoring surface and pull it into the template-coverage
+  ratchet — so the session event VOCABULARY (`SessionEventSchema`,
+  `SessionEvent`, `SessionEventBody`, the derived `SessionEventMap`) moved OFF
+  it to the root barrel and is owned by `aai:events`; every other capability now
+  names an event through that map (`SessionEvent<"tool.called">`) and records
+  the name only, so a new event is one classification rather than four.
+  `StandardSchemaV1` and its two siblings took the same route to
+  `aai:standard-schema`. What is left in `aai`'s baseline is deliberate: the
+  `*Misuse`/`*Field` diagnostic types (reached by `agent` alone, so their body
+  is already hashed exactly once, and exporting them would put compile-error
+  plumbing in an author's autocomplete), `IsAny`/`RejectThenable*`/
+  `SyncMutationMisuse` on `state` and `Literal` on `workflow` for the same
+  reason, and the `AgentConfig` family reached only through `aai:testing`'s
+  deployable helpers.
 - **Changing the normalization is a `--rehash`, never one bump per
   capability.** Every committed hash stops matching at once while not one
   signature moved, so
@@ -955,10 +967,6 @@ same project:
 
 - `entryPoints: ["dist/runtime-barrel.d.ts"]` — the only documentable subpath,
   since `./internal` is deny-listed for the reason its own module doc gives.
-- `intentionallyNotExported: ["EventsNamed"]` — the `Extract` helper
-  `TransportEventBody` is written as. Same call as `DistributiveOmit` in
-  `packages/aai/typedoc.json`: a reader gets the resolved union in the rendered
-  signature and can never name the helper.
 - `externalSymbolLinkMappings` for `ai`'s `LanguageModel`, which `resolveLlm`
   returns and `LlmRegistryEntry.create` builds.
 

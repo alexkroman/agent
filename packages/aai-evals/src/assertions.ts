@@ -25,7 +25,7 @@
  * @module
  */
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 // The event READERS and the terminator set are published, because the harness
 // that produces the events is: `openEvalSession` waits on `TURN_ENDS` to decide

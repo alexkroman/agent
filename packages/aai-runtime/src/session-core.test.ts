@@ -1,6 +1,6 @@
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
 import { flush, makeEmitter, makeLogger } from "./_test-utils.ts";

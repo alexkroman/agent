@@ -1,7 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { agent, tool } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
-import type { SessionEvent, SessionEventBody, SessionEventMeta } from "@alexkroman1/aai/protocol";
+import type { SessionEventMeta } from "@alexkroman1/aai/protocol";
 import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
 import { beforeEach, describe, expect, test } from "vitest";
 import { z } from "zod";

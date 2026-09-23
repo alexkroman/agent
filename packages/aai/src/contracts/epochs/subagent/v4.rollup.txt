@@ -11,7 +11,7 @@ type AnyWorkflowDef<R = unknown> = {
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
 
 // @public
-export const DEFAULT_GUARDRAIL_MAX_REVISIONS = 1;
+export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 
 // @public
 export const DELEGATE_TOOL_NAME = "delegate";

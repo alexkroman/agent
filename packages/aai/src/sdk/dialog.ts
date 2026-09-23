@@ -84,8 +84,8 @@ import type {
   DialogVoiceConfig,
 } from "./dialog-types.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { SessionEvent } from "./protocol-events.ts";
 import type { ToolInputSchema } from "./schema.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
@@ -105,6 +105,7 @@ export type {
 export type {
   DialogBargeIn,
   DialogEvent,
+  DialogEventNames,
   DialogGate,
   DialogPosition,
   DialogSessionEventName,

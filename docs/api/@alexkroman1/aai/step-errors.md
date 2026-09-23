@@ -155,7 +155,7 @@ next attempt.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
 
 #### Parameters
 

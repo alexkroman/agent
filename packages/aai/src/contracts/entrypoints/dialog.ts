@@ -50,6 +50,7 @@ export {
   type Dialog,
   type DialogBargeIn,
   type DialogEvent,
+  type DialogEventNames,
   type DialogGate,
   type DialogOptions,
   type DialogPosition,

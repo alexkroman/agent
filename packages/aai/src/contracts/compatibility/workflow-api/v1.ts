@@ -62,6 +62,7 @@ import type {
   WorkflowSummary,
 } from "../../../sdk/workflow-api-barrel.ts";
 import {
+  ClientConfigResponseSchema,
   createAgentClient,
   createWorkflowApiClient,
   isTerminal,
@@ -194,6 +195,11 @@ export type Epoch1Types = {
   workflowRunStatus: WorkflowRunStatus;
   workflowSummary: WorkflowSummary;
 };
+
+/** The schema a client validates `/client-config` against, owned here too. */
+export function parseClientConfig(body: unknown): ClientConfigResponse {
+  return ClientConfigResponseSchema.parse(body);
+}
 
 export const epoch1Values = [
   createAgentClient,

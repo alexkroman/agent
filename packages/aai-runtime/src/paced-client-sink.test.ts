@@ -5,7 +5,8 @@
  * transport-neutral half so a non-socket sink is held to them too.
  */
 
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createPacedClientSink } from "./paced-client-sink.ts";

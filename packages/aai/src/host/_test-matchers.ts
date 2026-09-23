@@ -9,7 +9,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
 import { isRecord } from "../sdk/is-record.ts";
-import { EVENT_ID_PREFIX, SessionEventSchema } from "../sdk/protocol.ts";
+import { EVENT_ID_PREFIX } from "../sdk/protocol.ts";
+import { SessionEventSchema } from "../sdk/protocol-events.ts";
 
 type MatcherResult = { pass: boolean; message: () => string };
 

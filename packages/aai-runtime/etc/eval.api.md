@@ -12,7 +12,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -83,9 +83,7 @@ export function describeTurn(turn: EvalTurn): string;
 export const END_CALL_TOOL = "end_call";
 
 // @public
-export function errorsIn(events: readonly SessionEvent[]): readonly Extract<SessionEvent, {
-    type: "error.reported";
-}>[];
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
 
 // @public
 export type EvalCredentials = {
@@ -183,9 +181,7 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public

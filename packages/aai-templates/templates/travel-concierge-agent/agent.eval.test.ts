@@ -29,7 +29,7 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern } from "@alexkroman1/aai/testing";
+import { dialogRefusalPattern, eventsOf, isEvent } from "@alexkroman1/aai/testing";
 import {
   describeTurn,
   type EvalSession,
@@ -70,12 +70,14 @@ const ProjectedTrip = z.object({
  * every tool call, so the stream carries one per step.
  */
 function framesBeforeConfirm(session: EvalSession): z.infer<typeof ProjectedTrip>[] {
-  const views: z.infer<typeof ProjectedTrip>[] = [];
-  for (const event of session.events()) {
-    if (event.type === "tool.called" && event.toolName === "confirm_action") break;
-    if (event.type === "state.updated") views.push(ProjectedTrip.parse(event.state));
-  }
-  return views;
+  const events = [...session.events()];
+  // `isEvent`/`eventsOf` pick members BY NAME, so neither this nor the filter
+  // below restates the event union — a misspelled name is a compile error.
+  const confirmAt = events.findIndex(
+    (e) => isEvent(e, "tool.called") && e.toolName === "confirm_action",
+  );
+  const before = confirmAt < 0 ? events : events.slice(0, confirmAt);
+  return eventsOf(before, "state.updated").map((e) => ProjectedTrip.parse(e.state));
 }
 
 /**

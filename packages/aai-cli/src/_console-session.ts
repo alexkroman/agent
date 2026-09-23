@@ -11,7 +11,8 @@
  * sound card; `_console-audio.ts` is the SoX implementation the command uses.
  */
 
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { SessionConnection } from "@alexkroman1/aai-runtime";
 
 /** A running speaker: PCM16LE mono at the rate it was opened with. */

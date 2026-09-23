@@ -9,14 +9,14 @@
  * session id when the send happens, not the one that held it at dispatch.
  */
 
-import type { AgentDef, ToolContext } from "@alexkroman1/aai";
+import type { AgentDef, SessionEvent, ToolContext } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import {
   createOwnedMap,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeUsageMeter } from "./_test-utils.ts";

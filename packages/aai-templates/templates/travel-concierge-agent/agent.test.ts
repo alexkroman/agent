@@ -1,7 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { SessionEventHandler, ToolContext } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent, SessionEventHandler, ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDialogOk,

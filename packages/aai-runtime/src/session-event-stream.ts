@@ -55,13 +55,9 @@
  * `fatal: false` already encodes for turn-level errors.
  */
 
+import { type SessionEvent, type SessionEventBody, SessionEventSchema } from "@alexkroman1/aai";
 import { invariant } from "@alexkroman1/aai/internal";
-import {
-  EVENT_ID_PREFIX,
-  type SessionEvent,
-  type SessionEventBody,
-  SessionEventSchema,
-} from "@alexkroman1/aai/protocol";
+import { EVENT_ID_PREFIX } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { monotonicFactory } from "ulid";
 import { getOrCreate } from "./_get-or-create.ts";

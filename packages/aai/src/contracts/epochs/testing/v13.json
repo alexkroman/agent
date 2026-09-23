@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 13,
   "rule": 2,
-  "sha256": "bbab41de98b3297f8bbeac25ff13ceb0135aa7995850aa18612054846909886a",
+  "sha256": "3331f51a62354424f138e0bd1e432e35c4342e2e0d52ae36508b6b60365f75d8",
   "exports": [
     "ProjectFiles",
     "RecordedSleep",
@@ -64,6 +64,7 @@
     "deployedAgent",
     "dialogRefusalPattern",
     "dialogResultSchema",
+    "eventsOf",
     "expectDeployable",
     "expectDialogOk",
     "expectDialogRefused",
@@ -77,6 +78,7 @@
     "installStubTranscribe",
     "installStubUploads",
     "installStubWorkflows",
+    "isEvent",
     "parseSchemaInput",
     "parseToolInput",
     "routeStepFetch",
@@ -99,5 +101,5 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "3c362822db8bd4d295206c2dbdcf5d918df4ffd4e9d4299216029fc6433ec041"
+  "rollup": "082929322abf3f425fd642fa06c788549ea732bf839fdd4a1b7dc2219006f28d"
 }

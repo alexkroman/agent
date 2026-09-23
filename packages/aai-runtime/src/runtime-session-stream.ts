@@ -24,7 +24,7 @@
  *   part a crash costs, and a clean stop is the one time it costs nothing.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { ServerSession } from "./session-core.ts";
 import { historyFromEvents } from "./session-event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";

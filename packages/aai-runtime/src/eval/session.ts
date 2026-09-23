@@ -52,11 +52,11 @@
  * @module
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
 import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
@@ -145,7 +145,7 @@ export type EvalTurn = {
    * is refused before a case sees it (`_turn-faults.ts`); `errorsIn` over
    * `session.events()` is the unfiltered list.
    */
-  readonly errors: readonly Extract<SessionEvent, { type: "error.reported" }>[];
+  readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 /** One live eval session. */

@@ -60,7 +60,7 @@ export interface StandardSchemaIssue {
    * alternatives has nowhere to put the reason each one was rejected. Zod
    * therefore passes an `errors` array through the `~standard` interface
    * anyway, and its parent issue's own `message` is the placeholder
-   * `"Invalid input"`. {@link formatSchemaIssues} reads this when it is
+   * `"Invalid input"`. `formatSchemaIssues` reads this when it is
    * shaped like branches and ignores it otherwise; nothing in this SDK
    * requires a vendor to supply it, and no caller should produce it.
    */
@@ -77,7 +77,7 @@ export interface StandardSchemaIssue {
    * `Invalid key in record` while `agent-config.ts` had spelled out the key
    * grammar and the reason for it.
    *
-   * Unlike `errors` these are not alternatives, so {@link formatSchemaIssues}
+   * Unlike `errors` these are not alternatives, so `formatSchemaIssues`
    * APPENDS rather than replaces — see `renderIssue`.
    */
   readonly issues?: unknown;

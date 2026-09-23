@@ -183,7 +183,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
-  function handleToolCalled(event: Extract<TransportEventBody, { type: "tool.called" }>): void {
+  function handleToolCalled(event: TransportEventBody<"tool.called">): void {
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
     // drain must not start tool work (guest RPC, ctx.generate)

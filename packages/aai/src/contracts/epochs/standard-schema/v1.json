@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "standard-schema",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "bfc5a7512886d606eea9cb449e4cbc9b52f1e35607942aafe12439a2e3d8f05c",
+  "exports": ["StandardSchemaIssue", "StandardSchemaResult", "StandardSchemaV1"],
+  "rollup": "1a80d2e3b83cf41ec40cda3b959188c19e452ae8cc3534c901a8e4a2af8adc62"
+}

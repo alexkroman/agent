@@ -3,7 +3,7 @@
   "capability": "step-errors",
   "epoch": 1,
   "rule": 2,
-  "sha256": "8d3c43d6b679af7d5ba963cfbecdeb26315661c270a69c0acf1ebcd403ea373e",
+  "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
   "exports": [
     "DEFAULT_RETRY_DELAY_MS",
     "FatalError",
@@ -22,5 +22,20 @@
     "throwStepError",
     "toStepError"
   ],
-  "rollup": "751e87990ca1c7404a731ec6fc012bd6ce8f0139ecb8ae3228bb11094a2e592e"
+  "rollup": "751e87990ca1c7404a731ec6fc012bd6ce8f0139ecb8ae3228bb11094a2e592e",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "8d3c43d6b679af7d5ba963cfbecdeb26315661c270a69c0acf1ebcd403ea373e",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "71aafffbea9b8fce4e938093311af484ffdab18ae9f3509e40f78a2c1091c493",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

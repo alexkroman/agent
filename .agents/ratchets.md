@@ -326,13 +326,15 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   `internal-surface.json` (`@internal` names on a public subpath) and
   `unowned-surface.json` — every declaration a capability HASH covers that no
   capability owns, split into `unowned` (exported by some published subpath,
-  e.g. `SessionEventSchema` on `/protocol`) and `forgotten`
+  e.g. `AgentConfig` on `/manifest`) and `forgotten`
   (`ae-forgotten-export`: exported by none). This is the second half of what
   `check:api-nameable` measures, asked of the contract instead of the package:
   a new ownerless type fails, `--bump`/`--update` refuse the capability that
   reaches it, and the remedy is ONE owner, because a body hashed in three
   capabilities is three epochs per change. It opened at 35 names in `aai` and
-  5 in `aai-runtime`. The gate also fails a branch that grew any capability by
+  5 in `aai-runtime`, and stands at 26 and 4 now: the session event vocabulary
+  (`aai:events`), the Standard Schema types (`aai:standard-schema`), dialog's
+  event-name helpers and `ClientConfigResponseSchema` got owners. The gate also fails a branch that grew any capability by
   more than one epoch or one revision against the merge-base. That half is a
   property of a BRANCH, the same exception `check:deploy-changeset` is, and it
   clears the same bar: without a base it SAYS it did not run (every tree check

@@ -20,10 +20,11 @@
  * @internal Test infrastructure, not part of any public API.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { silentLogger } from "../runtime-config.ts";
 import { createSessionCore, type ServerSession } from "../session-core.ts";
 import { createSessionEmitter } from "../session-emitter.ts";
@@ -119,7 +120,7 @@ function fail(what: string): never {
 }
 
 /** A fatal `error` frame latches: the client has released its microphone. */
-function noteFatalError(h: Harness, e: Extract<SessionEvent, { type: "error.reported" }>): void {
+function noteFatalError(h: Harness, e: SessionEvent<"error.reported">): void {
   h.declaredDead ??= `${e.code}: ${e.message}`;
   if (e.code === "connection") h.socketsAtRetirement ??= h.link.sockets.length;
 }

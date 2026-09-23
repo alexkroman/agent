@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
-import { ReadyConfigSchema, SessionCommandSchema, SessionEventSchema } from "./protocol.ts";
+import { ReadyConfigSchema, SessionCommandSchema } from "./protocol.ts";
+import { SessionEventSchema } from "./protocol-events.ts";
 
 type ZodObjectLike = { shape: Record<string, unknown> };
 

@@ -515,6 +515,57 @@ stay.result.options; // "garden view"
 
 ***
 
+### eventsOf()
+
+```ts
+function eventsOf<E extends {
+  type: string;
+}, K extends string>(events: Iterable<E>, type: K): Extract<E, {
+  type: K;
+}>[];
+```
+
+Every event in `events` named `type`, in order, typed as that member.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { eventsOf } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const calls = eventsOf(recorded, "tool.called");
+console.log(calls.map((e) => e.toolName));
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### events
+
+`Iterable`\<`E`\>
+
+##### type
+
+`K`
+
+#### Returns
+
+`Extract`\<`E`, \{
+  `type`: `K`;
+\}\>[]
+
+***
+
 ### expectDeployable()
 
 ```ts
@@ -1246,11 +1297,61 @@ expect(order.id).toBe("ord_1");
 
 ***
 
+### isEvent()
+
+```ts
+function isEvent<E extends {
+  type: string;
+}, K extends string>(event: E, type: K): event is Extract<E, { type: K }>;
+```
+
+Whether `event` is the one named `type` — a type guard, so the branch it
+guards reads that member's fields without a cast.
+
+```ts
+import type { SessionEvent } from "@alexkroman1/aai";
+import { isEvent } from "@alexkroman1/aai/testing";
+
+declare const recorded: SessionEvent[];
+const last = recorded.at(-1);
+if (last && isEvent(last, "tool.called")) console.log(last.toolName);
+```
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\}
+
+##### K
+
+`K` *extends* `string`
+
+#### Parameters
+
+##### event
+
+`E`
+
+##### type
+
+`K`
+
+#### Returns
+
+`event is Extract<E, { type: K }>`
+
+***
+
 ### parseSchemaInput()
 
 ```ts
 function parseSchemaInput<T = Record<string, unknown>>(
-   schema: StandardSchemaV1<unknown, unknown> | undefined, 
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
    value: unknown, 
    what?: string
 ): Promise<T>;
@@ -1271,7 +1372,8 @@ What the schema produces. Defaults to
 
 ##### schema
 
-`StandardSchemaV1`\<`unknown`, `unknown`\> \| `undefined`
+  \| [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
 
 A Standard Schema, or `undefined` — the shape
   `tool.inputSchema` and `workflow.input` both have. `undefined` is an ERROR
@@ -1586,10 +1688,14 @@ expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] })
 
 ```ts
 function schemaInputIssues(
-   schema: StandardSchemaV1<unknown, unknown> | undefined, 
+   schema: 
+  | StandardSchemaV1<unknown, unknown>
+  | undefined, 
    value: unknown, 
    what?: string
-): Promise<readonly StandardSchemaIssue[] | undefined>;
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
 ```
 
 The issues `schema` found in `value`, or `undefined` when it accepted it.
@@ -1603,7 +1709,8 @@ hand-rolled site was already writing against `.issues`.
 
 ##### schema
 
-`StandardSchemaV1`\<`unknown`, `unknown`\> \| `undefined`
+  \| [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
+  \| `undefined`
 
 As [parseSchemaInput](#parseschemainput): `undefined` throws rather than
   reporting "no issues", which would make a negative test pass for a schema
@@ -1621,7 +1728,9 @@ How the schema is named in that error.
 
 #### Returns
 
-`Promise`\<readonly `StandardSchemaIssue`[] \| `undefined`\>
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](index.md#standardschemaissue)[]
+  \| `undefined`\>
 
 #### Example
 
@@ -2260,7 +2369,9 @@ function toolInputIssues(
    agent: ToolBearingAgent, 
    name: string, 
    value: unknown
-): Promise<readonly StandardSchemaIssue[] | undefined>;
+): Promise<
+  | readonly StandardSchemaIssue[]
+| undefined>;
 ```
 
 The issues the tool `name`'s input schema found in `value`, or `undefined`.
@@ -2285,7 +2396,9 @@ between an LLM's untyped tool call and the tool body.
 
 #### Returns
 
-`Promise`\<readonly `StandardSchemaIssue`[] \| `undefined`\>
+`Promise`\<
+  \| readonly [`StandardSchemaIssue`](index.md#standardschemaissue)[]
+  \| `undefined`\>
 
 #### Throws
 

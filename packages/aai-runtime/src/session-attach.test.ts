@@ -7,8 +7,9 @@
  * non-socket adapter (`runtime.connect`, the console) is built on.
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
-import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { makeClientSink, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { type AttachSessionOptions, attachSession } from "./session-attach.ts";

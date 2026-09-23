@@ -201,6 +201,13 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function eventsOf<E extends {
+    type: string;
+}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
+    type: K;
+}>[];
+
+// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -261,6 +268,13 @@ type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isEvent<E extends {
+    type: string;
+}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
+    type: K;
+}>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;

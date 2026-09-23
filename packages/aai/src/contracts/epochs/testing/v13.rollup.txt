@@ -195,6 +195,13 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function eventsOf<E extends {
+    type: string;
+}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
+    type: K;
+}>[];
+
+// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -279,6 +286,13 @@ export function installStubUploads(files: Readonly<Record<string, StubUpload>>, 
 
 // @public
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
+
+// @public
+export function isEvent<E extends {
+    type: string;
+}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
+    type: K;
+}>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;

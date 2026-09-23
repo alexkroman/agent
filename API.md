@@ -2661,7 +2661,16 @@ export type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
-export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
+export type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+    type: N;
+} : never : never;
+
+// @public
+export type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? (C extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (C extends {
+    states: infer N;
+} ? DialogEventNames<N> : never) : never : never : never;
 
 // @public
 export interface DialogGate<R, E> {
@@ -2749,9 +2758,11 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
-type EventOf<N> = N extends string ? {
-    type: N;
-} : never;
+export type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R | ToolFailure>;
@@ -2915,9 +2926,7 @@ export type Message = {
 };
 
 // @public
-export type MetricsCollectedEvent = Extract<SessionEvent, {
-    type: "metrics.collected";
-}>;
+export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
 // @public
 export interface MetricsCollector {
@@ -2981,16 +2990,6 @@ export interface ModelTuning {
     maxRetries?: number;
     temperature?: number;
 }
-
-// @public
-type NamesIn<S> = (S extends {
-    on: infer O;
-} ? Extract<keyof O, string> : never) | (S extends {
-    states: infer M;
-} ? NamesInMap<M> : never);
-
-// @public
-type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? NamesIn<C> : never : never : never;
 
 // @public
 export function omitUndefined<T extends object>(obj: T): {
@@ -3177,7 +3176,15 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function safeJsonParse(text: string): unknown;
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+
+// @public
+export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public
+export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
+    [T in K]: Omit<SessionEventMap[T], "meta">;
+}[K];
 
 // @public
 export type SessionEventContext = {
@@ -3191,15 +3198,17 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event:
 
 // @public
 export type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
+export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -3416,7 +3425,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-export type SessionEventType = SessionEvent["type"];
+export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
@@ -3443,6 +3452,9 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
     durable?: boolean;
     view?: (value: DeepReadonly<T>) => V;
 }
+
+// @public
+export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
@@ -3513,7 +3525,7 @@ export function spokenOrdinal(spoken: string): number | undefined;
 export function spokenTime(hhmm: string): string;
 
 // @public
-interface StandardSchemaIssue {
+export interface StandardSchemaIssue {
     readonly errors?: unknown;
     readonly issues?: unknown;
     // (undocumented)
@@ -3525,7 +3537,7 @@ interface StandardSchemaIssue {
 }
 
 // @public
-type StandardSchemaResult<Output> = {
+export type StandardSchemaResult<Output> = {
     readonly value: Output;
     readonly issues?: undefined;
 } | {
@@ -3533,7 +3545,7 @@ type StandardSchemaResult<Output> = {
 };
 
 // @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly "~standard": {
         readonly version: 1;
         readonly vendor: string;
@@ -4770,6 +4782,13 @@ interface DialogVoiceConfig {
 }
 
 // @public
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -4962,7 +4981,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
 type SessionEventContext = {
@@ -4976,14 +4995,16 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
+// @public
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -5201,7 +5222,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-type SessionEventType = SessionEvent["type"];
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export type SessionMode = "s2s" | "pipeline" | "text";
@@ -5714,10 +5735,14 @@ export interface ClientSink {
 }
 
 // @public
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export const EVENT_ID_PREFIX = "evt_";
 
 // @public
-export const EVENT_ID_PREFIX = "evt_";
+type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export type HostConfig = z.infer<typeof HostConfigSchema>;
@@ -5990,10 +6015,11 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type SessionEvent = z.infer<typeof SessionEventSchema>;
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public
-export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
+interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
 
 // @public
 export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
@@ -6004,8 +6030,8 @@ export const SessionEventMetaSchema: z.ZodObject<{
     at: z.ZodNumber;
 }, z.core.$strip>;
 
-// @public (undocumented)
-export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -6220,6 +6246,9 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;
 ```
 
 ## `@alexkroman1/aai/s2s`
@@ -7560,6 +7589,13 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function eventsOf<E extends {
+    type: string;
+}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
+    type: K;
+}>[];
+
+// @public
 export function expectDeployable(def: AgentConfigSource): AgentConfig;
 
 // @public
@@ -7620,6 +7656,13 @@ type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isEvent<E extends {
+    type: string;
+}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
+    type: K;
+}>;
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -9205,7 +9248,7 @@ export type AnyWorkflowDef<R = unknown> = {
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
-const ClientConfigResponseSchema: z.ZodObject<{
+export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;
@@ -9748,7 +9791,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -9819,9 +9862,7 @@ export function describeTurn(turn: EvalTurn): string;
 export const END_CALL_TOOL = "end_call";
 
 // @public
-export function errorsIn(events: readonly SessionEvent[]): readonly Extract<SessionEvent, {
-    type: "error.reported";
-}>[];
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
 
 // @public
 export type EvalCredentials = {
@@ -9919,9 +9960,7 @@ export type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public
@@ -10222,7 +10261,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
 import type { StepFetch } from '@alexkroman1/aai/host-internal';
@@ -10401,9 +10440,7 @@ type EvalTurn = {
     readonly events: readonly SessionEvent[];
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
-    readonly errors: readonly Extract<SessionEvent, {
-        type: "error.reported";
-    }>[];
+    readonly errors: readonly SessionEvent<"error.reported">[];
 };
 
 // @public
@@ -10599,8 +10636,10 @@ import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { streamText } from 'ai';
@@ -10811,11 +10850,6 @@ export function ensureWorkflowJournalSchema(options: {
     url: string;
     logger: Logger;
 }): Promise<boolean>;
-
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
 
 export { ExecuteTool }
 
@@ -11470,10 +11504,10 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+export type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
 
 // @public
-export type TransportEventType = TransportEventBody["type"];
+export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { TtsError }
 
@@ -11651,8 +11685,10 @@ import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
@@ -11762,11 +11798,6 @@ export function createUploadStore(options: {
 
 // @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
-
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
 
 // @internal
 export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
@@ -12244,7 +12275,10 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
+
+// @public
+type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { UPLOAD_CHUNK_BYTES }
 
@@ -12350,7 +12384,7 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';

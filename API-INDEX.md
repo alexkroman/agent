@@ -98,7 +98,7 @@ each is for.
 | `CheckboxField` | `@alexkroman1/aai-ui` |
 | `ClientConfig` | `@alexkroman1/aai-ui` |
 | `ClientConfigResponse` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `ClientConfigResponseSchema` | `@alexkroman1/aai/protocol` |
+| `ClientConfigResponseSchema` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai/workflow-api` |
 | `ClientHandle` | `@alexkroman1/aai-ui` |
 | `ClientSink` | `@alexkroman1/aai/protocol` |
 | `ClientTheme` | `@alexkroman1/aai-ui` |
@@ -142,6 +142,7 @@ each is for.
 | `Dialog` | `@alexkroman1/aai` |
 | `DialogBargeIn` | `@alexkroman1/aai` |
 | `DialogEvent` | `@alexkroman1/aai` |
+| `DialogEventNames` | `@alexkroman1/aai` |
 | `DialogGate` | `@alexkroman1/aai` |
 | `DialogOptions` | `@alexkroman1/aai` |
 | `DialogPosition` | `@alexkroman1/aai` |
@@ -182,6 +183,7 @@ each is for.
 | `EvalWorkflowTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
 | `EvalWorkflowsOptions` | `@alexkroman1/aai-runtime/eval` |
+| `EventMapOf` | `@alexkroman1/aai` |
 | `EventStreamFrame` | `@alexkroman1/aai/workflow-api` |
 | `ExecuteTool` | `@alexkroman1/aai-runtime` |
 | `ExecuteToolOptions` | `@alexkroman1/aai-runtime` |
@@ -365,6 +367,7 @@ each is for.
 | `SESSION_EVENTS_TOKEN_ENV` | `@alexkroman1/aai-runtime` |
 | `SESSION_EVENT_TYPES` | `@alexkroman1/aai/protocol` |
 | `SESSION_SECRET_ENV` | `@alexkroman1/aai-runtime` |
+| `SESSION_SOURCED_EVENT_TYPES` | `@alexkroman1/aai` |
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | `@alexkroman1/aai-runtime` |
 | `SLACK_CHANNEL_HANDLER` | `@alexkroman1/aai/channels` |
 | `SLACK_CHANNEL_KIND` | `@alexkroman1/aai/channels` |
@@ -399,15 +402,16 @@ each is for.
 | `SessionErrorBannerProps` | `@alexkroman1/aai-ui` |
 | `SessionErrorCode` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui` |
 | `SessionErrorCodeSchema` | `@alexkroman1/aai/protocol` |
-| `SessionEvent` | `@alexkroman1/aai/protocol` |
-| `SessionEventBody` | `@alexkroman1/aai/protocol` |
+| `SessionEvent` | `@alexkroman1/aai` |
+| `SessionEventBody` | `@alexkroman1/aai` |
 | `SessionEventContext` | `@alexkroman1/aai` |
 | `SessionEventHandler` | `@alexkroman1/aai` |
 | `SessionEventHandlers` | `@alexkroman1/aai` |
+| `SessionEventMap` | `@alexkroman1/aai` |
 | `SessionEventMeta` | `@alexkroman1/aai/protocol` |
 | `SessionEventMetaSchema` | `@alexkroman1/aai/protocol` |
 | `SessionEventPage` | `@alexkroman1/aai-runtime` |
-| `SessionEventSchema` | `@alexkroman1/aai/protocol` |
+| `SessionEventSchema` | `@alexkroman1/aai` |
 | `SessionEventStream` | `@alexkroman1/aai-runtime` |
 | `SessionEventType` | `@alexkroman1/aai` |
 | `SessionIdentity` | `@alexkroman1/aai-runtime` |
@@ -416,6 +420,7 @@ each is for.
 | `SessionSlot` | `@alexkroman1/aai` |
 | `SessionSlotOptions` | `@alexkroman1/aai` |
 | `SessionSnapshot` | `@alexkroman1/aai-ui` |
+| `SessionSourcedEventType` | `@alexkroman1/aai` |
 | `SessionStartOptions` | `@alexkroman1/aai-runtime` |
 | `SessionStateBackend` | `@alexkroman1/aai-runtime` |
 | `SessionStateDot` | `@alexkroman1/aai-ui` |
@@ -447,6 +452,9 @@ each is for.
 | `SonioxSttOptions` | `@alexkroman1/aai/stt` |
 | `SpeakOptions` | `@alexkroman1/aai/step` |
 | `SpokenAudio` | `@alexkroman1/aai/step` |
+| `StandardSchemaIssue` | `@alexkroman1/aai` |
+| `StandardSchemaResult` | `@alexkroman1/aai` |
+| `StandardSchemaV1` | `@alexkroman1/aai` |
 | `StartOptions` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-cli/start` |
 | `StartResult` | `@alexkroman1/aai-cli/start` |
 | `StartScreen` | `@alexkroman1/aai-ui` |
@@ -775,6 +783,7 @@ each is for.
 | `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalTextCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
+| `eventsOf` | `@alexkroman1/aai/testing` |
 | `executeStart` | `@alexkroman1/aai-cli/start` |
 | `expectCalled` | `@alexkroman1/aai-runtime/eval` |
 | `expectDeployable` | `@alexkroman1/aai/testing` |
@@ -805,6 +814,7 @@ each is for.
 | `installStubUploads` | `@alexkroman1/aai/testing/vitest` |
 | `installStubWorkflows` | `@alexkroman1/aai/testing/vitest` |
 | `isClockTime` | `@alexkroman1/aai` |
+| `isEvent` | `@alexkroman1/aai/testing` |
 | `isFfmpegError` | `@alexkroman1/aai/ffmpeg` |
 | `isIsoDate` | `@alexkroman1/aai` |
 | `isLocalOnlyFile` | `@alexkroman1/aai/workspace-files` |
@@ -1198,8 +1208,6 @@ trace or a type error can be traced back to something.
 | `SleepTimerOptions` | `@alexkroman1/aai/internal` |
 | `SpawnCappedResult` | `@alexkroman1/aai/host-internal` |
 | `SpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
-| `StandardSchemaIssue` | `@alexkroman1/aai/host-internal` |
-| `StandardSchemaV1` | `@alexkroman1/aai/host-internal` |
 | `StepDelegateFn` | `@alexkroman1/aai/host-internal` |
 | `StepInfoReader` | `@alexkroman1/aai/host-internal` |
 | `StepReporter` | `@alexkroman1/aai/host-internal` |

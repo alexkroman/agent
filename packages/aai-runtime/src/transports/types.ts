@@ -32,52 +32,38 @@
  *   change with a client on the other end of it, not a callback cleanup.
  */
 
-import type { Message } from "@alexkroman1/aai";
-import type { SessionErrorCode, SessionEventBody } from "@alexkroman1/aai/protocol";
-
-/**
- * The event vocabulary narrowed to a named subset.
- *
- * The `extends` constraint is the point: a name that is not in
- * {@link SessionEventBody} is a COMPILE ERROR here, where a bare
- * `Extract<SessionEventBody, { type: "speach.started" }>` would silently resolve
- * to `never` and quietly shrink the union — the same
- * a-pattern-that-matches-nothing shape the repo's gates keep paying for.
- */
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, { type: T }>;
+import type {
+  Message,
+  SessionEventBody,
+  SessionEventType,
+  SessionSourcedEventType,
+} from "@alexkroman1/aai";
+import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
  * the events only the session itself can be the source of.
  *
- * The five it excludes are excluded for a reason each, not by omission:
- * `session.configured` is the handshake (`ServerSession.configure`),
- * `session.reset` and `session.timed-out` come from the client and the idle
- * watchdog, `custom.emitted` is `ctx.send`, and `state.updated` is a `syncState`
- * projection. A transport reporting any of them would be describing a decision
- * it did not make.
+ * DERIVED, never listed. This used to spell out the fourteen reportable names by
+ * hand, so every new event was an edit here AND a new epoch of this package's
+ * `session` capability — `user-turn.exceeded` and `metrics.collected` each cost
+ * one — for a change this package did not make. The exclusions are declared once,
+ * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
+ * (with the reason each is there), so a new event is reportable by default and
+ * `handleReport` publishes it unless it grows a `case`.
  *
  * @public
  */
-export type TransportEventBody = EventsNamed<
-  | "speech.started"
-  | "speech.stopped"
-  | "user-transcript.updated"
-  | "user-transcript.committed"
-  | "user-turn.exceeded"
-  | "metrics.collected"
-  | "agent-transcript.updated"
-  | "agent-transcript.committed"
-  | "tool.called"
-  | "tool.completed"
-  | "reply.completed"
-  | "reply.cancelled"
-  | "audio.completed"
-  | "error.reported"
->;
+export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
-/** One reportable event's `type`, for a switch or a per-type recorder. */
-export type TransportEventType = TransportEventBody["type"];
+/**
+ * One reportable event, envelope-free — the session stamps `meta` when it emits.
+ * `TransportEventBody<"tool.called">` is one member.
+ *
+ * @public
+ */
+export type TransportEventBody<K extends TransportEventType = TransportEventType> =
+  SessionEventBody<K>;
 
 /**
  * How a transport reaches the session it runs for. Constructed at

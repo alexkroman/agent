@@ -10,9 +10,14 @@
  * which is what a harness waits on instead of a timer.
  */
 
-import { type AgentDef, agent, tool } from "@alexkroman1/aai";
+import {
+  type AgentDef,
+  agent,
+  type SessionEvent,
+  SessionEventSchema,
+  tool,
+} from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
-import { type SessionEvent, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import type { TextStreamPart, ToolSet } from "ai";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";

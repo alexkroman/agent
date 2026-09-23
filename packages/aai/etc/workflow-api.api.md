@@ -25,7 +25,7 @@ export type AnyWorkflowDef<R = unknown> = {
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
-const ClientConfigResponseSchema: z.ZodObject<{
+export const ClientConfigResponseSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;
     greeting: z.ZodOptional<z.ZodString>;
     sessionUrl: z.ZodOptional<z.ZodString>;

@@ -38,13 +38,18 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 7,
-    "supported": [4, 5, 6, 7],
+    "current": 8,
+    "supported": [4, 5, 6, 7, 8],
     "dropped": {
       "1": "DialogStateSpec.keyterms and DialogVoiceConfig.keyterms are removed with the pipeline ASR-steering seam, so an epoch-1 dialog that narrowed the recognizer's vocabulary for a phase no longer compiles.",
       "2": "Same removal one epoch on: the per-state keyterms knob is gone, and epoch 2's example was written around it.",
       "3": "Removes the per-state keyterms knob from DialogStateSpec and DialogVoiceConfig. An epoch-3 dialog that narrowed the recognizer for one phase no longer compiles."
     }
+  },
+  "events": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "ffmpeg": {
     "current": 1,
@@ -103,6 +108,11 @@
   "spoken": {
     "current": 2,
     "supported": [1, 2],
+    "dropped": {}
+  },
+  "standard-schema": {
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "state": {
@@ -172,6 +182,11 @@
     "dropped": {}
   },
   "tts": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "turn-taking": {
     "current": 1,
     "supported": [1],
     "dropped": {}

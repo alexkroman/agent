@@ -22,8 +22,10 @@ import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
-import { SessionEvent } from '@alexkroman1/aai/protocol';
-import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEventType } from '@alexkroman1/aai';
+import type { SessionSourcedEventType } from '@alexkroman1/aai';
 import type { SlotStore } from '@alexkroman1/aai';
 import type { SubagentDef } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
@@ -133,11 +135,6 @@ export function createUploadStore(options: {
 
 // @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
-
-// @public
-type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
-    type: T;
-}>;
 
 // @internal
 export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
@@ -615,7 +612,10 @@ export type TraceParent = {
 };
 
 // @public
-type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "user-turn.exceeded" | "metrics.collected" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+type TransportEventBody<K extends TransportEventType = TransportEventType> = SessionEventBody<K>;
+
+// @public
+type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
 export { UPLOAD_CHUNK_BYTES }
 

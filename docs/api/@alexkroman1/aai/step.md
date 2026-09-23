@@ -966,7 +966,7 @@ failure — a `404` that means "already deleted".
 
 ##### S
 
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+`S` *extends* [`StandardSchemaV1`](index.md#standardschemav1)\<`unknown`, `unknown`\>
 
 #### Parameters
 
@@ -2571,7 +2571,7 @@ often better answer than one that rejects the whole reply.
 
 ##### S
 
-`S` *extends* `StandardSchemaV1`
+`S` *extends* [`StandardSchemaV1`](index.md#standardschemav1)
 
 ***
 

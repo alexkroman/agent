@@ -110,6 +110,19 @@ export {
  * needs to see the other to pick correctly.
  */
 export * from "./sdk/procedure.ts";
+/**
+ * The session event vocabulary, and the types an `agent({ events })` handler is
+ * written against.
+ *
+ * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
+ * moment a handler is extracted from the literal into a function of its own, which
+ * is the first thing an author does once one grows past a line — and `SessionEvent`
+ * and its schema came with them, off `/protocol`, so the vocabulary has exactly one
+ * owner: the `aai:events` capability. On `/protocol` it was contracted by NOTHING,
+ * so its body was hashed in every capability that reached it and one new event
+ * minted four epochs. A client parsing frames imports the schema from here too.
+ */
+export { SessionEventSchema } from "./sdk/protocol-events.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
@@ -249,28 +262,37 @@ export * from "./sdk/random.ts";
  */
 export { requireEnv } from "./sdk/require-env.ts";
 /**
- * Standard Schema acceptance — the two an author names.
+ * Standard Schema acceptance — the two an author names, and the SPEC they are
+ * written in terms of.
  *
- * `StandardSchemaV1` and its result/issue types are the ecosystem SPEC that
- * `tool()` happens to accept, not something an agent declares; they stay in
- * `sdk/schema.ts` for the signatures that reference them.
+ * `StandardSchemaV1` and its result/issue types are the ecosystem spec that
+ * `tool()`, `ctx.generate`, `step()` and `workflow()` all accept. They used to be
+ * reachable from those signatures without being on any authoring subpath, which
+ * made them OWNERLESS to the capability contracts: their bodies were hashed in
+ * eight capabilities at once. They are on the root now and owned by the
+ * `standard-schema` capability alone — a vendor-neutral type an author may name
+ * when writing a helper that accepts any schema.
  */
-export type { InferSchemaOutput, ToolInputSchema } from "./sdk/schema.ts";
-/**
- * The types an `agent({ events })` handler is written against.
- *
- * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
- * moment a handler is extracted from the literal into a function of its own, which
- * is the first thing an author does once one grows past a line. `SessionEvent`
- * itself is not here: it is the wire union and lives on
- * `@alexkroman1/aai/protocol`, so a handler that needs to name one imports it
- * there, exactly as a client does.
- */
+export type {
+  InferSchemaOutput,
+  StandardSchemaIssue,
+  StandardSchemaResult,
+  StandardSchemaV1,
+  ToolInputSchema,
+} from "./sdk/schema.ts";
+export {
+  type EventMapOf,
+  SESSION_SOURCED_EVENT_TYPES,
+  type SessionEvent,
+  type SessionEventBody,
+  type SessionEventMap,
+  type SessionEventType,
+  type SessionSourcedEventType,
+} from "./sdk/session-event-map.ts";
 export type {
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
-  SessionEventType,
 } from "./sdk/session-events.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.

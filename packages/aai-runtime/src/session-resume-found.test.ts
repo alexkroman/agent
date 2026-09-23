@@ -9,7 +9,7 @@
  * through to a greeting rather than producing a connected, silent agent.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import type { SessionEvent } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "./_test-utils.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";

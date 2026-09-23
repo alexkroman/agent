@@ -5,7 +5,6 @@
     "CreateHeaderWebSocket",
     "CreateOpenaiRealtimeWebSocket",
     "CreateS2sWebSocket",
-    "EventsNamed",
     "HeaderWebSocket"
   ]
 }

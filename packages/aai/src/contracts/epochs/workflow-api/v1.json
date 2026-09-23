@@ -3,11 +3,12 @@
   "capability": "workflow-api",
   "epoch": 1,
   "rule": 2,
-  "sha256": "9de6591666322b8bc12e6d3bc3c1cf348261d7e7381f7739e71fca06fa32b8be",
+  "sha256": "1bb7691a7b4489d9664e23a5f45ad15483cd3d9e54f07b1e2c4c3da859ebb4cd",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
     "ClientConfigResponse",
+    "ClientConfigResponseSchema",
     "EventStreamFrame",
     "FindOptions",
     "StartOptions",
@@ -35,5 +36,20 @@
     "isTerminal",
     "readEventStream"
   ],
-  "rollup": "722ae6d4ca84b11dda747839c293f834ef4bffcf50be442d17692a3345b244d0"
+  "rollup": "722ae6d4ca84b11dda747839c293f834ef4bffcf50be442d17692a3345b244d0",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "9de6591666322b8bc12e6d3bc3c1cf348261d7e7381f7739e71fca06fa32b8be",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "1bb7691a7b4489d9664e23a5f45ad15483cd3d9e54f07b1e2c4c3da859ebb4cd",
+      "reason": "additive (checked): +ClientConfigResponseSchema"
+    }
+  ]
 }

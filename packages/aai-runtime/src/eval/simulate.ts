@@ -35,9 +35,9 @@
  * @module
  */
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { generateText, jsonSchema, type ModelMessage, type Tool } from "ai";
 import { createLlmModelCache } from "../_llm-model-cache.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";

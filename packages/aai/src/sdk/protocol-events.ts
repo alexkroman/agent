@@ -25,7 +25,7 @@
  * {@link SessionEventMeta} is minted when the event is written and stored with
  * it, so the same `meta.id` comes back from a cursor reconnect, a rewind to
  * index 0, and a replay of a finished session. Emitters therefore pass a
- * {@link SessionEventBody} and the session's emitter stamps it — a required
+ * `SessionEventBody` and the session's emitter stamps it — a required
  * field on 40-odd call sites would be 40 chances to mint a second id for one
  * event, which is the one thing that would make the id useless.
  *
@@ -137,7 +137,6 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 const ev = <T extends string>(t: T) =>
   z.object({ type: z.literal(t), meta: SessionEventMetaSchema });
 
-/** Zod schema for {@link SessionEvent}. */
 /**
  * One tool call as a RESUME reports it — see `history.restored`.
  *
@@ -197,6 +196,12 @@ export const AgentTranscriptRecoverySchema = z.enum(["turn-failed", "session-fai
  */
 export type AgentTranscriptRecovery = z.infer<typeof AgentTranscriptRecoverySchema>;
 
+/**
+ * The session event vocabulary — the ONE source of truth. `SessionEventMap`,
+ * `SessionEvent` and `SessionEventType` are all derived from it.
+ *
+ * @public
+ */
 export const SessionEventSchema = z.discriminatedUnion("type", [
   /**
    * The handshake: audio negotiation plus the session's own id.
@@ -443,23 +448,11 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
 ]);
 
 /**
- * One **server→client** session event, envelope included: a fact the session
- * reports, in the shape it takes on the wire and in the retained stream.
- *
- * This is what a hook handler receives and what a client parses. Host code
- * EMITS a {@link SessionEventBody} and the session's emitter stamps the
- * envelope — see the module doc.
+ * `SessionEvent`, `SessionEventBody` and the typed map they are read through are
+ * declared in `session-event-map.ts`, derived from the schema above — see that
+ * module for why the vocabulary is a MAP an author keys off rather than a union
+ * each consumer restates.
  */
-export type SessionEvent = z.infer<typeof SessionEventSchema>;
-
-/** `Omit` that distributes over a union, so each member keeps its own `type`. */
-type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-
-/**
- * A session event as its EMITTER writes it — everything but the envelope,
- * which the session stamps exactly once.
- */
-export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
 
 /** Every event name, as a set — for `lenientParse`'s known-types argument. */
 export const SESSION_EVENT_TYPES: ReadonlySet<string> = new Set(

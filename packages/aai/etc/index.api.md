@@ -244,7 +244,16 @@ export type DialogBargeIn = "default" | "off" | {
 };
 
 // @public
-export type DialogEvent<S extends DialogSpec> = EventOf<Exclude<NamesInMap<S["states"]>, `@${string}`>>;
+export type DialogEvent<S extends DialogSpec> = Exclude<DialogEventNames<S["states"]>, `@${string}`> extends infer N ? N extends string ? {
+    type: N;
+} : never : never;
+
+// @public
+export type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? (C extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (C extends {
+    states: infer N;
+} ? DialogEventNames<N> : never) : never : never : never;
 
 // @public
 export interface DialogGate<R, E> {
@@ -332,9 +341,11 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
-type EventOf<N> = N extends string ? {
-    type: N;
-} : never;
+export type EventMapOf<U extends {
+    type: string;
+}> = {
+    [E in U as E["type"]]: E;
+};
 
 // @public
 export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Promise<R>): (...args: A) => Promise<R | ToolFailure>;
@@ -498,9 +509,7 @@ export type Message = {
 };
 
 // @public
-export type MetricsCollectedEvent = Extract<SessionEvent, {
-    type: "metrics.collected";
-}>;
+export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
 // @public
 export interface MetricsCollector {
@@ -564,16 +573,6 @@ export interface ModelTuning {
     maxRetries?: number;
     temperature?: number;
 }
-
-// @public
-type NamesIn<S> = (S extends {
-    on: infer O;
-} ? Extract<keyof O, string> : never) | (S extends {
-    states: infer M;
-} ? NamesInMap<M> : never);
-
-// @public
-type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? NamesIn<C> : never : never : never;
 
 // @public
 export function omitUndefined<T extends object>(obj: T): {
@@ -760,7 +759,15 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function safeJsonParse(text: string): unknown;
 
 // @public
-type SessionEvent = z.infer<typeof SessionEventSchema>;
+export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+
+// @public
+export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public
+export type SessionEventBody<K extends SessionEventType = SessionEventType> = {
+    [T in K]: Omit<SessionEventMap[T], "meta">;
+}[K];
 
 // @public
 export type SessionEventContext = {
@@ -774,15 +781,17 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event:
 
 // @public
 export type SessionEventHandlers = {
-    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
-        type: K;
-    }>>;
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
     "*"?: SessionEventHandler;
 };
 
-// @public (undocumented)
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+// @public
+export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+}
+
+// @public
+export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
         id: z.ZodString;
@@ -999,7 +1008,7 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
-export type SessionEventType = SessionEvent["type"];
+export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
@@ -1026,6 +1035,9 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
     durable?: boolean;
     view?: (value: DeepReadonly<T>) => V;
 }
+
+// @public
+export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
@@ -1096,7 +1108,7 @@ export function spokenOrdinal(spoken: string): number | undefined;
 export function spokenTime(hhmm: string): string;
 
 // @public
-interface StandardSchemaIssue {
+export interface StandardSchemaIssue {
     readonly errors?: unknown;
     readonly issues?: unknown;
     // (undocumented)
@@ -1108,7 +1120,7 @@ interface StandardSchemaIssue {
 }
 
 // @public
-type StandardSchemaResult<Output> = {
+export type StandardSchemaResult<Output> = {
     readonly value: Output;
     readonly issues?: undefined;
 } | {
@@ -1116,7 +1128,7 @@ type StandardSchemaResult<Output> = {
 };
 
 // @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly "~standard": {
         readonly version: 1;
         readonly vendor: string;

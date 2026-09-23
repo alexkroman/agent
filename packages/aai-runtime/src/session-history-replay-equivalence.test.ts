@@ -108,10 +108,9 @@
  * doc describes ("the usual failure is STT missing while TTS connected").
  */
 
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import type { TtsSession } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";

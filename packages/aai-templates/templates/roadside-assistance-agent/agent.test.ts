@@ -7,12 +7,12 @@ import type {
   DialogTimeout,
   DialogToolResult,
   DialogVoiceConfig,
+  SessionEvent,
   SlotHolder,
   TelephonyCarrier,
   ToolContext,
 } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createToolContext,
   dialogRefusalPattern,

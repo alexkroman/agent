@@ -1,8 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
+import type { SessionEvent, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   createToolContext,
   expectDialogOk,

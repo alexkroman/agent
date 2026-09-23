@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import type { SessionEvent } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
-import type { SessionEvent } from "@alexkroman1/aai/protocol";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
@@ -356,10 +356,7 @@ describe("startHostSession (deferred host handshake)", () => {
       expect(createRuntime).not.toHaveBeenCalled();
       const err = ws
         .sentJson()
-        .find(
-          (e): e is Extract<SessionEvent, { type: "error.reported" }> =>
-            e.type === "error.reported",
-        );
+        .find((e): e is SessionEvent<"error.reported"> => e.type === "error.reported");
       expect(err?.code).toBe("protocol");
       // Names both offending fields and what to send instead.
       expect(err?.message).toContain("sampleRate=8000");
