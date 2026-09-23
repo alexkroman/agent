@@ -311,6 +311,7 @@ const NOT_RUN_BY_LOCAL = [
   ["check:attw", "published export types"],
   ["check:dedupe", "duplicate versions in the lockfile — it resolves, so it needs a registry"],
   ["check:markdown", "markdownlint over every .md"],
+  ["check:shell", "shellcheck over every tracked shell script"],
   ["check:integration", "multiple modules in memory — the fast-check harnesses"],
   ["check:scenario", "a real subprocess, port, bundler, or Postgres (pnpm test:pg)"],
   ["check:e2e", "full process spawn + Playwright"],

@@ -155,6 +155,8 @@ jobs:
           pnpm run check:dedupe
           pnpm run check:sherif
           pnpm run check:markdown
+          # ubuntu-latest ships shellcheck; the flag makes its absence a failure.
+          AAI_REQUIRE_SHELLCHECK=1 pnpm run check:shell
       # EVERY quality gate, DERIVED — the ratchets and the after-build gates,
       # in the table's own order, read out of scripts/check.mjs rather than
       # restated here.
