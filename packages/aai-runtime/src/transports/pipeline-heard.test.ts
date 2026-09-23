@@ -4,7 +4,7 @@
 // pipeline-transport-barge-in.test.ts.
 
 import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createTestClock, type TestClock } from "../_pipeline-test-fakes.ts";
 import { createHeardTracker, type HeardTracker } from "./pipeline-heard.ts";
 
@@ -352,5 +352,85 @@ describe("createHeardTracker — the resume prompt", () => {
     heard.onAudio(chunk(4000));
     clock.advance(2000);
     expect(heard.resumePrompt()).not.toContain("Still working");
+  });
+});
+
+describe("createHeardTracker — cutting a reply already in history", () => {
+  /** Speak {@link REPLY} as a persisted reply: 1s of audio, word-timed. */
+  function persistedReply(heard: HeardTracker): ReturnType<typeof vi.fn> {
+    const onCut = vi.fn();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    heard.onWords(WORDS);
+    heard.markPersisted(onCut);
+    return onCut;
+  }
+
+  test("a cut while the persisted reply is still playing hands back its heard prefix", () => {
+    const { heard, clock } = setup();
+    const onCut = persistedReply(heard);
+    clock.advance(600);
+    heard.cut();
+    expect(onCut).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: "Hello" }));
+  });
+
+  test("a persisted reply that played out in full is never cut", () => {
+    const { heard, clock } = setup();
+    const onCut = persistedReply(heard);
+    // Past the end of the audio, still inside the grace — so a barge-in fires.
+    clock.advance(1100);
+    expect(heard.pending()).toBe(true);
+    heard.cut();
+    expect(onCut).not.toHaveBeenCalled();
+  });
+
+  test("an earlier reply still playing when the next starts is cut at its OWN position", () => {
+    const { heard, clock } = setup();
+    const onCut = persistedReply(heard);
+    // A chained turn starts at once; its audio queues behind the first reply's.
+    heard.startReply();
+    heard.onText("Anything else today?", true);
+    heard.onAudio(chunk(1000));
+    clock.advance(600);
+    heard.cut();
+    expect(onCut).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: "Hello" }));
+    // The current reply sits wholly behind the first, so none of it was heard.
+    expect(heard.heard().chars).toBe(0);
+  });
+
+  test("an earlier reply that played out is untouched by a cut of a later one", () => {
+    const { heard, clock } = setup();
+    const onCut = persistedReply(heard);
+    clock.advance(1500);
+    heard.startReply();
+    heard.onText("Anything else today?", true);
+    heard.onAudio(chunk(1000));
+    clock.advance(300);
+    heard.cut();
+    expect(onCut).not.toHaveBeenCalled();
+  });
+
+  test("a reply persisted after it was cut is taken back at the latched position", () => {
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    heard.onWords(WORDS);
+    clock.advance(600);
+    heard.cut();
+    clock.advance(5000);
+    const onCut = vi.fn();
+    heard.markPersisted(onCut);
+    expect(onCut).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: "Hello" }));
+  });
+
+  test("a second cut does not take the same reply back twice", () => {
+    const { heard, clock } = setup();
+    const onCut = persistedReply(heard);
+    clock.advance(600);
+    heard.cut();
+    heard.cut();
+    expect(onCut).toHaveBeenCalledTimes(1);
   });
 });

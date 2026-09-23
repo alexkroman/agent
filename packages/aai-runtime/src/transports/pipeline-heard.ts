@@ -44,6 +44,7 @@
 
 import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "@alexkroman1/aai/internal";
+import { alignedEnd, alignWords, lastHeardWord, snapToWord } from "./pipeline-heard-words.ts";
 import { buildTailResumePrompt, tailResumeWorthRunning } from "./pipeline-recovery.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */
@@ -156,123 +157,6 @@ function createPlaybackClock(sampleRateHz: number, now: () => number): PlaybackC
  */
 const MAX_SPEECH_CHARS_PER_MS = 18 / 1000;
 
-/**
- * One lowercase ASCII letter or digit.
- *
- * Module scope for the reason `normalizeUtterance` hoists its own: {@link normChar}
- * is called once per character of both sides of `alignWords`, a few thousand times
- * per barge-in, and a literal in the body is a fresh `RegExp` each time. No `g`
- * flag, so there is no `lastIndex` to share.
- */
-const ASCII_ALPHANUMERIC = /[a-z0-9]/;
-
-/** Lowercased alphanumeric projection of one character, or `undefined`. */
-function normChar(c: string | undefined): string | undefined {
-  if (c === undefined) return;
-  const lower = c.toLowerCase();
-  return ASCII_ALPHANUMERIC.test(lower) ? lower : undefined;
-}
-
-/** Alphanumeric-only, casefolded projection of a word. */
-function normWord(word: string): string {
-  let out = "";
-  for (const c of word) {
-    const n = normChar(c);
-    if (n !== undefined) out += n;
-  }
-  return out;
-}
-
-/**
- * Index just past `target` in `text` at or after `from`, comparing only
- * casefolded alphanumerics so the provider's normalization ("$5.00" → "five
- * dollars" is hopeless, but "5.00" → "500" and "Dr." → "dr" are not) does not
- * break the alignment outright.
- */
-function findWordEnd(text: string, target: string, from: number): number | undefined {
-  if (target.length === 0) return;
-  for (let start = from; start < text.length; start++) {
-    if (normChar(text[start]) === undefined) continue;
-    let ti = 0;
-    let i = start;
-    while (i < text.length && ti < target.length) {
-      const c = normChar(text[i]);
-      i++;
-      if (c === undefined) continue;
-      if (c !== target[ti]) {
-        ti = -1;
-        break;
-      }
-      ti++;
-    }
-    if (ti === target.length) return i;
-  }
-}
-
-/**
- * Character offset just past each reported word, or `-1` where the word could
- * not be located in the text.
- *
- * Alignment can fail on normalization even with a perfect parse (a provider
- * that speaks "$5.00" as "five dollars" reports words that are simply not in
- * the text), so a miss is recorded rather than fatal: the reader falls back to
- * the last aligned word, and failing that to the proportional estimate — never
- * worse than having no timings at all.
- */
-function alignWords(text: string, words: readonly TtsWordTiming[]): number[] {
-  const ends: number[] = [];
-  let cursor = 0;
-  for (const word of words) {
-    const end = findWordEnd(text, normWord(word.text), cursor);
-    if (end === undefined) {
-      ends.push(-1);
-      continue;
-    }
-    cursor = end;
-    ends.push(end);
-  }
-  return ends;
-}
-
-/**
- * Index of the last word whose audio had WHOLLY elapsed by `ms` (`endMs`, not
- * `startMs` — a half-spoken word was not heard), or `-1` for none.
- */
-function lastHeardWord(words: readonly TtsWordTiming[], ms: number): number {
-  let last = -1;
-  for (let i = 0; i < words.length; i++) {
-    if ((words[i]?.endMs ?? 0) > ms) break;
-    last = i;
-  }
-  return last;
-}
-
-/** Character offset of the last ALIGNED word at or before `last`, or `-1`. */
-function alignedEnd(ends: readonly number[], last: number): number {
-  for (let i = last; i >= 0; i--) {
-    const end = ends[i] ?? -1;
-    if (end >= 0) return end;
-  }
-  return -1;
-}
-
-/**
- * Snap a character index back to the word boundary at or before it, so a cut
- * never lands mid-word. Returns `index` unchanged when the prefix holds no
- * boundary at all (the cut is inside the reply's first word), which is the
- * behaviour the proportional estimate has always had.
- */
-function snapToWord(text: string, index: number): number {
-  // At or past the end there is nothing to snap: the whole text was heard, and
-  // snapping would drop the reply's last word from the record.
-  if (index >= text.length) return text.length;
-  // Already ON a boundary — moving back would drop a whole word for nothing.
-  if (/\s/.test(text[index] ?? "")) return index;
-  const head = text.slice(0, index);
-  const boundary = head.lastIndexOf(" ");
-  return boundary > 0 ? boundary : head.length;
-}
-
 /** Where the caller's ear had got to when the reply was cut. */
 export interface HeardPosition {
   /** Characters of the TTS text (filler included) the caller had heard. */
@@ -316,8 +200,29 @@ export interface HeardTracker {
   /**
    * A new reply started. Resets the per-reply text, spans, words and latch —
    * but NOT the playback clock, which is session-scoped (see the module doc).
+   *
+   * A PERSISTED reply whose audio is still queued client-side is not
+   * forgotten: it is kept, with its own position on the clock, so a cut that
+   * lands during the NEXT reply can still take back what it never played —
+   * see {@link markPersisted}.
    */
   startReply(): void;
+  /**
+   * The current reply's full text is now in history; `onCut` takes back what
+   * the caller had not heard, and is called at most once, by {@link cut}, with
+   * this reply's heard position — only if some of its audio was still unplayed
+   * at that moment. A reply that played out in full is never touched.
+   *
+   * This is what reaches the cuts `persistBargeIn` cannot: that path only runs
+   * when the turn BODY is aborted, and a measured 35 of 36 barge-ins landed
+   * after the body had committed the whole reply — during the TTS drain, or in
+   * the client's playback tail, which can hold 8-15s. See
+   * `pipeline-heard-history.ts`.
+   *
+   * Called after the reply was already cut (the body persisted past an abort),
+   * it runs `onCut` at once with the latched position.
+   */
+  markPersisted(onCut: (heard: HeardPosition) => void): void;
   /**
    * Has this reply sent any RECORDABLE text — real speech rather than filler?
    *
@@ -348,6 +253,10 @@ export interface HeardTracker {
    * runs when the aborted stream settles, which is necessarily AFTER the abort
    * reset the clock — reading the position then would report every interrupted
    * reply as fully heard, which is exactly the bug this module exists to fix.
+   *
+   * Then every persisted reply with audio still unplayed — this one and any
+   * earlier one still queued ahead of it — has its `markPersisted` callback
+   * run, AFTER the clock reset, since the client is flushing all of it.
    */
   cut(): void;
   /** The heard position — the latched one once {@link cut} has run. */
@@ -358,6 +267,96 @@ export interface HeardTracker {
    * append a fragment to a reply that already landed).
    */
   resumePrompt(): string | undefined;
+}
+
+/**
+ * One reply's TTS record — everything {@link HeardTracker.startReply} starts
+ * afresh.
+ */
+interface ReplyRecord {
+  spoken: string;
+  /**
+   * One entry per TTS send, in order: how many characters it carried and
+   * whether they belong in the record. Filler must not ride into history even
+   * though it is audible — see `emitText` in pipeline-stream-parts.ts for the
+   * measured reason.
+   */
+  spans: { len: number; record: boolean }[];
+  audioMs: number;
+  words: TtsWordTiming[];
+  /**
+   * The session's forwarded-audio total when this reply's latest chunk went
+   * out. Everything forwarded since is queued BEHIND this reply client-side,
+   * which is how an earlier reply's share of the clock's backlog is read.
+   */
+  forwardedAtEnd: number;
+  /** Set once the reply is in history — see {@link HeardTracker.markPersisted}. */
+  onCut: ((heard: HeardPosition) => void) | undefined;
+}
+
+/**
+ * Most earlier replies kept for a cut. One is the realistic case — a chained
+ * turn starting while the previous reply plays out — and a reply only stays
+ * while its audio is still queued, so this bounds memory, not behaviour.
+ */
+const MAX_PLAYING_REPLIES = 4;
+
+function newReply(forwardedMs: number): ReplyRecord {
+  return {
+    spoken: "",
+    spans: [],
+    audioMs: 0,
+    words: [],
+    forwardedAtEnd: forwardedMs,
+    onCut: undefined,
+  };
+}
+
+/**
+ * Characters of `reply.spoken` heard by `ms`.
+ *
+ * With word timings, the last word whose audio has WHOLLY elapsed (`endMs`,
+ * not `startMs` — a half-spoken word was not heard). Beyond the last reported
+ * word the timeline says nothing, so the proportional estimate takes over,
+ * floored at what the words already established.
+ */
+function heardChars(reply: ReplyRecord, ms: number): number {
+  const { spoken, audioMs, words } = reply;
+  if (audioMs <= 0) return 0;
+  // The MIN is the correction — see MAX_SPEECH_CHARS_PER_MS. `spoken.length /
+  // audioMs` is the rate at which text was handed over, not the rate at which
+  // it is spoken, and the two differ by however much of the reply has not
+  // been synthesized yet.
+  const charsPerMs = Math.min(spoken.length / audioMs, MAX_SPEECH_CHARS_PER_MS);
+  const proportional = snapToWord(spoken, Math.round(charsPerMs * ms));
+  if (words.length === 0) return proportional;
+  const last = lastHeardWord(words, ms);
+  if (last < 0) return 0;
+  const end = alignedEnd(alignWords(spoken, words), last);
+  // Every heard word failed to align: degrade to the estimate rather than
+  // claiming nothing was heard.
+  if (end < 0) return proportional;
+  return last === words.length - 1 ? Math.max(end, proportional) : end;
+}
+
+/**
+ * The recordable text inside the first `chars` characters of `reply.spoken`,
+ * and its length.
+ *
+ * One walk, not two: the count is `text.length` by construction — the record
+ * is a concatenation of whole slices — so computing them separately was the
+ * same span walk written twice, run twice per read, with two chances to
+ * disagree about which characters a partially-heard span contributes.
+ */
+function recordable(reply: ReplyRecord, chars: number): { text: string; length: number } {
+  let seen = 0;
+  let text = "";
+  for (const span of reply.spans) {
+    if (seen >= chars) break;
+    if (span.record) text += reply.spoken.slice(seen, seen + Math.min(span.len, chars - seen));
+    seen += span.len;
+  }
+  return { text, length: text.length };
 }
 
 /** Create a {@link HeardTracker}. */
@@ -373,71 +372,31 @@ export function createHeardTracker(opts: {
   const now = opts.now ?? Date.now;
   const clock = createPlaybackClock(opts.sampleRate, now);
 
-  // Everything below is REPLY-scoped and reset by startReply().
-  let spoken = "";
-  // One entry per TTS send, in order: how many characters it carried and
-  // whether they belong in the record. Filler must not ride into history even
-  // though it is audible — see `emitText` in pipeline-stream-parts.ts for the
-  // measured reason.
-  let spans: { len: number; record: boolean }[] = [];
-  let audioMs = 0;
-  let words: TtsWordTiming[] = [];
+  // SESSION-scoped: every ms of audio ever forwarded, the ruler the earlier
+  // replies below are placed on.
+  let forwardedMs = 0;
+  // REPLY-scoped, started afresh by startReply().
+  let current = newReply(forwardedMs);
   let latched: (HeardPosition & { unheardMs: number }) | null = null;
-
-  /** Ms of this reply's audio the caller is estimated to have heard. */
-  function heardMs(): number {
-    return Math.max(0, Math.min(audioMs, audioMs - clock.remainingMs() - lagMs));
-  }
+  // Earlier PERSISTED replies whose audio may still be queued ahead of the
+  // current one, oldest first — the cut targets `startReply` used to wipe.
+  let playing: ReplyRecord[] = [];
 
   /**
-   * Characters of `spoken` heard by `ms`.
-   *
-   * With word timings, the last word whose audio has WHOLLY elapsed (`endMs`,
-   * not `startMs` — a half-spoken word was not heard). Beyond the last reported
-   * word the timeline says nothing, so the proportional estimate takes over,
-   * floored at what the words already established.
+   * Ms of `reply`'s audio the client has not played yet. The clock's backlog
+   * is FIFO, so whatever was forwarded after this reply sits behind it; the
+   * reply's own share is what is left once that is subtracted. For the current
+   * reply nothing is behind it and this is the clock's backlog, capped.
    */
-  function heardChars(ms: number): number {
-    if (audioMs <= 0) return 0;
-    // The MIN is the correction — see MAX_SPEECH_CHARS_PER_MS. `spoken.length /
-    // audioMs` is the rate at which text was handed over, not the rate at which
-    // it is spoken, and the two differ by however much of the reply has not
-    // been synthesized yet.
-    const charsPerMs = Math.min(spoken.length / audioMs, MAX_SPEECH_CHARS_PER_MS);
-    const proportional = snapToWord(spoken, Math.round(charsPerMs * ms));
-    if (words.length === 0) return proportional;
-    const last = lastHeardWord(words, ms);
-    if (last < 0) return 0;
-    const end = alignedEnd(alignWords(spoken, words), last);
-    // Every heard word failed to align: degrade to the estimate rather than
-    // claiming nothing was heard.
-    if (end < 0) return proportional;
-    return last === words.length - 1 ? Math.max(end, proportional) : end;
+  function unplayedMs(reply: ReplyRecord): number {
+    const behind = forwardedMs - reply.forwardedAtEnd;
+    return Math.min(reply.audioMs, Math.max(0, clock.remainingMs() - behind));
   }
 
-  /**
-   * The recordable text inside the first `chars` characters of `spoken`, and
-   * its length.
-   *
-   * One walk, not two: the count is `text.length` by construction — the record
-   * is a concatenation of whole slices — so computing them separately was the
-   * same span walk written twice, run twice per read, with two chances to
-   * disagree about which characters a partially-heard span contributes.
-   */
-  function recordable(chars: number): { text: string; length: number } {
-    let seen = 0;
-    let text = "";
-    for (const span of spans) {
-      if (seen >= chars) break;
-      if (span.record) text += spoken.slice(seen, seen + Math.min(span.len, chars - seen));
-      seen += span.len;
-    }
-    return { text, length: text.length };
-  }
-
-  function position(): HeardPosition & { unheardMs: number } {
-    const chars = heardChars(heardMs());
-    const record = recordable(chars);
+  function position(reply: ReplyRecord): HeardPosition & { unheardMs: number } {
+    const heardMs = Math.max(0, reply.audioMs - unplayedMs(reply) - lagMs);
+    const chars = heardChars(reply, heardMs);
+    const record = recordable(reply, chars);
     return {
       chars,
       recordableChars: record.length,
@@ -446,14 +405,38 @@ export function createHeardTracker(opts: {
     };
   }
 
+  const publicPosition = (at: HeardPosition): HeardPosition => ({
+    chars: at.chars,
+    recordableChars: at.recordableChars,
+    text: at.text,
+  });
+
+  /**
+   * Replies a cut right now takes something back from, each with its heard
+   * position — read BEFORE the clock reset, like the latch.
+   */
+  function cutTargets(): { onCut: (heard: HeardPosition) => void; at: HeardPosition }[] {
+    const targets: { onCut: (heard: HeardPosition) => void; at: HeardPosition }[] = [];
+    for (const reply of [...playing, current]) {
+      const { onCut } = reply;
+      reply.onCut = undefined;
+      if (onCut === undefined || unplayedMs(reply) <= 0) continue;
+      targets.push({ onCut, at: position(reply) });
+    }
+    return targets;
+  }
+
   return {
     onText(text: string, record: boolean): string {
-      spans.push({ len: text.length, record });
-      spoken += text;
-      return spoken;
+      current.spans.push({ len: text.length, record });
+      current.spoken += text;
+      return current.spoken;
     },
     onAudio(pcm: Int16Array): void {
-      audioMs += (pcm.length / opts.sampleRate) * 1000;
+      const chunkMs = (pcm.length / opts.sampleRate) * 1000;
+      current.audioMs += chunkMs;
+      forwardedMs += chunkMs;
+      current.forwardedAtEnd = forwardedMs;
       clock.onChunk(pcm);
     },
     onClientPlaybackReport(bufferedMs: number): void {
@@ -464,31 +447,41 @@ export function createHeardTracker(opts: {
       clock.onClientReport(bufferedMs);
     },
     onWords(incoming: readonly TtsWordTiming[]): void {
-      words.push(...incoming);
+      current.words.push(...incoming);
     },
     spokeRecordable(): boolean {
-      return spans.some((span) => span.record);
+      return current.spans.some((span) => span.record);
     },
     startReply(): void {
-      spoken = "";
-      spans = [];
-      audioMs = 0;
-      words = [];
+      if (current.onCut !== undefined) playing.push(current);
+      playing = playing.filter((reply) => unplayedMs(reply) > 0).slice(-MAX_PLAYING_REPLIES);
+      current = newReply(forwardedMs);
       latched = null;
+    },
+    markPersisted(onCut: (heard: HeardPosition) => void): void {
+      if (latched !== null) {
+        onCut(publicPosition(latched));
+        return;
+      }
+      current.onCut = onCut;
     },
     pending: clock.pending,
     playoutMs: clock.playoutMs,
     cut(): void {
-      latched = position();
+      latched = position(current);
+      const targets = cutTargets();
       clock.reset();
+      // The client is flushing everything it holds, so nothing earlier is
+      // still playing to be cut again.
+      playing = [];
+      for (const { onCut, at } of targets) onCut(publicPosition(at));
     },
     heard(): HeardPosition {
-      const { chars, recordableChars: recordable, text } = latched ?? position();
-      return { chars, recordableChars: recordable, text };
+      return publicPosition(latched ?? position(current));
     },
     resumePrompt(): string | undefined {
-      const at = latched ?? position();
-      if (!tailResumeWorthRunning(audioMs, at.unheardMs)) return;
+      const at = latched ?? position(current);
+      if (!tailResumeWorthRunning(current.audioMs, at.unheardMs)) return;
       // The anchor is the RECORDABLE heard text, which is character-identical
       // to what history records for this reply — so the prompt can never quote
       // words the record denies, and never quotes filler.

@@ -70,8 +70,21 @@ export interface PipelineHistory {
    * for it again. A `reset` clears it with everything else.
    */
   pushToolResult(msg: Message): void;
-  /** Append ModelMessage(s) — e.g. a turn's response messages — to the LLM view. */
-  pushLlm(...msgs: ModelMessage[]): void;
+  /**
+   * Append ModelMessage(s) — e.g. a turn's response messages — to the LLM view.
+   * Answers the messages as STORED (reasoning-cleaned), which is the identity
+   * {@link rewrite} matches on.
+   */
+  pushLlm(...msgs: ModelMessage[]): ModelMessage[];
+  /**
+   * Replace (or, mapped to `null`, remove) messages this history already
+   * holds, matched by IDENTITY — a message since evicted, reset or never held
+   * is simply not found. Answers whether anything changed.
+   *
+   * For the heard-history cut (`pipeline-heard-history.ts`): a reply that was
+   * committed whole and then cut while its audio was still playing.
+   */
+  rewrite(edits: HistoryRewrite): boolean;
   /**
    * Drop a trailing user message matching `content` from both views.
    *
@@ -120,6 +133,36 @@ export interface PipelineHistory {
    * the revision is the cheap total check; comparing message arrays is not.
    */
   readonly revision: Pick<Epoch, "current" | "isCurrent">;
+}
+
+/** Edits for {@link PipelineHistory.rewrite}, per view. */
+export interface HistoryRewrite {
+  conversation?: ReadonlyMap<Message, Message | null> | undefined;
+  llm?: ReadonlyMap<ModelMessage, ModelMessage | null> | undefined;
+}
+
+/** Apply one view's identity-matched edits in place; answers whether any hit. */
+function applyEdits<T>(arr: T[], edits: ReadonlyMap<T, T | null> | undefined): boolean {
+  if (edits === undefined || edits.size === 0) return false;
+  let changed = false;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const next = edits.get(arr[i] as T);
+    if (next === undefined) continue;
+    changed = true;
+    if (next === null) arr.splice(i, 1);
+    else arr[i] = next;
+  }
+  return changed;
+}
+
+/**
+ * The marker an interrupted reply's HEARD prefix carries in history, so the
+ * model knows it was cut off. One spelling for both writers: the aborted turn
+ * body ({@link persistInterruptedTurn}) and the cut of an already-committed
+ * reply (`pipeline-heard-history.ts`).
+ */
+export function markInterrupted(heard: string): string {
+  return `${heard} [interrupted]`;
 }
 
 /**
@@ -287,13 +330,13 @@ export function persistInterruptedTurn(args: {
   // audible but never recordable (see emitText's `record` flag).
   const spoken = heard.trim();
   if (spoken.length === 0) return;
-  history.pushConversation({ role: "assistant", content: `${spoken} [interrupted]` });
+  history.pushConversation({ role: "assistant", content: markInterrupted(spoken) });
   // Clamped: the persisted-step snapshot indexes the GENERATED text, which the
   // heard prefix is shorter than, so an unclamped slice would run past the end
   // (a negative-length tail) rather than yielding nothing.
   const tail = heard.slice(Math.min(args.persistedLen, heard.length)).trim();
   if (tail.length > 0) {
-    history.pushLlm({ role: "assistant", content: `${tail} [interrupted]` });
+    history.pushLlm({ role: "assistant", content: markInterrupted(tail) });
   }
   // Seeded with the HEARD text, not the generated text: the STT bias is
   // fighting the agent's own voice echoing back, so what was in the air is the
@@ -381,7 +424,7 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       // Spent, not recorded — see the member's doc for all three halves.
       conversationUndo = null;
     },
-    pushLlm(...msgs: ModelMessage[]): void {
+    pushLlm(...msgs: ModelMessage[]): ModelMessage[] {
       // The message RECORDED is the cleaned one that reached the array, not the
       // argument: `withoutReasoning` may rewrite it, or drop it entirely, and an
       // undo keyed on a message the view does not hold could never be consumed.
@@ -397,6 +440,18 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       const only = pushed.length === 1 ? pushed[0] : undefined;
       llmUndo = only ? { pushed: only, evicted } : null;
       revision.bump();
+      return pushed;
+    },
+    rewrite(edits: HistoryRewrite): boolean {
+      const inConversation = applyEdits(conversation, edits.conversation);
+      const inLlm = applyEdits(llm, edits.llm);
+      if (!(inConversation || inLlm)) return false;
+      // Spent, like any intervening mutation: a removal shifted the window, so
+      // restoring an eviction under a later pop could overrun the cap.
+      conversationUndo = null;
+      llmUndo = null;
+      revision.bump();
+      return true;
     },
     dropTrailingUser(content: string): void {
       undoPush(conversation, conversationUndo, content);

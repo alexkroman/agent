@@ -63,6 +63,7 @@
  * transcript is a reply, by definition and by every older log.
  */
 
+import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import { persistInterruptedTurn } from "./pipeline-history.ts";
@@ -141,8 +142,11 @@ export interface TurnOutcome {
    * for the two readers that used to put the phrase back.
    */
   speakRecovery(failed: boolean): boolean;
-  /** Announce and persist a turn that produced speech. */
-  finishSpokenTurn(text: string): void;
+  /**
+   * Announce and persist a turn that produced speech. Answers the conversation
+   * message it wrote, so a later cut can find it (`pipeline-heard-history.ts`).
+   */
+  finishSpokenTurn(text: string): Message;
   /**
    * Last words when the session cannot start.
    *
@@ -206,7 +210,9 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
 
     finishSpokenTurn(text) {
       callbacks.report({ type: "agent-transcript.committed", text });
-      history.pushConversation({ role: "assistant", content: text });
+      const message: Message = { role: "assistant", content: text };
+      history.pushConversation(message);
+      return message;
     },
   };
 }

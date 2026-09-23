@@ -13,6 +13,7 @@ import type { FatalToolLatch } from "../tool-error-policy.ts";
 import type { UsageMeter } from "../usage-meter.ts";
 import type { SpeechGate, TurnGuardrails } from "./pipeline-guardrails.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
+import type { PersistedReply } from "./pipeline-heard-history.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
 import type { TurnLlmRunner } from "./pipeline-llm-stream.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
@@ -51,6 +52,11 @@ export function createTurnBody(deps: {
   emitError: EmitError;
   /** Per-reply marks — the turn claims the committed utterance it answers. */
   metrics?: TurnMetrics | undefined;
+  /**
+   * Register a reply committed WHOLE, so a cut while its audio is still
+   * playing takes back what the caller never heard — `createHeardHistory`.
+   */
+  trackPersisted: (reply: PersistedReply, historyEpoch: number) => void;
 }): TurnBody {
   const {
     gate,
@@ -66,6 +72,7 @@ export function createTurnBody(deps: {
     usage,
     sendTtsText,
     emitError,
+    trackPersisted,
   } = deps;
 
   /**
@@ -77,10 +84,10 @@ export function createTurnBody(deps: {
    * answer for this turn. A caller who asks the same thing again should be
    * talking to an agent that remembers refusing.
    */
-  function speakInstead(text: string): void {
+  function speakInstead(text: string, historyEpoch: number): void {
     sendTtsText(text);
-    history.pushLlm({ role: "assistant", content: text });
-    outcome.finishSpokenTurn(text);
+    const llm = history.pushLlm({ role: "assistant", content: text });
+    trackPersisted({ text, llm, conversation: outcome.finishSpokenTurn(text) }, historyEpoch);
   }
 
   /**
@@ -98,7 +105,11 @@ export function createTurnBody(deps: {
    * guardrail is going to judge it, so buffering it would mean holding a
    * sentence nothing will ever release.
    */
-  async function beforeModel(userText: string, signal: AbortSignal): Promise<boolean | undefined> {
+  async function beforeModel(
+    userText: string,
+    signal: AbortSignal,
+    historyEpoch: number,
+  ): Promise<boolean | undefined> {
     // BEFORE the model, which is the whole point of an input guardrail: a
     // refusal here costs no tokens and the model never sees the utterance. The
     // user message is pushed by the caller regardless — the caller DID say it,
@@ -107,7 +118,7 @@ export function createTurnBody(deps: {
     const refused = await guardrails.checkInput(userText);
     if (refused !== undefined) {
       if (signal.aborted) return false;
-      speakInstead(refused);
+      speakInstead(refused, historyEpoch);
       return true;
     }
     // The budget, checked where a request is about to be made rather than
@@ -130,6 +141,7 @@ export function createTurnBody(deps: {
    */
   async function afterModel(
     signal: AbortSignal,
+    historyEpoch: number,
     accumulated: string,
     responseMessages: readonly ModelMessage[],
     failed: boolean,
@@ -143,16 +155,19 @@ export function createTurnBody(deps: {
       // say; the cost is that a later turn may call those tools again.
       speech.discard();
       if (signal.aborted) return false;
-      speakInstead(blocked);
+      speakInstead(blocked, historyEpoch);
       return true;
     }
     speech.release();
     // Persist the assistant tool-call message(s) and their `tool` results so
     // the next turn retains tool context, not just the spoken transcript.
-    if (responseMessages.length > 0) history.pushLlm(...responseMessages);
+    const llm = responseMessages.length > 0 ? history.pushLlm(...responseMessages) : [];
     if (outcome.speakRecovery(failed)) return true;
     if (accumulated.length === 0) return false;
-    outcome.finishSpokenTurn(accumulated);
+    // Committed WHOLE, while most of it is still to be synthesized and played:
+    // registered so a cut in that window records only what was heard.
+    const conversation = outcome.finishSpokenTurn(accumulated);
+    trackPersisted({ text: accumulated, conversation, llm }, historyEpoch);
     return true;
   }
   return function runTurn(userText, kind) {
@@ -177,7 +192,7 @@ export function createTurnBody(deps: {
       history.pushConversation({ role: "user", content: userText });
       history.pushLlm({ role: "user", content: userText });
 
-      const stopped = await beforeModel(userText, signal);
+      const stopped = await beforeModel(userText, signal, historyEpoch);
       if (stopped !== undefined) return stopped;
 
       // Hold every recordable send until the reply can be judged whole. A
@@ -230,7 +245,7 @@ export function createTurnBody(deps: {
           return false;
         }
 
-        return await afterModel(signal, accumulated, responseMessages, failed);
+        return await afterModel(signal, historyEpoch, accumulated, responseMessages, failed);
       });
     });
   };

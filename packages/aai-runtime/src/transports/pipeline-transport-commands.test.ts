@@ -49,7 +49,14 @@ function harness(overrides: { terminated?: boolean } = {}) {
     llm: [],
     pushConversation: note("history.pushConversation"),
     pushToolResult: note("history.pushToolResult"),
-    pushLlm: note("history.pushLlm"),
+    pushLlm: (...msgs) => {
+      calls.push("history.pushLlm");
+      return msgs;
+    },
+    rewrite: () => {
+      calls.push("history.rewrite");
+      return false;
+    },
     dropTrailingUser: note("history.dropTrailingUser"),
     seed: (msgs) => {
       calls.push("history.seed");
@@ -69,6 +76,7 @@ function harness(overrides: { terminated?: boolean } = {}) {
     playoutMs: () => 0,
     spokeRecordable: () => false,
     cut: note("heard.cut"),
+    markPersisted: note("heard.markPersisted"),
     heard: () => ({ chars: 0, recordableChars: 0, text: "" }),
     resumePrompt: () => undefined,
   };
