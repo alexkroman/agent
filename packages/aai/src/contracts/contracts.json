@@ -97,6 +97,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "protocol": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "random": {
     "current": 1,
     "supported": [1],

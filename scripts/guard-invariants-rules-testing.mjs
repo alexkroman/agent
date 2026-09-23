@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The TESTING rules — so far rule 33, over the repo's own test files.
+ * The TESTING rules — rules 33 and 34, over the repo's own test files.
  *
  * Its own scope, rather than a row in the shape module, because the corpus is
  * different from every other rule's: these walk `packages/**\/*.test.ts(x)`,
@@ -28,7 +28,7 @@
  * a string literal as a string. It reports 0.
  */
 
-import { isConstantAssertion } from "./guard-invariants-nodes.mjs";
+import { isConstantAssertion, isModuleMock } from "./guard-invariants-nodes.mjs";
 import { TEST_FILE_PATHSPECS } from "./guard-invariants-scopes.mjs";
 
 /**
@@ -84,5 +84,51 @@ export const TESTING_RULES = [
       "skip into a hard failure. That way the skip is visible to a reader, the\n" +
       "coverage is honest, and a runner that was SUPPOSED to have the dependency\n" +
       "fails instead of passing quietly.",
+  },
+  {
+    id: 34,
+    key: "rule34_moduleMock",
+    label: "vi.mock / vi.doMock (a missing seam, replaced by module surgery)",
+    match: isModuleMock,
+    paths: TEST_FILE_PATHSPECS,
+    samples: {
+      matches: [
+        'vi.mock("./_ui.ts", () => ({ log: stubLog() }));',
+        'vi.doMock("node:child_process", () => ({ spawn }));',
+        // The computed spelling reaches the same call.
+        'vi["mock"]("./a.ts", () => ({}));',
+      ],
+      ignores: [
+        // A cast over a mock that already exists — the affordance check:hatches
+        // credits with removing `as unknown as` casts, not a new replacement.
+        "vi.mocked(run).mockClear();",
+        "vi.fn();",
+        'vi.spyOn(console, "log");',
+        'const note = "vi.mock(\\"x\\")";',
+      ],
+    },
+    remedy:
+      "Give the code under test a SEAM and hand the fake through it, instead of\n" +
+      "replacing a module for the whole file.\n" +
+      "\n" +
+      "A `vi.mock` is a record that the unit could not be tested as written: it\n" +
+      "reaches for its collaborator by import, so the only way to substitute one\n" +
+      "is to rewrite the module graph under it. That costs twice. The test couples\n" +
+      "to a FILE PATH (move `_ui.ts` and twelve suites break, none of them about\n" +
+      "the UI), and the factory is untyped against the real module, so a renamed\n" +
+      "or newly required export compiles and fails at runtime — or worse, passes,\n" +
+      "because the factory never exported it and the code's fallback ran.\n" +
+      "\n" +
+      "The repo has already paid this down once, which is the template to copy:\n" +
+      "`aai-server` routes every line through `logger.ts`, and its specs silence\n" +
+      "that with a capture helper instead of mocking a module. AGENTS.md's section on open\n" +
+      "testability work names the same job still open in aai-studio-server and\n" +
+      "aai-cli.\n" +
+      "An injected dependency with a production default — `deps = { spawn }`, a\n" +
+      "`serverEnv = process.env` parameter like `agentBootEnv`'s — is the usual\n" +
+      "shape.\n" +
+      "\n" +
+      "Baselined per file: the existing ones are a to-do list, and a new one is a\n" +
+      "hand edit to `guard-invariants-baseline.json` that a reviewer sees.",
   },
 ];

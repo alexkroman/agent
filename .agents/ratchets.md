@@ -4,10 +4,11 @@ every task's context. AGENTS.md's "Detailed references" table points here. -->
 # Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.mjs` **and the CI check job** run
-fourteen **gates** (all also runnable standalone) that hold the line on technical
-debt. Three compare against a COMMITTED PER-FILE BASELINE
-(`check:hatches`, `check:invariants`, `check:api-nameable`); the rest are
-absolute. They must stay
+the **gates** in its `GATES` table (all also runnable standalone) that hold the
+line on technical debt — the count is not written here, because a hand-kept one
+was already stale when two more landed. Four compare against a COMMITTED
+PER-FILE BASELINE (`check:hatches`, `check:invariants`, `check:api-nameable`,
+`check:duplication`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.mjs`, which CI never
 invokes, so the only thing enforcing them was the pre-push hook — and
 `git push --no-verify` skipped them entirely.
@@ -354,6 +355,42 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   (`--package`). The script's own doc carries the rest.
 
 - **`pnpm check:module-tests`** — a co-located test per module; read the script.
+
+- **`pnpm check:duplication`** (`scripts/check-duplication.mjs`) — jscpd v4
+  clone detection (≥50 tokens over ≥5 lines) over shipped source in
+  `packages/` and `scripts/`, holding each FILE to the number of its lines that
+  sit inside a clone, recorded in `scripts/duplication-baseline.json`. Same
+  contract and machinery as `check:hatches`: `--update` lowers, never raises.
+  Tests, `src/contracts/`, templates and scaffold are out, each for a reason
+  the script states. **A clone has two ends**, so a paste INTO `a.ts` can fail
+  on an untouched `b.ts`; the report names both ends, and the fix is removing
+  your copy, not raising `b.ts`. jscpd is loaded through `createRequire`
+  because 4.3.0's ESM build imports `colors/safe` without an extension.
+
+- **`pnpm check:guest-contract`** (`scripts/check-guest-contract.mjs`) — ties
+  `GUEST_CONTRACT_VERSION` (`aai-guest-core/src/limits.ts`) to the surface it
+  versions: the exec-env keys `agentBootEnv` writes, the `/manage/*` paths and
+  response keys, and the `CreateGuestRuntime`/`GuestRuntime` handshake types,
+  parsed with oxc and hashed with comments stripped into
+  `scripts/guest-contract.json`. An agent sandbox runs the harness PINNED at
+  deploy time and CI builds both ends from one commit, so no test can see them
+  disagree — the number used to be bumped by memory. A moved hash under an
+  unchanged version FAILS naming what moved; settle it with a bump plus
+  `--record "<reason>"`, or `--revise "<reason>"` when no pinned guest can
+  observe it. History is append-only — the epoch mechanism, cut down to one
+  contract. Its first run found `AAI_UPLOAD_BROKER_URL` and `AAI_DEBUG` in the
+  boot env with no mention in the version's changelog.
+
+**`pnpm debt:report` reads all of it back, and is deliberately NOT a gate.**
+Every baseline records a to-do list that is only consulted when a branch trips
+it, and the epoch tree records something richer — a written reason per break,
+and an epoch number that counts breaks since the reset. `scripts/debt-report.mjs`
+prints the capabilities that churn most (with their latest drop reason), the
+guest-contract history, every `*-baseline`/`*-allowlist`/`*-denylist` ledger
+DISCOVERED by filename (so a new ratchet joins by existing), and the files that
+sit in more than one ledger — usually one root cause behind several symptoms.
+`--json` for a dashboard. It exits 0 whatever it finds: nothing in it has a
+right answer to enforce, and "a threshold nothing enforces reads as a gate".
 
 - **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
   — enforces **structural** conventions: the shapes that are wrong only in
