@@ -468,7 +468,9 @@ export function createHeardTracker(opts: {
     pending: clock.pending,
     playoutMs: clock.playoutMs,
     cut(): void {
-      latched = position(current);
+      // Latch once per reply: the first cut resets the clock, so a repeat
+      // would read nothing left to play and latch the whole reply as heard.
+      latched ??= position(current);
       const targets = cutTargets();
       clock.reset();
       // The client is flushing everything it holds, so nothing earlier is

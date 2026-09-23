@@ -196,6 +196,22 @@ describe("createHeardTracker — the latch", () => {
     expect(heard.heard()).toEqual(atCut);
   });
 
+  test("a repeat cut keeps the FIRST latch rather than re-reading a reset clock", () => {
+    // The first cut resets the playback clock, so a second cut on the same
+    // reply would read "nothing left to play" and latch the whole reply as
+    // heard — history would then keep text the caller never received.
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText(REPLY, true);
+    heard.onAudio(chunk(1000));
+    clock.advance(500);
+    heard.cut();
+    const atCut = heard.heard();
+    clock.advance(5000);
+    heard.cut();
+    expect(heard.heard()).toEqual(atCut);
+  });
+
   test("the next reply clears the latch", () => {
     const { heard, clock } = setup();
     heard.startReply();
