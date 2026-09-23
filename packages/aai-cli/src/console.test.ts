@@ -26,10 +26,6 @@ vi.mock("./_dev-server.ts", () => ({
   resolveAgentEnv: vi.fn(async () => ({})),
 }));
 
-vi.mock("@alexkroman1/aai-runtime/internal", () => ({
-  withHostCredentialFallback: (env: Record<string, string>) => env,
-}));
-
 vi.mock("@alexkroman1/aai-runtime", () => ({
   ensureSessionStateSchema: vi.fn(),
   ensureWorkflowJournalSchema: vi.fn(),
