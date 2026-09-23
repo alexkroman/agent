@@ -1,5 +1,46 @@
 # @alexkroman1/aai-server
 
+## 5.3.9
+
+### Patch Changes
+
+- 75244f4: Forward the OTLP metrics variables (OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, OTEL_EXPORTER_OTLP_METRICS_HEADERS, OTEL_METRICS_EXPORTER) to agent guests, so a guest exports per-reply metrics to the platform's collector; a metrics-only endpoint now arms the forward too.
+- b324f33: The studio coding agent uses the single llm() descriptor and the updated SDK APIs.
+- 21eb693: Fix four lifecycle bugs found auditing the SDK for hand-rolled state:
+  
+  - `runCapped` (the `bash` tool, npm, test and deploy children) now kills a timed-out command's whole process group, escalating SIGTERM to SIGKILL, and reports the deadline as `timedOut`. A command that trapped SIGTERM used to run past its deadline and read as a clean success, and one that backgrounded a job (`npm run dev &`) held the call open until that job exited.
+  - `runFfmpeg`/`probeMedia` keep ffmpeg's stderr, exit code and signal on a `timeout` or `aborted` failure (they were always empty), and SIGKILL a child that ignores the abort.
+  - A `dialog.tool()` whose dialog was moved by a sibling tool while its body was awaiting no longer applies its `send`/`sendFrom` from the state the sibling left it in.
+  - Parts uploads keep one first-failure latch instead of two.
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [fccb2ef]
+- Updated dependencies [dc9d696]
+- Updated dependencies [8cdc919]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [7655482]
+- Updated dependencies [4995fe6]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [75244f4]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [0338a93]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [a6f3d59]
+- Updated dependencies [3593ab7]
+- Updated dependencies [21eb693]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [695101f]
+- Updated dependencies [651a8e9]
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [113e88d]
+- Updated dependencies [b3e4ee5]
+  - @alexkroman1/aai-runtime@18.0.0
+  - @alexkroman1/aai@18.0.0
+  - aai-guest@0.6.9
+
 ## 5.3.8
 
 ### Patch Changes
