@@ -729,16 +729,23 @@ jobs:
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).
       #
-      # **Retried on a registry THROTTLE only, the same shape as the Postgres
-      # pull in `integration-and-scenario`.** `supabase start` pulls ~10 images
-      # from ghcr.io, retries each twice 4-8s apart, and then fails the job
-      # before a test has run. On 2026-09-23 that happened on five consecutive
-      # runs across two PRs, all `toomanyrequests`, and logging in to ghcr.io
-      # did not change it. Every image that finished pulling stays in the local
-      # cache, so each attempt asks for fewer; the delays grow because the
-      # quota is per unit TIME. Any other failure exits at once — a broken
-      # migration has to stay fast and loud.
+      #
+      # **From public.ecr.aws, not ghcr.io, and retried on a THROTTLE only.**
+      # `setup-cli` points the CLI at ghcr.io (`SUPABASE_INTERNAL_IMAGE_REGISTRY`),
+      # and on 2026-09-23 ghcr.io answered `toomanyrequests` to six consecutive
+      # runs across two PRs, before a test had run: logged in or not, and
+      # through a 15/45/90s retry that left three of ~10 images unpulled. The
+      # Postgres pull in `integration-and-scenario` comes from public.ecr.aws
+      # and passed in the same runs. Supabase publishes the same tags to both.
+      #
+      # The retry stays, because public.ecr.aws throttles anonymous pulls too
+      # (see that job's note): only on a throttle message, with growing delays
+      # because the quota is per unit TIME, and every image that finished
+      # pulling stays cached so each attempt asks for fewer. Any other failure
+      # exits at once — a broken migration has to stay fast and loud.
       - name: Start the Supabase stack
+        env:
+          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
         run: |
           set -uo pipefail
           log="$RUNNER_TEMP/supabase-start.log"
@@ -746,10 +753,10 @@ jobs:
             if supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket 2>&1 | tee "$log"; then
               exit 0
             fi
-            if ! grep -q toomanyrequests "$log" || [ "$delay" = 0 ]; then
+            if ! grep -qiE 'toomanyrequests|rate exceeded' "$log" || [ "$delay" = 0 ]; then
               exit 1
             fi
-            echo "::warning title=ghcr.io throttled supabase start::retrying in ${delay}s"
+            echo "::warning title=Registry throttled supabase start::retrying in ${delay}s"
             supabase stop --no-backup || true
             sleep "$delay"
           done
