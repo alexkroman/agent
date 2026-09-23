@@ -148,8 +148,8 @@ import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
-import { measuredTurn } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
+import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";
 import type { EvalCredentials, EvalTurn } from "./session.ts";
 
 /**
@@ -404,7 +404,7 @@ export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<
           `something to wait out; events since: ${turn.map((e) => e.type).join(", ") || "none"}`,
       );
     }
-    const measured = measuredTurn(what, turn, toolNames, "text");
+    const measured = measuredTurn(what, turn, toolNames, "text", def);
     // Appended only for a turn that can be read: the conversation the next
     // `send()` builds on holds what really happened, and a turn nothing can be
     // read off is not carried into it.
@@ -425,7 +425,7 @@ export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<
     },
     events: () => events,
     said: () => saidIn(events),
-    toolCalls: () => toolCallsInEvents(events),
+    toolCalls: () => measuredToolCalls(events, def),
     close: async () => {
       // Nothing to unwind — see `EvalTextAgent.close`.
     },

@@ -1244,13 +1244,13 @@ describe("a caller who hangs up", () => {
 });
 
 describe("the read-back knob", () => {
-  test("awaitingConfirmation asks for a low temperature, and nothing else does", async () => {
+  test("awaitingConfirmation sets no sampling knob — the default model rejects one", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
     expect(callFlow.voiceConfig(ctx)?.temperature).toBeUndefined();
 
     await stageFor(ctx);
-    // Reading an order number and a dollar amount back is transcription; the
-    // failure is a model smoothing an id into one that scans better.
-    expect(callFlow.voiceConfig(ctx)?.temperature).toBe(0.2);
+    // The gateway's GPT-5 family answers `temperature` with a 400, so a
+    // read-back state that set one would fail the very turn it was guarding.
+    expect(callFlow.voiceConfig(ctx)?.temperature).toBeUndefined();
   });
 });

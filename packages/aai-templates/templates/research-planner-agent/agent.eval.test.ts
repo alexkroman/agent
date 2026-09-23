@@ -225,7 +225,12 @@ describeEval(agentDef, (test) => {
       const after = planState(session);
       // The trail is what the sidebar renders and what a caller cannot hold by
       // ear: a revision the caller asked for is recorded as theirs.
-      expect(after?.revisions.some((entry) => entry.startsWith("Caller:"))).toBe(true);
+      // Named, because a `revise_plan` that FAILED was still called, and "expected
+      // false to be true" hides the sentence it failed with.
+      expect(
+        after?.revisions.some((entry) => entry.startsWith("Caller:")),
+        describeToolCalls(turn.toolCalls),
+      ).toBe(true);
       // A revision reopens the plan rather than answering it, and completed
       // steps are never redone — there are none here, so the whole plan is new.
       expect(after?.plan).not.toEqual(before?.plan);

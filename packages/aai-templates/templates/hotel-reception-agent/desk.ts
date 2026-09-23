@@ -132,9 +132,6 @@ const deskSpec = {
             "just that detail again.",
         },
         readBack: {
-          // Reading dates, a total and a card's last four back is transcription,
-          // and the failure it has is a model smoothing one number into another.
-          temperature: 0.2,
           toolChoice: SPEAK_ONLY,
           instruction:
             "Every detail is captured. Read the booking back in ONE sentence - dates, guests, " +
@@ -143,7 +140,6 @@ const deskSpec = {
           on: { "@user-transcript.committed": "agreeing" },
         },
         agreeing: {
-          temperature: 0.2,
           instruction:
             "The caller has heard the read-back. If they agreed, call confirm_booking now - the " +
             "call IS your reply. If they corrected a detail, call the matching recording tool; " +

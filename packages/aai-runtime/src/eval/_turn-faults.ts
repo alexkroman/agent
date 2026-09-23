@@ -30,8 +30,8 @@
  * @module
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
-import { errorsIn, saidIn, toolCallsInEvents } from "./events.ts";
+import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
+import { type EvalToolCall, errorsIn, saidIn, toolCallsInEvents } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
 
 /**
@@ -185,6 +185,31 @@ export function assertTurnMeasurable(
 }
 
 /**
+ * {@link toolCallsInEvents}, minus the `think` builtin's calls — what
+ * `EvalTurn.toolCalls` and `session.toolCalls()` hand a case.
+ *
+ * `think` is a scratchpad: it reads nothing, changes nothing, and is silent on a
+ * call. Since it became the default (`DEFAULT_BUILTIN_TOOLS`), a model reaches
+ * for it on any turn it likes, so a case asserting the ACTIONS a turn took —
+ * `expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"])` — failed as
+ * `["think", "add_pizza"]` on a turn that did exactly the right thing. Measured:
+ * several template evals broke that way on the first live run after the default
+ * changed, none of them about thinking.
+ *
+ * An AUTHORED `tools/think.ts` wins over the builtin, and is an action like any
+ * other the author wrote, so its calls stay. The raw `events` are untouched —
+ * `toolCallsInEvents(turn.events)` is still every call, `think` included.
+ */
+export function measuredToolCalls(
+  events: readonly SessionEvent[],
+  agent: Pick<AgentDef, "tools">,
+): readonly EvalToolCall[] {
+  const calls = toolCallsInEvents(events);
+  if ("think" in agent.tools) return calls;
+  return calls.filter((call) => call.name !== "think");
+}
+
+/**
  * {@link assertTurnMeasurable}, then the turn read as an {@link EvalTurn} — what
  * the voice session and the text agent both hand a case, so the two cannot
  * disagree on what a field means.
@@ -194,12 +219,13 @@ export function measuredTurn(
   turn: readonly SessionEvent[],
   toolNames: readonly string[],
   mode: TurnMode,
+  agent: Pick<AgentDef, "tools">,
 ): EvalTurn {
   assertTurnMeasurable(what, turn, toolNames, mode);
   return {
     text: saidIn(turn).join(" "),
     events: turn,
-    toolCalls: toolCallsInEvents(turn),
+    toolCalls: measuredToolCalls(turn, agent),
     completed: turn.some((e) => e.type === "reply.completed"),
     errors: errorsIn(turn),
   };

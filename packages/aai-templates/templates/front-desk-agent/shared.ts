@@ -172,9 +172,6 @@ export const billing = persona({
       },
     }),
   },
-  // The two model knobs a persona may set: billing reads numbers back, so it
-  // runs cooler than the front desk.
-  temperature: 0.2,
 });
 
 export const support = persona({

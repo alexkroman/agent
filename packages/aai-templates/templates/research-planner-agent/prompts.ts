@@ -42,19 +42,26 @@ export const planSchema = z.object({
     .describe("The steps, in order, each one a task that can be done on its own"),
 });
 
-/** Their `Act` — `Response | Plan` as one discriminated object. */
+/**
+ * Their `Act` — `Response | Plan` as one discriminated object.
+ *
+ * `.nullable()`, never `.optional()`: the gateway sends a schema in STRICT
+ * structured-output mode, where every property must be listed as required, and
+ * an optional one is a 400 on every call — which is how this template's replan
+ * failed on its first live run after the default model moved to GPT-5.
+ */
 export const actSchema = z.object({
   kind: z.enum(["respond", "plan"]).describe("'respond' when the objective is met, else 'plan'"),
   response: z
     .string()
     .max(600)
-    .describe("The answer for the caller, when kind is 'respond'")
-    .optional(),
+    .nullable()
+    .describe("The answer for the caller when kind is 'respond', else null"),
   steps: z
     .array(z.string().max(200))
     .max(5)
-    .describe("The steps STILL to do, when kind is 'plan'")
-    .optional(),
+    .nullable()
+    .describe("The steps STILL to do when kind is 'plan', else null"),
 });
 
 /**

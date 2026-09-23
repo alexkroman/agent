@@ -47,7 +47,6 @@ export async function triageEmail(
     system: TRIAGE_SYSTEM,
     prompt: triagePrompt(exec, email, formatExamples(examples)),
     schema: respondTo,
-    temperature: 0,
   });
   return object;
 }
@@ -69,7 +68,6 @@ export async function rewriteDraft(
     system: REWRITE_SYSTEM,
     prompt: rewritePrompt(exec, instructions, draft, thread),
     schema: reWriteEmail,
-    temperature: 0,
   });
   return object;
 }
@@ -105,7 +103,6 @@ export async function reflect(
     system: CHOOSE_MEMORY_SYSTEM,
     prompt: chooseMemoryPrompt(input.trajectory, input.feedback, input.promptTypes),
     schema: memoryToUpdate,
-    temperature: 0,
   });
   // The chooser is offered only the allowed types, and is held to them: a model
   // that names `tone` when told about a calendar preference rewrites nothing.
@@ -124,7 +121,6 @@ export async function reflect(
           instructions,
         ),
         schema: generalResponse,
-        temperature: 0,
       });
       return object.updatePrompt && object.newPrompt.trim() !== ""
         ? { type, memory: key, logic: object.logic, newPrompt: object.newPrompt }

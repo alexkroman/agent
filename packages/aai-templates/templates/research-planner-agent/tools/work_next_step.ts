@@ -85,54 +85,9 @@ export default planFlow.tool({
     }
     const { step, objective, pastSteps } = claimed;
 
+    let outcome: Awaited<ReturnType<typeof executeStep>>;
     try {
-      const outcome = await executeStep(ctx.delegate, objective, step, pastSteps);
-      planSlot.update(ctx, (plan) => {
-        // Capped: `historyOf` renders this whole list into two prompts, so an
-        // append with no bound is a model bill that grows with the plan.
-        plan.pastSteps.push({
-          step,
-          result: outcome.result,
-          settled: outcome.settled,
-          searches: outcome.searches,
-        });
-      });
-
-      // Their `replan_step`: the plan after a step is whatever still needs
-      // doing, decided from the result rather than from what was planned before
-      // anyone knew it.
-      const act = await replanNode(ctx.generate, planSlot.get(ctx));
-      return planSlot.update(ctx, (plan) => {
-        if (act.kind === "respond") {
-          plan.response = act.response;
-          plan.plan = [];
-          plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
-          return {
-            finished: true,
-            step,
-            result: outcome.result,
-            settled: outcome.settled,
-            searches: outcome.searches,
-            response: act.response,
-            message: "The plan is done — give the caller the answer.",
-          };
-        }
-
-        const changed = act.steps.join("|") !== plan.plan.join("|");
-        plan.plan = act.steps;
-        if (changed) plan.revisions.push(`Replanned to ${act.steps.length} step(s) after: ${step}`);
-        return {
-          finished: false,
-          step,
-          result: outcome.result,
-          settled: outcome.settled,
-          searches: outcome.searches,
-          remaining: act.steps,
-          message:
-            "Report what this step found — say so plainly if it is not settled — " +
-            "then ask whether to carry on.",
-        };
-      });
+      outcome = await executeStep(ctx.delegate, objective, step, pastSteps);
     } catch (err: unknown) {
       // Put the claimed step back at the head, where a retry will find it.
       planSlot.update(ctx, (plan) => {
@@ -140,6 +95,77 @@ export default planFlow.tool({
       });
       return toolFailure(`That step could not be worked: ${errorMessage(err)}`);
     }
+    planSlot.update(ctx, (plan) => {
+      // Capped: `historyOf` renders this whole list into two prompts, so an
+      // append with no bound is a model bill that grows with the plan.
+      plan.pastSteps.push({
+        step,
+        result: outcome.result,
+        settled: outcome.settled,
+        searches: outcome.searches,
+      });
+    });
+    const found = {
+      step,
+      result: outcome.result,
+      settled: outcome.settled,
+      searches: outcome.searches,
+    };
+
+    // Their `replan_step`: the plan after a step is whatever still needs
+    // doing, decided from the result rather than from what was planned before
+    // anyone knew it.
+    //
+    // Its OWN failure path, apart from the step's. By here the step is done and
+    // recorded, so a replanner that throws must not put it back: the first live
+    // run did exactly that, and left one step both in `done` and at the head of
+    // the plan, waiting to be worked a second time. What is left stays what it
+    // was, which is the plan as it stood before anyone knew this result.
+    let act: Awaited<ReturnType<typeof replanNode>>;
+    try {
+      act = await replanNode(ctx.generate, planSlot.get(ctx));
+    } catch {
+      return {
+        finished: false,
+        ...found,
+        response: undefined,
+        remaining: planSlot.get(ctx).plan,
+        message:
+          "Report what this step found — say so plainly if it is not settled. The plan " +
+          "could not be updated from it, so ask whether to carry on with the next step as planned.",
+      };
+    }
+    return planSlot.update(ctx, (plan) => {
+      if (act.kind === "respond") {
+        plan.response = act.response;
+        plan.plan = [];
+        plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
+        return {
+          finished: true,
+          ...found,
+          response: act.response,
+          message: "The plan is done — give the caller the answer.",
+        };
+      }
+
+      // A completed step is never redone, whatever the replanner lists. It is
+      // shown the steps done and told to leave them out, but that is a prompt;
+      // this is the guarantee.
+      const worked = new Set(plan.pastSteps.map((past) => past.step));
+      const steps = act.steps.filter((next) => !worked.has(next));
+      const changed = steps.join("|") !== plan.plan.join("|");
+      plan.plan = steps;
+      if (changed) plan.revisions.push(`Replanned to ${steps.length} step(s) after: ${step}`);
+      return {
+        finished: false,
+        ...found,
+        response: undefined,
+        remaining: steps,
+        message:
+          "Report what this step found — say so plainly if it is not settled — " +
+          "then ask whether to carry on.",
+      };
+    });
   },
   // Written BELOW `execute` deliberately. `sendFrom`'s parameter is
   // `Exclude<NoInfer<R>, ToolFailure>`, and `NoInfer` keeps it from bidding on
