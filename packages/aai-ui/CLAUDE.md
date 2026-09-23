@@ -33,7 +33,8 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | --- | --- |
 | `client` | the voice mount — `mountClient()`, the one flat `ClientConfig` it takes, the handle |
 | `page` | the workflow-app mount — `mountPage()`, with no session under it, plus `fetchClientConfig()`: the lookup `mountClient()` does for itself and a page must ask for |
-| `session` | the live call: `BrowserSession`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
+| `session` | the live call: `BrowserSession` (SEALED — below), the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
+| `push-to-talk` | `usePushToTalk` and the `session.userTurn` sub-handle (`UserTurnControls`) it drives, for a `turnDetection: "manual"` agent — its own capability so one agent's feature is not an epoch of every session |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
@@ -199,9 +200,19 @@ Two consequences it cannot check, worth knowing before adding a component here:
   (audio-result, workflow-run-panel)
 - `use-session-controls.ts` — the two flags and four methods a control row
   renders from; `<SessionControls>` is built on it
-- `use-push-to-talk.ts` — the hold-to-talk button over `startUserTurn` /
-  `commitUserTurn` / `clearUserTurn`, for a `turnDetection: "manual"` agent. Its
+- `use-push-to-talk.ts` — the hold-to-talk button over `session.userTurn`
+  (`start` / `commit` / `clear`), for a `turnDetection: "manual"` agent. Its
   module doc lists the four ways a hand-written button leaves a turn open
+
+**`BrowserSession` is SEALED.** It carries `[browserSessionBrand]: true`, a
+`declare const … : unique symbol` exported TYPE-ONLY, so no object literal can
+satisfy it and only `createBrowserSession` mints one (one cast, there; the
+in-package `createMockSessionCore` is the other). Push-to-talk added three
+REQUIRED methods in one PR and broke every hand-written double — a handle a
+caller RECEIVES must be able to grow. So those three are a sub-handle
+(`session.userTurn`), and `SessionActions` is DECLARED on its own rather than
+`Pick`ed from the session, so a member the session gains does not silently
+become an action every chrome is handed.
 
 ## `useConversation` is the conversation; `MessageList` is one renderer of it
 
@@ -255,7 +266,8 @@ board re-rendered at STT-partial rate. `use-conversation.test.tsx` pins it — a
 only public route to `start`/`toggle`/`end` used to be `useSession()` — a
 whole-snapshot subscription for four methods, so four components across three
 templates re-rendered at STT-partial rate. It is `useSessionCore` narrowed to
-the eight methods: no subscription, no store on the object it returns. Pair it
+the eight methods (push-to-talk is `usePushToTalk`'s, not an action): no
+subscription, no store on the object it returns. Pair it
 with a one-field `useSessionSelector`, or with `useSessionStatus()` /
 `useSessionError()`, the only two fields more than one chrome selects.
 

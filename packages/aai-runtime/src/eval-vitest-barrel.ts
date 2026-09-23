@@ -43,10 +43,6 @@ export {
 // `describe*Eval` doors below makes before registering a case, published so a
 // harness that is not vitest can ask the same question. See its module doc.
 export { resolveEvalMode, resolveWorkflowEvalMode } from "./eval/eval-mode.ts";
-// What a case is handed to run a simulated caller and a judge, and the
-// suite/case options that pick their models — shared by both suite doors.
-export type {
-  EvalSimulationCaseOptions,
-  EvalSimulationContext,
-  EvalSimulationSuiteOptions,
-} from "./eval/simulation-context.ts";
+// A simulated caller and a judge are NOT here: a case builds that pair with
+// `evalSimulation` from `@alexkroman1/aai-runtime/eval/simulate`, a subpath and
+// a capability of its own.

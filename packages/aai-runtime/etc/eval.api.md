@@ -30,15 +30,6 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
-
-// @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
@@ -55,20 +46,10 @@ export function createStubTtsOpener(name: string): TtsOpener & {
 export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
-export type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
 }[];
-
-// @public
-export const DEFAULT_MAX_TURNS = 12;
 
 // @public
 export const DEFAULT_RUN_TIMEOUT_MS = 300000;
@@ -78,9 +59,6 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function describeTurn(turn: EvalTurn): string;
-
-// @public
-export const END_CALL_TOOL = "end_call";
 
 // @public
 export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
@@ -262,20 +240,6 @@ export function installStubLlm(script: StubScript): StubLlm;
 export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
-export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
-
-// @public
-export type JudgeCallOptions = {
-    readonly criteria: readonly string[];
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly context?: string;
-};
-
-// @public
-export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
@@ -315,64 +279,6 @@ export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
-
-// @public
-export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
-
-// @public
-export type SimulateCallOptions = {
-    readonly caller: SimulatedCaller;
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly maxTurns?: number;
-};
-
-// @public
-export type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-export type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-export type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-export type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
-};
-
-// @public
-export type SimulationTarget = {
-    say(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-} | {
-    send(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-};
 
 // @public
 export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];

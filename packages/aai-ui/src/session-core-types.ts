@@ -153,15 +153,62 @@ export type SessionSnapshot = {
 };
 
 /**
+ * The seal on a {@link BrowserSession}.
+ *
+ * TYPE-ONLY — there is no value at run time, so an object literal cannot carry
+ * the key and only `createBrowserSession` mints a session. That is what lets
+ * the handle grow a member without breaking anybody: push-to-talk added three
+ * REQUIRED methods and broke every hand-written double, which is the failure a
+ * handle a caller RECEIVES should not be able to cause.
+ *
+ * @public
+ */
+export declare const browserSessionBrand: unique symbol;
+
+/**
+ * Push-to-talk's three edges on a {@link BrowserSession} — `session.userTurn`.
+ *
+ * Only an agent declaring `turnDetection: "manual"` honours them; any other
+ * agent logs once and ignores them, because its transcriber already ends each
+ * turn on a pause. `usePushToTalk` is the hook a button is built on, and the
+ * way a `client.tsx` reaches these: a sub-handle rather than three methods on
+ * the session, so a feature one agent in many declares is not three members
+ * every session carries in its autocomplete.
+ *
+ * @public
+ */
+export type UserTurnControls = {
+  /**
+   * OPEN a turn — the button went down. Stops the agent if it is speaking
+   * (discarding its queued audio here at once, rather than a round trip later)
+   * and lets the microphone through to the transcriber.
+   */
+  start(): void;
+  /** CLOSE the turn and have the agent answer everything said since `start()` — the button came up. */
+  commit(): void;
+  /**
+   * Close the turn and THROW AWAY what was said in it — a cancelled press (the
+   * pointer left the button, Escape). The agent answers nothing.
+   */
+  clear(): void;
+};
+
+/**
  * A framework-agnostic voice session that manages WebSocket communication,
  * audio capture/playback, and agent state transitions.
  *
  * Uses a subscribe/getSnapshot pattern (compatible with React's
  * `useSyncExternalStore`). Implements `Disposable` for resource cleanup.
  *
+ * @sealed Only `createBrowserSession` produces one — see
+ * {@link browserSessionBrand}. A test double for a component is a real
+ * session with no socket, not an object literal.
+ *
  * @public
  */
 export type BrowserSession = {
+  /** The seal — see {@link browserSessionBrand}. */
+  readonly [browserSessionBrand]: true;
   /** Return the current immutable state snapshot. */
   getSnapshot(): SessionSnapshot;
   /** Subscribe to state changes. Returns an unsubscribe function. */
@@ -176,28 +223,8 @@ export type BrowserSession = {
   connect(options?: { signal?: AbortSignal }): void;
   /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
-  /**
-   * Push-to-talk: OPEN a turn — the button went down. Stops the agent if it is
-   * speaking (discarding its queued audio here at once, rather than a round
-   * trip later) and lets the microphone through to the transcriber.
-   *
-   * Only an agent declaring `turnDetection: "manual"` honours the three
-   * push-to-talk methods; any other agent logs once and ignores them, because
-   * its transcriber already ends each turn on a pause. `usePushToTalk` is the
-   * hook a button is built on.
-   */
-  startUserTurn(): void;
-  /**
-   * Push-to-talk: CLOSE the turn and have the agent answer everything said
-   * since {@link BrowserSession.startUserTurn} — the button came up.
-   */
-  commitUserTurn(): void;
-  /**
-   * Push-to-talk: close the turn and THROW AWAY what was said in it — a
-   * cancelled press (the pointer left the button, Escape). The agent answers
-   * nothing.
-   */
-  clearUserTurn(): void;
+  /** Push-to-talk's three edges — see {@link UserTurnControls}. */
+  readonly userTurn: UserTurnControls;
   /**
    * Clear messages, transcripts, and error state while keeping the current
    * connection (unlike `reset()`, which also reconnects).

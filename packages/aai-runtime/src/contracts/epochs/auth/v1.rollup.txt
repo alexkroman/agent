@@ -1,0 +1,57 @@
+import type http from 'node:http';
+
+// @public
+export function createSessionAuth(options: SessionAuthOptions): SessionAuth;
+
+// @public
+export function createSessionToken(input: SessionTokenInput): string;
+
+// @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
+export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
+
+// @public
+export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
+
+// @public @sealed
+export type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
+};
+
+// @public
+export const sessionAuthBrand: unique symbol;
+
+// @public
+export type SessionAuthOptions = {
+    secret?: string | undefined;
+    verify?: SessionVerifier | undefined;
+    allowedOrigins?: readonly string[] | undefined;
+};
+
+// @public
+export type SessionIdentity = {
+    sub: string;
+    sessionId?: string;
+    claims?: Record<string, unknown>;
+};
+
+// @public
+export type SessionTokenInput = SessionIdentity & {
+    secret: string;
+    ttlSeconds?: number;
+    now?: number;
+};
+
+// @public
+export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
+
+// @public
+export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
+
+// @public
+export type VerifySessionTokenOptions = {
+    secret: string;
+    now?: number;
+};

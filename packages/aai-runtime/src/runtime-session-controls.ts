@@ -32,12 +32,14 @@
 import type { AgentDef, AgentSessionContext } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import pTimeout, { TimeoutError } from "p-timeout";
 import { recordSessionMetrics } from "./metrics-sink.ts";
 import type { Logger } from "./runtime-config.ts";
 import { openSessionDialogs, type SessionDialogs } from "./runtime-dialogs.ts";
 import { openSessionPersonas, type SessionPersonas } from "./runtime-personas.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import type { SystemPromptResolver } from "./runtime-system-prompt.ts";
+import type { ServerSession } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { createTurnGuardrails, type TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import type { Transport } from "./transports/types.ts";
@@ -169,4 +171,34 @@ export function openSessionWiring(deps: {
         emitter.emit({ type: "guardrail.blocked", direction, replacement }),
     }),
   };
+}
+
+/**
+ * Stop every live session within `timeoutMs` — `runtime.shutdown()`'s wait.
+ * A stop that rejects is logged; running past the deadline is logged and the
+ * caller force-closes what is left. Never rejects.
+ */
+export async function stopSessionsWithin(
+  sessions: { readonly size: number; values(): Iterable<ServerSession> },
+  timeoutMs: number,
+  logger: Logger,
+): Promise<void> {
+  if (sessions.size === 0) return;
+  try {
+    const results = await pTimeout(
+      Promise.allSettled([...sessions.values()].map((s) => s.stop())),
+      { milliseconds: timeoutMs },
+    );
+    for (const r of results) {
+      if (r.status === "rejected") logger.warn(`Session stop failed during shutdown: ${r.reason}`);
+    }
+  } catch (err) {
+    // allSettled never rejects, so this is normally pTimeout's TimeoutError
+    // — but don't mislabel anything else (e.g. a throwing logger above).
+    logger.warn(
+      err instanceof TimeoutError
+        ? `Shutdown timeout (${timeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`
+        : `Shutdown failed: ${errorMessage(err)} — force-closing ${sessions.size} remaining session(s)`,
+    );
+  }
 }

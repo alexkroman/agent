@@ -3,8 +3,8 @@
  * `usePushToTalk` — a hold-to-speak button, for an agent that declares
  * `turnDetection: "manual"`.
  *
- * The three session methods underneath (`startUserTurn`, `commitUserTurn`,
- * `clearUserTurn`) are one line each; what a button needs on top of them is
+ * The three session edges underneath (`session.userTurn`'s `start`, `commit`
+ * and `clear`) are one line each; what a button needs on top of them is
  * where hand-written versions go wrong, and every one of the four is a turn
  * that is left OPEN — the microphone live and nothing ever answered:
  *
@@ -24,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSessionActions, useSessionSelector } from "./context.ts";
+import { useSessionCore, useSessionSelector } from "./context.ts";
 import type { SessionSnapshot } from "./session-core-types.ts";
 
 /** Options for {@link usePushToTalk}. */
@@ -109,7 +109,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
  */
 export function usePushToTalk(options: UsePushToTalkOptions = {}): UsePushToTalkResult {
   const holdKey = options.holdKey ?? "Space";
-  const { startUserTurn, commitUserTurn, clearUserTurn } = useSessionActions();
+  // The session's own sub-handle, stable per core — push-to-talk is not one of
+  // the `SessionActions` every chrome is handed, so this hook is the door.
+  const { userTurn } = useSessionCore();
   const ready = useSessionSelector(selectRunning);
   const [talking, setTalking] = useState(false);
   // The source of truth for the handlers: two edges can land in one render
@@ -120,22 +122,22 @@ export function usePushToTalk(options: UsePushToTalkOptions = {}): UsePushToTalk
     if (held.current || !ready) return;
     held.current = true;
     setTalking(true);
-    startUserTurn();
-  }, [ready, startUserTurn]);
+    userTurn.start();
+  }, [ready, userTurn]);
 
   const release = useCallback((): void => {
     if (!held.current) return;
     held.current = false;
     setTalking(false);
-    commitUserTurn();
-  }, [commitUserTurn]);
+    userTurn.commit();
+  }, [userTurn]);
 
   const cancel = useCallback((): void => {
     if (!held.current) return;
     held.current = false;
     setTalking(false);
-    clearUserTurn();
-  }, [clearUserTurn]);
+    userTurn.clear();
+  }, [userTurn]);
 
   // A call that stops mid-hold (paused, ended, dropped) has no turn to hold.
   useEffect(() => {

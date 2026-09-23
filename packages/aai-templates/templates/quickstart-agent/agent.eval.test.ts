@@ -29,6 +29,7 @@ import agentDef from "virtual:aai/agent";
 // agent decides you stopped talking, how it handles being interrupted, whether
 // two sentences merged into one turn. Those need real paced audio.
 import { errorsIn, toolNames } from "@alexkroman1/aai-runtime/eval";
+import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 
@@ -93,7 +94,22 @@ describeEval(agentDef, (test) => {
 
   test(
     "a simulated caller gets a forecast, and a judge grades the call",
-    async ({ simulate, judge }) => {
+    async ({ session, mode }) => {
+      // The caller and the judge come from `/eval/simulate`, built over this
+      // case's own session and mode. In a keyless run all three models are
+      // scripted: the agent's replies (`stubReply` below), the caller's lines
+      // (ending on `end_call`) and the judge's rulings. That checks the loop
+      // is wired; it grades nothing, and the verdict says so.
+      const { simulate, judge } = evalSimulation({
+        agent: agentDef,
+        mode,
+        target: session,
+        stubCaller: [
+          "Hi, do I need an umbrella in Seattle today?",
+          { tool: "end_call", args: { reason: "got the forecast" } },
+        ],
+      });
+
       // A SECOND model plays the caller: it is told who it is and what it
       // wants, reads each reply, answers it, and hangs up with `end_call` once
       // it has what it came for. Nobody scripted these lines — which is the
@@ -119,17 +135,10 @@ describeEval(agentDef, (test) => {
       ]);
       expect(verdict.pass, verdict.explain()).toBe(true);
     },
-    // In a keyless run all three models are scripted: the agent's replies,
-    // the caller's lines (ending on `end_call`) and the judge's rulings. That
-    // checks the loop is wired; it grades nothing, and the verdict says so.
     {
       stubReply: [
         { tool: "get_weather", args: { city: "Seattle" } },
         "It's raining in Seattle, so bring an umbrella.",
-      ],
-      stubCaller: [
-        "Hi, do I need an umbrella in Seattle today?",
-        { tool: "end_call", args: { reason: "got the forecast" } },
       ],
     },
   );

@@ -84,9 +84,6 @@ describe("useSessionActions", () => {
     expect(result.current.disconnect).toBe(core.disconnect);
     expect(result.current.toggle).toBe(core.toggle);
     expect(result.current.end).toBe(core.end);
-    expect(result.current.startUserTurn).toBe(core.startUserTurn);
-    expect(result.current.commitUserTurn).toBe(core.commitUserTurn);
-    expect(result.current.clearUserTurn).toBe(core.clearUserTurn);
   });
 
   it("does NOT re-render on a snapshot change, which is the whole reason it exists", () => {
@@ -133,15 +130,12 @@ describe("useSessionActions", () => {
     const { result } = renderHook(() => useSessionActions(), { wrapper: wrap(core) });
     expect(Object.keys(result.current).toSorted()).toEqual([
       "cancel",
-      "clearUserTurn",
-      "commitUserTurn",
       "disconnect",
       "end",
       "reset",
       "resetState",
       "restart",
       "start",
-      "startUserTurn",
       "toggle",
     ]);
     expect(result.current).not.toBe(core);

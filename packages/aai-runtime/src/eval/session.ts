@@ -62,7 +62,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
-import { createRuntime } from "../runtime.ts";
+import { createRuntimeWithSeams } from "../runtime.ts";
 import { type Logger, silentLogger } from "../runtime-config.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
@@ -333,7 +333,8 @@ async function openWithFakes(
 
   const turnTimeoutMs = options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
-  const runtime = createRuntime({
+  // The seams variant, for `generate` — a host-only option (`HostRuntimeOptions`).
+  const runtime = createRuntimeWithSeams({
     // `omitUndefined`, not `...omitUndefined({ llm })`: the conditional spread
     // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
     // out, and the truthiness spelling is the one its regex cannot see.

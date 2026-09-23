@@ -81,7 +81,7 @@ each is for.
 | `CLIENT_CONFIG_PATH` | `@alexkroman1/aai/protocol` |
 | `CODING_TOOL_DESCRIPTIONS` | `@alexkroman1/aai/coding-tools` |
 | `CallOptions` | `@alexkroman1/aai/tools` |
-| `CallVerdict` | `@alexkroman1/aai-runtime/eval` |
+| `CallVerdict` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `CarrierCodec` | `@alexkroman1/aai-runtime` |
 | `CarrierInbound` | `@alexkroman1/aai-runtime` |
 | `CarrierName` | `@alexkroman1/aai-runtime` |
@@ -113,7 +113,7 @@ each is for.
 | `ConversationView` | `@alexkroman1/aai-ui` |
 | `ConversationViewProps` | `@alexkroman1/aai-ui` |
 | `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
-| `CriterionVerdict` | `@alexkroman1/aai-runtime/eval` |
+| `CriterionVerdict` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
 | `DEFAULT_GUARDRAIL_MAX_REVISIONS` | `@alexkroman1/aai` |
 | `DEFAULT_LISTEN_HOST` | `@alexkroman1/aai-runtime` |
@@ -121,7 +121,7 @@ each is for.
 | `DEFAULT_LOG_LINE_BYTES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_LOG_PAGE_LINES` | `@alexkroman1/aai-runtime` |
 | `DEFAULT_MAX_DELIVERIES` | `@alexkroman1/aai-runtime/testing` |
-| `DEFAULT_MAX_TURNS` | `@alexkroman1/aai-runtime/eval` |
+| `DEFAULT_MAX_TURNS` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `DEFAULT_RETRY_DELAY_MS` | `@alexkroman1/aai/step-errors` |
 | `DEFAULT_RUN_TIMEOUT_MS` | `@alexkroman1/aai-runtime/eval` |
 | `DEFAULT_SERVICE_NAME` | `@alexkroman1/aai-runtime/tracing` |
@@ -154,7 +154,7 @@ each is for.
 | `DialogToolDef` | `@alexkroman1/aai` |
 | `DialogToolResult` | `@alexkroman1/aai` |
 | `DialogVoiceConfig` | `@alexkroman1/aai` |
-| `END_CALL_TOOL` | `@alexkroman1/aai-runtime/eval` |
+| `END_CALL_TOOL` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `EVENT_ID_PREFIX` | `@alexkroman1/aai/protocol` |
 | `ElevenLabsSttOptions` | `@alexkroman1/aai/stt` |
 | `EvalCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -164,9 +164,8 @@ each is for.
 | `EvalRunOptions` | `@alexkroman1/aai-runtime/eval` |
 | `EvalSession` | `@alexkroman1/aai-runtime/eval` |
 | `EvalSessionOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EvalSimulationCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalSimulationContext` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalSimulationSuiteOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
+| `EvalSimulationContext` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `EvalSimulationOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `EvalSleep` | `@alexkroman1/aai-runtime/eval` |
 | `EvalTest` | `@alexkroman1/aai-runtime/eval/vitest` |
 | `EvalTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
@@ -232,8 +231,8 @@ each is for.
 | `InferToolOutput` | `@alexkroman1/aai` |
 | `JournalConflictError` | `@alexkroman1/aai-runtime/testing` |
 | `JournalStore` | `@alexkroman1/aai-runtime/testing` |
-| `JudgeCallOptions` | `@alexkroman1/aai-runtime/eval` |
-| `JudgeInput` | `@alexkroman1/aai-runtime/eval` |
+| `JudgeCallOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `JudgeInput` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `KeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `KeyedLockTimeoutError` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
@@ -289,9 +288,9 @@ each is for.
 | `MetricsCollectedEvent` | `@alexkroman1/aai` |
 | `MetricsCollector` | `@alexkroman1/aai` |
 | `MetricsCollectorOptions` | `@alexkroman1/aai` |
-| `MetricsContext` | `@alexkroman1/aai-runtime/tracing` |
+| `MetricsContext` | `@alexkroman1/aai-runtime/metrics` |
 | `MetricsSample` | `@alexkroman1/aai` |
-| `MetricsSink` | `@alexkroman1/aai-runtime/tracing` |
+| `MetricsSink` | `@alexkroman1/aai-runtime/metrics` |
 | `MetricsSummary` | `@alexkroman1/aai` |
 | `MintCodeOptions` | `@alexkroman1/aai` |
 | `ModelTuning` | `@alexkroman1/aai` |
@@ -299,15 +298,15 @@ each is for.
 | `MultipartPart` | `@alexkroman1/aai/step` |
 | `NumberField` | `@alexkroman1/aai-ui` |
 | `OTEL_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
-| `OTEL_METRICS_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
-| `OTEL_METRICS_EXPORTER_ENV` | `@alexkroman1/aai-runtime/tracing` |
-| `OTEL_METRIC_NAMES` | `@alexkroman1/aai-runtime/tracing` |
+| `OTEL_METRICS_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/metrics` |
+| `OTEL_METRICS_EXPORTER_ENV` | `@alexkroman1/aai-runtime/metrics` |
+| `OTEL_METRIC_NAMES` | `@alexkroman1/aai-runtime/metrics` |
 | `OTEL_SERVICE_NAME_ENV` | `@alexkroman1/aai-runtime/tracing` |
 | `OpenAICompatibleLlmOptions` | `@alexkroman1/aai/experimental` |
 | `OpenAIS2sOptions` | `@alexkroman1/aai/s2s` |
 | `OpenAIS2sVoice` | `@alexkroman1/aai/s2s` |
 | `OpenerRegistryEntry` | `@alexkroman1/aai-runtime` |
-| `OtelMeterLike` | `@alexkroman1/aai-runtime/tracing` |
+| `OtelMeterLike` | `@alexkroman1/aai-runtime/metrics` |
 | `PROJECT_GUIDE_POINTER` | `@alexkroman1/aai/workspace-files` |
 | `PackageManifest` | `@alexkroman1/aai/workspace-files` |
 | `PageConfig` | `@alexkroman1/aai-ui` |
@@ -362,13 +361,13 @@ each is for.
 | `S2sAgentParams` | `@alexkroman1/aai` |
 | `S2sConfig` | `@alexkroman1/aai-runtime` |
 | `S2sProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
-| `SESSION_AUTH_PROTOCOL_PREFIX` | `@alexkroman1/aai-runtime` |
+| `SESSION_AUTH_PROTOCOL_PREFIX` | `@alexkroman1/aai-runtime/auth` |
 | `SESSION_COMMAND_TYPES` | `@alexkroman1/aai/protocol` |
 | `SESSION_EVENTS_TOKEN_ENV` | `@alexkroman1/aai-runtime` |
 | `SESSION_EVENT_TYPES` | `@alexkroman1/aai/protocol` |
-| `SESSION_SECRET_ENV` | `@alexkroman1/aai-runtime` |
+| `SESSION_SECRET_ENV` | `@alexkroman1/aai-runtime/auth` |
 | `SESSION_SOURCED_EVENT_TYPES` | `@alexkroman1/aai` |
-| `SESSION_UNAUTHORIZED_CLOSE_CODE` | `@alexkroman1/aai-runtime` |
+| `SESSION_UNAUTHORIZED_CLOSE_CODE` | `@alexkroman1/aai-runtime/auth` |
 | `SLACK_CHANNEL_HANDLER` | `@alexkroman1/aai/channels` |
 | `SLACK_CHANNEL_KIND` | `@alexkroman1/aai/channels` |
 | `STEP_FILE_READ_CONCURRENCY` | `@alexkroman1/aai/step-files` |
@@ -384,10 +383,13 @@ each is for.
 | `ScriptedToolContextOptions` | `@alexkroman1/aai/testing` |
 | `SelectField` | `@alexkroman1/aai-ui` |
 | `SentEvent` | `@alexkroman1/aai/testing` |
+| `ServerRequestHook` | `@alexkroman1/aai-runtime` |
 | `ServerSession` | `@alexkroman1/aai-runtime` |
+| `ServerUpgradeHook` | `@alexkroman1/aai-runtime` |
 | `Session` | `@alexkroman1/aai-ui` |
 | `SessionActions` | `@alexkroman1/aai-ui` |
-| `SessionAuthOptions` | `@alexkroman1/aai-runtime` |
+| `SessionAuth` | `@alexkroman1/aai-runtime/auth` |
+| `SessionAuthOptions` | `@alexkroman1/aai-runtime/auth` |
 | `SessionCommand` | `@alexkroman1/aai/protocol` |
 | `SessionCommandSchema` | `@alexkroman1/aai/protocol` |
 | `SessionConnectOptions` | `@alexkroman1/aai-runtime` |
@@ -414,7 +416,7 @@ each is for.
 | `SessionEventSchema` | `@alexkroman1/aai` |
 | `SessionEventStream` | `@alexkroman1/aai-runtime` |
 | `SessionEventType` | `@alexkroman1/aai` |
-| `SessionIdentity` | `@alexkroman1/aai-runtime` |
+| `SessionIdentity` | `@alexkroman1/aai-runtime/auth` |
 | `SessionMode` | `@alexkroman1/aai/manifest` |
 | `SessionRuntime` | `@alexkroman1/aai-runtime` |
 | `SessionSlot` | `@alexkroman1/aai` |
@@ -426,19 +428,19 @@ each is for.
 | `SessionStateDot` | `@alexkroman1/aai-ui` |
 | `SessionStateDotProps` | `@alexkroman1/aai-ui` |
 | `SessionStateStore` | `@alexkroman1/aai-runtime` |
-| `SessionTokenInput` | `@alexkroman1/aai-runtime` |
-| `SessionVerifier` | `@alexkroman1/aai-runtime` |
+| `SessionTokenInput` | `@alexkroman1/aai-runtime/auth` |
+| `SessionVerifier` | `@alexkroman1/aai-runtime/auth` |
 | `SessionWebSocket` | `@alexkroman1/aai-runtime` |
 | `Settled` | `@alexkroman1/aai/step` |
 | `SharedAgentParams` | `@alexkroman1/aai` |
 | `SharedServerOptions` | `@alexkroman1/aai-runtime` |
 | `SidebarLayout` | `@alexkroman1/aai-ui` |
-| `SimulateCallOptions` | `@alexkroman1/aai-runtime/eval` |
-| `SimulatedCall` | `@alexkroman1/aai-runtime/eval` |
-| `SimulatedCaller` | `@alexkroman1/aai-runtime/eval` |
-| `SimulatedTurn` | `@alexkroman1/aai-runtime/eval` |
-| `SimulationMetrics` | `@alexkroman1/aai-runtime/eval` |
-| `SimulationTarget` | `@alexkroman1/aai-runtime/eval` |
+| `SimulateCallOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `SimulatedCall` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `SimulatedCaller` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `SimulatedTurn` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `SimulationMetrics` | `@alexkroman1/aai-runtime/eval/simulate` |
+| `SimulationTarget` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `SkipGreetingOption` | `@alexkroman1/aai-runtime` |
 | `SlackChannel` | `@alexkroman1/aai/channels` |
 | `SlackChannelOptions` | `@alexkroman1/aai/channels` |
@@ -643,9 +645,10 @@ each is for.
 | `UseWorkflowSubmitOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsOptions` | `@alexkroman1/aai-ui` |
 | `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
+| `UserTurnControls` | `@alexkroman1/aai-ui` |
 | `UserTurnLimit` | `@alexkroman1/aai` |
 | `VOICE_PRESETS` | `@alexkroman1/aai` |
-| `VerifySessionTokenOptions` | `@alexkroman1/aai-runtime` |
+| `VerifySessionTokenOptions` | `@alexkroman1/aai-runtime/auth` |
 | `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
 | `VoicePresetName` | `@alexkroman1/aai` |
 | `VoiceSessionOptions` | `@alexkroman1/aai-ui` |
@@ -714,6 +717,7 @@ each is for.
 | `assertPipelineTuning` | `@alexkroman1/aai/manifest` |
 | `assertSilencePolicy` | `@alexkroman1/aai/manifest` |
 | `blockAlign` | `@alexkroman1/aai/step` |
+| `browserSessionBrand` | `@alexkroman1/aai-ui` |
 | `buildClient` | `@alexkroman1/aai-cli/client-bundler` |
 | `buildClientConfig` | `@alexkroman1/aai/protocol` |
 | `buildReadyConfig` | `@alexkroman1/aai/protocol` |
@@ -724,6 +728,7 @@ each is for.
 | `clockTime` | `@alexkroman1/aai` |
 | `commandedBuiltins` | `@alexkroman1/aai/testing` |
 | `completedOutput` | `@alexkroman1/aai-runtime/eval` |
+| `connectSession` | `@alexkroman1/aai-runtime` |
 | `countWords` | `@alexkroman1/aai/utils` |
 | `createAgentClient` | `@alexkroman1/aai/workflow-api` |
 | `createAgentServer` | `@alexkroman1/aai-runtime` |
@@ -744,7 +749,8 @@ each is for.
 | `createRuntime` | `@alexkroman1/aai-runtime` |
 | `createRuntimeServer` | `@alexkroman1/aai-runtime` |
 | `createSeededRandom` | `@alexkroman1/aai` |
-| `createSessionToken` | `@alexkroman1/aai-runtime` |
+| `createSessionAuth` | `@alexkroman1/aai-runtime/auth` |
+| `createSessionToken` | `@alexkroman1/aai-runtime/auth` |
 | `createStubSttOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubTtsOpener` | `@alexkroman1/aai-runtime/eval` |
 | `createStubWorkflows` | `@alexkroman1/aai/testing` |
@@ -781,6 +787,7 @@ each is for.
 | `errorsIn` | `@alexkroman1/aai-runtime/eval` |
 | `escapeSlackMrkdwn` | `@alexkroman1/aai/channels` |
 | `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
+| `evalSimulation` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `evalTextCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
 | `eventsOf` | `@alexkroman1/aai/testing` |
@@ -827,7 +834,7 @@ each is for.
 | `isToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `isTransientStatus` | `@alexkroman1/aai/step` |
 | `isoDate` | `@alexkroman1/aai` |
-| `judgeCall` | `@alexkroman1/aai-runtime/eval` |
+| `judgeCall` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
 | `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
 | `layerScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
@@ -838,7 +845,7 @@ each is for.
 | `mapSettled` | `@alexkroman1/aai/step` |
 | `mcpToolName` | `@alexkroman1/aai` |
 | `mergeScaffoldManifest` | `@alexkroman1/aai/workspace-files` |
-| `metricsEndpoint` | `@alexkroman1/aai-runtime/tracing` |
+| `metricsEndpoint` | `@alexkroman1/aai-runtime/metrics` |
 | `mintCode` | `@alexkroman1/aai` |
 | `mountClient` | `@alexkroman1/aai-ui` |
 | `mountPage` | `@alexkroman1/aai-ui` |
@@ -852,7 +859,7 @@ each is for.
 | `openEvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
 | `openEvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
 | `orFail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `otelMetricsSink` | `@alexkroman1/aai-runtime/tracing` |
+| `otelMetricsSink` | `@alexkroman1/aai-runtime/metrics` |
 | `pageMetadata` | `@alexkroman1/aai/html` |
 | `parseFeed` | `@alexkroman1/aai/html` |
 | `parseSchemaInput` | `@alexkroman1/aai/testing` |
@@ -875,7 +882,7 @@ each is for.
 | `readUploadToFile` | `@alexkroman1/aai/step-files` |
 | `registerChannelHandler` | `@alexkroman1/aai/channels` |
 | `registerLlmKind` | `@alexkroman1/aai-runtime` |
-| `registerMetricsSink` | `@alexkroman1/aai-runtime/tracing` |
+| `registerMetricsSink` | `@alexkroman1/aai-runtime/metrics` |
 | `registerSttKind` | `@alexkroman1/aai-runtime` |
 | `registerTtsKind` | `@alexkroman1/aai-runtime` |
 | `registeredChannelKindNames` | `@alexkroman1/aai/channels` |
@@ -904,6 +911,7 @@ each is for.
 | `runTextAgent` | `@alexkroman1/aai-runtime/testing` |
 | `runTool` | `@alexkroman1/aai/testing` |
 | `runWorkflow` | `@alexkroman1/aai-runtime/testing` |
+| `runtimeBrand` | `@alexkroman1/aai-runtime` |
 | `safeJsonParse` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
 | `saidIn` | `@alexkroman1/aai-runtime/eval` |
 | `salvageJson` | `@alexkroman1/aai-runtime` |
@@ -912,9 +920,10 @@ each is for.
 | `scriptedToolContext` | `@alexkroman1/aai/testing` |
 | `sendToChannel` | `@alexkroman1/aai/channels` |
 | `sendToChannelOrFail` | `@alexkroman1/aai/step-errors` |
+| `sessionAuthBrand` | `@alexkroman1/aai-runtime/auth` |
 | `sessionSlot` | `@alexkroman1/aai` |
 | `shuffled` | `@alexkroman1/aai` |
-| `simulateCall` | `@alexkroman1/aai-runtime/eval` |
+| `simulateCall` | `@alexkroman1/aai-runtime/eval/simulate` |
 | `slackChannel` | `@alexkroman1/aai/channels` |
 | `slugifyName` | `@alexkroman1/aai/slugify` |
 | `snapshotWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
@@ -1016,7 +1025,7 @@ each is for.
 | `useWorkflowStream` | `@alexkroman1/aai-ui` |
 | `useWorkflowSubmit` | `@alexkroman1/aai-ui` |
 | `useWorkflows` | `@alexkroman1/aai-ui` |
-| `verifySessionToken` | `@alexkroman1/aai-runtime` |
+| `verifySessionToken` | `@alexkroman1/aai-runtime/auth` |
 | `visitWebpage` | `@alexkroman1/aai/tools` |
 | `walkWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
 | `wavEncodeArgs` | `@alexkroman1/aai/ffmpeg` |

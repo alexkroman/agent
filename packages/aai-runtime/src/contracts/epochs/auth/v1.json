@@ -1,0 +1,23 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "auth",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "2f7f7f18b44b3988b24a70191c05396cb746e0ba013d03fc7e2ad4a18e73efef",
+  "exports": [
+    "SESSION_AUTH_PROTOCOL_PREFIX",
+    "SESSION_SECRET_ENV",
+    "SESSION_UNAUTHORIZED_CLOSE_CODE",
+    "SessionAuth",
+    "SessionAuthOptions",
+    "SessionIdentity",
+    "SessionTokenInput",
+    "SessionVerifier",
+    "VerifySessionTokenOptions",
+    "createSessionAuth",
+    "createSessionToken",
+    "sessionAuthBrand",
+    "verifySessionToken"
+  ],
+  "rollup": "56b89aa6dfff2a90d461265cc7971f50bfdcc7276bd9aea9d9865836cd5a78ae"
+}

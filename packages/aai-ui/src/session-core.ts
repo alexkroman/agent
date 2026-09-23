@@ -31,6 +31,7 @@ import { createSessionStateMachine } from "./session-core-state.ts";
 import {
   type BrowserSession,
   bargeIn,
+  type browserSessionBrand,
   type ConnState,
   type SessionSnapshot,
   STOPPED,
@@ -407,7 +408,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   }
 
   // Push-to-talk's three edges — see `session-core-user-turn.ts`.
-  const { startUserTurn, commitUserTurn, clearUserTurn } = createUserTurnActions({
+  const userTurn = createUserTurnActions({
     snapshot: () => currentSnapshot,
     connected: () => openSocket() !== null,
     bargeIn: () => bargeIn(conn, audio),
@@ -473,14 +474,15 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     start();
   }
 
-  return {
+  // Built WITHOUT the seal and cast once: the brand is type-only (see
+  // `browserSessionBrand`), which is what makes this the one place a
+  // `BrowserSession` exists.
+  const session: Omit<BrowserSession, typeof browserSessionBrand> = {
     getSnapshot,
     subscribe,
     connect,
     cancel,
-    startUserTurn,
-    commitUserTurn,
-    clearUserTurn,
+    userTurn: Object.freeze(userTurn),
     resetState,
     reset,
     disconnect,
@@ -492,4 +494,5 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
       disconnect();
     },
   };
+  return session as BrowserSession;
 }

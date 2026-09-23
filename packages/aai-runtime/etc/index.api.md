@@ -11,8 +11,6 @@ import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
@@ -86,11 +84,11 @@ export type AgentServer = {
 
 // @public
 export interface AgentServerOptions extends SharedServerOptions {
-    agent: RuntimeOptions["agent"];
+    agent: AgentDef;
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
-    journal?: RuntimeOptions["journal"];
+    journal?: JournalStore | undefined;
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -152,6 +150,9 @@ export type CloseableDb = Db & {
 };
 
 // @public
+export function connectSession(runtime: Runtime, sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
+
+// @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
 
 // @public (undocumented)
@@ -203,9 +204,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
-
-// @public
-export function createSessionToken(input: SessionTokenInput): string;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
@@ -275,12 +273,6 @@ type HookRecord = {
 };
 
 export { HostCredentialEnv }
-
-// @public
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
-    signal?: AbortSignal | undefined;
-    onUsage?: ((usage: StepUsage) => void) | undefined;
-}) => Promise<GenerateResult>;
 
 // @public
 export interface HostServerOptions extends SharedServerOptions {
@@ -543,11 +535,11 @@ type RunRecord = {
 // @public
 type RunStatus = WorkflowRunStatus;
 
-// @public
+// @public @sealed
 export type Runtime = AgentRuntime & {
+    readonly [runtimeBrand]: true;
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
-    connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
     createSession(options: {
         id: string;
         agent: string;
@@ -555,6 +547,9 @@ export type Runtime = AgentRuntime & {
         skipGreeting?: boolean;
     }): ServerSession;
 };
+
+// @public
+export const runtimeBrand: unique symbol;
 
 // @public
 export type RuntimeOptions = {
@@ -584,13 +579,12 @@ export type RuntimeOptions = {
         error: string;
     }>) | undefined;
     toolTimeoutMs?: number | undefined;
-    generate?: HostGenerateFn | undefined;
     stt?: SttProvider | undefined;
     llm?: LlmProvider | undefined;
     tts?: TtsProvider | undefined;
 };
 
-// @public (undocumented)
+// @public
 export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
@@ -600,11 +594,11 @@ export type RuntimeServerOptions = {
     hostBaseAgent?: AgentDef;
     greeting?: string;
     uploadBroker?: string;
-    upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
-    request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
     page?: "voice" | "static";
     telephony?: TelephonyAccess;
-    auth?: SessionAuthOptions | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -616,6 +610,9 @@ export type S2sConfig = {
 
 // @public
 export function salvageJson(input: string): Promise<string | null>;
+
+// @public
+export type ServerRequestHook = (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
 
 // @public
 export type ServerSession = {
@@ -634,23 +631,18 @@ export type ServerSession = {
 };
 
 // @public
-export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+export type ServerUpgradeHook = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
 
 // @public
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
-// @public
-export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
-
-// @public
-export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
-
-// @public
-export type SessionAuthOptions = {
-    secret?: string | undefined;
-    verify?: SessionVerifier | undefined;
-    allowedOrigins?: readonly string[] | undefined;
+// @public @sealed
+type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
 };
+
+// @public
+const sessionAuthBrand: unique symbol;
 
 // @public
 export type SessionConnection = {
@@ -681,13 +673,6 @@ export type SessionEventStream = {
     discard(sessionId: string): void;
     clear(): void;
     readonly durable: boolean;
-};
-
-// @public
-export type SessionIdentity = {
-    sub: string;
-    sessionId?: string;
-    claims?: Record<string, unknown>;
 };
 
 // @public
@@ -730,16 +715,6 @@ export type SessionStateStore = {
 };
 
 // @public
-export type SessionTokenInput = SessionIdentity & {
-    secret: string;
-    ttlSeconds?: number;
-    now?: number;
-};
-
-// @public
-export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
-
-// @public
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -762,9 +737,9 @@ export type SessionWebSocket = {
 // @public
 export type SharedServerOptions = {
     logger?: Logger | undefined;
-    upgrade?: RuntimeServerOptions["upgrade"];
-    request?: RuntimeServerOptions["request"];
-    auth?: RuntimeServerOptions["auth"];
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -809,16 +784,6 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
-
-// @public
-interface StepUsage {
-    // (undocumented)
-    inputTokens?: number | undefined;
-    // (undocumented)
-    outputTokens?: number | undefined;
-    // (undocumented)
-    totalTokens?: number | undefined;
-}
 
 // @public
 export type StoredSessionEvent = {
@@ -980,15 +945,6 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
-
-// @public
-export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
-
-// @public
-export type VerifySessionTokenOptions = {
-    secret: string;
-    now?: number;
-};
 
 // @public
 export type WdkAdapter = {

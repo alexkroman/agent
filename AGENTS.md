@@ -522,7 +522,7 @@ prevents and why the shipped SKILL carries no API guidance of its own.
 
 The third artifact of the three above: two renderings of the published type
 surface, both from TypeDoc over the built `dist/*.d.ts` of `aai`, `aai-ui` and
-three of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
+four of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
 site into `docs/dist/**` in ONE Astro build — the handwritten guide, plus the
 reference at `/reference/`, which `starlight-typedoc` renders as Starlight pages
 rather than TypeDoc's own HTML; `pnpm docs:md` renders `docs/api/**` as

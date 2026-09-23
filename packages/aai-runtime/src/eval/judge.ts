@@ -174,7 +174,7 @@ function verdictOf(
  *
  * ```ts
  * import { llm } from "@alexkroman1/aai/llm";
- * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval";
+ * import { judgeCall, type SimulatedCall } from "@alexkroman1/aai-runtime/eval/simulate";
  *
  * export async function grade(call: SimulatedCall): Promise<void> {
  *   const verdict = await judgeCall(call, {

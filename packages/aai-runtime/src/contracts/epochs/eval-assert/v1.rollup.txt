@@ -1,0 +1,27 @@
+import type { SessionEvent } from '@alexkroman1/aai/protocol';
+import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
+
+// @public
+type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+    readonly errors: readonly Extract<SessionEvent, {
+        type: "error.reported";
+    }>[];
+};
+
+// @public
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+
+// @public
+export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;

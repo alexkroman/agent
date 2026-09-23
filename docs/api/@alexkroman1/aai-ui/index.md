@@ -2481,9 +2481,8 @@ function useSessionActions(): SessionActions;
 ```
 
 The session's control methods — `start`, `cancel`, `resetState`, `reset`,
-`restart`, `disconnect`, `toggle`, `end`, and the three push-to-talk edges
-(`startUserTurn`, `commitUserTurn`, `clearUserTurn`) — with **no snapshot
-subscription**.
+`restart`, `disconnect`, `toggle`, `end` — with **no snapshot subscription**.
+Push-to-talk is not among them: that is `usePushToTalk`.
 
 This is the narrow half of [useSession](#usesession), and it is the half a custom
 chrome could not reach. `<Controls>` and `<StartScreen>` in this package pair
@@ -4141,10 +4140,10 @@ The player's `aria-label`: what this audio IS — `"Summary read aloud"`.
 
 ```ts
 type BrowserSession = {
+  [browserSessionBrand]: true;
+  userTurn: UserTurnControls;
   [dispose]: void;
   cancel: void;
-  clearUserTurn: void;
-  commitUserTurn: void;
   connect: void;
   disconnect: void;
   end: void;
@@ -4153,17 +4152,22 @@ type BrowserSession = {
   resetState: void;
   restart: void;
   start: void;
-  startUserTurn: void;
   subscribe: () => void;
   toggle: void;
 };
 ```
+
+**`Sealed`**
 
 A framework-agnostic voice session that manages WebSocket communication,
 audio capture/playback, and agent state transitions.
 
 Uses a subscribe/getSnapshot pattern (compatible with React's
 `useSyncExternalStore`). Implements `Disposable` for resource cleanup.
+
+ Only `createBrowserSession` produces one — see
+[browserSessionBrand](#browsersessionbrand-1). A test double for a component is a real
+session with no socket, not an object literal.
 
 #### Methods
 
@@ -4186,33 +4190,6 @@ cancel(): void;
 ```
 
 Cancel the current agent turn and discard in-flight TTS audio.
-
-###### Returns
-
-`void`
-
-##### clearUserTurn()
-
-```ts
-clearUserTurn(): void;
-```
-
-Push-to-talk: close the turn and THROW AWAY what was said in it — a
-cancelled press (the pointer left the button, Escape). The agent answers
-nothing.
-
-###### Returns
-
-`void`
-
-##### commitUserTurn()
-
-```ts
-commitUserTurn(): void;
-```
-
-Push-to-talk: CLOSE the turn and have the agent answer everything said
-since [BrowserSession.startUserTurn](#startuserturn) — the button came up.
 
 ###### Returns
 
@@ -4359,25 +4336,6 @@ afterwards `toggle()` is the pause/resume control.
 
 `void`
 
-##### startUserTurn()
-
-```ts
-startUserTurn(): void;
-```
-
-Push-to-talk: OPEN a turn — the button went down. Stops the agent if it is
-speaking (discarding its queued audio here at once, rather than a round
-trip later) and lets the microphone through to the transcriber.
-
-Only an agent declaring `turnDetection: "manual"` honours the three
-push-to-talk methods; any other agent logs once and ignores them, because
-its transcriber already ends each turn on a pause. `usePushToTalk` is the
-hook a button is built on.
-
-###### Returns
-
-`void`
-
 ##### subscribe()
 
 ```ts
@@ -4407,6 +4365,40 @@ Toggle between connected and disconnected states (after `start()`).
 ###### Returns
 
 `void`
+
+#### Properties
+
+##### \[browserSessionBrand\]
+
+```ts
+readonly [browserSessionBrand]: true;
+```
+
+The seal — see [browserSessionBrand](#browsersessionbrand-1).
+
+##### userTurn
+
+```ts
+readonly userTurn: UserTurnControls;
+```
+
+Push-to-talk's three edges — see [UserTurnControls](#userturncontrols).
+
+***
+
+### browserSessionBrand
+
+```ts
+type browserSessionBrand = typeof browserSessionBrand;
+```
+
+The seal on a [BrowserSession](#browsersession).
+
+TYPE-ONLY — there is no value at run time, so an object literal cannot carry
+the key and only `createBrowserSession` mints a session. That is what lets
+the handle grow a member without breaking anybody: push-to-talk added three
+REQUIRED methods and broke every hand-written double, which is the failure a
+handle a caller RECEIVES should not be able to cause.
 
 ***
 
@@ -5579,18 +5571,16 @@ client→server inputs are audio and the control methods above.
 ### SessionActions
 
 ```ts
-type SessionActions = Pick<BrowserSession, 
-  | "start"
-  | "cancel"
-  | "startUserTurn"
-  | "commitUserTurn"
-  | "clearUserTurn"
-  | "resetState"
-  | "reset"
-  | "restart"
-  | "disconnect"
-  | "toggle"
-| "end">;
+type SessionActions = {
+  cancel: void;
+  disconnect: void;
+  end: void;
+  reset: void;
+  resetState: void;
+  restart: void;
+  start: void;
+  toggle: void;
+};
 ```
 
 The session's control methods, and nothing else — what a `client.tsx` may
@@ -5600,7 +5590,110 @@ Declared once and merged into [Session](#session-1) rather than written out at b
 places: the two lists have to be the same list, and a member added to one and
 not the other is a hook that cannot do what `useSession()` can.
 
-Method signatures come from [BrowserSession](#browsersession) — one source of truth.
+DECLARED here rather than picked out of [BrowserSession](#browsersession): that handle is
+sealed and grows, and a `Pick` made every member it gained a candidate for
+this list without anyone deciding. Push-to-talk is the case in point — its
+three edges are `session.userTurn`, reached through `usePushToTalk`, and not
+actions every chrome is handed. `createBrowserSession` is what keeps each of
+these assignable from the session's own methods.
+
+#### Methods
+
+##### cancel()
+
+```ts
+cancel(): void;
+```
+
+Cancel the current agent turn and discard in-flight TTS audio.
+
+###### Returns
+
+`void`
+
+##### disconnect()
+
+```ts
+disconnect(): void;
+```
+
+Close the WebSocket and release all audio resources.
+
+###### Returns
+
+`void`
+
+##### end()
+
+```ts
+end(): void;
+```
+
+End the call and return to the not-started state — see [BrowserSession.end](#end).
+
+###### Returns
+
+`void`
+
+##### reset()
+
+```ts
+reset(): void;
+```
+
+Clear state and reopen the connection — the same session id.
+
+###### Returns
+
+`void`
+
+##### resetState()
+
+```ts
+resetState(): void;
+```
+
+Clear messages, transcripts and error state, keeping the connection.
+
+###### Returns
+
+`void`
+
+##### restart()
+
+```ts
+restart(): void;
+```
+
+End the call and begin a fresh one — see [BrowserSession.restart](#restart).
+
+###### Returns
+
+`void`
+
+##### start()
+
+```ts
+start(): void;
+```
+
+Start the call for the first time — see [BrowserSession.start](#start).
+
+###### Returns
+
+`void`
+
+##### toggle()
+
+```ts
+toggle(): void;
+```
+
+Toggle between connected and disconnected (after `start()`).
+
+###### Returns
+
+`void`
 
 ***
 
@@ -6842,6 +6935,68 @@ Whether a turn is being held open right now — the button is DOWN.
 
 ***
 
+### UserTurnControls
+
+```ts
+type UserTurnControls = {
+  clear: void;
+  commit: void;
+  start: void;
+};
+```
+
+Push-to-talk's three edges on a [BrowserSession](#browsersession) — `session.userTurn`.
+
+Only an agent declaring `turnDetection: "manual"` honours them; any other
+agent logs once and ignores them, because its transcriber already ends each
+turn on a pause. `usePushToTalk` is the hook a button is built on, and the
+way a `client.tsx` reaches these: a sub-handle rather than three methods on
+the session, so a feature one agent in many declares is not three members
+every session carries in its autocomplete.
+
+#### Methods
+
+##### clear()
+
+```ts
+clear(): void;
+```
+
+Close the turn and THROW AWAY what was said in it — a cancelled press (the
+pointer left the button, Escape). The agent answers nothing.
+
+###### Returns
+
+`void`
+
+##### commit()
+
+```ts
+commit(): void;
+```
+
+CLOSE the turn and have the agent answer everything said since `start()` — the button came up.
+
+###### Returns
+
+`void`
+
+##### start()
+
+```ts
+start(): void;
+```
+
+OPEN a turn — the button went down. Stops the agent if it is speaking
+(discarding its queued audio here at once, rather than a round trip later)
+and lets the microphone through to the transcriber.
+
+###### Returns
+
+`void`
+
+***
+
 ### UseSessionControlsResult
 
 ```ts
@@ -7858,7 +8013,7 @@ startAndWait(
 
 Start a run and resolve the FINISHED one — the synchronous call.
 
-What a form or a shell script wants, and what [WorkflowApi.start](#start-3)
+What a form or a shell script wants, and what [WorkflowApi.start](#start-5)
 deliberately is not: one request in, one result out, with no watch to wire
 up. The agent holds the request open until the run settles or its own budget
 expires, so a run that is still going when the wait runs out resolves
@@ -8064,7 +8219,7 @@ End a run's `sleep()` early, resolving how many pending sleeps were
 interrupted.
 
 `0` is an answer, not a failure — the run finished, was never sleeping, or is
-gone. Same shape as [WorkflowApi.cancel](#cancel-2) answering false, and for the
+gone. Same shape as [WorkflowApi.cancel](#cancel-3) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
 [WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with

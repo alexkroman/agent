@@ -45,10 +45,13 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/start` — `packages/aai-cli/etc/start.api.md`
 - `@alexkroman1/aai-cli/typecheck` — `packages/aai-cli/etc/typecheck.api.md`
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
+- `@alexkroman1/aai-runtime/auth` — `packages/aai-runtime/etc/auth.api.md`
 - `@alexkroman1/aai-runtime/eval` — `packages/aai-runtime/etc/eval.api.md`
+- `@alexkroman1/aai-runtime/eval/simulate` — `packages/aai-runtime/etc/eval-simulate.api.md`
 - `@alexkroman1/aai-runtime/eval/vitest` — `packages/aai-runtime/etc/eval-vitest.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
+- `@alexkroman1/aai-runtime/metrics` — `packages/aai-runtime/etc/metrics.api.md`
 - `@alexkroman1/aai-runtime/testing` — `packages/aai-runtime/etc/testing.api.md`
 - `@alexkroman1/aai-runtime/tracing` — `packages/aai-runtime/etc/tracing.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
@@ -9780,6 +9783,68 @@ export type BuildWorkerOptions = {
 };
 ```
 
+## `@alexkroman1/aai-runtime/auth`
+
+```ts
+import type http from 'node:http';
+
+// @public
+export function createSessionAuth(options: SessionAuthOptions): SessionAuth;
+
+// @public
+export function createSessionToken(input: SessionTokenInput): string;
+
+// @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
+export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
+
+// @public
+export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
+
+// @public @sealed
+export type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
+};
+
+// @public
+export const sessionAuthBrand: unique symbol;
+
+// @public
+export type SessionAuthOptions = {
+    secret?: string | undefined;
+    verify?: SessionVerifier | undefined;
+    allowedOrigins?: readonly string[] | undefined;
+};
+
+// @public
+export type SessionIdentity = {
+    sub: string;
+    sessionId?: string;
+    claims?: Record<string, unknown>;
+};
+
+// @public
+export type SessionTokenInput = SessionIdentity & {
+    secret: string;
+    ttlSeconds?: number;
+    now?: number;
+};
+
+// @public
+export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
+
+// @public
+export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
+
+// @public
+export type VerifySessionTokenOptions = {
+    secret: string;
+    now?: number;
+};
+```
+
 ## `@alexkroman1/aai-runtime/eval`
 
 ```ts
@@ -9809,15 +9874,6 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
-
-// @public
 export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
 
 // @public
@@ -9834,20 +9890,10 @@ export function createStubTtsOpener(name: string): TtsOpener & {
 export function createVmRunCode(options?: VmRunCodeOptions): RunCodeExecutor;
 
 // @public
-export type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
 }[];
-
-// @public
-export const DEFAULT_MAX_TURNS = 12;
 
 // @public
 export const DEFAULT_RUN_TIMEOUT_MS = 300000;
@@ -9857,9 +9903,6 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function describeTurn(turn: EvalTurn): string;
-
-// @public
-export const END_CALL_TOOL = "end_call";
 
 // @public
 export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
@@ -10041,20 +10084,6 @@ export function installStubLlm(script: StubScript): StubLlm;
 export function installStubSpeechProviders(): StubSpeechProviders;
 
 // @public
-export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
-
-// @public
-export type JudgeCallOptions = {
-    readonly criteria: readonly string[];
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly context?: string;
-};
-
-// @public
-export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 export function lastStateIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
@@ -10094,64 +10123,6 @@ export function runCodeOutput(calls: readonly EvalToolCall[]): string;
 
 // @public
 export function saidIn(events: readonly SessionEvent[]): readonly string[];
-
-// @public
-export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
-
-// @public
-export type SimulateCallOptions = {
-    readonly caller: SimulatedCaller;
-    readonly llm: LlmProvider;
-    readonly providerEnv?: ProviderEnv;
-    readonly maxTurns?: number;
-};
-
-// @public
-export type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-export type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-export type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-export type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
-};
-
-// @public
-export type SimulationTarget = {
-    say(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-} | {
-    send(text: string): Promise<EvalTurn>;
-    said(): readonly string[];
-};
 
 // @public
 export function statesIn<T>(events: readonly SessionEvent[], schema: StandardSchemaV1<unknown, T>): readonly T[];
@@ -10250,6 +10221,167 @@ export type VmRunCodeOptions = {
 };
 ```
 
+## `@alexkroman1/aai-runtime/eval/simulate`
+
+```ts
+import type { AgentDef } from '@alexkroman1/aai';
+import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { SessionEvent } from '@alexkroman1/aai';
+
+// @public
+export type CallVerdict = {
+    readonly pass: boolean;
+    readonly criteria: readonly CriterionVerdict[];
+    readonly summary: string;
+    readonly scripted: boolean;
+    explain(): string;
+};
+
+// @public
+export type CriterionVerdict = {
+    readonly criterion: string;
+    readonly pass: boolean;
+    readonly reason: string;
+};
+
+// @public
+export const DEFAULT_MAX_TURNS = 12;
+
+// @public
+export const END_CALL_TOOL = "end_call";
+
+// @public
+type EvalMode = "live" | "stub";
+
+// @public
+export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
+
+// @public
+export type EvalSimulationContext = {
+    simulate(caller: SimulatedCaller, options?: {
+        readonly maxTurns?: number;
+    }): Promise<SimulatedCall>;
+    judge(input: JudgeInput, criteria: readonly string[], options?: {
+        readonly context?: string;
+    }): Promise<CallVerdict>;
+};
+
+// @public
+export type EvalSimulationOptions = {
+    readonly agent: AgentDef;
+    readonly mode: EvalMode;
+    readonly target: SimulationTarget;
+    readonly callerLlm?: LlmProvider;
+    readonly judgeLlm?: LlmProvider;
+    readonly llm?: LlmProvider;
+    readonly env?: Record<string, string>;
+    readonly providerEnv?: ProviderEnv;
+    readonly stubCaller?: StubScript;
+    readonly stubJudge?: readonly boolean[];
+};
+
+// @public
+type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+    readonly errors: readonly SessionEvent<"error.reported">[];
+};
+
+// @public
+export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
+
+// @public
+export type JudgeCallOptions = {
+    readonly criteria: readonly string[];
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly context?: string;
+};
+
+// @public
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
+
+// @public
+export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
+
+// @public
+export type SimulateCallOptions = {
+    readonly caller: SimulatedCaller;
+    readonly llm: LlmProvider;
+    readonly providerEnv?: ProviderEnv;
+    readonly maxTurns?: number;
+};
+
+// @public
+export type SimulatedCall = {
+    readonly caller: SimulatedCaller;
+    readonly greeting: readonly string[];
+    readonly turns: readonly SimulatedTurn[];
+    readonly endedBy: "caller" | "max-turns";
+    readonly endReason: string | undefined;
+    readonly metrics: SimulationMetrics;
+    transcript(): string;
+};
+
+// @public
+export type SimulatedCaller = {
+    readonly persona: string;
+    readonly goal: string;
+    readonly opening?: string;
+};
+
+// @public
+export type SimulatedTurn = {
+    readonly caller: string;
+    readonly turn: EvalTurn;
+    readonly latencyMs: number | undefined;
+};
+
+// @public
+export type SimulationMetrics = {
+    readonly turns: number;
+    readonly durationMs: number;
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly toolCallCounts: Readonly<Record<string, number>>;
+    readonly latencyMs: {
+        readonly mean: number | undefined;
+        readonly p50: number | undefined;
+        readonly max: number | undefined;
+    };
+};
+
+// @public
+export type SimulationTarget = {
+    say(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+} | {
+    send(text: string): Promise<EvalTurn>;
+    said(): readonly string[];
+};
+
+// @public
+type StubScript = string | readonly (string | StubStep)[];
+
+// @public
+type StubStep = {
+    readonly text: string;
+} | {
+    readonly tool: string;
+    readonly args?: Record<string, unknown>;
+};
+```
+
 ## `@alexkroman1/aai-runtime/eval/vitest`
 
 ```ts
@@ -10258,7 +10390,7 @@ import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
-import { LlmProvider } from '@alexkroman1/aai/llm';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai';
@@ -10272,26 +10404,10 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-type CallVerdict = {
-    readonly pass: boolean;
-    readonly criteria: readonly CriterionVerdict[];
-    readonly summary: string;
-    readonly scripted: boolean;
-    explain(): string;
-};
-
-// @public
-type CriterionVerdict = {
-    readonly criterion: string;
-    readonly pass: boolean;
-    readonly reason: string;
-};
-
-// @public
 export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: DescribeEvalOptions): void;
 
 // @public
-export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimulationSuiteOptions & {
+export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
     readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 
@@ -10299,7 +10415,7 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & EvalSimula
 export function describeTextEval(agent: AgentDef, define: (test: EvalTextTest) => void, options?: DescribeTextEvalOptions): void;
 
 // @public
-export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent"> & EvalSimulationSuiteOptions;
+export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 
 // @public
 export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
@@ -10310,8 +10426,6 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
 };
 
 // @public
@@ -10355,28 +10469,6 @@ type EvalSessionOptions = {
 };
 
 // @public
-export type EvalSimulationCaseOptions = {
-    readonly stubCaller?: StubScript;
-    readonly stubJudge?: readonly boolean[];
-};
-
-// @public
-export type EvalSimulationContext = {
-    simulate(caller: SimulatedCaller, options?: {
-        readonly maxTurns?: number;
-    }): Promise<SimulatedCall>;
-    judge(input: JudgeInput, criteria: readonly string[], options?: {
-        readonly context?: string;
-    }): Promise<CallVerdict>;
-};
-
-// @public
-export type EvalSimulationSuiteOptions = {
-    readonly callerLlm?: LlmProvider;
-    readonly judgeLlm?: LlmProvider;
-};
-
-// @public
 type EvalSleep = {
     readonly label: string;
     readonly duration: string | number | Date;
@@ -10386,7 +10478,7 @@ type EvalSleep = {
 export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTestContext = EvalSimulationContext & {
+export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
@@ -10421,7 +10513,7 @@ type EvalTextAgentOptions = {
 export type EvalTextTest = (name: string, body: (ctx: EvalTextTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
 
 // @public
-export type EvalTextTestContext = EvalSimulationContext & {
+export type EvalTextTestContext = {
     readonly agent: EvalTextAgent;
     readonly mode: EvalMode;
 };
@@ -10520,9 +10612,6 @@ type HostGenerateFn = (options: GenerateOptions, callOptions?: {
 }) => Promise<GenerateResult>;
 
 // @public
-type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
-
-// @public
 type LogContext = Record<string, unknown>;
 
 // @public
@@ -10547,44 +10636,6 @@ overrides?: {
 export function resolveWorkflowEvalMode(agent: AgentDef, hostEnv?: Record<string, string | undefined>): {
     mode: EvalMode;
     reason: string;
-};
-
-// @public
-type SimulatedCall = {
-    readonly caller: SimulatedCaller;
-    readonly greeting: readonly string[];
-    readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
-    readonly endReason: string | undefined;
-    readonly metrics: SimulationMetrics;
-    transcript(): string;
-};
-
-// @public
-type SimulatedCaller = {
-    readonly persona: string;
-    readonly goal: string;
-    readonly opening?: string;
-};
-
-// @public
-type SimulatedTurn = {
-    readonly caller: string;
-    readonly turn: EvalTurn;
-    readonly latencyMs: number | undefined;
-};
-
-// @public
-type SimulationMetrics = {
-    readonly turns: number;
-    readonly durationMs: number;
-    readonly toolCalls: readonly EvalToolCall[];
-    readonly toolCallCounts: Readonly<Record<string, number>>;
-    readonly latencyMs: {
-        readonly mean: number | undefined;
-        readonly p50: number | undefined;
-        readonly max: number | undefined;
-    };
 };
 
 // @public
@@ -10619,8 +10670,6 @@ import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { JSONSchema7 } from 'json-schema';
@@ -10694,11 +10743,11 @@ export type AgentServer = {
 
 // @public
 export interface AgentServerOptions extends SharedServerOptions {
-    agent: RuntimeOptions["agent"];
+    agent: AgentDef;
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
-    journal?: RuntimeOptions["journal"];
+    journal?: JournalStore | undefined;
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -10760,6 +10809,9 @@ export type CloseableDb = Db & {
 };
 
 // @public
+export function connectSession(runtime: Runtime, sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
+
+// @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
 
 // @public (undocumented)
@@ -10811,9 +10863,6 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
 
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
-
-// @public
-export function createSessionToken(input: SessionTokenInput): string;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
@@ -10883,12 +10932,6 @@ type HookRecord = {
 };
 
 export { HostCredentialEnv }
-
-// @public
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
-    signal?: AbortSignal | undefined;
-    onUsage?: ((usage: StepUsage) => void) | undefined;
-}) => Promise<GenerateResult>;
 
 // @public
 export interface HostServerOptions extends SharedServerOptions {
@@ -11151,11 +11194,11 @@ type RunRecord = {
 // @public
 type RunStatus = WorkflowRunStatus;
 
-// @public
+// @public @sealed
 export type Runtime = AgentRuntime & {
+    readonly [runtimeBrand]: true;
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
-    connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
     createSession(options: {
         id: string;
         agent: string;
@@ -11163,6 +11206,9 @@ export type Runtime = AgentRuntime & {
         skipGreeting?: boolean;
     }): ServerSession;
 };
+
+// @public
+export const runtimeBrand: unique symbol;
 
 // @public
 export type RuntimeOptions = {
@@ -11192,13 +11238,12 @@ export type RuntimeOptions = {
         error: string;
     }>) | undefined;
     toolTimeoutMs?: number | undefined;
-    generate?: HostGenerateFn | undefined;
     stt?: SttProvider | undefined;
     llm?: LlmProvider | undefined;
     tts?: TtsProvider | undefined;
 };
 
-// @public (undocumented)
+// @public
 export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
@@ -11208,11 +11253,11 @@ export type RuntimeServerOptions = {
     hostBaseAgent?: AgentDef;
     greeting?: string;
     uploadBroker?: string;
-    upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
-    request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
     page?: "voice" | "static";
     telephony?: TelephonyAccess;
-    auth?: SessionAuthOptions | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -11224,6 +11269,9 @@ export type S2sConfig = {
 
 // @public
 export function salvageJson(input: string): Promise<string | null>;
+
+// @public
+export type ServerRequestHook = (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
 
 // @public
 export type ServerSession = {
@@ -11242,23 +11290,18 @@ export type ServerSession = {
 };
 
 // @public
-export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+export type ServerUpgradeHook = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
 
 // @public
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
-// @public
-export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
-
-// @public
-export const SESSION_UNAUTHORIZED_CLOSE_CODE = 4401;
-
-// @public
-export type SessionAuthOptions = {
-    secret?: string | undefined;
-    verify?: SessionVerifier | undefined;
-    allowedOrigins?: readonly string[] | undefined;
+// @public @sealed
+type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
 };
+
+// @public
+const sessionAuthBrand: unique symbol;
 
 // @public
 export type SessionConnection = {
@@ -11289,13 +11332,6 @@ export type SessionEventStream = {
     discard(sessionId: string): void;
     clear(): void;
     readonly durable: boolean;
-};
-
-// @public
-export type SessionIdentity = {
-    sub: string;
-    sessionId?: string;
-    claims?: Record<string, unknown>;
 };
 
 // @public
@@ -11338,16 +11374,6 @@ export type SessionStateStore = {
 };
 
 // @public
-export type SessionTokenInput = SessionIdentity & {
-    secret: string;
-    ttlSeconds?: number;
-    now?: number;
-};
-
-// @public
-export type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
-
-// @public
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -11370,9 +11396,9 @@ export type SessionWebSocket = {
 // @public
 export type SharedServerOptions = {
     logger?: Logger | undefined;
-    upgrade?: RuntimeServerOptions["upgrade"];
-    request?: RuntimeServerOptions["request"];
-    auth?: RuntimeServerOptions["auth"];
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
+    auth?: SessionAuth | undefined;
 };
 
 // @public
@@ -11417,16 +11443,6 @@ type StepEntry = {
     startedAt?: number | undefined;
     finishedAt: number;
 };
-
-// @public
-interface StepUsage {
-    // (undocumented)
-    inputTokens?: number | undefined;
-    // (undocumented)
-    outputTokens?: number | undefined;
-    // (undocumented)
-    totalTokens?: number | undefined;
-}
 
 // @public
 export type StoredSessionEvent = {
@@ -11588,15 +11604,6 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
-
-// @public
-export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
-
-// @public
-export type VerifySessionTokenOptions = {
-    secret: string;
-    now?: number;
-};
 
 // @public
 export type WdkAdapter = {
@@ -12373,6 +12380,71 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
 };
 ```
 
+## `@alexkroman1/aai-runtime/metrics`
+
+```ts
+import type { MetricsCollectedEvent } from '@alexkroman1/aai';
+
+// @public
+export interface MetricsContext {
+    // (undocumented)
+    agent: string;
+    // (undocumented)
+    sessionId: string;
+}
+
+// @public
+export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
+
+// @public
+export interface MetricsSink {
+    // (undocumented)
+    record(event: MetricsCollectedEvent, context: MetricsContext): void;
+}
+
+// @public
+export const OTEL_METRIC_NAMES: {
+    readonly replies: "aai.replies";
+    readonly latency: "aai.reply.latency";
+    readonly sttEndpointing: "aai.stt.endpointing_delay";
+    readonly llmTtft: "aai.llm.time_to_first_token";
+    readonly llmDuration: "aai.llm.duration";
+    readonly llmTokens: "aai.llm.tokens";
+    readonly ttsTtfb: "aai.tts.time_to_first_byte";
+    readonly ttsCharacters: "aai.tts.characters";
+};
+
+// @public
+export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+// @public
+export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
+
+// @public
+export interface OtelMeterLike {
+    // (undocumented)
+    createCounter(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        add(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+    // (undocumented)
+    createHistogram(name: string, options?: {
+        description?: string;
+        unit?: string;
+    }): {
+        record(value: number, attributes?: Record<string, string | boolean>): void;
+    };
+}
+
+// @public
+export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
+
+// @public
+export function registerMetricsSink(sink: MetricsSink): () => void;
+```
+
 ## `@alexkroman1/aai-runtime/testing`
 
 ```ts
@@ -12630,75 +12702,14 @@ export type WorkflowTestStep = {
 ## `@alexkroman1/aai-runtime/tracing`
 
 ```ts
-import type { MetricsCollectedEvent } from '@alexkroman1/aai';
-
 // @public
 export const DEFAULT_SERVICE_NAME = "aai-agent";
-
-// @public
-export interface MetricsContext {
-    // (undocumented)
-    agent: string;
-    // (undocumented)
-    sessionId: string;
-}
-
-// @public
-export function metricsEndpoint(env?: NodeJS.ProcessEnv): string | undefined;
-
-// @public
-export interface MetricsSink {
-    // (undocumented)
-    record(event: MetricsCollectedEvent, context: MetricsContext): void;
-}
 
 // @public
 export const OTEL_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
 
 // @public
-export const OTEL_METRIC_NAMES: {
-    readonly replies: "aai.replies";
-    readonly latency: "aai.reply.latency";
-    readonly sttEndpointing: "aai.stt.endpointing_delay";
-    readonly llmTtft: "aai.llm.time_to_first_token";
-    readonly llmDuration: "aai.llm.duration";
-    readonly llmTokens: "aai.llm.tokens";
-    readonly ttsTtfb: "aai.tts.time_to_first_byte";
-    readonly ttsCharacters: "aai.tts.characters";
-};
-
-// @public
-export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"];
-
-// @public
-export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
-
-// @public
 export const OTEL_SERVICE_NAME_ENV = "OTEL_SERVICE_NAME";
-
-// @public
-export interface OtelMeterLike {
-    // (undocumented)
-    createCounter(name: string, options?: {
-        description?: string;
-        unit?: string;
-    }): {
-        add(value: number, attributes?: Record<string, string | boolean>): void;
-    };
-    // (undocumented)
-    createHistogram(name: string, options?: {
-        description?: string;
-        unit?: string;
-    }): {
-        record(value: number, attributes?: Record<string, string | boolean>): void;
-    };
-}
-
-// @public
-export function otelMetricsSink(meter: OtelMeterLike): MetricsSink;
-
-// @public
-export function registerMetricsSink(sink: MetricsSink): () => void;
 
 // @public
 export type RuntimeTracing = {
@@ -12801,17 +12812,16 @@ export function AutoScroll(input: {
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
 
-// @public
+// @public @sealed
 export type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -12821,6 +12831,9 @@ export type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+export const browserSessionBrand: unique symbol;
 
 // @public
 export function BulletList(input: BulletListProps): ReactNode;
@@ -13080,7 +13093,16 @@ export function SelectField(input: FieldShell & {
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
-export type SessionActions = Pick<BrowserSession, "start" | "cancel" | "startUserTurn" | "commitUserTurn" | "clearUserTurn" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end">;
+export type SessionActions = {
+    start(): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    restart(): void;
+    disconnect(): void;
+    toggle(): void;
+    end(): void;
+};
 
 // @public
 export type SessionControlAction = "start" | "toggle" | "restart" | "end";
@@ -13342,6 +13364,13 @@ export type UsePushToTalkResult = {
         disabled: boolean;
         "aria-pressed": boolean;
     };
+};
+
+// @public
+export type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
 };
 
 // @public
@@ -13627,17 +13656,16 @@ export function ApiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public
+// @public @sealed
 type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -13647,6 +13675,9 @@ type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+const browserSessionBrand: unique symbol;
 
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
@@ -13747,6 +13778,13 @@ export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
+
+// @public
+type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};
 
 // @public
 export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;

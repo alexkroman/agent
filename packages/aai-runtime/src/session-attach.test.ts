@@ -4,7 +4,7 @@
  *
  * `ws-handler*.test.ts` still pins every one of these behaviours through the
  * WebSocket adapter; this suite states them against the core, which is what a
- * non-socket adapter (`runtime.connect`, the console) is built on.
+ * non-socket adapter (`connectSession`, the console) is built on.
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";

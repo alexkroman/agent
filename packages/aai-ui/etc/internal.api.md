@@ -28,17 +28,16 @@ export function ApiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public
+// @public @sealed
 type BrowserSession = {
+    readonly [browserSessionBrand]: true;
     getSnapshot(): SessionSnapshot;
     subscribe(callback: () => void): () => void;
     connect(options?: {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
-    startUserTurn(): void;
-    commitUserTurn(): void;
-    clearUserTurn(): void;
+    readonly userTurn: UserTurnControls;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -48,6 +47,9 @@ type BrowserSession = {
     restart(): void;
     [Symbol.dispose](): void;
 };
+
+// @public
+const browserSessionBrand: unique symbol;
 
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
@@ -148,6 +150,13 @@ export const TRANSCRIBING_PLACEHOLDER = "\u2026";
 export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
+
+// @public
+type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};
 
 // @public
 export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;

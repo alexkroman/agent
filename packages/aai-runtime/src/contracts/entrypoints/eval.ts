@@ -13,6 +13,10 @@
  * not which promise is being made. A case moving from a hand-rolled `test()` to
  * `describeEval` crosses that line without the promise changing.
  *
+ * A simulated caller and a judge are `eval-simulate`'s (`/eval/simulate`), and
+ * the two newest per-turn claims (`expectCalled`, `lastToolResultIn`) are
+ * `eval-assert`'s — each moves apart from the harness.
+ *
  * Re-exported from `@alexkroman1/aai-runtime/eval` and
  * `@alexkroman1/aai-runtime/eval/vitest`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report for
@@ -39,18 +43,14 @@ export type {
   StepUsage,
 } from "../../eval-barrel.ts";
 export {
-  type CallVerdict,
-  type CriterionVerdict,
   completedOutput,
   createStubSttOpener,
   createStubTtsOpener,
   createVmRunCode,
   customEventsIn,
-  DEFAULT_MAX_TURNS,
   DEFAULT_RUN_TIMEOUT_MS,
   describeToolCalls,
   describeTurn,
-  END_CALL_TOOL,
   type EvalCredentials,
   type EvalEmitted,
   type EvalRunOptions,
@@ -68,26 +68,15 @@ export {
   evalCredentials,
   evalTextCredentials,
   evalWorkflowCredentials,
-  expectCalled,
   expectToolBeforeSpeech,
   installStubLlm,
   installStubSpeechProviders,
-  type JudgeCallOptions,
-  type JudgeInput,
-  judgeCall,
   lastStateIn,
-  lastToolResultIn,
   openEvalSession,
   openEvalTextAgent,
   openEvalWorkflows,
   runCodeIn,
   runCodeOutput,
-  type SimulateCallOptions,
-  type SimulatedCall,
-  type SimulatedCaller,
-  type SimulatedTurn,
-  type SimulationMetrics,
-  type SimulationTarget,
   STUB_LLM_API_KEY_ENV,
   STUB_SPEECH_API_KEY_ENV,
   type StubLlm,
@@ -97,7 +86,6 @@ export {
   type StubSttSession,
   type StubTtsSession,
   saidIn,
-  simulateCall,
   statesIn,
   TURN_ENDS,
   toolArgsIn,
@@ -117,9 +105,6 @@ export {
   describeWorkflowEval,
   type EvalCaseOptions,
   type EvalMode,
-  type EvalSimulationCaseOptions,
-  type EvalSimulationContext,
-  type EvalSimulationSuiteOptions,
   type EvalTest,
   type EvalTestContext,
   type EvalTextTest,

@@ -52,7 +52,7 @@ export type SessionStartOptions = {
 };
 
 /**
- * Per-session options for {@link Runtime.connect}.
+ * Per-session options for {@link connectSession}.
  *
  * @public
  */
@@ -62,7 +62,7 @@ export type SessionConnectOptions = Pick<
 >;
 
 /**
- * The input half of a session started with {@link Runtime.connect}.
+ * The input half of a session started with {@link connectSession}.
  *
  * Input sent while the session is still starting is buffered and replayed once
  * it is ready; input after the session has ended is dropped.
@@ -350,18 +350,6 @@ export type RuntimeOptions = {
    */
   toolTimeoutMs?: number | undefined;
   /**
-   * Override what tool code calls as `ctx.generate`.
-   *
-   * @internal A testing seam, shaped like `executeTool` and `createWebSocket`.
-   * It exists because `ctx.generate` resolves the agent's LLM DESCRIPTOR into a
-   * model of its own (`setupGenerate` → `createGenerateFn` → `resolveLlm`), so a
-   * scripted provider hands it a SECOND instance walking that script from the
-   * start, in parallel with the turn's. One script cannot serve both: element 0
-   * has to be the turn's first move AND the first `generate` answer at once.
-   * With this, an eval scripts the two independently.
-   */
-  generate?: HostGenerateFn | undefined;
-  /**
    * STT provider descriptor ({@link SttProvider}). Must be set together with
    * `llm` and `tts` to route sessions through the pipeline path; leave all
    * three unset to fall back to the agent's own provider fields (which
@@ -375,59 +363,69 @@ export type RuntimeOptions = {
 };
 
 /**
+ * The runtime's HOST-ONLY options — {@link RuntimeOptions} plus the seams no
+ * embedder is promised.
+ *
+ * Not exported from any published subpath. `generate` was a public
+ * `RuntimeOptions` member tagged `@internal`, which is the shape the root
+ * barrel's zero-`@internal` ratchet exists to refuse: API Extractor reads the
+ * tag at the declaration and the member stayed in every embedder's
+ * autocomplete. Its one caller is this package's own eval harness
+ * (`eval/session.ts`), which reaches `createRuntimeWithSeams` by a relative
+ * import — so the seam keeps working and nothing outside the package can name
+ * it.
+ *
+ * @internal
+ */
+export type HostRuntimeOptions = RuntimeOptions & {
+  /**
+   * Override what tool code calls as `ctx.generate`.
+   *
+   * @internal A testing seam, shaped like `executeTool` and `createWebSocket`.
+   * It exists because `ctx.generate` resolves the agent's LLM DESCRIPTOR into a
+   * model of its own (`setupGenerate` → `createGenerateFn` → `resolveLlm`), so a
+   * scripted provider hands it a SECOND instance walking that script from the
+   * start, in parallel with the turn's. One script cannot serve both: element 0
+   * has to be the turn's first move AND the first `generate` answer at once.
+   * With this, an eval scripts the two independently.
+   */
+  generate?: HostGenerateFn | undefined;
+};
+
+/**
+ * The seal on a {@link Runtime}.
+ *
+ * TYPE-ONLY — there is no value at run time, so an object literal cannot carry
+ * the key and only {@link createRuntime} mints a `Runtime`. That is the point:
+ * a handle a caller RECEIVES may grow a member in a minor release without
+ * breaking anybody, because nobody outside this package can have written one by
+ * hand. A double for a server spec implements `SessionRuntime`, which is what
+ * `createRuntimeServer` takes, and is not sealed.
+ *
+ * @public
+ */
+export declare const runtimeBrand: unique symbol;
+
+/**
  * The agent runtime returned by {@link createRuntime}.
  *
  * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
  * lower-level helpers (`executeTool`, `toolSchemas`, `createSession`) for
- * testing and advanced usage.
+ * testing and advanced usage. A session over your OWN audio I/O is
+ * {@link connectSession}, a free function over this handle rather than a
+ * method on it.
+ *
+ * @sealed Only {@link createRuntime} produces one — see {@link runtimeBrand}.
  *
  * @public
  */
 export type Runtime = AgentRuntime & {
+  /** The seal — see {@link runtimeBrand}. */
+  readonly [runtimeBrand]: true;
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
-  /**
-   * Run a session over your OWN audio I/O — anything that is not a WebSocket.
-   *
-   * `startSession` takes a socket speaking the client protocol; this takes the
-   * two halves of that protocol directly. The session writes to `sink` (events,
-   * and agent audio as PCM16 mono at `readyConfig.ttsSampleRate`) and you write
-   * to the returned {@link SessionConnection} (user audio as PCM16 mono at
-   * `readyConfig.sampleRate`, plus client commands). Everything else a browser
-   * session gets comes with it: the start deadline, input buffered while the
-   * session starts, real-time pacing of agent audio with its barge-in ordering
-   * rules, resume by id, and end-of-session cleanup.
-   *
-   * The session announces itself on `sink` (`session.configured`) before this
-   * returns. Send `{ type: "audio_ready" }` once you can play audio — that is
-   * what releases the greeting — and call `close()` when your end goes away.
-   *
-   * @example
-   * ```ts
-   * import { agent } from "@alexkroman1/aai";
-   * import { createRuntime } from "@alexkroman1/aai-runtime";
-   *
-   * const runtime = createRuntime({ agent: agent({ name: "Desk" }), env: {} });
-   * declare function play(pcm: Uint8Array): void;
-   * declare function flushPlayback(): void;
-   *
-   * const connection = runtime.connect({
-   *   open: true,
-   *   event(e) {
-   *     if (e.type === "reply.cancelled") flushPlayback();
-   *   },
-   *   playAudioChunk: play,
-   * });
-   * connection.sendCommand({ type: "audio_ready" });
-   * // …feed microphone PCM16 at runtime.readyConfig.sampleRate:
-   * connection.sendAudio(new Uint8Array(3200));
-   * connection.close();
-   * await connection.ended;
-   * ```
-   */
-  connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
   /** Create a new voice session for a connected client (lower-level than startSession). */
   createSession(options: {
     id: string;

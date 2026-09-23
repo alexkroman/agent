@@ -48,18 +48,19 @@
  */
 
 import type http from "node:http";
-import type { TelephonyAccess } from "@alexkroman1/aai";
+import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { ensureOwnedSchemas, ownedSchemaUrl } from "./agent-server-schemas.ts";
-import { createRuntime, type RuntimeOptions } from "./runtime.ts";
+import { createRuntime } from "./runtime.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { type AgentServer, createRuntimeServer, type SharedServerOptions } from "./server.ts";
 import { agentServerEnv } from "./server-env.ts";
 import { routeMatches, SERVER_ROUTES, type ServerRoute } from "./server-routes.ts";
 import { enabledCarriers } from "./telephony/telephony-server.ts";
+import type { JournalStore } from "./workflow/journal/types.ts";
 import { handleWorkflowRequest } from "./workflow/serve.ts";
 
 /**
@@ -94,10 +95,11 @@ export interface AgentServerOptions extends SharedServerOptions {
   /**
    * The agent to serve. Its `name` and `greeting` feed `GET /client-config`.
    *
-   * Typed as whatever `createRuntime` accepts rather than restating `AgentDef`,
-   * so the two cannot disagree.
+   * Declared rather than indexed out of `RuntimeOptions["agent"]`, so this
+   * door's contract is written on its own page; `agent-server-forwarding.ts`
+   * is what holds it assignable to what `createRuntime` accepts.
    */
-  agent: RuntimeOptions["agent"];
+  agent: AgentDef;
   /**
    * The agent's own env — what tool code sees as `ctx.env`, and where provider
    * credentials resolve from unless {@link AgentServerOptions.providerEnv} is
@@ -145,7 +147,7 @@ export interface AgentServerOptions extends SharedServerOptions {
    * went wherever the runtime guessed. Each was found by somebody needing the
    * option, which is the wrong detector. {@link ForwardingGap} is the right one.
    */
-  journal?: RuntimeOptions["journal"];
+  journal?: JournalStore | undefined;
   /**
    * Where this server is reachable from outside — see `RuntimeOptions.publicUrl`.
    * `ctx.workflows.publicWebhookUrl()` is the only reader; without it, it throws.

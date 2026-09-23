@@ -23,6 +23,7 @@ import { registerLlmKind } from "../providers/resolve.ts";
 import { announceEvalCoverage, announceEvalMode, emptySuiteReason } from "./_announce.ts";
 import { describeEval } from "./describe.ts";
 import { toolResultIn } from "./events.ts";
+import { evalSimulation } from "./simulation-context.ts";
 import { installStubLlm, STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
 
 describe("installStubLlm", () => {
@@ -130,7 +131,9 @@ const judge = tool({
       .object,
 });
 
-describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
+const stubSuiteAgent = withTools(agent({ name: "Stub Suite" }), { judge });
+
+describeEval(stubSuiteAgent, (test) => {
   test(
     "drives a real session against the scripted model",
     async ({ session, mode }) => {
@@ -275,8 +278,15 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
   );
 
   test(
-    "simulate() and judge() run on SCRIPTS in a keyless run, and say so",
-    async ({ session, simulate, judge }) => {
+    "evalSimulation() over a case's session runs on SCRIPTS in a keyless run, and says so",
+    async ({ session, mode }) => {
+      const { simulate, judge } = evalSimulation({
+        agent: stubSuiteAgent,
+        mode,
+        target: session,
+        stubCaller: ["hello?", "thanks", { tool: "end_call", args: { reason: "all set" } }],
+        stubJudge: [true, false],
+      });
       const call = await simulate(
         { persona: "a regular", goal: "check the agent is there" },
         { maxTurns: 4 },
@@ -294,11 +304,7 @@ describeEval(withTools(agent({ name: "Stub Suite" }), { judge }), (test) => {
       expect(verdict.criteria.map((c) => c.pass)).toEqual([true, false]);
       expect(verdict.pass).toBe(false);
     },
-    {
-      stubReply: "scripted, and only the model is",
-      stubCaller: ["hello?", "thanks", { tool: "end_call", args: { reason: "all set" } }],
-      stubJudge: [true, false],
-    },
+    { stubReply: "scripted, and only the model is" },
   );
 });
 

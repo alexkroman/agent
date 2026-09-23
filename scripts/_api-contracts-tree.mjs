@@ -109,6 +109,14 @@ const UNEXEMPLIFIED_SUBPATHS = {
       "own `server.mjs` plus this package's compatibility fixture, which is written as a " +
       "starter a host copies. `/eval` and `/eval/vitest` are NOT here: every template ships " +
       "an `agent.eval.test.ts` written against them.",
+    "/auth":
+      "who may open a session on a self-hosted SERVER — `createSessionAuth` and the session " +
+      "ticket. Split out of `.` for the same reader: a host behind its own login, never an " +
+      "`agent.ts`, so a template has nothing honest to demonstrate with it.",
+    "/metrics":
+      "the process-wide metrics sinks a HOST registers, split out of `.`'s embedder surface " +
+      "and armed off the environment by the front doors; an `agent.ts` reads metrics through " +
+      "`agent({ events })` and the SDK's collector, never through a sink.",
   },
 };
 

@@ -19,7 +19,7 @@
  * Everything else is conversation-critical and goes straight through.
  *
  * It used to live inside the WebSocket sink, which made pacing a property of
- * the WIRE: a session reaching its client any other way — `runtime.connect`,
+ * the WIRE: a session reaching its client any other way — `connectSession`,
  * the console — would have had to re-derive both rules. Now the socket sink is
  * this wrapper plus a stalled-link guard, and any other sink gets the same
  * rules by construction.

@@ -9,7 +9,7 @@
 import { agent } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import type { EvalTurn } from "./session.ts";
-import { simulationContext } from "./simulation-context.ts";
+import { evalSimulation } from "./simulation-context.ts";
 import { installStubLlm } from "./stub-llm.ts";
 
 function fakeTarget(reply: string) {
@@ -29,10 +29,10 @@ function fakeTarget(reply: string) {
 const caller = { persona: "a regular", goal: "say hi" };
 const def = agent({ name: "Desk" });
 
-describe("simulationContext", () => {
+describe("evalSimulation", () => {
   test("stub mode: the default scripted caller says one line and hangs up", async () => {
     const { heard, target } = fakeTarget("Hi there.");
-    const ctx = simulationContext({ agent: def, mode: "stub", target, suite: {}, caseOptions: {} });
+    const ctx = evalSimulation({ agent: def, mode: "stub", target });
     const call = await ctx.simulate(caller);
     expect(heard).toHaveLength(1);
     expect(call.endedBy).toBe("caller");
@@ -41,13 +41,7 @@ describe("simulationContext", () => {
 
   test("stub mode: stubJudge decides the rulings, and the verdict says it was scripted", async () => {
     const { target } = fakeTarget("Hi.");
-    const ctx = simulationContext({
-      agent: def,
-      mode: "stub",
-      target,
-      suite: {},
-      caseOptions: { stubJudge: [false] },
-    });
+    const ctx = evalSimulation({ agent: def, mode: "stub", target, stubJudge: [false] });
     const verdict = await ctx.judge("Agent: hi", ["It greeted.", "It was brief."]);
     expect(verdict.scripted).toBe(true);
     // The first ruling was scripted false; the missing second one passes.
@@ -61,16 +55,13 @@ describe("simulationContext", () => {
     );
     const { heard, target } = fakeTarget("Hi.");
     try {
-      const ctx = simulationContext({
+      const ctx = evalSimulation({
         agent: def,
         mode: "live",
         target,
-        suite: {
-          callerLlm: callerStub.llm,
-          judgeLlm: judgeStub.llm,
-          providerEnv: { ...callerStub.env, ...judgeStub.env },
-        },
-        caseOptions: undefined,
+        callerLlm: callerStub.llm,
+        judgeLlm: judgeStub.llm,
+        providerEnv: { ...callerStub.env, ...judgeStub.env },
       });
       const call = await ctx.simulate(caller, { maxTurns: 5 });
       expect(heard).toEqual(["Hello!"]);

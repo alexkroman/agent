@@ -11,8 +11,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
-import type { Runtime } from "./runtime.ts";
-import { createRuntimeServer } from "./server.ts";
+import { createRuntimeServer, type SessionRuntime } from "./server.ts";
 
 /**
  * A server whose runtime does exactly what `shutdown` says.
@@ -26,12 +25,9 @@ async function startServer(
   shutdown: () => Promise<void> = () => Promise.resolve(),
 ): Promise<{ server: ReturnType<typeof createRuntimeServer>; shutdown: ReturnType<typeof vi.fn> }> {
   const spy = vi.fn(shutdown);
-  const runtime: Runtime = {
-    executeTool: vi.fn().mockResolvedValue(""),
-    toolSchemas: [],
-    createSession: vi.fn() as Runtime["createSession"],
-    connect: vi.fn() as Runtime["connect"],
-    readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },
+  // `SessionRuntime`, the slice `createRuntimeServer` takes — a `Runtime` is
+  // sealed and only `createRuntime` builds one.
+  const runtime: SessionRuntime = {
     startSession: vi.fn(),
     shutdown: spy,
   };

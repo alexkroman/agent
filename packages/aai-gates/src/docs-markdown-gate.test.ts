@@ -222,7 +222,7 @@ describe("the markdown config", () => {
         "./workspace-files",
       ],
       "aai-ui": ["./internal"],
-      "aai-runtime": [".", "./internal", "./tracing"],
+      "aai-runtime": [".", "./auth", "./internal", "./metrics", "./tracing"],
     };
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = packageDirOf(globKey);

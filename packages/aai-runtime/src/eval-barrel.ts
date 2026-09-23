@@ -123,18 +123,6 @@ export {
 // each then guarded against the builtin's REFUSAL with a hand-typed regex over a
 // sentence the runtime owns — `runCodeOutput` imports the constant instead and
 // throws on it, so a reworded refusal cannot read as output.
-// A MODEL-GRADED verdict. Deterministic readers stay the first instrument;
-// this is for the claims only visible as meaning ("it confirmed the date
-// before booking"), which a regex over reply text turns into a flake. One
-// ruling per criterion, and the verdict is computed from those rather than
-// asked for — see `eval/judge.ts`.
-export {
-  type CallVerdict,
-  type CriterionVerdict,
-  type JudgeCallOptions,
-  type JudgeInput,
-  judgeCall,
-} from "./eval/judge.ts";
 export { runCodeIn, runCodeOutput } from "./eval/run-code.ts";
 export {
   type EvalCredentials,
@@ -144,21 +132,8 @@ export {
   evalCredentials,
   openEvalSession,
 } from "./eval/session.ts";
-// A SIMULATED CALLER: a second model with a persona and a goal, driving the
-// same `say()`/`send()` a scripted case does until it calls `end_call`. The
-// result is ordinary `EvalTurn`s plus the call's metrics, so every reader here
-// takes it unchanged — see `eval/simulate.ts`.
-export {
-  DEFAULT_MAX_TURNS,
-  END_CALL_TOOL,
-  type SimulateCallOptions,
-  type SimulatedCall,
-  type SimulatedCaller,
-  type SimulatedTurn,
-  type SimulationMetrics,
-  type SimulationTarget,
-  simulateCall,
-} from "./eval/simulate.ts";
+// A SIMULATED CALLER and a MODEL-GRADED judge are `@alexkroman1/aai-runtime/eval/simulate`
+// (`eval-simulate-barrel.ts`) — their own subpath and capability.
 // The scripted model a keyless run falls back to. Public because the FALLBACK
 // is public policy: a suite that runs without a credential is checking wiring
 // rather than behaviour, and a harness of its own has to be able to say so.

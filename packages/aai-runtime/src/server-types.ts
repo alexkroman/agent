@@ -12,7 +12,7 @@ import type http from "node:http";
 import type { AgentDef, TelephonyAccess } from "@alexkroman1/aai";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
-import type { SessionAuthOptions } from "./session-auth.ts";
+import type { SessionAuth } from "./session-auth.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createRuntimeServer} needs.
@@ -29,7 +29,37 @@ export type SessionRuntime = Pick<
   "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow"
 >;
 
-/** Configuration for {@link createRuntimeServer}. */
+/**
+ * First look at every WebSocket upgrade. Return true to claim it (the server
+ * then leaves the socket alone); return false to fall through to the standard
+ * `/websocket` session handling. Lets an embedder (the platform's guest
+ * harness) add its own upgrade surface — its host control channel — without a
+ * second HTTP server.
+ *
+ * @public
+ */
+export type ServerUpgradeHook = (
+  req: http.IncomingMessage,
+  socket: import("node:stream").Duplex,
+  head: Buffer,
+) => boolean;
+
+/**
+ * First look at every HTTP request (after `/health`). Return true to claim it —
+ * the server then leaves the response alone. The {@link ServerUpgradeHook}'s
+ * HTTP twin: lets an embedder (the platform's guest harness) add its own HTTP
+ * surface — the studio coding agent's chat endpoint — without a second HTTP
+ * server.
+ *
+ * @public
+ */
+export type ServerRequestHook = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: string,
+  method: string,
+) => boolean;
+
 /**
  * The options every front door over {@link createRuntimeServer} passes straight
  * through — a logger and the two request hooks.
@@ -46,18 +76,29 @@ export type SessionRuntime = Pick<
  * the one bag that exists to reach all three front doors could not be handed to
  * any of them, and each wrapper forwarded the fields one at a time instead.
  * They carry `| undefined` now, on both sides; do not narrow either back.
+ *
+ * Each field is DECLARED here rather than indexed out of
+ * `RuntimeServerOptions["…"]`: an indexed field has no doc of its own and
+ * moves whenever the other type does, so a change to one door's option read
+ * as a change to every door's.
  */
 export type SharedServerOptions = {
   /** Structured logger. Defaults to the console logger. */
   logger?: Logger | undefined;
-  /** First look at every WebSocket upgrade — see {@link RuntimeServerOptions.upgrade}. */
-  upgrade?: RuntimeServerOptions["upgrade"];
-  /** First look at every HTTP request — see {@link RuntimeServerOptions.request}. */
-  request?: RuntimeServerOptions["request"];
-  /** Who may open a session — see {@link RuntimeServerOptions.auth}. */
-  auth?: RuntimeServerOptions["auth"];
+  /** First look at every WebSocket upgrade — see {@link ServerUpgradeHook}. */
+  upgrade?: ServerUpgradeHook | undefined;
+  /** First look at every HTTP request — see {@link ServerRequestHook}. */
+  request?: ServerRequestHook | undefined;
+  /**
+   * Who may open a session on `WS /websocket` — a handle from
+   * `createSessionAuth()` on `@alexkroman1/aai-runtime/auth`. Off unless
+   * configured: `AAI_SESSION_SECRET` in the server's env turns the built-in
+   * ticket check on without it.
+   */
+  auth?: SessionAuth | undefined;
 };
 
+/** Configuration for {@link createRuntimeServer}. */
 export type RuntimeServerOptions = {
   /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;
@@ -104,31 +145,10 @@ export type RuntimeServerOptions = {
    * such an agent on a byte route nothing serves. This is a claim about the DEPLOYMENT.
    */
   uploadBroker?: string;
-  /**
-   * First look at every WebSocket upgrade. Return true to claim it (the
-   * server then leaves the socket alone); return false to fall through to
-   * the standard `/websocket` session handling. Lets an embedder (the
-   * platform's guest harness) add its own upgrade surface — its host
-   * control channel — without a second HTTP server.
-   */
-  upgrade?:
-    | ((req: http.IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => boolean)
-    | undefined;
-  /**
-   * First look at every HTTP request (after `/health`). Return true to claim
-   * it — the server then leaves the response alone. The `upgrade` hook's
-   * HTTP twin: lets an embedder (the platform's guest harness) add its own
-   * HTTP surface — the studio coding agent's chat endpoint — without a
-   * second HTTP server.
-   */
-  request?:
-    | ((
-        req: http.IncomingMessage,
-        res: http.ServerResponse,
-        url: string,
-        method: string,
-      ) => boolean)
-    | undefined;
+  /** First look at every WebSocket upgrade — see {@link ServerUpgradeHook}. */
+  upgrade?: ServerUpgradeHook | undefined;
+  /** First look at every HTTP request (after `/health`) — see {@link ServerRequestHook}. */
+  request?: ServerRequestHook | undefined;
   /**
    * What this server's front door IS — see `AgentDef.page`. Defaults to
    * `"voice"`.
@@ -159,10 +179,20 @@ export type RuntimeServerOptions = {
   /**
    * Who may open a session on `WS /websocket`: a session ticket check, an
    * `Origin` allowlist, and resume bound to the identity that opened the
-   * session. Off unless configured — `AAI_SESSION_SECRET` in `env` turns the
-   * built-in ticket check on without this. See `session-auth.ts`.
+   * session — a handle from `createSessionAuth()` on
+   * `@alexkroman1/aai-runtime/auth`. Off unless configured:
+   * `AAI_SESSION_SECRET` in `env` turns the built-in ticket check on without
+   * this.
+   *
+   * A FIELD rather than something plugged through {@link ServerUpgradeHook},
+   * because that hook cannot express it: it answers synchronously, so an async
+   * ticket check cannot decide there; a claimed socket cannot be handed back to
+   * the session path once admitted; resume ownership has to be recorded on the
+   * session this server STARTS; and the ticket subprotocol must be kept out of
+   * this server's own handshake reply. The field is one opaque handle, and every
+   * type behind it is the `auth` capability's.
    */
-  auth?: SessionAuthOptions | undefined;
+  auth?: SessionAuth | undefined;
 };
 
 /** Handle returned by {@link createRuntimeServer}. */

@@ -3557,7 +3557,7 @@ Pipeline mode only. WHO decides that the caller's turn is over.
 - `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
   reaches the transcriber only between a `user_turn_start` and the
   `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `session.userTurn.start` / `.commit` / `.clear`, or its
   `usePushToTalk` hook). Everything transcribed in that window, across
   however many pauses, is ONE turn, and nothing is answered until the
   commit. Outside the window the microphone is replaced with silence
@@ -6401,7 +6401,7 @@ Pipeline mode only. WHO decides that the caller's turn is over.
 - `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
   reaches the transcriber only between a `user_turn_start` and the
   `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
-  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `session.userTurn.start` / `.commit` / `.clear`, or its
   `usePushToTalk` hook). Everything transcribed in that window, across
   however many pauses, is ONE turn, and nothing is answered until the
   commit. Outside the window the microphone is replaced with silence

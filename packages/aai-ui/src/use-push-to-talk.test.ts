@@ -16,10 +16,10 @@ import { type UsePushToTalkOptions, usePushToTalk } from "./use-push-to-talk.ts"
 
 function mount(options?: UsePushToTalkOptions, snapshot = { running: true }) {
   const core = createMockSessionCore(snapshot);
-  // Spied BEFORE the hook mounts: `useSessionActions` picks the methods once.
-  const start = vi.spyOn(core, "startUserTurn");
-  const commit = vi.spyOn(core, "commitUserTurn");
-  const clear = vi.spyOn(core, "clearUserTurn");
+  // Spied BEFORE the hook mounts, on the `userTurn` sub-handle it calls.
+  const start = vi.spyOn(core.userTurn, "start");
+  const commit = vi.spyOn(core.userTurn, "commit");
+  const clear = vi.spyOn(core.userTurn, "clear");
   const hook = renderHook(() => usePushToTalk(options), {
     wrapper: ({ children }: { children: ReactNode }) =>
       createElement(SessionProvider, { value: core }, children),

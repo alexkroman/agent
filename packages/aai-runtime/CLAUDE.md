@@ -113,13 +113,15 @@ The phase machine is still `ws-session-lifecycle.ts`.
 **Two adapters sit on it, and a third kind of I/O is a third adapter, never a
 second lifecycle.** `wireSessionSocket` keeps only what a socket has — frame
 parsing, the keepalive ping, close codes, and the `bufferedAmount` guard in
-`ws-client-sink.ts`. `Runtime.connect(sink)` is the PUBLIC one, for a host with
-its own audio I/O (`aai console` is its first consumer). Pacing is
+`ws-client-sink.ts`. `connectSession(runtime, sink)` is the PUBLIC one, for a
+host with its own audio I/O (`aai console` is its first consumer) — a free
+function over the handle rather than a `Runtime.connect` method, because
+`Runtime` is SEALED (below). Pacing is
 `paced-client-sink.ts`, wrapped around ANY sink, because its two ordering rules
 (turn-closing events wait behind held audio; a cancel or reset discards it) are
 properties of holding audio back, not of the wire.
 
-**`connect` detaches itself when the RUNTIME closes the sink** (a resume
+**`connectSession` detaches itself when the RUNTIME closes the sink** (a resume
 takeover, a failed start). A socket adapter learns that from its own close
 event; a caller-owned sink has none, so without it the session would sit
 `ready` with nobody left to end it.
@@ -149,10 +151,9 @@ since the split, and that guide is at its cap.
 
 ## The published surface is versioned in epochs
 
-Fifteen capabilities under `contracts/`, each a named slice of what an
-embedder writes against: `server`, `runtime`, `session`, `session-state`,
-`providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
-`text`, `tools`, `eval`. The
+The capabilities under `contracts/` (read the tree for the list — this line
+has been wrong twice) are each a named slice of what an embedder writes
+against, from `server` and `runtime` to `eval`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
 `docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
 the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
@@ -166,8 +167,44 @@ its own capability rather than part of `runtime` because it assembles the
 DEFINITION a runtime is handed rather than any part of the engine. See "Tool
 discovery off the platform" below.
 
-`eval` is the newest, and the only capability spanning TWO subpaths — see
-"Driving an agent from text is a published surface" below.
+`eval` is the only capability spanning TWO subpaths — see "Driving an agent
+from text is a published surface" below. Four came OUT of older ones because a
+feature added to a capability made every change to it an epoch of the host:
+`auth` (`/auth` — `createSessionAuth` and the session ticket, out of `server`),
+`metrics` (`/metrics` — the sink registry, out of `tracing`), `eval-simulate`
+(`/eval/simulate` — `simulateCall`, `judgeCall`, `evalSimulation`, which were
+intersected into `EvalTestContext`) and `eval-assert` (on `/eval` —
+`expectCalled`, `lastToolResultIn`). A new feature gets its own capability,
+and its own subpath when a different reader imports it.
+
+### The handles a caller RECEIVES are sealed
+
+`Runtime` carries `[runtimeBrand]: true` and `SessionAuth` `[sessionAuthBrand]`
+— each a `declare const … : unique symbol` exported TYPE-ONLY, so no value
+exists, an object literal cannot carry the key, and only `createRuntime` /
+`createSessionAuth` mint one (a cast in the one factory). That is what lets a
+received handle grow a member in a minor: nobody outside this package can have
+written one by hand. `aai-ui`'s `BrowserSession` is the case that forced it —
+push-to-talk added three required methods and broke every hand-written double.
+A DOUBLE implements the unsealed slice a consumer takes (`SessionRuntime` for
+`createRuntimeServer`), never the sealed handle. Methods that would widen a
+sealed handle become free functions over it (`connectSession`) or a sub-handle.
+
+**`RuntimeOptions.generate` is gone from the public type.** It was an
+`@internal` member of a public type — reachable anyway, since API Extractor
+reads the tag at the declaration. It is `HostRuntimeOptions` now, consumed by
+`createRuntimeWithSeams` (`runtime.ts`), which only `eval/session.ts` reaches
+by relative import. The forwarding check (`agent-server-forwarding.ts`) also
+holds the fields `AgentServerOptions` now DECLARES (`agent: AgentDef`,
+`journal?: JournalStore`, rather than `RuntimeOptions["…"]`) assignable to
+what they are forwarded to — `TypeDrift`, beside `ForwardingGap`.
+
+**`auth` stays a server FIELD, and not a use of the `upgrade` hook.** The hook
+answers synchronously, so an async ticket check cannot decide there; a claimed
+socket cannot be handed back to the session path; resume ownership is recorded
+on the session the server starts; and the ticket subprotocol must be kept out
+of the server's own handshake reply. So the field holds one opaque
+`SessionAuth`, and every type behind it is the `auth` capability's.
 
 The split shipped this package with no `contracts/` tree, so for its first days
 221 exports moved with nothing recording it, while `aai` and `aai-ui` could not
@@ -665,7 +702,8 @@ steps — is a spec asserting on a provider's choices.
 the text-agent surface itself, why a workflow app is evaluated by RUNNING it,
 and why a keyless run gets a SCRIPTED model rather than a skip. Which subpaths a
 template eval may import from is konsistent's
-`template-eval-runtime-subpaths` (`/eval` and `/eval/vitest`, and nowhere else).
+`template-eval-runtime-subpaths` (`/eval`, `/eval/simulate` and `/eval/vitest`,
+and nowhere else).
 
 ## Tool discovery off the platform
 
@@ -795,10 +833,12 @@ And the generic cover STANDS DOWN while a tool is covering its own gap
 disabled during tool calls", for the same reason: two sentences about one
 silence, the second of them generic.
 
-## Three subpaths are RENDERED, and the root barrel is not
+## Four subpaths are RENDERED, and the root barrel is not
 
-`typedoc.json` here names `dist/eval-barrel.d.ts`, `dist/eval-vitest-barrel.d.ts`
-and `dist/testing-barrel.d.ts` — and nothing else. The split is by READER rather
+`typedoc.json` here names `dist/eval-barrel.d.ts`, `dist/eval-vitest-barrel.d.ts`,
+`dist/eval-simulate-barrel.d.ts` and `dist/testing-barrel.d.ts` — and nothing
+else (`/auth` and `/metrics` are embedder surfaces, deny-listed beside
+`/tracing` in `scripts/docs-markdown.mjs`). The split is by READER rather
 than by package: an eval and a workflow spec are written by whoever wrote the
 `agent.ts`, in the same vitest project, beside `@alexkroman1/aai/testing`, so
 they belong in the authoring reference. The root barrel and `/internal` stay
@@ -1204,7 +1244,7 @@ rules, each argued in that module or in `aai`'s `protocol-events-metrics.ts`:
 
 Readers: the client (it is an ordinary event), `agent({ events })`, and the
 process-wide SINKS in `metrics-sink.ts` (`registerMetricsSink`, exported from
-`/tracing`). The sink registry is `Symbol.for`-keyed for the two-copies reason
+`/metrics`). The sink registry is `Symbol.for`-keyed for the two-copies reason
 above — the harness's copy starts the exporter, the bundle's records. With a
 collector configured, `startTracing` registers `otelMetricsSink` over a
 `MeterProvider` (`_metrics-otel.ts`); its two peers are loaded SEPARATELY from

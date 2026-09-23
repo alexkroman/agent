@@ -6,6 +6,7 @@ import WebSocket from "ws";
 import { makeClientSink, silentLogger } from "./_test-utils.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
 import {
+  createSessionAuth,
   createSessionToken,
   presentedSessionToken,
   resolveSessionGate,
@@ -128,7 +129,16 @@ describe("selectSessionProtocol", () => {
 describe("resolveSessionGate", () => {
   test("is absent when nothing is configured — the upgrade path is unchanged", () => {
     expect(resolveSessionGate(undefined, {}, silentLogger)).toBeUndefined();
-    expect(resolveSessionGate({}, undefined, silentLogger)).toBeUndefined();
+  });
+
+  test("createSessionAuth refuses a handle that would check nothing, and a blank secret", () => {
+    expect(() => createSessionAuth({})).toThrow(/checks nothing/);
+    expect(() => createSessionAuth({ secret: " " })).toThrow(/must not be blank/);
+  });
+
+  test("a handle not minted by createSessionAuth is refused, naming the factory", () => {
+    const forged = {} as Parameters<typeof resolveSessionGate>[0];
+    expect(() => resolveSessionGate(forged, undefined, silentLogger)).toThrow(/createSessionAuth/);
   });
 
   test("AAI_SESSION_SECRET in env turns the ticket check on", async () => {
@@ -145,7 +155,7 @@ describe("resolveSessionGate", () => {
 
   test("refuses a listed-out Origin and admits a request with none", async () => {
     const gate = resolveSessionGate(
-      { allowedOrigins: ["https://app.example.com"] },
+      createSessionAuth({ allowedOrigins: ["https://app.example.com"] }),
       undefined,
       silentLogger,
     );
@@ -160,12 +170,12 @@ describe("resolveSessionGate", () => {
 
   test("a custom verifier decides, and a throwing one refuses", async () => {
     const gate = resolveSessionGate(
-      {
+      createSessionAuth({
         verify: (token) => {
           if (token === "boom") throw new Error("idp down");
           return token === "good" ? { sub: "u" } : null;
         },
-      },
+      }),
       undefined,
       silentLogger,
     );
@@ -177,7 +187,7 @@ describe("resolveSessionGate", () => {
   });
 
   describe("resume ownership", () => {
-    const gate = resolveSessionGate({ secret: SECRET }, undefined, silentLogger);
+    const gate = resolveSessionGate(createSessionAuth({ secret: SECRET }), undefined, silentLogger);
     const withTicket = (ticket: string) =>
       fakeRequest({ protocol: `${SESSION_AUTH_PROTOCOL_PREFIX}${ticket}` });
     gate?.recordOwner("sess-alice", { sub: "alice" });
@@ -255,7 +265,11 @@ describe("createRuntimeServer with auth", () => {
 
   test("a session with no ticket is declined with a reason and the 4401 close code", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({ runtime, logger: silentLogger, auth: { secret: SECRET } });
+    server = createRuntimeServer({
+      runtime,
+      logger: silentLogger,
+      auth: createSessionAuth({ secret: SECRET }),
+    });
     await server.listen(0);
 
     const outcome = await dial("/websocket");
@@ -267,7 +281,11 @@ describe("createRuntimeServer with auth", () => {
 
   test("a ticket in the subprotocol is admitted, and the ticket is not echoed back", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({ runtime, logger: silentLogger, auth: { secret: SECRET } });
+    server = createRuntimeServer({
+      runtime,
+      logger: silentLogger,
+      auth: createSessionAuth({ secret: SECRET }),
+    });
     await server.listen(0);
 
     const ticket = createSessionToken({ secret: SECRET, sub: "alice" });
@@ -308,7 +326,11 @@ describe("createRuntimeServer with auth", () => {
 
   test("only the identity that opened a session may resume it through the server", async () => {
     const { runtime, started } = recordingRuntime();
-    server = createRuntimeServer({ runtime, logger: silentLogger, auth: { secret: SECRET } });
+    server = createRuntimeServer({
+      runtime,
+      logger: silentLogger,
+      auth: createSessionAuth({ secret: SECRET }),
+    });
     await server.listen(0);
     const as = (sub: string) => `token=${createSessionToken({ secret: SECRET, sub })}`;
 
