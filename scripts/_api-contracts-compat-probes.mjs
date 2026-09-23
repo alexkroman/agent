@@ -10,6 +10,7 @@
 
 import { createRequire } from "node:module";
 import { isSealedStatement, uniqueSymbolNames } from "./_api-contracts-compat-rewrite.mjs";
+import { compareNames } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
 const extractorRequire = createRequire(require.resolve("@microsoft/api-extractor/package.json"));
@@ -92,19 +93,25 @@ const isPureType = (statements) =>
   statements.every((s) => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s));
 
 /**
- * What the two sides must agree on before anything is compiled: the brands
+ * What the two sides must agree on before anything is compiled: the
+ * declarations ANOTHER capability of the package owns (`shared`: taken from
+ * the new rollup on both sides — see `_api-contracts-compat-rewrite.mjs`), the brands
  * they share (one `unique symbol` per name), the `@sealed` names (tagged on
  * EITHER side — adding the tag is the claim, and it shows in the API report's
  * diff), and which of those can be masked: a pure type on both sides with the
  * same number of type parameters.
  */
-export function agreements(before, after) {
+export function agreements(before, after, foreign = new Set()) {
   const newBrands = brandsIn(after);
   const brands = new Set([...brandsIn(before)].filter((name) => newBrands.has(name)));
+  const inBoth = (name) => before.declared.has(name) && after.declared.has(name);
+  const exported = (name) => before.exported.has(name) || after.exported.has(name);
+  const shared = [...foreign]
+    .filter((name) => inBoth(name) && !exported(name) && !brands.has(name))
+    .sort(compareNames);
+  const isShared = new Set(shared);
   const sealed = new Set(
-    [...sealedIn(before), ...sealedIn(after)].filter(
-      (name) => before.declared.has(name) && after.declared.has(name),
-    ),
+    [...sealedIn(before), ...sealedIn(after)].filter((name) => inBoth(name) && !isShared.has(name)),
   );
   const arity = (statements) => statements[0]?.typeParameters?.length ?? 0;
   const masked = [...sealed].filter((name) => {
@@ -112,5 +119,5 @@ export function agreements(before, after) {
     const n = after.declared.get(name);
     return isPureType(o) && isPureType(n) && arity(o) === arity(n);
   });
-  return { brands, sealed, masked };
+  return { brands, sealed, masked, shared };
 }

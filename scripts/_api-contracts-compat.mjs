@@ -289,9 +289,14 @@ function exportsOf(parsedBody) {
  * declarations to the checker, so an UNCHANGED generic one would otherwise read
  * as a break forever.
  */
-function closureOf(parsedBody) {
+function closureOf(parsedBody, leaves = new Set()) {
   const { sourceFile, imports, declared } = parsedBody;
   const known = (name) => declared.has(name) || imports.has(name);
+  const unseen = (statement, seen) => {
+    const next = [...referencedNames(statement)].filter((ref) => !seen.has(ref) && known(ref));
+    for (const ref of next) seen.add(ref);
+    return next;
+  };
   return (root) => {
     const seen = new Set([root]);
     const queue = [root];
@@ -299,11 +304,15 @@ function closureOf(parsedBody) {
     while (queue.length > 0) {
       const current = queue.shift();
       if (imports.has(current)) parts.push(`${current} <- ${imports.get(current)}`);
+      // A shared declaration is ONE declaration on both sides: its name is
+      // the whole of what can differ, as in the hash.
+      if (current !== root && leaves.has(current)) {
+        parts.push(`${current} <- (shared)`);
+        continue;
+      }
       for (const statement of declared.get(current) ?? []) {
         parts.push(statement.getText(sourceFile));
-        const next = [...referencedNames(statement)].filter((ref) => !seen.has(ref) && known(ref));
-        for (const ref of next) seen.add(ref);
-        queue.push(...next);
+        queue.push(...unseen(statement, seen));
       }
     }
     return parts.sort(compareNames).join("\n");
@@ -323,14 +332,15 @@ function exportProblem(entry, next) {
  * a re-export whose source moved, and one probe per name whose closure is not
  * byte-identical on both sides.
  */
-function planProbes(oldBody, newBody) {
+function planProbes(oldBody, newBody, foreign) {
   const before = parseBody(oldBody);
   const after = parseBody(newBody);
   const oldExports = exportsOf(before);
   const newExports = exportsOf(after);
-  const oldClosure = closureOf(before);
-  const newClosure = closureOf(after);
-  const agreed = agreements(before, after);
+  const agreed = agreements(before, after, foreign);
+  const foreignShared = new Set(agreed.shared);
+  const oldClosure = closureOf(before, foreignShared);
+  const newClosure = closureOf(after, foreignShared);
   const problems = [];
   const probes = [];
   const changed = (name) => oldClosure(name) !== newClosure(name);
@@ -403,6 +413,8 @@ function locate(diagnostic, isOld, spans) {
  *
  * `dir` is where the two virtual modules pretend to live, so their own
  * imports (`zod`, `react`, a sibling package) resolve from that package.
+ * `foreign` is the names ANOTHER capability of the package contracts (the
+ * hash's own set); each one both rollups declare is taken from the new copy.
  *
  * `unproven` is the subset of `problems` that is not a failed check but a
  * position the probe cannot decide (a one-sided `any`); a result whose every
@@ -410,20 +422,20 @@ function locate(diagnostic, isOld, spans) {
  *
  * @returns {{ compatible: boolean, problems: string[], unproven: string[], added: string[] }}
  */
-export function probeCompatibility({ oldBody, newBody, dir }) {
+export function probeCompatibility({ oldBody, newBody, dir, foreign = new Set() }) {
   const before = methodsAsProperties(oldBody);
   const after = methodsAsProperties(newBody);
-  const { problems, probes, added, agreed } = planProbes(before, after);
+  const { problems, probes, added, agreed } = planProbes(before, after, foreign);
   const probeDir = join(dir, ".api-contracts-probe");
   const oldPath = join(probeDir, "old.ts");
   const newPath = join(probeDir, "new.ts");
   const maskedPath = join(probeDir, "masked.ts");
-  const { brands, sealed, masked } = agreed;
+  const { brands, sealed, masked, shared } = agreed;
   const exportSealed = [...sealed];
   const maskedModule = masked.length > 0 ? "./masked.ts" : "./new.ts";
   const spans = [];
   let oldText =
-    `${asModule(rewriteForProbe(before, { brands, exportSealed: masked }))}\n\n` +
+    `${asModule(rewriteForProbe(before, { brands, exportSealed: masked, useShared: shared }))}\n\n` +
     `import * as __N from "./new.ts";\nimport * as __M from "${maskedModule}";\n${WIDEN}\n${CTOR}\n`;
   for (const probe of probes) {
     const start = oldText.length;
@@ -432,11 +444,14 @@ export function probeCompatibility({ oldBody, newBody, dir }) {
   }
   const virtual = new Map([
     [oldPath, oldText],
-    [newPath, asModule(rewriteForProbe(after, { brands, exportSealed }))],
+    [newPath, asModule(rewriteForProbe(after, { brands, exportSealed, exportShared: shared }))],
     [join(probeDir, SHARED_MODULE), sharedModule(brands)],
   ]);
   if (masked.length > 0) {
-    virtual.set(maskedPath, asModule(rewriteForProbe(after, { brands, mask: masked })));
+    virtual.set(
+      maskedPath,
+      asModule(rewriteForProbe(after, { brands, mask: masked, useShared: shared })),
+    );
   }
   const program = checkerTs.createProgram({
     rootNames: [oldPath, newPath],

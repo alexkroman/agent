@@ -34,6 +34,26 @@
  *    probe compares against the real new declaration. Without the mask, a
  *    sealed handle gaining a required member failed every function that
  *    accepts it back.
+ * 4. **A declaration ANOTHER capability owns is one declaration.** The hash
+ *    reads such a type by NAME only (rule 2), but a rollup inlines its whole
+ *    body, so every change its owner made — `SubagentDef` swapping
+ *    `maxRetries` for a misuse field, reached from `agent` through
+ *    `ToolContext.delegate` — showed through as a break of every capability
+ *    that merely REACHES it ("Two different types with this name exist, but
+ *    they are unrelated": ten `aai` capabilities against today's tree, with
+ *    their hashes unmoved). Both sides now take it from the NEW
+ *    rollup's copy (the old side's declarations are dropped for an import of
+ *    `new.ts`), and the closure-identity check reads it as a LEAF, so an
+ *    export whose only difference is inside it is not probed at all. Its
+ *    changes are its owner's capability to probe, against its own epoch.
+ *    Which names: the hash's own `foreign` set (`generateCapabilityReports`
+ *    returns it with each report), declared on both sides. NEW rather than old: the new rollup's own declarations were
+ *    written against the new copy, so aliasing them to the old one could fail
+ *    them for no reason, while old declarations that relied on something the
+ *    new copy dropped fail to compile — surfaced here as a break, the safe
+ *    direction. The blind spot is the rest: a change to that type which
+ *    breaks only THIS capability's use of it passes here and is left to the
+ *    owner's probe and the frozen examples.
  *
  * Reads the rollup with api-extractor's bundled TypeScript, the parser the
  * compat probe uses (see its header); the output is text.
@@ -51,6 +71,8 @@ const ts = extractorRequire("typescript");
 export const SHARED_MODULE = "shared.ts";
 const MARKER = "__AaiMisuse";
 /** The name a sealed type is re-exported under, so the other side can reach an unexported one. */
+/** The name the new module re-exports a SHARED (other-capability) declaration under. */
+export const sharedAlias = (name) => `__foreign_${name}`;
 export const sealedAlias = (name) => `__sealed_${name}`;
 
 const isConstStatement = (statement) =>
@@ -143,21 +165,47 @@ function maskedAlias(statement, sourceFile, name) {
  * One side's rollup rewritten for the probe program.
  *
  * @param {string} body the rollup, methods already rewritten as properties
- * @param {{ brands: Set<string>, exportSealed?: string[], mask?: string[] }} plan
+ * @param {{ brands: Set<string>, exportSealed?: string[], mask?: string[], useShared?: string[], exportShared?: string[] }} plan
  *   `brands`: the names to import from the shared module; `exportSealed`: the
  *   sealed names to re-export under `__sealed_<name>`, so the other side can
  *   reach an unexported one; `mask`: the sealed names whose declaration here
- *   becomes an alias of `old.ts`'s `__sealed_<name>` (the masked module only).
+ *   becomes an alias of `old.ts`'s `__sealed_<name>` (the masked module only);
+ *   `useShared`: the other-capability names whose declarations here are
+ *   dropped for an import of the NEW module's copy; `exportShared`: the same
+ *   names, re-exported by the new module under `__foreign_<name>`.
  */
-export function rewriteForProbe(body, { brands, exportSealed = [], mask = [] }) {
+export function rewriteForProbe(
+  body,
+  { brands, exportSealed = [], mask = [], useShared = [], exportShared = [] },
+) {
   const sourceFile = ts.createSourceFile("x.ts", body, ts.ScriptTarget.Latest, true);
+  const edits = statementEdits(sourceFile, { brands, mask, useShared });
+  let out = body;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, edit.start) + edit.to + out.slice(edit.end);
+  }
+  const tail = [`import type { ${MARKER} } from "./${SHARED_MODULE}";`];
+  if (mask.length > 0) tail.push('import type * as __SealedOld from "./old.ts";');
+  for (const name of exportSealed) tail.push(`export type { ${name} as ${sealedAlias(name)} };`);
+  for (const name of useShared)
+    tail.push(`import { ${sharedAlias(name)} as ${name} } from "./new.ts";`);
+  for (const name of exportShared) tail.push(`export { ${name} as ${sharedAlias(name)} };`);
+  return `${out}\n\n${tail.join("\n")}\n`;
+}
+
+/** Every edit {@link rewriteForProbe} makes inside the body, statement by statement. */
+function statementEdits(sourceFile, { brands, mask, useShared }) {
   const toMask = new Set(mask);
+  const fromNew = new Set(useShared);
   const masked = new Set();
   const edits = [];
   for (const statement of sourceFile.statements) {
     const symbols = uniqueSymbolNames(statement);
-    const [name] = declarationNames(statement);
-    if (symbols.length > 0 && symbols.every((symbol) => brands.has(symbol))) {
+    const names = declarationNames(statement);
+    const [name] = names;
+    if (names.length > 0 && names.every((declared) => fromNew.has(declared))) {
+      edits.push(replace(statement, sourceFile, ""));
+    } else if (symbols.length > 0 && symbols.every((symbol) => brands.has(symbol))) {
       edits.push(replace(statement, sourceFile, brandImport(statement, symbols)));
     } else if (name !== undefined && toMask.has(name)) {
       // A merged interface declares one name in several statements; the
@@ -169,12 +217,5 @@ export function rewriteForProbe(body, { brands, exportSealed = [], mask = [] }) 
       messageEdits(statement, sourceFile, edits);
     }
   }
-  let out = body;
-  for (const edit of edits.sort((a, b) => b.start - a.start)) {
-    out = out.slice(0, edit.start) + edit.to + out.slice(edit.end);
-  }
-  const tail = [`import type { ${MARKER} } from "./${SHARED_MODULE}";`];
-  if (toMask.size > 0) tail.push('import type * as __SealedOld from "./old.ts";');
-  for (const name of exportSealed) tail.push(`export type { ${name} as ${sealedAlias(name)} };`);
-  return `${out}\n\n${tail.join("\n")}\n`;
+  return edits;
 }

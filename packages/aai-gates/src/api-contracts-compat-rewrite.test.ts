@@ -6,8 +6,9 @@
  *
  * `scripts/_api-contracts-compat-rewrite.mjs` rewrites both sides three ways:
  * same-named `unique symbol` brands become ONE symbol, long misuse-message
- * literal types become one marker type, and a `@sealed` type is probed
- * new-to-old only while every other position sees it unchanged. Each of those
+ * literal types become one marker type, a `@sealed` type is probed
+ * new-to-old only while every other position sees it unchanged, and a
+ * declaration another capability owns is ONE declaration on both sides. Each of those
  * turns something that used to probe as a break into a revision, which is
  * exactly the direction an over-eager rule ships a breaking change in — so,
  * as in `api-contracts-compat.test.ts`, every accepted change sits beside the
@@ -21,14 +22,19 @@ type Probe = { compatible: boolean; problems: string[]; unproven: string[]; adde
 const { probeCompatibility } =
   sole(
     import.meta.glob<{
-      probeCompatibility: (input: { oldBody: string; newBody: string; dir: string }) => Probe;
+      probeCompatibility: (input: {
+        oldBody: string;
+        newBody: string;
+        dir: string;
+        foreign?: Set<string>;
+      }) => Probe;
     }>("../../../scripts/_api-contracts-compat.mjs", { eager: true }),
   ) ?? {};
 
 const DIR = "/nonexistent-probe-root";
 
-const probeOf = (oldBody: string, newBody: string): Probe =>
-  probeCompatibility?.({ oldBody, newBody, dir: DIR }) ?? {
+const probeOf = (oldBody: string, newBody: string, foreign = new Set<string>()): Probe =>
+  probeCompatibility?.({ oldBody, newBody, dir: DIR, foreign }) ?? {
     compatible: false,
     problems: ["probeCompatibility-not-importable"],
     unproven: [],
@@ -279,5 +285,82 @@ describe("a misuse-message literal reads the same on both sides", () => {
     const next = edit("    tools?: InlineToolsMisuse;\n", "    tools?: string[];\n");
     const result = probeOf(MISUSE, next);
     expect(breaksNaming(result, "AgentParams"), result.problems.join("\n")).toBe(true);
+  });
+});
+
+/**
+ * `dialog`'s shape reached from `agent`: a capability's rollup inlines the
+ * whole body of a type ANOTHER capability owns, while the hash reads it by
+ * name. So the owner's own change — even one its own probe records as a
+ * revision, or a break it records as a `--bump` — showed through here as a
+ * break of `agent`'s ("Two different types with this name exist, but they are
+ * unrelated", ten `aai` capabilities against today's tree).
+ */
+const INLINED = `// @public
+export interface AgentDef {
+    name: string;
+    dialogs?: readonly AnyDialog[];
+    retries?: number;
+}
+
+// @public
+export function agent(def: AgentDef): AgentDef;
+
+// @public
+type AnyDialog = Dialog<string>;
+
+// @public
+interface Dialog<M extends string> {
+    mode: M;
+    tool<P, R = unknown>(def: DialogToolDef<P, R>): Wrapped<P, R>;
+}
+
+type DialogToolDef<P, R> = { params: P; run: (args: P) => R };
+
+type Wrapped<P, R> = P extends { run: () => infer X } ? X | R : never;
+`;
+
+const DIALOG_OWNED = new Set(["AnyDialog", "Dialog", "DialogToolDef", "Wrapped"]);
+
+describe("a declaration another capability owns is ONE declaration on both sides", () => {
+  const edit = editOf(INLINED);
+  // The additive change the other capability made — the hash of THIS one does
+  // not see it (foreign bodies are hashed by name), but its rollup does.
+  const dialogGrew = (body: string) =>
+    body.replace("    mode: M;", "    mode: M;\n    label?: string;");
+
+  test("an additive change elsewhere, beside an additive foreign change, is compatible", () => {
+    const next = dialogGrew(
+      edit("    retries?: number;", "    retries?: number;\n    tag?: string;"),
+    );
+    expect(verdictOf(probeOf(INLINED, next, DIALOG_OWNED))).toEqual(COMPATIBLE);
+  });
+
+  test("a required member on the foreign type is its OWNER's to report, not this capability's", () => {
+    // The blind spot, pinned: `dialog`'s own probe is what catches this.
+    const next = edit("    mode: M;", "    mode: M;\n    label: string;").replace(
+      "    retries?: number;",
+      "    retries?: number;\n    tag?: string;",
+    );
+    expect(verdictOf(probeOf(INLINED, next, DIALOG_OWNED))).toEqual(COMPATIBLE);
+    // …and without the ownership it is the break it really is.
+    expect(breaksNaming(probeOf(INLINED, next), "AgentDef")).toBe(true);
+  });
+
+  test("a real break in the capability's OWN types still breaks", () => {
+    const next = dialogGrew(edit("    retries?: number;", "    retries: number;"));
+    const result = probeOf(INLINED, next, DIALOG_OWNED);
+    expect(breaksNaming(result, "AgentDef"), result.problems.join("\n")).toBe(true);
+  });
+
+  test("an OLD declaration relying on something the new foreign copy dropped fails", () => {
+    // The shared copy is the NEW one, so this capability's old use of a
+    // removed member cannot compile — surfaced here, the safe direction.
+    const old = edit(
+      "// @public\nexport function agent",
+      '// @public\nexport type ModeOf = AnyDialog["mode"];\n\n// @public\nexport function agent',
+    );
+    const next = old.replace("    mode: M;\n", "    kind: M;\n");
+    expect(probeOf(old, next, DIALOG_OWNED).compatible).toBe(false);
   });
 });

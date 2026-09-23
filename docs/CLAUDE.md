@@ -444,7 +444,7 @@ each probed pair and reports every such position by path; the verdict is
 found a break", since a return loosened to `any` may break nobody. An `any` on
 both sides is unchanged and passes.
 
-**Three things are made to AGREE before either side is compiled**
+**Four things are made to AGREE before either side is compiled**
 (`scripts/_api-contracts-compat-rewrite.mjs`), each because two separately
 compiled modules disagree about something a consumer's program has once:
 
@@ -487,6 +487,21 @@ compiled modules disagree about something a consumer's program has once:
   probe is what now lets it land as a revision. `const` literals are skipped,
   as the hash skips them.
 
+- **A declaration ANOTHER capability of the package owns is ONE declaration**,
+  taken from the NEW rollup on both sides. The hash reads it by name (rule 2);
+  the rollup inlines its body, so its owner's changes — `SubagentDef` trading
+  `maxRetries` for a misuse field, reached from `agent` through
+  `ToolContext.delegate` — read as a break of every capability that only
+  REACHES it ("Two different types with this name exist, but they are
+  unrelated"). Against today's tree that was ten `aai` capabilities with
+  unmoved hashes, so the first moved hash in any of them would have been a
+  `--bump`. Closure identity reads the shared name as a leaf, as the hash does.
+  NEW rather than old because the new rollup's declarations were written
+  against the new copy; an OLD declaration that relied on something the new
+  copy dropped then fails to compile, which surfaces as a break (safe). **The
+  blind spot**: a change to that type which breaks only THIS capability's use
+  of it passes here — its owner's probe and the frozen examples are what see it.
+
 **Every current epoch's rollup must probe compatible with ITSELF**, checked on
 every `check:api-contracts` run (`scripts/_api-contracts-staleness.mjs`). A
 rollup imports its sibling packages by specifier, resolved to their CURRENT
@@ -516,8 +531,9 @@ every retained epoch's frozen example.
 `L & Literal<L>` methods above; generic overloads are related with their type
 parameters erased, as TypeScript relates overloads; an `any` inside a union or
 an unpaired position can still hide; a type from ANOTHER package is the same
-current type on both sides (its own package's capability reports it); a `@sealed`
-tag is TRUSTED (a type an author does build, tagged anyway, lands a break as a
+current type on both sides (its own package's capability reports it);
+another capability's type is judged only by ITS probe (above); a `@sealed` tag
+is TRUSTED (a type an author does build, tagged anyway, lands a break as a
 revision); and behaviour is never checked. The safe-direction miss: a CHANGED generic
 conditional or `as`-remapped type is reported incompatible even when it is not,
 because two separate declarations of one are unrelated to the checker (an
