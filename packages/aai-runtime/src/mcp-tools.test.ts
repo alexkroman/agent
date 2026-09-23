@@ -28,7 +28,7 @@ import { z } from "zod";
 import { makeLogger, silentLogger } from "./_test-utils.ts";
 import type { McpSession, ResolvedMcpServer } from "./mcp-connect.ts";
 import { withMcpTools } from "./mcp-tools.ts";
-import { createRuntime } from "./runtime.ts";
+import { createRuntimeWithSeams } from "./runtime.ts";
 
 const SEARCH_SCHEMA: JSONSchema7 = {
   type: "object",
@@ -109,7 +109,11 @@ describe("discovery", () => {
     expect(surface.servers[0]?.tools).toEqual(["mcp_docs_search"]);
     expect(surface.servers[0]?.unavailable).toBeUndefined();
 
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     const schema = runtime.toolSchemas.find((s) => s.name === "mcp_docs_search");
     // The server's own document, minus the `$schema` strip every vendor gets
     // and plus the AI SDK's own `additionalProperties: false`: what the model
@@ -157,7 +161,11 @@ describe("a call round-trips through ExecuteTool", () => {
           calls,
         ),
     });
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
 
     const result = await runtime.executeTool("mcp_docs_search", { query: "budgets" }, "s1", []);
 
@@ -178,7 +186,11 @@ describe("a call round-trips through ExecuteTool", () => {
           }),
         }),
     });
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     expect(await runtime.executeTool("mcp_docs_search", { query: "x" }, "s1", [])).toBe(
       '{"hits":2}',
     );
@@ -193,7 +205,11 @@ describe("a call round-trips through ExecuteTool", () => {
           }),
         }),
     });
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     expect(await runtime.executeTool("mcp_docs_search", { query: "x" }, "s1", [])).toBe(
       '{"text":"","unsupportedContent":["image"]}',
     );
@@ -208,7 +224,11 @@ describe("a call round-trips through ExecuteTool", () => {
           }),
         }),
     });
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     expect(await runtime.executeTool("mcp_docs_search", { query: "x" }, "s1", [])).toContain(
       "rate limited",
     );
@@ -225,7 +245,11 @@ describe("a call round-trips through ExecuteTool", () => {
           }),
         }),
     });
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     const result = await runtime.executeTool("mcp_docs_search", { query: "x" }, "s1", []);
     expect(result).toContain("socket hang up");
     expect(result).toContain("could not reach the");
@@ -401,7 +425,11 @@ describe("a bad server costs its own tools and nothing else", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"down" is unavailable'));
 
     // And the session that results is a working one.
-    const runtime = createRuntime({ agent: surface.agent, env: RUNTIME_ENV, logger: silentLogger });
+    const runtime = createRuntimeWithSeams({
+      agent: surface.agent,
+      env: RUNTIME_ENV,
+      logger: silentLogger,
+    });
     expect(await runtime.executeTool("mcp_up_search", { query: "x" }, "s1", [])).toBe("ok");
   });
 

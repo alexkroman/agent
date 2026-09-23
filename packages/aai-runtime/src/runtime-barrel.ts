@@ -11,18 +11,13 @@
  * page is plumbing:
  *
  * - {@link createAgentServer} — an agent served over HTTP + WebSocket in one
- *   call. The scaffold's own `server.mjs` imports this and
- *   {@link withHostCredentialFallback}, and nothing else from here.
+ *   call.
  * - {@link withToolsDir} — the agent's `tools/` directory, discovered by a
  *   process that has no bundler to do it at build time.
  * - {@link createRuntime} — the engine underneath it ({@link RuntimeOptions},
  *   {@link Runtime}, {@link SessionStartOptions}), for a process that owns its
  *   own transport; {@link connectSession} runs a session over your own audio
  *   I/O on it.
- * - {@link withHostCredentialFallback} — fill an agent's provider credentials
- *   from the host's own environment.
- * - {@link requiredProviderEnvVars} — which keys an agent config needs, before
- *   starting it.
  * - {@link resolveLlm} — turn an LLM descriptor into a Vercel AI SDK model.
  * - {@link createPostgresDb} — a `Db` over your own Postgres, for the stores the
  *   runtime keeps there (`RuntimeOptions.db` — session slots, the workflow
@@ -60,40 +55,22 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
-// `SessionStateStore.syncSession` mentions this type, and a type a public
-// signature MENTIONS but does not export is a docs-build warning here — and
-// warnings are errors (see the `WdkStreamOptions` note below, same rule).
 // The OPENER CONTRACT — what `registerSttKind`/`registerTtsKind` (below) take
 // and what an opener of your own is written against. It lives here rather than
 // on `@alexkroman1/aai/stt`+`/tts` for the reason those two functions do: a HOST
 // application registers a kind and an agent author never does, so the types and
 // the seam they serve belong on one page. `SttProvider`/`TtsProvider` stay on
 // the authoring subpaths — those are what a FACTORY returns, which is an
-// author's concern.
-export type {
-  AgentEnv,
-  HostCredentialEnv,
-  ProviderEnv,
-  RunCodeExecutor,
-  SttError,
-  SttEvents,
-  SttOpener,
-  SttOpenOptions,
-  SttSession,
-  SttTurnMeta,
-  TtsError,
-  TtsEvents,
-  TtsOpener,
-  TtsOpenOptions,
-  TtsSession,
-  TtsWordTiming,
-  Unsubscribe,
-} from "@alexkroman1/aai/host-internal";
-export type { StateSyncSession } from "./_state-sync.ts";
+// author's concern. DECLARED in this package (`providers/openers.ts`), so the
+// `providers` capability that publishes them also owns them.
+export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 export {
   type AgentServerOptions,
   createAgentServer,
 } from "./agent-server.ts";
+// What every way of RUNNING an agent definition takes — `RuntimeOptions`,
+// `TextAgentOptions` and the two eval option bags all extend it.
+export type { HostAgentOptions } from "./host-agent-options.ts";
 export {
   createHostServer,
   type HostServerOptions,
@@ -142,10 +119,23 @@ export {
   createPostgresDb,
   type ReservedDb,
 } from "./postgres-db.ts";
-export { withHostCredentialFallback } from "./providers/host-env.ts";
+export type {
+  SttError,
+  SttEvents,
+  SttOpener,
+  SttOpenOptions,
+  SttSession,
+  SttTurnMeta,
+  TtsError,
+  TtsEvents,
+  TtsOpener,
+  TtsOpenOptions,
+  TtsSession,
+  TtsWordTiming,
+  Unsubscribe,
+} from "./providers/openers.ts";
 // Narrow named exports rather than the whole module: the rest of resolve.ts is
-// internal descriptor plumbing. `requiredProviderEnvVars` is used by the CLI
-// dev server to check credentials before starting; `resolveLlm` lets host
+// internal descriptor plumbing. `resolveLlm` lets host
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
 //
@@ -168,7 +158,6 @@ export {
   registerLlmKind,
   registerSttKind,
   registerTtsKind,
-  requiredProviderEnvVars,
   resolveLlm,
 } from "./providers/resolve.ts";
 export {
@@ -209,7 +198,6 @@ export {
 // Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
 // their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
 // subpath and capability. A server option names only the opaque `SessionAuth`.
-export type { ServerSession } from "./session-core.ts";
 export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
@@ -221,13 +209,6 @@ export { SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 // come with the database and the owner applies them; a self-hosted server is that
 // owner, so it needs a way to say so at boot. See the function's own doc.
 export { ensureSessionStateSchema } from "./session-state/backends/postgres.ts";
-export type {
-  SessionStateBackend,
-  SessionStateStore,
-  // `SessionStateBackend.readEvents` returns these, so a host implementing the
-  // backend has to name the type. It is only reachable from here.
-  StoredSessionEvent,
-} from "./session-state/store.ts";
 export {
   CARRIER_CODECS,
   type CarrierCodec,
@@ -242,11 +223,7 @@ export {
   createTelephonyBridge,
   type TelephonyBridgeOptions,
 } from "./telephony/telephony-bridge.ts";
-export {
-  CARRIER_PARAM,
-  startTelephonySession,
-  TELEPHONY_PATH,
-} from "./telephony/telephony-server.ts";
+export { startTelephonySession } from "./telephony/telephony-server.ts";
 // The TEXT session mode — an agent definition driven over a message list.
 // Public: it is how a text-based agent is run, the counterpart of
 // `createRuntime` for the other two modes.
@@ -268,19 +245,10 @@ export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
 // modules; a plain `server.mjs` has neither, and without this the only way to
 // give a self-hosted agent a tool was the hand-written map `agent()` refuses.
 export { withToolsDir } from "./tools-dir.ts";
-export type {
-  // `PipelineTransportOptions.skipGreeting` names this. That options type is on
-  // `@alexkroman1/aai-runtime/internal`, but the rule is unchanged: a caller
-  // passing the THUNK form — which is how a resume that recovered nothing gets
-  // greeted — would otherwise have a type to satisfy and no way to name it.
-  SkipGreetingOption,
-  // `TransportCallbacks.report` names this, so anything implementing that
-  // interface (it is on `@alexkroman1/aai-runtime/internal`) needs the other —
-  // a forgotten export here would be a type a consumer has to satisfy and has
-  // no way to import.
-  TransportEventBody,
-  TransportEventType,
-} from "./transports/types.ts";
+// `PipelineTransportOptions.skipGreeting` names this, and a caller passing the
+// THUNK form — which is how a resume that recovered nothing gets greeted —
+// would otherwise have a type to satisfy and no way to name it.
+export type { SkipGreetingOption } from "./transports/types.ts";
 // The workflow HTTP API's ADDRESSING. `createRuntimeServer` mounts the route itself,
 // so nothing outside this package has to wire one — what is exported is the
 // token's env var (the guest's deploy path reads it to decide whether a
@@ -292,19 +260,6 @@ export {
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
 } from "./workflow/api.ts";
-// The durable-workflow host side's TYPES. The client that becomes
-// `ctx.workflows`, and the DevKit binding itself, are on
-// `@alexkroman1/aai-runtime/internal`; `resolveKeyStore` is below, beside the
-// stores it chooses between.
-export type {
-  WdkAdapter,
-  WdkRunRecord,
-  // `readStream`'s options. Exported because `WdkAdapter` is: a type a public
-  // signature MENTIONS but does not export is a docs-build warning here, and
-  // warnings are errors — see the root guide's `includeForgottenExports` note.
-  WdkStreamOptions,
-  WorkflowClientOptions,
-} from "./workflow/client.ts";
 // The journal's tables, for the same reason and the same operator: a self-hosted
 // deployment owns its database and `server.mjs` may import only this surface.
 export { ensureWorkflowJournalSchema } from "./workflow/journal/schema.ts";
@@ -320,26 +275,18 @@ export {
 // platform's own index is selected by `selectKeyStore` (`workflow/runtime.ts`)
 // out of the environment, beside `selectJournal`.
 export { resolveKeyStore } from "./workflow/keys-select.ts";
-// The upload store's two blob backends and the key grammar a window is written
-// under. `createUploadStore` and `resolveUploadBlobs`, which JOIN them to a
-// record, are `@internal` and on `@alexkroman1/aai-runtime/internal` — the
-// asymmetry this package's guide records under "What writing the templates
-// found".
+// What an OPERATOR configures an upload bucket with, the record shapes a step
+// reads back, and the two failures a caller has to tell apart. The store, its
+// two blob backends, the part addressing and the table name are the PLATFORM's
+// wiring and are on `@alexkroman1/aai-runtime/internal` — no public signature
+// takes or returns one, so a contract over them promised epochs on plumbing.
 export {
-  createHttpUploadBackend,
-  createMemoryUploadBackend,
-  type HttpUploadBackendOptions,
-  partKey,
-  partsOf,
   UPLOAD_KEY_PREFIX,
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-  UPLOADS_TABLE,
-  type UploadBackend,
   type UploadMeta,
   type UploadPart,
-  type UploadStore,
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow/uploads.ts";

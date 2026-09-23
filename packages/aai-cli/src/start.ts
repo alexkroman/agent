@@ -51,8 +51,8 @@ import {
   createAgentServer,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
-  withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
+import { withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";

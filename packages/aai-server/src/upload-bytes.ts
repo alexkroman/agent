@@ -48,12 +48,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { UPLOAD_KEY_PREFIX } from "@alexkroman1/aai-runtime";
 import {
   createHttpUploadBackend,
   createMemoryUploadBackend,
-  UPLOAD_KEY_PREFIX,
   type UploadBackend,
-} from "@alexkroman1/aai-runtime";
+} from "@alexkroman1/aai-runtime/internal";
 import { StorageClient } from "@supabase/storage-js";
 import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage.ts";
 

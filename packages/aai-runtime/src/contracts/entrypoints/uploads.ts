@@ -2,8 +2,13 @@
 /**
  * Capability contract: `uploads`.
  *
- * A run's file storage: the store interface, the two blob backends, the
- * part addressing, and the two failures a caller has to tell apart.
+ * A run's file storage as an operator and a caller see it: the bucket
+ * configuration an operator sets, the record shapes a step reads back, and the
+ * two failures a caller has to tell apart.
+ *
+ * The store, its two blob backends, the part addressing and the table name are
+ * `@alexkroman1/aai-runtime/internal`'s: `createRuntimeServer` builds the store
+ * and no public signature takes or returns one.
  *
  * Re-exported from `@alexkroman1/aai-runtime`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -12,20 +17,12 @@
  */
 
 export {
-  createHttpUploadBackend,
-  createMemoryUploadBackend,
-  type HttpUploadBackendOptions,
-  partKey,
-  partsOf,
   UPLOAD_KEY_PREFIX,
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-  UPLOADS_TABLE,
-  type UploadBackend,
   type UploadMeta,
   type UploadPart,
-  type UploadStore,
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "../../runtime-barrel.ts";

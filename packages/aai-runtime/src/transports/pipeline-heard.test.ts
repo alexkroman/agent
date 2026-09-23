@@ -3,9 +3,9 @@
 // resume anchor both read. Wired-up behaviour (barge-in → history) lives in
 // pipeline-transport-barge-in.test.ts.
 
-import type { TtsWordTiming } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { createTestClock, type TestClock } from "../_pipeline-test-fakes.ts";
+import type { TtsWordTiming } from "../providers/openers.ts";
 import { createHeardTracker, type HeardTracker } from "./pipeline-heard.ts";
 
 const RATE = 24_000;

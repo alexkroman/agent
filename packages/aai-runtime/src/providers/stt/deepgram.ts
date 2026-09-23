@@ -6,15 +6,7 @@
  * socket; `socket.connect()` + `socket.waitForOpen()` establish it.
  */
 
-import {
-  createSttError,
-  DEEPGRAM_API_KEY_ENV,
-  resolveDeepgramSttSettings,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
-} from "@alexkroman1/aai/host-internal";
+import { DEEPGRAM_API_KEY_ENV, resolveDeepgramSttSettings } from "@alexkroman1/aai/host-internal";
 import type { DeepgramSttOptions } from "@alexkroman1/aai/stt";
 import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -27,6 +19,13 @@ import {
   requireApiKey,
   type SessionShell,
 } from "../_utils.ts";
+import {
+  createSttError,
+  type SttEvents,
+  type SttOpener,
+  type SttOpenOptions,
+  type SttSession,
+} from "../openers.ts";
 
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 

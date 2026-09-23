@@ -22,14 +22,14 @@ import {
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
   type Logger,
-  requiredProviderEnvVars,
-  withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
 import {
   createMemoryJournal,
   handleWorkflowRequest,
   publishStepEnv,
+  requiredProviderEnvVars,
   WORKFLOW_DATA_DIR_ENV,
+  withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";

@@ -4,35 +4,19 @@
  * lifecycle those openers share lives next door in `_socket.ts`.
  */
 
-import type { SttEvents, TtsEvents } from "@alexkroman1/aai/host-internal";
-import {
-  createSttError,
-  createTtsError,
-  STT_FRAME_MAX_MS,
-  STT_FRAME_TARGET_MS,
-} from "@alexkroman1/aai/host-internal";
+import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS } from "@alexkroman1/aai/host-internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Emitter, EventsMap, Unsubscribe } from "nanoevents";
 import { pEvent } from "p-event";
 import type WebSocket from "ws";
+import type { SttEvents, TtsEvents } from "./openers.ts";
+import { createSttError, createTtsError } from "./openers.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
 const PCM16_RATES = [
   8000, 16_000, 22_050, 24_000, 44_100, 48_000,
 ] as const satisfies readonly number[];
 export type Pcm16Rate = (typeof PCM16_RATES)[number];
-
-/**
- * Read a descriptor's typed options bag.
- *
- * The one narrowing seam every registry goes through: a descriptor carries its
- * options as `Record<string, unknown>` on the wire, and each provider entry
- * knows the shape its own factory declared. Keeping it here means ONE cast
- * rather than one per registry (see the escape-hatch ratchet in CLAUDE.md).
- */
-export function options<T>(descriptor: { options: Record<string, unknown> }): T {
-  return descriptor.options as unknown as T;
-}
 
 /** Assert `rate` is a supported PCM16 rate, else throw via `makeError`. */
 export function assertPcm16Rate(

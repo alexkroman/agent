@@ -113,7 +113,11 @@ export type McpServerStatus = {
   unavailable?: string;
 };
 
-/** What {@link withMcpTools} hands back. */
+/**
+ * What {@link withMcpTools} hands back.
+ *
+ * @sealed
+ */
 export type McpToolSurface<D> = {
   /** The definition to serve — the one passed in, plus the discovered tools. */
   agent: D;

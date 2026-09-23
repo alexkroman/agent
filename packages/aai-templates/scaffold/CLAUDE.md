@@ -1403,8 +1403,8 @@ is refused on your laptop too.
 `telephony: false` is the same refusal stated out loud, and an operator can pass
 `telephony` to `createAgentServer` to override one deployment of an agent that
 does declare a carrier. If you are embedding the runtime yourself rather than
-deploying, the pieces are `createTelephonyBridge`, `startTelephonySession`,
-`TELEPHONY_PATH` and `carrierByName`, all on `@alexkroman1/aai-runtime`.
+deploying, the pieces are `createTelephonyBridge`, `startTelephonySession` and
+`carrierByName`, all on `@alexkroman1/aai-runtime`.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.

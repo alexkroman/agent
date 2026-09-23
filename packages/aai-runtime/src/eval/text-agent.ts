@@ -138,15 +138,14 @@
  */
 
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
-import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { ModelMessage } from "ai";
+import type { HostAgentOptions } from "../host-agent-options.ts";
 import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
-import { type Logger, silentLogger } from "../runtime-config.ts";
+import { silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { assertTurnMeasurable } from "./_turn-faults.ts";
@@ -188,25 +187,26 @@ export function evalTextCredentials(
   return { env, ...credentialVerdict(name.length > 0 && !env[name] ? [name] : []) };
 }
 
-/** What {@link openEvalTextAgent} takes. */
-export type EvalTextAgentOptions = {
-  /** The agent under eval. Must declare `text: true`. */
-  readonly agent: AgentDef;
+/**
+ * What {@link openEvalTextAgent} takes.
+ *
+ * The fields every way of running an agent shares are {@link HostAgentOptions};
+ * here `agent` must declare `text: true`, and the rest mean what they mean on
+ * `EvalSessionOptions`: `providerEnv` defaults to `env` with any credential it
+ * does not carry filled in from this machine's own environment (a value in
+ * `env` always wins over the shell), `runCode` absent makes the builtin refuse
+ * exactly as it does off-platform, `fetch` keeps a case off the network,
+ * `toolTimeoutMs` defaults to the executor's 30s voice-turn budget — which a
+ * text agent whose tools type-check a workspace or install packages will
+ * outrun — and `logger` defaults to silent.
+ */
+export interface EvalTextAgentOptions extends HostAgentOptions {
   /**
    * The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
    * empty: a tool that needs a value gets it here, and nothing is inherited
    * implicitly.
    */
   readonly env?: Record<string, string>;
-  /**
-   * Where provider credentials are resolved from. Defaults to
-   * {@link EvalTextAgentOptions.env} with any credential it does not carry
-   * filled in from this machine's own environment — the same trust decision
-   * `openEvalSession` makes, for the same reason: an eval runs on the
-   * developer's box against their own key. A value passed in `env` always wins
-   * over the shell.
-   */
-  readonly providerEnv?: ProviderEnv;
   /**
    * Override the LLM the case runs on. Defaults to the agent's own.
    *
@@ -216,33 +216,15 @@ export type EvalTextAgentOptions = {
    * see the module doc on why that is what makes the keyless fallback honest.
    */
   readonly llm?: LlmProvider;
-  /**
-   * Backs the `run_code` builtin. Without one the builtin is registered and
-   * permanently refuses, exactly as it does off-platform — the Modal container
-   * is the security boundary and nothing here pretends otherwise.
-   */
-  readonly runCode?: RunCodeExecutor;
-  /**
-   * The `fetch` the builtin web tools use. Pass one to keep a case off the
-   * network — a scripted `visit_webpage` really visits.
-   */
-  readonly fetch?: typeof globalThis.fetch;
-  /**
-   * Per-tool-call deadline. Defaults to the executor's own (30s, a voice-turn
-   * budget), which a text agent whose tools type-check a workspace or install
-   * packages will outrun — and then the case measures the deadline instead of
-   * the agent.
-   */
-  readonly toolTimeoutMs?: number;
-  /** `ctx.workflows` for this conversation — what a tool that starts a run calls. */
-  readonly workflows?: WorkflowClient | undefined;
   /** How long one turn may take before it is cancelled. Defaults to 90s. */
   readonly turnTimeoutMs?: number;
-  /** Defaults to silent. Pass `consoleLogger` when diagnosing a case. */
-  readonly logger?: Logger;
-};
+}
 
-/** One live eval conversation with a text agent. */
+/**
+ * One live eval conversation with a text agent.
+ *
+ * @sealed
+ */
 export type EvalTextAgent = {
   /**
    * This conversation's id — what its tools read as `ctx.sessionId`.

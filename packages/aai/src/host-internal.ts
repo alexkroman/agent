@@ -208,23 +208,6 @@ export {
   RIME_KIND,
   resolveRimeTtsSettings,
 } from "./sdk/providers/tts/rime.ts";
-export {
-  createSttError,
-  createTtsError,
-  type SttError,
-  type SttEvents,
-  type SttOpener,
-  type SttOpenOptions,
-  type SttSession,
-  type SttTurnMeta,
-  type TtsError,
-  type TtsEvents,
-  type TtsOpener,
-  type TtsOpenOptions,
-  type TtsSession,
-  type TtsWordTiming,
-  type Unsubscribe,
-} from "./sdk/providers.ts";
 export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./sdk/s2s-constants.ts";
 export { isConvertibleSchema, toToolJsonSchema } from "./sdk/schema.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";

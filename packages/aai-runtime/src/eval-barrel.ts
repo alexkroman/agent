@@ -218,14 +218,39 @@ export {
   evalWorkflowCredentials,
   openEvalWorkflows,
 } from "./eval/workflows.ts";
-// The two types `EvalSessionOptions` names and this subpath did not publish, so
-// a case that wanted to hold either field in a variable — a shared `generate`
-// double, a `logger` that collects lines for an assertion — could pass one and
-// not name it. `Logger` is the same declaration `@alexkroman1/aai-runtime`
-// exports, re-exported rather than redeclared, on the principle the
-// `host-internal` line above already applies: a subpath names the types of its
-// own options.
+// `Logger` is what `EvalSessionOptions.logger` takes, so a case holding a logger
+// that collects lines for an assertion can name it — the same declaration
+// `@alexkroman1/aai-runtime` exports, re-exported rather than redeclared, on the
+// principle the `host-internal` line above already applies: a subpath names the
+// types of its own options. `HostGenerateFn` was `EvalSessionOptions.generate`'s
+// type; that field is host-only now (`HostEvalSessionOptions`), and the type
+// stays published because a retained epoch's frozen case still names it.
 export type { HostGenerateFn } from "./generate.ts";
+// What both eval option bags EXTEND. Owned by the `runtime` capability (it is
+// on the root barrel, beside `RuntimeOptions`, which extends it too); re-exported
+// here so a case can name what its options inherit without importing the root,
+// for the node-types reason above.
+export type { HostAgentOptions } from "./host-agent-options.ts";
+// The opener contract those stubs implement. Owned by the `providers`
+// capability, on the root barrel beside `registerSttKind`; re-exported here
+// because the stubs' own signatures name it — it is declared in this package
+// now rather than in the SDK, so a subpath that published the stubs without it
+// published a type a harness author could not write down.
+export type {
+  SttError,
+  SttEvents,
+  SttOpener,
+  SttOpenOptions,
+  SttSession,
+  SttTurnMeta,
+  TtsError,
+  TtsEvents,
+  TtsOpener,
+  TtsOpenOptions,
+  TtsSession,
+  TtsWordTiming,
+  Unsubscribe,
+} from "./providers/openers.ts";
 export type { LogContext, LogFn, Logger, LogLevel } from "./runtime-config.ts";
 // `HostGenerateFn`'s `onUsage` takes one, so a case holding that callback in a
 // variable has to be able to write its parameter type — the same rule the

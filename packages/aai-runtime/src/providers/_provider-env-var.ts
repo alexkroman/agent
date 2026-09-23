@@ -8,6 +8,7 @@
  * provider or reads a key: it answers a NAME.
  */
 
+import type { AgentDef } from "@alexkroman1/aai";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { llmEntryFor } from "./_llm-registry.ts";
 
@@ -65,3 +66,27 @@ export function llmProviderEnvVar(descriptor: LlmProvider): string {
   const entry = llmEntryFor(descriptor);
   return entry === undefined ? (descriptorEnvVar(descriptor) ?? "") : envVarOf(entry, descriptor);
 }
+
+/**
+ * What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor
+ * slots and its front door.
+ *
+ * The descriptors are `object` rather than `SttProvider` and its kin, and
+ * deliberately. The CLI's deploy preflight hands in a bundle's `__aaiConfig`,
+ * written by whichever SDK version BUILT the bundle — so a descriptor here may
+ * name a kind, or carry an options shape, that this build has never seen, and
+ * `descriptorKind` reads the `kind` off it at run time instead. It used to be
+ * spelled `{ kind: string } | object`, a union `object` alone already covers.
+ * `page` is the SDK's own type, so the front door has one spelling.
+ */
+export type ProviderEnvVarsQuery = {
+  stt?: object | undefined;
+  llm?: object | undefined;
+  tts?: object | undefined;
+  s2s?: object | undefined;
+  /**
+   * The agent's front door (`AgentDef.page`). A `"static"` one needs no
+   * provider credential at all — see the first branch.
+   */
+  page?: AgentDef["page"] | undefined;
+};

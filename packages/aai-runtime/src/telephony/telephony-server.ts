@@ -27,7 +27,6 @@
 
 import type http from "node:http";
 import type { Duplex } from "node:stream";
-import type { TelephonyAccess } from "@alexkroman1/aai";
 import { requestPath, requestQuery, TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import type { WebSocketServer } from "ws";
 import type { Logger } from "../runtime-config.ts";
@@ -59,11 +58,13 @@ export const CARRIER_PARAM = "carrier";
  *
  * @internal
  */
-export function enabledCarriers(access: TelephonyAccess | undefined): readonly CarrierName[] {
+export function enabledCarriers(
+  access: boolean | readonly CarrierName[] | undefined,
+): readonly CarrierName[] {
   if (access === undefined || access === false) return [];
   // The SDK's list rather than `Object.keys(CARRIER_CODECS)`: the two are the
-  // same set by the `satisfies` in `carriers.ts`, and this one is typed as the
-  // names instead of as `string[]`, so the filter below needs no cast.
+  // same set by the `satisfies` in `carriers.ts`. A declaration is a list of
+  // plain names (`CarrierName` is `string`), so this filter IS the validation.
   if (access === true) return TELEPHONY_CARRIERS;
   const asked = new Set<string>(access);
   return TELEPHONY_CARRIERS.filter((name) => asked.has(name));

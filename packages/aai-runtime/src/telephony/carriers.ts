@@ -191,8 +191,19 @@ export const CARRIER_CODECS = {
   telnyx: telnyxCodec,
 } as const satisfies Record<TelephonyCarrier, CarrierCodec>;
 
-/** A carrier name this build can serve. */
-export type CarrierName = keyof typeof CARRIER_CODECS;
+/**
+ * A carrier's name — the `?carrier=` value, and what a `telephony` declaration
+ * lists.
+ *
+ * `string` rather than `keyof typeof CARRIER_CODECS`, which was a CLOSED union
+ * on a published type: every carrier this build learned to frame would have
+ * been a changed union, i.e. a breaking change to a type an embedder only
+ * passes in. Which names this build can actually serve is decided at run time,
+ * where it has to be anyway — {@link carrierByName} answers null for an unknown
+ * one and the server refuses the upgrade naming it, and a declaration naming a
+ * carrier with no codec here is dropped rather than refused (`enabledCarriers`).
+ */
+export type CarrierName = string;
 
 /**
  * The codec for a `?carrier=` value.

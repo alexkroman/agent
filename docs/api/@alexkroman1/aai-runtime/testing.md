@@ -350,6 +350,19 @@ cross-copy `instanceof` is false for an error the other copy constructed.
 
 Session-fixed configuration for `createTextAgent`.
 
+The fields every way of running an agent shares are [HostAgentOptions](eval.md#hostagentoptions).
+Here: `agent` must declare `text: true`; `providerEnv` defaults to `env`, split
+for the reason `RuntimeOptions` splits them (a host-fallback env may resolve a
+model and must never become `ctx.env`); an absent `workflows` substitutes a
+client that rejects with the reason; `fetch` is for tests (see
+`BuiltinToolOptions`); `logger` defaults to `consoleLogger`; and a text agent
+whose tools install packages or type-check a workspace wants a larger
+`toolTimeoutMs` than the 30s voice-turn default.
+
+#### Extends
+
+- [`HostAgentOptions`](eval.md#hostagentoptions)
+
 #### Properties
 
 ##### agent
@@ -358,7 +371,11 @@ Session-fixed configuration for `createTextAgent`.
 agent: AgentDef;
 ```
 
-The agent definition. Must declare `text: true`.
+The agent to run — an ordinary `agent()` definition.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`agent`](eval.md#agent-2)
 
 ##### db?
 
@@ -389,7 +406,9 @@ optional fetch?: {
 };
 ```
 
-Override the builtins' fetch. Tests only — see `BuiltinToolOptions`.
+The `fetch` the builtin web tools use (web_search, visit_webpage,
+get_page_design, fetch_json). Defaults to an SSRF-screened fetch. Pass one
+to keep a spec or an eval case off the network.
 
 ###### Call Signature
 
@@ -435,13 +454,21 @@ Override the builtins' fetch. Tests only — see `BuiltinToolOptions`.
 
 `Promise`\<`Response`\>
 
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`fetch`](eval.md#fetch-2)
+
 ##### logger?
 
 ```ts
 optional logger?: Logger;
 ```
 
-Defaults to `consoleLogger`.
+Structured logger. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`logger`](eval.md#logger-2)
 
 ##### model?
 
@@ -493,9 +520,17 @@ per turn — which is what `runTextAgent` does.
 optional providerEnv?: ProviderEnv;
 ```
 
-Env used for provider-credential resolution only. Defaults to `env`.
-Split for the same reason `RuntimeOptions` splits them: a host-fallback
-env may resolve a model and must never become `ctx.env`.
+Where provider credentials (STT/TTS/LLM) are resolved from, when that is
+not the agent's own env.
+
+Exists so a host can let shell-exported credentials reach the provider
+resolvers without also placing them in `ctx.env`, where agent tool code
+could read them and come to depend on host-level variables that do not
+exist in production. Each entry point documents its own default.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`providerEnv`](eval.md#providerenv-2)
 
 ##### runCode?
 
@@ -503,7 +538,14 @@ env may resolve a model and must never become `ctx.env`.
 optional runCode?: RunCodeExecutor;
 ```
 
-In-sandbox `run_code` executor, for an agent that enables that builtin.
+In-sandbox executor for the `run_code` builtin. Without one the builtin is
+registered and permanently refuses, exactly as it does off-platform — the
+Modal container is the security boundary and nothing here pretends
+otherwise.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`runCode`](eval.md#runcode-2)
 
 ##### sessionId?
 
@@ -521,9 +563,15 @@ which is what makes a slot mean the same thing here as in a session.
 optional toolTimeoutMs?: number;
 ```
 
-Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS`
-(30s), which is a voice-turn budget; a text agent whose tools install
-packages or type-check a workspace wants a larger one.
+Per-tool-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
+which is a VOICE-turn budget: a caller waiting on speech has left by then.
+A tool whose work legitimately outruns it — a graded retrieval loop making
+eleven model calls, measured at 22-30s — needs this raised, and that is the
+caller's trade to make.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`toolTimeoutMs`](eval.md#tooltimeoutms-2)
 
 ##### workflows?
 
@@ -531,7 +579,18 @@ packages or type-check a workspace wants a larger one.
 optional workflows?: WorkflowClient;
 ```
 
-`ctx.workflows`. Absent substitutes a client that rejects with the reason.
+`ctx.workflows`, supplied rather than built — what a tool that starts a
+durable run calls.
+
+Absent, a workflow-declaring agent gets the client the runtime assembles
+itself, which is what every deployment wants. An eval supplies the
+in-process client `openEvalWorkflows` builds, because a `"use workflow"`
+body imported through a test runner was never through the compiler's
+transform and the real engine cannot start it.
+
+###### Inherited from
+
+[`HostAgentOptions`](eval.md#hostagentoptions).[`workflows`](eval.md#workflows-2)
 
 ***
 
@@ -2624,3 +2683,9 @@ How many deliveries one run may take before the driver gives up.
 Generous — a template's longest body suspends twice — and low enough that a
 body woken in a loop fails in milliseconds with a message naming the bound
 rather than hanging until the runner's own timeout, which reports the runner.
+
+## References
+
+### HostAgentOptions
+
+Re-exports [HostAgentOptions](eval.md#hostagentoptions)
