@@ -1141,6 +1141,8 @@
     "SESSION_UNAUTHORIZED_CLOSE_CODE",
     "ServerSession",
     "SessionAuthOptions",
+    "SessionConnectOptions",
+    "SessionConnection",
     "SessionEventPage",
     "SessionEventStream",
     "SessionIdentity",

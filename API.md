@@ -11467,6 +11467,7 @@ type RunStatus = WorkflowRunStatus;
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
+    connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
     createSession(options: {
         id: string;
         agent: string;
@@ -11570,6 +11571,19 @@ export type SessionAuthOptions = {
     verify?: SessionVerifier | undefined;
     allowedOrigins?: readonly string[] | undefined;
 };
+
+// @public
+export type SessionConnection = {
+    readonly id: string;
+    readonly readyConfig: ReadyConfig;
+    sendAudio(pcm16: Uint8Array): void;
+    sendCommand(command: SessionCommand): void;
+    close(): void;
+    readonly ended: Promise<void>;
+};
+
+// @public
+export type SessionConnectOptions = Pick<SessionStartOptions, "skipGreeting" | "resumeFrom" | "logContext" | "onSessionEnd" | "audioLeadMs">;
 
 // @public
 export type SessionEventPage = {
