@@ -61,7 +61,7 @@ supabase/.branches/
 # Scenario-test fixture (`dev-workflow.scenario.test.ts`): written inside the
 # package because both bundlers resolve `workflow` by walking up from the
 # project, and removed in the test's `afterAll`. Present only mid-run.
-packages/aai-cli/.dev-workflow-fixture/
+packages/aai-cli/src/.dev-workflow-fixture/
 
 # This checkout's packed SDK, staged into the guest image's build context by
 # `scripts/build-guest-image.mjs` for a LOCAL build. Build output, not source —

@@ -609,6 +609,21 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   nothing until it broke, and `check:publish-protocols` structurally cannot
   cover it — see "`check:scaffold` exists because the sync ran only during a
   release" in `packages/aai-templates/CLAUDE.md`.
+- **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
+  template, plus the scaffold's `server.mjs`, `global.d.ts` and two configs,
+  compiled under the tsconfig `aai init` ships (derived at run time by
+  `_scaffold-tsc.mjs`, never copied). **It runs TWICE**: that config verbatim,
+  then with `exactOptionalPropertyTypes: true` overlaid. The second pass exists
+  because `_api-contracts-compat.mjs` proves an epoch revision compatible
+  under that flag, while nothing compiled a real consumer under it — so a
+  published optional field that rejects an explicit `undefined` passed every
+  gate and broke only the user who turned the flag on. It is an OVERLAY, not a
+  scaffold setting: flipping it in `scaffold/tsconfig.json` ships it into every
+  user project, a product call rather than a gate's. `noUncheckedIndexedAccess`
+  needs no second pass — the scaffold already sets it. Both passes were clean
+  when the second landed; a canary `{ a?: number } = { a: undefined }` in a
+  template fails only the strict one. When the strict pass fails inside an SDK
+  type, fix the PUBLISHED type (`?: T | undefined`), not the template.
 
 **Every gate whose success output is a COUNT now carries a floor**, set from
 the measured actual and recorded beside it, because a scan that stops matching

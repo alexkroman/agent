@@ -39,54 +39,88 @@
 import path from "node:path";
 import { REPO_ROOT, runScaffoldTsc, SCAFFOLD_DIR } from "./_scaffold-tsc.mjs";
 
-const result = runScaffoldTsc({
-  name: "template-types",
-  // `types` differs on purpose: a scaffolded project resolves `vitest/globals`
-  // from its own install, and template tools use `node` builtins. Everything
-  // that decides whether a given file type-checks — strictness, target, lib,
-  // jsx — comes from the scaffold untouched.
-  overrides: { types: ["vitest/globals", "node"], allowJs: true, checkJs: true },
-  include: [
-    path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.ts"),
-    path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.tsx"),
-    // Carries the triple-slash reference to vite's client types, without
-    // which every `?raw` and `.css` import in a template is an unresolved
-    // module. (Spelled out rather than quoted: knip parses a verbatim
-    // reference directive in a comment as a real dependency.)
-    path.join(SCAFFOLD_DIR, "global.d.ts"),
-    // The shipped server entrypoint. Named as a FILE rather than a `*.mjs` glob:
-    // the scaffold holds exactly one, and a glob would silently start checking
-    // whatever else lands beside it under a config chosen for this file.
-    path.join(SCAFFOLD_DIR, "server.mjs"),
-    // The scaffold's two shipped CONFIGS, for the reason `server.mjs` is here:
-    // a user gets them from `aai init` and every `aai test` / `aai dev` loads
-    // them, and they were checked by NOTHING — `packages/aai-templates/tsconfig.json`
-    // deliberately stops at `src` so the scaffold is checked here instead, and
-    // here only named `global.d.ts` and `server.mjs`. Confirmed by putting
-    // `const x: number = "s"` in each and watching all four type gates stay green.
-    //
-    // `vitest.config.ts` is the one that can actually rot: it imports
-    // `@alexkroman1/aai/testing/vite` for `aaiAgentPlugin`, so a rename on OUR
-    // side of that subpath breaks every scaffolded project's test run, and this
-    // is the only place that would say so. `vite.config.ts` names
-    // `@tailwindcss/vite` and `@vitejs/plugin-react`, which is why this package
-    // now carries both — the alternative was leaving the file unchecked.
-    //
-    // Named as FILES, not a `*.config.ts` glob, for the same reason as
-    // `server.mjs`: the scaffold holds exactly these two.
-    path.join(SCAFFOLD_DIR, "vite.config.ts"),
-    path.join(SCAFFOLD_DIR, "vitest.config.ts"),
-  ],
-});
+const include = [
+  path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.ts"),
+  path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.tsx"),
+  // Carries the triple-slash reference to vite's client types, without
+  // which every `?raw` and `.css` import in a template is an unresolved
+  // module. (Spelled out rather than quoted: knip parses a verbatim
+  // reference directive in a comment as a real dependency.)
+  path.join(SCAFFOLD_DIR, "global.d.ts"),
+  // The shipped server entrypoint. Named as a FILE rather than a `*.mjs` glob:
+  // the scaffold holds exactly one, and a glob would silently start checking
+  // whatever else lands beside it under a config chosen for this file.
+  path.join(SCAFFOLD_DIR, "server.mjs"),
+  // The scaffold's two shipped CONFIGS, for the reason `server.mjs` is here:
+  // a user gets them from `aai init` and every `aai test` / `aai dev` loads
+  // them, and they were checked by NOTHING — `packages/aai-templates/tsconfig.json`
+  // deliberately stops at `src` so the scaffold is checked here instead, and
+  // here only named `global.d.ts` and `server.mjs`. Confirmed by putting
+  // `const x: number = "s"` in each and watching all four type gates stay green.
+  //
+  // `vitest.config.ts` is the one that can actually rot: it imports
+  // `@alexkroman1/aai/testing/vite` for `aaiAgentPlugin`, so a rename on OUR
+  // side of that subpath breaks every scaffolded project's test run, and this
+  // is the only place that would say so. `vite.config.ts` names
+  // `@tailwindcss/vite` and `@vitejs/plugin-react`, which is why this package
+  // now carries both — the alternative was leaving the file unchecked.
+  //
+  // Named as FILES, not a `*.config.ts` glob, for the same reason as
+  // `server.mjs`: the scaffold holds exactly these two.
+  path.join(SCAFFOLD_DIR, "vite.config.ts"),
+  path.join(SCAFFOLD_DIR, "vitest.config.ts"),
+];
 
-if (result.ok) {
-  console.log("check-template-types: every template type-checks under the scaffold config. ✓");
-} else {
-  process.stdout.write(result.output);
-  console.error(
-    "\ncheck-template-types: a template does not compile under the config users get.\n" +
+// `types` differs on purpose: a scaffolded project resolves `vitest/globals`
+// from its own install, and template tools use `node` builtins. Everything
+// that decides whether a given file type-checks — strictness, target, lib,
+// jsx — comes from the scaffold untouched.
+const overrides = { types: ["vitest/globals", "node"], allowJs: true, checkJs: true };
+
+/**
+ * Two passes. The first is the config `aai init` ships, verbatim. The second
+ * is that config plus the strictest flag a CONSUMER can turn on that the
+ * scaffold leaves off: `exactOptionalPropertyTypes`. It is the flag the
+ * capability-contract compatibility probe (`_api-contracts-compat.mjs`)
+ * compiles under, so a published type that only breaks for a user who enables
+ * it — an optional field a template legitimately fills with `undefined` — was
+ * never compiled against a real consumer anywhere.
+ *
+ * It is an OVERLAY rather than a scaffold setting on purpose: turning it on in
+ * `scaffold/tsconfig.json` ships it into every user's project, which is a
+ * product decision about how strict a beginner's first agent should be, not a
+ * gate's. `noUncheckedIndexedAccess` needs no second pass — the scaffold
+ * already sets it.
+ */
+const passes = [
+  {
+    name: "template-types",
+    label: "the scaffold config",
+    overrides,
+    hint:
       "`pnpm typecheck` can be green and this still fail — the repo's tsconfig is stricter\n" +
       "in some places and LOOSER in others (evolving-array inference, catch variables).",
+  },
+  {
+    name: "template-types-strict",
+    label: "the scaffold config + exactOptionalPropertyTypes",
+    overrides: { ...overrides, exactOptionalPropertyTypes: true },
+    hint:
+      "A consumer who enables the flag gets this error. When it points at an SDK type (an\n" +
+      "optional field a caller legitimately passes `undefined` to), fix the PUBLISHED type\n" +
+      "(`?: T | undefined`) rather than working around it in the template.",
+  },
+];
+
+for (const pass of passes) {
+  const result = runScaffoldTsc({ name: pass.name, overrides: pass.overrides, include });
+  if (result.ok) {
+    console.log(`check-template-types: every template type-checks under ${pass.label}. ✓`);
+    continue;
+  }
+  process.stdout.write(result.output);
+  console.error(
+    `\ncheck-template-types: a template does not compile under ${pass.label}.\n${pass.hint}`,
   );
   process.exitCode = 1;
 }
