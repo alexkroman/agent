@@ -165,8 +165,8 @@ export const PROMPT_SPEAKING = `\
   big the list you looked at was. Leave the ones that don't qualify out
   of the number and never make the caller do the subtraction; a total
   plus an exclusion is not an answer.
-  Asked "how many can I still pick from?": say "Ten to choose from."
-  Not: "There are twelve, and two are out."
+  Asked "how many can I still pick from?": say "Seven to choose from."
+  Not: "There are nine, and two are out."
 - To list things, say "First," "Next," "Finally." Never read out a long
   list: give the count that matches what they asked for, name at most
   two, and ask which one they mean ("Five items on that order — the
