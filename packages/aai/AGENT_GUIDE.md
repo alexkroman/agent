@@ -49,6 +49,12 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    the plugin that serves it; a scaffolded project already has it. For a runner
    that is not vitest, `deployedAgent` on `@alexkroman1/aai/testing` is the same
    thing written out.
+
+   **Call a tool with `runTool(tool, args, ctx)`** (`/testing`): passed the tool
+   itself, the result is typed by its `execute` — no `as` cast (the
+   `runTool(agent, "name", …)` form answers `unknown`). `expectDeployable(agentDef)`
+   runs the build's checks and returns a `DeployedConfig` (`name`,
+   `systemPrompt`, `mode`, `builtinTools`, …) to assert on.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
    Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
@@ -777,12 +783,11 @@ Five things worth knowing:
 - **Racing the two WORKS, and is still not how to put a deadline on a wait.** A
   wait no longer unwinds the stack — it hands back a promise that never settles
   — so the body reaches every wait a `race` or an `all` puts in front of it and
-  the run suspends once, on the earliest deadline among them. Reach for a race
-  when the two waits are genuinely independent (a review window beside a retry
-  backoff). For a deadline ON a wait, use `timeoutMs`: it is journaled WITH the
-  hook, so one decision fixes the window, and its timeout arm CLOSES the hook
-  before the body continues — a race has no such moment, and a signal landing
-  just after it would make the next replay answer a window this one timed out.
+  the run suspends once, on the earliest deadline among them. Race only waits
+  that are independent. For a deadline ON a wait, use `timeoutMs`: it is
+  journaled WITH the hook, and its timeout arm CLOSES the hook before the body
+  continues — a race has no such moment, so a late signal could change a window
+  already timed out.
 - **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
   which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
   wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
@@ -790,12 +795,10 @@ Five things worth knowing:
 - **A SUSPEND is not free, so `ctx.sleep` is not a `setTimeout`.** A wait costs
   a journal write to record it, a queued delivery to bring the run back, and a
   fresh WALK of the body — measured on a deployed agent at roughly a second of
-  overhead around the sleep itself, on top of whatever you asked for. There is a
-  cliff at the bottom of the range worth knowing about: a sleep shorter
-  than the round trip that records it never suspends AT ALL — `ctx.sleep("beat",
-  100)` and `ctx.sleep("beat", 0)` are both simply free — while anything longer
-  pays the whole cost. Measured, `nap(100)` and `nap(0)` came back within 30 ms
-  of each other on a run whose total was 2.1 s.
+  overhead around the sleep itself, on top of whatever you asked for. A sleep
+  shorter than the round trip that records it never suspends AT ALL —
+  `ctx.sleep("beat", 100)` is as free as `0` — while anything longer pays the
+  whole cost.
 
   So a sub-second pause is not what this is for. For a short backoff inside a
   step, use an ordinary timer (`sleep` from `@alexkroman1/aai/internal`) — a step
@@ -814,8 +817,7 @@ already paid for:
 
 - **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
   over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
-  tool-side one needs a `ToolContext`, and a workflow body and its steps are
-  handed none, so a workflow app with no tools has only this one. It THROWS when
+  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS when
   the deployment cannot mint one, which a step should catch and treat as "no
   callback": a run must not fail over a missing optimization. And note
   `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
@@ -825,22 +827,19 @@ already paid for:
   callback was registered decides whether the body parks, and a body may only
   branch on values that came out of the journal. Mint inside the step's function
   — it runs once, on first execution, never on a replay — and answer
-  `{ id, callback }`. A body that re-minted on every walk could flip the branch
-  under a redeploy and then look for a `waitFor` the journal never recorded.
+  `{ id, callback }`.
 - **Keep the poll as the TIMEOUT arm.** A webhook is one HTTP POST from a third
   party with no delivery guarantee you control: the sender gives up after its own
   retry budget, a deployment may not know its public URL, and a delivery that
   lands before your body reaches its wait is answered `404` and dropped. So read
   the state before you park and again after, give the wait a `timeoutMs`, and let
-  an unanswered window fall through to the read. A run that hangs forever on a
-  dropped delivery is strictly worse than one that polls.
+  an unanswered window fall through to the read.
 - **Wait for the EDGE, not the answer.** Treat the payload as "something
   happened, go look" and get the fact from the far side's own API under your own
   credential. That is what makes an unauthenticated callback route safe: a forged
-  delivery on a guessed token costs one extra read and changes no outcome. It
-  holds by construction, where a shared secret holds only until somebody has to
-  rotate it — and the route authorizes on the TOKEN and reads no other header, so
-  a sender's own auth-header option would be sent and ignored.
+  delivery on a guessed token costs one extra read and changes no outcome. The
+  route authorizes on the TOKEN and reads no other header, so a sender's own
+  auth-header option is ignored.
 - **One token, ONE `waitFor` per run.** A token is claimed for the life of its
   run and given back when the run goes terminal, so a second `ctx.waitFor` on the
   same token — a wait written inside a loop — THROWS. A throw is not a suspend,
@@ -848,10 +847,8 @@ already paid for:
   Park once, outside the loop.
 - **You cannot test it under `aai dev` without a tunnel.** `publicUrl` there is
   `http://localhost:<backend port>`, which no third party can reach — so the
-  delivery never arrives, the run silently takes the fallback, and the webhook
-  half of your code is exercised by nothing. `PUBLIC_URL=https://<your tunnel>
-  pnpm dev` is what makes it reachable. Until you set it, treat local runs as
-  coverage of the backstop only.
+  delivery never arrives and the run silently takes the fallback.
+  `PUBLIC_URL=https://<your tunnel> pnpm dev` is what makes it reachable.
 
 ### Testing a workflow body
 
@@ -1625,12 +1622,21 @@ ctx.slots: SlotStore                           // where sessionSlot() keeps this
                                                // reach for the slot, never this (see "Session state")
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
-ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
+ctx.send(event, data): void                    // push custom event to browser client (dropped over 64 KB JSON);
+                                               // typed per event by ClientEventMap (below), else `unknown`
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
                                                // with a `schema`, `object` is REQUIRED and typed by it
 ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
                                                // context window (see "Subagents")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+```
+
+**Declare an event's payload once** and every `ctx.send` of it is checked:
+
+```ts
+declare module "@alexkroman1/aai" {
+  interface ClientEventMap { "order.progress": { done: number; total: number } }
+}
 ```
 
 **Pass `ctx.signal` to anything slow.** It is always present — no `?.`
@@ -1674,8 +1680,7 @@ const [picks, set] = useState<Pick[]>([]);  // ✅
 ```
 
 Annotating the *use* instead does not help — the declaration is still wrong,
-so the next push reports the next line, and you can burn a whole session
-fixing one call site at a time.
+so the next push just reports the next line.
 
 ### Session state
 
@@ -1746,6 +1751,8 @@ Four rules, and each is an error rather than advice if you get it wrong:
 
 There is nothing to declare on `agent()` — the slot owns its own default. Use
 `syncState: slot.projection(view)` to show state to a custom client.
+`slot.snapshot(ctx)` returns a mutable deep copy of the value — what a spec
+hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain
@@ -1883,12 +1890,13 @@ export default agent({ name: "Front Desk", personas: desk });
 ```
 
 The roster mints one `handoff` tool the model routes with, described by each
-persona's `description`. A tool body hands off in code with
-`desk.handoff(ctx, billing, { note })` and returns the result; the same turn
-continues as the new persona. A persona's `tools` (a map) refuse at
-execution while another persona speaks, naming who is and how to hand off.
-`tools/` and `system-prompt.md` hold under every persona; a dialog state pins one
-with `persona`. Example: `front-desk-agent`.
+persona's `description`. A tool body hands off in code with `desk.handoff(ctx,
+billing, { note })` and returns the result; the same turn continues as the new
+persona. The target may be a name, and names are INFERRED: `desk.handoff(ctx,
+"biling")` does not compile. A persona's `tools` (a map) refuse at execution
+while another persona speaks, naming who is and how to hand off. `tools/` and
+`system-prompt.md` hold under every persona; a dialog state pins one with
+`persona`. Example: `front-desk-agent`.
 
 ### A tool that calls an API
 
