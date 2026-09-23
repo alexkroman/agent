@@ -19,6 +19,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { authoringSurface } from "./_api-contracts.mjs";
+import { checkOwnership, ownershipFindings } from "./_api-contracts-ownership.mjs";
+import { checkBranch, checkEpochs } from "./_api-contracts-staleness.mjs";
 import {
   authoringSubpaths,
   capabilityId,
@@ -26,11 +28,13 @@ import {
   FIXTURE_PLACEHOLDER,
   fixturePath,
   internalDestination,
-  readEpoch,
+  latestEpoch,
   readInternalSurface,
   rel,
 } from "./_api-contracts-tree.mjs";
 import { compareNames } from "./_api-surface.mjs";
+
+export { classify } from "./_api-contracts-staleness.mjs";
 
 /** Findings for one run. Reset by `runChecks`, appended to by every check. */
 let issues = [];
@@ -59,8 +63,14 @@ function checkCapabilitySet(pkg, table, present) {
   return false;
 }
 
-/** The `supported` list names real epochs, once each, including the current one. */
-function checkSupported(where, current, supported) {
+/**
+ * The `supported` list names real epochs, once each, including the current one.
+ *
+ * `latest` is not always `current`: a `--bump` whose hash equals a supported
+ * epoch's points `current` BACK at it rather than minting a copy, so epochs
+ * newer than `current` can exist, each classified like any other.
+ */
+function checkSupported(where, current, supported, latest) {
   let ok = true;
   if (!supported.includes(current)) {
     fail(`${where} does not list its current epoch ${current} as supported.`);
@@ -71,20 +81,20 @@ function checkSupported(where, current, supported) {
     ok = false;
   }
   for (const version of supported) {
-    if (!Number.isInteger(version) || version < 1 || version > current) {
-      fail(`${where} lists supported epoch ${version}, which is not in 1..${current}.`);
+    if (!Number.isInteger(version) || version < 1 || version > latest) {
+      fail(`${where} lists supported epoch ${version}, which is not in 1..${latest}.`);
       ok = false;
     }
   }
   return ok;
 }
 
-/** Every drop names a historical epoch and says why. */
+/** Every drop names a non-current epoch and says why. */
 function checkDropped(where, current, dropped) {
   let ok = true;
   for (const [version, reason] of Object.entries(dropped)) {
-    if (Number(version) >= current || Number(version) < 1) {
-      fail(`${where} drops epoch ${version}; only epochs before ${current} can be dropped.`);
+    if (Number(version) === current || Number(version) < 1 || !Number.isInteger(Number(version))) {
+      fail(`${where} drops epoch ${version}; only a real, non-current epoch can be dropped.`);
       ok = false;
     }
     if (typeof reason !== "string" || reason.trim() === "") {
@@ -95,10 +105,11 @@ function checkDropped(where, current, dropped) {
   return ok;
 }
 
-/** Each historical epoch is classified exactly once — supported or dropped. */
-function checkClassification(where, current, supported, dropped) {
+/** Each non-current epoch is classified exactly once — supported or dropped. */
+function checkClassification(where, current, supported, dropped, latest) {
   let ok = true;
-  for (let version = 1; version < current; version += 1) {
+  for (let version = 1; version <= latest; version += 1) {
+    if (version === current) continue;
     const isSupported = supported.includes(version);
     const isDropped = Object.hasOwn(dropped, version);
     if (isSupported === isDropped) {
@@ -123,9 +134,10 @@ function checkTable(pkg, table, present) {
       ok = false;
       continue;
     }
-    ok = checkSupported(where, current, supported) && ok;
+    const latest = latestEpoch({ current, supported, dropped });
+    ok = checkSupported(where, current, supported, latest) && ok;
     ok = checkDropped(where, current, dropped) && ok;
-    ok = checkClassification(where, current, supported, dropped) && ok;
+    ok = checkClassification(where, current, supported, dropped, latest) && ok;
   }
   return ok;
 }
@@ -139,7 +151,8 @@ function checkTable(pkg, table, present) {
  * without a git archaeology session.
  */
 function checkInventory(pkg, table) {
-  for (const [capability, { current }] of Object.entries(table)) {
+  for (const [capability, contract] of Object.entries(table)) {
+    const current = latestEpoch(contract);
     const dir = dirname(epochPath(pkg, capability, 1));
     const expected = Array.from({ length: current }, (_, index) => `v${index + 1}.json`).sort();
     const actual = existsSync(dir)
@@ -196,52 +209,6 @@ function checkFixtures(pkg, table) {
         );
       }
     }
-  }
-}
-
-/** Added and removed export names between two epochs, and what they imply. */
-export function classify(previous, next) {
-  const before = new Set(previous);
-  const after = new Set(next);
-  const removed = previous.filter((name) => !after.has(name));
-  const added = next.filter((name) => !before.has(name));
-  let bump = "patch or minor";
-  if (removed.length > 0) bump = "major";
-  else if (added.length > 0) bump = "minor";
-  return { added, removed, bump };
-}
-
-/** The generated report for each capability still matches its current epoch. */
-function checkEpochs(pkg, table, reports) {
-  for (const [capability, { current }] of Object.entries(table)) {
-    const generated = reports.get(capability);
-    if (generated === undefined) continue;
-    const path = epochPath(pkg, capability, current);
-    if (!existsSync(path)) continue; // checkInventory already reported it.
-    const committed = readEpoch(pkg, capability, current);
-    if (committed.sha256 === generated.sha256) continue;
-
-    const id = capabilityId(pkg, capability);
-    const { added, removed, bump } = classify(committed.exports ?? [], generated.exports);
-    const detail = [
-      removed.length > 0 ? `  removed: ${removed.join(", ")}` : "",
-      added.length > 0 ? `  added:   ${added.join(", ")}` : "",
-      added.length === 0 && removed.length === 0
-        ? "  the export list is unchanged, so this is a SIGNATURE change — read the report diff"
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    fail(
-      `The "${id}" capability no longer matches epoch ${current}.\n${detail}\n` +
-        `  Likely changeset bump: ${bump}.\n` +
-        "  Classify it, which is the whole point of this gate:\n" +
-        `    node scripts/api-contracts.mjs --bump ${id} --retain\n` +
-        `      keeps epoch ${current} working, and obliges a frozen example that proves it.\n` +
-        `    node scripts/api-contracts.mjs --bump ${id} --drop "<reason>"\n` +
-        `      records that epoch ${current} no longer compiles, and why.`,
-    );
   }
 }
 
@@ -384,7 +351,12 @@ export function runChecks({ pkg, table, present, entries, reports }) {
   if (checkTable(pkg, table, present)) {
     checkInventory(pkg, table);
     checkFixtures(pkg, table);
-    checkEpochs(pkg, table, reports());
+    issues.push(...checkBranch(pkg, table));
+    const generated = reports();
+    issues.push(...checkEpochs(pkg, table, generated));
+    const ownership = checkOwnership(pkg, ownershipFindings(pkg, generated));
+    issues.push(...ownership.issues);
+    warnings.push(...ownership.warnings);
   }
   checkAssignment(pkg, entries);
   checkInternalSurface(pkg);

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "providers",
   "epoch": 1,
-  "sha256": "5b240ea94ce8263025899516d3477e835f7b63903545538f918773ceca12caf7",
+  "rule": 2,
+  "sha256": "40c58722955f77f8c94a6b14e2c19fff3798d2bd0b4760c1889b46b6e57a9df1",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",
@@ -26,5 +27,6 @@
     "registerTtsKind",
     "resolveLlm",
     "salvageJson"
-  ]
+  ],
+  "rollup": "1c31f86d471f330a041259b2c554df5d4579c05cdcdca6219191348dab7a323f"
 }

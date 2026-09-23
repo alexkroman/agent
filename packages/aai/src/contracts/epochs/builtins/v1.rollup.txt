@@ -1,0 +1,35 @@
+// @public (undocumented)
+export type CallOptions = {
+    fetch?: typeof globalThis.fetch;
+    signal?: AbortSignal;
+};
+
+// @public
+type DefaultToolResult = any;
+
+// @public
+export function fetchJson<T = UntypedJsonBody>(url: string | ({
+    url: string;
+    headers?: Record<string, string>;
+} & CallOptions), options?: {
+    headers?: Record<string, string>;
+} & CallOptions): Promise<T | ToolFailure>;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
+
+// @public
+export type UntypedJsonBody = Record<string, DefaultToolResult>;
+
+// @public
+export function visitWebpage<T = UntypedJsonBody>(url: string | ({
+    url: string;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;
+
+// @public
+export function webSearch<T = UntypedJsonBody>(query: string | ({
+    query: string;
+    maxResults?: number;
+} & CallOptions), options?: CallOptions): Promise<T | ToolFailure>;

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 12,
-  "sha256": "3bb0bf306b4bcdccc5ebbbd50a8514397934b9b284e827af666cb9eb688473b5",
+  "rule": 2,
+  "sha256": "1c4725722f04e0707eee30b16f068ef0d69d5f6d949faa3741a18964e2d23a3d",
   "exports": [
     "ProjectFiles",
     "RecordedSleep",
@@ -97,5 +98,6 @@
     "toolInputIssues",
     "toolOf",
     "toolRunner"
-  ]
+  ],
+  "rollup": "ea29104d03db758fe22ed85ce884719cd9316882b49f5024df657f08ea417825"
 }

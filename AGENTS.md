@@ -479,11 +479,13 @@ Four things a change to a published package owes, without reading further:
 
 - **Regenerate rather than hand-edit** — `pnpm api-report`, `pnpm docs:md`. All
   three trees are derived, and all three gates fail on a stale one.
-- **A capability whose shape moved has to be CLASSIFIED before it can land**:
-  `node scripts/api-contracts.mjs --bump <pkg>:<capability> --retain` (epoch N
-  still compiles) or `--drop "<reason>"`. Run `pnpm typecheck` FIRST — the
-  frozen examples it reddens are the older epochs to drop. Names are qualified
-  per package (`aai-ui:workflow`), and ambiguity is REFUSED, never resolved by
+- **A capability whose hash moved has to be RECORDED before it can land**:
+  `node scripts/api-contracts.mjs --update` when the check says the change is
+  provably compatible (a revision of the same epoch — no example owed), else
+  `--bump <pkg>:<capability> --drop "<reason>"` (or `--retain`, epoch N still
+  compiles, with a frozen example). Run `pnpm typecheck` FIRST — the frozen
+  examples it reddens are the older epochs to drop. Names are qualified per
+  package (`aai-ui:workflow`), and ambiguity is REFUSED, never resolved by
   precedence.
 - **A new subpath export defaults INTO all three** — each is a deny-list, so it
   fails until somebody writes down why it should be out.
@@ -495,8 +497,9 @@ Four things a change to a published package owes, without reading further:
 CONTRACT package owes. This section used to be two, "Published type signatures
 are a committed report" and "The authoring surface is versioned in epochs" —
 the titles three package guides still cite as living in the root; both are
-there under those same headings, with the `@internal`-surface ratchet, the six
-load-bearing properties of an epoch, why capabilities rather than entry points,
+there under those same headings, with the `@internal`-surface ratchet, the
+load-bearing properties of an epoch (revisions, one epoch per branch, one owner
+per hashed type), why capabilities rather than entry points,
 and the two mechanical notes.
 
 ### The authoring guide ships inside the SDK

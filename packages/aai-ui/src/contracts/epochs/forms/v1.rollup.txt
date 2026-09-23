@@ -1,0 +1,106 @@
+import type { ButtonHTMLAttributes } from 'react';
+import type { FormHTMLAttributes } from 'react';
+import type { InputHTMLAttributes } from 'react';
+import { JSX } from 'react';
+import type { ReactNode } from 'react';
+import type { SelectHTMLAttributes } from 'react';
+import type { TextareaHTMLAttributes } from 'react';
+import type { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
+
+// @public
+type ButtonSize = "default" | "lg";
+
+// @public
+type ButtonVariant = "default" | "secondary" | "ghost";
+
+// @public
+export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
+export function Field(input: {
+    label?: string | undefined;
+    hint?: string | undefined;
+    htmlFor?: string | undefined;
+    className?: string | undefined;
+    children: ReactNode;
+}): JSX.Element;
+
+// @public
+export function fieldKindFor(schema: unknown, options?: {
+    upload?: boolean | undefined;
+}): WorkflowFieldKind;
+
+// @public
+export type FieldShell = {
+    name: string;
+    label?: string | undefined;
+    hint?: string | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function FileField(input: FieldShell & {
+    read?: FileReadMode;
+    upload?: boolean;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
+export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
+
+// @public
+export type FileValue = {
+    name: string;
+    size: number;
+    type: string;
+    lastModified: number;
+    content?: string;
+};
+
+// @public
+export function Form(input: FormProps): JSX.Element;
+
+// @public
+export type FormProps = {
+    onSubmit: (values: FormValues) => void | Promise<void>;
+    error?: string | undefined;
+    children?: ReactNode;
+    className?: string | undefined;
+} & Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "className">;
+
+// @public
+export type FormValues = Record<string, unknown>;
+
+// @public
+export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
+
+// @public
+export function SelectField(input: FieldShell & {
+    options?: readonly (string | {
+        value: string;
+        label: string;
+    })[];
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
+
+// @public
+export function SubmitButton(input: {
+    children?: ReactNode;
+    pending?: boolean;
+    pendingLabel?: string;
+    size?: ButtonSize | undefined;
+    variant?: ButtonVariant | undefined;
+    className?: string | undefined;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
+
+// @public
+export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
+
+// @public
+export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
+
+// @public
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+
+// @public
+export function WorkflowFields(input: {
+    workflow?: WorkflowSummary | string | undefined;
+}): JSX.Element | null;

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "session",
   "epoch": 3,
-  "sha256": "69bbb8f71c7551d842f08ad0ac6a18865e22d6d3786ebfcc49480c77c6eca1c5",
+  "rule": 2,
+  "sha256": "9ecd6c7cff6ba09f9fc3712ae50163d92cbaf1603695a90bc319854a7ba042eb",
   "exports": [
     "SESSION_EVENTS_TOKEN_ENV",
     "ServerSession",
@@ -13,5 +14,6 @@
     "StoredSessionEvent",
     "TransportEventBody",
     "TransportEventType"
-  ]
+  ],
+  "rollup": "aa006f122cc60d863919df3146e4c4f1ec9a7fd47bd5e0f7dac113654d8788e4"
 }

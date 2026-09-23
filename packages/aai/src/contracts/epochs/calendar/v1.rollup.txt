@@ -1,0 +1,19 @@
+import { z } from 'zod';
+
+// @public
+export function addDays(iso: string, days: number): string;
+
+// @public
+export function clockTime(what?: string): z.ZodString;
+
+// @public
+export function daysBetween(from: string, to: string): number;
+
+// @public
+export function isClockTime(value: string): boolean;
+
+// @public
+export function isIsoDate(value: string): boolean;
+
+// @public
+export function isoDate(what?: string): z.ZodString;

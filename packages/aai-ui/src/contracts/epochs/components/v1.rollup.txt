@@ -1,0 +1,258 @@
+import type { ButtonHTMLAttributes } from 'react';
+import type { CSSProperties } from 'react';
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import { FunctionComponent } from 'react';
+import { JSX } from 'react';
+import { MemoExoticComponent } from 'react';
+import { ReactNode } from 'react';
+
+// @public
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+
+// @public
+export function AutoScroll(input: {
+    children: ReactNode;
+    className?: string | undefined;
+    contentClassName?: string | undefined;
+    scrollClassName?: string | undefined;
+    style?: CSSProperties | undefined;
+    initial?: "instant" | "smooth" | undefined;
+    resize?: "instant" | "smooth" | undefined;
+}): ReactNode;
+
+// @public
+export function BulletList(input: BulletListProps): ReactNode;
+
+// @public
+export type BulletListProps = {
+    items: readonly string[];
+    title?: ReactNode | undefined;
+    size?: "sm" | "base" | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export function Button(input: {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+    className?: string;
+    children?: ReactNode;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">): JSX.Element;
+
+// @public
+export type ButtonSize = "default" | "lg";
+
+// @public
+export type ButtonVariant = "default" | "secondary" | "ghost";
+
+// @public
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+export function ChatView(input: {
+    icon?: ReactNode | undefined;
+    title?: string | undefined;
+    className?: string | undefined;
+}): ReactNode;
+
+// @public
+export function ConsoleShell(input: ConsoleShellProps): ReactNode;
+
+// @public
+export type ConsoleShellProps = {
+    icon?: ReactNode | undefined;
+    title?: string | undefined;
+    state: AgentState;
+    pulsing: boolean;
+    children: ReactNode;
+    footer: ReactNode;
+    className?: string | undefined;
+};
+
+// @public
+export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
+
+// @public
+export type ControlsProps = {
+    className?: string;
+};
+
+// @public
+export function ConversationView(input: ConversationViewProps): ReactNode;
+
+// @public
+export type ConversationViewProps = {
+    renderMessage: (message: ChatMessage) => ReactNode;
+    renderTool?: ((toolCall: ToolCallInfo) => ReactNode) | undefined;
+    renderStreaming?: ((text: string) => ReactNode) | undefined;
+    renderTranscript?: ((transcript: UseUserTranscriptResult) => ReactNode) | undefined;
+    transcriptPosition?: "inline" | "below" | undefined;
+    empty?: ReactNode | undefined;
+    thinkingLabel?: string | undefined;
+    thinkingIndicator?: ReactNode | undefined;
+    thinkingClassName?: string | undefined;
+    className?: string | undefined;
+    contentClassName?: string | undefined;
+    scrollClassName?: string | undefined;
+    style?: CSSProperties | undefined;
+};
+
+// @public
+export function Facts(input: FactsProps): ReactNode;
+
+// @public
+export type FactsProps = {
+    items: readonly (string | number | false | null | undefined)[];
+    size?: "sm" | "xs" | undefined;
+    as?: "p" | "span" | undefined;
+    className?: string | undefined;
+};
+
+// @public
+export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
+
+// @public
+export type MarkdownProps = {
+    text: string;
+    variant?: MarkdownVariant;
+};
+
+// @public
+export type MarkdownVariant = "default" | "compact";
+
+// @public
+export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>>;
+
+// @public
+export type MessageListProps = {
+    className?: string;
+};
+
+// @public
+export type SessionControlAction = "start" | "toggle" | "restart" | "end";
+
+// @public
+export type SessionControlButton = {
+    action: SessionControlAction;
+    label: string;
+    onClick: () => void;
+    running: boolean;
+};
+
+// @public
+export function SessionControls(input: SessionControlsProps): ReactNode;
+
+// @public
+export type SessionControlsLabels = {
+    start: string;
+    pause: string;
+    resume: string;
+    restart: string;
+    end: string;
+};
+
+// @public
+export type SessionControlsProps = {
+    labels?: Partial<SessionControlsLabels> | undefined;
+    renderButton?: ((button: SessionControlButton) => ReactNode) | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
+export function SessionErrorBanner(input: SessionErrorBannerProps): ReactNode;
+
+// @public
+export type SessionErrorBannerProps = {
+    className?: string | undefined;
+};
+
+// @public
+export function SessionStateDot(input: SessionStateDotProps): ReactNode;
+
+// @public
+export type SessionStateDotProps = {
+    colors: Readonly<Record<AgentState, string>>;
+    labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
+    pulse?: boolean | undefined;
+    className?: string | undefined;
+    dotClassName?: string | undefined;
+    labelClassName?: string | undefined;
+};
+
+// @public
+export function SidebarLayout(input: {
+    sidebar: ReactNode;
+    children: ReactNode;
+    sidebarWidth?: string | undefined;
+    sidebarPosition?: "left" | "right" | undefined;
+    className?: string;
+}): JSX.Element;
+
+// @public
+export function StartScreen(input: {
+    children: ReactNode;
+    icon?: ReactNode | undefined;
+    title?: string | undefined;
+    subtitle?: string | undefined;
+    buttonText?: string | undefined;
+    className?: string | undefined;
+}): ReactNode;
+
+// @public
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+export function ToolCallRow(input: ToolCallRowProps): ReactNode;
+
+// @public
+export interface ToolCallRowProps {
+    children?: ReactNode;
+    className?: string | undefined;
+    detail?: ReactNode | undefined;
+    icon?: ReactNode | undefined;
+    pending?: boolean | undefined;
+    title: ReactNode;
+    variant?: ToolCallRowVariant | undefined;
+}
+
+// @public
+export type ToolCallRowVariant = "default" | "compact";
+
+// @public
+export function useCopy(): UseCopyResult;
+
+// @public
+export type UseCopyResult = {
+    copy: (text: string) => void;
+    label: (text: string, idle?: string) => string;
+    didCopy: (text: string) => boolean;
+};
+
+// @public
+export function useFlash<T>(ms?: number): UseFlashResult<T>;
+
+// @public
+export type UseFlashResult<T> = {
+    readonly value: T | null;
+    readonly flash: (value: T) => void;
+};
+
+// @public
+interface UseUserTranscriptResult {
+    partial: string | null;
+    speaking: boolean;
+    text: string;
+}

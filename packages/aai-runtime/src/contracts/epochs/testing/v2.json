@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 2,
-  "sha256": "13a800953b191ea4fee4c1da47ead11f690311f6c2e253538414194c845ea91e",
+  "rule": 2,
+  "sha256": "89cbfefff38326eedebccd8f63474b832211700d114472b218be4943e3f49ef2",
   "exports": [
     "DEFAULT_MAX_DELIVERIES",
     "DeterminismKind",
@@ -28,5 +29,6 @@
     "runTextAgent",
     "runWorkflow",
     "scriptedTextModel"
-  ]
+  ],
+  "rollup": "c6d2dda3c39c3a1ac29ad9c9319383d45c7ff01ff29919bffeec746d26b81ebc"
 }

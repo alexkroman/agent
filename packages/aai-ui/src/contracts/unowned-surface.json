@@ -1,0 +1,5 @@
+{
+  "comment": "Declarations a capability hash covers that NO capability owns. `unowned`: exported by a published subpath but selected by no capability. `forgotten`: exported by no published subpath (ae-forgotten-export). Ratchet: may shrink, never grow. See scripts/_api-contracts-ownership.mjs.",
+  "unowned": [],
+  "forgotten": []
+}

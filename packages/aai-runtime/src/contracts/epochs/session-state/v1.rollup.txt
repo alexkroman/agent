@@ -1,0 +1,56 @@
+import type { SlotStore } from '@alexkroman1/aai';
+
+// @public
+export function ensureSessionStateSchema(options: {
+    url: string;
+    logger: Logger;
+}): Promise<boolean>;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+// @public
+export type SessionStateBackend = {
+    readonly name: "memory" | "postgres" | "platform";
+    readonly durable: boolean;
+    load(sessionId: string): Promise<Map<string, string>>;
+    commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
+    discard(sessionId: string): Promise<void>;
+    appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
+    readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
+    countEvents(sessionId: string): Promise<number>;
+};
+
+// @public
+export type SessionStateStore = {
+    viewFor(sessionId: string): SlotStore;
+    hydrate(sessionId: string): Promise<void>;
+    flush(sessionId: string): Promise<void>;
+    has(sessionId: string): boolean;
+    syncSession(sessionId: string): StateSyncSession;
+    discard(sessionId: string): void;
+    clear(): void;
+    readonly backend: Pick<SessionStateBackend, "name" | "durable">;
+};
+
+// @public
+type StateSyncSession = {
+    read(key: string): unknown;
+    lastPush(): string | undefined;
+    recordPush(json: string): void;
+};
+
+// @public
+type StoredSessionEvent = {
+    index: number;
+    json: string;
+};

@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "tool",
   "epoch": 5,
-  "sha256": "5029d6295e0de9e80ce930d9dd8b7b6c8d6d881b38989a9c18200841640a195d",
+  "rule": 2,
+  "sha256": "0ecd6935277c556a1035a092783a7ddff498d5fc53047e3776abe05580e103dd",
   "exports": [
     "DefaultToolResult",
     "InferSchemaOutput",
@@ -27,5 +28,6 @@
     "requireEnv",
     "tool",
     "toolFailure"
-  ]
+  ],
+  "rollup": "2976e3bb2f94220cad2af268e01619aa4833adb6abf5abe57107a7d0b20a7423"
 }

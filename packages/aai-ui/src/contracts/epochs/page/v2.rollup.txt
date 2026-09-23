@@ -1,0 +1,31 @@
+import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { ComponentType } from 'react';
+
+// @public
+type ClientTheme = {
+    bg?: string;
+    primary?: string;
+    text?: string;
+    surface?: string;
+    border?: string;
+};
+
+// @public
+export function fetchClientConfig(platformUrl?: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+
+// @public
+export function mountPage(config?: PageConfig): PageHandle;
+
+// @public
+export type PageConfig = {
+    component?: ComponentType;
+    target?: string | HTMLElement;
+    name?: string;
+    theme?: ClientTheme;
+};
+
+// @public
+export type PageHandle = {
+    dispose(): void;
+    [Symbol.dispose](): void;
+};

@@ -1,0 +1,69 @@
+// @public
+export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
+
+// @public
+export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
+
+// @public
+export interface AssemblyAISttOptions extends ProviderCredentialOptions {
+    connectTimeoutMs?: number;
+    formatTurns?: boolean;
+    languages?: string[];
+    maxConnectRetries?: number;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    model?: "universal-3-5-pro" | string;
+    region?: "us" | "eu";
+    streamingUrl?: string;
+    voiceFocus?: "near-field" | "far-field" | "off" | string;
+    voiceFocusThreshold?: number;
+}
+
+// @public
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
+
+// @public
+export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
+
+// @public
+export interface DeepgramSttOptions extends ProviderCredentialOptions {
+    endpointing?: number;
+    language?: string;
+    model?: "nova-3" | "nova-2" | string;
+}
+
+// @public
+export function elevenLabsStt(options?: ElevenLabsSttOptions): SttProvider;
+
+// @public
+export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
+    language?: string;
+    model?: string;
+}
+
+// @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
+interface ProviderDescriptor<Kind extends string, Options> {
+    // (undocumented)
+    readonly kind: Kind;
+    // (undocumented)
+    readonly options: Options;
+}
+
+// @public
+export function sonioxStt(options?: SonioxSttOptions): SttProvider;
+
+// @public
+export interface SonioxSttOptions extends ProviderCredentialOptions {
+    languages?: readonly string[];
+    model?: string;
+}
+
+// @public
+export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};

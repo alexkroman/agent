@@ -367,15 +367,60 @@ The **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` re-exporting
 from a published subpath — get a report of their own, and what
 is committed is that report's hash plus its export list, at
-`packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` — the tree is
-PER PACKAGE, and `aai`, `aai-ui` and `aai-runtime` each have their own. When a
-capability's shape moves the
-hash stops matching and the change cannot land without being CLASSIFIED:
+`packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json`, beside the
+rollup the epoch was minted from (`v<N>.rollup.txt`, pinned by sha) — the tree
+is PER PACKAGE, and `aai`, `aai-ui` and `aai-runtime` each have their own. When
+a capability's hash moves the check FAILS, exactly like a stale API report, and
+names the command that settles it:
 
 ```sh
-node scripts/api-contracts.mjs --bump aai:tool --retain          # epoch N works
-node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # and why not
+node scripts/api-contracts.mjs --update                          # compatible: a REVISION
+node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # a break, and why
+node scripts/api-contracts.mjs --bump aai:tool --retain          # "it still compiles"
 ```
+
+**A compatible change is a REVISION, not an epoch.** 61 of the 73 bumps after
+the reset were `--retain` — nothing broke, and each still cost an epoch and a
+hand-written frozen example. So a moved hash is first put to
+`scripts/_api-contracts-compat.mjs`, which compiles the epoch's committed rollup
+and the new one as two modules plus a generated probe in the OLD module's
+scope. Per name the epoch exported: it must still be exported; a TYPE must be
+MUTUALLY assignable (old to new and new to old, under the old declaration's own
+type parameters — an author both builds these and receives them, and the rollup
+does not say which); a VALUE must be assignable new-to-old (every old call still
+type-checks; a const's literal values are widened first, matching the hash). It
+runs under `strict` + `exactOptionalPropertyTypes`, the stricter of the settings
+a consumer might use. Proven, `--update` records revision `r+1` of the SAME
+epoch with an automatic reason (`additive (checked): +Foo`) — the epoch number
+and its rollup do not move, and every revision is proven against the epoch's
+ORIGINAL rollup, so a chain of compatible steps cannot walk away from it.
+`--bump` REFUSES a change the probe proved compatible — it would mint an epoch
+for nothing.
+Additive changes pass (optional member, optional parameter, new export, widened
+parameter, narrowed return); a removed export, a required member, a changed or
+narrowed/widened union, an added required parameter, a return that provides less
+or a stricter generic constraint fails, and needs `--bump`. **Its blind spots**,
+which are why `--retain` still exists: method-shorthand members compare
+BIVARIANTLY, so a method parameter moving to a sub- or supertype is invisible; a
+type that is or contains `any` proves nothing; a type from ANOTHER package is the
+same current type on both sides (its own package's capability reports it); and
+behaviour is never checked. The safe-direction miss: a CHANGED generic
+conditional or `as`-remapped type is reported incompatible even when it is not,
+because two separate declarations of one are unrelated to the checker (an
+UNCHANGED one passes by closure identity). `packages/aai-gates/src/
+api-contracts-compat.test.ts` holds each accepted change beside the break next
+to it.
+
+**At most one epoch, and one revision, per capability per BRANCH.** One PR
+minted `aai:llm` v4→v7 with v7's hash equal to v3's. `--bump` and `--update` now
+measure against the merge-base with `origin/main` (`--base <ref|none>` overrides;
+no base falls back to the working tree): an epoch minted on this branch is
+rewritten in place, un-minted when the change turns out compatible with main's
+epoch after all, and a revision made here is replaced rather than stacked. A
+`--bump` whose hash equals a SUPPORTED epoch's points `current` BACK at it
+rather than minting a copy — so `current` may be older than the newest epoch,
+and every other epoch up to that newest one is classified as before. The check
+fails on a branch that grew an epoch or a revision by more than one.
 
 **Three packages carry contracts — `aai`, `aai-ui` and `aai-runtime` — and a
 capability is therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in
@@ -400,7 +445,7 @@ does it (see "One canonical config schema, deny-list boundaries"): a new subpath
 defaults INTO the contracted surface and fails until its exports join a
 capability, where an allow-list would silently leave it uncovered.
 
-Six properties are load-bearing:
+These properties are load-bearing:
 
 - **A retained epoch obliges a frozen, compiling artifact.**
   `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` is written
@@ -486,15 +531,27 @@ Six properties are load-bearing:
     else's type, reached through a field like `ToolContext.workflows`, so
     `tool` was five times likelier to be bumped by a change to another surface
     than to its own. That produced 35 drops whose reason begins "Collateral:".
-    471 declarations collapse this way, 26% of the hashed text.
+  - **Anything reached only THROUGH a foreign declaration** (hash rule 2). The
+    walk starts at the capability's exports, follows identifiers through its
+    own and unowned declarations, and stops at a foreign one — recording that
+    NAME only. Rule 1 hashed every foreign name reachable anywhere in the
+    rollup, so one new type reachable through `ToolContext` bumped `state`,
+    `step`, `subagent` and `coding` with no change of their own.
+  - **Presentation** (rule 2): the reached statements are RE-PRINTED by the
+    TypeScript printer without comments — release tags, `(undocumented)`,
+    `@deprecated` — and imports are rewritten to one canonical form (`import`,
+    never `import type`; sorted; only names something hashed uses). A string
+    literal type longer than 80 characters reads as `string`, and a `const`'s
+    literal VALUES read as their primitive (`timeoutMs: 30000` hashes as
+    `timeoutMs: number`), so the key set and value kinds stay contracted and a
+    changed default does not.
 
-  Neither weakens the gate, and the tests are written in PAIRS to keep that
+  None weakens the gate, and the tests are written in PAIRS to keep that
   honest (`packages/aai-gates/src/api-contracts-hash.test.ts`): the NAME of a
-  foreign declaration is still hashed, so a capability that starts or stops
-  reaching one still bumps; a declaration NO capability owns — a forgotten
-  export, which `includeForgottenExports` puts there precisely because a
-  consumer must satisfy it while having no name to import it by — is still
-  hashed by body; and a capability's own surface is never elided. The real
+  foreign declaration the capability references directly is still hashed, so a
+  capability that starts or stops reaching one still moves; a capability's own
+  surface is never elided; and a declaration NO capability owns is hashed by
+  body — and now FAILS the check unless it is baselined (below). The real
   backward-compatibility test was never the hash anyway: it is the frozen
   example under `src/contracts/compatibility/`, which `pnpm typecheck`
   compiles, so
@@ -503,6 +560,22 @@ Six properties are load-bearing:
   in source and rebuilding leaves every contract green, while widening its
   return type flags `aai:tool` and only `aai:tool`.
 
+- **Every hashed declaration has exactly ONE owner** (`scripts/
+  _api-contracts-ownership.mjs`). An UNOWNED one — exported by some published
+  subpath but selected by no capability, like `SessionEventSchema` on
+  `/protocol` — is hashed in every capability that reaches it, so one change is
+  several epochs; a FORGOTTEN one (`ae-forgotten-export`, exported by no
+  published subpath at all) is a shape a consumer must satisfy and cannot name,
+  and is what minted `aai-runtime:eval` v4 and then v5. Both FAIL the check, and
+  `--bump`/`--update` REFUSE a capability that reaches one. What exists today is
+  committed to `src/contracts/unowned-surface.json` per package — a ratchet that
+  may shrink and never grow (`--update-internal` lowers it and never adds; a
+  gone name WARNS). A name in either list satisfies either finding, so
+  exporting a forgotten type from a non-authoring subpath is progress rather
+  than a new failure. The remedy is an owner: select the name in the capability
+  it belongs to. `/protocol` is NOT contracted as an `events` capability — that
+  would make every `/protocol` export authoring surface and pull it into the
+  template-coverage ratchet, a decision about the SDK rather than this gate.
 - **Changing the normalization is a `--rehash`, never one bump per
   capability.** Every committed hash stops matching at once while not one
   signature moved, so
@@ -512,8 +585,12 @@ Six properties are load-bearing:
   tree where the gate was GREEN beforehand, since green means every committed
   hash already matched the surface. Run it in the commit that changes the rule
   and in no other: a rehash shows in review as changed `sha256` fields under
-  unchanged epoch numbers and nothing else.
-- **Old epoch metadata is immutable and retained** (`v1..current`, enforced), so
+  unchanged epoch numbers and nothing else. Records carry the `rule` they were
+  hashed under; the rule-2 rehash also pinned each current epoch's rollup (from
+  a green tree the surface IS the epoch's), and an older rule's shas are never
+  compared against — equal text under two rules is a coincidence.
+- **Old epoch metadata is immutable and retained** (`v1..latest`, enforced;
+  only the CURRENT epoch's record moves, by revision), so
   "when did this break and what did we say" is answerable from the tree.
 
 - **Every capability restarts at epoch 1, and the history is deliberately
@@ -536,10 +613,9 @@ Six properties are load-bearing:
   checked. Do it again only for the same reason, and only before release: once
   a consumer exists, a dropped epoch is a broken promise and deleting the record
   of it is the opposite of what this system is for.
-- **The export-list delta suggests the bump.** A removed name prints `major`, an
-  added one `minor`, and an unchanged list says so explicitly — this is a
-  SIGNATURE change, read the report diff. That is the cheap 80% of the question,
-  and it beats nothing.
+- **The export-list delta suggests the bump**, and the probe overrides it: a
+  removed name prints `major`, an added one `minor`, an unchanged list `patch or
+  minor` — and any change the probe finds breaking prints `major`.
 - **A `--bump --drop` classifies the CURRENT epoch and nothing else.** A change
   can break OLDER supported epochs while the current one compiles, so run
   `pnpm typecheck` FIRST: the frozen examples it reddens are the epochs to drop,

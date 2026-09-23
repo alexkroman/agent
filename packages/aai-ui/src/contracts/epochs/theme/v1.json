@@ -2,6 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "theme",
   "epoch": 1,
-  "sha256": "6c82859e23a19480c475ff906e4556c0f187a5934cfebac08ed6fbaad2e6428b",
-  "exports": ["ClientTheme", "useTheme"]
+  "rule": 2,
+  "sha256": "deec0b892b1c15f49017359eebb243637dc83481c579d825943c3d73ec4ffc9e",
+  "exports": ["ClientTheme", "useTheme"],
+  "rollup": "6c82859e23a19480c475ff906e4556c0f187a5934cfebac08ed6fbaad2e6428b"
 }

@@ -1,0 +1,24 @@
+import { AnyStateMachine } from 'xstate';
+import { InputFrom } from 'xstate';
+import { OutputFrom } from 'xstate';
+
+// @public
+export interface Procedure<M extends AnyStateMachine> {
+    readonly machine: M;
+    run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;
+}
+
+// @public
+export function procedure<M extends AnyStateMachine>(machine: M): Procedure<M>;
+
+// @public
+export class ProcedureNotFinishedError extends Error {
+    constructor(procedure: string, aborted: boolean);
+    readonly aborted: boolean;
+    readonly procedure: string;
+}
+
+// @public
+export interface ProcedureRunOptions {
+    signal?: AbortSignal;
+}

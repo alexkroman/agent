@@ -20,12 +20,18 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+
+import { HASH_RULE } from "./_api-contracts-hash.mjs";
 
 import { typedEntryPoints } from "./_api-surface.mjs";
 import { readJson, readManifest, repoRoot } from "./_fs.mjs";
 
+// The epoch arithmetic is `_api-contracts-epochs.mjs`'s (pure, so the gate
+// suite exercises it directly); re-exported so the tree reads as one module.
+export { latestEpoch, recordShas } from "./_api-contracts-epochs.mjs";
 // `readJson` was defined here (silently) and twice more elsewhere; it is
 // `_fs.mjs`'s now, re-exported so the ~20 call sites in this tree read as before.
 // `readManifest` rides along for the same reason: `_api-contracts.mjs` reads a
@@ -177,6 +183,7 @@ function contractPackage(key) {
     fixtureRoot: join(contractRoot, "compatibility"),
     tablePath: join(contractRoot, "contracts.json"),
     internalSurfacePath: join(contractRoot, "internal-surface.json"),
+    unownedSurfacePath: join(contractRoot, "unowned-surface.json"),
     cacheRoot: join(dir, ".api-contracts-cache"),
     fixtureExtension: fixtureExtension(dir),
   };
@@ -211,7 +218,9 @@ export function contractPackages() {
  * @typedef {{ current: number, supported: number[], dropped: Record<string, string> }} CapabilityEpochs
  * @typedef {Record<string, CapabilityEpochs>} ContractTable
  * @typedef {{ comment?: string, total: number, surface: Record<string, string[]> }} InternalSurface
- * @typedef {{ kind: string, capability: string, epoch: number, sha256: string, exports: string[] }} EpochRecord
+ * @typedef {{ revision: number, rule?: number, sha256: string, reason?: string }} Revision
+ * @typedef {{ kind: string, capability: string, epoch: number, rule?: number, sha256: string, exports: string[], rollup?: string, revision?: number, revisions?: Revision[] }} EpochRecord
+ * @typedef {{ comment?: string, unowned: string[], forgotten: string[] }} UnownedSurface
  */
 
 /** @returns {ContractTable} */
@@ -237,9 +246,38 @@ export const epochRecord = (capability, epoch, generated) => ({
   kind: CONTRACT_KIND,
   capability,
   epoch,
+  rule: HASH_RULE,
   sha256: generated.sha256,
   exports: generated.exports,
+  rollup: sha256Of(generated.body),
 });
+
+/** The sha256 of a text, hex — what a record pins its committed rollup with. */
+export const sha256Of = (text) => createHash("sha256").update(text).digest("hex");
+
+/**
+ * The rollup an epoch was minted from, committed beside its record: the
+ * compatibility probe's OLD side. `.txt` so no formatter or linter rewrites
+ * it — it has to stay byte-for-byte what API Extractor wrote.
+ */
+export const rollupPath = (pkg, capability, version) =>
+  join(pkg.epochRoot, capability, `v${version}.rollup.txt`);
+export const readRollup = (pkg, capability, version) => {
+  const path = rollupPath(pkg, capability, version);
+  // The file is the body plus one trailing newline; the pin is over the body.
+  return existsSync(path) ? readFileSync(path, "utf8").replace(/\n$/, "") : undefined;
+};
+export const writeRollup = (pkg, capability, version, body) => {
+  mkdirSync(dirname(rollupPath(pkg, capability, version)), { recursive: true });
+  writeFileSync(rollupPath(pkg, capability, version), body.endsWith("\n") ? body : `${body}\n`);
+};
+
+/** @returns {UnownedSurface} */
+export const readUnownedSurface = (pkg) =>
+  existsSync(pkg.unownedSurfacePath)
+    ? /** @type {UnownedSurface} */ (readJson(pkg.unownedSurfacePath))
+    : { unowned: [], forgotten: [] };
+export const writeUnownedSurface = (pkg, surface) => writeJson(pkg.unownedSurfacePath, surface);
 
 export const epochPath = (pkg, capability, version) =>
   join(pkg.epochRoot, capability, `v${version}.json`);

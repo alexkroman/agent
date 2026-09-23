@@ -1,0 +1,44 @@
+// @public
+export function mintCode(prefix: string, options?: MintCodeOptions): string;
+
+// @public
+export interface MintCodeOptions {
+    length?: number;
+    random?: () => number;
+    taken?: ReadonlySet<string>;
+}
+
+// @public
+export function resolveOne<T>(candidates: readonly T[], spoken: string, options: ResolveOneOptions<T>): T | ToolFailure;
+
+// @public
+export interface ResolveOneOptions<T> {
+    code?: (candidate: T) => string;
+    describe: (candidate: T) => string;
+    label?: string;
+    match?: (candidate: T) => string;
+    score?: (candidate: T, text: string) => number;
+}
+
+// @public
+export function spokenAlphanumeric(spoken: string): string;
+
+// @public
+export function spokenDate(iso: string): string;
+
+// @public
+export function spokenDigits(spoken: string): string;
+
+// @public
+export function spokenMoney(amount: number): string;
+
+// @public
+export function spokenOrdinal(spoken: string): number | undefined;
+
+// @public
+export function spokenTime(hhmm: string): string;
+
+// @public
+type ToolFailure = {
+    error: string;
+};

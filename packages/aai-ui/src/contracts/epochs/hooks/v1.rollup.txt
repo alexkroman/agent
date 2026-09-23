@@ -1,0 +1,41 @@
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import type { StateProjection } from '@alexkroman1/aai';
+
+// @public
+export type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+export function useAgentState<S = DefaultToolResult>(): S | null;
+
+// @public
+export function useAgentState<V>(projection: StateProjection<V>): V;
+
+// @public
+export function useAgentState<S = DefaultToolResult>(fallback: S): S;
+
+// @public
+export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
+
+// @public
+export function useToolCallStart<A = ToolCallInfo["args"]>(toolName: string, callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
+
+// @public
+export function useToolCallStart<A = ToolCallInfo["args"]>(callback: (toolCall: Omit<ToolCallInfo, "args"> & {
+    args: A;
+}) => void): void;
+
+// @public
+export function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+
+// @public
+export function useToolResult<R = unknown>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;

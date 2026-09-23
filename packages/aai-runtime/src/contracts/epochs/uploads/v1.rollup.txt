@@ -1,0 +1,86 @@
+import type { OpenUpload } from '@alexkroman1/aai/host-internal';
+import type { UploadInfo } from '@alexkroman1/aai/step';
+import type { UploadReader } from '@alexkroman1/aai/host-internal';
+
+// @public
+export function createHttpUploadBackend(options: HttpUploadBackendOptions): UploadBackend;
+
+// @public
+export function createMemoryUploadBackend(): UploadBackend;
+
+// @public (undocumented)
+export type HttpUploadBackendOptions = {
+    url: string;
+    serviceKey: string;
+    bucket: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
+
+// @public
+export function partKey(prefix: string, id: string, at: number): string;
+
+// @public
+export function partsOf(value: unknown): UploadPart[];
+
+// @public
+export const UPLOAD_KEY_PREFIX = "uploads";
+
+// @public
+export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
+
+// @public
+export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
+
+// @public
+export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
+
+// @public
+export type UploadBackend = {
+    put(key: string, body: AsyncIterable<Uint8Array>, options?: {
+        type?: string | undefined;
+        limit?: number | undefined;
+    }): Promise<number>;
+    read(key: string, start: number, end: number): Promise<Uint8Array>;
+    size(key: string): Promise<number | undefined>;
+};
+
+// @public
+export type UploadMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+// @public
+export type UploadPart = {
+    at: number;
+    bytes: number;
+};
+
+// @public
+export const UPLOADS_TABLE = "aai_workflow_uploads";
+
+// @public
+export type UploadStore = UploadReader & {
+    open(id: string): Promise<OpenUpload | undefined>;
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    beginParts(id: string, meta: UploadMeta, total: number, options?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+    recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
+};
+
+// @public
+export class UploadsUnavailableError extends Error {
+    constructor(message: string);
+}
+
+// @public
+export class UploadTooLargeError extends Error {
+    constructor(limit: number);
+}

@@ -1,0 +1,135 @@
+import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { ComponentType } from 'react';
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import { ReactNode } from 'react';
+import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
+
+// @public
+type AgentCustomEvent = {
+    readonly id: number;
+    readonly event: string;
+    readonly data: unknown;
+};
+
+// @public
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+
+// @public
+type BrowserSession = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    startUserTurn(): void;
+    commitUserTurn(): void;
+    clearUserTurn(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+    target?: string | HTMLElement;
+    platformUrl?: string;
+    theme?: ClientTheme;
+    component?: ComponentType;
+    name?: string;
+    sidebar?: ComponentType;
+    sidebarWidth?: string;
+    sidebarPosition?: "left" | "right";
+    icon?: ReactNode;
+    subtitle?: string;
+    buttonText?: string;
+    tools?: ToolDisplayConfig;
+};
+
+export { ClientConfigResponse }
+
+// @public
+export type ClientHandle = {
+    session: BrowserSession;
+    dispose(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
+type ClientTheme = {
+    bg?: string;
+    primary?: string;
+    text?: string;
+    surface?: string;
+    border?: string;
+};
+
+// @public
+export function mountClient(config: ClientConfig): ClientHandle;
+
+// @public
+type SessionError = {
+    readonly code: SessionErrorCode;
+    readonly message: string;
+    readonly fatal: boolean;
+};
+
+// @public
+type SessionSnapshot = {
+    readonly state: AgentState;
+    readonly recording: boolean;
+    readonly apiUrl: string;
+    readonly contentVersion: number;
+    readonly messages: ChatMessage[];
+    readonly toolCalls: ToolCallInfo[];
+    readonly customEvents: AgentCustomEvent[];
+    readonly agentState: unknown;
+    readonly userTranscript: string | null;
+    readonly agentTranscript: string | null;
+    readonly error: SessionError | null;
+    readonly started: boolean;
+    readonly running: boolean;
+};
+
+// @public
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+export type ToolDisplayConfig = Record<string, {
+    icon?: string;
+    label?: string;
+}>;
+
+// @public
+type VoiceSessionOptions = {
+    platformUrl: string;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public
+type WebSocketConstructor = {
+    new (url: string | URL, protocols?: string | string[]): WebSocket;
+    readonly OPEN: number;
+};

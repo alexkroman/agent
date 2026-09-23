@@ -2,7 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "uploads",
   "epoch": 1,
-  "sha256": "d48adc3c845732feb07a0fb310ba369d12fa6a5cc016e56544b9dfa5e905fef6",
+  "rule": 2,
+  "sha256": "cf53ee51d2d0369b1926a80ec1e12797e06db4f83572066c379aef19568fba17",
   "exports": [
     "HttpUploadBackendOptions",
     "UPLOADS_TABLE",
@@ -20,5 +21,6 @@
     "createMemoryUploadBackend",
     "partKey",
     "partsOf"
-  ]
+  ],
+  "rollup": "f2dd706e75cc08804a89fbb5db5196fddac009a3e18e1fbf3096df5d5f42e18b"
 }

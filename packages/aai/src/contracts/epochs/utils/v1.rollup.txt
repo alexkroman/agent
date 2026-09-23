@@ -1,0 +1,66 @@
+// @public
+export function countWords(text: string): number;
+
+// @public
+export function createKeyedLock(): KeyedLock;
+
+// @public
+export function decodeHtmlEntities(text: string): string;
+
+// @public
+export function errorDetail(err: unknown): string;
+
+// @public
+export function errorMessage(err: unknown): string;
+
+// @public
+export function formatBytes(bytes: number): string;
+
+// @public
+export function formatDuration(ms: number): string;
+
+// @public
+export function formatMoney(amount: number, symbol?: string): string;
+
+// @public
+export function isRecord(value: unknown): value is Record<string, unknown>;
+
+// @public (undocumented)
+export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
+    readonly size: number;
+};
+
+// @public (undocumented)
+export type KeyedLockOptions = {
+    timeoutMs?: number | undefined;
+};
+
+// @public
+export class KeyedLockTimeoutError extends Error {
+    constructor(key: string, timeoutMs: number, options?: ErrorOptions);
+    // (undocumented)
+    readonly key: string;
+}
+
+// @public
+export function omitUndefined<T extends object>(obj: T): {
+    [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
+};
+
+// @public
+export function plural(n: number, one: string, many?: string): string;
+
+// @public
+export function pushCapped<T>(list: T[], item: T, max: number): T[];
+
+// @public
+export function responseErrorMessage(response: Response, label?: string): Promise<string>;
+
+// @public
+export function roundMoney(amount: number): number;
+
+// @public
+export function safeJsonParse(text: string): unknown;
+
+// @public
+export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
