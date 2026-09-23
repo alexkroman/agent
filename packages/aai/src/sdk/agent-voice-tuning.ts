@@ -70,7 +70,7 @@ export interface PipelineVoiceTuning {
    * disables. The wording is internal and must stay purely declarative — see
    * `DEAD_AIR_COVER_PHRASES` for why.
    *
-   * @defaultValue `5000` (`DEFAULT_DEAD_AIR_COVER_MS`)
+   * @defaultValue `2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
    */
   deadAirCoverMs?: number;
   /**

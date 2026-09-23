@@ -83,89 +83,48 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
  * `pipeline-stream-parts.ts`). Cover is time-based, so both are the same case:
  * any gap this long gets filler, whether or not the model already spoke.
  *
- * **Nothing is spoken at t=0, and that is the other half of the design.** A
- * structural bet — "this turn opened with a tool call, so silence is coming" —
- * pays on every such turn regardless of how long the tool actually takes, and
- * the ordinary opening gap is about a second: LLM time-to-first-text measured
- * p50 **1.10s** / mean 1.42s on a tau2-bench retail run. That is a pause, not
- * dead air, and covering it costs the FIRST SENTENCE, which the voice rules
- * spend deliberately (eight words, carrying the answer, because interruption
- * rate climbs with reply length — 17% under 10 words to 59% past 35). Waiting
- * for 5s of MEASURED silence costs a fast turn nothing.
+ * **Nothing is spoken at t=0.** The ordinary opening gap is about a second:
+ * LLM time-to-first-text measured p50 **1.10s** / mean 1.42s on a tau2-bench
+ * retail run. That is a pause, not dead air, and covering it costs the FIRST
+ * SENTENCE, which the voice rules spend deliberately (eight words, carrying the
+ * answer, because interruption rate climbs with reply length — 17% under 10
+ * words to 59% past 35). Waiting for 2.4s of MEASURED silence still lets a
+ * normal reply start before any filler.
  *
- * **Must stay above the MEDIAN tool turn, not below it.** This is cover for the
- * long-chain outlier; at 2000 it was under the ordinary case and fired on
- * essentially every tool turn instead. Measured on the EVA airline run: tool
- * turns averaged 6.24s, so 2000 fired on 93% of them (`pretoolspeech_rate`
- * 0.933) and twice on the 8.7s and 10.5s turns — turning a latency problem into
- * a verbosity one (`verbosity_or_filler_rate` 0.38,
- * `redundant_statements_rate` 0.60) and, once, derailing the call outright (see
- * {@link DEAD_AIR_COVER_PHRASES}). 5000 sits below the 6.24s mean but above the
- * turns that complete normally, so a routine single tool call now finishes
- * unaccompanied and only a genuine chain draws cover. There is no measured
- * value between 2000 and 5000; do not split the difference by feel.
+ * **2400 is the tool window's first firing, applied to every turn.** A turn
+ * whose first tool call lands at the measured p50 (~1.2s, see
+ * {@link DEAD_AIR_TOOL_COVER_MS}) hears its filler 1.2s later, at ~2.4s into
+ * the turn. This window used to be 5000, so a turn that went quiet WITHOUT a
+ * tool call — a stalled first token, a long reasoning phase — waited more than
+ * twice as long for the same reassurance. Matching the two puts every silent
+ * turn's first filler at the same point, whatever made it silent.
  *
  * **This number is in the AGENT's frame, and the caller is in another one.**
  * Cover is armed when the turn's LLM stream opens, which is one
  * `minTurnSilenceMs` (1600ms on the default AssemblyAI pipeline) plus commit
- * after the caller stopped speaking — so 5000 here is ~6.7s of measured wait
- * from the caller's side. On a tau2-bench retail run that mattered: the
- * simulated caller re-spoke after 5.0s, **9 of 26 turns (35%) ended that way,
- * every one at exactly 5.2s**, and cover fired zero times in the whole run.
- * A deployment whose caller gives up on a known deadline should subtract its
- * endpointing budget from that deadline rather than reading this number as if
- * the two clocks agreed.
+ * after the caller stopped speaking — so 2400 here is ~4.0-4.2s from the
+ * caller's side. That is inside the 5.0s after which a simulated tau2-bench
+ * caller re-speaks ("are you still there?"); at 5000 it was ~6.7s and lost to
+ * that probe on every firing (5 of 5 on one retail run, 113 of 123 on a
+ * 114-task run, all `opening: true` at `waitedMs: 5000`).
  *
- * **3000, and the instrumentation that justifies it exists now.** Lowering it
- * was tried once before inside a four-knob bundle, showed no response-rate
- * movement, and was reverted — but that bundle also turned
- * `resumeFalseInterruption` off, which halved agent speech per call and would
- * have masked any gain. It was never cleanly tested, and at the time nothing
- * could even confirm a filler had played: they are emitted `record: false`, so
- * they reach TTS and the interim transcript but never a committed one, and no
- * log line announced them.
- *
- * `pipeline-stream-parts.ts` logs every firing now (phrase, `opening`,
- * `coverCount`, and the window actually armed), and that turned the argument
- * from inference into arithmetic. Measured on a tau2-bench retail run: cover
- * fired 5 times across 5 calls, **every one of them `opening: true` at
- * `waitedMs: 5000`** — the right turns, and too late on all of them. Against
- * a simulated caller who gives up after 5.0s:
- *
- *     caller stops                                  t = 0
- *     endpointing (min_turn_silence 1600) + commit  ~1.8s   <- cover's clock starts
- *     caller gives up and asks "are you still there" t = 5.0s
- *     earliest possible filler at 5000              ~6.8s
- *
- * The probe wins by ~1.8s every time, so cover could not pre-empt a single one.
- * 3000 puts the filler at ~4.8s, just inside the deadline. Five of six residual
- * truncations in that run were give-up probes, and two carried audible agent
- * speech with NO transcript text — the filler's signature, i.e. the probe
- * colliding with the very filler meant to prevent it.
- *
- * **UNDER TEST at 2000, because 3000 fixed the mechanism without moving the
- * outcome.** At 3000 cover really did fire in time — 8 firings at
- * `waitedMs: 3000` plus 3 backed off to 6000, a 20% fire rate across 56 turns,
- * nowhere near the 93% that condemned 2000 on EVA — and give-up probes per call
- * did not fall (2.4 -> 2.6). The likely reason is margin: 1.8s of endpointing
- * plus 3.0s puts the filler at ~4.8s against a 5.0s deadline, and a caller
- * decides to probe BEFORE it starts speaking, so 200ms of headroom is probably
- * less than the decision itself takes. 2000 puts the filler at ~3.8s, a 1.2s
- * margin.
- *
- * The 93% objection is measured on a DIFFERENT workload and may not transfer:
- * EVA airline tool turns averaged 6.24s, while on the tau2 retail run behind
- * these numbers only 16% of turns exceed 2000ms (single-step turns are p50
- * 971ms, max 1981ms). If the fire rate here comes in near that 16-20% rather
- * than 93%, the verbosity argument does not apply at this value on this
- * workload. If probes still do not fall at 2000, the hypothesis that cover can
- * pre-empt them is wrong and this should go back to 5000.
+ * **What this costs, measured at neighbouring values.** On EVA airline, where
+ * tool turns averaged 6.24s, a 2000 base fired on 93% of tool turns
+ * (`pretoolspeech_rate` 0.933) and raised `verbosity_or_filler_rate` to 0.38 —
+ * but tool turns are now covered by {@link DEAD_AIR_TOOL_COVER_MS} at 1200
+ * anyway, so this base decides only the turns that make NO tool call. On tau2
+ * retail, single-step turns are p50 971ms, max 1981ms, and 16% of all turns
+ * exceed 2000ms. Lowering the base to 3000 and 2000 there fired the cover in
+ * time without reducing give-up probes per call (2.4 -> 2.6 at 3000). 2400 was
+ * chosen to line up with the tool window, not measured on its own; check the
+ * `Pipeline dead-air cover` log's fire rate at `waitedMs: 2400` before moving
+ * it again.
  *
  * Authors override it with `deadAirCoverMs`; 0 disables cover entirely.
  *
  * @internal
  */
-export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
+export const DEFAULT_DEAD_AIR_COVER_MS = 2400;
 
 /**
  * Ceiling on the dead-air cover's exponential backoff, so a long tool chain
@@ -195,7 +154,7 @@ export const DEAD_AIR_COVER_MAX_MS = 8000;
  *
  * {@link DEFAULT_DEAD_AIR_COVER_MS} is armed when the turn's stream opens, a
  * condition true of EVERY turn, so it can only distinguish the silent ones by
- * waiting long enough to be sure — and 5000 ms from turn commit is ~6.7 s in
+ * waiting long enough to be sure — and at its old 5000 ms that was ~6.7 s in
  * the caller's frame, past the point a caller concludes the line is dead.
  * Measured on a 114-task tau2-bench retail run: **123 firings across 1076
  * turns, 113 of them `opening: true` at exactly `waitedMs: 5000`** — the right

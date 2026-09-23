@@ -868,7 +868,7 @@ export default agent({
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
   minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
-  deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 5000; 0 disables)
+  deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 2400; 0 disables)
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
