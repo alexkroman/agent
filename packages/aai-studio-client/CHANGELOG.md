@@ -1,5 +1,33 @@
 # aai-studio-client
 
+## 0.7.5
+
+### Patch Changes
+
+- 5664ccd: Remove the studio's "Work locally" card — the `npm i -g` / `aai login` / `aai pull <project>` / `aai dev` command list on the Settings pane — and the `cli-commands.tsx` component that existed only to render it.
+  
+  GitHub sync is the one way out of the studio the product points at, and a second, copy-pasted path beside it split the answer to "how do I get this code?" in two. The Settings pane is now Sync to GitHub (when the platform has a GitHub App) and Danger zone; `settings.test.tsx` asserts no `aai pull` renders so the list does not come back in a follow-up. The CLI's own `pull` subcommand and the server routes behind it are untouched — this changes what the studio advertises, not what the platform serves.
+  
+  `aai-studio-server` is named because `aai-studio-client` ships only as a side effect of a server release (`guard-invariants` rule 20).
+- Updated dependencies [fccb2ef]
+- Updated dependencies [8cdc919]
+- Updated dependencies [4995fe6]
+- Updated dependencies [75244f4]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [0338a93]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [a6f3d59]
+- Updated dependencies [3593ab7]
+- Updated dependencies [21eb693]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [113e88d]
+- Updated dependencies [b3e4ee5]
+  - @alexkroman1/aai@18.0.0
+  - @alexkroman1/aai-ui@18.0.0
+
 ## 0.7.4
 
 ### Patch Changes
