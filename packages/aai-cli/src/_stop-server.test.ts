@@ -30,7 +30,10 @@ describe("stopProjectServer", () => {
 
   test("needs no tracing", async () => {
     let closed = false;
-    await stopProjectServer({ close: async () => void (closed = true) }, undefined);
+    const close = async (): Promise<void> => {
+      closed = true;
+    };
+    await stopProjectServer({ close }, undefined);
     expect(closed).toBe(true);
   });
 });
