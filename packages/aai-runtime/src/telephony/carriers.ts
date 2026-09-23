@@ -23,8 +23,11 @@
  * reason to read.
  */
 
-import type { TelephonyCarrier } from "@alexkroman1/aai";
+import type { TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+
+/** The carriers the SDK ships — `TelephonyCarrier` itself is open (`| (string & {})`). */
+type ShippedCarrier = (typeof TELEPHONY_CARRIERS)[number];
 
 /** One inbound carrier frame, reduced to what a session needs. */
 export type CarrierInbound =
@@ -174,7 +177,7 @@ export const telnyxCodec: CarrierCodec = {
 /**
  * Every carrier this build can serve, keyed by its `?carrier=` value.
  *
- * `satisfies Record<TelephonyCarrier, CarrierCodec>` rather than
+ * `satisfies Record<ShippedCarrier, CarrierCodec>` rather than
  * `Record<string, …>`, which is what ties this table to the vocabulary an agent
  * DECLARES in `agent({ telephony: [...] })`: the SDK owns the names, this owns
  * the framing, and the two must not be able to disagree. A name added to
@@ -189,7 +192,7 @@ export const CARRIER_CODECS = {
   // asserts each key still equals the codec's own name.
   twilio: twilioCodec,
   telnyx: telnyxCodec,
-} as const satisfies Record<TelephonyCarrier, CarrierCodec>;
+} as const satisfies Record<ShippedCarrier, CarrierCodec>;
 
 /**
  * A carrier's name — the `?carrier=` value, and what a `telephony` declaration
