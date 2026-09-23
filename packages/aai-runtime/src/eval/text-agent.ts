@@ -148,8 +148,8 @@ import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { createTextAgent } from "../text-agent.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
-import { assertTurnMeasurable } from "./_turn-faults.ts";
-import { type EvalToolCall, errorsIn, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
+import { measuredTurn } from "./_turn-faults.ts";
+import { type EvalToolCall, saidIn, TURN_ENDS, toolCallsInEvents } from "./events.ts";
 import type { EvalCredentials, EvalTurn } from "./session.ts";
 
 /**
@@ -404,18 +404,12 @@ export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<
           `something to wait out; events since: ${turn.map((e) => e.type).join(", ") || "none"}`,
       );
     }
-    assertTurnMeasurable(what, turn, toolNames, "text");
+    const measured = measuredTurn(what, turn, toolNames, "text");
     // Appended only for a turn that can be read: the conversation the next
     // `send()` builds on holds what really happened, and a turn nothing can be
     // read off is not carried into it.
     messages.push(said, ...(await result.responseMessages));
-    return {
-      text: saidIn(turn).join(" "),
-      events: turn,
-      toolCalls: toolCallsInEvents(turn),
-      completed: turn.some((e) => e.type === "reply.completed"),
-      errors: errorsIn(turn),
-    };
+    return measured;
   };
 
   return {

@@ -141,8 +141,12 @@ export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
  * over the policy directly, `tool-executor.test.ts` over the whole call), and a
  * third malformed shape goes through here too.
  */
-export function malformedOnError(handler: () => unknown): ToolErrorHandler {
-  return handler as unknown as ToolErrorHandler;
+export function malformedOnError(handler: (err: unknown, ctx: never) => unknown): ToolErrorHandler {
+  // A single, CHECKED narrowing rather than a double cast: `ToolErrorHandler`
+  // is assignable to this parameter type (a `never` context accepts any, and
+  // any return widens to `unknown`), so the compiler still verifies the two
+  // are related and only the return type is being asserted.
+  return handler as ToolErrorHandler;
 }
 
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
@@ -155,15 +159,15 @@ export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
       overrides.llm != null ||
       overrides.tts != null ||
       overrides.s2s != null);
-  return {
+  const base: AgentDef = {
     name: "test-agent",
     systemPrompt: "Be helpful.",
     greeting: "Hello!",
     maxSteps: 5,
     tools: {},
-    ...(declaresProviders ? {} : { s2s: assemblyAIS2s() }),
-    ...overrides,
   };
+  if (!declaresProviders) base.s2s = assemblyAIS2s();
+  return { ...base, ...overrides };
 }
 
 export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -294,7 +298,9 @@ export { silentLogger } from "./runtime-config.ts";
 export function fakeFetch(
   fn: (url: string, init: RequestInit) => Promise<Response>,
 ): typeof globalThis.fetch {
-  return fn as unknown as typeof globalThis.fetch;
+  // One CHECKED cast: `fetch` is assignable to `fn`'s narrower type, so the
+  // compiler still relates the two.
+  return fn as typeof globalThis.fetch;
 }
 
 /**

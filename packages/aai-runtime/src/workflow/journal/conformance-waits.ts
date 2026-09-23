@@ -16,11 +16,29 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { type JournalArm, keysFor, runOf } from "./conformance-cases.ts";
-import { JournalConflictError } from "./types.ts";
+import { type JournalArm, keysFor, runOf, type StartedRun, startRun } from "./conformance-cases.ts";
+import { type HookRecord, JournalConflictError, type RunRecord } from "./types.ts";
 
 /** Far enough out that no case's wall-clock reads it as elapsed. */
 const FAR = 60_000;
+
+/**
+ * A started run holding ONE open window — `ask#0`, on the run's own token —
+ * which is the ground every deliver/close case stands on.
+ *
+ * `window()` re-claims that same key with that same token, which is the
+ * ordinary replay READ, so a case checks what the window became by reading it
+ * back the way the engine does.
+ */
+async function openHook(
+  arm: JournalArm,
+  overrides?: Omit<Partial<RunRecord>, "runId">,
+): Promise<StartedRun & { window: () => Promise<HookRecord> }> {
+  const run = await startRun(arm, overrides);
+  const window = () => run.journal.claimHook(run.runId, "ask#0", run.token);
+  await window();
+  return { ...run, window };
+}
 
 /**
  * The sleep/hook half of the contract.
@@ -34,9 +52,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // A body is replayed, so `ctx.sleep("poll", 60_000)` is evaluated again on every
         // delivery. Storing the newly-computed deadline each time pushes it 60
         // seconds further out per replay and the run never wakes.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const at = Date.now() + FAR;
         const first = await journal.claimSleep(runId, "wait#0", at, undefined);
         const second = await journal.claimSleep(runId, "wait#0", at + FAR, "review");
@@ -45,18 +61,14 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("a sleep declared with NO correlation id reads back with none", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const record = await journal.claimSleep(runId, "wait#0", Date.now() + FAR, undefined);
         expect(record.correlationId).toBeUndefined();
         expect(record.woken).toBe(false);
       });
 
       test("a correlation id and a kind are stored and read back", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const record = await journal.claimSleep(
           runId,
           "approve#0",
@@ -73,17 +85,13 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("kind defaults to sleep", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const record = await journal.claimSleep(runId, "wait#0", Date.now() + FAR, undefined);
         expect(record.kind).toBe("sleep");
       });
 
       test("two concurrent claims of one key agree on one deadline", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const at = Date.now() + FAR;
         const [a, b] = await Promise.all([
           journal.claimSleep(runId, "wait#0", at, undefined),
@@ -99,9 +107,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // knows whether the body waits at all — so the ordinary answer for most
         // runs is nothing, and a backend that threw would fail every delivery of
         // every wait-free workflow.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         expect(await journal.readSleeps(runId)).toEqual([]);
       });
 
@@ -109,9 +115,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // The whole point of the bulk read is that a walk may answer an elapsed
         // wait WITHOUT claiming it, so what it hands back has to be exactly what
         // the claim would have — field for field, both kinds, per key.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const at = Date.now() + FAR;
         const b = await journal.claimSleep(runId, "poll#1", at, "batch");
         const a = await journal.claimSleep(runId, "poll#0", at - 1000, undefined);
@@ -133,9 +137,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // `woken` is the monotonic flag the engine short-circuits an elapsed wait
         // on. A backend whose bulk read did not carry it would leave every walk
         // round-tripping, silently.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimSleep(runId, "nap#0", Date.now() + FAR, undefined);
         expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
         expect((await journal.readSleeps(runId)).map((record) => record.woken)).toEqual([true]);
@@ -155,9 +157,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // same primitive as `ctx.sleep`, and without the `kind` test the "send it
         // now" call a tool makes to cut a SCHEDULE short also closed any pending
         // approval window on the run.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const at = Date.now() + FAR;
         await journal.claimSleep(runId, "nap#0", at, undefined, "sleep");
         await journal.claimSleep(runId, "approve#0", at, "review", "hookTimeout");
@@ -167,9 +167,7 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("named correlation ids reach exactly the waits that declared one", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         const at = Date.now() + FAR;
         await journal.claimSleep(runId, "a#0", at, "review", "hookTimeout");
         await journal.claimSleep(runId, "b#0", at, "audit", "hookTimeout");
@@ -186,9 +184,7 @@ export function journalWaitConformance(arm: JournalArm): void {
         // the same fold makes a wait genuinely declared `""` indistinguishable
         // from one declared nothing, which is the absence bug in the other
         // direction.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimSleep(runId, "nap#0", Date.now() + FAR, undefined, "sleep");
         expect(await journal.wakeSleeps(runId, [""])).toBe(0);
       });
@@ -197,27 +193,21 @@ export function journalWaitConformance(arm: JournalArm): void {
         // The number is what this call CHANGED, which is what makes `0` an answer
         // a caller can act on rather than a tie between "nothing was waiting" and
         // "I woke something twice".
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimSleep(runId, "nap#0", Date.now() + FAR, undefined);
         expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
         expect(await journal.wakeSleeps(runId, undefined)).toBe(0);
       });
 
       test("an ELAPSED wait is not one this call stopped", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId } = await startRun(arm);
         await journal.claimSleep(runId, "nap#0", Date.now() - FAR, undefined);
         expect(await journal.wakeSleeps(runId, undefined)).toBe(0);
       });
 
       test("a run nobody started, and a run with no waits, both answer 0", async () => {
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
+        const { journal, runId } = await startRun(arm);
         const missing = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
         expect(await journal.wakeSleeps(runId, undefined)).toBe(0);
         expect(await journal.wakeSleeps(missing.runId, undefined)).toBe(0);
       });
@@ -225,9 +215,7 @@ export function journalWaitConformance(arm: JournalArm): void {
 
     describe("claimHook opens ONE window per key", () => {
       test("a fresh window is neither delivered nor closed", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId, token } = await startRun(arm);
         // `closed` is spelled out rather than merely falsy. It is the field that
         // decides which of two branches a replay takes, and a backend answering
         // `undefined` where the others answer `false` is the same absence
@@ -242,9 +230,7 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("a re-claim by the same run and key is the ordinary REPLAY path", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
+        const { journal, runId, token } = await startRun(arm);
         const first = await journal.claimHook(runId, "ask#0", token);
         expect(await journal.claimHook(runId, "ask#0", token)).toEqual(first);
       });
@@ -265,11 +251,9 @@ export function journalWaitConformance(arm: JournalArm): void {
         // Two waits sharing a token means one signal resolves whichever the store
         // happens to find and the other waits forever — a bug worth failing the
         // run over rather than resolving arbitrarily.
-        const journal = arm.journal();
-        const one = keysFor(arm);
-        const two = keysFor(arm);
-        await journal.createRun(runOf({ runId: one.runId }));
-        await journal.createRun(runOf({ runId: two.runId }));
+        const one = await startRun(arm);
+        const two = await startRun(arm, {}, one.journal);
+        const { journal } = one;
         await journal.claimHook(one.runId, "ask#0", one.token);
         await expect(journal.claimHook(two.runId, "ask#0", one.token)).rejects.toSatisfy(
           JournalConflictError.is,
@@ -277,10 +261,7 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("a token another KEY of the same run holds is refused too", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token } = await openHook(arm);
         await expect(journal.claimHook(runId, "ask#1", token)).rejects.toSatisfy(
           JournalConflictError.is,
         );
@@ -289,24 +270,18 @@ export function journalWaitConformance(arm: JournalArm): void {
 
     describe("deliverHook is addressed by TOKEN and answers once", () => {
       test("it answers the run that was waiting, and the payload is readable", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token, window } = await openHook(arm);
         expect(await journal.deliverHook(token, { approved: true })).toBe(runId);
-        const record = await journal.claimHook(runId, "ask#0", token);
+        const record = await window();
         expect(record.delivered).toBe(true);
         expect(record.payload).toEqual({ approved: true });
       });
 
       test("a typed-JSON payload survives", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, token, window } = await openHook(arm);
         const payload = { sig: new Uint8Array([4, 5]), at: new Date(1_700_000_000_002) };
         await journal.deliverHook(token, payload);
-        expect((await journal.claimHook(runId, "ask#0", token)).payload).toEqual(payload);
+        expect((await window()).payload).toEqual(payload);
       });
 
       test("a token nobody holds is the ORDINARY answer, not an error", async () => {
@@ -316,20 +291,14 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("a second signal is refused, and the FIRST payload stands", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, token, window } = await openHook(arm);
         await journal.deliverHook(token, "first");
         expect(await journal.deliverHook(token, "second")).toBeUndefined();
-        expect((await journal.claimHook(runId, "ask#0", token)).payload).toBe("first");
+        expect((await window()).payload).toBe("first");
       });
 
       test("two concurrent signals: exactly one wins", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token } = await openHook(arm);
         const answers = await Promise.all([
           journal.deliverHook(token, "a"),
           journal.deliverHook(token, "b"),
@@ -340,19 +309,13 @@ export function journalWaitConformance(arm: JournalArm): void {
 
     describe("closeHook has exactly TWO verdicts", () => {
       test("true when the window is closed by this call", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, window } = await openHook(arm);
         expect(await journal.closeHook(runId, "ask#0")).toBe(true);
-        expect((await journal.claimHook(runId, "ask#0", token)).closed).toBe(true);
+        expect((await window()).closed).toBe(true);
       });
 
       test("true again when it was already closed", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId } = await openHook(arm);
         await journal.closeHook(runId, "ask#0");
         expect(await journal.closeHook(runId, "ask#0")).toBe(true);
       });
@@ -360,10 +323,8 @@ export function journalWaitConformance(arm: JournalArm): void {
       test("true when the window is GONE entirely", async () => {
         // A terminal run has already given its tokens back, so no signal can be
         // taken and the caller's timeout stands.
-        const journal = arm.journal();
-        const { runId } = keysFor(arm);
+        const { journal, runId } = await startRun(arm);
         const missing = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
         expect(await journal.closeHook(runId, "never#0")).toBe(true);
         expect(await journal.closeHook(missing.runId, "never#0")).toBe(true);
       });
@@ -374,25 +335,19 @@ export function journalWaitConformance(arm: JournalArm): void {
         // landing between the two left THIS walk taking the timed-out branch
         // while every later replay read `delivered: true` and took the answered
         // one. The boolean is what the caller branches on.
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token, window } = await openHook(arm);
         await journal.deliverHook(token, { approved: true });
         expect(await journal.closeHook(runId, "ask#0")).toBe(false);
-        const record = await journal.claimHook(runId, "ask#0", token);
+        const record = await window();
         expect(record.delivered).toBe(true);
         expect(record.payload).toEqual({ approved: true });
       });
 
       test("a closed window refuses every later signal", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token, window } = await openHook(arm);
         await journal.closeHook(runId, "ask#0");
         expect(await journal.deliverHook(token, "late")).toBeUndefined();
-        expect((await journal.claimHook(runId, "ask#0", token)).delivered).toBe(false);
+        expect((await window()).delivered).toBe(false);
       });
     });
 
@@ -416,19 +371,13 @@ export function journalWaitConformance(arm: JournalArm): void {
       });
 
       test("a signal for a settled run's token is refused", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token } = await openHook(arm, { status: "running" });
         await journal.setStatus(runId, "failed", { error: { message: "gave up" } });
         expect(await journal.deliverHook(token, "late")).toBeUndefined();
       });
 
       test("a NON-terminal move keeps the token — that is the whole point of a hook", async () => {
-        const journal = arm.journal();
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "pending" }));
-        await journal.claimHook(runId, "ask#0", token);
+        const { journal, runId, token } = await openHook(arm, { status: "pending" });
         expect(await journal.setStatus(runId, "running")).toBe(true);
         expect(await journal.deliverHook(token, "still here")).toBe(runId);
       });

@@ -337,13 +337,17 @@ export function translateSpawnFailure(err: unknown): unknown {
  * exists to prevent, and hiding it behind a warning made a registry loss
  * invisible until an agent misbehaved. `SANDBOX_IGNORE_IMAGE_PINS=1` is the
  * operator kill switch for a registry loss, and it says so in the log.
+ *
+ * Generic over the image because it only ever hands one through: the spec
+ * exercises it with a tagged stand-in rather than laundering an object
+ * literal into Modal's `Image` class.
  */
-export async function resolveSpawnImage(opts: {
+export async function resolveSpawnImage<I = Image>(opts: {
   imageTag: string | undefined;
-  fromName: (tag: string) => Promise<Image>;
-  current: () => Promise<Image>;
+  fromName: (tag: string) => Promise<I>;
+  current: () => Promise<I>;
   env?: NodeJS.ProcessEnv;
-}): Promise<Image> {
+}): Promise<I> {
   const { imageTag, env = process.env } = opts;
   if (!imageTag) return await opts.current();
   if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") {

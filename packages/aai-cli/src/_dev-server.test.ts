@@ -48,37 +48,12 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
-import { log } from "./_ui.ts";
+import { loadWorker, startDevServer } from "./_dev-server.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
 // these otherwise-fast tests.
 vi.setConfig({ testTimeout: 30_000 });
-
-describe("watchDirectory", () => {
-  test("logs watcher errors, with an inotify hint for ENOSPC", () => {
-    watchDirectory("/tmp/watched", () => undefined);
-    const enospc = Object.assign(new Error("watch limit"), { code: "ENOSPC" });
-    chokidarState.errorCallback?.(enospc);
-    expect(log.error).toHaveBeenCalledWith(expect.stringContaining("max_user_watches"));
-
-    chokidarState.errorCallback?.(new Error("disk gone"));
-    expect(log.error).toHaveBeenLastCalledWith(expect.stringContaining("disk gone"));
-    expect(log.error).toHaveBeenLastCalledWith(expect.not.stringContaining("max_user_watches"));
-  });
-
-  test("a throwing onChange is logged, not an unhandled rejection", async () => {
-    watchDirectory("/tmp/watched", () => {
-      throw new Error("restart exploded");
-    });
-    chokidarState.allCallback?.("change", "/tmp/watched/agent.ts");
-    // The debounce window is 300ms; the throw surfaces via the catch handler.
-    await vi.waitFor(() =>
-      expect(log.error).toHaveBeenCalledWith(expect.stringContaining("restart exploded")),
-    );
-  });
-});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -160,7 +135,8 @@ describe("startDevServer", () => {
         // The run store, built once for the process and handed to every build:
         // a rebuild replaces the workflow ENGINE (that is what reloads a body)
         // and must not replace the runs underneath it. Identity across rebuilds
-        // is asserted in `_dev-server-restart.test.ts`, which drives one.
+        // is asserted in `_dev-server-restart.test.ts`, which drives one
+        // through the `serve` seam.
         journal: expect.anything(),
         // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
         // which with no `client.tsx` is the port passed in — because the DevKit's

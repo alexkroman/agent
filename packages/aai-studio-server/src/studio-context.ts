@@ -62,9 +62,12 @@ export function projectNotFound(c: Context<StudioHonoEnv>): Response {
  * Lives beside the context type rather than in studio-routes.ts so route
  * modules under it (the database switch, which redeploys a preview) can
  * resolve the origin without importing their own parent.
+ *
+ * Takes only the raw request it reads — a route's full context is assignable,
+ * and a spec can hand it a bare `Request` without claiming to be one.
  */
 export function requestPublicOrigin(
-  c: Context<StudioHonoEnv>,
+  c: { req: { raw: Request } },
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   // Through `guestReachableUrl`, because this value's whole job is to be dialed

@@ -174,6 +174,27 @@ function declaredMeta(req: http.IncomingMessage): UploadMeta {
   };
 }
 
+/**
+ * The answer both whole-file writes give: run the store write, log it, and
+ * answer 201 with where the bytes are — or answer one of the store's typed
+ * refusals, and rethrow anything else for the router to classify.
+ */
+async function answerWholeUpload(
+  res: http.ServerResponse,
+  logger: Logger,
+  message: string,
+  write: () => Promise<UploadInfo>,
+): Promise<void> {
+  try {
+    const info = await write();
+    logger.info(message, { id: info.id, name: info.name, size: info.size });
+    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+  } catch (err: unknown) {
+    if (sendUploadFailure(res, err)) return;
+    throw err;
+  }
+}
+
 /** `POST /workflows/uploads` — store the request body and answer with its id. */
 export async function createUpload(
   req: http.IncomingMessage,
@@ -181,14 +202,9 @@ export async function createUpload(
   store: UploadStore,
   logger: Logger,
 ): Promise<void> {
-  try {
-    const info = await store.create(declaredMeta(req), req);
-    logger.info("Workflow upload stored", { id: info.id, name: info.name, size: info.size });
-    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
-  } catch (err: unknown) {
-    if (sendUploadFailure(res, err)) return;
-    throw err;
-  }
+  await answerWholeUpload(res, logger, "Workflow upload stored", () =>
+    store.create(declaredMeta(req), req),
+  );
 }
 
 /**
@@ -208,14 +224,9 @@ export async function streamUpload(
 ): Promise<void> {
   // The id's grammar was checked by `uploadIdOr400`, which is the only caller and
   // now checks it for every upload route rather than for this one and the claim.
-  try {
-    const info = await store.stream(id, declaredMeta(req), req);
-    logger.info("Workflow upload streamed", { id: info.id, name: info.name, size: info.size });
-    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
-  } catch (err: unknown) {
-    if (sendUploadFailure(res, err)) return;
-    throw err;
-  }
+  await answerWholeUpload(res, logger, "Workflow upload streamed", () =>
+    store.stream(id, declaredMeta(req), req),
+  );
 }
 
 /**

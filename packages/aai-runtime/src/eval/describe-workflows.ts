@@ -49,12 +49,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
-import {
-  announceEvalCoverage,
-  announceEvalMode,
-  type EvalMode,
-  registerEmptySuiteFailure,
-} from "./_announce.ts";
+import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
@@ -164,21 +159,9 @@ export function describeWorkflowEval(
     // sharper version of that hazard — every case being `{ live: true }` is more
     // tempting here, since a scripted run needs the case to install a fake per
     // provider a step reaches — so a keyless CI job going green and empty is
-    // easier to arrive at by degrees.
-    announceEvalCoverage(agent.name, mode, declared, skipped, filteredOut.length);
-    // A filter that matched nothing WARNS rather than failing, for the reason
-    // `describeEval` carries: one variable across the whole tier, and each suite
-    // sees only its own cases.
-    if (declared > 0 && filteredOut.length === declared) {
-      announceEvalMode(
-        `eval: ${agent.name} — AAI_EVAL_ONLY matched none of its ${declared} case(s), so this ` +
-          `suite ran nothing. Its cases are: ${filteredOut
-            .map((one) => JSON.stringify(one))
-            .join(", ")}.`,
-      );
-    } else {
-      registerEmptySuiteFailure(agent.name, mode, declared - filteredOut.length, skipped);
-    }
+    // easier to arrive at by degrees. A filter that matched nothing only WARNS;
+    // `closeEvalSuite` carries why.
+    closeEvalSuite(agent.name, mode, declared, skipped, filteredOut);
     spread.report();
   });
 }

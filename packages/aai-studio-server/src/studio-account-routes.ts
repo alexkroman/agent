@@ -63,7 +63,9 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
   studio.get("/account", async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
     const key = await c.env.secrets.get(userApiKeySecretName(user.id));
-    return c.json({ ...(user.email && { email: user.email }), hasKey: key !== null });
+    // Presence, not truthiness: `StudioAuthUser` already carries an empty
+    // email as absent (see `studioUser` in aai-server's supabase-auth.ts).
+    return c.json({ ...omitUndefined({ email: user.email }), hasKey: key !== null });
   });
 
   studio.put("/account/key", zValidator("json", AccountKeySchema), async (c) => {

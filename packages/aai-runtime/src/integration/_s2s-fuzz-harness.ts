@@ -20,6 +20,7 @@
  * @internal Test infrastructure, not part of any public API.
  */
 
+import { setImmediate as nextCheckPhase } from "node:timers/promises";
 import type { SessionEvent } from "@alexkroman1/aai";
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { invariant } from "@alexkroman1/aai/internal";
@@ -99,6 +100,14 @@ export interface Harness {
 }
 
 /**
+ * The harness before its session exists. The sink and the tool executor are
+ * built first and close over this object, and the session is attached to the
+ * SAME object once `createSessionCore` returns — so nothing needs a placeholder
+ * session typed as the real thing.
+ */
+type HarnessState = Omit<Harness, "session">;
+
+/**
  * Let every pending microtask run. A macrotask boundary rather than N awaits:
  * the chains here are several deep (p-event's open race, then the transport's
  * connect continuation, then session-core's turn promise) and counting ticks is
@@ -109,9 +118,11 @@ export interface Harness {
  * suite at ~60s on its own. Nothing in the S2S path arms a timer (the idle timer
  * is disabled, and the injected `executeTool` bypasses the tool executor's
  * `pTimeout`), so there is no timer callback for this to jump ahead of.
+ * Reached through `node:timers/promises` rather than wrapped in a hand-built
+ * promise: the same check-phase yield, already promise-shaped.
  */
 export function drain(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+  return nextCheckPhase();
 }
 
 /** Throw, so fast-check shrinks to the shortest sequence that reproduces it. */
@@ -120,13 +131,13 @@ function fail(what: string): never {
 }
 
 /** A fatal `error` frame latches: the client has released its microphone. */
-function noteFatalError(h: Harness, e: SessionEvent<"error.reported">): void {
+function noteFatalError(h: HarnessState, e: SessionEvent<"error.reported">): void {
   h.declaredDead ??= `${e.code}: ${e.message}`;
   if (e.code === "connection") h.socketsAtRetirement ??= h.link.sockets.length;
 }
 
 /** `speech_stopped` must pair with a `speech_started` any client can have seen. */
-function checkSpeechPairing(h: Harness): void {
+function checkSpeechPairing(h: HarnessState): void {
   // One pass rather than two `filter().length` scans of the same array: this
   // runs on every `speech.stopped` of every generated run, so the log is walked
   // once per check instead of twice.
@@ -139,7 +150,7 @@ function checkSpeechPairing(h: Harness): void {
   if (stops > starts) fail("speech_stopped with no matching speech_started");
 }
 
-function makeSink(h: Harness): ClientSink {
+function makeSink(h: HarnessState): ClientSink {
   return {
     open: true,
     event(e) {
@@ -185,8 +196,7 @@ export const FIRST_SESSION_ID = "sess-0";
  */
 export async function createHarness(cov: Record<string, number>): Promise<Harness> {
   const link = createFakeS2sLink();
-  const h: Harness = {
-    session: undefined as unknown as ServerSession,
+  const state: HarnessState = {
     link,
     events: [],
     pendingTools: [],
@@ -233,7 +243,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     logger: silentLogger,
   });
 
-  const sink = makeSink(h);
+  const sink = makeSink(state);
   core = createSessionCore({
     id: "fuzz",
     agent: "fuzz-agent",
@@ -275,8 +285,8 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
         const finish = (result: string): void => {
           if (done) return;
           done = true;
-          h.settled.add(callId);
-          h.pendingTools = h.pendingTools.filter((t) => t.callId !== callId);
+          state.settled.add(callId);
+          state.pendingTools = state.pendingTools.filter((t) => t.callId !== callId);
           resolve(result);
         };
         const signal = options?.signal;
@@ -289,7 +299,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
           hit("toolAbortedBySession");
           finish(serializeToolFailure("aborted"));
         });
-        h.pendingTools.push({
+        state.pendingTools.push({
           callId,
           settle: (ok) =>
             finish(ok ? `result for ${callId}` : serializeToolFailure("tool blew up")),
@@ -297,7 +307,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
       });
     },
   });
-  h.session = core;
+  const h: Harness = Object.assign(state, { session: core });
 
   const started = core.start();
   await drain();

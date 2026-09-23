@@ -31,6 +31,8 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
+import { errorsIn, saidIn, toolCallsInEvents } from "./events.ts";
+import type { EvalTurn } from "./session.ts";
 
 /**
  * Which harness is asking — the two differ only in the sentence that says WHY
@@ -180,4 +182,25 @@ export function assertTurnMeasurable(
       "discovered by the bundler and not by `agent()`, so an eval importing `./agent.ts` " +
       "drives a definition with NO tools — import `virtual:aai/agent` instead.",
   );
+}
+
+/**
+ * {@link assertTurnMeasurable}, then the turn read as an {@link EvalTurn} — what
+ * the voice session and the text agent both hand a case, so the two cannot
+ * disagree on what a field means.
+ */
+export function measuredTurn(
+  what: string,
+  turn: readonly SessionEvent[],
+  toolNames: readonly string[],
+  mode: TurnMode,
+): EvalTurn {
+  assertTurnMeasurable(what, turn, toolNames, mode);
+  return {
+    text: saidIn(turn).join(" "),
+    events: turn,
+    toolCalls: toolCallsInEvents(turn),
+    completed: turn.some((e) => e.type === "reply.completed"),
+    errors: errorsIn(turn),
+  };
 }

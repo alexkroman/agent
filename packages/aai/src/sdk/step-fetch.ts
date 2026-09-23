@@ -72,6 +72,7 @@
  */
 
 import { concatBytes } from "./_bytes.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 
 /**
  * The subset of `fetch` a step needs, and all a host has to publish.
@@ -272,10 +273,14 @@ function causeChain(err: unknown): { text: string; code?: string }[] {
   // and five hops is past every real chain undici and node:http produce.
   for (let hop = 0; hop < 5 && at !== undefined && at !== null; hop += 1) {
     const node = at as { name?: unknown; message?: unknown; code?: unknown; cause?: unknown };
-    const code = typeof node.code === "string" ? node.code : undefined;
+    // An empty `code` is no code: it would render as a bare ` []`.
+    const code = typeof node.code === "string" && node.code !== "" ? node.code : undefined;
     const name = typeof node.name === "string" ? node.name : "Error";
     const message = typeof node.message === "string" ? node.message : String(at);
-    chain.push({ text: `${name}: ${message}${code ? ` [${code}]` : ""}`, ...(code && { code }) });
+    chain.push({
+      text: `${name}: ${message}${code === undefined ? "" : ` [${code}]`}`,
+      ...omitUndefined({ code }),
+    });
     at = node.cause;
   }
   return chain;

@@ -671,8 +671,9 @@ debounce per assertion — which is why those specs carried 15s `vi.waitFor`
 ceilings, and why four of the races above had no test at all. Keep new
 restart/teardown logic in `_dev-restart.ts` and spec it there
 (`_dev-restart.test.ts`, no mocks); `_dev-server-restart.test.ts` is for
-WIRING only — that a chokidar event reaches the supervisor and that teardown
-closes the watcher with the server.
+WIRING only — that a watcher event reaches the supervisor and that teardown
+closes the watcher with the server. It mocks no module: `startDevServer`'s
+second argument (`DevServerSeams` — `watch` and `serve`) takes the fakes.
 
 **The "at most one rebuild, one trailing re-run" half is
 `createCoalescingRunner`, not a local flag pump.** It had been re-derived here
@@ -788,6 +789,8 @@ the user requests outright is unaffected.
   it is worth reading without the watcher/restart/env plumbing around it, and
   because that plumbing had pushed `_dev-server.ts` past the length cap
 - `_dev-restart.ts` — the watch loop's restart state machine (see below)
+- `_dev-watch.ts` — the file watcher (`watchDirectory`, `isIgnoredPath`) and
+  the `DevWatchFn` seam `startDevServer` accepts in place of chokidar
 - `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)

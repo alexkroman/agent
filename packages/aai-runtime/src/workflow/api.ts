@@ -227,6 +227,36 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
   return undefined;
 }
 
+/**
+ * One `/uploads/:id<suffix>` rule — five of them, and each owes the same two
+ * refusals before it may touch anything: the 404 of a server with no store
+ * ({@link requireUploads}) and the 400 of an id that does not parse
+ * (`uploadIdOr400`, which checks the grammar for every such route). An empty
+ * `suffix` is the bare prefix match.
+ */
+function uploadIdRoute(
+  method: string,
+  suffix: string,
+  handle: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    ctx: RouteContext,
+    store: UploadStore,
+    id: string,
+  ) => Promise<void>,
+): Route {
+  return {
+    method,
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith(suffix),
+    run: async (req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = uploadIdOr400(res, url, suffix);
+      if (id !== undefined) await handle(req, res, ctx, store, id);
+    },
+  };
+}
+
 /** Prefix every `/runs/:id` route matches under. */
 const RUNS_PREFIX = `${WORKFLOW_API_PREFIX}/runs/`;
 
@@ -273,58 +303,21 @@ const ROUTES: readonly Route[] = [
   // The `/parts` pair is under the same prefix-order rule as `/info` below: both
   // paths end in a suffix the bare `/uploads/:id` rules would read as part of the
   // id, so they are listed first.
-  {
-    method: "POST",
-    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith(UPLOAD_PARTS_SUFFIX),
-    run: async (req, res, ctx, url) => {
-      const store = requireUploads(res, ctx);
-      if (!store) return;
-      const id = uploadIdOr400(res, url, UPLOAD_PARTS_SUFFIX);
-      if (id !== undefined) {
-        await beginUploadParts(req, res, store, id, ctx.logger, ctx.directParts === true);
-      }
-    },
-  },
-  {
-    method: "PUT",
-    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith(UPLOAD_PARTS_SUFFIX),
-    run: async (req, res, ctx, url) => {
-      const store = requireUploads(res, ctx);
-      if (!store) return;
-      const id = uploadIdOr400(res, url, UPLOAD_PARTS_SUFFIX);
-      if (id !== undefined) await writeUploadPart(req, res, store, id);
-    },
-  },
-  {
-    method: "GET",
-    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith("/info"),
-    run: async (_req, res, ctx, url) => {
-      const store = requireUploads(res, ctx);
-      if (!store) return;
-      const id = uploadIdOr400(res, url, "/info");
-      if (id !== undefined) await readUploadInfoRoute(res, store, id, ctx.directParts === true);
-    },
-  },
-  {
-    method: "GET",
-    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
-    run: async (req, res, ctx, url) => {
-      const store = requireUploads(res, ctx);
-      if (!store) return;
-      const id = uploadIdOr400(res, url);
-      if (id !== undefined) await readUploadRoute(req, res, store, id);
-    },
-  },
-  {
-    method: "PUT",
-    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
-    run: async (req, res, ctx, url) => {
-      const store = requireUploads(res, ctx);
-      if (!store) return;
-      const id = uploadIdOr400(res, url);
-      if (id !== undefined) await streamUpload(req, res, store, id, ctx.logger);
-    },
-  },
+  uploadIdRoute("POST", UPLOAD_PARTS_SUFFIX, (req, res, ctx, store, id) =>
+    beginUploadParts(req, res, store, id, ctx.logger, ctx.directParts === true),
+  ),
+  uploadIdRoute("PUT", UPLOAD_PARTS_SUFFIX, (req, res, _ctx, store, id) =>
+    writeUploadPart(req, res, store, id),
+  ),
+  uploadIdRoute("GET", "/info", (_req, res, ctx, store, id) =>
+    readUploadInfoRoute(res, store, id, ctx.directParts === true),
+  ),
+  // The two bare `/uploads/:id` rules: an empty suffix is a PREFIX match, which
+  // is why everything with a suffix is listed above them.
+  uploadIdRoute("GET", "", (req, res, _ctx, store, id) => readUploadRoute(req, res, store, id)),
+  uploadIdRoute("PUT", "", (req, res, ctx, store, id) =>
+    streamUpload(req, res, store, id, ctx.logger),
+  ),
   // Before the `/runs/:id` prefix matches below, and distinct from them: the
   // collection path carries no id, so it cannot be confused with a run whose
   // id is the empty string.

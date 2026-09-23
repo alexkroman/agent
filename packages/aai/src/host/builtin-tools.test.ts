@@ -10,17 +10,19 @@ import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";
  * real execution happens inside the guest sandbox (see deno-harness). This
  * host-side def is a guard that refuses to evaluate code.
  */
-/** A `vi.fn()` standing in for `fetch`, however its return was inferred. */
-type MockFetch = { mock: { calls: unknown[] } };
+/** The signature {@link fakeFetch} narrows to `fetch` — declared on a mock so its calls are typed. */
+type FetchDouble = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
- * The `[url, init]` pair a mocked fetch recorded. `vi.fn()` types its call
- * tuple from its own inferred signature rather than from the `fetch` call
- * site, so reading it back needs a cast — keep it at this one seam; the
- * escape-hatch ratchet counts every occurrence.
+ * The `[url, init]` pair a mocked fetch recorded. The mock is declared as
+ * `vi.fn<FetchDouble>()`, so its call tuple already has this type.
  */
-function firstFetchCall(mockFetch: MockFetch): [string, RequestInit] {
-  return mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+function firstFetchCall(mockFetch: {
+  mock: { calls: Parameters<FetchDouble>[] };
+}): Parameters<FetchDouble> {
+  const call = mockFetch.mock.calls[0];
+  if (call === undefined) throw new Error("fetch was never called");
+  return call;
 }
 
 function runCode(code: string): Promise<unknown> {
@@ -181,7 +183,9 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("fetch_json passes allowed custom headers to fetch", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    const mockFetch = vi.fn<FetchDouble>(() =>
+      Promise.resolve(new Response(JSON.stringify({ ok: true }))),
+    );
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
@@ -200,7 +204,9 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("fetch_json blocks dangerous headers like Authorization", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    const mockFetch = vi.fn<FetchDouble>(() =>
+      Promise.resolve(new Response(JSON.stringify({ ok: true }))),
+    );
     const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: fakeFetch(mockFetch),
     });
@@ -265,7 +271,7 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("web_search parses DDG results, decoding redirect URLs and entities", async () => {
-    const mockFetch = vi.fn(() => Promise.resolve(new Response(ddgHtml)));
+    const mockFetch = vi.fn<FetchDouble>(() => Promise.resolve(new Response(ddgHtml)));
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: fakeFetch(mockFetch),
     });

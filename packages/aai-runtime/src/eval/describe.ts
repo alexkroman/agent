@@ -31,12 +31,7 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, test } from "vitest";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
-import {
-  announceEvalCoverage,
-  announceEvalMode,
-  type EvalMode,
-  registerEmptySuiteFailure,
-} from "./_announce.ts";
+import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
 import { announceToollessAgent, checkStubReplyTools, hasWorkflows } from "./_declared-tools.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
@@ -290,23 +285,9 @@ export function describeEval(
       );
     };
     define(evalTest);
-    announceEvalCoverage(agent.name, mode, declared, skippedCases, filteredOut.length);
-    // A FILTERED run has opted out of coverage on purpose, so the empty-suite
-    // failure is not its business — and must not be. `AAI_EVAL_ONLY` is one
-    // variable across the whole tier while each suite sees only its own cases,
-    // so a filter aimed at one template would otherwise fail the other
-    // twenty-seven for not containing it. `aai-evals/_register.ts` reached the
-    // same conclusion for the same reason and warns instead; this warns too.
-    if (declared > 0 && filteredOut.length === declared) {
-      announceEvalMode(
-        `eval: ${agent.name} — AAI_EVAL_ONLY matched none of its ${declared} case(s), so this ` +
-          `suite ran nothing. Its cases are: ${filteredOut
-            .map((one) => JSON.stringify(one))
-            .join(", ")}.`,
-      );
-    } else {
-      registerEmptySuiteFailure(agent.name, mode, declared - filteredOut.length, skippedCases);
-    }
+    // Coverage line, then the empty-suite failure or the filtered-to-nothing
+    // warning — see `closeEvalSuite` for why a filtered run only warns.
+    closeEvalSuite(agent.name, mode, declared, skippedCases, filteredOut);
     spread.report();
   });
 }

@@ -37,7 +37,7 @@
 
 import { describe, expect, test } from "vitest";
 import { codeUnit } from "./_order.ts";
-import { type JournalArm, keysFor, runOf } from "./conformance-cases.ts";
+import { type JournalArm, keysFor, runOf, startRun } from "./conformance-cases.ts";
 import { isResumableJournal, type ResumableJournal, type ResumableRun } from "./types.ts";
 
 /**
@@ -147,16 +147,12 @@ export function journalResumeConformance(arm: JournalArm): void {
         // A `pending` run whose start was never delivered, or one killed
         // mid-step. Absent `wakeAt` means "now" — `undefined` and not `null`,
         // which is one of the absence drifts this table exists to hammer.
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "pending" }));
+        const { journal, runId } = await startRun(arm, { status: "pending" }, resumableOf(arm));
         expect(await owed(journal, runId)).toEqual([{ runId }]);
       });
 
       test("a run suspended on a sleep answers that sleep's deadline", async () => {
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" }, resumableOf(arm));
         const at = Date.now() + FAR;
         await journal.claimSleep(runId, "nap#0", at, undefined);
         expect(await owed(journal, runId)).toEqual([{ runId, wakeAt: at }]);
@@ -166,18 +162,14 @@ export function journalResumeConformance(arm: JournalArm): void {
         // The run this method exists for: its deadline passed while no process
         // held a timer for it, and `wakeSleeps` refuses an elapsed wait, so
         // nothing else in the system could reach it.
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" }, resumableOf(arm));
         const at = Date.now() - FAR;
         await journal.claimSleep(runId, "nap#0", at, undefined);
         expect(await owed(journal, runId)).toEqual([{ runId, wakeAt: at }]);
       });
 
       test("the EARLIEST outstanding deadline is the one answered", async () => {
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" }, resumableOf(arm));
         const at = Date.now() + FAR;
         await journal.claimSleep(runId, "late#0", at + FAR, undefined);
         await journal.claimSleep(runId, "soon#0", at, undefined);
@@ -185,18 +177,14 @@ export function journalResumeConformance(arm: JournalArm): void {
       });
 
       test("a WOKEN sleep is not outstanding, so the run is owed one now", async () => {
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" }, resumableOf(arm));
         await journal.claimSleep(runId, "nap#0", Date.now() + FAR, undefined);
         expect(await journal.wakeSleeps(runId, undefined)).toBe(1);
         expect(await owed(journal, runId)).toEqual([{ runId }]);
       });
 
       test("a TERMINAL run is owed nothing", async () => {
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId } = await startRun(arm, { status: "running" }, resumableOf(arm));
         await journal.claimSleep(runId, "nap#0", Date.now() - FAR, undefined);
         await journal.setStatus(runId, "completed", { output: 1 });
         expect(await owed(journal, runId)).toEqual([]);
@@ -207,9 +195,11 @@ export function journalResumeConformance(arm: JournalArm): void {
         // the approval workflow the SDK documents, and `signal` is what ends it.
         // Re-delivering it costs a replay per parked run per boot and buys
         // nothing — the same park rule `workflow-queue-reconcile.ts` applies.
-        const journal = resumableOf(arm);
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId, token } = await startRun(
+          arm,
+          { status: "running" },
+          resumableOf(arm),
+        );
         await journal.claimHook(runId, "ask#0", token);
         expect(await owed(journal, runId)).toEqual([]);
       });
@@ -218,9 +208,11 @@ export function journalResumeConformance(arm: JournalArm): void {
         // A `waitFor(token, { timeoutMs })` journals its deadline as a
         // `hookTimeout` sleep. Without this arm the exclusion above would hide
         // such a run forever once its delivery was lost.
-        const journal = resumableOf(arm);
-        const { runId, token } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "running" }));
+        const { journal, runId, token } = await startRun(
+          arm,
+          { status: "running" },
+          resumableOf(arm),
+        );
         await journal.claimHook(runId, "ask#0", token);
         const at = Date.now() - FAR;
         await journal.claimSleep(runId, "ask!0", at, "review", "hookTimeout");
@@ -248,9 +240,7 @@ export function journalResumeConformance(arm: JournalArm): void {
       });
 
       test("limit BOUNDS the pass, so a boot sweep cannot stampede", async () => {
-        const journal = resumableOf(arm);
-        const { runId } = keysFor(arm);
-        await journal.createRun(runOf({ runId, status: "pending" }));
+        const { journal } = await startRun(arm, { status: "pending" }, resumableOf(arm));
         expect(await journal.resumableRuns(1)).toHaveLength(1);
         expect(await journal.resumableRuns(0)).toEqual([]);
       });

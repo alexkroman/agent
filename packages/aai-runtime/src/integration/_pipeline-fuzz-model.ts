@@ -108,13 +108,13 @@ export function promptProblems(prompt: unknown): string[] {
 export function trackStreamLifetime<T>(
   stream: ReadableStream<T>,
   signal: AbortSignal | undefined,
-  onSettle: () => void,
+  whenSettled: () => void,
 ): ReadableStream<T> {
   let settled = false;
   const settle = (): void => {
     if (settled) return;
     settled = true;
-    onSettle();
+    whenSettled();
   };
   if (signal?.aborted === true) settle();
   else signal?.addEventListener("abort", settle, { once: true });
@@ -387,11 +387,16 @@ export function instrumentLlm(
   mon: Monitor,
   refusals: readonly boolean[],
 ): void {
-  const llmObj = llm as unknown as { doStream: (o: unknown) => Promise<unknown> };
-  const rawDoStream = llmObj.doStream;
+  // `LanguageModel` is a union over three provider spec versions plus a bare
+  // model id, and a `doStream` override written against the union satisfies
+  // none of them. The fake is always the v3 object, so narrow to that arm — the
+  // same move `error-injection.test.ts`'s `refusingLlm` makes.
+  if (typeof llm === "string" || llm.specificationVersion !== "v3") {
+    throw new Error("the fake model is a v3 object, never an id or another spec version");
+  }
+  const rawDoStream = llm.doStream;
   let requests = 0;
-  llmObj.doStream = async (o) => {
-    const opts = o as { prompt?: unknown; abortSignal?: AbortSignal };
+  llm.doStream = async (opts) => {
     mon.hit("llmRequest");
     // A request that never produces a stream at all. Reported by the catch in
     // `consumeLlmStream` rather than the stream-part handler — a separate
@@ -408,7 +413,7 @@ export function instrumentLlm(
 
     mon.liveStreams++;
     mon.maxLiveStreams = Math.max(mon.maxLiveStreams, mon.liveStreams);
-    const result = (await rawDoStream.call(llm, o)) as { stream: ReadableStream<unknown> };
+    const result = await rawDoStream.call(llm, opts);
     const stream = trackStreamLifetime(result.stream, opts.abortSignal, () => {
       mon.liveStreams--;
     });

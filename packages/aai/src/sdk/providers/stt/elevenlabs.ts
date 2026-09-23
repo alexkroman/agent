@@ -76,7 +76,10 @@ export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
 } {
   return {
     model: options.model ?? ELEVENLABS_DEFAULT_MODEL,
-    // Omitted unless set: absent means auto-detect, which is not "English".
-    ...(options.language ? { languageCode: options.language } : {}),
+    // Omitted unless set: absent means auto-detect, which is not "English". An
+    // empty `language` is treated as absent rather than sent as a blank code.
+    ...(options.language !== undefined && options.language !== ""
+      ? { languageCode: options.language }
+      : {}),
   };
 }

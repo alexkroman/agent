@@ -400,12 +400,11 @@ describe("deploy + chat endpoints", () => {
 
 describe("requestPublicOrigin", () => {
   /** A request as the studio sees it behind Modal: cleartext, public Host. */
-  const behindTls = (headers: Record<string, string> = {}) =>
-    ({
-      req: {
-        raw: new Request("http://agent.example.modal.run/studio/projects/p/deploy", { headers }),
-      },
-    }) as unknown as Parameters<typeof requestPublicOrigin>[0];
+  const behindTls = (headers: Record<string, string> = {}) => ({
+    req: {
+      raw: new Request("http://agent.example.modal.run/studio/projects/p/deploy", { headers }),
+    },
+  });
 
   test("publishes https for a public host behind a TLS-terminating proxy", () => {
     // Publish hands this origin to the guest's `aai deploy`. Resolving it as

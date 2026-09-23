@@ -84,7 +84,7 @@ export function writeLine(line: string): Promise<void> {
  * `aai … --json | head -1`) exits quietly; anything else is reported on
  * stderr and exits non-zero.
  */
-export function installStdoutGuard(stream: NodeJS.WriteStream = process.stdout): void {
+export function installStdoutGuard(stream: NodeJS.EventEmitter = process.stdout): void {
   stream.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EPIPE") {
       process.exit(0);

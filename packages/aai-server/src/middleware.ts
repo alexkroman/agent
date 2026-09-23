@@ -277,8 +277,9 @@ export async function requireOwner(
 }
 
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
-  // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
-  c.set("slug", validateSlug(c.req.param("slug")!));
+  // The route pattern guarantees the param; were it ever absent, the empty
+  // string fails validation (400) rather than letting `undefined` through.
+  c.set("slug", validateSlug(c.req.param("slug") ?? ""));
   await next();
 });
 

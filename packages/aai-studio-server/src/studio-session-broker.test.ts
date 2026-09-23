@@ -6,6 +6,7 @@
  * _studio-session-test-utils.ts.
  */
 
+import { setImmediate } from "node:timers/promises";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createMemoryChatStore, createMemoryWorkspaceStore } from "aai-server/stores";
 import { describe, expect, test, vi } from "vitest";
@@ -307,7 +308,7 @@ describe("studio session broker", () => {
 
     // Mid-turn checkpoint: files land, no preview deploy.
     await sync?.({ files: { "agent.ts": "// checkpoint" } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setImmediate();
     expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
 
     // Turn-complete sync: the preview deploys to `<project>-preview`, on
@@ -339,7 +340,7 @@ describe("studio session broker", () => {
     await broker.ensureSession(SCOPE, PROJECT, "k");
     const sync = guest.handlers.get("studio/sync-workspace");
     await sync?.({ files: { "agent.ts": "// settled" }, done: true });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setImmediate();
     expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
     await broker.dispose();
   });

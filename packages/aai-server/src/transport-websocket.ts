@@ -117,9 +117,9 @@ export function createDefaultClientHandlers(readDefaultClient: CachedDirReader):
 
   async function handleClientAsset(c: AppContext): Promise<Response> {
     const slug = c.var.slug;
-    // biome-ignore lint/style/noNonNullAssertion: path param guaranteed by route
-    const rawPath = c.req.param("path")!;
-    const parsed = SafePathSchema.safeParse(rawPath);
+    // Handed to the schema as-is: the route pattern guarantees the param, and
+    // `safeParse` rejects anything that is not a safe path string regardless.
+    const parsed = SafePathSchema.safeParse(c.req.param("path"));
     if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
 
     const assetPath = parsed.data;

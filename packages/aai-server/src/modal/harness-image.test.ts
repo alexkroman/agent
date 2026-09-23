@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import type { App, Image, ModalClient } from "modal";
+import type { App, ModalClient } from "modal";
 import { describe, expect, test, vi } from "vitest";
 import { resolveHarnessPath } from "../constants.ts";
 import { fakeModalImage as fakeImage } from "../test-utils.ts";
@@ -264,42 +264,37 @@ describe("createHarnessImageResolver", () => {
     } = {},
   ) {
     const publishedTags = opts.publishedTags ?? new Set<string>();
+    // Two image doubles: the base the toolchain layers stack on (and whose
+    // `build()` is counted), and the snapshot the builder sandbox hands back.
+    const baseImage = fakeImage();
+    const snapshot = fakeImage();
     const state = {
-      published: [] as string[],
+      /** Every tag the snapshot was published under. */
+      get published() {
+        return snapshot.published;
+      },
       writes: [] as { data: string; path: string }[],
       created: 0,
       terminated: 0,
       fromNameCalls: [] as string[],
-      builds: 0,
+      get builds() {
+        return baseImage.builds;
+      },
       /** Every exec the build ran, in order, with its env. */
       execs: [] as { command: string[]; env: Record<string, string> }[],
       /** Ordering probe: was the snapshot taken after the warm-up exec? */
       snapshotAfterExecs: -1,
       /** Every `dockerfileCommands` layer the build stacked, in order. */
-      layers: [] as string[][],
+      get layers() {
+        return baseImage.commands;
+      },
     };
-    const snapshot = {
-      publish: (tag: string) => {
-        state.published.push(tag);
-        publishedTags.add(tag);
-        return Promise.resolve();
-      },
-    } as unknown as Image;
-    const baseImage = {
-      dockerfileCommands: (next: string[]) => {
-        state.layers.push(next);
-        return baseImage;
-      },
-      build: () => {
-        state.builds++;
-        return Promise.resolve(baseImage);
-      },
-    } as unknown as Image;
     const client = {
       images: {
         fromName: (tag: string) => {
           state.fromNameCalls.push(tag);
-          return publishedTags.has(tag)
+          // Published by another replica, or by this resolver's own snapshot.
+          return publishedTags.has(tag) || snapshot.published.includes(tag)
             ? Promise.resolve(baseImage)
             : Promise.reject(new Error("not found"));
         },

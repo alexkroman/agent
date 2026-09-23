@@ -22,9 +22,23 @@
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { beforeEach, vi } from "vitest";
 
 process.env.AAI_CONFIG_DIR = mkdtempSync(path.join(os.tmpdir(), "aai-test-config-"));
 
-for (const key of Object.keys(process.env)) {
-  if (/^[A-Z0-9_]*API_KEY$/.test(key) || key === "DATABASE_URL") delete process.env[key];
+const CREDENTIAL_KEYS = Object.keys(process.env).filter(
+  (key) => /^[A-Z0-9_]*API_KEY$/.test(key) || key === "DATABASE_URL",
+);
+
+/**
+ * Stubbed rather than deleted: `unstubEnvs` (vitest.shared.ts) restores every
+ * stub before each test, so the drop is applied twice — once now, for code a
+ * spec runs at import time or in `beforeAll`, and again in `beforeEach`, after
+ * that restore, for the test body itself.
+ */
+function dropCredentials(): void {
+  for (const key of CREDENTIAL_KEYS) vi.stubEnv(key, undefined);
 }
+
+dropCredentials();
+beforeEach(dropCredentials);

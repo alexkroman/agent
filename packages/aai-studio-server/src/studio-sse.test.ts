@@ -13,6 +13,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { endLiveStreams, resetLiveStreams } from "aai-server/platform";
 import type { SSEMessage } from "hono/streaming";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +35,7 @@ function makeStream(): {
   // that contract rather than a claim to be a class it is not.
   const stream: SseStream = {
     writeSSE: async (frame: SSEMessage) => {
-      frames.push({ ...(frame.event && { event: frame.event }), data: String(frame.data) });
+      frames.push({ ...omitUndefined({ event: frame.event }), data: String(frame.data) });
     },
     onAbort: (cb: () => void) => {
       onAbort = cb;

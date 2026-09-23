@@ -22,7 +22,9 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
+import type { SandboxCreateParams } from "modal";
 import { describe, expect, it } from "vitest";
 import {
   type FakeProc,
@@ -64,7 +66,7 @@ async function spawn(
       worker: overrides.worker ?? { kind: "inline", code: WORKER, sha256: SHA },
       agentEnv: overrides.agentEnv ?? { ASSEMBLYAI_API_KEY: "k" },
       name: overrides.name ?? "agent-abc123-v7",
-      ...(overrides.imageTag ? { imageTag: overrides.imageTag } : {}),
+      ...omitUndefined({ imageTag: overrides.imageTag }),
     },
     overrides.ctx ?? makeCtx(sb),
   );
@@ -323,12 +325,12 @@ describe("spawnModalAgentServer", () => {
     // deploy (see sandbox/directory.ts) — there is no lease table behind it.
     const fake = makeFakeProc();
     const sb = makeFakeSandbox(fake);
-    const params: Record<string, unknown>[] = [];
+    const params: SandboxCreateParams[] = [];
     const ctx: ModalSpawnContext = {
       lookupGuestSandbox: () => Promise.resolve(null),
       prepareGuestImage: () => Promise.resolve(),
       createGuestSandbox: async (_code, p) => {
-        params.push(p as unknown as Record<string, unknown>);
+        params.push(p);
         return sb;
       },
     };

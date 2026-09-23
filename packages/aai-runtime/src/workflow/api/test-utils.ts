@@ -108,8 +108,20 @@ export async function serve(opts: {
     ...omitUndefined({ token: opts.token, uploads: opts.uploads }),
     logger,
   });
+  return { ...(await listenLoopback(api, opts.onRequest)), logger };
+}
+
+/**
+ * Serve `api` on a real loopback port — anything it does not claim is a 404 —
+ * and answer the base URL plus a close. Shared with the upload suites'
+ * harness (`_uploads-test-utils.ts`), so the two drive the API identically.
+ */
+export async function listenLoopback(
+  api: ReturnType<typeof createWorkflowApi>,
+  onRequest?: () => void,
+): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
-    opts.onRequest?.();
+    onRequest?.();
     const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
     res.writeHead(404).end();
@@ -118,7 +130,6 @@ export async function serve(opts: {
   const { port } = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${port}`,
-    logger,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

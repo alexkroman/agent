@@ -107,7 +107,7 @@ export function realtimeEndpoint(url: string): string {
 function defaultClient(opts: RealtimePlatformEventsOptions): RealtimeClientLike {
   return new RealtimeClient(realtimeEndpoint(opts.url), {
     params: { apikey: opts.key },
-  }) as unknown as RealtimeClientLike;
+  });
 }
 
 /**

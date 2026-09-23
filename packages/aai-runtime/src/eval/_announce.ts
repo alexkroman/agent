@@ -130,6 +130,41 @@ export function registerEmptySuiteFailure(
 }
 
 /**
+ * What a suite owes once its cases are declared: the coverage line, then EITHER
+ * the empty-suite failure OR — when `AAI_EVAL_ONLY` dropped every case — a
+ * warning naming them instead.
+ *
+ * A FILTERED run has opted out of coverage on purpose, so the empty-suite
+ * failure is not its business — and must not be. `AAI_EVAL_ONLY` is one
+ * variable across the whole tier while each suite sees only its own cases, so a
+ * filter aimed at one template would otherwise fail the other twenty-seven for
+ * not containing it. `aai-evals/_register.ts` reached the same conclusion for
+ * the same reason and warns instead; this warns too.
+ *
+ * `describeEval` and `describeEvalWorkflows` both close this way, which is why it
+ * is one function: the wording is the contract a reader of either learns.
+ */
+export function closeEvalSuite(
+  name: string,
+  mode: EvalMode,
+  declared: number,
+  skipped: number,
+  filteredOut: readonly string[],
+): void {
+  announceEvalCoverage(name, mode, declared, skipped, filteredOut.length);
+  if (declared > 0 && filteredOut.length === declared) {
+    announceEvalMode(
+      `eval: ${name} — AAI_EVAL_ONLY matched none of its ${declared} case(s), so this ` +
+        `suite ran nothing. Its cases are: ${filteredOut
+          .map((one) => JSON.stringify(one))
+          .join(", ")}.`,
+    );
+  } else {
+    registerEmptySuiteFailure(name, mode, declared - filteredOut.length, skipped);
+  }
+}
+
+/**
  * The decision {@link registerEmptySuiteFailure} acts on, as a pure function —
  * `undefined` when the suite ran something.
  *

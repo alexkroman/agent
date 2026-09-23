@@ -12,9 +12,7 @@
  * here would attach to whichever suite happened to import it first.
  */
 
-import http from "node:http";
-import type { AddressInfo } from "node:net";
-import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
+import { rejectingWorkflows } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { silentLogger } from "../../_test-utils.ts";
@@ -28,6 +26,7 @@ import {
   UploadPartError,
   type UploadStore,
 } from "../uploads.ts";
+import { listenLoopback } from "./test-utils.ts";
 
 /** An engine that answers nothing: these routes must not touch it. */
 export const engine = () => ({
@@ -74,14 +73,9 @@ export async function serve(
     logger: silentLogger,
     ...omitUndefined({ directParts: opts.directParts }),
   });
-  const server = http.createServer((req, res) => {
-    const url = requestPath(req.url);
-    if (api(req, res, url, req.method ?? "GET")) return;
-    res.writeHead(404).end();
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  close = () => new Promise<void>((resolve) => server.close(() => resolve()));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const server = await listenLoopback(api);
+  close = server.close;
+  return server.url;
 }
 
 /** A store the ROUTES can be driven against — enough to exercise create + range. */

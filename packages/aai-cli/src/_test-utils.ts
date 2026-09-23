@@ -4,8 +4,26 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, vi } from "vitest";
+import { describe, type MockInstance, vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
+
+/**
+ * Stub `process.exit` with a function that RETURNS, so the code after the exit
+ * call (and the assertion on the spy) runs in the test.
+ *
+ * `process.exit` is declared to return `never`, so a hand-written stub that
+ * returns normally cannot satisfy the signature, and every spec reached for its
+ * own `(() => undefined) as never`. A bare `vi.fn<typeof process.exit>()` IS
+ * that signature by construction and returns `undefined` when called, so the
+ * implementation needs no cast at all. Where the code under test does nothing
+ * after the exit, a stub that THROWS is the other cast-free option (see
+ * `_output.test.ts`).
+ *
+ * `restoreMocks` puts the real `process.exit` back before the next test.
+ */
+export function stubProcessExit(): MockInstance<typeof process.exit> {
+  return vi.spyOn(process, "exit").mockImplementation(vi.fn<typeof process.exit>());
+}
 
 /** Create a temp directory, run `fn`, then clean up. */
 export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -51,7 +69,7 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
  * `err` is a filesystem EEXIST.
  *
  * Spelled out here rather than imported from `_utils.ts`, which has the same
- * predicate: `_dev-server.test.ts` and `_dev-server-restart.test.ts` MOCK
+ * predicate: `_dev-server.test.ts` and `_dev-env.test.ts` MOCK
  * `./_utils.ts` with a factory that imports `_dev-server-test-utils.ts`, which
  * imports THIS file — so importing `_utils.ts` from here closes a cycle
  * through the mock registry, and that HANGS the run rather than failing it

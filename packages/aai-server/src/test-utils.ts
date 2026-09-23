@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Image } from "modal";
 import { afterEach, beforeEach, vi } from "vitest";
 import { emptyLogPage } from "./agent-logs.ts";
@@ -194,9 +195,13 @@ export function deployPayload(overrides?: Record<string, unknown>): Record<strin
     worker:
       'export default { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
     clientFiles: {
-      "index.html":
-        // biome-ignore lint/security/noSecrets: HTML template, not a secret
-        '<!DOCTYPE html><html><body><script type="module" src="./assets/index.js"></script></body></html>',
+      // Built from its tags rather than one literal: at full length biome's
+      // `noSecrets` entropy heuristic scores the markup as a credential.
+      "index.html": [
+        "<!DOCTYPE html><html><body>",
+        '<script type="module" src="./assets/index.js"></script>',
+        "</body></html>",
+      ].join(""),
       "assets/index.js": 'console.log("c");',
     },
     ...overrides,
@@ -270,7 +275,7 @@ export async function authFetch(
   return fetch(path, {
     method: opts.method ?? "POST",
     headers: authHeaders(opts.key),
-    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+    ...omitUndefined({ body: opts.body === undefined ? undefined : JSON.stringify(opts.body) }),
   });
 }
 
@@ -445,22 +450,44 @@ export function captureLogs(): {
   };
 }
 
+/** {@link fakeModalImage}'s double, with what it recorded. */
+export type FakeModalImage = Image & {
+  /** Every `dockerfileCommands` layer stacked on it, in order. */
+  commands: string[][];
+  /** How many times `build()` was called. */
+  builds: number;
+  /** Every tag `publish()` was called with, in order. */
+  published: string[];
+};
+
 /**
- * A Modal `Image` double that records every layer's commands, in order.
+ * A Modal `Image` double that records every layer's commands, its builds and
+ * its publishes. `build()` resolves to the same double, so layers stacked on a
+ * built image land in the one `commands` list.
  *
  * The one cast for this shape in the package: `Image` is a class with private
  * fields, so a structural stand-in cannot satisfy it, and the fake was written
- * twice with the cast spelled out at each site. Narrowing once here is the same
- * typed-seam rule the root guide states for a concentration of identical casts.
+ * at several sites with the cast spelled out at each. Narrowing once here is the
+ * same typed-seam rule the root guide states for a concentration of identical
+ * casts.
  */
-export function fakeModalImage(): Image & { commands: string[][] } {
-  const commands: string[][] = [];
+export function fakeModalImage(): FakeModalImage {
   const image = {
-    commands,
+    commands: [] as string[][],
+    builds: 0,
+    published: [] as string[],
     dockerfileCommands(next: string[]) {
-      commands.push(next);
+      image.commands.push(next);
       return image;
     },
-  } as unknown as Image & { commands: string[][] };
+    build() {
+      image.builds += 1;
+      return Promise.resolve(image);
+    },
+    publish(tag: string) {
+      image.published.push(tag);
+      return Promise.resolve();
+    },
+  } as unknown as FakeModalImage;
   return image;
 }

@@ -220,6 +220,8 @@ export class MockAudioWorkletNode {
   /** The context this node was constructed on — capture and playback use
    *  separate contexts, so tests need to tell them apart. */
   ctx: MockAudioContext;
+  /** What the code under test installs; {@link crashWorklet} fires it. */
+  onprocessorerror: (() => void) | null = null;
   constructor(ctx: MockAudioContext, name: string, options?: unknown) {
     this.ctx = ctx;
     this.name = name;
@@ -287,7 +289,7 @@ export type AudioMockOptions = {
  * Exported so tests share this one widening; the escape-hatch ratchet counts
  * every occurrence.
  */
-export const g = globalThis as unknown as Record<string, unknown>;
+export const g: Record<string, unknown> = globalThis;
 
 export function installAudioMocks(
   mockOpts: AudioMockOptions = {},
@@ -350,12 +352,14 @@ export function findWorkletNode(nodes: MockAudioWorkletNode[], name: string): Mo
 
 /**
  * Fire a worklet node's `onprocessorerror`, the way the browser does when a
- * processor throws. `MockAudioWorkletNode` does not declare the handler, so
- * reaching it needs a cast — keep it at this one seam; the escape-hatch
- * ratchet counts every occurrence.
+ * processor throws. Throws when the code under test never installed one, so a
+ * missing handler fails the spec rather than passing it silently.
  */
 export function crashWorklet(node: MockAudioWorkletNode): void {
-  (node as unknown as { onprocessorerror: () => void }).onprocessorerror();
+  if (node.onprocessorerror === null) {
+    throw new Error(`worklet node "${node.name}" has no onprocessorerror`);
+  }
+  node.onprocessorerror();
 }
 
 /**

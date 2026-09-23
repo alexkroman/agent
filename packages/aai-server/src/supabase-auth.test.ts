@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { requireStudioUser, resolveBearer } from "./middleware.ts";
 import { PlatformServiceUnavailableError } from "./platform/service-errors.ts";
@@ -14,16 +15,18 @@ import {
 
 /** A dev token the way the browser mints it (unpadded base64url via btoa). */
 function devToken(id: string, email?: string): string {
-  const payload = Buffer.from(JSON.stringify({ id, ...(email ? { email } : {}) }))
+  const payload = Buffer.from(JSON.stringify({ id, ...omitUndefined({ email }) }))
     .toString("base64url")
     .replace(/=+$/, "");
   return `dev.${payload}.dev`;
 }
 
 function bearerReq(token?: string): Request {
-  return new Request("http://localhost/", {
-    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-  });
+  // An empty header set is a request with no Authorization, which is what the
+  // token-less calls below assert against.
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return new Request("http://localhost/", { headers });
 }
 
 describe("isJwtShaped", () => {
@@ -103,7 +106,9 @@ describe("createSupabaseAuth", () => {
     jwksThrows?: boolean;
     url?: string;
   }) {
-    const fetchFn = vi.fn(async (input: unknown) => {
+    // Typed as `fetch`'s own parameters, so it is handed to `fetchFn` as-is and
+    // a recorded call reads back as `[input, init]` without a cast.
+    const fetchFn = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const requested = String(input);
       if (requested.includes(".well-known/jwks.json")) {
         if (opts.jwksThrows) throw new TypeError("fetch failed");
@@ -121,7 +126,7 @@ describe("createSupabaseAuth", () => {
     const auth = createSupabaseAuth({
       supabaseUrl: `${url}/`,
       supabasePublishableKey: "sb_publishable_test",
-      fetchFn: fetchFn as unknown as typeof fetch,
+      fetchFn,
     });
     return { auth, fetchFn, url };
   }
@@ -223,11 +228,11 @@ describe("createSupabaseAuth", () => {
     expect(await auth.verifyAccessTokenFresh("tok")).toEqual(user);
     // Uncached on purpose: its whole job is to see a revoked session at once.
     expect(requestedUser(fetchFn)).toHaveLength(2);
-    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    const [url, init] = fetchFn.mock.calls[0] ?? [];
     // Trailing slash is stripped; the publishable key and bearer both ride along.
     expect(url).toBe("https://proj.supabase.co/auth/v1/user");
-    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer tok");
-    expect(new Headers(init.headers).get("apikey")).toBe("sb_publishable_test");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer tok");
+    expect(new Headers(init?.headers).get("apikey")).toBe("sb_publishable_test");
   });
 
   test("the fresh check reports 401 as null and 5xx as a throw", async () => {

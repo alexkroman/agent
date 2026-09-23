@@ -20,6 +20,7 @@ vi.mock("./_ui.ts", async (importOriginal) => ({
   notify: mockNotify,
 }));
 
+import { stubProcessExit } from "./_test-utils.ts";
 import { executeDev } from "./dev.ts";
 
 // `mockCleanup`, `mockStartDevServer` and `mockNotify` are module-level
@@ -47,7 +48,7 @@ async function withCapturedHandlers(
     handlers.set(event, handler);
     return process;
   }) as typeof process.on);
-  const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+  const exitSpy = stubProcessExit();
   try {
     await fn(handlers);
   } finally {
