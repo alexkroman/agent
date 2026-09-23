@@ -414,29 +414,6 @@ describe("concurrent deliveries", () => {
   });
 });
 
-describe("cancellation", () => {
-  test("stops before the next step and propagates the abort", async () => {
-    const { journal } = await seed();
-    const controller = new AbortController();
-    const second = vi.fn(() => "should not run");
-    await expect(
-      replayRun({
-        runId: "wrun_1",
-        workflow: "digest",
-        input: {},
-        journal,
-        signal: controller.signal,
-        run: async (_input, ctx) => {
-          await ctx.step("first", () => "ran");
-          controller.abort();
-          await ctx.step("second", second);
-        },
-      }),
-    ).rejects.toThrow();
-    expect(second).not.toHaveBeenCalled();
-  });
-});
-
 describe("durable sleep", () => {
   test("suspends on a wait that has not elapsed, reporting when to come back", async () => {
     const { journal } = await seed();

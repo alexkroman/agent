@@ -221,6 +221,42 @@ test("a hung socket fails with the label and the deadline that elapsed", async (
   await settled;
 });
 
+test("a timed-out HTTP call ABORTS its request rather than leaving it on the pool", async () => {
+  vi.useFakeTimers();
+  let seen: AbortSignal | undefined;
+  const call = platformPost(
+    {
+      base: BASE,
+      token: TOKEN,
+      fetch: (_input, init) => {
+        seen = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      },
+    },
+    { ...CALL, timeoutMs: 10_000 },
+  );
+  const settled = expect(call).rejects.toThrow(/timed out after 10000ms/);
+  await vi.advanceTimersByTimeAsync(10_000);
+  await settled;
+  expect(seen?.aborted).toBe(true);
+});
+
+test("an answered call leaves its request's signal alone, so the body still reads", async () => {
+  let seen: AbortSignal | undefined;
+  await platformPost(
+    {
+      base: BASE,
+      token: TOKEN,
+      fetch: async (_input, init) => {
+        seen = init?.signal ?? undefined;
+        return new Response("{}", { status: 200 });
+      },
+    },
+    CALL,
+  );
+  expect(seen?.aborted).toBe(false);
+});
+
 test("a transport failure propagates rather than being swallowed", async () => {
   await expect(
     platformPost(
