@@ -92,12 +92,11 @@ import {
   combinedFile,
   EXPORTS_FILE,
   exportsFile,
-  INDEX_FILE,
   importSpecifier,
-  indexFile,
   rollupBody,
 } from "./_api-derived.mjs";
-import { collectExportedNames, typedEntryPoints } from "./_api-surface.mjs";
+import { capabilityOwners, INDEX_FILE, indexFile, packageDirsOf } from "./_api-index.mjs";
+import { collectExports, typedEntryPoints } from "./_api-surface.mjs";
 import { parseScriptArgs } from "./_args.mjs";
 import { publishablePackages, readManifest, repoRoot } from "./_fs.mjs";
 
@@ -118,6 +117,10 @@ const CHECK = FLAGS.check === true;
 // looks it back up. A divergence therefore surfaces as "missing report" naming
 // a path nobody typed.
 
+/** Where one entry point's doc model is written: scratch, like the report's temp copy. */
+const docModelPath = (packageDir, slug) =>
+  join(packageDir, "node_modules/.cache/api-extractor", `${slug}.api.json`);
+
 /**
  * Run API Extractor for one entry point.
  *
@@ -133,8 +136,12 @@ function runExtractor(packageDir, entry, { write }) {
     configObject: {
       projectFolder: packageDir,
       mainEntryPointFilePath: join(packageDir, entry.types),
-      // The report is the whole point; the rollup .d.ts and the doc model are
-      // build outputs we do not consume, so they stay off.
+      // The report is the whole point; the rollup .d.ts is a build output we do
+      // not consume, so it stays off. The DOC MODEL is on for one reader:
+      // `API-INDEX.md` takes each name's KIND and the first sentence of its doc
+      // comment from it, which the report cannot give — a report is signatures
+      // with every comment stripped. It lands beside the report's temp copy, in
+      // a gitignored cache, and nothing else reads it.
       //
       // `reportTempFolder` is NOT optional in practice. In check mode API
       // Extractor writes the freshly-extracted report somewhere and diffs it
@@ -162,7 +169,7 @@ function runExtractor(packageDir, entry, { write }) {
         // modifier rather than from every declaration in the file.
         includeForgottenExports: true,
       },
-      docModel: { enabled: false },
+      docModel: { enabled: true, apiJsonFilePath: docModelPath(packageDir, entry.slug) },
       dtsRollup: { enabled: false },
       tsdocMetadata: { enabled: false },
       compiler: {
@@ -256,6 +263,8 @@ for (const packageDir of packages) {
       specifier: importSpecifier(manifest.name, entry.subpath),
       reportPath: outcome.reportPath,
       absolutePath: join(ROOT, outcome.reportPath),
+      packageDir,
+      docModelPath: docModelPath(packageDir, entry.slug),
     });
   }
 }
@@ -288,10 +297,10 @@ if (stale.length > 0) {
 // Collected once: `API-EXPORTS.json` indexes these names by subpath and
 // `API-INDEX.md` inverts them, so re-reading each report twice would only
 // create a way for the two to disagree.
-const named = sections.map((section) => ({
-  ...section,
-  names: collectExportedNames(readFileSync(section.absolutePath, "utf8"), section.reportPath),
-}));
+const named = sections.map((section) => {
+  const entries = collectExports(readFileSync(section.absolutePath, "utf8"), section.reportPath);
+  return { ...section, entries, names: entries.map((entry) => entry.name) };
+});
 
 const derived = [
   {
@@ -313,7 +322,7 @@ const derived = [
   },
   {
     file: INDEX_FILE,
-    content: indexFile(named),
+    content: indexFile(named, capabilityOwners(packageDirsOf(sections))),
     explain:
       "It is those same names INVERTED — every published symbol against the subpath\n" +
       "to import it from, which is the direction a reader who has the name and\n" +

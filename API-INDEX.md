@@ -2,1358 +2,1320 @@
 
 # Where each published name comes from
 
-Every export of every publishable package, and the subpath to import it
-from. `API.md` is the same surface indexed by subpath, with signatures;
-this is the reverse index, for when you have the name and want the import.
+Every export of every publishable package: what it is, the subpath to import
+it from, the capability contract that versions it, and the first sentence of
+its doc comment. `API.md` is the same surface indexed by subpath, with
+signatures; this is the reverse index, for when you have the name — or half
+of it — and want the import.
 
-A name listed against more than one subpath is published from each of them.
-That is usually one declaration with two reference pages — the SDK and the
-browser client naming the two ends of one wire, or a root convenience over a
-narrower subpath — so either import is correct and the pages say which reader
-each is for.
+- **Import from** lists the subpath to write FIRST. Any listed after it
+  ("also") publish the same declaration, so they compile too.
+- **`FooProps` / `FooOptions`** share `Foo`'s row when both come from the
+  same subpaths.
+- **Capability** is the `<package>:<capability>` contract under
+  `packages/<package>/src/contracts/` that records breaking changes to the
+  name. Blank means no contract covers it.
 
-## Authoring surface
+## Contents
 
-| Name | Import from |
-| --- | --- |
-| `AAI_AGENT_MODULE` | `@alexkroman1/aai/testing/vite` |
-| `AGENT_STATE_LABELS` | `@alexkroman1/aai-ui` |
-| `ASSEMBLYAI_LLM_DEFAULT_MODEL` | `@alexkroman1/aai/llm` |
-| `ASSEMBLYAI_STT_EU_URL` | `@alexkroman1/aai/stt` |
-| `ASSEMBLYAI_TTS_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
-| `ASSEMBLYAI_TTS_LANGUAGES` | `@alexkroman1/aai/tts` |
-| `ASSEMBLYAI_TTS_VOICES` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
-| `AaiVitePlugin` | `@alexkroman1/aai/testing/vite` |
-| `AgentClient` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `AgentConfig` | `@alexkroman1/aai/manifest` |
-| `AgentConfigSchema` | `@alexkroman1/aai/manifest` |
-| `AgentConfigSource` | `@alexkroman1/aai/manifest` |
-| `AgentCustomEvent` | `@alexkroman1/aai-ui` |
-| `AgentDef` | `@alexkroman1/aai` |
-| `AgentEnv` | `@alexkroman1/aai-runtime` |
-| `AgentGuardrail` | `@alexkroman1/aai` |
-| `AgentGuardrails` | `@alexkroman1/aai` |
-| `AgentInstructions` | `@alexkroman1/aai` |
-| `AgentModelTuning` | `@alexkroman1/aai` |
-| `AgentObservation` | `@alexkroman1/aai` |
-| `AgentParams` | `@alexkroman1/aai` |
-| `AgentRuntime` | `@alexkroman1/aai-runtime` |
-| `AgentServer` | `@alexkroman1/aai-runtime` |
-| `AgentServerOptions` | `@alexkroman1/aai-runtime` |
-| `AgentSessionContext` | `@alexkroman1/aai` |
-| `AgentState` | `@alexkroman1/aai-ui` |
-| `AgentSystemPrompt` | `@alexkroman1/aai` |
-| `AgentVoicePresets` | `@alexkroman1/aai` |
-| `AnyDialog` | `@alexkroman1/aai` |
-| `AnyWorkflowDef` | `@alexkroman1/aai/workflow-api` |
-| `AssemblyAIGatewayModel` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
-| `AssemblyAILlmProviderOptions` | `@alexkroman1/aai/llm` |
-| `AssemblyAIPipelineOptions` | `@alexkroman1/aai` |
-| `AssemblyAIReasoningEffort` | `@alexkroman1/aai/llm` |
-| `AssemblyAIS2sOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
-| `AssemblyAISttOptions` | `@alexkroman1/aai/stt` |
-| `AssemblyAITtsLanguage` | `@alexkroman1/aai/tts` |
-| `AssemblyAITtsOptions` | `@alexkroman1/aai/tts` |
-| `AssemblyAITtsVoice` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
-| `AssemblyAITtsVoiceId` | `@alexkroman1/aai/tts` |
-| `AssemblyAITtsVoiceInfo` | `@alexkroman1/aai/tts` |
-| `AudioResult` | `@alexkroman1/aai-ui` |
-| `AudioResultCaptions` | `@alexkroman1/aai-ui` |
-| `AudioResultProps` | `@alexkroman1/aai-ui` |
-| `AutoScroll` | `@alexkroman1/aai-ui` |
-| `BASH_TIMEOUT_MAX_MS` | `@alexkroman1/aai/coding-tools` |
-| `BASH_TIMEOUT_MS` | `@alexkroman1/aai/coding-tools` |
-| `BrowserSession` | `@alexkroman1/aai-ui` |
-| `BuildClientOptions` | `@alexkroman1/aai-cli/client-bundler` |
-| `BuildWorkerOptions` | `@alexkroman1/aai-cli/worker-bundler` |
-| `BuiltinTool` | `@alexkroman1/aai` |
-| `BulletList` | `@alexkroman1/aai-ui` |
-| `BulletListProps` | `@alexkroman1/aai-ui` |
-| `Button` | `@alexkroman1/aai-ui` |
-| `ButtonSize` | `@alexkroman1/aai-ui` |
-| `ButtonVariant` | `@alexkroman1/aai-ui` |
-| `CARRIER_CODECS` | `@alexkroman1/aai-runtime` |
-| `CARRIER_PARAM` | `@alexkroman1/aai-runtime` |
-| `CARTESIA_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
-| `CHANNEL_POST_TIMEOUT_MS` | `@alexkroman1/aai/channels` |
-| `CLIENT_ARTIFACT_REL` | `@alexkroman1/aai-cli/start` |
-| `CLIENT_CONFIG_METHODS` | `@alexkroman1/aai/protocol` |
-| `CLIENT_CONFIG_PATH` | `@alexkroman1/aai/protocol` |
-| `CODING_TOOL_DESCRIPTIONS` | `@alexkroman1/aai/coding-tools` |
-| `CallOptions` | `@alexkroman1/aai/tools` |
-| `CallVerdict` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `CarrierCodec` | `@alexkroman1/aai-runtime` |
-| `CarrierInbound` | `@alexkroman1/aai-runtime` |
-| `CarrierName` | `@alexkroman1/aai-runtime` |
-| `CartesiaTtsOptions` | `@alexkroman1/aai/tts` |
-| `Channel` | `@alexkroman1/aai/channels` |
-| `ChannelDeliveryError` | `@alexkroman1/aai/channels` |
-| `ChannelDescriptor` | `@alexkroman1/aai/channels` |
-| `ChannelHandler` | `@alexkroman1/aai/channels` |
-| `ChannelMessage` | `@alexkroman1/aai/channels` |
-| `ChannelPayload` | `@alexkroman1/aai/channels` |
-| `ChannelSection` | `@alexkroman1/aai/channels` |
-| `ChatMessage` | `@alexkroman1/aai-ui` |
-| `ChatView` | `@alexkroman1/aai-ui` |
-| `CheckboxField` | `@alexkroman1/aai-ui` |
-| `ClientConfig` | `@alexkroman1/aai-ui` |
-| `ClientConfigResponse` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `ClientConfigResponseSchema` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai/workflow-api` |
-| `ClientHandle` | `@alexkroman1/aai-ui` |
-| `ClientSink` | `@alexkroman1/aai/protocol` |
-| `ClientTheme` | `@alexkroman1/aai-ui` |
-| `CloseableDb` | `@alexkroman1/aai-runtime` |
-| `CodingToolName` | `@alexkroman1/aai/coding-tools` |
-| `CodingToolsOptions` | `@alexkroman1/aai/coding-tools` |
-| `ConsoleShell` | `@alexkroman1/aai-ui` |
-| `ConsoleShellProps` | `@alexkroman1/aai-ui` |
-| `Controls` | `@alexkroman1/aai-ui` |
-| `ControlsProps` | `@alexkroman1/aai-ui` |
-| `ConversationItem` | `@alexkroman1/aai-ui` |
-| `ConversationView` | `@alexkroman1/aai-ui` |
-| `ConversationViewProps` | `@alexkroman1/aai-ui` |
-| `CreatePostgresDbOptions` | `@alexkroman1/aai-runtime` |
-| `CriterionVerdict` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | `@alexkroman1/aai/stt` |
-| `DEFAULT_GUARDRAIL_MAX_REVISIONS` | `@alexkroman1/aai` |
-| `DEFAULT_LISTEN_HOST` | `@alexkroman1/aai-runtime` |
-| `DEFAULT_LOG_BUFFER_LINES` | `@alexkroman1/aai-runtime` |
-| `DEFAULT_LOG_LINE_BYTES` | `@alexkroman1/aai-runtime` |
-| `DEFAULT_LOG_PAGE_LINES` | `@alexkroman1/aai-runtime` |
-| `DEFAULT_MAX_DELIVERIES` | `@alexkroman1/aai-runtime/testing` |
-| `DEFAULT_MAX_TURNS` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `DEFAULT_RETRY_DELAY_MS` | `@alexkroman1/aai/step-errors` |
-| `DEFAULT_RUN_TIMEOUT_MS` | `@alexkroman1/aai-runtime/eval` |
-| `DEFAULT_SERVICE_NAME` | `@alexkroman1/aai-runtime/tracing` |
-| `DEFAULT_START_PORT` | `@alexkroman1/aai-cli/start` |
-| `DEFAULT_STEP_MAX_ATTEMPTS` | `@alexkroman1/aai` |
-| `DEFAULT_SYSTEM_PROMPT` | `@alexkroman1/aai` |
-| `DEFAULT_WORKFLOW_FIND_LIMIT` | `@alexkroman1/aai-runtime` |
-| `DELEGATE_TOOL_NAME` | `@alexkroman1/aai` |
-| `DeepReadonly` | `@alexkroman1/aai` |
-| `DeepgramSttOptions` | `@alexkroman1/aai/stt` |
-| `DefaultToolResult` | `@alexkroman1/aai` |
-| `DelegateFn` | `@alexkroman1/aai` |
-| `DelegateOptions` | `@alexkroman1/aai` |
-| `DelegateResult` | `@alexkroman1/aai` |
-| `DescribeEvalOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `DescribeTextEvalOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `DeterminismKind` | `@alexkroman1/aai-runtime/testing` |
-| `Dialog` | `@alexkroman1/aai` |
-| `DialogBargeIn` | `@alexkroman1/aai` |
-| `DialogEvent` | `@alexkroman1/aai` |
-| `DialogEventNames` | `@alexkroman1/aai` |
-| `DialogGate` | `@alexkroman1/aai` |
-| `DialogOptions` | `@alexkroman1/aai` |
-| `DialogPosition` | `@alexkroman1/aai` |
-| `DialogSessionEventName` | `@alexkroman1/aai` |
-| `DialogSpec` | `@alexkroman1/aai` |
-| `DialogStateSpec` | `@alexkroman1/aai` |
-| `DialogTimeout` | `@alexkroman1/aai` |
-| `DialogTimeoutSpec` | `@alexkroman1/aai` |
-| `DialogToolDef` | `@alexkroman1/aai` |
-| `DialogToolResult` | `@alexkroman1/aai` |
-| `DialogVoiceConfig` | `@alexkroman1/aai` |
-| `END_CALL_TOOL` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `EVENT_ID_PREFIX` | `@alexkroman1/aai/protocol` |
-| `ElevenLabsSttOptions` | `@alexkroman1/aai/stt` |
-| `EvalCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalCredentials` | `@alexkroman1/aai-runtime/eval` |
-| `EvalEmitted` | `@alexkroman1/aai-runtime/eval` |
-| `EvalMode` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalRunOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EvalSession` | `@alexkroman1/aai-runtime/eval` |
-| `EvalSessionOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EvalSimulationContext` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `EvalSimulationOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `EvalSleep` | `@alexkroman1/aai-runtime/eval` |
-| `EvalTest` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
-| `EvalTextAgentOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EvalTextTest` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalTextTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalToolCall` | `@alexkroman1/aai-runtime/eval` |
-| `EvalTurn` | `@alexkroman1/aai-runtime/eval` |
-| `EvalWorkflowCaseOptions` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalWorkflowEngineOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EvalWorkflowRun` | `@alexkroman1/aai-runtime/eval` |
-| `EvalWorkflowTest` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalWorkflowTestContext` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `EvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
-| `EvalWorkflowsOptions` | `@alexkroman1/aai-runtime/eval` |
-| `EventMapOf` | `@alexkroman1/aai` |
-| `EventStreamFrame` | `@alexkroman1/aai/workflow-api` |
-| `ExecuteTool` | `@alexkroman1/aai-runtime` |
-| `ExecuteToolOptions` | `@alexkroman1/aai-runtime` |
-| `Facts` | `@alexkroman1/aai-ui` |
-| `FactsProps` | `@alexkroman1/aai-ui` |
-| `FatalError` | `@alexkroman1/aai/step-errors` |
-| `FeedItem` | `@alexkroman1/aai/html` |
-| `FfmpegError` | `@alexkroman1/aai/ffmpeg` |
-| `FfmpegFailureKind` | `@alexkroman1/aai/ffmpeg` |
-| `FfmpegRunOptions` | `@alexkroman1/aai/ffmpeg` |
-| `FfmpegRunResult` | `@alexkroman1/aai/ffmpeg` |
-| `FfmpegSource` | `@alexkroman1/aai/ffmpeg` |
-| `Field` | `@alexkroman1/aai-ui` |
-| `FieldShell` | `@alexkroman1/aai-ui` |
-| `FileField` | `@alexkroman1/aai-ui` |
-| `FileReadMode` | `@alexkroman1/aai-ui` |
-| `FileValue` | `@alexkroman1/aai-ui` |
-| `FindOptions` | `@alexkroman1/aai/workflow-api` |
-| `Form` | `@alexkroman1/aai-ui` |
-| `FormProps` | `@alexkroman1/aai-ui` |
-| `FormValues` | `@alexkroman1/aai-ui` |
-| `GLOB_LIMIT` | `@alexkroman1/aai/coding-tools` |
-| `GenerateFn` | `@alexkroman1/aai` |
-| `GenerateObjectResult` | `@alexkroman1/aai` |
-| `GenerateOptions` | `@alexkroman1/aai` |
-| `GenerateResult` | `@alexkroman1/aai` |
-| `GlobalConfig` | `@alexkroman1/aai-cli/project-config` |
-| `GuardrailVerdict` | `@alexkroman1/aai` |
-| `HANDOFF_TOOL_NAME` | `@alexkroman1/aai` |
-| `HOST_ONLY_AGENT_FIELDS` | `@alexkroman1/aai/manifest` |
-| `HandoffOptions` | `@alexkroman1/aai` |
-| `HandoffResult` | `@alexkroman1/aai` |
-| `HookRecord` | `@alexkroman1/aai-runtime/testing` |
-| `HostConfig` | `@alexkroman1/aai/protocol` |
-| `HostConfigMessageSchema` | `@alexkroman1/aai/protocol` |
-| `HostConfigSchema` | `@alexkroman1/aai/protocol` |
-| `HostCredentialEnv` | `@alexkroman1/aai-runtime` |
-| `HostGenerateFn` | `@alexkroman1/aai-runtime/eval` |
-| `HostOnlyAgentField` | `@alexkroman1/aai/manifest` |
-| `HostServerOptions` | `@alexkroman1/aai-runtime` |
-| `HostSessionDefaults` | `@alexkroman1/aai-runtime` |
-| `HttpUploadBackendOptions` | `@alexkroman1/aai-runtime` |
-| `IGNORED_WORKSPACE_DIRS` | `@alexkroman1/aai/workspace-files` |
-| `InferSchemaOutput` | `@alexkroman1/aai` |
-| `InferToolInput` | `@alexkroman1/aai` |
-| `InferToolOutput` | `@alexkroman1/aai` |
-| `JournalConflictError` | `@alexkroman1/aai-runtime/testing` |
-| `JournalStore` | `@alexkroman1/aai-runtime/testing` |
-| `JudgeCallOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `JudgeInput` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `KeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `KeyedLockOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `KeyedLockTimeoutError` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `KnownGatewayModel` | `@alexkroman1/aai/llm` |
-| `KnownLlmProvider` | `@alexkroman1/aai/llm` |
-| `KnownTurnDetectionMode` | `@alexkroman1/aai` |
-| `KnownVoicePresetName` | `@alexkroman1/aai` |
-| `LOCAL_ONLY_FILES` | `@alexkroman1/aai/workspace-files` |
-| `LOCKFILES` | `@alexkroman1/aai/workspace-files` |
-| `LOG_LINE_TRUNCATED` | `@alexkroman1/aai-runtime` |
-| `LlmDescriptorOptions` | `@alexkroman1/aai/llm` |
-| `LlmOptions` | `@alexkroman1/aai/llm` |
-| `LlmProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/llm` |
-| `LlmProviderName` | `@alexkroman1/aai/llm` |
-| `LlmRegistryEntry` | `@alexkroman1/aai-runtime` |
-| `LogBuffer` | `@alexkroman1/aai-runtime` |
-| `LogBufferOptions` | `@alexkroman1/aai-runtime` |
-| `LogContext` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
-| `LogFn` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
-| `LogLevel` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
-| `LogLine` | `@alexkroman1/aai-runtime` |
-| `LogPage` | `@alexkroman1/aai-runtime` |
-| `LogStream` | `@alexkroman1/aai-runtime` |
-| `Logger` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
-| `MAX_WORKFLOW_FIND_LIMIT` | `@alexkroman1/aai-runtime` |
-| `MAX_WORKFLOW_INPUT_BYTES` | `@alexkroman1/aai-runtime` |
-| `MAX_WORKSPACE_FILES` | `@alexkroman1/aai/workspace-files` |
-| `MAX_WORKSPACE_FILE_BYTES` | `@alexkroman1/aai/workspace-files` |
-| `MCP_CONNECT_TIMEOUT_MS` | `@alexkroman1/aai-runtime` |
-| `MCP_SERVER_KEY_RE` | `@alexkroman1/aai` |
-| `MCP_TOOL_NAME_MAX` | `@alexkroman1/aai` |
-| `MCP_TOOL_PREFIX` | `@alexkroman1/aai` |
-| `Markdown` | `@alexkroman1/aai-ui` |
-| `MarkdownProps` | `@alexkroman1/aai-ui` |
-| `MarkdownVariant` | `@alexkroman1/aai-ui` |
-| `McpCallResult` | `@alexkroman1/aai-runtime` |
-| `McpConnectOptions` | `@alexkroman1/aai-runtime` |
-| `McpDrift` | `@alexkroman1/aai-runtime` |
-| `McpInputSchema` | `@alexkroman1/aai-runtime` |
-| `McpServerConfig` | `@alexkroman1/aai` |
-| `McpServerStatus` | `@alexkroman1/aai-runtime` |
-| `McpServers` | `@alexkroman1/aai` |
-| `McpSession` | `@alexkroman1/aai-runtime` |
-| `McpSessionOpener` | `@alexkroman1/aai-runtime` |
-| `McpToolSurface` | `@alexkroman1/aai-runtime` |
-| `McpToolsOptions` | `@alexkroman1/aai-runtime` |
-| `McpTrust` | `@alexkroman1/aai-runtime` |
-| `MediaInfo` | `@alexkroman1/aai/ffmpeg` |
-| `MediaStreamInfo` | `@alexkroman1/aai/ffmpeg` |
-| `Message` | `@alexkroman1/aai` |
-| `MessageList` | `@alexkroman1/aai-ui` |
-| `MessageListProps` | `@alexkroman1/aai-ui` |
-| `MetricStat` | `@alexkroman1/aai` |
-| `MetricsCollectedEvent` | `@alexkroman1/aai` |
-| `MetricsCollector` | `@alexkroman1/aai` |
-| `MetricsCollectorOptions` | `@alexkroman1/aai` |
-| `MetricsContext` | `@alexkroman1/aai-runtime/metrics` |
-| `MetricsSample` | `@alexkroman1/aai` |
-| `MetricsSink` | `@alexkroman1/aai-runtime/metrics` |
-| `MetricsSummary` | `@alexkroman1/aai` |
-| `MintCodeOptions` | `@alexkroman1/aai` |
-| `ModelTuning` | `@alexkroman1/aai` |
-| `MultipartBody` | `@alexkroman1/aai/step` |
-| `MultipartPart` | `@alexkroman1/aai/step` |
-| `NumberField` | `@alexkroman1/aai-ui` |
-| `OTEL_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/tracing` |
-| `OTEL_METRICS_ENDPOINT_ENVS` | `@alexkroman1/aai-runtime/metrics` |
-| `OTEL_METRICS_EXPORTER_ENV` | `@alexkroman1/aai-runtime/metrics` |
-| `OTEL_METRIC_NAMES` | `@alexkroman1/aai-runtime/metrics` |
-| `OTEL_SERVICE_NAME_ENV` | `@alexkroman1/aai-runtime/tracing` |
-| `OpenAICompatibleLlmOptions` | `@alexkroman1/aai/experimental` |
-| `OpenAIS2sOptions` | `@alexkroman1/aai/s2s` |
-| `OpenAIS2sVoice` | `@alexkroman1/aai/s2s` |
-| `OpenerRegistryEntry` | `@alexkroman1/aai-runtime` |
-| `OtelMeterLike` | `@alexkroman1/aai-runtime/metrics` |
-| `PROJECT_GUIDE_POINTER` | `@alexkroman1/aai/workspace-files` |
-| `PackageManifest` | `@alexkroman1/aai/workspace-files` |
-| `PageConfig` | `@alexkroman1/aai-ui` |
-| `PageHandle` | `@alexkroman1/aai-ui` |
-| `PageMetadata` | `@alexkroman1/aai/html` |
-| `ParsedFeed` | `@alexkroman1/aai/html` |
-| `PcmFormat` | `@alexkroman1/aai/step` |
-| `PersonaDef` | `@alexkroman1/aai` |
-| `PersonaPosition` | `@alexkroman1/aai` |
-| `Personas` | `@alexkroman1/aai` |
-| `PipelineAgentParams` | `@alexkroman1/aai` |
-| `PipelineTuning` | `@alexkroman1/aai/manifest` |
-| `PipelineVoiceTuning` | `@alexkroman1/aai` |
-| `ProbeOptions` | `@alexkroman1/aai/ffmpeg` |
-| `Procedure` | `@alexkroman1/aai` |
-| `ProcedureNotFinishedError` | `@alexkroman1/aai` |
-| `ProcedureRunOptions` | `@alexkroman1/aai` |
-| `ProjectConfig` | `@alexkroman1/aai-cli/project-config` |
-| `ProjectFiles` | `@alexkroman1/aai/testing` |
-| `ProviderCredentialOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/llm`, `@alexkroman1/aai/s2s`, `@alexkroman1/aai/stt`, `@alexkroman1/aai/tts` |
-| `ProviderDescriptor` | `@alexkroman1/aai` |
-| `ProviderDescriptorSchema` | `@alexkroman1/aai/manifest` |
-| `ProviderEnv` | `@alexkroman1/aai-runtime` |
-| `READ_LIMIT` | `@alexkroman1/aai/coding-tools` |
-| `RIME_DEFAULT_VOICE` | `@alexkroman1/aai/tts` |
-| `RandomSource` | `@alexkroman1/aai` |
-| `ReadUploadOptions` | `@alexkroman1/aai/step` |
-| `ReadUploadToFileOptions` | `@alexkroman1/aai/step-files` |
-| `ReadyConfig` | `@alexkroman1/aai/protocol` |
-| `ReadyConfigSchema` | `@alexkroman1/aai/protocol` |
-| `RecordedSleep` | `@alexkroman1/aai/testing` |
-| `RecordedStep` | `@alexkroman1/aai/testing` |
-| `ReservedDb` | `@alexkroman1/aai-runtime` |
-| `ResolveOneOptions` | `@alexkroman1/aai` |
-| `ResolvedMcpServer` | `@alexkroman1/aai-runtime` |
-| `RestoredToolCall` | `@alexkroman1/aai/protocol` |
-| `RestoredToolCallSchema` | `@alexkroman1/aai/protocol` |
-| `ResumableRun` | `@alexkroman1/aai-runtime/testing` |
-| `RetryableError` | `@alexkroman1/aai/step-errors` |
-| `RetryableErrorOptions` | `@alexkroman1/aai/step-errors` |
-| `RimeTtsOptions` | `@alexkroman1/aai/tts` |
-| `RunCodeExecutor` | `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime` |
-| `RunRecord` | `@alexkroman1/aai-runtime/testing` |
-| `RunSnapshotOverrides` | `@alexkroman1/aai/testing` |
-| `RunStatus` | `@alexkroman1/aai-runtime/testing` |
-| `RunTextAgentOptions` | `@alexkroman1/aai-runtime/testing` |
-| `RunWorkflowOptions` | `@alexkroman1/aai-runtime/testing` |
-| `Runtime` | `@alexkroman1/aai-runtime` |
-| `RuntimeOptions` | `@alexkroman1/aai-runtime` |
-| `RuntimeServerOptions` | `@alexkroman1/aai-runtime` |
-| `RuntimeTracing` | `@alexkroman1/aai-runtime/tracing` |
-| `S2sAgentParams` | `@alexkroman1/aai` |
-| `S2sConfig` | `@alexkroman1/aai-runtime` |
-| `S2sProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
-| `SESSION_AUTH_PROTOCOL_PREFIX` | `@alexkroman1/aai-runtime/auth` |
-| `SESSION_COMMAND_TYPES` | `@alexkroman1/aai/protocol` |
-| `SESSION_EVENTS_TOKEN_ENV` | `@alexkroman1/aai-runtime` |
-| `SESSION_EVENT_TYPES` | `@alexkroman1/aai/protocol` |
-| `SESSION_SECRET_ENV` | `@alexkroman1/aai-runtime/auth` |
-| `SESSION_SOURCED_EVENT_TYPES` | `@alexkroman1/aai` |
-| `SESSION_UNAUTHORIZED_CLOSE_CODE` | `@alexkroman1/aai-runtime/auth` |
-| `SLACK_CHANNEL_HANDLER` | `@alexkroman1/aai/channels` |
-| `SLACK_CHANNEL_KIND` | `@alexkroman1/aai/channels` |
-| `STEP_FILE_READ_CONCURRENCY` | `@alexkroman1/aai/step-files` |
-| `STEP_FILE_WINDOW_BYTES` | `@alexkroman1/aai/step-files` |
-| `STEP_SPEAK_SAMPLE_RATE` | `@alexkroman1/aai/step` |
-| `STEP_SPEAK_TIMEOUT_MS` | `@alexkroman1/aai/step` |
-| `STUB_LLM_API_KEY_ENV` | `@alexkroman1/aai-runtime/eval` |
-| `STUB_SPEECH_API_KEY_ENV` | `@alexkroman1/aai-runtime/eval` |
-| `STUB_SPEECH_PCM_BYTES` | `@alexkroman1/aai/testing` |
-| `ScriptedTextStep` | `@alexkroman1/aai-runtime/testing` |
-| `ScriptedToolCall` | `@alexkroman1/aai-runtime/testing` |
-| `ScriptedToolContext` | `@alexkroman1/aai/testing` |
-| `ScriptedToolContextOptions` | `@alexkroman1/aai/testing` |
-| `SelectField` | `@alexkroman1/aai-ui` |
-| `SentEvent` | `@alexkroman1/aai/testing` |
-| `ServerRequestHook` | `@alexkroman1/aai-runtime` |
-| `ServerSession` | `@alexkroman1/aai-runtime` |
-| `ServerUpgradeHook` | `@alexkroman1/aai-runtime` |
-| `Session` | `@alexkroman1/aai-ui` |
-| `SessionActions` | `@alexkroman1/aai-ui` |
-| `SessionAuth` | `@alexkroman1/aai-runtime/auth` |
-| `SessionAuthOptions` | `@alexkroman1/aai-runtime/auth` |
-| `SessionCommand` | `@alexkroman1/aai/protocol` |
-| `SessionCommandSchema` | `@alexkroman1/aai/protocol` |
-| `SessionConnectOptions` | `@alexkroman1/aai-runtime` |
-| `SessionConnection` | `@alexkroman1/aai-runtime` |
-| `SessionControlAction` | `@alexkroman1/aai-ui` |
-| `SessionControlButton` | `@alexkroman1/aai-ui` |
-| `SessionControls` | `@alexkroman1/aai-ui` |
-| `SessionControlsLabels` | `@alexkroman1/aai-ui` |
-| `SessionControlsProps` | `@alexkroman1/aai-ui` |
-| `SessionError` | `@alexkroman1/aai-ui` |
-| `SessionErrorBanner` | `@alexkroman1/aai-ui` |
-| `SessionErrorBannerProps` | `@alexkroman1/aai-ui` |
-| `SessionErrorCode` | `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui` |
-| `SessionErrorCodeSchema` | `@alexkroman1/aai/protocol` |
-| `SessionEvent` | `@alexkroman1/aai` |
-| `SessionEventBody` | `@alexkroman1/aai` |
-| `SessionEventContext` | `@alexkroman1/aai` |
-| `SessionEventHandler` | `@alexkroman1/aai` |
-| `SessionEventHandlers` | `@alexkroman1/aai` |
-| `SessionEventMap` | `@alexkroman1/aai` |
-| `SessionEventMeta` | `@alexkroman1/aai/protocol` |
-| `SessionEventMetaSchema` | `@alexkroman1/aai/protocol` |
-| `SessionEventPage` | `@alexkroman1/aai-runtime` |
-| `SessionEventSchema` | `@alexkroman1/aai` |
-| `SessionEventStream` | `@alexkroman1/aai-runtime` |
-| `SessionEventType` | `@alexkroman1/aai` |
-| `SessionIdentity` | `@alexkroman1/aai-runtime/auth` |
-| `SessionMode` | `@alexkroman1/aai/manifest` |
-| `SessionRuntime` | `@alexkroman1/aai-runtime` |
-| `SessionSlot` | `@alexkroman1/aai` |
-| `SessionSlotOptions` | `@alexkroman1/aai` |
-| `SessionSnapshot` | `@alexkroman1/aai-ui` |
-| `SessionSourcedEventType` | `@alexkroman1/aai` |
-| `SessionStartOptions` | `@alexkroman1/aai-runtime` |
-| `SessionStateBackend` | `@alexkroman1/aai-runtime` |
-| `SessionStateDot` | `@alexkroman1/aai-ui` |
-| `SessionStateDotProps` | `@alexkroman1/aai-ui` |
-| `SessionStateStore` | `@alexkroman1/aai-runtime` |
-| `SessionTokenInput` | `@alexkroman1/aai-runtime/auth` |
-| `SessionVerifier` | `@alexkroman1/aai-runtime/auth` |
-| `SessionWebSocket` | `@alexkroman1/aai-runtime` |
-| `Settled` | `@alexkroman1/aai/step` |
-| `SharedAgentParams` | `@alexkroman1/aai` |
-| `SharedServerOptions` | `@alexkroman1/aai-runtime` |
-| `SidebarLayout` | `@alexkroman1/aai-ui` |
-| `SimulateCallOptions` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SimulatedCall` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SimulatedCaller` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SimulatedTurn` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SimulationMetrics` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SimulationTarget` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `SkipGreetingOption` | `@alexkroman1/aai-runtime` |
-| `SlackChannel` | `@alexkroman1/aai/channels` |
-| `SlackChannelOptions` | `@alexkroman1/aai/channels` |
-| `SleepEntry` | `@alexkroman1/aai-runtime/testing` |
-| `SleepOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `SleepRecord` | `@alexkroman1/aai-runtime/testing` |
-| `SlotCaps` | `@alexkroman1/aai` |
-| `SlotHolder` | `@alexkroman1/aai` |
-| `SlotStore` | `@alexkroman1/aai` |
-| `SlotToolDef` | `@alexkroman1/aai` |
-| `SonioxSttOptions` | `@alexkroman1/aai/stt` |
-| `SpeakOptions` | `@alexkroman1/aai/step` |
-| `SpokenAudio` | `@alexkroman1/aai/step` |
-| `StandardSchemaIssue` | `@alexkroman1/aai` |
-| `StandardSchemaResult` | `@alexkroman1/aai` |
-| `StandardSchemaV1` | `@alexkroman1/aai` |
-| `StartOptions` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-cli/start` |
-| `StartResult` | `@alexkroman1/aai-cli/start` |
-| `StartScreen` | `@alexkroman1/aai-ui` |
-| `StateProjection` | `@alexkroman1/aai` |
-| `StateSyncSession` | `@alexkroman1/aai-runtime` |
-| `StaticAgentParams` | `@alexkroman1/aai` |
-| `StepEntry` | `@alexkroman1/aai-runtime/testing` |
-| `StepFetch` | `@alexkroman1/aai-runtime/eval` |
-| `StepFetchInit` | `@alexkroman1/aai/step` |
-| `StepGenerateError` | `@alexkroman1/aai/step` |
-| `StepGenerateJsonOptions` | `@alexkroman1/aai/step` |
-| `StepGenerateOptions` | `@alexkroman1/aai/step` |
-| `StepInfo` | `@alexkroman1/aai/step` |
-| `StepOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `StepRoute` | `@alexkroman1/aai/testing` |
-| `StepSchemaOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `StepTransportError` | `@alexkroman1/aai/step` |
-| `StepUnmatched` | `@alexkroman1/aai/testing` |
-| `StepUsage` | `@alexkroman1/aai-runtime/eval` |
-| `StoredSessionEvent` | `@alexkroman1/aai-runtime` |
-| `StreamOptions` | `@alexkroman1/aai/workflow-api` |
-| `SttError` | `@alexkroman1/aai-runtime` |
-| `SttEvents` | `@alexkroman1/aai-runtime` |
-| `SttOpenOptions` | `@alexkroman1/aai-runtime` |
-| `SttOpener` | `@alexkroman1/aai-runtime` |
-| `SttProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/stt` |
-| `SttSession` | `@alexkroman1/aai-runtime` |
-| `SttTurnMeta` | `@alexkroman1/aai-runtime` |
-| `StubDelegate` | `@alexkroman1/aai/testing` |
-| `StubDelegateCall` | `@alexkroman1/aai/testing` |
-| `StubDelegateReply` | `@alexkroman1/aai/testing` |
-| `StubDelegateRoute` | `@alexkroman1/aai/testing` |
-| `StubDelegateScript` | `@alexkroman1/aai/testing` |
-| `StubEmitted` | `@alexkroman1/aai/testing` |
-| `StubGateway` | `@alexkroman1/aai/testing` |
-| `StubGatewayCall` | `@alexkroman1/aai/testing` |
-| `StubGatewayOptions` | `@alexkroman1/aai/testing` |
-| `StubGatewayRoute` | `@alexkroman1/aai/testing` |
-| `StubGenerate` | `@alexkroman1/aai/testing` |
-| `StubGenerateCall` | `@alexkroman1/aai/testing` |
-| `StubGenerateReply` | `@alexkroman1/aai/testing` |
-| `StubGenerateRoute` | `@alexkroman1/aai/testing` |
-| `StubGenerateScript` | `@alexkroman1/aai/testing` |
-| `StubLlm` | `@alexkroman1/aai-runtime/eval` |
-| `StubReporter` | `@alexkroman1/aai/testing` |
-| `StubScript` | `@alexkroman1/aai-runtime/eval` |
-| `StubSpeech` | `@alexkroman1/aai/testing` |
-| `StubSpeechCall` | `@alexkroman1/aai/testing` |
-| `StubSpeechOptions` | `@alexkroman1/aai/testing` |
-| `StubSpeechProviders` | `@alexkroman1/aai-runtime/eval` |
-| `StubStep` | `@alexkroman1/aai-runtime/eval` |
-| `StubStepAnswer` | `@alexkroman1/aai/testing` |
-| `StubStepDelegate` | `@alexkroman1/aai/testing` |
-| `StubStepFetch` | `@alexkroman1/aai/testing` |
-| `StubStepRequest` | `@alexkroman1/aai/testing` |
-| `StubSttSession` | `@alexkroman1/aai-runtime/eval` |
-| `StubTranscribe` | `@alexkroman1/aai/testing` |
-| `StubTranscribeCall` | `@alexkroman1/aai/testing` |
-| `StubTranscribeFailure` | `@alexkroman1/aai/testing` |
-| `StubTranscribeLeg` | `@alexkroman1/aai/testing` |
-| `StubTranscribeOptions` | `@alexkroman1/aai/testing` |
-| `StubTtsSession` | `@alexkroman1/aai-runtime/eval` |
-| `StubUpload` | `@alexkroman1/aai/testing` |
-| `StubUploadWrite` | `@alexkroman1/aai/testing` |
-| `StubUploads` | `@alexkroman1/aai/testing` |
-| `StubUploadsOptions` | `@alexkroman1/aai/testing` |
-| `StubWorkflowsOptions` | `@alexkroman1/aai/testing/vitest` |
-| `SubagentAnswer` | `@alexkroman1/aai` |
-| `SubagentDef` | `@alexkroman1/aai` |
-| `SubagentGuardrail` | `@alexkroman1/aai` |
-| `SubagentRoster` | `@alexkroman1/aai` |
-| `SubagentToolCall` | `@alexkroman1/aai` |
-| `SubmitButton` | `@alexkroman1/aai-ui` |
-| `SubmitInputOf` | `@alexkroman1/aai-ui` |
-| `TELEPHONY_PATH` | `@alexkroman1/aai-runtime` |
-| `TELEPHONY_SAMPLE_RATE` | `@alexkroman1/aai-runtime` |
-| `TRANSCRIBE_API` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_MODELS` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_SYNC_ENDPOINT` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_SYNC_MODEL` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_SYNC_TIMEOUT_MS` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_TIMEOUT_MS` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_UPLOAD_TIMEOUT_MS` | `@alexkroman1/aai/step` |
-| `TRANSCRIBE_WINDOW_BYTES` | `@alexkroman1/aai/step` |
-| `TURN_ENDS` | `@alexkroman1/aai-runtime/eval` |
-| `TelephonyAccess` | `@alexkroman1/aai` |
-| `TelephonyBridgeOptions` | `@alexkroman1/aai-runtime` |
-| `TelephonyCarrier` | `@alexkroman1/aai` |
-| `TerminalWorkflowRun` | `@alexkroman1/aai/workflow-api` |
-| `TestToolContext` | `@alexkroman1/aai/testing` |
-| `TextAgent` | `@alexkroman1/aai-runtime` |
-| `TextAgentOptions` | `@alexkroman1/aai-runtime`, `@alexkroman1/aai-runtime/testing` |
-| `TextAgentParams` | `@alexkroman1/aai` |
-| `TextAgentTestRun` | `@alexkroman1/aai-runtime/testing` |
-| `TextAgentTestToolCall` | `@alexkroman1/aai-runtime/testing` |
-| `TextAreaField` | `@alexkroman1/aai-ui` |
-| `TextField` | `@alexkroman1/aai-ui` |
-| `TextTurnOptions` | `@alexkroman1/aai-runtime`, `@alexkroman1/aai-runtime/testing` |
-| `TextTurnResult` | `@alexkroman1/aai-runtime` |
-| `ToolBearingAgent` | `@alexkroman1/aai/testing` |
-| `ToolCallInfo` | `@alexkroman1/aai-ui` |
-| `ToolCallRow` | `@alexkroman1/aai-ui` |
-| `ToolCallRowProps` | `@alexkroman1/aai-ui` |
-| `ToolCallRowVariant` | `@alexkroman1/aai-ui` |
-| `ToolChoice` | `@alexkroman1/aai` |
-| `ToolCompletionMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `ToolConditionOperator` | `@alexkroman1/aai` |
-| `ToolContext` | `@alexkroman1/aai` |
-| `ToolContextOverrides` | `@alexkroman1/aai/testing` |
-| `ToolDef` | `@alexkroman1/aai` |
-| `ToolDelayedMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `ToolDisplayConfig` | `@alexkroman1/aai-ui` |
-| `ToolErrorHandler` | `@alexkroman1/aai` |
-| `ToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `ToolInputSchema` | `@alexkroman1/aai` |
-| `ToolMessageCondition` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `ToolMessages` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `ToolMessagesInput` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `ToolModules` | `@alexkroman1/aai/manifest` |
-| `ToolRegistry` | `@alexkroman1/aai/manifest` |
-| `ToolRunner` | `@alexkroman1/aai/testing` |
-| `ToolSchema` | `@alexkroman1/aai/manifest` |
-| `ToolSchemaSchema` | `@alexkroman1/aai/manifest` |
-| `ToolStartMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/manifest` |
-| `TranscodeToWavOptions` | `@alexkroman1/aai/ffmpeg` |
-| `TranscribeError` | `@alexkroman1/aai/step` |
-| `TranscribeProgress` | `@alexkroman1/aai/step` |
-| `TranscribeRequestOptions` | `@alexkroman1/aai/step` |
-| `TranscribeSubmitOptions` | `@alexkroman1/aai/step` |
-| `TranscribeSyncOptions` | `@alexkroman1/aai/step` |
-| `Transcript` | `@alexkroman1/aai/step` |
-| `TransportEventBody` | `@alexkroman1/aai-runtime` |
-| `TransportEventType` | `@alexkroman1/aai-runtime` |
-| `TtsError` | `@alexkroman1/aai-runtime` |
-| `TtsEvents` | `@alexkroman1/aai-runtime` |
-| `TtsOpenOptions` | `@alexkroman1/aai-runtime` |
-| `TtsOpener` | `@alexkroman1/aai-runtime` |
-| `TtsProvider` | `@alexkroman1/aai`, `@alexkroman1/aai/tts` |
-| `TtsSession` | `@alexkroman1/aai-runtime` |
-| `TtsWordTiming` | `@alexkroman1/aai-runtime` |
-| `TurnDetectionMode` | `@alexkroman1/aai` |
-| `TypecheckResult` | `@alexkroman1/aai-cli/typecheck` |
-| `TypedDelegateResult` | `@alexkroman1/aai` |
-| `TypedSubagentDef` | `@alexkroman1/aai` |
-| `UPLOADS_TABLE` | `@alexkroman1/aai-runtime` |
-| `UPLOAD_KEY_PREFIX` | `@alexkroman1/aai-runtime` |
-| `UPLOAD_STORAGE_BUCKET_ENV` | `@alexkroman1/aai-runtime` |
-| `UPLOAD_STORAGE_KEY_ENV` | `@alexkroman1/aai-runtime` |
-| `UPLOAD_STORAGE_URL_ENV` | `@alexkroman1/aai-runtime` |
-| `Unsubscribe` | `@alexkroman1/aai-runtime` |
-| `UnsupportedRecordingError` | `@alexkroman1/aai/step` |
-| `UntypedJsonBody` | `@alexkroman1/aai/tools` |
-| `UploadBackend` | `@alexkroman1/aai-runtime` |
-| `UploadBody` | `@alexkroman1/aai/workflow-api` |
-| `UploadIncompleteError` | `@alexkroman1/aai/step` |
-| `UploadInfo` | `@alexkroman1/aai/step`, `@alexkroman1/aai/workflow-api` |
-| `UploadMeta` | `@alexkroman1/aai-runtime` |
-| `UploadOptions` | `@alexkroman1/aai/workflow-api` |
-| `UploadParallelOption` | `@alexkroman1/aai/workflow-api` |
-| `UploadPart` | `@alexkroman1/aai-runtime` |
-| `UploadPartsOptions` | `@alexkroman1/aai/workflow-api` |
-| `UploadProgress` | `@alexkroman1/aai/workflow-api` |
-| `UploadProgressBar` | `@alexkroman1/aai-ui` |
-| `UploadRange` | `@alexkroman1/aai/step`, `@alexkroman1/aai/workflow-api` |
-| `UploadRef` | `@alexkroman1/aai/workflow-api` |
-| `UploadSlice` | `@alexkroman1/aai/step` |
-| `UploadStatus` | `@alexkroman1/aai-ui` |
-| `UploadStore` | `@alexkroman1/aai-runtime` |
-| `UploadTooLargeError` | `@alexkroman1/aai-runtime` |
-| `UploadsUnavailableError` | `@alexkroman1/aai-runtime` |
-| `UsageLimits` | `@alexkroman1/aai` |
-| `UseConversationResult` | `@alexkroman1/aai-ui` |
-| `UseCopyResult` | `@alexkroman1/aai-ui` |
-| `UseDownloadUrlOptions` | `@alexkroman1/aai-ui` |
-| `UseDownloadUrlResult` | `@alexkroman1/aai-ui` |
-| `UseFlashResult` | `@alexkroman1/aai-ui` |
-| `UsePushToTalkOptions` | `@alexkroman1/aai-ui` |
-| `UsePushToTalkResult` | `@alexkroman1/aai-ui` |
-| `UseSessionControlsResult` | `@alexkroman1/aai-ui` |
-| `UseUserTranscriptResult` | `@alexkroman1/aai-ui` |
-| `UseWorkflowProgressResult` | `@alexkroman1/aai-ui` |
-| `UseWorkflowRunResult` | `@alexkroman1/aai-ui` |
-| `UseWorkflowRunsOptions` | `@alexkroman1/aai-ui` |
-| `UseWorkflowRunsResult` | `@alexkroman1/aai-ui` |
-| `UseWorkflowStreamOptions` | `@alexkroman1/aai-ui` |
-| `UseWorkflowSubmitOptions` | `@alexkroman1/aai-ui` |
-| `UseWorkflowsOptions` | `@alexkroman1/aai-ui` |
-| `UseWorkflowsResult` | `@alexkroman1/aai-ui` |
-| `UserTurnControls` | `@alexkroman1/aai-ui` |
-| `UserTurnLimit` | `@alexkroman1/aai` |
-| `VOICE_PRESETS` | `@alexkroman1/aai` |
-| `VerifySessionTokenOptions` | `@alexkroman1/aai-runtime/auth` |
-| `VmRunCodeOptions` | `@alexkroman1/aai-runtime/eval` |
-| `VoicePresetName` | `@alexkroman1/aai` |
-| `VoiceSessionOptions` | `@alexkroman1/aai-ui` |
-| `WAV_HEADER_BYTES` | `@alexkroman1/aai/step` |
-| `WORKFLOW_API_PREFIX` | `@alexkroman1/aai-runtime` |
-| `WORKFLOW_API_TOKEN_ENV` | `@alexkroman1/aai-runtime` |
-| `WORKFLOW_CONTEXT_NOW` | `@alexkroman1/aai/testing` |
-| `WORKFLOW_STATUS_LABELS` | `@alexkroman1/aai-ui` |
-| `WaitForOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WaitForSchemaOptions` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WakeUpOptions` | `@alexkroman1/aai/workflow-api` |
-| `WavEncodeOptions` | `@alexkroman1/aai/ffmpeg` |
-| `WavFormat` | `@alexkroman1/aai/step` |
-| `WdkAdapter` | `@alexkroman1/aai-runtime` |
-| `WdkRunRecord` | `@alexkroman1/aai-runtime` |
-| `WdkStreamOptions` | `@alexkroman1/aai-runtime` |
-| `WebSocketConstructor` | `@alexkroman1/aai-ui` |
-| `WithTempDirOptions` | `@alexkroman1/aai/step-files` |
-| `WorkflowApi` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `WorkflowApiClientOptions` | `@alexkroman1/aai/workflow-api` |
-| `WorkflowApiOptions` | `@alexkroman1/aai-ui` |
-| `WorkflowBody` | `@alexkroman1/aai/workflow-api` |
-| `WorkflowClient` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WorkflowClientOptions` | `@alexkroman1/aai-runtime` |
-| `WorkflowContext` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WorkflowContextOptions` | `@alexkroman1/aai/testing` |
-| `WorkflowContextRecorder` | `@alexkroman1/aai/testing` |
-| `WorkflowDef` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WorkflowFieldKind` | `@alexkroman1/aai-ui` |
-| `WorkflowFields` | `@alexkroman1/aai-ui` |
-| `WorkflowInputOf` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `WorkflowKeyStore` | `@alexkroman1/aai-runtime` |
-| `WorkflowOutputOf` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `WorkflowPendingNote` | `@alexkroman1/aai-ui` |
-| `WorkflowPendingNoteProps` | `@alexkroman1/aai-ui` |
-| `WorkflowProgress` | `@alexkroman1/aai-ui` |
-| `WorkflowRun` | `@alexkroman1/aai-ui` |
-| `WorkflowRunBase` | `@alexkroman1/aai/workflow-api` |
-| `WorkflowRunError` | `@alexkroman1/aai-ui` |
-| `WorkflowRunErrorProps` | `@alexkroman1/aai-ui` |
-| `WorkflowRunOf` | `@alexkroman1/aai`, `@alexkroman1/aai/workflow-api` |
-| `WorkflowRunPanel` | `@alexkroman1/aai-ui` |
-| `WorkflowRunPanelProps` | `@alexkroman1/aai-ui` |
-| `WorkflowRunSnapshot` | `@alexkroman1/aai/workflow-api` |
-| `WorkflowRunStatus` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `WorkflowStreamSubmission` | `@alexkroman1/aai-ui` |
-| `WorkflowSubmission` | `@alexkroman1/aai-ui` |
-| `WorkflowSummary` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `WorkflowTestHandle` | `@alexkroman1/aai-runtime/testing` |
-| `WorkflowTestRead` | `@alexkroman1/aai-runtime/testing` |
-| `WorkflowTestRun` | `@alexkroman1/aai-runtime/testing` |
-| `WorkflowTestStep` | `@alexkroman1/aai-runtime/testing` |
-| `WorkspaceSnapshot` | `@alexkroman1/aai/workspace-files` |
-| `WorkspaceWalkOptions` | `@alexkroman1/aai/workspace-files` |
-| `WriteUploadFromFileOptions` | `@alexkroman1/aai/step-files` |
-| `WriteUploadOptions` | `@alexkroman1/aai/step` |
-| `aaiAgentPlugin` | `@alexkroman1/aai/testing/vite` |
-| `addDays` | `@alexkroman1/aai` |
-| `agent` | `@alexkroman1/aai` |
-| `agentConfigWarnings` | `@alexkroman1/aai/manifest` |
-| `agentToolsToSchemas` | `@alexkroman1/aai/manifest` |
-| `assemblyAIPipeline` | `@alexkroman1/aai` |
-| `assemblyAIS2s` | `@alexkroman1/aai`, `@alexkroman1/aai/s2s` |
-| `assemblyAIStt` | `@alexkroman1/aai/stt` |
-| `assemblyAITts` | `@alexkroman1/aai/tts` |
-| `assertPipelineTuning` | `@alexkroman1/aai/manifest` |
-| `assertSilencePolicy` | `@alexkroman1/aai/manifest` |
-| `blockAlign` | `@alexkroman1/aai/step` |
-| `browserSessionBrand` | `@alexkroman1/aai-ui` |
-| `buildClient` | `@alexkroman1/aai-cli/client-bundler` |
-| `buildClientConfig` | `@alexkroman1/aai/protocol` |
-| `buildReadyConfig` | `@alexkroman1/aai/protocol` |
-| `buildWorker` | `@alexkroman1/aai-cli/worker-bundler` |
-| `bytesPerSecond` | `@alexkroman1/aai/step` |
-| `carrierByName` | `@alexkroman1/aai-runtime` |
-| `cartesiaTts` | `@alexkroman1/aai/tts` |
-| `clockTime` | `@alexkroman1/aai` |
-| `commandedBuiltins` | `@alexkroman1/aai/testing` |
-| `completedOutput` | `@alexkroman1/aai-runtime/eval` |
-| `connectSession` | `@alexkroman1/aai-runtime` |
-| `countWords` | `@alexkroman1/aai/utils` |
-| `createAgentClient` | `@alexkroman1/aai/workflow-api` |
-| `createAgentServer` | `@alexkroman1/aai-runtime` |
-| `createBrowserSession` | `@alexkroman1/aai-ui` |
-| `createCodingTools` | `@alexkroman1/aai/coding-tools` |
-| `createHostServer` | `@alexkroman1/aai-runtime` |
-| `createHttpUploadBackend` | `@alexkroman1/aai-runtime` |
-| `createKeyedLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `createLogBuffer` | `@alexkroman1/aai-runtime` |
-| `createMemoryKeyStore` | `@alexkroman1/aai-runtime` |
-| `createMemoryUploadBackend` | `@alexkroman1/aai-runtime` |
-| `createMetricsCollector` | `@alexkroman1/aai` |
-| `createPostgresDb` | `@alexkroman1/aai-runtime` |
-| `createPostgresKeyStore` | `@alexkroman1/aai-runtime` |
-| `createProgressStream` | `@alexkroman1/aai/testing` |
-| `createProjectServer` | `@alexkroman1/aai-cli/start` |
-| `createRunSnapshot` | `@alexkroman1/aai/testing` |
-| `createRuntime` | `@alexkroman1/aai-runtime` |
-| `createRuntimeServer` | `@alexkroman1/aai-runtime` |
-| `createSeededRandom` | `@alexkroman1/aai` |
-| `createSessionAuth` | `@alexkroman1/aai-runtime/auth` |
-| `createSessionToken` | `@alexkroman1/aai-runtime/auth` |
-| `createStubSttOpener` | `@alexkroman1/aai-runtime/eval` |
-| `createStubTtsOpener` | `@alexkroman1/aai-runtime/eval` |
-| `createStubWorkflows` | `@alexkroman1/aai/testing` |
-| `createTelephonyBridge` | `@alexkroman1/aai-runtime` |
-| `createTextAgent` | `@alexkroman1/aai-runtime` |
-| `createToolCallRepair` | `@alexkroman1/aai-runtime` |
-| `createToolContext` | `@alexkroman1/aai/testing` |
-| `createVmRunCode` | `@alexkroman1/aai-runtime/eval` |
-| `createWorkflowApi` | `@alexkroman1/aai-ui` |
-| `createWorkflowApiClient` | `@alexkroman1/aai/workflow-api` |
-| `createWorkflowContext` | `@alexkroman1/aai/testing` |
-| `customEventsIn` | `@alexkroman1/aai-runtime/eval` |
-| `daysBetween` | `@alexkroman1/aai` |
-| `decodeHtmlEntities` | `@alexkroman1/aai/utils` |
-| `decodeWorkspaceText` | `@alexkroman1/aai/workspace-files` |
-| `deepgramStt` | `@alexkroman1/aai/stt` |
-| `defaultClientDir` | `@alexkroman1/aai-ui/client-dir` |
-| `deployedAgent` | `@alexkroman1/aai/testing` |
-| `describeEval` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `describeMedia` | `@alexkroman1/aai/ffmpeg` |
-| `describeTextEval` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `describeToolCalls` | `@alexkroman1/aai-runtime/eval` |
-| `describeTurn` | `@alexkroman1/aai-runtime/eval` |
-| `describeWorkflowEval` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `dialog` | `@alexkroman1/aai` |
-| `dialogRefusalPattern` | `@alexkroman1/aai/testing` |
-| `dialogResultSchema` | `@alexkroman1/aai/testing` |
-| `elevenLabsStt` | `@alexkroman1/aai/stt` |
-| `encodeWav` | `@alexkroman1/aai/step` |
-| `ensureSessionStateSchema` | `@alexkroman1/aai-runtime` |
-| `ensureWorkflowJournalSchema` | `@alexkroman1/aai-runtime` |
-| `errorDetail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `errorMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `errorsIn` | `@alexkroman1/aai-runtime/eval` |
-| `escapeSlackMrkdwn` | `@alexkroman1/aai/channels` |
-| `evalCredentials` | `@alexkroman1/aai-runtime/eval` |
-| `evalSimulation` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `evalTextCredentials` | `@alexkroman1/aai-runtime/eval` |
-| `evalWorkflowCredentials` | `@alexkroman1/aai-runtime/eval` |
-| `eventsOf` | `@alexkroman1/aai/testing` |
-| `executeStart` | `@alexkroman1/aai-cli/start` |
-| `expectCalled` | `@alexkroman1/aai-runtime/eval` |
-| `expectDeployable` | `@alexkroman1/aai/testing` |
-| `expectDialogOk` | `@alexkroman1/aai/testing` |
-| `expectDialogRefused` | `@alexkroman1/aai/testing` |
-| `expectPromptBuiltinsDeclared` | `@alexkroman1/aai/testing` |
-| `expectToolBeforeSpeech` | `@alexkroman1/aai-runtime/eval` |
-| `expectToolOk` | `@alexkroman1/aai/testing` |
-| `explainChannelFailure` | `@alexkroman1/aai/channels` |
-| `explainSlackChannelFailure` | `@alexkroman1/aai/channels` |
-| `failable` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `fetchClientConfig` | `@alexkroman1/aai-ui` |
-| `fetchJson` | `@alexkroman1/aai/tools` |
-| `ffmpegBaseArgs` | `@alexkroman1/aai/ffmpeg` |
-| `fieldKindFor` | `@alexkroman1/aai-ui` |
-| `formatBytes` | `@alexkroman1/aai/utils` |
-| `formatDuration` | `@alexkroman1/aai/utils` |
-| `formatMoney` | `@alexkroman1/aai/utils` |
-| `htmlToText` | `@alexkroman1/aai/html` |
-| `installStubGateway` | `@alexkroman1/aai/testing/vitest` |
-| `installStubLlm` | `@alexkroman1/aai-runtime/eval` |
-| `installStubReporter` | `@alexkroman1/aai/testing/vitest` |
-| `installStubSpeech` | `@alexkroman1/aai/testing/vitest` |
-| `installStubSpeechProviders` | `@alexkroman1/aai-runtime/eval` |
-| `installStubStepDelegate` | `@alexkroman1/aai/testing/vitest` |
-| `installStubStepFetch` | `@alexkroman1/aai/testing/vitest` |
-| `installStubTranscribe` | `@alexkroman1/aai/testing/vitest` |
-| `installStubUploads` | `@alexkroman1/aai/testing/vitest` |
-| `installStubWorkflows` | `@alexkroman1/aai/testing/vitest` |
-| `isClockTime` | `@alexkroman1/aai` |
-| `isEvent` | `@alexkroman1/aai/testing` |
-| `isFfmpegError` | `@alexkroman1/aai/ffmpeg` |
-| `isIsoDate` | `@alexkroman1/aai` |
-| `isLocalOnlyFile` | `@alexkroman1/aai/workspace-files` |
-| `isLockfile` | `@alexkroman1/aai/workspace-files` |
-| `isPathInside` | `@alexkroman1/aai/workspace-files` |
-| `isRecord` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `isSlackWebhookUrl` | `@alexkroman1/aai/channels` |
-| `isSlackWorkflowTriggerUrl` | `@alexkroman1/aai/channels` |
-| `isTerminal` | `@alexkroman1/aai/workflow-api`, `@alexkroman1/aai-ui` |
-| `isToolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `isTransientStatus` | `@alexkroman1/aai/step` |
-| `isoDate` | `@alexkroman1/aai` |
-| `judgeCall` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `lastStateIn` | `@alexkroman1/aai-runtime/eval` |
-| `lastToolResultIn` | `@alexkroman1/aai-runtime/eval` |
-| `layerScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
-| `lenientParse` | `@alexkroman1/aai/protocol` |
-| `llm` | `@alexkroman1/aai/llm` |
-| `loadBuiltAgent` | `@alexkroman1/aai-cli/start` |
-| `mapConcurrent` | `@alexkroman1/aai/step` |
-| `mapSettled` | `@alexkroman1/aai/step` |
-| `mcpToolName` | `@alexkroman1/aai` |
-| `mergeScaffoldManifest` | `@alexkroman1/aai/workspace-files` |
-| `metricsEndpoint` | `@alexkroman1/aai-runtime/metrics` |
-| `mintCode` | `@alexkroman1/aai` |
-| `mountClient` | `@alexkroman1/aai-ui` |
-| `mountPage` | `@alexkroman1/aai-ui` |
-| `multipartBody` | `@alexkroman1/aai/step` |
-| `normalizeToolMessages` | `@alexkroman1/aai/manifest` |
-| `offsetToMs` | `@alexkroman1/aai/step` |
-| `omitUndefined` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `openAICompatibleLlm` | `@alexkroman1/aai/experimental` |
-| `openAIS2s` | `@alexkroman1/aai/s2s` |
-| `openEvalSession` | `@alexkroman1/aai-runtime/eval` |
-| `openEvalTextAgent` | `@alexkroman1/aai-runtime/eval` |
-| `openEvalWorkflows` | `@alexkroman1/aai-runtime/eval` |
-| `orFail` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `otelMetricsSink` | `@alexkroman1/aai-runtime/metrics` |
-| `pageMetadata` | `@alexkroman1/aai/html` |
-| `parseFeed` | `@alexkroman1/aai/html` |
-| `parseSchemaInput` | `@alexkroman1/aai/testing` |
-| `parseToolInput` | `@alexkroman1/aai/testing` |
-| `parseWav` | `@alexkroman1/aai/step` |
-| `partKey` | `@alexkroman1/aai-runtime` |
-| `partitionSettled` | `@alexkroman1/aai/step` |
-| `partsOf` | `@alexkroman1/aai-runtime` |
-| `pcmDurationMs` | `@alexkroman1/aai/step` |
-| `persona` | `@alexkroman1/aai` |
-| `personas` | `@alexkroman1/aai` |
-| `pickOne` | `@alexkroman1/aai` |
-| `plural` | `@alexkroman1/aai/utils` |
-| `probeMedia` | `@alexkroman1/aai/ffmpeg` |
-| `procedure` | `@alexkroman1/aai` |
-| `pushCapped` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `randomInt` | `@alexkroman1/aai` |
-| `readEventStream` | `@alexkroman1/aai/workflow-api` |
-| `readScaffoldFiles` | `@alexkroman1/aai/workspace-files` |
-| `readUploadToFile` | `@alexkroman1/aai/step-files` |
-| `registerChannelHandler` | `@alexkroman1/aai/channels` |
-| `registerLlmKind` | `@alexkroman1/aai-runtime` |
-| `registerMetricsSink` | `@alexkroman1/aai-runtime/metrics` |
-| `registerSttKind` | `@alexkroman1/aai-runtime` |
-| `registerTtsKind` | `@alexkroman1/aai-runtime` |
-| `registeredChannelKindNames` | `@alexkroman1/aai/channels` |
-| `rejectingRuntime` | `@alexkroman1/aai-runtime` |
-| `renderChannelPayload` | `@alexkroman1/aai/channels` |
-| `renderSlackChannelPayload` | `@alexkroman1/aai/channels` |
-| `renderSlackPlainText` | `@alexkroman1/aai/channels` |
-| `requireEnv` | `@alexkroman1/aai` |
-| `requireStepEnv` | `@alexkroman1/aai/step` |
-| `requiredProviderEnvVars` | `@alexkroman1/aai-runtime` |
-| `resolveEvalMode` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `resolveInside` | `@alexkroman1/aai/workspace-files` |
-| `resolveKeyStore` | `@alexkroman1/aai-runtime` |
-| `resolveLlm` | `@alexkroman1/aai-runtime` |
-| `resolveOne` | `@alexkroman1/aai` |
-| `resolveWorkflowEvalMode` | `@alexkroman1/aai-runtime/eval/vitest` |
-| `responseErrorMessage` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `retryAfter` | `@alexkroman1/aai/step` |
-| `rimeTts` | `@alexkroman1/aai/tts` |
-| `roundMoney` | `@alexkroman1/aai/utils` |
-| `routeStepFetch` | `@alexkroman1/aai/testing` |
-| `runCodeIn` | `@alexkroman1/aai-runtime/eval` |
-| `runCodeOutput` | `@alexkroman1/aai-runtime/eval` |
-| `runFfmpeg` | `@alexkroman1/aai/ffmpeg` |
-| `runGuardrail` | `@alexkroman1/aai/testing` |
-| `runTextAgent` | `@alexkroman1/aai-runtime/testing` |
-| `runTool` | `@alexkroman1/aai/testing` |
-| `runWorkflow` | `@alexkroman1/aai-runtime/testing` |
-| `runtimeBrand` | `@alexkroman1/aai-runtime` |
-| `safeJsonParse` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `saidIn` | `@alexkroman1/aai-runtime/eval` |
-| `salvageJson` | `@alexkroman1/aai-runtime` |
-| `schemaInputIssues` | `@alexkroman1/aai/testing` |
-| `scriptedTextModel` | `@alexkroman1/aai-runtime/testing` |
-| `scriptedToolContext` | `@alexkroman1/aai/testing` |
-| `sendToChannel` | `@alexkroman1/aai/channels` |
-| `sendToChannelOrFail` | `@alexkroman1/aai/step-errors` |
-| `sessionAuthBrand` | `@alexkroman1/aai-runtime/auth` |
-| `sessionSlot` | `@alexkroman1/aai` |
-| `shuffled` | `@alexkroman1/aai` |
-| `simulateCall` | `@alexkroman1/aai-runtime/eval/simulate` |
-| `slackChannel` | `@alexkroman1/aai/channels` |
-| `slugifyName` | `@alexkroman1/aai/slugify` |
-| `snapshotWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
-| `sonioxStt` | `@alexkroman1/aai/stt` |
-| `spokenAlphanumeric` | `@alexkroman1/aai` |
-| `spokenDate` | `@alexkroman1/aai` |
-| `spokenDigits` | `@alexkroman1/aai` |
-| `spokenMoney` | `@alexkroman1/aai` |
-| `spokenOrdinal` | `@alexkroman1/aai` |
-| `spokenTime` | `@alexkroman1/aai` |
-| `startTelephonySession` | `@alexkroman1/aai-runtime` |
-| `startTracing` | `@alexkroman1/aai-runtime/tracing` |
-| `startTracingDetached` | `@alexkroman1/aai-runtime/tracing` |
-| `statesIn` | `@alexkroman1/aai-runtime/eval` |
-| `stepDelegate` | `@alexkroman1/aai/step` |
-| `stepEmit` | `@alexkroman1/aai/step` |
-| `stepEnv` | `@alexkroman1/aai/step` |
-| `stepFetch` | `@alexkroman1/aai/step` |
-| `stepFetchOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepGenerate` | `@alexkroman1/aai/step` |
-| `stepGenerateJson` | `@alexkroman1/aai/step` |
-| `stepGenerateJsonOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepGenerateOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepInfo` | `@alexkroman1/aai/step` |
-| `stepReadUpload` | `@alexkroman1/aai/step` |
-| `stepReport` | `@alexkroman1/aai/step` |
-| `stepRequireCompleteUpload` | `@alexkroman1/aai/step` |
-| `stepSpeak` | `@alexkroman1/aai/step` |
-| `stepTranscribePoll` | `@alexkroman1/aai/step` |
-| `stepTranscribePollOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepTranscribeSubmit` | `@alexkroman1/aai/step` |
-| `stepTranscribeSubmitOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepTranscribeSync` | `@alexkroman1/aai/step` |
-| `stepTranscribeSyncOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepTranscribeUpload` | `@alexkroman1/aai/step` |
-| `stepTranscribeUploadOrFail` | `@alexkroman1/aai/step-errors` |
-| `stepUploadInfo` | `@alexkroman1/aai/step` |
-| `stepWebhookUrl` | `@alexkroman1/aai/step` |
-| `stepWriteUpload` | `@alexkroman1/aai/step` |
-| `stripJsonFence` | `@alexkroman1/aai/step` |
-| `stubDelegate` | `@alexkroman1/aai/testing` |
-| `stubGateway` | `@alexkroman1/aai/testing` |
-| `stubGatewayRoute` | `@alexkroman1/aai/testing` |
-| `stubGenerate` | `@alexkroman1/aai/testing` |
-| `stubReporter` | `@alexkroman1/aai/testing` |
-| `stubSpeech` | `@alexkroman1/aai/testing` |
-| `stubStepDelegate` | `@alexkroman1/aai/testing` |
-| `stubStepFetch` | `@alexkroman1/aai/testing` |
-| `stubStepInfo` | `@alexkroman1/aai/testing` |
-| `stubTranscribe` | `@alexkroman1/aai/testing` |
-| `stubUploads` | `@alexkroman1/aai/testing` |
-| `subagent` | `@alexkroman1/aai` |
-| `telnyxCodec` | `@alexkroman1/aai-runtime` |
-| `throwFatalStepError` | `@alexkroman1/aai/step-errors` |
-| `throwFfmpegStepError` | `@alexkroman1/aai/step-errors` |
-| `throwStepError` | `@alexkroman1/aai/step-errors` |
-| `toAgentConfig` | `@alexkroman1/aai/manifest` |
-| `toStepError` | `@alexkroman1/aai/step-errors` |
-| `tool` | `@alexkroman1/aai` |
-| `toolArgsIn` | `@alexkroman1/aai-runtime/eval` |
-| `toolCallsInEvents` | `@alexkroman1/aai-runtime/eval` |
-| `toolCallsInTurns` | `@alexkroman1/aai-runtime/eval` |
-| `toolFailure` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `toolInputIssues` | `@alexkroman1/aai/testing` |
-| `toolNames` | `@alexkroman1/aai-runtime/eval` |
-| `toolOf` | `@alexkroman1/aai/testing` |
-| `toolRegistry` | `@alexkroman1/aai/manifest` |
-| `toolResultIn` | `@alexkroman1/aai-runtime/eval` |
-| `toolResultsIn` | `@alexkroman1/aai-runtime/eval` |
-| `toolRunner` | `@alexkroman1/aai/testing` |
-| `tracingEndpoint` | `@alexkroman1/aai-runtime/tracing` |
-| `transcodeToWav` | `@alexkroman1/aai/ffmpeg` |
-| `ttsVoiceIds` | `@alexkroman1/aai/tts` |
-| `turnCalling` | `@alexkroman1/aai-runtime/eval` |
-| `twilioCodec` | `@alexkroman1/aai-runtime` |
-| `typecheckProject` | `@alexkroman1/aai-cli/typecheck` |
-| `updateProjectConfig` | `@alexkroman1/aai-cli/project-config` |
-| `useAgentState` | `@alexkroman1/aai-ui` |
-| `useConversation` | `@alexkroman1/aai-ui` |
-| `useCopy` | `@alexkroman1/aai-ui` |
-| `useDownloadUrl` | `@alexkroman1/aai-ui` |
-| `useEvent` | `@alexkroman1/aai-ui` |
-| `useFlash` | `@alexkroman1/aai-ui` |
-| `usePushToTalk` | `@alexkroman1/aai-ui` |
-| `useRunKey` | `@alexkroman1/aai-ui` |
-| `useSession` | `@alexkroman1/aai-ui` |
-| `useSessionActions` | `@alexkroman1/aai-ui` |
-| `useSessionControls` | `@alexkroman1/aai-ui` |
-| `useSessionError` | `@alexkroman1/aai-ui` |
-| `useSessionSelector` | `@alexkroman1/aai-ui` |
-| `useSessionStatus` | `@alexkroman1/aai-ui` |
-| `useTheme` | `@alexkroman1/aai-ui` |
-| `useToolCallStart` | `@alexkroman1/aai-ui` |
-| `useToolResult` | `@alexkroman1/aai-ui` |
-| `useUserTranscript` | `@alexkroman1/aai-ui` |
-| `useWorkflowProgress` | `@alexkroman1/aai-ui` |
-| `useWorkflowRun` | `@alexkroman1/aai-ui` |
-| `useWorkflowRuns` | `@alexkroman1/aai-ui` |
-| `useWorkflowStream` | `@alexkroman1/aai-ui` |
-| `useWorkflowSubmit` | `@alexkroman1/aai-ui` |
-| `useWorkflows` | `@alexkroman1/aai-ui` |
-| `verifySessionToken` | `@alexkroman1/aai-runtime/auth` |
-| `visitWebpage` | `@alexkroman1/aai/tools` |
-| `walkWorkspaceFiles` | `@alexkroman1/aai/workspace-files` |
-| `wavEncodeArgs` | `@alexkroman1/aai/ffmpeg` |
-| `wavHeader` | `@alexkroman1/aai/step` |
-| `webSearch` | `@alexkroman1/aai/tools` |
-| `withHostCredentialFallback` | `@alexkroman1/aai-runtime` |
-| `withLock` | `@alexkroman1/aai`, `@alexkroman1/aai/utils` |
-| `withMcpTools` | `@alexkroman1/aai-runtime` |
-| `withSystemPrompt` | `@alexkroman1/aai/manifest` |
-| `withTempDir` | `@alexkroman1/aai/step-files` |
-| `withTools` | `@alexkroman1/aai/manifest` |
-| `withToolsDir` | `@alexkroman1/aai-runtime` |
-| `workflow` | `@alexkroman1/aai` |
-| `workflowApp` | `@alexkroman1/aai` |
-| `writeConfigHome` | `@alexkroman1/aai-cli/project-config` |
-| `writeFileWithParents` | `@alexkroman1/aai/workspace-files` |
-| `writeUploadFromFile` | `@alexkroman1/aai/step-files` |
+- [Agent authoring](#agent-authoring) — 423 names
+- [Browser client](#browser-client) — 138 names
+- [Testing and evals](#testing-and-evals) — 214 names
+- [Hosting and tooling](#hosting-and-tooling) — 254 names
+- [Framework internals](#framework-internals) — 305 names
+
+## Agent authoring
+
+What an `agent.ts`, its tools, its steps and its workflows import.
+
+| Name | Kind | Import from | Capability | Summary |
+| --- | --- | --- | --- | --- |
+| `ASSEMBLYAI_LLM_DEFAULT_MODEL` | const | `@alexkroman1/aai/llm` | `aai:llm` | The gateway model to reach for when an agent has no opinion. |
+| `ASSEMBLYAI_STT_EU_URL` | const | `@alexkroman1/aai/stt` | `aai:stt` | EU data-residency streaming endpoint. |
+| `ASSEMBLYAI_TTS_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice when `assemblyAITts()` is called with no `voice` — a US-accented English voice, since most agents face US callers (it was `"vera"` for a while, … |
+| `ASSEMBLYAI_TTS_LANGUAGES` | const | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code → the `language` query-param value the service accepts. |
+| `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | The voice catalog — voice id → the language it speaks and its accent. |
+| `AgentClient` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Everything one agent answers: every `WorkflowApi` call, plus the front door. |
+| `AgentDef` | interface | `@alexkroman1/aai` | `aai:agent` | Fully resolved agent definition. |
+| `AgentGuardrail` | type | `@alexkroman1/aai` | `aai:agent` | Judge one piece of text — see `AgentDef.inputGuardrails` and `AgentDef.outputGuardrails`. |
+| `AgentGuardrails` | interface | `@alexkroman1/aai` | `aai:agent` | The two guardrail fields on `AgentDef` — see this module's header for what each can actually prevent. |
+| `AgentInstructions` | type | `@alexkroman1/aai` | `aai:agent` | Compute the agent's instructions for the request about to be assembled. |
+| `AgentModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | `ModelTuning` plus the two knobs only the agent's OWN loop has: a per-step tool-choice policy and a session token budget. |
+| `AgentObservation` | interface | `@alexkroman1/aai` | `aai:agent` | The observe-only half of an agent declaration — see this module's header. |
+| `AgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The author-facing parameter shape of `agent`: every `AgentDef` field, with the defaulted ones optional. |
+| `AgentSessionContext` | interface | `@alexkroman1/aai` | `aai:agent` | The session a per-session author function is running for. |
+| `AgentSystemPrompt` | type | `@alexkroman1/aai` | `aai:agent` | What `agent({ systemPrompt })` accepts: the text, or a function that answers it per request. |
+| `AgentVoicePresets` | interface | `@alexkroman1/aai` | `aai:agent` | The opt-in prompt presets, extended by `AgentDef`. |
+| `AnyDialog` | type | `@alexkroman1/aai` | `aai:dialog` | Any dialog, whatever its machine and event union — what `AgentDef.dialogs` holds. |
+| `AnyWorkflowDef` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Any workflow definition, for a signature that only needs its OUTPUT type. |
+| `AssemblyAIGatewayModel` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | A model id on AssemblyAI's LLM Gateway — one of `KnownGatewayModel`, or any other string. |
+| `AssemblyAILlmProviderOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | `providerOptions` for `provider: "assemblyai"`. |
+| `AssemblyAIReasoningEffort` | type | `@alexkroman1/aai/llm` | `aai:llm` | Reasoning effort accepted by the gateway's GPT-5-family models, including the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the original … |
+| `AssemblyAITtsLanguage` | type | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code for a language the AssemblyAI voice catalog speaks. |
+| `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | A voice id from `ASSEMBLYAI_TTS_VOICES`. |
+| `AssemblyAITtsVoiceId` | type | `@alexkroman1/aai/tts` | `aai:tts` | The voice ids this release's catalog carries. |
+| `AssemblyAITtsVoiceInfo` | interface | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about one voice: the language it speaks and the accent it speaks with. |
+| `BASH_TIMEOUT_MAX_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
+| `BASH_TIMEOUT_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Default and maximum wall-clock for one `bash` command. |
+| `BuiltinTool` | type | `@alexkroman1/aai` | `aai:agent` | Identifier for a built-in server-side tool. |
+| `CARTESIA_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice used when callers invoke `cartesiaTts()` with no `voice`. |
+| `CHANNEL_POST_TIMEOUT_MS` | const | `@alexkroman1/aai/channels` | `aai:channels` | A platform is not slow. |
+| `CODING_TOOL_DESCRIPTIONS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
+| `CallOptions` | type | `@alexkroman1/aai/tools` | `aai:builtins` |  |
+| `Channel` | type | `@alexkroman1/aai/channels` | `aai:channels` | Any channel descriptor — what `sendToChannel` takes. |
+| `ChannelDeliveryError` | class | `@alexkroman1/aai/channels` | `aai:channels` | A post the channel refused, carrying the verdict the caller needs. |
+| `ChannelDescriptor` | interface | `@alexkroman1/aai/channels` | `aai:channels` | Base shape for a channel descriptor: a `kind` tag plus an opaque `options` payload, so the dispatch table picks the renderer and passes the author's options … |
+| `ChannelHandler` | interface | `@alexkroman1/aai/channels` | `aai:channels` | Everything one channel kind supplies: how to turn a `ChannelMessage` into the request body that platform takes, and what to say when the platform refuses one. |
+| `ChannelMessage` | interface | `@alexkroman1/aai/channels` | `aai:channels` | What gets posted, in terms no single platform owns. |
+| `ChannelPayload` | interface | `@alexkroman1/aai/channels` | `aai:channels` | A rendered request: where to POST and what to send. |
+| `ChannelSection` | interface | `@alexkroman1/aai/channels` | `aai:channels` | One block of a message: a titled chunk, optionally linked, with prose and bullets under it. |
+| `ClientConfigResponse` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | Parsed body of `GET /client-config`. |
+| `ClientConfigResponseSchema` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`) | `aai:workflow-api` | Body of `GET /client-config`. |
+| `CodingToolName` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | Every tool `createCodingTools` can build, by the name the model calls. |
+| `CodingToolsOptions` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | What `createCodingTools` takes. |
+| `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/stt` | `aai:stt` | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
+| `DEFAULT_GUARDRAIL_MAX_REVISIONS` | const | `@alexkroman1/aai` | `aai:subagent` | How many times a `SubagentDef.guardrail` may send an answer back when the subagent names no `SubagentDef.maxRevisions` of its own. |
+| `DEFAULT_RETRY_DELAY_MS` | const | `@alexkroman1/aai/step-errors` | `aai:step-errors` | How long a `RetryableError` that names no delay waits. |
+| `DEFAULT_STEP_MAX_ATTEMPTS` | const | `@alexkroman1/aai` | `aai:workflow` | Attempts a step gets when `StepOptions.maxAttempts` says nothing. |
+| `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when `systemPrompt` is not provided. |
+| `DELEGATE_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:subagent` | The name the model calls a roster by. |
+| `DeepReadonly` | type | `@alexkroman1/aai` | `aai:state` | `Readonly<T>`, all the way down. |
+| `DefaultToolResult` | type | `@alexkroman1/aai` | `aai:tool` | Default type of a tool result observed on the client (`useToolResult`) — `any`, so untyped reads compile. |
+| `DelegateFn` | type | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
+| `DelegateOptions` | interface | `@alexkroman1/aai` | `aai:subagent` | Per-call options for `DelegateFn`. |
+| `DelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | What one delegated run returns: the accepted attempt, plus what getting there took. |
+| `Dialog`, `DialogOptions` | interface | `@alexkroman1/aai` | `aai:dialog` | A dialog statechart bound to a session, created by `dialog`. |
+| `DialogBargeIn` | type | `@alexkroman1/aai` | `aai:dialog` | How interruptible the agent is while a dialog state is active. |
+| `DialogEvent` | type | `@alexkroman1/aai` | `aai:dialog` | The event union a `DialogSpec` declares — synthesized from its `on` keys at every depth. |
+| `DialogEventNames` | type | `@alexkroman1/aai` | `aai:dialog` | Every event name the `on` maps of a `states` map declare, at every depth. |
+| `DialogGate` | interface | `@alexkroman1/aai` | `aai:dialog` | What makes a tool part of a dialog: where it may run, and what it advances. |
+| `DialogPosition` | interface | `@alexkroman1/aai` | `aai:dialog` | Where a dialog currently is. |
+| `DialogSessionEventName` | type | `@alexkroman1/aai` | `aai:dialog` | A session event as a dialog names it: the wire type under a leading `@`. |
+| `DialogSpec` | interface | `@alexkroman1/aai` | `aai:dialog` | A dialog's shape as a plain state map — the argument to the `dialog` overload that takes no XState machine. |
+| `DialogStateSpec` | interface | `@alexkroman1/aai` | `aai:dialog` | One state of a `DialogSpec` — the plain-object form of a dialog's shape. |
+| `DialogTimeout` | interface | `@alexkroman1/aai` | `aai:dialog` | A deadline as `Dialog.timeout` reports it: how long, and the event to send. |
+| `DialogTimeoutSpec` | interface | `@alexkroman1/aai` | `aai:dialog` | A per-state deadline: how long the dialog may stay here, and what to send when it has been that long. |
+| `DialogToolDef` | interface | `@alexkroman1/aai` | `aai:dialog` | The authoring shape of a gated tool — `ToolDef` plus the `DialogGate` that makes it part of a dialog. |
+| `DialogToolResult` | interface | `@alexkroman1/aai` | `aai:dialog` | What a `Dialog.tool` answers on success. |
+| `DialogVoiceConfig` | interface | `@alexkroman1/aai` | `aai:dialog` | The per-state voice settings a dialog declares — what `Dialog.voiceConfig` answers with, from the deepest active state that declares any of them. |
+| `EventMapOf` | type | `@alexkroman1/aai` | `aai:events` | Key a union of `{ type }` members by their `type`. |
+| `EventStreamFrame` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | One parsed frame. |
+| `FatalError` | class | `@alexkroman1/aai/step-errors` | `aai:step-errors` | A failure that another attempt cannot fix. |
+| `FeedItem` | type | `@alexkroman1/aai/html` | `aai:html` | One entry of a feed, with the fields a digest actually reads. |
+| `FfmpegError` | class | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | A failed ffmpeg run, with the diagnosis attached. |
+| `FfmpegFailureKind` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Which way a run failed — see `FfmpegError`. |
+| `FfmpegRunOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
+| `FfmpegRunResult` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
+| `FfmpegSource` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | A media input: a filesystem path, or the bytes themselves. |
+| `FindOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for `WorkflowClient.find`. |
+| `GLOB_LIMIT` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Max `glob` results before the list is truncated, newest first. |
+| `GenerateFn` | type | `@alexkroman1/aai` |  | One-shot LLM generation — the signature of `ctx.generate`. |
+| `GenerateObjectResult` | type | `@alexkroman1/aai` |  | Result of a generation call that passed a Standard Schema — `object` is REQUIRED, matching what the host guarantees. |
+| `GenerateOptions` | type | `@alexkroman1/aai` |  | Options for one LLM generation call. |
+| `GenerateResult` | type | `@alexkroman1/aai` |  | Result of one LLM generation call without a Standard Schema — text only. |
+| `GuardrailVerdict` | type | `@alexkroman1/aai` | `aai:subagent` | A guardrail's verdict: `true` to accept, or the complaint to send back. |
+| `HANDOFF_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:persona` | The name the model hands off by. |
+| `HandoffOptions` | interface | `@alexkroman1/aai` | `aai:persona` | Per-call options for `Personas.handoff`. |
+| `HandoffResult` | interface | `@alexkroman1/aai` | `aai:persona` | What a handoff returns — the shape a tool hands back as its result so the model learns, in the same turn, who is speaking now. |
+| `InferSchemaOutput` | type | `@alexkroman1/aai` | `aai:tool` | The output (validated) type of a Standard Schema. |
+| `InferToolInput` | type | `@alexkroman1/aai` | `aai:tool` | The validated input type a tool's `execute` receives — inferred from the tool's `inputSchema`. |
+| `InferToolOutput` | type | `@alexkroman1/aai` | `aai:tool` | The result type a tool's `execute` returns (awaited, so a sync and an `async` body infer alike). |
+| `KeyedLock`, `KeyedLockOptions` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` |  |
+| `KeyedLockTimeoutError` | class | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Thrown when an acquire deadline lapses before the key came free. |
+| `KnownGatewayModel` | type | `@alexkroman1/aai/llm` | `aai:llm` | An id the gateway advertised when this catalog was generated — the autocomplete half of `AssemblyAIGatewayModel`, which also accepts any other string. |
+| `KnownLlmProvider` | type | `@alexkroman1/aai/llm` | `aai:llm` | The providers the runtime resolves with no registration — the autocomplete half of `LlmProviderName`. |
+| `KnownTurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | The turn-detection modes this release implements — the autocomplete half of `TurnDetectionMode`. |
+| `KnownVoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | One of the opt-in prompt presets THIS release ships — see `VOICE_PRESETS` for what each one says and what it costs. |
+| `LlmDescriptorOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | What an `LlmProvider` descriptor's `options` carry — the one shape `llm()` writes and the host resolver reads. |
+| `LlmProvider` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | Descriptor for an LLM provider. |
+| `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name — one of `KnownLlmProvider`, or any other string. |
+| `MCP_SERVER_KEY_RE` | const | `@alexkroman1/aai` | `aai:agent` | The grammar for a server KEY — the name an author gives one server, and the first segment of every tool name it contributes. |
+| `MCP_TOOL_NAME_MAX` | const | `@alexkroman1/aai` | `aai:agent` | Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the strictest this SDK routes to, and therefore the one that decides. |
+| `MCP_TOOL_PREFIX` | const | `@alexkroman1/aai` | `aai:agent` | The prefix every MCP-derived tool name carries. |
+| `McpServerConfig` | type | `@alexkroman1/aai` | `aai:agent` | One MCP server an agent may take tools from. |
+| `McpServers` | type | `@alexkroman1/aai` | `aai:agent` | The servers an agent declares, keyed by the name that prefixes their tools. |
+| `MediaInfo` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`. |
+| `MediaStreamInfo` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | One elementary stream inside a container. |
+| `Message` | type | `@alexkroman1/aai` | `aai:tool` | A single message in the conversation history. |
+| `MetricStat` | interface | `@alexkroman1/aai` | `aai:metrics` | One measurement's distribution. |
+| `MetricsCollectedEvent` | type | `@alexkroman1/aai` | `aai:metrics` | One `metrics.collected` frame, envelope included — what an `events: { "metrics.collected" }` hook receives. |
+| `MetricsCollector`, `MetricsCollectorOptions` | interface | `@alexkroman1/aai` | `aai:metrics` | A running summary of `metrics.collected` frames — see `createMetricsCollector`. |
+| `MetricsSample` | type | `@alexkroman1/aai` | `aai:metrics` | What `MetricsCollector.collect` reads off one frame — the event without its envelope, so a hook's event and a transport's body both fit. |
+| `MetricsSummary` | interface | `@alexkroman1/aai` | `aai:metrics` | Everything collected so far. |
+| `ModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | The per-REQUEST knobs every model loop this runtime runs takes — the agent's own conversational loop and a `SubagentDef`'s delegated one alike. |
+| `MultipartBody` | type | `@alexkroman1/aai/step` | `aai:step` | A ready-to-send multipart body, as `multipartBody` returns it. |
+| `MultipartPart` | type | `@alexkroman1/aai/step` | `aai:step` | One file part, as `multipartBody` takes it. |
+| `OpenAIS2sVoice` | type | `@alexkroman1/aai/s2s` | `aai:s2s` | Voice ids the OpenAI Realtime API accepts for TTS. |
+| `PageMetadata` | type | `@alexkroman1/aai/html` | `aai:html` | The three things a scraper reads off a page's `<head>`. |
+| `ParsedFeed` | type | `@alexkroman1/aai/html` | `aai:html` | A parsed RSS/Atom/RDF feed. |
+| `PcmFormat` | type | `@alexkroman1/aai/step` | `aai:step` | How to read the samples handed to `encodeWav`. |
+| `PersonaDef` | interface | `@alexkroman1/aai` | `aai:persona` | One persona: a speaker the session can hand the caller to. |
+| `PersonaPosition` | interface | `@alexkroman1/aai` | `aai:persona` | Where a session is, persona-wise — the position `Personas.position` answers, the shape `DialogPosition` has for a dialog. |
+| `Personas` | interface | `@alexkroman1/aai` | `aai:persona` | The roster the agent declares and every tool reaches for — what `personas` returns. |
+| `PipelineAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Pipeline-mode params: any subset of the provider triple (unset stages run on the default all-AssemblyAI pipeline), never `s2s`. |
+| `PipelineVoiceTuning` | interface | `@alexkroman1/aai` |  | Pipeline-mode voice-UX tuning, extended by `AgentDef`. |
+| `ProbeOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
+| `Procedure` | interface | `@alexkroman1/aai` | `aai:procedure` | A machine that can be run as a unit of work, created by `procedure`. |
+| `ProcedureNotFinishedError` | class | `@alexkroman1/aai` | `aai:procedure` | The error a run that did not finish rejects with. |
+| `ProcedureRunOptions` | interface | `@alexkroman1/aai` | `aai:procedure` | Options for one `Procedure.run`. |
+| `ProviderCredentialOptions` | interface | `@alexkroman1/aai` (also `@alexkroman1/aai/llm`, `@alexkroman1/aai/s2s`, `@alexkroman1/aai/stt`, `@alexkroman1/aai/tts`) | `aai:agent` | The credential override every provider descriptor accepts. |
+| `ProviderDescriptor` | interface | `@alexkroman1/aai` | `aai:agent` | Base shape for a provider descriptor. |
+| `READ_LIMIT` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | `read_file` paging default and hard cap, in lines. |
+| `RIME_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default Rime speaker used when callers invoke `rimeTts()` with no `voice`. |
+| `RandomSource` | type | `@alexkroman1/aai` | `aai:random` | A source of uniform floats in `[0, 1)` — `Math.random`'s contract, and the one a caller substitutes. |
+| `ReadUploadOptions` | type | `@alexkroman1/aai/step` | `aai:uploads` | Options for `stepReadUpload`. |
+| `RetryableError`, `RetryableErrorOptions` | class | `@alexkroman1/aai/step-errors` | `aai:step-errors` | A failure another attempt might survive, with an optional "not before". |
+| `S2sAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | S2S-mode params: an `s2s` descriptor, no pipeline providers, and the pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting one fails with a … |
+| `S2sProvider` | type | `@alexkroman1/aai/s2s` (also `@alexkroman1/aai`) | `aai:s2s` | Descriptor for an S2S provider. |
+| `SESSION_SOURCED_EVENT_TYPES` | const | `@alexkroman1/aai` | `aai:events` | The events only the SESSION itself can be the source of — never a transport. |
+| `SLACK_CHANNEL_HANDLER` | const | `@alexkroman1/aai/channels` | `aai:channels` | Slack as a `ChannelHandler` — what `sendToChannel` dispatches to for a `"slack"` descriptor. |
+| `SLACK_CHANNEL_KIND` | const | `@alexkroman1/aai/channels` | `aai:channels` | The `kind` tag on a Slack channel descriptor. |
+| `STEP_FILE_READ_CONCURRENCY` | const | `@alexkroman1/aai/step-files` | `aai:step-files` | Windows `readUploadToFile` reads at once, when the file is known to be whole. |
+| `STEP_FILE_WINDOW_BYTES` | const | `@alexkroman1/aai/step-files` | `aai:step-files` | Bytes moved per store round trip, in either direction. |
+| `STEP_SPEAK_SAMPLE_RATE` | const | `@alexkroman1/aai/step` | `aai:step` | Sample rate `stepSpeak` asks for when a caller names none. |
+| `STEP_SPEAK_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:step` | How long one `stepSpeak` call may take before it is abandoned. |
+| `SessionEvent` | type | `@alexkroman1/aai` | `aai:events` | One **server→client** session event, envelope included: a fact the session reports, in the shape it takes on the wire and in the retained stream. |
+| `SessionEventBody` | type | `@alexkroman1/aai` | `aai:events` | A session event as its EMITTER writes it — everything but the `meta` envelope, which the session stamps exactly once. |
+| `SessionEventContext` | type | `@alexkroman1/aai` | `aai:agent` | What a session event handler is handed alongside the event. |
+| `SessionEventHandler` | type | `@alexkroman1/aai` | `aai:events` | One handler: an event of the type it was declared under, plus the context. |
+| `SessionEventHandlers` | type | `@alexkroman1/aai` | `aai:events` | The `events` map an agent declares — keyed by event type, plus `"*"`. |
+| `SessionEventMap` | interface | `@alexkroman1/aai` | `aai:events` | Every session event, keyed by its `type` — derived from `SessionEventSchema`. |
+| `SessionEventSchema` | const | `@alexkroman1/aai` | `aai:events` | The session event vocabulary — the ONE source of truth. |
+| `SessionEventType` | type | `@alexkroman1/aai` | `aai:events` | Every event name a handler map, a dialog's `@` keys or a spec may name. |
+| `SessionSlot`, `SessionSlotOptions` | interface | `@alexkroman1/aai` | `aai:state` | A named slot of per-session state, created by `sessionSlot`. |
+| `SessionSourcedEventType` | type | `@alexkroman1/aai` | `aai:events` | One of `SESSION_SOURCED_EVENT_TYPES`. |
+| `Settled` | type | `@alexkroman1/aai/step` | `aai:step` | What one item of a `mapSettled` came back as: its value, or the reason it failed, beside the item itself. |
+| `SharedAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Fields shared by both session modes: everything on `AgentDef` minus the providers and the pipeline-only tuning knobs, plus the authoring conveniences. |
+| `SlackChannel`, `SlackChannelOptions` | type | `@alexkroman1/aai/channels` | `aai:channels` | A Slack channel descriptor, as returned by `slackChannel`. |
+| `SleepOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-sleep options. |
+| `SlotCaps` | type | `@alexkroman1/aai` | `aai:state` | Growth caps for the ARRAYS at the top level of a slot's value — the type of `SessionSlotOptions.caps`. |
+| `SlotHolder` | type | `@alexkroman1/aai` | `aai:state` | Anything that can reach one session's slots. |
+| `SlotStore` | type | `@alexkroman1/aai` | `aai:state` | One session's slot storage, as a tool's context carries it. |
+| `SlotToolDef` | interface | `@alexkroman1/aai` | `aai:state` | The authoring shape of a slot-backed tool: `ToolDef` with the slot's value handed to `execute` directly. |
+| `SpeakOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepSpeak` accepts. |
+| `SpokenAudio` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepSpeak` resolves with. |
+| `StandardSchemaIssue` | interface | `@alexkroman1/aai` |  | One validation issue in a failed Standard Schema result. |
+| `StandardSchemaResult` | type | `@alexkroman1/aai` |  | A successful or failed Standard Schema validation. |
+| `StandardSchemaV1` | interface | `@alexkroman1/aai` |  | The [Standard Schema](https://standardschema.dev) V1 interface, inlined as the spec recommends (it is a types-only contract). |
+| `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start`. |
+| `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` and `SessionSlot.projection` are, and what `agent({ syncState })` takes. |
+| `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Workflow-app params: `page: "static"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
+| `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
+| `StepGenerateError` | class | `@alexkroman1/aai/step` | `aai:step` | A model call that failed, with the one thing a step has to decide from. |
+| `StepInfo` | type | `@alexkroman1/aai/step` | `aai:step` | Which step is running, and which attempt of it. |
+| `StepOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-step overrides. |
+| `StepSchemaOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | `StepOptions` with the schema PRESENT — what selects the validating overload of `ctx.step`, whose result is the schema's output rather than whatever the body … |
+| `StepTransportError` | class | `@alexkroman1/aai/step` | `aai:step` | A request that never got an answer. |
+| `StreamOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for `WorkflowClient.stream`. |
+| `SttProvider` | type | `@alexkroman1/aai/stt` (also `@alexkroman1/aai`) | `aai:stt` | Descriptor for an STT provider. |
+| `SubagentAnswer` | interface | `@alexkroman1/aai` | `aai:subagent` | ONE attempt at an answer — what a `SubagentGuardrail` judges. |
+| `SubagentDef` | interface | `@alexkroman1/aai` | `aai:subagent` | A subagent definition — what `subagent` returns and `DelegateFn` runs. |
+| `SubagentGuardrail` | type | `@alexkroman1/aai` | `aai:subagent` | Judge one attempt — see `SubagentDef.guardrail`. |
+| `SubagentRoster` | type | `@alexkroman1/aai` | `aai:subagent` | The subagents an agent publishes for the MODEL to choose between — `agent({ subagents })`. |
+| `SubagentToolCall` | interface | `@alexkroman1/aai` | `aai:subagent` | One tool call a subagent made, as reported back to the caller. |
+| `TRANSCRIBE_API` | const | `@alexkroman1/aai/step` | `aai:transcribe` | The async API's base. |
+| `TRANSCRIBE_MODELS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | The models a job asks for when a caller names none. |
+| `TRANSCRIBE_SYNC_ENDPOINT` | const | `@alexkroman1/aai/step` | `aai:transcribe` | The synchronous endpoint. |
+| `TRANSCRIBE_SYNC_MODEL` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Required on every sync request; the endpoint routes on it. |
+| `TRANSCRIBE_SYNC_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | The endpoint's own per-request deadline, plus room to upload. |
+| `TRANSCRIBE_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Per-request deadline when a caller names none. |
+| `TRANSCRIBE_UPLOAD_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Deadline for the upload leg. |
+| `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/step` | `aai:transcribe` | How much of a stored upload one outbound window carries. |
+| `TelephonyAccess` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about `WS /phone`. |
+| `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent. |
+| `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run in a status nothing will change again. |
+| `TextAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Text-mode params: `text: true`, optionally an `llm`, and nothing else from the audio half of the agent shape. |
+| `ToolChoice` | type | `@alexkroman1/aai` | `aai:agent` | How the LLM should select tools. |
+| `ToolCompletionMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | The role switch, and the reason this feature is worth having. |
+| `ToolConditionOperator` | type | `@alexkroman1/aai` | `aai:tool` | Comparison a `ToolMessageCondition` applies. |
+| `ToolContext` | type | `@alexkroman1/aai` | `aai:tool` | Context passed to tool `execute` functions. |
+| `ToolDef` | type | `@alexkroman1/aai` | `aai:tool` | Definition of a custom tool that the agent can invoke. |
+| `ToolDelayedMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | Spoken when the tool has been running for `ToolDelayedMessage.afterMs`. |
+| `ToolErrorHandler` | type | `@alexkroman1/aai` | `aai:tool` | What a tool does with an exception its `execute` threw — the shape of `ToolDef.onError`. |
+| `ToolFailure` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | A tool result that reports a recoverable failure to the LLM. |
+| `ToolInputSchema` | type | `@alexkroman1/aai` | `aai:tool` | A schema accepted for tool inputs and `ctx.generate` structured output: any Standard Schema that can also convert to JSON Schema (Zod natively, or a vendor … |
+| `ToolMessageCondition` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | One test a tool call's ARGUMENTS must pass for the message carrying it to be eligible. |
+| `ToolMessages` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | A tool's messages in NORMALIZED form — what a `ToolSchema` carries and what the runtime reads. |
+| `ToolMessagesInput` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | What an author writes for `tool({ messages })` — every kind also accepts the shorthands, because the common declaration is one string. |
+| `ToolStartMessage` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/manifest`) | `aai:tool` | Spoken as the tool call BEGINS. |
+| `TranscribeError` | class | `@alexkroman1/aai/step` | `aai:transcribe` | A failure from either endpoint, carrying what the caller needs to classify it. |
+| `TranscribeProgress` | type | `@alexkroman1/aai/step` | `aai:transcribe` | Where a submitted job has got to. |
+| `TranscribeRequestOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | Options every call in this family accepts. |
+| `TranscribeSubmitOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `stepTranscribeSubmit` accepts. |
+| `TranscribeSyncOptions` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `stepTranscribeSync` accepts. |
+| `Transcript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | A finished transcript, as `stepTranscribePoll` answers with one. |
+| `TtsProvider` | type | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | Descriptor for a TTS provider. |
+| `TurnDetectionMode` | type | `@alexkroman1/aai` | `aai:agent` | A turn-detection mode — one of `KnownTurnDetectionMode`, or any other string. |
+| `TypedDelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
+| `TypedSubagentDef` | interface | `@alexkroman1/aai` | `aai:subagent` | Define a subagent. |
+| `UnsupportedRecordingError` | class | `@alexkroman1/aai/step` | `aai:step` | A recording `parseWav` will not read. |
+| `UntypedJsonBody` | type | `@alexkroman1/aai/tools` | `aai:builtins` | What an unparameterized call answers with — see the module doc for why this rather than `DefaultToolResult` (which is `any`, and absorbs the `\| ToolFailure` … |
+| `UploadBody` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | What an upload call accepts as the file's bytes. |
+| `UploadIncompleteError` | class | `@alexkroman1/aai/step` | `aai:uploads` | An upload that is still arriving, where the whole file was needed. |
+| `UploadInfo` | type | `@alexkroman1/aai/step` (also `@alexkroman1/aai/workflow-api`) | `aai:uploads` | What a stored upload is, minus its bytes. |
+| `UploadOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for an upload. |
+| `UploadParallelOption` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | What `UploadOptions.parallel` accepts: `true` for the defaults, or the settings to tune them. |
+| `UploadPartsOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | How a caller tunes the fan-out. |
+| `UploadProgress` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | How far an upload has got, as `UploadOptions.onProgress` reports it. |
+| `UploadRange` | type | `@alexkroman1/aai/step` (also `@alexkroman1/aai/workflow-api`) | `aai:uploads` | A half-open window of an upload's bytes, `[start, end)`. |
+| `UploadRef` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A stored upload, as `WorkflowApi.upload` resolves it. |
+| `UploadSlice` | type | `@alexkroman1/aai/step` | `aai:uploads` | One window of an upload, as `stepReadUpload` resolves it. |
+| `UsageLimits` | interface | `@alexkroman1/aai` | `aai:agent` | The token budget a session may spend before the runtime stops it. |
+| `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `PipelineVoiceTuning.userTurnLimit`. |
+| `VOICE_PRESETS` | const | `@alexkroman1/aai` | `aai:agent` | The shipped text of every preset, keyed by the name `agent({ voicePresets })` takes. |
+| `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of `KnownVoicePresetName`, or any other string. |
+| `WAV_HEADER_BYTES` | const | `@alexkroman1/aai/step` | `aai:step` | Bytes of WAV header `encodeWav` writes — `RIFF`, `fmt `, and `data`. |
+| `WaitForOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-wait options, for a wait that carries a DEADLINE. |
+| `WaitForSchemaOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | A wait that carries a schema and NO deadline — `ctx.waitFor(token, { schema })`. |
+| `WakeUpOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for `WorkflowClient.wakeUp`. |
+| `WavEncodeOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
+| `WavFormat` | type | `@alexkroman1/aai/step` | `aai:step` | A WAV's `fmt ` chunk plus where its samples actually live. |
+| `WorkflowApi` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | The calls the API offers — one method per route, and nothing beyond them. |
+| `WorkflowApiClientOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | What a client needs to know: which agent, on whose authority, and for how long. |
+| `WorkflowBody` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A workflow body: an ordinary async function of its input and a `WorkflowContext`. |
+| `WorkflowClient` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Start and inspect workflow runs. |
+| `WorkflowContext` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | The handle a workflow body receives as its second argument. |
+| `WorkflowDef` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Definition of one durable workflow: its schema, its description, and the function that is its body. |
+| `WorkflowInputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's INPUT type — what its declared schema parses to, which is exactly what the body's parameter should be. |
+| `WorkflowOutputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's OUTPUT type, for a page that polls its runs. |
+| `WorkflowRunBase` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Fields every `WorkflowRunSnapshot` member carries, whatever its status. |
+| `WorkflowRunOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`) | `aai:workflow-api` | A run of `D`, with its output already typed — `WorkflowRunSnapshot` and `WorkflowOutputOf` composed. |
+| `WorkflowRunSnapshot` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run's observable state, as `WorkflowClient.get` returns it. |
+| `WorkflowRunStatus` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Lifecycle of one workflow run. |
+| `WorkflowSummary` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | One declared workflow, as `GET /workflows` lists it. |
+| `WriteUploadOptions` | type | `@alexkroman1/aai/step` | `aai:uploads` | Options for `stepWriteUpload`. |
+| `addDays` | function | `@alexkroman1/aai` | `aai:calendar` | `iso` plus `days`, as another `YYYY-MM-DD`. |
+| `agent` | function | `@alexkroman1/aai` | `aai:agent` | Define an agent: its system prompt, its providers, and its configuration. |
+| `assemblyAIPipeline`, `AssemblyAIPipelineOptions` | function | `@alexkroman1/aai` | `aai:agent` | All three pipeline stages on AssemblyAI, ready to spread into `agent()`. |
+| `assemblyAIS2s`, `AssemblyAIS2sOptions` | function | `@alexkroman1/aai/s2s` (also `@alexkroman1/aai`) | `aai:s2s` | Select AssemblyAI's speech-to-speech (Voice Agent API) session mode. |
+| `assemblyAIStt`, `AssemblyAISttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build an AssemblyAI STT descriptor. |
+| `assemblyAITts`, `AssemblyAITtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build an AssemblyAI streaming-TTS descriptor. |
+| `blockAlign` | function | `@alexkroman1/aai/step` | `aai:step` | Bytes one sample frame occupies — every channel of one instant. |
+| `bytesPerSecond` | function | `@alexkroman1/aai/step` | `aai:step` | Bytes of audio per second of wall clock — the constant that converts a byte offset into a timestamp, and a duration into a request size. |
+| `cartesiaTts`, `CartesiaTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Cartesia TTS descriptor for pipeline mode. |
+| `clockTime` | function | `@alexkroman1/aai` | `aai:calendar` | A time-of-day argument: 24-hour `HH:MM`, zero-padded. |
+| `countWords` | function | `@alexkroman1/aai/utils` | `aai:utils` | How many words a string holds — whitespace-separated runs, after trimming. |
+| `createAgentClient` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Create a client for one agent. |
+| `createCodingTools` | function | `@alexkroman1/aai/coding-tools` | `aai:coding` | Build a coding agent's tool set over one directory. |
+| `createKeyedLock` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Create a `KeyedLock`. |
+| `createMetricsCollector` | function | `@alexkroman1/aai` | `aai:metrics` | Create a collector — see this module's doc for an example. |
+| `createSeededRandom` | function | `@alexkroman1/aai` | `aai:random` | A `RandomSource` that produces the same sequence every run, from a seed. |
+| `createWorkflowApiClient` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Create a workflow API client. |
+| `daysBetween` | function | `@alexkroman1/aai` | `aai:calendar` | Whole calendar days from `from` to `to` — a stay's night count. |
+| `decodeHtmlEntities` | function | `@alexkroman1/aai/utils` | `aai:utils` | Decode the five XML/HTML entities that matter, plus a numeric apostrophe. |
+| `deepgramStt`, `DeepgramSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build a Deepgram STT descriptor. |
+| `describeMedia` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | A probe as one phrase for a progress line — `41:20 of aac`. |
+| `dialog` | function | `@alexkroman1/aai` | `aai:dialog` | Declare a dialog statechart for an agent's conversation. |
+| `elevenLabsStt`, `ElevenLabsSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build an ElevenLabs Scribe STT descriptor. |
+| `encodeWav` | function | `@alexkroman1/aai/step` | `aai:step` | Wrap raw linear-PCM samples in a WAV container. |
+| `errorDetail` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract a detailed error string (message + stack) for diagnostic logging. |
+| `errorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract an error message from an unknown thrown value. |
+| `escapeSlackMrkdwn` | function | `@alexkroman1/aai/channels` | `aai:channels` | The three characters Slack's mrkdwn reserves. |
+| `explainChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on for a refusal this channel understands. |
+| `explainSlackChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on, chosen from what the URL and the body say. |
+| `failable` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Wrap a function whose body uses `orFail`, so a failure it hits becomes the function's return value. |
+| `fetchJson` | function | `@alexkroman1/aai/tools` | `aai:builtins` | GET a URL and return its parsed JSON. |
+| `ffmpegBaseArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The standing flags every ffmpeg invocation in a guest wants, before anything the caller is actually asking for. |
+| `formatBytes` | function | `@alexkroman1/aai/utils` | `aai:utils` | A byte count at the scale a person reads it: `"17.7 MB"`, `"110 KB"`, `"512 B"`. |
+| `formatDuration` | function | `@alexkroman1/aai/utils` | `aai:utils` | A duration as a clock reading: `"4:09"` under an hour, `"1:04:09"` over one. |
+| `formatMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | `$1,234.00` — an amount of money, grouped in threes and always to the cent. |
+| `htmlToText` | function | `@alexkroman1/aai/html` | `aai:html` | Markup as the prose inside it. |
+| `isClockTime` | function | `@alexkroman1/aai` | `aai:calendar` | 24-hour `HH:MM`, zero-padded — `"09:05"` yes, `"9:05"` no. |
+| `isFfmpegError` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Narrow an unknown catch to a failed ffmpeg run. |
+| `isIsoDate` | function | `@alexkroman1/aai` | `aai:calendar` | `YYYY-MM-DD`, and a real calendar date — `2026-02-30` is refused. |
+| `isRecord` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Whether a value is a non-null, non-array object, narrowed to `Record<string, unknown>` so its fields can be read without a second cast. |
+| `isSlackWebhookUrl` | function | `@alexkroman1/aai/channels` | `aai:channels` | Whether a string is a Slack webhook URL at all — an incoming webhook or a workflow trigger, on one of Slack's two webhook hosts. |
+| `isSlackWorkflowTriggerUrl` | function | `@alexkroman1/aai/channels` | `aai:channels` | A workflow trigger, which takes flat variables and not Block Kit. |
+| `isTerminal` | function | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Is this run finished? |
+| `isToolFailure` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Whether a value is a `ToolFailure`. |
+| `isTransientStatus` | function | `@alexkroman1/aai/step` | `aai:step` | Will another attempt plausibly answer differently? |
+| `isoDate` | function | `@alexkroman1/aai` | `aai:calendar` | A calendar date argument: `YYYY-MM-DD`, and a real date. |
+| `llm`, `LlmOptions` | function | `@alexkroman1/aai/llm` | `aai:llm` | Build an LLM descriptor for `agent({ llm })`, `subagent({ llm })` or `ctx.generate({ llm })`. |
+| `mapConcurrent` | function | `@alexkroman1/aai/step` | `aai:step` | Map `items` through `run`, at most `width` at a time, in a replay-safe order. |
+| `mapSettled` | function | `@alexkroman1/aai/step` | `aai:step` | Map `items` through `run`, at most `width` at a time, settling each item rather than racing to the first rejection. |
+| `mcpToolName` | function | `@alexkroman1/aai` | `aai:agent` | The name the MODEL calls, for one remote tool on one server. |
+| `mintCode`, `MintCodeOptions` | function | `@alexkroman1/aai` | `aai:spoken` | A `PREFIX-XXXX` reference, on an alphabet a caller can read back. |
+| `multipartBody` | function | `@alexkroman1/aai/step` | `aai:step` | Encode `multipart/form-data` as BYTES. |
+| `offsetToMs` | function | `@alexkroman1/aai/step` | `aai:step` | Where a byte offset in the FILE falls in the recording, in milliseconds. |
+| `omitUndefined` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Drop the `undefined`-valued entries of `obj`, typing every surviving key as optional-and-defined — exactly what `exactOptionalPropertyTypes` wants on the … |
+| `openAICompatibleLlm`, `OpenAICompatibleLlmOptions` | function | `@alexkroman1/aai/experimental` |  | An `llm()` descriptor for an OpenAI-compatible chat-completions endpoint the runtime has no built-in entry for — a self-hosted server, an inference host, a … |
+| `openAIS2s`, `OpenAIS2sOptions` | function | `@alexkroman1/aai/s2s` | `aai:s2s` | Build an OpenAI Realtime S2S descriptor — the explicit opt-in to speech-to-speech mode on OpenAI's Realtime API. |
+| `orFail` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | The value, or abandon the surrounding `failable` with the failure. |
+| `pageMetadata` | function | `@alexkroman1/aai/html` | `aai:html` | Title, description, and any feed links a page advertises. |
+| `parseFeed` | function | `@alexkroman1/aai/html` | `aai:html` | An RSS, Atom or RDF feed as its channel title and entries. |
+| `parseWav` | function | `@alexkroman1/aai/step` | `aai:step` | Read a WAV header out of the first bytes of a recording. |
+| `partitionSettled` | function | `@alexkroman1/aai/step` | `aai:step` | Split what `mapSettled` answered into the successes and the failures, each still beside its item and each list typed as its own arm. |
+| `pcmDurationMs` | function | `@alexkroman1/aai/step` | `aai:step` | How long a run of PCM samples lasts, in milliseconds. |
+| `persona` | function | `@alexkroman1/aai` | `aai:persona` | Define a persona. |
+| `personas` | function | `@alexkroman1/aai` | `aai:persona` | Declare the roster. |
+| `pickOne` | function | `@alexkroman1/aai` | `aai:random` | One item, uniformly. |
+| `plural` | function | `@alexkroman1/aai/utils` | `aai:utils` | The right form of an English noun for a count: `plural(1, "risk")` is `"risk"`, `plural(2, "risk")` is `"risks"`. |
+| `probeMedia` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | What ffprobe makes of a file: duration, container, and every stream. |
+| `procedure` | function | `@alexkroman1/aai` | `aai:procedure` | Wrap a machine so a tool body can run it without touching an actor. |
+| `pushCapped` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Append to a list, dropping the oldest entries so it never exceeds `max`. |
+| `randomInt` | function | `@alexkroman1/aai` | `aai:random` | A whole number in `[0, maxExclusive)`. |
+| `readEventStream` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Parse an SSE byte stream into frames, with `eventsource-parser`. |
+| `readUploadToFile`, `ReadUploadToFileOptions` | function | `@alexkroman1/aai/step-files` | `aai:step-files` | Write an upload to a local path, a window at a time, and answer with the byte count that landed. |
+| `registerChannelHandler` | function | `@alexkroman1/aai/channels` | `aai:channels` | Register a channel kind, so `sendToChannel` can dispatch a descriptor carrying its tag. |
+| `registeredChannelKindNames` | function | `@alexkroman1/aai/channels` | `aai:channels` | The tags `sendToChannel` can dispatch, in registration order. |
+| `renderChannelPayload` | function | `@alexkroman1/aai/channels` | `aai:channels` | The request a channel would send for this message — PURE, so the branch a channel takes over its own options is testable without a network. |
+| `renderSlackChannelPayload` | function | `@alexkroman1/aai/channels` | `aai:channels` | Block Kit, or flat variables — see the module doc. |
+| `renderSlackPlainText` | function | `@alexkroman1/aai/channels` | `aai:channels` | The trigger body: one string, because that is all a variable can hold. |
+| `requireEnv` | function | `@alexkroman1/aai` | `aai:tool` | Read a variable off `ToolContext.env`, failing by NAME when it is not set. |
+| `requireStepEnv` | function | `@alexkroman1/aai/step` | `aai:step` | `stepEnv`, failing by name when the key is not set. |
+| `resolveOne`, `ResolveOneOptions` | function | `@alexkroman1/aai` | `aai:spoken` | Pick the one candidate an utterance names, or fail saying why. |
+| `responseErrorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Read a failed `Response`'s error sentence — the one every route this SDK serves answers with. |
+| `retryAfter` | function | `@alexkroman1/aai/step` | `aai:step` | When the far side asked to be called back, as a `Date`. |
+| `rimeTts`, `RimeTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Rime TTS descriptor for pipeline mode. |
+| `roundMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | An amount snapped to whole cents — `roundMoney(0.1 + 0.2)` is `0.3`. |
+| `runFfmpeg` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Run ffmpeg with `args`, exactly as given. |
+| `safeJsonParse` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Parse JSON, returning `undefined` on malformed input. |
+| `sendToChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Post one message, and classify the failure honestly. |
+| `sendToChannelOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified — see `stepGenerateOrFail` for the family, and this module's doc for why the wrapper … |
+| `sessionSlot` | function | `@alexkroman1/aai` | `aai:state` | Declare a named slot of per-session state. |
+| `shuffled` | function | `@alexkroman1/aai` | `aai:random` | A NEW array holding the same items in a random order. |
+| `slackChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Declare a Slack destination. |
+| `slugifyName` | function | `@alexkroman1/aai/slugify` |  | Normalize a human-given name into the slug grammar, capped at `maxLength`. |
+| `sonioxStt`, `SonioxSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build a Soniox STT descriptor. |
+| `spokenAlphanumeric` | function | `@alexkroman1/aai` | `aai:spoken` | The letters and digits of a spoken code, upper-cased, with everything else dropped — `spokenDigits` for an id that carries letters too. |
+| `spokenDate` | function | `@alexkroman1/aai` | `aai:spoken` | A `YYYY-MM-DD` as a receptionist says it — `"Monday, June 8"`. |
+| `spokenDigits` | function | `@alexkroman1/aai` | `aai:spoken` | The digits of a spoken number, with everything else dropped. |
+| `spokenMoney` | function | `@alexkroman1/aai` | `aai:spoken` | An amount as a voice reads it — `"240 dollars and 50 cents"`. |
+| `spokenOrdinal` | function | `@alexkroman1/aai` | `aai:spoken` | The position an utterance names, as an index, or `undefined` if it names none. |
+| `spokenTime` | function | `@alexkroman1/aai` | `aai:spoken` | A 24-hour `HH:MM` as a voice reads it — `"7 PM"`, `"6:30 PM"`. |
+| `stepDelegate` | function | `@alexkroman1/aai/step` | `aai:step` | Hand a bounded task to a SUBAGENT from inside a step. |
+| `stepEmit` | function | `@alexkroman1/aai/step` | `aai:step` | Write one structured chunk into a NAMED stream of this run. |
+| `stepEnv` | function | `@alexkroman1/aai/step` | `aai:step` | Read one key of the agent's env from inside a step. |
+| `stepFetch` | function | `@alexkroman1/aai/step` | `aai:step` | Make one HTTP request from inside a step. |
+| `stepFetchOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepFetch`, with the non-2xx branch every caller was writing by hand. |
+| `stepGenerate`, `StepGenerateOptions` | function | `@alexkroman1/aai/step` | `aai:step` | Ask the AssemblyAI LLM Gateway one question and return its reply. |
+| `stepGenerateJson`, `StepGenerateJsonOptions` | function | `@alexkroman1/aai/step` | `aai:step` | Ask the model for JSON and return it validated. |
+| `stepGenerateJsonOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepGenerateJson`, with its failure classified — see `stepGenerateOrFail`. |
+| `stepGenerateOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepGenerate`, with its failure classified — the whole of what the wrapper adds is `throwStepError`, and see this module's doc for why that is worth an export … |
+| `stepInfo` | function | `@alexkroman1/aai/step` | `aai:step` | Which step this code is running inside, or `undefined` when it is not in one. |
+| `stepReadUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Read a window of an uploaded file. |
+| `stepReport` | function | `@alexkroman1/aai/step` | `aai:step` | Write one progress line for the run this step belongs to. |
+| `stepRequireCompleteUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | One upload's metadata, refused unless every byte is in. |
+| `stepSpeak` | function | `@alexkroman1/aai/step` | `aai:step` | Speak `text`, and answer with the whole utterance as a WAV. |
+| `stepTranscribePoll` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Ask once whether a job has finished, and read it when it has. |
+| `stepTranscribePollOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepTranscribePoll`, with its failure classified — see `stepTranscribeSubmitOrFail`. |
+| `stepTranscribeSubmit` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Create the transcription job, and answer with the id that outlives this run. |
+| `stepTranscribeSubmitOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepTranscribeSubmit`, with its failure classified — see `stepTranscribeSyncOrFail`. |
+| `stepTranscribeSync` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Transcribe one complete audio file. |
+| `stepTranscribeSyncOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepTranscribeSync`, with its failure classified — see `stepGenerateOrFail`. |
+| `stepTranscribeUpload` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Send a stored upload to the provider, and answer with the URL it gave. |
+| `stepTranscribeUploadOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepTranscribeUpload`, with its failure classified — see `stepTranscribeSyncOrFail` for what a transcription verdict carries. |
+| `stepUploadInfo` | function | `@alexkroman1/aai/step` | `aai:uploads` | Read one upload's metadata: its name, what has ARRIVED, and whether that is all of it. |
+| `stepWebhookUrl` | function | `@alexkroman1/aai/step` | `aai:step` | The public URL a third party POSTs to in order to resolve `ctx.waitFor(token)` for the run this step belongs to. |
+| `stepWriteUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Store a file a step PRODUCED, and answer with the record naming it. |
+| `stripJsonFence` | function | `@alexkroman1/aai/step` | `aai:step` | Unwrap a ```` ```json ```` fence, which models add however firmly they are told not to. |
+| `subagent` | function | `@alexkroman1/aai` | `aai:subagent` |  |
+| `throwFatalStepError` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | Stop the engine retrying: throw a `FatalError` whatever the cause was. |
+| `throwFfmpegStepError` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | The verdict a failed ffmpeg run deserves: retry a `timeout` or an `aborted`, stop on everything else. |
+| `throwStepError` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `toStepError`, thrown. |
+| `toStepError` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | The step error one failure deserves. |
+| `tool` | function | `@alexkroman1/aai` | `aai:tool` | Define a tool with a typed input schema and execute function. |
+| `toolFailure` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Build a `ToolFailure` — the failure a tool `execute` RETURNS when the model should see it and recover. |
+| `transcodeToWav`, `TranscodeToWavOptions` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Re-encode anything ffmpeg can read into linear-PCM WAV bytes. |
+| `ttsVoiceIds` | function | `@alexkroman1/aai/tts` | `aai:tts` | The catalog's voice ids, optionally only those speaking `language`, as the non-empty tuple a `z.enum` takes. |
+| `visitWebpage` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Fetch a page and return its content as clean text. |
+| `wavEncodeArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The encoder half of a linear-PCM WAV argv — no input, no output. |
+| `wavHeader` | function | `@alexkroman1/aai/step` | `aai:step` | The WAV header for a payload of `byteLength` bytes, and nothing else. |
+| `webSearch` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Search the web (DuckDuckGo-backed, no API key) and return ranked results. |
+| `withLock` | const | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Run `fn` while holding a keyed lock, releasing it in every outcome. |
+| `withTempDir`, `WithTempDirOptions` | function | `@alexkroman1/aai/step-files` | `aai:step-files` | Run `work` with a private temp directory, and remove it afterwards. |
+| `workflow` | function | `@alexkroman1/aai` | `aai:workflow` | Declare a durable workflow. |
+| `workflowApp` | function | `@alexkroman1/aai` | `aai:agent` | Define a WORKFLOW APP — an agent whose front door is a form rather than a microphone, and whose work happens in `workflows`. |
+| `writeUploadFromFile`, `WriteUploadFromFileOptions` | function | `@alexkroman1/aai/step-files` | `aai:step-files` | Store a local file as an upload, streaming it, and answer with the record. |
+
+## Browser client
+
+The React client an agent's page is built from (`@alexkroman1/aai-ui`).
+
+| Name | Kind | Import from | Capability | Summary |
+| --- | --- | --- | --- | --- |
+| `AGENT_STATE_LABELS` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The default label per `AgentState`. |
+| `AgentCustomEvent` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A custom event emitted by the agent via `ctx.send(event, data)` — the payload the session records in `SessionSnapshot.customEvents` (`id` is a monotonic … |
+| `AgentState` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Current state of the voice agent session — the `state` field of `SessionSnapshot`, and what a chrome paints its status indicator from. |
+| `AudioResult`, `AudioResultProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The player for a file a RUN produced: a heading, the fetch's pending line, its announced error, the `<audio>` with an optional caption track, the download … |
+| `AudioResultCaptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A one-cue caption track for `AudioResult`: the words the clip speaks, spanning its whole length. |
+| `AutoScroll` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A scroll container that stays pinned to the bottom as its content grows, releases when the reader scrolls up, and re-engages once they return to the bottom. |
+| `BrowserSession` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A framework-agnostic voice session that manages WebSocket communication, audio capture/playback, and agent state transitions. |
+| `BulletList`, `BulletListProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A disc-bulleted list of short strings — a run's key points, findings, risks. |
+| `Button` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A styled button with variant and size presets. |
+| `ButtonSize` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for a `Button`. |
+| `ButtonVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Visual style of a `Button` (design-system "website refresh": rectangular, ALL-CAPS, tracked labels). |
+| `ChatMessage` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A chat message exchanged between user and assistant. |
+| `ChatView` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The main chat interface for a voice agent session — the design-system "voice agent console": a 760px column on the cream page with a header (logo + live-status … |
+| `CheckboxField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A checkbox. |
+| `ClientConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Configuration passed to `mountClient`. |
+| `ClientHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Handle returned by `mountClient` for cleanup. |
+| `ClientTheme` | type | `@alexkroman1/aai-ui` | `aai-ui:theme` | Theme color overrides for the AAI UI components. |
+| `ConsoleShell`, `ConsoleShellProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design-system "console" chrome: a 760px column on the themed page with a header (icon + live-status eyebrow), an announced error banner, the main content … |
+| `Controls`, `ControlsProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Session control buttons: **Stop / Resume** and **New Conversation**. |
+| `ConversationItem` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | One row of the conversation: a finalized message, or a tool invocation. |
+| `ConversationView`, `ConversationViewProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The conversation's skeleton over `useConversation`, with every row a render slot: a pinned scroll region holding the empty state, the interleaved messages and … |
+| `Facts`, `FactsProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A muted line of run facts, joined by `·` — "6 segments · 12:04 of audio · 1,840 words". |
+| `Field` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | Label + control + hint, in the layout every field here uses. |
+| `FieldShell` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | The props every field in `form.tsx` shares. |
+| `FileField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A file picker. |
+| `FileReadMode` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | How much of a chosen file a `FileField` reads. |
+| `FileValue` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | What a `FileField` contributes to `FormValues`. |
+| `Form`, `FormProps` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A form that hands its values to `onSubmit` as one object. |
+| `FormValues` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | One submitted form, as a plain object keyed by field name. |
+| `Markdown`, `MarkdownProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Agent prose, rendered as Markdown. |
+| `MarkdownVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Type scale for `Markdown`: `"default"` is the deployed agent UI's scale, `"compact"` a notch smaller for denser surfaces (the studio's chat transcript). |
+| `MessageList`, `MessageListProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Scrollable list of all chat messages, tool-call blocks, live transcript, streaming agent utterance, and a thinking indicator. |
+| `NumberField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A number input. |
+| `PageConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Configuration for `mountPage`. |
+| `PageHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Handle returned by `mountPage`. |
+| `SelectField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A dropdown. |
+| `Session` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSession` returns: the live `SessionSnapshot` fields (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`, `apiUrl`, … |
+| `SessionActions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods, and nothing else — what a `client.tsx` may legitimately CALL on a session, as against what it may read. |
+| `SessionControlAction` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Which of the four buttons a `SessionControlButton` is. |
+| `SessionControlButton` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | One button of `SessionControls`, as handed to `renderButton`. |
+| `SessionControls`, `SessionControlsProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The full control row of a custom chrome: **Start** before the call, then **Pause / Resume**, **New Conversation** and **End** once it is up. |
+| `SessionControlsLabels` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | The five words `SessionControls` renders, every one overridable. |
+| `SessionError` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Error reported by the voice session. |
+| `SessionErrorBanner`, `SessionErrorBannerProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The announced banner for a failed session: the error's message and code, or nothing at all when the session is fine. |
+| `SessionErrorCode` | type | `@alexkroman1/aai-ui` (also `@alexkroman1/aai/protocol`) | `aai-ui:session` | Error codes for categorizing session errors on the wire. |
+| `SessionSnapshot` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Immutable snapshot of the session state. |
+| `SessionStateDot`, `SessionStateDotProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The live session state as a coloured dot and a word, on its own narrow subscription. |
+| `SidebarLayout` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A two-column layout with a fixed-width sidebar and a flexible main area. |
+| `StartScreen` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A centered start screen: a white card on the cream page with the logo, an eyebrow label, a serif title, subtitle, and the start CTA. |
+| `SubmitButton` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | The form's submit button, disabled and relabelled while a submit is in flight. |
+| `SubmitInputOf` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `submit()` takes for `D` — `undefined` when `D` declares no schema. |
+| `TextAreaField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A multi-line text input. |
+| `TextField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A single-line text input. |
+| `ToolCallInfo` | type | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Info about a tool call for display in the UI. |
+| `ToolCallRow`, `ToolCallRowProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design system's console row for one tool invocation: a small outlined "TOOL" chip (or a custom `icon`), the tool title in mono, a truncated detail preview, … |
+| `ToolCallRowVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for `ToolCallRow`: `"default"` is the deployed agent UI's scale, `"compact"` the studio transcript's denser one. |
+| `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI. |
+| `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | How far a form's files have got, rendered as a bar. |
+| `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `WorkflowSubmission.upload` reports while the bytes are going. |
+| `UseConversationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useConversation` returns. |
+| `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
+| `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useDownloadUrl` reports. |
+| `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
+| `UsePushToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | What `usePushToTalk` returns. |
+| `UseSessionControlsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSessionControls` returns. |
+| `UseUserTranscriptResult` | interface | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useUserTranscript` returns. |
+| `UseWorkflowProgressResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
+| `UseWorkflowRunResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
+| `UseWorkflowRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowRuns` reports. |
+| `UseWorkflowsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflows` reports. |
+| `UserTurnControls` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Push-to-talk's three edges on a `BrowserSession` — `session.userTurn`. |
+| `VoiceSessionOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Options for creating a voice session — the shared field set accepted by both `mountClient()` and `createBrowserSession`. |
+| `WORKFLOW_STATUS_LABELS` | const | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The default status line per `WorkflowRunStatus`. |
+| `WebSocketConstructor` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Minimal WebSocket constructor type accepted by `VoiceSessionOptions`. |
+| `WorkflowApiOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
+| `WorkflowFieldKind` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | The control a schema property renders as inside `<WorkflowFields>`. |
+| `WorkflowFields` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | Render one field per scalar property of a workflow's input schema. |
+| `WorkflowPendingNote`, `WorkflowPendingNoteProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The one sentence a page says while a run is in flight — three situations, one line each — as a muted line under the form, and nothing otherwise. |
+| `WorkflowProgress` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What a run has said so far, rendered. |
+| `WorkflowRun` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A run's observable state. |
+| `WorkflowRunError`, `WorkflowRunErrorProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The announced line for a run that failed: its error, or nothing at all while the run is anything else. |
+| `WorkflowRunPanel`, `WorkflowRunPanelProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The bordered panel a workflow page shows one run in: a status line, a Clear button, the run's own narration, the live slot while it works, the completed body … |
+| `WorkflowStreamSubmission` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowStream` returns: a `WorkflowSubmission`, exactly. |
+| `WorkflowSubmission` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowSubmit` returns. |
+| `browserSessionBrand` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The seal on a `BrowserSession`. |
+| `createBrowserSession` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | Create a framework-agnostic voice session core that connects to an AAI server via WebSocket. |
+| `createWorkflowApi` | function | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Create a client for the agent serving this page. |
+| `defaultClientDir` | function | `@alexkroman1/aai-ui/client-dir` | `aai-ui:client-dir` | Absolute path to the prebuilt browser client's static files — pass it to `createRuntimeServer`/`createAgentServer` as `clientDir`. |
+| `fetchClientConfig` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
+| `fieldKindFor` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Which control `<WorkflowFields>` renders for one property of an input schema. |
+| `mountClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client` | Define and mount a client UI for a voice agent. |
+| `mountPage` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Mount a page for an agent whose work happens in workflows. |
+| `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
+| `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
+| `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
+| `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read an upload's bytes and hand back a URL a DOM element can use. |
+| `useEvent` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Subscribe to custom events emitted by agent tools via `ctx.send(event, data)`; the callback receives each event's `data`. |
+| `useFlash` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | A transient value: set it, and it clears itself after `ms`. |
+| `usePushToTalk`, `UsePushToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Hold-to-speak over the session's push-to-talk methods, with the four ways a turn gets stuck open handled — see this module's doc. |
+| `useRunKey` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A lookup key for `useWorkflowSubmit({ key })`, stable across reloads. |
+| `useSession` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Return the live `Session`: the current snapshot fields plus the control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`, `cancel`, `end`). |
+| `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`, `end` — with **no snapshot subscription**. |
+| `useSessionControls` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The state and the actions a Start / Pause–Resume / New conversation / End row renders from, on two one-field subscriptions. |
+| `useSessionError` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's current `SessionError`, or `null` when there is none, on its own narrow subscription. |
+| `useSessionSelector` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to a narrow slice of the session snapshot. |
+| `useSessionStatus` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The agent's live `AgentState` — `disconnected`, `connecting`, `ready`, `listening`, `thinking`, `speaking`, `error` — on its own narrow subscription. |
+| `useTheme` | hook | `@alexkroman1/aai-ui` | `aai-ui:theme` | Read the resolved theme (every `ClientTheme` field filled with its default) from the nearest theme context. |
+| `useToolCallStart` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Fire a callback when ONE named tool starts, before its result arrives. |
+| `useToolResult` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Fire a callback when ONE named tool settles, with its parsed JSON result. |
+| `useUserTranscript` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the caller's in-progress turn. |
+| `useWorkflowProgress` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Follow one run's progress stream. |
+| `useWorkflowRun` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Watch one run until it reaches a terminal status. |
+| `useWorkflowRuns`, `UseWorkflowRunsOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read a workflow's recent runs. |
+| `useWorkflowStream`, `UseWorkflowStreamOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Start a workflow run and stream a file into it while it works. |
+| `useWorkflowSubmit`, `UseWorkflowSubmitOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Start a workflow from a form, and follow the run it creates. |
+| `useWorkflows`, `UseWorkflowsOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read the agent's declared workflows. |
+
+## Testing and evals
+
+What an agent's specs and evals import: stubs, harnesses, the eval runner.
+
+| Name | Kind | Import from | Capability | Summary |
+| --- | --- | --- | --- | --- |
+| `AAI_AGENT_MODULE` | const | `@alexkroman1/aai/testing/vite` |  | The module specifier a spec imports. |
+| `AaiVitePlugin` | type | `@alexkroman1/aai/testing/vite` |  | The minimal Vite plugin shape, declared structurally. |
+| `CallVerdict` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | The judge's verdict over a whole conversation. |
+| `CriterionVerdict` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | One criterion's ruling. |
+| `DEFAULT_MAX_DELIVERIES` | const | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | How many deliveries one run may take before the driver gives up. |
+| `DEFAULT_MAX_TURNS` | const | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | How many caller turns a simulation may take unless told otherwise. |
+| `DEFAULT_RUN_TIMEOUT_MS` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | How long one run may take before the harness gives up on it. |
+| `DeterminismKind` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The three reads, which is also the reserved half of the journal's key space. |
+| `END_CALL_TOOL` | const | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | The name of the caller-side hang-up tool. |
+| `EvalCaseOptions` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a case gets to say about how it should be run. |
+| `EvalCredentials` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What `evalCredentials` found on this machine. |
+| `EvalEmitted` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One chunk `stepEmit()` wrote during a run, and the stream it named. |
+| `EvalMode` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | How the suite is running, and why. |
+| `EvalRunOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Per-run knobs. |
+| `EvalSession`, `EvalSessionOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One live eval session. |
+| `EvalSimulationContext` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a case gets for running a simulated caller and grading the result. |
+| `EvalSleep` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One durable `sleep()` a body asked for — and did NOT take. |
+| `EvalTest` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare one eval case. |
+| `EvalTestContext` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a case body is handed: its own session, which model it is on, and the workflow app behind it. |
+| `EvalTextAgent`, `EvalTextAgentOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One live eval conversation with a text agent. |
+| `EvalTextTest` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare one text eval case. |
+| `EvalTextTestContext` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a text case body is handed: its own conversation and the mode. |
+| `EvalToolCall` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One tool call, paired with its result when the stream carries one. |
+| `EvalTurn` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One turn: what the agent did between an utterance and the end of its reply. |
+| `EvalWorkflowCaseOptions` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a workflow case gets to say about how it should be run. |
+| `EvalWorkflowEngineOptions` | type | `@alexkroman1/aai-runtime/eval` |  | How the in-process engine behind `openEvalWorkflows` is configured. |
+| `EvalWorkflowRun` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What one eval run did. |
+| `EvalWorkflowTest` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare one workflow eval case. |
+| `EvalWorkflowTestContext` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a workflow case body is handed. |
+| `EvalWorkflows`, `EvalWorkflowsOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One open eval workflow app. |
+| `HookRecord` | type | `@alexkroman1/aai-runtime/testing` |  | One outstanding HOOK: a body parked on somebody else's answer. |
+| `HostGenerateFn` | type | `@alexkroman1/aai-runtime/eval` |  | The host-side `ctx.generate` implementation — takes `GenerateOptions` and resolves a `GenerateResult`, with an extra per-call options bag: the tool executor … |
+| `JournalConflictError` | class | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A journal call the store REFUSED on the run's own merits. |
+| `JournalStore` | type | `@alexkroman1/aai-runtime/testing` |  | The durable store, as the engine needs it. |
+| `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, or a transcript. |
+| `ProjectFiles` | type | `@alexkroman1/aai/testing` | `aai:testing` | What the BUILD lowers onto an `agent.ts` default export — the files beside it that a deployed agent runs with and a spec has to apply itself. |
+| `RecordedSleep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One wait the body asked for — and did NOT take. |
+| `RecordedStep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One step the body reached, as the recorder saw it. |
+| `ResumableRun` | type | `@alexkroman1/aai-runtime/testing` |  | One run a local dispatcher still owes a delivery, as `JournalStore.resumableRuns` answers it. |
+| `RunRecord` | type | `@alexkroman1/aai-runtime/testing` |  | One run, as stored. |
+| `RunSnapshotOverrides` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `createRunSnapshot` accepts: the shared fields, plus whatever the chosen status requires. |
+| `RunStatus` | type | `@alexkroman1/aai-runtime/testing` |  | Where a run is — the PUBLIC union, imported rather than restated. |
+| `STUB_LLM_API_KEY_ENV` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The env var the stub model resolves its (unused) credential from. |
+| `STUB_SPEECH_API_KEY_ENV` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The env var the fake stages resolve their (unused) credential from. |
+| `STUB_SPEECH_PCM_BYTES` | const | `@alexkroman1/aai/testing` | `aai:testing` | PCM bytes `stubSpeech` answers with when no size is named — ~0.25s at 24 kHz. |
+| `ScriptedTextStep` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One step of a scripted turn: what the model says, and what it calls. |
+| `ScriptedToolCall` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One tool call in a `ScriptedTextStep`. |
+| `ScriptedToolContext`, `ScriptedToolContextOptions` | interface | `@alexkroman1/aai/testing` | `aai:testing` | What `scriptedToolContext` answers: the context to run tools against, and the two fakes it was built from, for asserting what each was asked. |
+| `SentEvent` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One `ctx.send(event, data)` call that would REACH the client, as recorded by `createToolContext` — see the `send` default for what is left out. |
+| `SimulatedCall` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | A finished simulated call. |
+| `SimulatedCaller` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Who the simulated caller is, and what they called for. |
+| `SimulatedTurn` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | One exchange: what the caller said and the turn it produced. |
+| `SimulationMetrics` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What was measured over the whole call. |
+| `SimulationTarget` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a simulation drives: an `EvalSession` (`say`) or an `EvalTextAgent` (`send`). |
+| `SleepEntry` | type | `@alexkroman1/aai-runtime/testing` |  | One durable wait AND the key it is stored under — what a BULK read answers. |
+| `SleepRecord` | type | `@alexkroman1/aai-runtime/testing` |  | One durable WAIT, as stored. |
+| `StepEntry` | type | `@alexkroman1/aai-runtime/testing` |  | One journal entry: a step that reached a verdict. |
+| `StepFetch` | type · `@internal` | `@alexkroman1/aai-runtime/eval` |  |  |
+| `StepRoute` | type | `@alexkroman1/aai/testing` | `aai:testing` | One leg of a step's outside world: answers the requests it recognises and `undefined` for everything else, so legs compose. |
+| `StepUnmatched` | type | `@alexkroman1/aai/testing` | `aai:testing` | What an unrecognised request means. |
+| `StepUsage` | interface | `@alexkroman1/aai-runtime/eval` |  | What one completed step reported. |
+| `StubDelegate` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A fake `ctx.delegate`: the function to pass, and what it was asked. |
+| `StubDelegateCall` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One `ctx.delegate` call, as recorded by `stubDelegate`. |
+| `StubDelegateReply` | type | `@alexkroman1/aai/testing` | `aai:testing` | What one route answers with. |
+| `StubDelegateRoute` | type | `@alexkroman1/aai/testing` | `aai:testing` | How a route answers: a fixed reply, or a function of the call — the function form being what a route asked more than once (a subagent run per document) needs … |
+| `StubDelegateScript` | type | `@alexkroman1/aai/testing` | `aai:testing` | Everything `stubDelegate` and `stubStepDelegate` accept: ONE route answering every delegation, or a table of routes keyed by subagent name — each under a key … |
+| `StubEmitted` | type | `@alexkroman1/aai/testing` | `aai:testing` | One chunk `stepEmit()` wrote, and the stream it went to. |
+| `StubGateway`, `StubGatewayOptions` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A fake gateway: the `fetch` to install, and what it was asked. |
+| `StubGatewayCall` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One request a `StubGateway` answered. |
+| `StubGatewayRoute` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A gateway answer for a `stepFetch`-published slot, plus what it was asked. |
+| `StubGenerate` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A fake `ctx.generate`: the function to pass, and what it was asked. |
+| `StubGenerateCall` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One `ctx.generate` call, as recorded by `stubGenerate`. |
+| `StubGenerateReply` | type | `@alexkroman1/aai/testing` | `aai:testing` | What one route answers with. |
+| `StubGenerateRoute` | type | `@alexkroman1/aai/testing` | `aai:testing` | How a route answers: a fixed reply, or a function of the call. |
+| `StubGenerateScript` | type | `@alexkroman1/aai/testing` | `aai:testing` | Everything `stubGenerate` accepts: ONE route answering every call, or a table of routes keyed by system prompt — each under a key that says which. |
+| `StubLlm` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | A registered stub model, and what to hand a session. |
+| `StubReporter` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubReporter` returns. |
+| `StubScript` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What a scripted model is given: one line, or a sequence of steps. |
+| `StubSpeech`, `StubSpeechOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubSpeech` returns: the call log, and how to put the slot back. |
+| `StubSpeechCall` | type | `@alexkroman1/aai/testing` | `aai:testing` | One `stepSpeak` call, as `stubSpeech` records it. |
+| `StubSpeechProviders` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Both fake stages, registered, with the handles a case needs. |
+| `StubStep` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One step of a scripted model: a line it says, or a tool it calls. |
+| `StubStepAnswer` | type | `@alexkroman1/aai/testing` | `aai:testing` | What a `stubStepFetch` answer may be: a whole `Response`, or the `{ status, body, headers }` shorthand that JSON-encodes `body`. |
+| `StubStepDelegate` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A fake `stepDelegate`: the calls it recorded, and the slot to give back. |
+| `StubStepFetch` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubStepFetch` returns. |
+| `StubStepRequest` | type | `@alexkroman1/aai/testing` | `aai:testing` | One request a `stubStepFetch` recorder captured. |
+| `StubSttSession` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One open fake STT stream, plus the two edges a case drives. |
+| `StubTranscribe`, `StubTranscribeOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubTranscribe` returns. |
+| `StubTranscribeCall` | type | `@alexkroman1/aai/testing` | `aai:testing` | One request `stubTranscribe` answered, with the leg it belonged to. |
+| `StubTranscribeFailure` | type | `@alexkroman1/aai/testing` | `aai:testing` | A refusal to stage, as an HTTP answer the SDK then classifies. |
+| `StubTranscribeLeg` | type | `@alexkroman1/aai/testing` | `aai:testing` | Which transcription call a request was. |
+| `StubTtsSession` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One open fake TTS stream, plus what it captured. |
+| `StubUpload` | type | `@alexkroman1/aai/testing` | `aai:testing` | One file a `stubUploads` store answers for. |
+| `StubUploadWrite` | type | `@alexkroman1/aai/testing` | `aai:testing` | One file a step WROTE into a `stubUploads` store. |
+| `StubUploads`, `StubUploadsOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubUploads` returns. |
+| `StubWorkflowsOptions` | type | `@alexkroman1/aai/testing/vitest` | `aai:testing` | What `installStubWorkflows` answers each read with. |
+| `TURN_ENDS` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The events that END a reply. |
+| `TestToolContext` | type | `@alexkroman1/aai/testing` | `aai:testing` | A `ToolContext` that records what its tools sent. |
+| `TextAgentTestRun` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | What one scripted turn produced. |
+| `TextAgentTestToolCall` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One tool call the turn made, with what it was given and what it answered. |
+| `ToolBearingAgent` | type | `@alexkroman1/aai/testing` | `aai:testing` | The slice of an agent these helpers read: its tool table. |
+| `ToolContextOverrides` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `createToolContext` accepts: a field per `ToolContext` field, each also taking `undefined` for one the caller does not have. |
+| `ToolRunner` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `toolRunner` hands back: `runTool` with the agent already supplied. |
+| `VmRunCodeOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What `createVmRunCode` takes. |
+| `WORKFLOW_CONTEXT_NOW` | const | `@alexkroman1/aai/testing` | `aai:testing` | The instant `createWorkflowContext` freezes `ctx.now()` at. |
+| `WorkflowContextOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `createWorkflowContext` takes. |
+| `WorkflowContextRecorder` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `createWorkflowContext` answers: a real `WorkflowContext` plus its log. |
+| `WorkflowTestHandle` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A started run, plus the four things a spec can do to it. |
+| `WorkflowTestRead` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One journaled determinism read — what `ctx.now()`, `ctx.random()` or `ctx.uuid()` answered, and will answer again on every later walk. |
+| `WorkflowTestRun` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The run, as it stands after the last thing the driver did. |
+| `WorkflowTestStep` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One step the run journaled. |
+| `aaiAgentPlugin` | function | `@alexkroman1/aai/testing/vite` |  | Serve `AAI_AGENT_MODULE` for the agent project a spec sits in. |
+| `commandedBuiltins` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every builtin the system prompt COMMANDS by name, in first-mention order. |
+| `completedOutput` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The output of a run that COMPLETED, or a throw naming what actually happened. |
+| `createProgressStream` | function | `@alexkroman1/aai/testing` | `aai:testing` | The progress channel of a run, from the read side — what `ctx.workflows.stream` resolves with. |
+| `createRunSnapshot` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `WorkflowRunSnapshot` — the right arm of the union, without a cast. |
+| `createStubSttOpener` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One fake STT stage, and the last stream it opened. |
+| `createStubTtsOpener` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One fake TTS stage, and the last stream it opened. |
+| `createStubWorkflows` | function | `@alexkroman1/aai/testing` | `aai:testing` | A `ctx.workflows` for testing a tool that starts or reads durable runs: every method rejects by default, and `overrides` replaces the ones the test drives. |
+| `createToolContext` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `ToolContext` for testing a tool's `execute` in isolation. |
+| `createVmRunCode` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Build a `run_code` executor that evaluates in a fresh `node:vm` context and answers with whatever the code PRINTED. |
+| `createWorkflowContext` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `WorkflowContext` that runs a body and records what it asked for. |
+| `customEventsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | An event the AGENT named, via `ctx.send` — `{ event, data }` pairs, in order. |
+| `deployedAgent` | function | `@alexkroman1/aai/testing` | `aai:testing` | The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its `tools/` directory declares, plus what its `system-prompt.md` says. |
+| `describeEval`, `DescribeEvalOptions` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for `agent`. |
+| `describeTextEval`, `DescribeTextEvalOptions` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for a TEXT agent. |
+| `describeToolCalls` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | `calls` as one line, for the message argument of a failing assertion. |
+| `describeTurn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One turn as one line — what the agent did, for the message argument of a failing assertion. |
+| `describeWorkflowEval` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for a workflow app. |
+| `dialogRefusalPattern` | function | `@alexkroman1/aai/testing` | `aai:testing` | A pattern matching the sentence a `dialog()` gate refuses with — optionally pinned to the state it names. |
+| `dialogResultSchema` | function | `@alexkroman1/aai/testing` | `aai:testing` | The envelope a gated tool answers with, as a schema around the tool's own. |
+| `errorsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every `error.reported` in `events`, in order — what the RUNTIME reported, as opposed to what the agent said or called. |
+| `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run evals against `agent`? |
+| `evalSimulation`, `EvalSimulationOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Build the `simulate`/`judge` pair for one case. |
+| `evalTextCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run a TEXT agent's eval live, and if not, which key is missing? |
+| `evalWorkflowCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run workflow evals against `agent`? |
+| `eventsOf` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every event in `events` named `type`, in order, typed as that member. |
+| `expectCalled` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-assert` | Every name in `names` was called in this turn, and a throw naming what the agent did INSTEAD when one was not. |
+| `expectDeployable` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run the invariants a deployable agent owes, and hand back the RESOLVED config so a spec can go on to assert its own specifics — a chosen model, a declared … |
+| `expectDialogOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The same unwrap as `expectToolOk`, keeping WHERE the dialog landed. |
+| `expectDialogRefused` | function | `@alexkroman1/aai/testing` | `aai:testing` | The refusal a gated tool answered with, or a throw saying the gate did NOT hold. |
+| `expectPromptBuiltinsDeclared` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every builtin the prompt commands is one `builtinTools` declares — or a throw naming the ones that are not. |
+| `expectToolBeforeSpeech` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The agent ACTED before it spoke: this turn's first `tool.called` precedes its first committed reply. |
+| `expectToolOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The value a gated tool's own `execute` returned, or a throw naming the refusal. |
+| `installStubGateway` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Install a fake LLM gateway as the global `fetch`, and return its call log. |
+| `installStubLlm` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Register a model that answers with `replies`, one per model call, repeating the last for as long as it is asked. |
+| `installStubReporter` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Capture what a step narrates and emits, restored when this test finishes. |
+| `installStubSpeech` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish a synthesizer that records what it was asked to say, restored when this test finishes. |
+| `installStubSpeechProviders` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Register both fake stages. |
+| `installStubStepDelegate` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish a fake subagent runner for `stepDelegate`, restored when this test finishes. |
+| `installStubStepFetch` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish a fake `stepFetch`, restored when this test finishes. |
+| `installStubTranscribe` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Answer AssemblyAI's transcription endpoints in memory, restored when this test finishes. |
+| `installStubUploads` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish an in-memory upload store, restored when this test finishes. |
+| `installStubWorkflows` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | A `ctx.workflows` whose reads answer from one fixture and whose every method is a `vi.fn`. |
+| `isEvent` | function | `@alexkroman1/aai/testing` | `aai:testing` | Whether `event` is the one named `type` — a type guard, so the branch it guards reads that member's fields without a cast. |
+| `judgeCall`, `JudgeCallOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Have a model rule on `criteria` over `input`, and hand back the verdict. |
+| `lastStateIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page is showing. |
+| `lastToolResultIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-assert` | The result of the LAST call to `name` in `calls`, parsed. |
+| `openEvalSession` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Open an eval session against a real runtime. |
+| `openEvalTextAgent` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Open an eval conversation against a real text agent. |
+| `openEvalWorkflows` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Open a workflow app for evaluation. |
+| `parseSchemaInput` | function | `@alexkroman1/aai/testing` | `aai:testing` | Validate `value` against `schema`, or throw naming every issue. |
+| `parseToolInput` | function | `@alexkroman1/aai/testing` | `aai:testing` | Validate `value` against the input schema of the tool `name`. |
+| `resolveEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Live if this machine can be, stub if it cannot — unless a caller has said which it wants. |
+| `resolveWorkflowEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | `resolveEvalMode` for a WORKFLOW app, whose credentials are a different question. |
+| `routeStepFetch` | function | `@alexkroman1/aai/testing` | `aai:testing` | Compose several `StepRoute`s into the one handler `stubStepFetch` takes. |
+| `runCodeIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The code every `run_code` call in `calls` carried, joined with newlines — the recipe the agent wrote. |
+| `runCodeOutput` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What every `run_code` call in `calls` PRINTED, joined with newlines — the results as the model was handed them, verbatim. |
+| `runGuardrail` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run `def`'s guardrail over one answer and return its verdict. |
+| `runTextAgent`, `RunTextAgentOptions` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | Run one turn of `def` against `script`, and hand back what it did. |
+| `runTool` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run a tool by the name the model calls it by. |
+| `runWorkflow`, `RunWorkflowOptions` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | Start `def` with `input` and drive it until it finishes or parks. |
+| `saidIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The committed agent replies in `events`, in order — what the caller was told. |
+| `schemaInputIssues` | function | `@alexkroman1/aai/testing` | `aai:testing` | The issues `schema` found in `value`, or `undefined` when it accepted it. |
+| `scriptedTextModel` | function | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A `LanguageModel` that answers one scripted step per model call. |
+| `scriptedToolContext` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `TestToolContext` whose `generate` and `delegate` are both scripted, and hand back the fakes beside it. |
+| `simulateCall`, `SimulateCallOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Run a simulated call against `target` and hand back every turn, the way it ended, and what was measured. |
+| `statesIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every state frame the agent pushed (`AgentDef.syncState`), oldest first — what the page showed, in order. |
+| `stubDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.delegate` from a script: one reply, or routes keyed by subagent name. |
+| `stubGateway` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake LLM gateway answering `replies` in order. |
+| `stubGatewayRoute` | function | `@alexkroman1/aai/testing` | `aai:testing` | A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot rather than the global `fetch`. |
+| `stubGenerate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.generate` from a script: one reply, or routes keyed by system prompt. |
+| `stubReporter` | function | `@alexkroman1/aai/testing` | `aai:testing` | Capture what a step narrates and emits. |
+| `stubSpeech` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a synthesizer that records what it was asked to say and answers with silence. |
+| `stubStepDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be driven without a host. |
+| `stubStepFetch` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a fake `stepFetch`, so a step's HTTP can be asserted without a server and without stubbing a global. |
+| `stubStepInfo` | function | `@alexkroman1/aai/testing` | `aai:testing` | Answer `stepInfo()` for the step under test, so a body's RETRY branch is reachable from a spec. |
+| `stubTranscribe` | function | `@alexkroman1/aai/testing` | `aai:testing` | Answer AssemblyAI's transcription endpoints in memory, and record what was sent. |
+| `stubUploads` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish an in-memory upload store, so a step that calls `stepReadUpload` can be tested without a server. |
+| `toolArgsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked for, in call order. |
+| `toolCallsInEvents` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The tool calls in `events`, each paired with the result event that answered it. |
+| `toolCallsInTurns` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every tool call across `turns`, flattened, in call order — the whole call. |
+| `toolInputIssues` | function | `@alexkroman1/aai/testing` | `aai:testing` | The issues the tool `name`'s input schema found in `value`, or `undefined`. |
+| `toolNames` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The names of `calls`, in call order — what the agent reached for. |
+| `toolOf` | function | `@alexkroman1/aai/testing` | `aai:testing` | The tool `name` is declared under, or a throw naming the ones that are. |
+| `toolResultIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The result of the ONE call to `name` in `calls`, parsed. |
+| `toolResultsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every call to `name` in `calls`, with its RESULT parsed — what each answered, in call order. |
+| `toolRunner` | function | `@alexkroman1/aai/testing` | `aai:testing` | `runTool` bound to one agent — the `run(...)` a spec actually calls. |
+| `turnCalling` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The turn `name` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
+
+## Hosting and tooling
+
+What runs an agent rather than what one is written in: the host runtime, the CLI's build hooks, the config schema and the wire protocol.
+
+| Name | Kind | Import from | Capability | Summary |
+| --- | --- | --- | --- | --- |
+| `AgentConfig` | type | `@alexkroman1/aai/manifest` |  | JSON-safe subset of the agent definition — the canonical serializable config that flows CLI → server → runtime unchanged. |
+| `AgentConfigSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `AgentConfigSource` | type | `@alexkroman1/aai/manifest` |  | What `toAgentConfig` accepts: every serializable `AgentConfig` field (`mode` excepted — it is derived, never supplied) plus the host-only fields the deny-list … |
+| `AgentEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Tenant-owned env — the only kind allowed to become `ctx.env` (what agent tool code reads). |
+| `AgentRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Common interface for agent runtimes. |
+| `AgentServer`, `AgentServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Handle returned by `createRuntimeServer`. |
+| `CARRIER_CODECS` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Every carrier this build can serve, keyed by its `?carrier=` value. |
+| `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Query parameter naming the carrier — see `carrierByName`. |
+| `CLIENT_ARTIFACT_REL` | const | `@alexkroman1/aai-cli/start` |  | Where `aai build` leaves the built browser client, relative to the root. |
+| `CLIENT_CONFIG_METHODS` | const | `@alexkroman1/aai/protocol` |  | The only method the endpoint answers — read by the host's route dispatch, so this is the value and not a description of it. |
+| `CLIENT_CONFIG_PATH` | const | `@alexkroman1/aai/protocol` |  | Relative path of the client-config endpoint under an agent's base URL. |
+| `CarrierCodec` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Translates between a carrier's JSON frames and the two things a session needs. |
+| `CarrierInbound` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | One inbound carrier frame, reduced to what a session needs. |
+| `CarrierName` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | A carrier name this build can serve. |
+| `ClientSink` | interface | `@alexkroman1/aai/protocol` |  | Typed interface for pushing session events to a connected client. |
+| `CloseableDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | A `Db` whose underlying connection pool the caller owns and must close. |
+| `DEFAULT_LISTEN_HOST` | const | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Default bind address. |
+| `DEFAULT_LOG_BUFFER_LINES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | 2,000 lines: enough that a boot plus a few turns fits, small enough that the whole ring serialises well under the platform's response budget even with every … |
+| `DEFAULT_LOG_LINE_BYTES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | 4 KiB per line. |
+| `DEFAULT_LOG_PAGE_LINES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Lines one read returns unless the caller asks for fewer. |
+| `DEFAULT_SERVICE_NAME` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | What a span says it came from when the operator did not say. |
+| `DEFAULT_START_PORT` | const | `@alexkroman1/aai-cli/start` |  | The port `aai start` binds when neither an argument nor `PORT` says otherwise. |
+| `DEFAULT_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | How many runs a keyed or keyless lookup returns when the caller names no limit. |
+| `EVENT_ID_PREFIX` | const | `@alexkroman1/aai/protocol` |  | The prefix every session-event id carries, so an id names its own kind. |
+| `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Executes a named tool with parsed arguments and returns its string result. |
+| `GlobalConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
+| `HOST_ONLY_AGENT_FIELDS` | const | `@alexkroman1/aai/manifest` |  | `AgentDef` fields that must never cross the serialization boundary — the single deny-list `toAgentConfig` strips. |
+| `HostConfig` | type | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection. |
+| `HostConfigMessageSchema` | const | `@alexkroman1/aai/protocol` |  | The host-mode handshake frame: the first inbound message on a host-mode WebSocket connection, carrying the `HostConfigSchema` payload. |
+| `HostConfigSchema` | const | `@alexkroman1/aai/protocol` |  | Host-provided agent configuration for a host-mode connection: the caller (e.g. an external evaluation harness) supplies the system prompt, optional greeting, … |
+| `HostCredentialEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | An env record that may carry host/shell provider credentials. |
+| `HostOnlyAgentField` | type | `@alexkroman1/aai/manifest` |  | A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). |
+| `HostServerOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createHostServer`. |
+| `HostSessionDefaults` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Session settings every tenant inherits, minus the four the handshake owns. |
+| `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` |  |
+| `IGNORED_WORKSPACE_DIRS` | const | `@alexkroman1/aai/workspace-files` |  | Directories never walked — never listed, grepped, or synced. |
+| `LOCAL_ONLY_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Files that exist only on a developer's machine and must never reach a workspace row: secrets (`.env` rides the secret routes) and lockfiles. |
+| `LOCKFILES` | const | `@alexkroman1/aai/workspace-files` |  | Package-manager lockfiles — a resolved tree, not source. |
+| `LOG_LINE_TRUNCATED` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Appended to a line cut at `LogBufferOptions.maxLineBytes`. |
+| `LlmRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per LLM provider — adding a provider is one entry here. |
+| `LogBuffer`, `LogBufferOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` |  |
+| `LogContext` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Structured context attached to a log line. |
+| `LogFn` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | A single log method: message plus optional structured context. |
+| `LogLevel` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Log severity levels a `Logger` implements. |
+| `LogLine` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One captured line. |
+| `LogPage` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One read. |
+| `LogStream` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Which of a process's two streams a line came from. |
+| `Logger` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:logging` | Structured logger interface. |
+| `MAX_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Ceiling on `FindOptions.limit`, so one lookup cannot scan a whole history. |
+| `MAX_WORKFLOW_INPUT_BYTES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Largest `POST /workflows/runs` body. |
+| `MAX_WORKSPACE_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Max files in one workspace. |
+| `MAX_WORKSPACE_FILE_BYTES` | const | `@alexkroman1/aai/workspace-files` |  | Max bytes for a single workspace file. |
+| `MCP_CONNECT_TIMEOUT_MS` | const | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | How long a server has to accept a connection, complete the MCP handshake and answer `tools/list`. |
+| `McpCallResult` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What a `tools/call` came back with, flattened. |
+| `McpConnectOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Options `openMcpSession` takes; every one of them is a test seam. |
+| `McpDrift` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | `detectToolDrift`'s answer, kept as its own name so a status can carry it. |
+| `McpInputSchema` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What `mcp-tools.ts` puts in a `ToolDef.inputSchema`. |
+| `McpServerStatus` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What one declared server ended up contributing, and why when the answer is nothing. |
+| `McpSession` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | A live connection to one server. |
+| `McpSessionOpener` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | How a session is opened. |
+| `McpToolSurface` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What `withMcpTools` hands back. |
+| `McpToolsOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Options `withMcpTools` takes. |
+| `McpTrust` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | What `assessTools` concluded about one server's listing. |
+| `MetricsContext` | interface | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | Which session a frame came from. |
+| `MetricsSink` | interface | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | A process-wide reader of every session's `metrics.collected` frames. |
+| `OTEL_ENDPOINT_ENVS` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | The standard variables that name a collector. |
+| `OTEL_METRICS_ENDPOINT_ENVS` | const | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The standard variables that name a METRICS collector. |
+| `OTEL_METRICS_EXPORTER_ENV` | const | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The standard switch: `none` turns metric export off whatever the endpoint. |
+| `OTEL_METRIC_NAMES` | const | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The instrument names `otelMetricsSink` records, one per measurement in a `metrics.collected` frame. |
+| `OTEL_SERVICE_NAME_ENV` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | The standard variable naming this service on every exported span. |
+| `OpenerRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per STT/TTS provider kind — the kind's env var and opener factory live together, so adding a provider is one entry here and an unmapped kind … |
+| `OtelMeterLike` | interface | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The slice of an OpenTelemetry `Meter` `otelMetricsSink` uses, stated structurally so this module imports no OpenTelemetry — `@opentelemetry/api` is an optional … |
+| `PROJECT_GUIDE_POINTER` | const | `@alexkroman1/aai/workspace-files` |  | The project-root `CLAUDE.md` a project gets — a POINTER at the guide inside the resolved SDK, not a copy of it. |
+| `PackageManifest` | type | `@alexkroman1/aai/workspace-files` |  | A parsed `package.json` — open-ended, since only a few fields are merged. |
+| `PipelineTuning` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `ProjectConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
+| `ProjectServerOptions` | interface | `@alexkroman1/aai-cli/start` |  | Options for `createProjectServer` and `executeStart`. |
+| `ProviderDescriptorSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `ProviderEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Env acceptable for provider-credential resolution (STT/TTS/LLM openers, `ctx.generate`): the agent's own env or a host-fallback env. |
+| `ReadyConfig` | type | `@alexkroman1/aai/protocol` |  | Protocol-level session config returned to the client on connect. |
+| `ReadyConfigSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `ReadyConfig`. |
+| `ReservedDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | One connection held out of the pool for the caller's exclusive use, so SESSION-scoped state — advisory locks, `SET` — survives across statements. |
+| `ResolvedMcpServer` | type | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | One MCP server with its credential already resolved out of the agent env. |
+| `RestoredToolCall` | type · `@internal` | `@alexkroman1/aai/protocol` |  |  |
+| `RestoredToolCallSchema` | const | `@alexkroman1/aai/protocol` |  | One tool call as a RESUME reports it — see `history.restored`. |
+| `RunCodeExecutor` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`) | `aai-runtime:runtime` | In-sandbox executor backing the run_code builtin (see createRunCode). |
+| `Runtime`, `RuntimeOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The agent runtime returned by `createRuntime`. |
+| `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createRuntimeServer`. |
+| `RuntimeTracing` | type | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | A started tracer. |
+| `S2sConfig` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Speech-to-Speech (S2S) endpoint configuration. |
+| `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | `Sec-WebSocket-Protocol` entry prefix a ticket travels under. |
+| `SESSION_COMMAND_TYPES` | const | `@alexkroman1/aai/protocol` |  | The set of recognised client→server command `type` values — pass to `lenientParse` so a known-but-invalid message warns instead of being silently dropped as an … |
+| `SESSION_EVENTS_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Env var holding the bearer this route requires. |
+| `SESSION_EVENT_TYPES` | const | `@alexkroman1/aai/protocol` |  | Every event name, as a set — for `lenientParse`'s known-types argument. |
+| `SESSION_SECRET_ENV` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The env variable that turns the built-in ticket check on. |
+| `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
+| `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |
+| `ServerSession` | type | `@alexkroman1/aai-runtime` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
+| `ServerUpgradeHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every WebSocket upgrade. |
+| `SessionAuth`, `SessionAuthOptions` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who may open a session on a server — `auth` on `createAgentServer`, `createRuntimeServer` and `createHostServer`. |
+| `SessionCommand` | type | `@alexkroman1/aai/protocol` |  | **Client→server** text messages (binary frames carry raw PCM16 audio). |
+| `SessionCommandSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `SessionCommand`. |
+| `SessionConnectOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options for `connectSession`. |
+| `SessionConnection` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The input half of a session started with `connectSession`. |
+| `SessionErrorCodeSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for session error codes. |
+| `SessionEventMeta` | type | `@alexkroman1/aai/protocol` |  | The envelope every session event carries. |
+| `SessionEventMetaSchema` | const | `@alexkroman1/aai/protocol` |  | Zod schema for `SessionEventMeta`. |
+| `SessionEventPage` | type | `@alexkroman1/aai-runtime` |  | One page of a stream read. |
+| `SessionEventStream` | type | `@alexkroman1/aai-runtime` |  | The runtime's view of every session's event stream. |
+| `SessionIdentity` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who a verified ticket says the caller is. |
+| `SessionMode` | type | `@alexkroman1/aai/manifest` |  | Session mode derived from which provider fields are set. |
+| `SessionRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The session-facing slice of a runtime — all `createRuntimeServer` needs. |
+| `SessionStartOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options passed to `AgentRuntime.startSession`. |
+| `SessionStateBackend` | type | `@alexkroman1/aai-runtime` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
+| `SessionStateStore` | type | `@alexkroman1/aai-runtime` |  | The runtime's view of the store. |
+| `SessionTokenInput` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Input to `createSessionToken`. |
+| `SessionVerifier` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | A caller's own ticket check — a JWT from your IdP, an API key lookup. |
+| `SessionWebSocket` | type | `@alexkroman1/aai-runtime` |  | Minimal WebSocket interface accepted by `AgentRuntime.startSession`. |
+| `SharedServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The options every front door over `createRuntimeServer` passes straight through — a logger and the two request hooks. |
+| `SkipGreetingOption` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Whether to suppress a session's opening greeting: the answer, or a THUNK that knows it later. |
+| `StartResult` | interface | `@alexkroman1/aai-cli/start` |  | What `executeStart` answers, for `--json` and for tests. |
+| `StateSyncSession` | type | `@alexkroman1/aai-runtime` |  | The per-session state this decision reads and writes. |
+| `StoredSessionEvent` | type | `@alexkroman1/aai-runtime` |  | One retained session event: its index in the session's log, and its JSON. |
+| `SttError` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Error raised by an STT provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
+| `SttEvents` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` |  |
+| `SttOpenOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Options the host passes when opening an STT stream. |
+| `SttOpener` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side openable STT provider — produced by `resolveStt(descriptor)`. |
+| `SttSession` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side handle to one open STT provider stream (pipeline mode). |
+| `SttTurnMeta` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Provider-reported detail about the turn a transcript belongs to. |
+| `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Path `createRuntimeServer` serves carrier media streams on. |
+| `TELEPHONY_SAMPLE_RATE` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Sample rate every phone carrier streams at. |
+| `TelephonyBridgeOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Options for `createTelephonyBridge`. |
+| `TextAgent` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:text` | A text agent bound to one conversation — see `createTextAgent`. |
+| `TextAgentOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/testing`) | `aai-runtime:text` | Session-fixed configuration for `createTextAgent`. |
+| `TextTurnOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/testing`) | `aai-runtime:text` | Per-turn parameters for `TextAgent.stream`. |
+| `TextTurnResult` | type | `@alexkroman1/aai-runtime` | `aai-runtime:text` | What one turn hands back: the AI SDK's own `streamText` result, with this SDK's tool set. |
+| `ToolModules` | type | `@alexkroman1/aai/manifest` |  | `path → module namespace`, which is what both sources produce: Vite's `import.meta.glob` (eager) and the static import list the CLI generates. |
+| `ToolRegistry` | type | `@alexkroman1/aai/manifest` |  | A checked set of tools, keyed by the name the model calls. |
+| `ToolSchema` | type | `@alexkroman1/aai/manifest` |  | A tool declaration in wire form: name, description, and JSON Schema parameters — the serializable counterpart of `ToolDef`. |
+| `ToolSchemaSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `TransportEventBody` | type | `@alexkroman1/aai-runtime` |  | One reportable event, envelope-free — the session stamps `meta` when it emits. |
+| `TransportEventType` | type | `@alexkroman1/aai-runtime` |  | What a transport may report: everything in the session event vocabulary except the events only the session itself can be the source of. |
+| `TtsError` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Error raised by a TTS provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
+| `TtsEvents` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Events emitted by an open `TtsSession`. |
+| `TtsOpenOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Options the host passes when opening a TTS stream. |
+| `TtsOpener` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side openable TTS provider — produced by `resolveTts(descriptor)`. |
+| `TtsSession` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Host-side handle to one open TTS provider stream (pipeline mode). |
+| `TtsWordTiming` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One synthesized word and where its audio sits in the current turn. |
+| `TypecheckResult` | type · `@internal` | `@alexkroman1/aai-cli/typecheck` |  |  |
+| `UPLOADS_TABLE` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The table one row per upload lives in. |
+| `UPLOAD_KEY_PREFIX` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Where one deployment's upload objects live, under whichever bucket it uses. |
+| `UPLOAD_STORAGE_BUCKET_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key naming the bucket within it. |
+| `UPLOAD_STORAGE_KEY_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key holding the service key for `UPLOAD_STORAGE_URL_ENV`. |
+| `UPLOAD_STORAGE_URL_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Env key naming the Storage origin uploads are written to. |
+| `Unsubscribe` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Unsubscribe callback returned by `.on()` event subscriptions. |
+| `UploadBackend` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The byte operations the upload store performs, and only those. |
+| `UploadMeta` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | What an uploader declares about the file it is sending. |
+| `UploadPart` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | One window of an upload, and the object holding it. |
+| `UploadStore` | type | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | The store, as the API routes and `stepReadUpload` use it. |
+| `UploadTooLargeError` | class | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Raised by an upload store's `create` when the body ran past its cap. |
+| `UploadsUnavailableError` | class | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Raised by every method of the store a deployment with no upload backend gets. |
+| `WORKFLOW_API_PREFIX` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Path prefix every route lives under, relative to the agent's own base URL. |
+| `WORKFLOW_API_TOKEN_ENV` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Env var holding the bearer this API requires. |
+| `WdkAdapter` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | The slice of the Workflow DevKit this client touches. |
+| `WdkRunRecord` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | A WDK run record, narrowed to the fields a snapshot is built from. |
+| `WdkStreamOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | What `WdkAdapter.readStream` passes through to WDK. |
+| `WorkflowClientOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | What a client needs to serve `ctx.workflows`. |
+| `WorkflowKeyStore` | type | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | The index, as the client uses it. |
+| `WorkspaceSnapshot` | type | `@alexkroman1/aai/workspace-files` |  |  |
+| `WorkspaceWalkOptions` | type | `@alexkroman1/aai/workspace-files` |  | Options shared by the walk and the snapshot. |
+| `agentConfigWarnings` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `agentToolsToSchemas` | function | `@alexkroman1/aai/manifest` |  |  |
+| `assertPipelineTuning` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `assertSilencePolicy` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `buildClient`, `BuildClientOptions` | function · `@internal` | `@alexkroman1/aai-cli/client-bundler` |  |  |
+| `buildClientConfig` | function | `@alexkroman1/aai/protocol` |  | Build the `GET /client-config` response body from an agent-shaped config. |
+| `buildReadyConfig` | function | `@alexkroman1/aai/protocol` |  | Build the protocol-level session config (the `config` frame's audio fields) from the session's input/output sample rates — used by every session mode, pipeline … |
+| `buildWorker`, `BuildWorkerOptions` | function · `@internal` | `@alexkroman1/aai-cli/worker-bundler` |  |  |
+| `carrierByName` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | The codec for a `?carrier=` value. |
+| `connectSession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Run a session over your OWN audio I/O — anything that is not a WebSocket. |
+| `createAgentServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server running one agent — the self-hosting entry point, and the same server `aai dev` runs. |
+| `createHostServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create a multi-tenant host server: an HTTP + WebSocket server whose voice sessions run agents supplied by their callers. |
+| `createHttpUploadBackend` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | `UploadBackend` over Supabase Storage's REST API. |
+| `createLogBuffer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:logging` |  |
+| `createMemoryKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in this process's memory, for `aai dev`. |
+| `createMemoryUploadBackend` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | An in-memory `UploadBackend`, for specs and for a platform with no bucket. |
+| `createPostgresDb`, `CreatePostgresDbOptions` | function | `@alexkroman1/aai-runtime` | `aai-runtime:db` | Create a `Db` backed by a Postgres connection pool. |
+| `createPostgresKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in the workflow database. |
+| `createProjectServer` | function | `@alexkroman1/aai-cli/start` |  | Build this project's `AgentServer` WITHOUT binding a socket. |
+| `createRuntime` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Create an agent runtime — the execution engine for a voice agent. |
+| `createRuntimeServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server for an agent — the self-hosting entry point, and the same server `aai dev` runs. |
+| `createSessionAuth` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Build the session gate a server applies to `WS /websocket`: a ticket check, an `Origin` allowlist, and resume bound to the identity that opened the session. |
+| `createSessionToken` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Mint a session ticket — call this from your own backend, after your own login check, and hand the result to the browser. |
+| `createTelephonyBridge` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Wrap a carrier's media-stream socket as a `SessionWebSocket`, ready to hand straight to `runtime.startSession`. |
+| `createTextAgent` | function | `@alexkroman1/aai-runtime` | `aai-runtime:text` | Create a text agent bound to one conversation. |
+| `createToolCallRepair` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Build a `ToolCallRepairFunction` bound to `model`. |
+| `decodeWorkspaceText` | function | `@alexkroman1/aai/workspace-files` |  |  |
+| `ensureSessionStateSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:session-state` | Apply `sessionStateDdl` to a database this process OWNS, once, at boot. |
+| `ensureWorkflowJournalSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Create the journal's tables on a database this deployment owns. |
+| `executeStart` | function | `@alexkroman1/aai-cli/start` |  | Serve the built agent and keep serving it: bind, announce, and shut down cleanly on a signal. |
+| `isLocalOnlyFile` | function | `@alexkroman1/aai/workspace-files` |  | True when `name` matches `LOCAL_ONLY_FILES`. |
+| `isLockfile` | function | `@alexkroman1/aai/workspace-files` |  | True when `name` is a package-manager lockfile. |
+| `isPathInside` | function | `@alexkroman1/aai/workspace-files` |  | Is `target` the directory `dir` itself, or something under it? |
+| `layerScaffoldFiles` | function | `@alexkroman1/aai/workspace-files` |  | The files layering `scaffold` under `files` adds or changes — and ONLY those, so a caller writing to disk touches nothing it does not have to, and one building … |
+| `lenientParse` | function | `@alexkroman1/aai/protocol` |  | Two-phase message parse: tries the strict schema first, then falls back to the envelope to distinguish unknown-but-valid types (safe to ignore during rolling … |
+| `loadBuiltAgent` | function | `@alexkroman1/aai-cli/start` |  | Load the built agent, or fail saying what to run. |
+| `mergeScaffoldManifest` | function | `@alexkroman1/aai/workspace-files` |  | Fill a manifest's gaps from the scaffold's, `existing` always winning. |
+| `metricsEndpoint` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | The collector this environment names for METRICS, or `undefined`. |
+| `normalizeToolMessages` | function | `@alexkroman1/aai/manifest` |  | Author input → the wire shape, dropping every kind the tool did not declare. |
+| `otelMetricsSink` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | A sink recording each frame onto OpenTelemetry instruments of `meter`. |
+| `partKey` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | Where one upload's objects live, under a prefix the deployment owns. |
+| `partsOf` | function | `@alexkroman1/aai-runtime` | `aai-runtime:uploads` | A stored boundary list, whatever the driver handed back. |
+| `readScaffoldFiles` | function | `@alexkroman1/aai/workspace-files` |  | Read a scaffold directory into the map `layerScaffoldFiles` takes, or `{}` when it is missing. |
+| `registerLlmKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register an LLM kind. |
+| `registerMetricsSink` | function | `@alexkroman1/aai-runtime/metrics` | `aai-runtime:metrics` | Add a sink for every session in this process. |
+| `registerSttKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register an STT kind, returning an unregister function. |
+| `registerTtsKind` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Register a TTS kind. |
+| `rejectingRuntime` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | A `SessionRuntime` that turns every session away with a protocol error and closes, instead of accepting a socket it cannot answer. |
+| `requiredProviderEnvVars` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The provider credentials an agent actually needs, derived from the same registries that resolve them. |
+| `resolveInside` | function | `@alexkroman1/aai/workspace-files` |  | Resolve a workspace-relative path, refusing one that escapes the root. |
+| `resolveKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | Build the key store an embedder holding a `Db` should use: that database, or memory. |
+| `resolveLlm` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Resolve an `LlmProvider` descriptor into a Vercel AI SDK `LanguageModel`. |
+| `runtimeBrand` | const | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The seal on a `Runtime`. |
+| `salvageJson` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Best-effort repair of *nearly* valid JSON, without an LLM round trip. |
+| `sessionAuthBrand` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The seal on a `SessionAuth`. |
+| `snapshotWorkspaceFiles` | function | `@alexkroman1/aai/workspace-files` |  | Read `dir` into a workspace file map, skipping (and NAMING) what cannot be carried: too many files, an oversized one, or bytes that aren't UTF-8. |
+| `startTelephonySession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Start a session over a carrier's media-stream socket. |
+| `startTracing` | function | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | Start span export if this environment names a collector; otherwise nothing. |
+| `startTracingDetached` | function | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | Start span export ALONGSIDE the boot rather than in front of it. |
+| `telnyxCodec` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Telnyx media streaming. |
+| `toAgentConfig` | function | `@alexkroman1/aai/manifest` |  | Convert an agent definition into its serializable `AgentConfig`, injecting the default providers, deriving the session `mode`, and running the cross-field … |
+| `toolRegistry` | function | `@alexkroman1/aai/manifest` |  | Build a checked registry from already-loaded modules. |
+| `tracingEndpoint` | function | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | The collector this environment names, or `undefined` for "no tracing". |
+| `twilioCodec` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Twilio Media Streams (`<Connect><Stream>`). |
+| `typecheckProject` | function · `@internal` | `@alexkroman1/aai-cli/typecheck` |  |  |
+| `updateProjectConfig` | function | `@alexkroman1/aai-cli/project-config` |  | Merge `patch` into the existing project config rather than replacing the file — a publish recording its `slug` must not drop the studio link fields a pull … |
+| `verifySessionToken`, `VerifySessionTokenOptions` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Check a ticket minted by `createSessionToken`: the signature, then the expiry. |
+| `walkWorkspaceFiles` | function | `@alexkroman1/aai/workspace-files` |  | Workspace-relative paths of every non-ignored file under `dir`, sorted. |
+| `withHostCredentialFallback` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Return `env` with any missing provider credential filled in from `hostEnv` (defaults to `process.env`). |
+| `withMcpTools` | function | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Connect every server the agent declares and attach what they publish. |
+| `withSystemPrompt` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
+| `withTools` | function | `@alexkroman1/aai/manifest` |  | Attach a registry to an agent definition, returning the def the runtime runs. |
+| `withToolsDir` | function | `@alexkroman1/aai-runtime` | `aai-runtime:tools` | Attach the tools in a directory to an agent definition, returning the def to serve. |
+| `writeConfigHome` | function | `@alexkroman1/aai-cli/project-config` |  |  |
+| `writeFileWithParents` | function | `@alexkroman1/aai/workspace-files` |  | Write one file at an already-resolved absolute path, creating its parent directories. |
 
 ## Framework internals
 
 Not public API and not covered by semver — listed so a name found in a stack
 trace or a type error can be traced back to something.
 
-| Name | Import from |
-| --- | --- |
-| `AGENT_CSP` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
-| `ASSEMBLYAI_GATEWAY_MODELS` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_LLM_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_LLM_GATEWAY_EU_URL` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_LLM_GATEWAY_URL` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_LLM_KIND` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_S2S_KIND` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_S2S_SAMPLE_RATE` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_STT_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_STT_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_STT_KIND` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_TTS_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_TTS_DEPRECATED_VOICES` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_TTS_HOST` | `@alexkroman1/aai/host-internal` |
-| `ASSEMBLYAI_TTS_KIND` | `@alexkroman1/aai/host-internal` |
-| `ApiUrlChip` | `@alexkroman1/aai-ui/internal` |
-| `AttachSessionOptions` | `@alexkroman1/aai-runtime/internal` |
-| `BuiltinToolOptions` | `@alexkroman1/aai/host-internal` |
-| `CAPTURE_STOP_ACK_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
-| `CARTESIA_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `CARTESIA_KIND` | `@alexkroman1/aai/host-internal` |
-| `CLIENT_AUDIO_LEAD_MS` | `@alexkroman1/aai/internal` |
-| `CONTAINED_ENV` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `ClientEventDecision` | `@alexkroman1/aai/internal` |
-| `ClientEventDrop` | `@alexkroman1/aai/internal` |
-| `CoalescingRunner` | `@alexkroman1/aai/internal` |
-| `DEAD_AIR_COVER_MAX_MS` | `@alexkroman1/aai/host-internal` |
-| `DEAD_AIR_COVER_PHRASES` | `@alexkroman1/aai/host-internal` |
-| `DEAD_AIR_OPENING_PHRASE` | `@alexkroman1/aai/host-internal` |
-| `DEAD_AIR_TOOL_COVER_MS` | `@alexkroman1/aai/host-internal` |
-| `DEEPGRAM_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `DEEPGRAM_KIND` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_BUILTIN_TOOLS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_DEAD_AIR_COVER_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_ERROR_PHRASE` | `@alexkroman1/aai/internal` |
-| `DEFAULT_FALSE_INTERRUPTION_PROMPT` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_GREETING` | `@alexkroman1/aai/internal` |
-| `DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_IDLE_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_INTERRUPTION_BACKOFF_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_MAX_HISTORY` | `@alexkroman1/aai/internal` |
-| `DEFAULT_MAX_STEPS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_MAX_TURN_SILENCE_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_MIN_BARGE_IN_WORDS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_MIN_TURN_SILENCE_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_PROGRESS_POLL_MS` | `@alexkroman1/aai-ui/internal` |
-| `DEFAULT_RELAY_TOOL_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_SESSION_START_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_SHUTDOWN_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_SILENCE_PROMPT` | `@alexkroman1/aai/internal` |
-| `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_START_FAILURE_PHRASE` | `@alexkroman1/aai/internal` |
-| `DEFAULT_START_SPEAKING_FLOOR_MS` | `@alexkroman1/aai/internal` |
-| `DEFAULT_STT_PROMPT` | `@alexkroman1/aai/internal` |
-| `DEFAULT_STT_SAMPLE_RATE` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_TOOL_CHOICE` | `@alexkroman1/aai/internal` |
-| `DEFAULT_TOOL_START_PHRASES` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_TTS_SAMPLE_RATE` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_VOICE_FOCUS` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_VOICE_FOCUS_THRESHOLD` | `@alexkroman1/aai/host-internal` |
-| `DEFAULT_WORKFLOW_POLL_MS` | `@alexkroman1/aai-ui/internal` |
-| `Db` | `@alexkroman1/aai/internal` |
-| `DelayedRung` | `@alexkroman1/aai/host-internal` |
-| `EGRESS_KEEP_ALIVE_MS` | `@alexkroman1/aai-runtime/internal` |
-| `ELEVENLABS_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `ELEVENLABS_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
-| `ELEVENLABS_KIND` | `@alexkroman1/aai/host-internal` |
-| `EMPTY_PARAMS` | `@alexkroman1/aai/host-internal` |
-| `Epoch` | `@alexkroman1/aai/internal` |
-| `GatewayModelInfo` | `@alexkroman1/aai/host-internal` |
-| `HEARD_AUDIO_LAG_MS` | `@alexkroman1/aai/internal` |
-| `InvariantDetail` | `@alexkroman1/aai/internal` |
-| `InvariantViolation` | `@alexkroman1/aai/internal` |
-| `JitteredBackoffOptions` | `@alexkroman1/aai/internal` |
-| `JournalConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
-| `KNOWN_LLM_PROVIDERS` | `@alexkroman1/aai/host-internal` |
-| `LOG_PREVIEW_CHARS` | `@alexkroman1/aai/host-internal` |
-| `MAX_CLIENT_EVENT_NAME_LENGTH` | `@alexkroman1/aai/internal` |
-| `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | `@alexkroman1/aai/internal` |
-| `MAX_CLIENT_WS_BUFFERED_BYTES` | `@alexkroman1/aai/host-internal` |
-| `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | `@alexkroman1/aai/host-internal` |
-| `MAX_CONSECUTIVE_SILENCE_NUDGES` | `@alexkroman1/aai/host-internal` |
-| `MAX_DB_RESULT_ROWS` | `@alexkroman1/aai/internal` |
-| `MAX_INTERRUPTION_BACKOFF_MS` | `@alexkroman1/aai/internal` |
-| `MAX_MESSAGE_BUFFER_SIZE` | `@alexkroman1/aai/host-internal` |
-| `MAX_MISSING_READS` | `@alexkroman1/aai-ui/internal` |
-| `MAX_PLATFORM_SOCKET_FRAME_BYTES` | `@alexkroman1/aai-runtime/internal` |
-| `MAX_PLAYBACK_BUFFERED_MS` | `@alexkroman1/aai/internal` |
-| `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` | `@alexkroman1/aai/host-internal` |
-| `MAX_PROVIDER_WS_BUFFERED_BYTES` | `@alexkroman1/aai/host-internal` |
-| `MAX_SESSION_STATE_BYTES` | `@alexkroman1/aai/host-internal` |
-| `MAX_SLUG_LENGTH` | `@alexkroman1/aai/internal` |
-| `MAX_START_SPEAKING_FLOOR_MS` | `@alexkroman1/aai/internal` |
-| `MAX_TOOL_RESULT_CHARS` | `@alexkroman1/aai/internal` |
-| `MAX_UPLOAD_BYTES_ENV` | `@alexkroman1/aai/host-internal` |
-| `MAX_WORKFLOW_UPLOAD_BYTES` | `@alexkroman1/aai/host-internal` |
-| `MAX_WORKFLOW_WAIT_MS` | `@alexkroman1/aai/internal` |
-| `MAX_WS_PAYLOAD_BYTES` | `@alexkroman1/aai/host-internal` |
-| `MIC_BUFFER_SECONDS` | `@alexkroman1/aai/internal` |
-| `MIC_SEND_MAX_BUFFERED_BYTES` | `@alexkroman1/aai/internal` |
-| `MIC_SILENCE_PROBE_MS` | `@alexkroman1/aai/internal` |
-| `OPENAI_S2S_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `OPENAI_S2S_KIND` | `@alexkroman1/aai/host-internal` |
-| `OpenUpload` | `@alexkroman1/aai/host-internal` |
-| `OwnedMap` | `@alexkroman1/aai/internal` |
-| `PACER_BURST_MS` | `@alexkroman1/aai/internal` |
-| `PIPELINE_FLUSH_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `PIPELINE_PLAYBACK_GRACE_MS` | `@alexkroman1/aai/internal` |
-| `PLATFORM_ROUTES` | `@alexkroman1/aai-runtime/internal` |
-| `PLATFORM_SOCKET_PATH` | `@alexkroman1/aai-runtime/internal` |
-| `PLAYBACK_BUFFER_SECONDS` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_CONCEAL_FADE_MS` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_CONCEAL_FLOOR` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_DONE_MAX_WAIT_MS` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_DONE_POLL_MS` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_FILL_MS` | `@alexkroman1/aai/internal` |
-| `PLAYBACK_PROGRESS_INTERVAL_MS` | `@alexkroman1/aai/internal` |
-| `PREEMPTIVE_CONFIDENCE_THRESHOLD` | `@alexkroman1/aai/host-internal` |
-| `PREVIEW_SLUG_SUFFIX` | `@alexkroman1/aai/internal` |
-| `PUBLIC_URL_UNCONFIGURED_MESSAGE` | `@alexkroman1/aai/host-internal` |
-| `PinnedRequestInit` | `@alexkroman1/aai/host-internal` |
-| `PlatformEndpoint` | `@alexkroman1/aai-runtime/internal` |
-| `PlatformInboundFrameSchema` | `@alexkroman1/aai-runtime/internal` |
-| `PlatformQueueOptions` | `@alexkroman1/aai-runtime/internal` |
-| `PlatformReplyFrame` | `@alexkroman1/aai-runtime/internal` |
-| `PlatformRoute` | `@alexkroman1/aai-runtime/internal` |
-| `PlatformSocket` | `@alexkroman1/aai-runtime/internal` |
-| `RESERVED_SLUGS` | `@alexkroman1/aai/internal` |
-| `RETRYABLE_STATUS` | `@alexkroman1/aai/host-internal` |
-| `RIME_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `RIME_DEFAULT_LANGUAGE` | `@alexkroman1/aai/host-internal` |
-| `RIME_DEFAULT_MODEL` | `@alexkroman1/aai/host-internal` |
-| `RIME_KIND` | `@alexkroman1/aai/host-internal` |
-| `RUN_CODE_REFUSAL` | `@alexkroman1/aai/host-internal` |
-| `ResolvedBuiltins` | `@alexkroman1/aai/host-internal` |
-| `RunCappedOptions` | `@alexkroman1/aai/host-internal` |
-| `S2S_MAX_RESUME_ATTEMPTS` | `@alexkroman1/aai/host-internal` |
-| `SANDBOX_ONLY_BUILTINS` | `@alexkroman1/aai/host-internal` |
-| `SERVER_ROUTES` | `@alexkroman1/aai-runtime/internal` |
-| `SESSION_EVENT_TABLE` | `@alexkroman1/aai-runtime/internal` |
-| `SESSION_KEEPALIVE_INTERVAL_MS` | `@alexkroman1/aai/host-internal` |
-| `SESSION_RESUME_GRACE_MS` | `@alexkroman1/aai/host-internal` |
-| `SESSION_STATE_TABLE` | `@alexkroman1/aai-runtime/internal` |
-| `SONIOX_API_KEY_ENV` | `@alexkroman1/aai/host-internal` |
-| `SONIOX_KIND` | `@alexkroman1/aai/host-internal` |
-| `STEP_FETCH_CONNECTIONS` | `@alexkroman1/aai/host-internal` |
-| `STEP_FETCH_INACTIVITY_MS` | `@alexkroman1/aai/host-internal` |
-| `STEP_FETCH_KEEP_ALIVE_MS` | `@alexkroman1/aai/host-internal` |
-| `STEP_FETCH_PIPELINING` | `@alexkroman1/aai/host-internal` |
-| `STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE` | `@alexkroman1/aai/host-internal` |
-| `STT_CONNECT_MAX_RETRIES` | `@alexkroman1/aai/host-internal` |
-| `STT_CONNECT_RETRY_DELAY_MS` | `@alexkroman1/aai/host-internal` |
-| `STT_CONNECT_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `STT_FRAME_FLOOR_MS` | `@alexkroman1/aai/host-internal` |
-| `STT_FRAME_MAX_MS` | `@alexkroman1/aai/host-internal` |
-| `STT_FRAME_TARGET_MS` | `@alexkroman1/aai/host-internal` |
-| `ServerRoute` | `@alexkroman1/aai-runtime/internal` |
-| `ServerRouteMatch` | `@alexkroman1/aai-runtime/internal` |
-| `SessionProvider` | `@alexkroman1/aai-ui/internal` |
-| `SessionStateConformanceSuite` | `@alexkroman1/aai-runtime/internal` |
-| `SessionUrlChips` | `@alexkroman1/aai-ui/internal` |
-| `SleepTimerOptions` | `@alexkroman1/aai/internal` |
-| `SpawnCappedResult` | `@alexkroman1/aai/host-internal` |
-| `SpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
-| `StepDelegateFn` | `@alexkroman1/aai/host-internal` |
-| `StepInfoReader` | `@alexkroman1/aai/host-internal` |
-| `StepReporter` | `@alexkroman1/aai/host-internal` |
-| `StepWebhookMinter` | `@alexkroman1/aai/host-internal` |
-| `TAIL_RESUME_MIN_UNHEARD_MS` | `@alexkroman1/aai/host-internal` |
-| `TELEPHONY_CARRIERS` | `@alexkroman1/aai/internal` |
-| `TERMINAL_WORKFLOW_STATUSES` | `@alexkroman1/aai/internal` |
-| `TOOL_EXECUTION_TIMEOUT_MS` | `@alexkroman1/aai/internal` |
-| `TOOL_RESULT_TRUNCATION_MARKER` | `@alexkroman1/aai/internal` |
-| `TOOL_START_BLOCKING_MAX_MS` | `@alexkroman1/aai/host-internal` |
-| `TRANSCRIBING_PLACEHOLDER` | `@alexkroman1/aai-ui/internal` |
-| `TTS_CANCEL_ACK_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `TTS_RECONNECT_TIMEOUT_MS` | `@alexkroman1/aai/host-internal` |
-| `ThemeProvider` | `@alexkroman1/aai-ui/internal` |
-| `ToolConfigContext` | `@alexkroman1/aai-ui/internal` |
-| `ToolDefRecord` | `@alexkroman1/aai/host-internal` |
-| `ToolMessageBase` | `@alexkroman1/aai/host-internal` |
-| `TraceParent` | `@alexkroman1/aai-runtime/internal` |
-| `UPLOADS_UNAVAILABLE_MESSAGE` | `@alexkroman1/aai/host-internal` |
-| `UPLOAD_CHUNK_BYTES` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `UPLOAD_CLAIM_BATCH` | `@alexkroman1/aai/host-internal` |
-| `UPLOAD_ID_PREFIX` | `@alexkroman1/aai/host-internal` |
-| `UPLOAD_PART_BYTES` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `UPLOAD_TOKEN_RE` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `UiUrlChip` | `@alexkroman1/aai-ui/internal` |
-| `UploadAccess` | `@alexkroman1/aai/host-internal` |
-| `UploadReader` | `@alexkroman1/aai/host-internal` |
-| `UploadWriteMeta` | `@alexkroman1/aai/host-internal` |
-| `UploadWriter` | `@alexkroman1/aai/host-internal` |
-| `UsageMeter` | `@alexkroman1/aai-runtime/internal` |
-| `UsageSnapshot` | `@alexkroman1/aai-runtime/internal` |
-| `VALID_SLUG_RE` | `@alexkroman1/aai/internal` |
-| `VOICE_CAPTURE_CONSTRAINTS` | `@alexkroman1/aai-ui/internal` |
-| `WORKFLOWS_UNAVAILABLE_MESSAGE` | `@alexkroman1/aai/internal` |
-| `WORKFLOW_API_METHODS` | `@alexkroman1/aai-runtime/internal` |
-| `WORKFLOW_CALLBACK_ROUTES` | `@alexkroman1/aai-runtime/internal` |
-| `WORKFLOW_DATA_DIR_ENV` | `@alexkroman1/aai-runtime/internal` |
-| `WORKFLOW_QUEUE_PATH` | `@alexkroman1/aai-runtime/internal` |
-| `WS_NORMAL_CLOSURE` | `@alexkroman1/aai/host-internal` |
-| `WS_OPEN` | `@alexkroman1/aai/internal` |
-| `agentInstructionsSection` | `@alexkroman1/aai/host-internal` |
-| `agentServerEnv` | `@alexkroman1/aai-runtime/internal` |
-| `applyWorkflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
-| `asDispatcher` | `@alexkroman1/aai/host-internal` |
-| `assemblyAITtsLanguageCodes` | `@alexkroman1/aai/host-internal` |
-| `assertProviderTriple` | `@alexkroman1/aai/host-internal` |
-| `assertUploadToken` | `@alexkroman1/aai/host-internal` |
-| `buildAgentUrl` | `@alexkroman1/aai-ui/internal` |
-| `buildSystemPrompt` | `@alexkroman1/aai/host-internal` |
-| `capToolResult` | `@alexkroman1/aai/internal` |
-| `clampWorkflowWait` | `@alexkroman1/aai/internal` |
-| `clientEventDropMessage` | `@alexkroman1/aai/internal` |
-| `consoleLogger` | `@alexkroman1/aai-runtime/internal` |
-| `createCoalescingRunner` | `@alexkroman1/aai/internal` |
-| `createDetachedSlotStore` | `@alexkroman1/aai/host-internal` |
-| `createEpoch` | `@alexkroman1/aai/internal` |
-| `createMemoryJournal` | `@alexkroman1/aai-runtime/internal` |
-| `createOwnedMap` | `@alexkroman1/aai/internal` |
-| `createPlatformJournal` | `@alexkroman1/aai-runtime/internal` |
-| `createPlatformQueueSend` | `@alexkroman1/aai-runtime/internal` |
-| `createPlatformSocket` | `@alexkroman1/aai-runtime/internal` |
-| `createPlatformStateBackend` | `@alexkroman1/aai-runtime/internal` |
-| `createPostgresJournal` | `@alexkroman1/aai-runtime/internal` |
-| `createPostgresStateBackend` | `@alexkroman1/aai-runtime/internal` |
-| `createSessionEventStream` | `@alexkroman1/aai-runtime/internal` |
-| `createSessionStateStore` | `@alexkroman1/aai-runtime/internal` |
-| `createSttError` | `@alexkroman1/aai/host-internal` |
-| `createTtsError` | `@alexkroman1/aai/host-internal` |
-| `createUploadStore` | `@alexkroman1/aai-runtime/internal` |
-| `decideClientEvent` | `@alexkroman1/aai/internal` |
-| `defaultProviders` | `@alexkroman1/aai/host-internal` |
-| `eligibleToolMessages` | `@alexkroman1/aai/host-internal` |
-| `executeToolCall` | `@alexkroman1/aai-runtime/internal` |
-| `firstWriteWins` | `@alexkroman1/aai-runtime/internal` |
-| `formatSchemaIssues` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai/internal` |
-| `freezeStorable` | `@alexkroman1/aai/host-internal` |
-| `gatewayModelIds` | `@alexkroman1/aai/host-internal` |
-| `handleWorkflowRequest` | `@alexkroman1/aai-runtime/internal` |
-| `invariant` | `@alexkroman1/aai/internal` |
-| `isConvertibleSchema` | `@alexkroman1/aai/host-internal` |
-| `isInvariantViolation` | `@alexkroman1/aai/internal` |
-| `isTextAssetPath` | `@alexkroman1/aai/internal` |
-| `isUniversal35Pro` | `@alexkroman1/aai/host-internal` |
-| `jitteredBackoff` | `@alexkroman1/aai/internal` |
-| `linkConfirmationCode` | `@alexkroman1/aai/internal` |
-| `loadClientConfig` | `@alexkroman1/aai-ui/internal` |
-| `loadJournalConformance` | `@alexkroman1/aai-runtime/internal` |
-| `loadSessionStateConformance` | `@alexkroman1/aai-runtime/internal` |
-| `mapStream` | `@alexkroman1/aai/host-internal` |
-| `matchesToolConditions` | `@alexkroman1/aai/host-internal` |
-| `normalizeLlm` | `@alexkroman1/aai/host-internal` |
-| `normalizeSpeechText` | `@alexkroman1/aai/internal` |
-| `outputWithKillNote` | `@alexkroman1/aai/host-internal` |
-| `parseBearer` | `@alexkroman1/aai-runtime/internal` |
-| `parsePlatformFrame` | `@alexkroman1/aai-runtime/internal` |
-| `parseTraceparent` | `@alexkroman1/aai-runtime/internal` |
-| `parseWsUpgradeParams` | `@alexkroman1/aai/internal` |
-| `pinnedFetch` | `@alexkroman1/aai/host-internal` |
-| `planDelayedLadder` | `@alexkroman1/aai/host-internal` |
-| `platformSocketUrl` | `@alexkroman1/aai-runtime/internal` |
-| `publishSpeechSynthesizer` | `@alexkroman1/aai/host-internal` |
-| `publishStepDelegate` | `@alexkroman1/aai/host-internal` |
-| `publishStepEnv` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `publishStepFetch` | `@alexkroman1/aai/host-internal` |
-| `publishStepInfoReader` | `@alexkroman1/aai/host-internal` |
-| `publishStepReporter` | `@alexkroman1/aai/host-internal` |
-| `publishStepWebhookUrl` | `@alexkroman1/aai/host-internal` |
-| `publishUploadReader` | `@alexkroman1/aai/host-internal` |
-| `publishWorkflowWebhookUrl` | `@alexkroman1/aai-runtime/internal` |
-| `queueNameKind` | `@alexkroman1/aai-runtime/internal` |
-| `readAssemblyAILlmProviderOptions` | `@alexkroman1/aai/host-internal` |
-| `rejectingWorkflows` | `@alexkroman1/aai/internal` |
-| `requestPath` | `@alexkroman1/aai/internal` |
-| `requestQuery` | `@alexkroman1/aai/internal` |
-| `resolveAllBuiltins` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `resolveAssemblyAISttSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveAssemblyAITtsLanguage` | `@alexkroman1/aai/host-internal` |
-| `resolveAssemblyAITtsSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveCartesiaTtsSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveDeepgramSttSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveElevenLabsSttSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveRimeTtsSettings` | `@alexkroman1/aai/host-internal` |
-| `resolveSonioxSttSettings` | `@alexkroman1/aai/host-internal` |
-| `runAgentGuardrails` | `@alexkroman1/aai/host-internal` |
-| `runCapped` | `@alexkroman1/aai/host-internal` |
-| `safeFetch` | `@alexkroman1/aai/host-internal`, `@alexkroman1/aai-runtime/internal` |
-| `selectToolMessage` | `@alexkroman1/aai/host-internal` |
-| `serializeToolFailure` | `@alexkroman1/aai/host-internal` |
-| `sessionStateDdl` | `@alexkroman1/aai-runtime/internal` |
-| `sleep` | `@alexkroman1/aai/internal` |
-| `ssrfSafeFetch` | `@alexkroman1/aai/host-internal` |
-| `stampSessionEvent` | `@alexkroman1/aai-runtime/internal` |
-| `staticSystemPrompt` | `@alexkroman1/aai/host-internal` |
-| `systemPromptResolver` | `@alexkroman1/aai/host-internal` |
-| `toArgsRecord` | `@alexkroman1/aai/internal` |
-| `toToolJsonSchema` | `@alexkroman1/aai/host-internal` |
-| `traceIdOf` | `@alexkroman1/aai-runtime/internal` |
-| `wireSessionSocket` | `@alexkroman1/aai-runtime/internal` |
-| `workflowJournalDdl` | `@alexkroman1/aai-runtime/internal` |
+| Name | Kind | Import from | Capability | Summary |
+| --- | --- | --- | --- | --- |
+| `AGENT_CSP` | const · `@internal` | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
+| `ASSEMBLYAI_GATEWAY_MODELS` | const | `@alexkroman1/aai/host-internal` |  |  |
+| `ASSEMBLYAI_LLM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT). |
+| `ASSEMBLYAI_LLM_GATEWAY_EU_URL` | const | `@alexkroman1/aai/host-internal` |  | EU LLM Gateway endpoint — keeps data within the European Union. |
+| `ASSEMBLYAI_LLM_GATEWAY_URL` | const | `@alexkroman1/aai/host-internal` |  | US (default) LLM Gateway endpoint. |
+| `ASSEMBLYAI_LLM_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `ASSEMBLYAI_S2S_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Env var holding this stage's credential. |
+| `ASSEMBLYAI_S2S_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `ASSEMBLYAI_S2S_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `ASSEMBLYAI_STT_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key. |
+| `ASSEMBLYAI_STT_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
+| `ASSEMBLYAI_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `ASSEMBLYAI_TTS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). |
+| `ASSEMBLYAI_TTS_DEPRECATED_VOICES` | const | `@alexkroman1/aai/host-internal` |  | Voices the service still accepts but has scheduled for removal. |
+| `ASSEMBLYAI_TTS_HOST` | const | `@alexkroman1/aai/host-internal` |  | Production streaming-TTS host. |
+| `ASSEMBLYAI_TTS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `ApiUrlChip` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `AttachSessionOptions` | type | `@alexkroman1/aai-runtime/internal` |  | Options for `attachSession`. |
+| `BuiltinToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for creating built-in tool definitions. |
+| `CAPTURE_STOP_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `CARTESIA_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Cartesia API key. |
+| `CARTESIA_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `CLIENT_AUDIO_LEAD_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `CONTAINED_ENV` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Env flag a SPAWNER sets when the runtime is wrapped in a real container. |
+| `ClientEventDecision` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `ClientEventDrop` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `CoalescingRunner` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `DEAD_AIR_COVER_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_COVER_PHRASES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_OPENING_PHRASE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_TOOL_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEEPGRAM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Deepgram API key. |
+| `DEEPGRAM_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `DEFAULT_BUILTIN_TOOLS` | const | `@alexkroman1/aai/internal` |  | Built-in tools enabled when an agent does not set `builtinTools` at all — **`think`**, and only `think`. |
+| `DEFAULT_DEAD_AIR_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_ERROR_PHRASE` | const | `@alexkroman1/aai/internal` |  | Spoken when a pipeline turn's LLM stream fails, so a provider outage is a recoverable moment in the conversation instead of a dead line. |
+| `DEFAULT_FALSE_INTERRUPTION_PROMPT` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_GREETING` | const | `@alexkroman1/aai/internal` |  | Default greeting spoken when a session starts. |
+| `DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_IDLE_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `idleTimeoutMs` (ms of user silence before the session is closed). |
+| `DEFAULT_INTERRUPTION_BACKOFF_MS` | const | `@alexkroman1/aai/internal` |  | How long agent audio stays blocked after a REAL interruption, in ms. |
+| `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | const | `@alexkroman1/aai/internal` |  |  |
+| `DEFAULT_MAX_HISTORY` | const | `@alexkroman1/aai/internal` |  | Sliding window of conversation messages retained per session. |
+| `DEFAULT_MAX_STEPS` | const | `@alexkroman1/aai/internal` |  | Max TOOL-CALLING steps per reply — bounds runaway tool loops. |
+| `DEFAULT_MAX_TURN_SILENCE_MS` | const | `@alexkroman1/aai/internal` |  | Maximum silence (ms) before AssemblyAI force-ends a turn regardless of content (`max_turn_silence`). |
+| `DEFAULT_MIN_BARGE_IN_WORDS` | const | `@alexkroman1/aai/internal` |  | Minimum number of words in an interim STT transcript before a barge-in aborts the agent's in-flight turn (pipeline mode). |
+| `DEFAULT_MIN_TURN_SILENCE_MS` | const | `@alexkroman1/aai/internal` |  | Silence (ms) before AssemblyAI streaming STT runs its end-of-turn CHECK (`min_turn_silence`). |
+| `DEFAULT_PROGRESS_POLL_MS` | const | `@alexkroman1/aai-ui/internal` |  | How often a live run's progress is re-read once a bounded read has ended. |
+| `DEFAULT_RELAY_TOOL_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_SESSION_START_TIMEOUT_MS` | const | `@alexkroman1/aai/host-internal` |  | Deadline (ms) for `session.start()` — providers must be open by then. |
+| `DEFAULT_SHUTDOWN_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_SILENCE_PROMPT` | const | `@alexkroman1/aai/internal` |  | Default instruction injected as a synthetic user turn when `silenceTimeoutMs` elapses with no user speech (pipeline mode). |
+| `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_START_FAILURE_PHRASE` | const | `@alexkroman1/aai/internal` |  | Spoken when the session cannot start at all — a provider failed to open, so there is no conversation to have (pipeline mode). |
+| `DEFAULT_START_SPEAKING_FLOOR_MS` | const | `@alexkroman1/aai/internal` |  | Minimum delay between a reply starting and its first audio reaching the caller, in ms. |
+| `DEFAULT_STT_PROMPT` | const | `@alexkroman1/aai/internal` |  | Default streaming STT `prompt` — deliberately empty: transcription is unbiased in BOTH session modes unless an agent sets `sttPrompt` (the pipeline sends it as … |
+| `DEFAULT_STT_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_TOOL_CHOICE` | const | `@alexkroman1/aai/internal` |  | Default `toolChoice`: the LLM decides when to call tools vs respond directly. |
+| `DEFAULT_TOOL_START_PHRASES` | const | `@alexkroman1/aai/host-internal` |  | The pool a `start: true` draws from — Vapi's own default filler set, which they publish nowhere but the schema. |
+| `DEFAULT_TTS_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_VOICE_FOCUS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_VOICE_FOCUS_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_WORKFLOW_POLL_MS` | const | `@alexkroman1/aai-ui/internal` |  | How often `useWorkflowRun` re-reads a live run when it has to poll. |
+| `Db` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `DelayedRung` | type | `@alexkroman1/aai/host-internal` |  | One rung of a delay ladder: what to say, and how long into the call. |
+| `EGRESS_KEEP_ALIVE_MS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `ELEVENLABS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the ElevenLabs API key. |
+| `ELEVENLABS_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
+| `ELEVENLABS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
+| `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  | The AssemblyAI LLM Gateway model catalog. |
+| `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `InvariantDetail` | type | `@alexkroman1/aai/internal` |  | Extra context for a violation, built ONLY when one happens. |
+| `InvariantViolation` | class | `@alexkroman1/aai/internal` |  | A broken invariant. |
+| `JournalConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `JournalStore` CONFORMANCE suite, loaded on demand. |
+| `KNOWN_LLM_PROVIDERS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
+| `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents memory abuse via `ctx.send`. |
+| `MAX_CLIENT_WS_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_CONSECUTIVE_SILENCE_NUDGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_DB_RESULT_ROWS` | const | `@alexkroman1/aai/internal` |  | Max rows one `Db` query may return; queries that could exceed it should paginate with LIMIT/OFFSET. |
+| `MAX_INTERRUPTION_BACKOFF_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `MAX_MESSAGE_BUFFER_SIZE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_MISSING_READS` | const | `@alexkroman1/aai-ui/internal` |  | Consecutive "no such run" reads `useWorkflowRun` tolerates before giving up on the id. |
+| `MAX_PLATFORM_SOCKET_FRAME_BYTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `MAX_PLAYBACK_BUFFERED_MS` | const | `@alexkroman1/aai/internal` |  | Upper bound (ms) accepted on a `playback_progress` report. |
+| `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_PROVIDER_WS_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_SESSION_STATE_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_SLUG_LENGTH` | const | `@alexkroman1/aai/internal` |  | Longest slug `VALID_SLUG_RE` accepts — for callers that truncate to fit. |
+| `MAX_START_SPEAKING_FLOOR_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `MAX_TOOL_RESULT_CHARS` | const | `@alexkroman1/aai/internal` |  | Cap (characters) on a tool result's JSON serialization **as the CLIENT sees it** — the `tool.completed` frame, and the per-message `history` content — where a … |
+| `MAX_UPLOAD_BYTES_ENV` | const | `@alexkroman1/aai/host-internal` |  | Env key an agent raises or lowers `MAX_WORKFLOW_UPLOAD_BYTES` with. |
+| `MAX_WORKFLOW_UPLOAD_BYTES` | const | `@alexkroman1/aai/host-internal` |  | Largest file `POST /workflows/uploads` accepts, unless the agent says otherwise (`AAI_MAX_UPLOAD_BYTES` in its env). |
+| `MAX_WORKFLOW_WAIT_MS` | const | `@alexkroman1/aai/internal` |  | Longest a request may hold open waiting for a run to settle — the ceiling on the API's SYNCHRONOUS mode. |
+| `MAX_WS_PAYLOAD_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MIC_BUFFER_SECONDS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `MIC_SEND_MAX_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `MIC_SILENCE_PROBE_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `OPENAI_S2S_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Env var holding this stage's credential — the same string as the OpenAI LLM constant, under a name of its own so `apiKeyEnv` can repoint this stage alone (the … |
+| `OPENAI_S2S_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `OpenUpload` | type | `@alexkroman1/aai/host-internal` |  | One upload OPENED: its record, and a reader over the windows THAT record named. |
+| `OwnedMap` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PACER_BURST_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PIPELINE_FLUSH_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PIPELINE_PLAYBACK_GRACE_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLATFORM_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PLATFORM_SOCKET_PATH` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PLAYBACK_BUFFER_SECONDS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_CONCEAL_FADE_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_CONCEAL_FLOOR` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_DONE_MAX_WAIT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_DONE_POLL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_FILL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `PLAYBACK_PROGRESS_INTERVAL_MS` | const | `@alexkroman1/aai/internal` |  | How often a client reports its unplayed agent-audio backlog to the host (`playback_progress`), while it holds any. |
+| `PREEMPTIVE_CONFIDENCE_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PREVIEW_SLUG_SUFFIX` | const | `@alexkroman1/aai/internal` |  | Suffix the studio's auto-preview deploys own (`<project>-preview`). |
+| `PUBLIC_URL_UNCONFIGURED_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PinnedRequestInit` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PlatformEndpoint` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PlatformInboundFrameSchema` | const | `@alexkroman1/aai-runtime/internal` |  | What the PLATFORM may receive. |
+| `PlatformQueueOptions` | type | `@alexkroman1/aai-runtime/internal` |  | What this client needs to reach the platform. |
+| `PlatformReplyFrame` | type | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PlatformRoute` | type | `@alexkroman1/aai-runtime/internal` |  | One of `PLATFORM_ROUTES`. |
+| `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
+| `RESERVED_SLUGS` | const | `@alexkroman1/aai/internal` |  | Slugs that collide with top-level platform routes and can never be claimed by an agent. |
+| `RETRYABLE_STATUS` | const | `@alexkroman1/aai/host-internal` |  | Statuses that mean "come back", as opposed to "no". |
+| `RIME_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Rime API key. |
+| `RIME_DEFAULT_LANGUAGE` | const | `@alexkroman1/aai/host-internal` |  | Synthesis language used when the descriptor names none. |
+| `RIME_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Synthesis model used when the descriptor names none. |
+| `RIME_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `RUN_CODE_REFUSAL` | const | `@alexkroman1/aai/host-internal` |  | What `run_code` answers when no executor was supplied — the sentence the model reads off-platform. |
+| `ResolvedBuiltins` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtins with defs, schemas, and guidance computed in a single pass. |
+| `S2S_MAX_RESUME_ATTEMPTS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `SANDBOX_ONLY_BUILTINS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `SERVER_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SESSION_EVENT_TABLE` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SESSION_KEEPALIVE_INTERVAL_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `SESSION_RESUME_GRACE_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `SESSION_STATE_TABLE` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SONIOX_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Soniox API key. |
+| `SONIOX_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `STEP_FETCH_CONNECTIONS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STEP_FETCH_INACTIVITY_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STEP_FETCH_KEEP_ALIVE_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STEP_FETCH_PIPELINING` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_CONNECT_MAX_RETRIES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_CONNECT_RETRY_DELAY_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_CONNECT_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_FRAME_FLOOR_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_FRAME_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `STT_FRAME_TARGET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `ServerRoute` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SessionProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `SessionStateConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `SessionStateBackend` CONFORMANCE suite, loaded on demand. |
+| `SessionUrlChips` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `SleepTimerOptions` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `SpawnCappedResult` | type | `@alexkroman1/aai/host-internal` |  | One child-process runner for every tool that shells out. |
+| `SpeechSynthesizer` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StepDelegateFn` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StepInfoReader` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StepReporter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StepWebhookMinter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TAIL_RESUME_MIN_UNHEARD_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TELEPHONY_CARRIERS` | const | `@alexkroman1/aai/internal` |  | The same names as a VALUE, for the two readers that need the list at run time: `AgentConfigSchema`, which validates them because the declaration crosses the … |
+| `TERMINAL_WORKFLOW_STATUSES` | const | `@alexkroman1/aai/internal` |  | Statuses nothing will change again. |
+| `TOOL_EXECUTION_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Wall-clock budget (ms) for one tool `execute` call before it is aborted. |
+| `TOOL_RESULT_TRUNCATION_MARKER` | const | `@alexkroman1/aai/internal` |  | Appended to a tool result the framework trimmed at `MAX_TOOL_RESULT_CHARS`, so a model reading it can tell the record is incomplete rather than answering from … |
+| `TOOL_START_BLOCKING_MAX_MS` | const | `@alexkroman1/aai/host-internal` |  | Ceiling on a blocking start message's delay to the tool call. |
+| `TRANSCRIBING_PLACEHOLDER` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `TTS_CANCEL_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TTS_RECONNECT_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `ThemeProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `ToolConfigContext` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `ToolDefRecord` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtin tool definitions, keyed by tool name. |
+| `ToolMessageBase` | type | `@alexkroman1/aai/host-internal` |  | The two fields every message kind carries, as one type for the selector to be generic over (`tool-messages-select.ts`). |
+| `TraceParent` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `UPLOADS_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `UPLOAD_CHUNK_BYTES` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | How much of an upload one stored row (or one write) holds. |
+| `UPLOAD_CLAIM_BATCH` | const | `@alexkroman1/aai/host-internal` |  | How many landed offsets one claim may name. |
+| `UPLOAD_ID_PREFIX` | const | `@alexkroman1/aai/host-internal` |  | Prefix every upload id carries. |
+| `UPLOAD_PART_BYTES` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | How much of a file one PART of a parallel upload carries, by default. |
+| `UPLOAD_TOKEN_RE` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | What a caller-chosen upload id may contain. |
+| `UiUrlChip` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `UploadAccess` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `UploadReader` | type | `@alexkroman1/aai/host-internal` |  | The half of an upload store a step needs: metadata, and a byte range. |
+| `UploadWriteMeta` | type | `@alexkroman1/aai/host-internal` |  | What an uploader may declare about a file it is storing. |
+| `UploadWriter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `UsageMeter` | interface · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `UsageSnapshot` | interface · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `VALID_SLUG_RE` | const | `@alexkroman1/aai/internal` |  | Slug shape accepted by the platform: lowercase letters, digits, `-`, `_` (2–64 chars). |
+| `VOICE_CAPTURE_CONSTRAINTS` | const | `@alexkroman1/aai-ui/internal` |  | `getUserMedia` audio constraints for every capture path in this package. |
+| `WORKFLOWS_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `WORKFLOW_API_METHODS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `WORKFLOW_CALLBACK_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `WORKFLOW_DATA_DIR_ENV` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `WORKFLOW_QUEUE_PATH` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `WS_NORMAL_CLOSURE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `WS_OPEN` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `agentInstructionsSection` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `agentServerEnv` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `applyWorkflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `asDispatcher` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `assemblyAITtsLanguageCodes` | function | `@alexkroman1/aai/host-internal` |  | The codes `resolveAssemblyAITtsLanguage` accepts, for error messages. |
+| `assertProviderTriple` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `assertUploadToken` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `buildAgentUrl` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `buildSystemPrompt` | function | `@alexkroman1/aai/host-internal` |  | Build the system prompt sent to the LLM from the agent configuration. |
+| `capToolResult` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `clampWorkflowWait` | function | `@alexkroman1/aai/internal` |  | Clamp a requested wait to what the API will actually hold a socket open for. |
+| `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `createMemoryJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createOwnedMap` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `createPlatformJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createPlatformQueueSend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createPlatformSocket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createPlatformStateBackend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createPostgresJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createPostgresStateBackend` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createSessionEventStream` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createSessionStateStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `createSttError` | function | `@alexkroman1/aai/host-internal` |  | Build an `SttError` with a typed `code`. |
+| `createTtsError` | function | `@alexkroman1/aai/host-internal` |  | Build a `TtsError` with a typed `code`. |
+| `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `decideClientEvent` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `defaultProviders` | function | `@alexkroman1/aai/host-internal` |  | The default providers for the pipeline stages a config leaves unset: each missing stage of the `stt`/`llm`/`tts` triple is filled from the all-AssemblyAI … |
+| `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
+| `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |
+| `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `gatewayModelIds` | function | `@alexkroman1/aai/host-internal` |  | Ids usable for a streaming, tool-calling agent — the only shape this SDK runs — and that actually answer. |
+| `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
+| `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
+| `isInvariantViolation` | function | `@alexkroman1/aai/internal` |  | Is `value` a broken invariant of ours, however deeply wrapped? |
+| `isTextAssetPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `isUniversal35Pro` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `jitteredBackoff`, `JitteredBackoffOptions` | function | `@alexkroman1/aai/internal` |  | How long to wait before attempt `attempt + 1`, in milliseconds. |
+| `linkConfirmationCode` | function | `@alexkroman1/aai/internal` |  | Human-matchable confirmation derived from the link code. |
+| `loadClientConfig` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
+| `loadJournalConformance` | function | `@alexkroman1/aai-runtime/internal` |  |  |
+| `loadSessionStateConformance` | function | `@alexkroman1/aai-runtime/internal` |  |  |
+| `mapStream` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
+| `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
+| `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
+| `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
+| `parseBearer` | function | `@alexkroman1/aai-runtime/internal` |  | Token from an `Authorization: Bearer <token>` header value. |
+| `parsePlatformFrame` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `parseTraceparent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `parseWsUpgradeParams` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `pinnedFetch` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `planDelayedLadder` | function | `@alexkroman1/aai/host-internal` |  | The ladder this call gets: one line per DISTINCT `afterMs`, ascending. |
+| `platformSocketUrl` | function | `@alexkroman1/aai-runtime/internal` |  | `<base>/platform-socket` with a WebSocket scheme. |
+| `publishSpeechSynthesizer` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepDelegate` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepEnv` | function · `@internal` | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
+| `publishStepFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepInfoReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepReporter` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepWebhookUrl` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishUploadReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishWorkflowWebhookUrl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `queueNameKind` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `resolveAllBuiltins` | function | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Resolve all builtin tools in one pass, returning defs, schemas, and guidance. |
+| `resolveAssemblyAISttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveAssemblyAITtsLanguage` | function | `@alexkroman1/aai/host-internal` |  | Translate an ISO 639-1 code to the service's `language` value. |
+| `resolveAssemblyAITtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveCartesiaTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveDeepgramSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveElevenLabsSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveRimeTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveSonioxSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `runAgentGuardrails` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `runCapped`, `RunCappedOptions` | function | `@alexkroman1/aai/host-internal` |  | Run one child process, capturing capped output tails. |
+| `safeFetch` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | `globalThis.fetch` wrapped in SSRF validation — the default for every network builtin. |
+| `selectToolMessage` | function | `@alexkroman1/aai/host-internal` |  | One of the eligible messages, drawn — the VARIANT rule. |
+| `serializeToolFailure` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `sessionStateDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `ssrfSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `stampSessionEvent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `staticSystemPrompt` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `systemPromptResolver` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `toArgsRecord` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `toToolJsonSchema` | function | `@alexkroman1/aai/host-internal` |  | Convert a Standard Schema to the JSON Schema shape providers expect. |
+| `traceIdOf` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `wireSessionSocket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `workflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |

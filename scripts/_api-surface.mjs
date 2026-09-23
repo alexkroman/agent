@@ -156,6 +156,8 @@ function reExportedNames(statement) {
     name: specifier.name.text,
     tag: "none",
     isType: statement.isTypeOnly || specifier.isTypeOnly,
+    // Declared in another package's report; the index looks it up there.
+    kind: undefined,
   }));
 }
 
@@ -199,7 +201,19 @@ function declarationEntries(statement, source, sourceFile) {
   if (!isExported(statement)) return [];
   const tag = releaseTag(source.slice(statement.pos, statement.getStart(sourceFile)));
   const isType = ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement);
-  return declarationNames(statement).map((name) => ({ name, tag, isType }));
+  const kind = declarationKind(statement);
+  return declarationNames(statement).map((name) => ({ name, tag, isType, kind }));
+}
+
+/** What a declaration IS, as a reader names it — `API-INDEX.md`'s Kind column. */
+function declarationKind(statement) {
+  if (ts.isClassDeclaration(statement)) return "class";
+  if (ts.isEnumDeclaration(statement)) return "enum";
+  if (ts.isFunctionDeclaration(statement)) return "function";
+  if (ts.isInterfaceDeclaration(statement)) return "interface";
+  if (ts.isModuleDeclaration(statement)) return "namespace";
+  if (ts.isTypeAliasDeclaration(statement)) return "type";
+  return "const";
 }
 
 /**

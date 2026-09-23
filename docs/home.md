@@ -43,8 +43,9 @@ plus committed API reports rather than a rendered page. And the `aai` CLI
 
 **For a single name, read
 [`API-INDEX.md`](https://github.com/alexkroman/agent/blob/main/API-INDEX.md)** —
-every published symbol against the subpath to import it from, generated from
-the same reports this reference is.
+every published symbol, grouped by who imports it, with its kind, the subpath
+to import it from, the contract that versions it and a one-line summary —
+generated from the same reports this reference is.
 
 Three places on this surface publish more than one way to do a thing. Each
 distinction is real; none is guessable from the names alone.

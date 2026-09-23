@@ -308,19 +308,41 @@ committed, which is correct: a new subpath IS a public API change.
 
 **`API-INDEX.md` is the third derived file, and it is the same names INVERTED.**
 A report and `API-EXPORTS.json` are both indexed BY subpath, which is the wrong
-direction for the question a reader actually arrives with: thirty-six subpaths
-publish 1,100-odd names, so "which import gives me `WorkflowInputOf`?" was a
-grep or a guess. It is generated in the same pass, gated by the same `--check`,
-and split into an authoring half and a framework-internals half by a
-`/internal`-and-`/host-internal` deny-list — a new subpath defaults into the
-authoring half, for the reason every deny-list here exists. It carries a floor
-(`MIN_INDEXED_SYMBOLS`, 600 against a measured 823) because `--check` reports a
+direction for the question a reader actually arrives with: forty-two subpaths
+publish 1,300-odd names, so "which import gives me `WorkflowInputOf`?" was a
+grep or a guess. It is generated in the same pass (`scripts/_api-index.mjs`),
+gated by the same `--check`, and each row carries what the reader needs to pick
+the right name without a second lookup: its KIND, the PREFERRED import first
+(the capability owner's subpath, else the narrowest), the `<pkg>:<capability>`
+contract that versions it, and the first sentence of its doc comment.
+`FooProps`/`FooOptions` share `Foo`'s row.
+
+- **Sections are audiences, cut by rule** (`audienceOf`): agent authoring,
+  browser client, testing and evals, hosting and tooling, framework internals.
+  `/internal` and `/host-internal` are internal; `/testing*` and `/eval*` are
+  testing; `aai-ui` is the client; `aai-runtime`, `aai-cli` and three named SDK
+  subpaths (`/manifest`, `/protocol`, `/workspace-files`) are hosting; anything
+  else on the SDK is authoring. A new subpath lands in one by construction.
+- **Kind comes from the REPORT, the summary from API Extractor's doc model.**
+  The doc model trims `@internal` items, and the report keeps them with their
+  release tag, so an `@internal` name on a public subpath shows as such rather
+  than vanishing. A cross-package re-export (`export { AgentEnv }`) is declared
+  in neither of its own files, so both fall back to the entry point that
+  declares it.
+- **The capability column names the contract, never its epoch.** An epoch
+  number would make every `--bump` a stale index, reported by
+  `check:api-report` — which runs BEFORE `check:api-contracts`, so it would
+  name the wrong gate.
+- **A doc-comment edit to a published name regenerates the index.** That is the
+  price of the summary column, and the same one `check:docs-md` already charges.
+
+It carries a floor (`MIN_INDEXED_SYMBOLS`, 500) because `--check` reports a
 collapsed extraction as "out of date", which invites regenerating and
 committing the empty file; and
 `packages/aai-gates/src/api-index-file.test.ts` is the guard under the
 gate, asserting the index really is `API-EXPORTS.json` turned inside out rather
-than two derivations of one broken scan agreeing with each other. Fifty-one
-names list more than one subpath — that is the case worth seeing, not an error.
+than two derivations of one broken scan agreeing with each other, and that
+each public name sits in exactly one section.
 
 **`API.md` is for READERS; the per-entry-point reports are for reviewers.** One
 file per entry point is the right shape for a diff — a signature change lands in

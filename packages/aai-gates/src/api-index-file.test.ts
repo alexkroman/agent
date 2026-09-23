@@ -59,7 +59,26 @@ function expectedIndex(): { authoring: Map<string, string[]>; internal: Map<stri
   return { authoring, internal };
 }
 
-/** The `| \`name\` | \`a\`, \`b\` |` rows under one `##` heading. */
+/** The public sections, in the order the index writes them. */
+const PUBLIC_SECTIONS = [
+  "Agent authoring",
+  "Browser client",
+  "Testing and evals",
+  "Hosting and tooling",
+];
+
+/** Every backticked token in one table cell. */
+const ticked = (cell: string): string[] => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? "");
+
+/**
+ * `{ name -> subpaths }` for the rows under one `##` heading.
+ *
+ * A row is `| names | kind | imports | capability | summary |`. The name cell
+ * may fold `FooProps` / `FooOptions` beside `Foo` — each is its own entry
+ * here, under the same subpaths — and the import cell lists the preferred
+ * subpath first, so the subpaths are compared as a SORTED list. A summary's
+ * own `|` is escaped, so cells split on an unescaped one.
+ */
 function rowsUnder(heading: string): Map<string, string[]> {
   const start = index.indexOf(`\n## ${heading}\n`);
   if (start < 0) return new Map();
@@ -67,10 +86,11 @@ function rowsUnder(heading: string): Map<string, string[]> {
   const nextHeading = rest.indexOf("\n## ");
   const body = nextHeading < 0 ? rest : rest.slice(0, nextHeading);
   const rows = new Map<string, string[]>();
-  for (const match of body.matchAll(/^\| `([^`]+)` \| (.+) \|$/gm)) {
-    const name = match[1] ?? "";
-    const specifiers = (match[2] ?? "").split(", ").map((cell) => cell.replaceAll("`", ""));
-    rows.set(name, specifiers);
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("| `")) continue;
+    const cells = line.split(/(?<!\\)\|/);
+    const specifiers = ticked(cells[3] ?? "").sort(byCodeUnit);
+    for (const name of ticked(cells[1] ?? "")) rows.set(name, specifiers);
   }
   return rows;
 }
@@ -79,12 +99,14 @@ function rowsUnder(heading: string): Map<string, string[]> {
  * Both derivations, evaluated ONCE.
  *
  * `expectedIndex()` JSON-parses a 30 KB artifact and builds two ~700-entry Maps;
- * `rowsUnder` slices and `matchAll`s a 62 KB document. Nothing between the calls
- * can change either answer, and they stood at three and four call sites.
+ * `rowsUnder` slices a 150 KB document. Nothing between the calls can change
+ * either answer, and they stood at three and four call sites.
  */
 const { authoring: expectedAuthoring, internal: expectedInternal } = expectedIndex();
-const authoringRows = rowsUnder("Authoring surface");
+const sectionRows = new Map(PUBLIC_SECTIONS.map((heading) => [heading, rowsUnder(heading)]));
+const authoringRows = new Map([...sectionRows.values()].flatMap((rows) => [...rows]));
 const internalRows = rowsUnder("Framework internals");
+const sorted = (specifiers: string[] | undefined) => [...(specifiers ?? [])].sort(byCodeUnit);
 
 describe("API-INDEX.md", () => {
   test("both artifacts are readable", () => {
@@ -96,21 +118,35 @@ describe("API-INDEX.md", () => {
     expect(expectedInternal.size).toBeGreaterThan(100);
   });
 
-  test("the authoring half is API-EXPORTS.json inverted", () => {
+  test("the public sections are API-EXPORTS.json inverted", () => {
     expect(
-      [...authoringRows.keys()],
-      `the index lists ${authoringRows.size} authoring name(s), the surface has ` +
+      [...authoringRows.keys()].sort(byCodeUnit),
+      `the index lists ${authoringRows.size} public name(s), the surface has ` +
         `${expectedAuthoring.size}. ${remedy}`,
     ).toEqual([...expectedAuthoring.keys()].sort(byCodeUnit));
     for (const [name, specifiers] of expectedAuthoring) {
       expect(authoringRows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(
-        specifiers,
+        sorted(specifiers),
       );
     }
   });
 
-  test("the internal half holds what the authoring half does not", () => {
-    expect([...internalRows.keys()], remedy).toEqual([...expectedInternal.keys()].sort(byCodeUnit));
+  test("each public name is listed in exactly one section", () => {
+    // The sections are audiences; a name under two would make the reader pick
+    // an audience to find an import, which is the question the file answers.
+    const total = [...sectionRows.values()].reduce((sum, rows) => sum + rows.size, 0);
+    expect(total, remedy).toBe(authoringRows.size);
+  });
+
+  test("the internal half holds what the public half does not", () => {
+    expect([...internalRows.keys()].sort(byCodeUnit), remedy).toEqual(
+      [...expectedInternal.keys()].sort(byCodeUnit),
+    );
+    for (const [name, specifiers] of expectedInternal) {
+      expect(internalRows.get(name), `${name} is indexed against the wrong subpath(s)`).toEqual(
+        sorted(specifiers),
+      );
+    }
     // A name in both halves would tell a reader they have a choice of import
     // where one of the two is explicitly not covered by semver.
     for (const name of internalRows.keys()) expect(authoringRows.has(name)).toBe(false);
@@ -123,5 +159,12 @@ describe("API-INDEX.md", () => {
     expect(authoringRows.get("WorkflowInputOf")).toContain("@alexkroman1/aai");
     expect(authoringRows.get("WorkflowRunOf")).toContain("@alexkroman1/aai");
     expect(authoringRows.get("agent")).toEqual(["@alexkroman1/aai"]);
+  });
+
+  test("names land in the section of the reader they are for", () => {
+    expect(sectionRows.get("Agent authoring")?.has("agent")).toBe(true);
+    expect(sectionRows.get("Browser client")?.has("useSession")).toBe(true);
+    expect(sectionRows.get("Testing and evals")?.has("stubGenerate")).toBe(true);
+    expect(sectionRows.get("Hosting and tooling")?.has("createRuntime")).toBe(true);
   });
 });

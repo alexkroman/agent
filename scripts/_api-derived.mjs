@@ -11,7 +11,7 @@
  * | --- | --- |
  * | `API.md` | what is the whole surface, in one pass |
  * | `API-EXPORTS.json` | what names are IN each subpath |
- * | `API-INDEX.md` | which subpath publishes a given name |
+ * | `API-INDEX.md` | which subpath publishes a given name — in `_api-index.mjs` |
  *
  * Split out under the 500-line cap. The seam is the one the caller already
  * uses: `api-report.mjs` hands each of these the list of sections and compares
@@ -31,9 +31,6 @@ export const COMBINED_FILE = "API.md";
 
 /** The export-name lists: what each entry point exposes, without signatures. */
 export const EXPORTS_FILE = "API-EXPORTS.json";
-
-/** The reverse index: every name, against the subpath that publishes it. */
-export const INDEX_FILE = "API-INDEX.md";
 
 /** Resolved here rather than passed in — every caller would pass the same one. */
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
@@ -86,126 +83,6 @@ export function exportsFile(sections) {
   const surface = {};
   for (const section of sections) surface[section.specifier] = section.names;
   return `${JSON.stringify(surface, null, 2)}\n`;
-}
-
-/**
- * Code-unit order, never `localeCompare`.
- *
- * Same rule the export lists sort under and for the same reason: with no
- * explicit locale `localeCompare` answers to the runtime's ICU default, so the
- * same tree would produce a different file on a different machine and the gate
- * would report a surface change that is really a locale change.
- */
-function byCodeUnit(a, b) {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
-}
-
-/**
- * Subpaths whose reader is the FRAMEWORK, listed apart in the index below.
- *
- * A deny-list rather than an allow-list, for the reason the config schema and
- * the contract tree both use one: a new subpath defaults into the authoring
- * half and has to be argued out, where an allow-list would silently leave it
- * uncovered. Both of these say so in their own module docs — they are
- * cross-package infrastructure, not public API, and not covered by semver.
- */
-const INTERNAL_SUBPATH = /\/(?:internal|host-internal)$/;
-
-/**
- * The floor under {@link indexFile}'s authoring half, set from the measured
- * actual (823 at the time of writing) with room to shrink.
- *
- * Every gate in this repo whose success output is a COUNT carries one, because
- * a scan that stopped matching prints the same checkmark as a healthy tree.
- * `--check` compares content, so a broken extraction fails there first — but it
- * fails as "out of date", which invites regenerating and committing the empty
- * file. The floor makes the writer refuse instead.
- */
-const MIN_INDEXED_SYMBOLS = 600;
-
-/**
- * `API-INDEX.md`: every published name, and the subpath(s) that publish it.
- *
- * The third derived artifact over the same reports, and the question it answers
- * is the one neither of the others can. A report says what a subpath's shape is
- * and `API-EXPORTS.json` says what is in each subpath — both indexed BY
- * subpath, which is the wrong direction for the question a reader actually
- * arrives with. Thirty-six subpaths publish 1,100-odd names, so "which import
- * gives me `WorkflowInputOf`?" was a grep across a JSON file or a guess, and a
- * guess is what the split between `@alexkroman1/aai` and
- * `@alexkroman1/aai/workflow-api` is least survivable at.
- *
- * A name published from more than one subpath lists all of them, in export
- * order, because that is the case worth seeing: fifty-one names are, some as
- * one declaration with two reference pages (the SDK and the browser client
- * naming the two ends of one wire) and some as a root convenience over a
- * narrower subpath. The index states the fact and the two pages argue it.
- *
- * The internal half is listed too rather than dropped — "where does this name
- * come from" has an answer for a framework name as well — but under its own
- * heading, so the authoring half is what a reader lands in.
- */
-export function indexFile(sections) {
-  const authoring = new Map();
-  const internal = new Map();
-  for (const section of sections) {
-    const target = INTERNAL_SUBPATH.test(section.specifier) ? internal : authoring;
-    for (const name of section.names) {
-      if (!target.has(name)) target.set(name, []);
-      target.get(name).push(section.specifier);
-    }
-  }
-  // A name on both halves is an AUTHORING name: the internal subpath re-exports
-  // a good few of them, and listing it twice would say the reader has a choice.
-  for (const name of authoring.keys()) internal.delete(name);
-
-  if (authoring.size < MIN_INDEXED_SYMBOLS) {
-    throw new Error(
-      `api-report: ${INDEX_FILE} indexed ${authoring.size} authoring symbol(s), ` +
-        `under the floor of ${MIN_INDEXED_SYMBOLS}. Either the export scan stopped ` +
-        "matching or the surface really shrank — check which before lowering it.",
-    );
-  }
-
-  const rows = (entries) =>
-    [...entries]
-      .sort(([a], [b]) => byCodeUnit(a, b))
-      .map(
-        ([name, specifiers]) => `| \`${name}\` | ${specifiers.map((s) => `\`${s}\``).join(", ")} |`,
-      );
-
-  return [
-    "<!-- Generated by `pnpm api-report`. Do not edit — edit the source, then regenerate. -->",
-    "",
-    "# Where each published name comes from",
-    "",
-    "Every export of every publishable package, and the subpath to import it",
-    "from. `API.md` is the same surface indexed by subpath, with signatures;",
-    "this is the reverse index, for when you have the name and want the import.",
-    "",
-    "A name listed against more than one subpath is published from each of them.",
-    "That is usually one declaration with two reference pages — the SDK and the",
-    "browser client naming the two ends of one wire, or a root convenience over a",
-    "narrower subpath — so either import is correct and the pages say which reader",
-    "each is for.",
-    "",
-    "## Authoring surface",
-    "",
-    "| Name | Import from |",
-    "| --- | --- |",
-    ...rows(authoring),
-    "",
-    "## Framework internals",
-    "",
-    "Not public API and not covered by semver — listed so a name found in a stack",
-    "trace or a type error can be traced back to something.",
-    "",
-    "| Name | Import from |",
-    "| --- | --- |",
-    ...rows(internal),
-    "",
-  ].join("\n");
 }
 
 /** The specifier a consumer actually writes: `@alexkroman1/aai/stt`, not `./stt`. */
