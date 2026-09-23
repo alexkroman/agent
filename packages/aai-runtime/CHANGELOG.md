@@ -1,5 +1,74 @@
 # @alexkroman1/aai-runtime
 
+## 18.0.0
+
+### Major Changes
+
+- b324f33: Seal the handles a caller receives, and give the newest features their own subpaths and capabilities.
+  
+  - **`Runtime` and `BrowserSession` are sealed.** Each carries a type-only brand (`runtimeBrand`, `browserSessionBrand`), so only `createRuntime` / `createBrowserSession` produce one and either can grow a member without breaking a hand-written double. A server-spec double implements `SessionRuntime`.
+  - **`runtime.connect(sink, options)` is now `connectSession(runtime, sink, options)`**, a free function on `@alexkroman1/aai-runtime`.
+  - **Push-to-talk is a sub-handle:** `session.startUserTurn()` / `commitUserTurn()` / `clearUserTurn()` are `session.userTurn.start()` / `.commit()` / `.clear()` (`UserTurnControls`), reached from React through `usePushToTalk`. `SessionActions` is declared on its own and no longer carries them. `usePushToTalk` is its own `push-to-talk` capability.
+  - **Session tickets moved to `@alexkroman1/aai-runtime/auth`.** `createSessionToken`, `verifySessionToken`, `SESSION_SECRET_ENV`, `SESSION_AUTH_PROTOCOL_PREFIX`, `SESSION_UNAUTHORIZED_CLOSE_CODE` and the ticket types left the root barrel, and a server's `auth` option now takes `createSessionAuth({ secret, verify, allowedOrigins })` instead of an options literal.
+  - **Metric sinks moved to `@alexkroman1/aai-runtime/metrics`**: `registerMetricsSink`, `otelMetricsSink`, `OtelMeterLike`, `MetricsSink`, `MetricsContext`, `OTEL_METRIC_NAMES`, `metricsEndpoint` and the `OTEL_METRICS_*` constants are no longer on `/tracing`. `startTracing` still arms metric export.
+  - **Simulated callers and the judge moved to `@alexkroman1/aai-runtime/eval/simulate`.** `simulateCall`, `judgeCall` and their types left `/eval`; a `describeEval` / `describeTextEval` case no longer receives `simulate()` / `judge()`, and `stubCaller` / `stubJudge` / `callerLlm` / `judgeLlm` left the case and suite options — build the pair with `evalSimulation({ agent, mode, target: session, stubCaller, stubJudge, callerLlm, judgeLlm })`.
+  - `AgentServerOptions` and `SharedServerOptions` declare their own field types (new `ServerUpgradeHook` / `ServerRequestHook`), and `RuntimeOptions.generate` (an internal eval seam) is no longer public.
+
+### Minor Changes
+
+- dc9d696: Run a session over your own audio I/O with `runtime.connect(sink)`, and talk to an agent from the terminal with `aai console`.
+  
+  `Runtime.connect(sink, options)` takes a `ClientSink` for the session's output (events, and agent audio as PCM16 at `readyConfig.ttsSampleRate`) and returns a `SessionConnection` for its input (`sendAudio`, `sendCommand`, `close`, `ended`). A connection gets the same lifecycle a browser WebSocket gets — the start deadline, input buffered while the session starts, real-time pacing of agent audio with its barge-in ordering rules, resume by id, and end-of-session cleanup — because the WebSocket handler is now an adapter over the same transport-neutral core.
+  
+  `aai console` loads the project's agent the way `aai dev` does and runs one session over the microphone and speakers (via SoX's `rec`/`play`), printing the conversation in the terminal. No server and no browser. Use headphones: there is no echo cancellation.
+- 75244f4: Add first-class per-reply metrics.
+  
+  - **`metrics.collected` session event** (pipeline mode): one frame per reply with STT endpointing delay, LLM time-to-first-token / duration / steps / tokens, TTS time-to-first-byte / characters, and the committed-turn → first-audio `latencyMs`. A stage that did not happen is absent, never zero. It reaches the client, `agent({ events })` hooks and the runtime's metrics sinks.
+  - **`createMetricsCollector()`** on `@alexkroman1/aai`: folds frames into a summary (count/min/max/mean plus p50/p95 over a bounded window, and token/character totals).
+  - **Metrics sinks** on `@alexkroman1/aai-runtime/tracing`: `registerMetricsSink` (process-wide, shared across both runtime copies in a deployed guest) and `otelMetricsSink(meter)`, which records `aai.*` histograms and counters onto any OpenTelemetry `Meter` — a Prometheus `MeterProvider` included.
+  - **OTLP metric export**: `startTracing` now also exports metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` is set (`OTEL_METRICS_EXPORTER=none` opts out). It needs two new optional peers, `@opentelemetry/sdk-metrics` and `@opentelemetry/exporter-metrics-otlp-proto`; without them it logs one line and traces carry on.
+- 695101f: Authenticate self-hosted voice sessions. `createRuntimeServer`, `createAgentServer` and `createHostServer` take an optional `auth` (`SessionAuthOptions`): a built-in HMAC session ticket (`createSessionToken` / `verifySessionToken`, or just `AAI_SESSION_SECRET` in the server env), your own `verify` callback, and an `allowedOrigins` list. The ticket rides the `Sec-WebSocket-Protocol` header as `aai.auth.<ticket>` (or `?token=`), is checked before the handshake, and a refused session is declined with a fatal error frame and close code 4401. A `?sessionId=` resume is only honoured for the identity that opened the session, or for a ticket minted with that `sessionId`. Off unless configured — existing servers behave exactly as before.
+- 651a8e9: Add simulated callers and a model-graded judge to `@alexkroman1/aai-runtime/eval`. `simulateCall(session, { caller: { persona, goal }, llm })` has a second model play the user until it calls `end_call` or `maxTurns` runs out, and reports every turn plus metrics (turns, duration, reply latency, tool calls). `judgeCall(call, { criteria, llm })` rules on each criterion and computes the verdict itself. `describeEval`/`describeTextEval` cases get both as `simulate()` and `judge()`, scripted in a keyless run via the new `stubCaller`/`stubJudge` case options, with `callerLlm`/`judgeLlm` suite options for the live models.
+- 113e88d: The `think` builtin is now on by default. An agent that does not set `builtinTools` gets `think` — a no-op scratchpad the model uses to check a tool result against its policy before the next action, silent on a voice call — and no other builtin; `DEFAULT_BUILTIN_TOOLS` is `["think"]`. This follows Anthropic's published tau-bench result for the same tool (airline pass^1 0.332 → 0.404 on its own, 0.584 with guidance; retail 0.783 → 0.812).
+  
+  Setting `builtinTools` still REPLACES the default: `builtinTools: ["web_search"]` carries no `think`, so add `"think"` to keep it, and pass `[]` to turn it off. Every agent now sends a tool list and the tool preamble in its system prompt, which a toolless agent did not before. A `tools/think.ts` still wins over the builtin, and no longer logs an "inert" line when the author never named `think`. `expectPromptBuiltinsDeclared` and the eval `stubReply` check count the default as declared.
+
+### Patch Changes
+
+- b3e4ee5: Cancelling or timing out now stops the underlying work instead of only the
+  wait. A workflow cancel that lands during a step's retry backoff ends the walk
+  immediately rather than after the full `retryAfter`; a platform RPC that times
+  out aborts its HTTP request instead of leaving it open on the shared RPC pool;
+  and a brokered upload byte operation that times out aborts its request instead
+  of continuing to send (or hold a pool connection for) a window nobody will read.
+- f4e7c87: Pipeline mode: fix two barge-in edges that discarded agent audio. Dead-air filler now holds the `speech_started` edge like any other agent audio, so a caller talking over a holding phrase no longer makes clients flush it with no `cancelled` behind (the filler still never counts as a barge-in against the reply). And an utterance the caller began into silence no longer barges in on a reply that started speaking after it — a "hello, are you still there?" spoken during a tool chain now chains behind the answer instead of replacing it.
+- 7655482: Pipeline mode's fixed lines — the greeting, the error phrase and the start-failure phrase — now go through one send. An interrupted greeting records only what the caller heard (marked `[interrupted]`, or nothing if nothing was audible) instead of the whole line, and the error phrase is captioned once as a final rather than as an interim followed by an identical final.
+- f4e7c87: Pipeline mode now records only what the caller heard when a barge-in cuts a reply that had already been committed to history — during the TTS drain, in the client's playback tail, or while a follow-up reply was queued behind it. The reply is rewritten to its heard prefix marked `[interrupted]` (or dropped if nothing was heard), with its tool calls and results kept, so the model no longer believes it delivered information the caller never heard.
+- f4e7c87: Pipeline mode: a repeated cut on the same reply no longer re-reads the (already reset) playback clock, which latched the whole reply as heard and kept unheard text in history.
+- b3e4ee5: `stepSpeak` now honours a workflow cancel and reports an abort faithfully. The
+  synthesizer follows the walk's signal the way `stepFetch` does, so cancelling a
+  run closes its in-flight synthesis socket instead of leaving it open until the
+  120s deadline; an abort rejects with the signal's own `reason` rather than a
+  fresh `Error` wrapping it, so the replay engine recognises a cancelled walk
+  instead of retrying the step or journaling it `failed`; and an already-aborted
+  signal no longer dials a socket only to terminate it.
+- Updated dependencies [fccb2ef]
+- Updated dependencies [8cdc919]
+- Updated dependencies [4995fe6]
+- Updated dependencies [75244f4]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [0338a93]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [a6f3d59]
+- Updated dependencies [3593ab7]
+- Updated dependencies [21eb693]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [b324f33]
+- Updated dependencies [113e88d]
+- Updated dependencies [b3e4ee5]
+  - @alexkroman1/aai@18.0.0
+
 ## 17.0.0
 
 ### Major Changes

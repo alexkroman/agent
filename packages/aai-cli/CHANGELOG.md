@@ -1,5 +1,52 @@
 # @alexkroman1/aai-cli
 
+## 18.0.0
+
+### Major Changes
+
+- 6e051f8: `@alexkroman1/aai-cli/start`'s `StartOptions` is renamed `ProjectServerOptions`. It shared its name with `@alexkroman1/aai/workflow-api`'s `StartOptions` (`{ key, notify }` for starting a workflow run), an unrelated type, so an autocomplete list spanning both offered two `StartOptions` with nothing to tell them apart. `createProjectServer` and `executeStart` are unchanged apart from the parameter's type name.
+
+### Minor Changes
+
+- dc9d696: Run a session over your own audio I/O with `runtime.connect(sink)`, and talk to an agent from the terminal with `aai console`.
+  
+  `Runtime.connect(sink, options)` takes a `ClientSink` for the session's output (events, and agent audio as PCM16 at `readyConfig.ttsSampleRate`) and returns a `SessionConnection` for its input (`sendAudio`, `sendCommand`, `close`, `ended`). A connection gets the same lifecycle a browser WebSocket gets — the start deadline, input buffered while the session starts, real-time pacing of agent audio with its barge-in ordering rules, resume by id, and end-of-session cleanup — because the WebSocket handler is now an adapter over the same transport-neutral core.
+  
+  `aai console` loads the project's agent the way `aai dev` does and runs one session over the microphone and speakers (via SoX's `rec`/`play`), printing the conversation in the terminal. No server and no browser. Use headphones: there is no echo cancellation.
+
+### Patch Changes
+
+- fccb2ef: A repository synced to GitHub from the studio is now a complete project: the scaffold (package.json scripts and toolchain, .gitignore, .env.example, CLAUDE.md pointer) is layered under the workspace the same way `aai pull` does, so a clone can `pnpm install` and run `pnpm dev`, `pnpm test` and `pnpm build`. Previously the stub workspace manifest was committed verbatim and installed nothing.
+- f02ee82: Fix `aai console` audio on macOS: the speaker no longer exits after the agent's first reply, and agent speech no longer plays at half speed on Bluetooth headsets. `play` now reads a real pipe (SoX treated Node's socket stdin as end of input the moment the agent paused), and the microphone opens before the speaker so SoX picks up the headset's rate after it switches profiles.
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [fccb2ef]
+- Updated dependencies [dc9d696]
+- Updated dependencies [8cdc919]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [7655482]
+- Updated dependencies [4995fe6]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [75244f4]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [0338a93]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [a6f3d59]
+- Updated dependencies [3593ab7]
+- Updated dependencies [21eb693]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [695101f]
+- Updated dependencies [651a8e9]
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [113e88d]
+- Updated dependencies [b3e4ee5]
+  - @alexkroman1/aai-runtime@18.0.0
+  - @alexkroman1/aai@18.0.0
+  - @alexkroman1/aai-ui@18.0.0
+
 ## 17.0.0
 
 ### Minor Changes

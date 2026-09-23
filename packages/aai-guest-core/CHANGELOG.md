@@ -1,5 +1,37 @@
 # aai-guest-core
 
+## 0.6.8
+
+### Patch Changes
+
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [fccb2ef]
+- Updated dependencies [dc9d696]
+- Updated dependencies [8cdc919]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [7655482]
+- Updated dependencies [4995fe6]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [75244f4]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [0338a93]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [a6f3d59]
+- Updated dependencies [3593ab7]
+- Updated dependencies [21eb693]
+- Updated dependencies [f4e7c87]
+- Updated dependencies [b324f33]
+- Updated dependencies [b324f33]
+- Updated dependencies [695101f]
+- Updated dependencies [651a8e9]
+- Updated dependencies [b3e4ee5]
+- Updated dependencies [113e88d]
+- Updated dependencies [b3e4ee5]
+  - @alexkroman1/aai-runtime@18.0.0
+  - @alexkroman1/aai@18.0.0
+
 ## 0.6.7
 
 ### Patch Changes
