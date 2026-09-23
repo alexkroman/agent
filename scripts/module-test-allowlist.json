@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 318 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 317 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -287,7 +287,6 @@
     "packages/aai/src/sdk/playback-timing-constants.ts": 1,
     "packages/aai/src/sdk/protocol-commands.ts": 1,
     "packages/aai/src/sdk/protocol-events.ts": 1,
-    "packages/aai/src/sdk/providers.ts": 1,
     "packages/aai/src/sdk/providers/_default-providers.ts": 1,
     "packages/aai/src/sdk/providers/assemblyai-pipeline.ts": 1,
     "packages/aai/src/sdk/providers/llm/shared/from-string.ts": 1,

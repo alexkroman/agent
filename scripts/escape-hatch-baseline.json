@@ -19,7 +19,8 @@
     "packages/aai-ui/src/components/message-list.tsx": 1,
     "packages/aai/src/host/_ffmpeg-spawn.ts": 1,
     "packages/aai/src/host/coding-spawn.ts": 1,
-    "packages/aai/src/index.ts": 1
+    "packages/aai/src/index.ts": 1,
+    "packages/aai/src/sdk/session-event-map.ts": 1
   },
   "as unknown as": {
     "packages/aai-cli/src/_default-html.test.ts": 2,
@@ -38,7 +39,6 @@
     "packages/aai-runtime/src/integration/_s2s-fuzz-harness.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-model.ts": 1,
     "packages/aai-runtime/src/providers/_openai-stream-repair.test.ts": 1,
-    "packages/aai-runtime/src/providers/_utils.ts": 1,
     "packages/aai-runtime/src/providers/resolve.test.ts": 1,
     "packages/aai-runtime/src/providers/stt/_assemblyai-test-utils.ts": 1,
     "packages/aai-runtime/src/providers/stt/assemblyai.ts": 2,

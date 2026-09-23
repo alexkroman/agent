@@ -164,10 +164,10 @@ test("persona names are inferred, and a mistyped handoff target does not compile
   const ctx = {} as ToolContext;
   desk.handoff(ctx, "billing");
   desk.handoff(ctx, billing);
-  // @ts-expect-error — "biling" is not on the roster.
-  desk.handoff(ctx, "biling");
-  // @ts-expect-error — nor is a persona declared for another roster.
-  desk.handoff(ctx, persona({ name: "sales", description: "d", systemPrompt: "p" }));
+  type HandoffTo = Parameters<typeof desk.handoff>[1];
+  // "biling" is not on the roster, nor is a persona declared for another one.
+  expectTypeOf<"biling">().not.toExtend<HandoffTo>();
+  expectTypeOf<PersonaDef<"sales">>().not.toExtend<HandoffTo>();
   // Backward compatible: the default is `string`, and a typed roster fits it.
   const loose: Personas = desk;
   loose.handoff(ctx, "anyone");
@@ -183,10 +183,11 @@ test("persona names are inferred, and a mistyped handoff target does not compile
 test("ctx.send is typed by ClientEventMap, per declared event", () => {
   const ctx = {} as ToolContext;
   ctx.send("typetest.progress", { done: 1, total: 2 });
-  // @ts-expect-error — a declared event's payload is checked.
-  ctx.send("typetest.progress", { done: "1", total: 2 });
-  // @ts-expect-error — including a missing field.
-  ctx.send("typetest.progress", { done: 1 });
+  // A declared event's payload is checked, including a missing field.
+  type Progress = Parameters<typeof ctx.send<"typetest.progress">>[1];
+  expectTypeOf<Progress>().toEqualTypeOf<{ done: number; total: number }>();
+  expectTypeOf<{ done: string; total: number }>().not.toExtend<Progress>();
+  expectTypeOf<{ done: number }>().not.toExtend<Progress>();
   ctx.send("anything.else", { whatever: true });
   const name: string = "dynamic";
   ctx.send(name, 42);
