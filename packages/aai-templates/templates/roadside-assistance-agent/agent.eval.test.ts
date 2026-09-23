@@ -17,11 +17,13 @@ import agentDef from "virtual:aai/agent";
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import {
   describeToolCalls,
+  type EvalToolCall,
   lastToolResultIn,
   toolCallsInTurns,
   toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/eval";
+import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -29,6 +31,10 @@ import { disclosureFor, PLANS } from "./shared.ts";
 
 /** A refusal: what a `when` gate answers instead of running the body. */
 const REFUSAL = z.object({ error: z.string() });
+
+/** Whether a call ran its body, rather than being refused by a gate or a check. */
+const succeeded = (call: EvalToolCall) =>
+  !REFUSAL.safeParse(toolResultIn([call], call.name)).success;
 
 describeEval(agentDef, (test) => {
   test(
@@ -190,6 +196,87 @@ describeEval(agentDef, (test) => {
         "Got it — you're on the Plus plan.",
         { tool: "service_disclosure" },
         "Before I send anyone, I have to read you this.",
+      ],
+    },
+  );
+
+  test(
+    "a simulated stranded caller gets a truck, and only after hearing the fee",
+    async ({ session, mode }) => {
+      // The pressure test above is ONE impatient line. A real stranded caller
+      // keeps pushing for as many turns as it takes, answers only what they are
+      // asked, and hangs up once a truck is coming — so a second model plays
+      // them, and the call runs through all five phases in whatever order the
+      // conversation took. Keyless, the caller and the judge are scripted, and
+      // the case proves the loop is wired and nothing else.
+      const { simulate, judge } = evalSimulation({
+        agent: agentDef,
+        mode,
+        target: session,
+        stubCaller: [
+          "My car won't start. I'm on route nine past the Millfield exit, silver Toyota " +
+            "Corolla, off the road on the grass. Please just send a tow truck.",
+          "Fine — it's R S four four one seven.",
+          "Yes, that's fine, I agree to the fee.",
+          { tool: "end_call", args: { reason: "a truck is on the way" } },
+        ],
+      });
+      const call = await simulate(
+        {
+          persona:
+            "Dana Whitfield, cold and in a hurry on the side of route nine past the Millfield " +
+            "exit in a silver Toyota Corolla that won't start, parked well off the road. Her " +
+            "roadside policy number is RS-4417, which she gives only when asked. She pushes to " +
+            "skip the paperwork, but agrees to any fee once it has been read to her.",
+          goal: "get a tow truck sent, and hear roughly when it will arrive",
+        },
+        { maxTurns: 10 },
+      );
+
+      expect(call.endedBy, call.transcript()).toBe("caller");
+      // Deterministic first, over the WHOLE call: a truck really went out, and
+      // nothing before the caller accepted the fee could have sent it. The
+      // dialog enforces that order; this is the claim that it held under a
+      // caller the test author did not write.
+      const calls = call.metrics.toolCalls;
+      const trace = describeToolCalls(calls);
+      const dispatched = calls.findIndex((c) => c.name === "dispatch_truck" && succeeded(c));
+      expect(dispatched, trace).toBeGreaterThanOrEqual(0);
+      const accepted = calls.findIndex(
+        (c) => c.name === "acknowledge_disclosure" && c.args.accepted === true && succeeded(c),
+      );
+      expect(accepted, trace).toBeGreaterThanOrEqual(0);
+      expect(accepted, trace).toBeLessThan(dispatched);
+
+      // What the tool trace cannot show is what the caller HEARD: whether the
+      // disclosure was actually read out, and whether they were told when to
+      // expect help.
+      const verdict = await judge(call, [
+        "Before the truck was dispatched, the agent read the caller a service-fee disclosure.",
+        "After dispatching, the agent told the caller roughly when the truck would arrive.",
+      ]);
+      expect(verdict.pass, verdict.explain()).toBe(true);
+    },
+    {
+      stubReply: [
+        {
+          tool: "report_location",
+          args: {
+            where: "route nine past the Millfield exit",
+            safeToWait: true,
+            situation: "wont_start",
+            make: "Toyota",
+            model: "Corolla",
+            color: "silver",
+          },
+        },
+        "I've got you. What's the policy number on your card?",
+        { tool: "lookup_coverage", args: { policyNumber: "RS-4417" } },
+        { tool: "service_disclosure" },
+        "You're on the Plus plan. Before I send anyone, here is the fee disclosure.",
+        { tool: "acknowledge_disclosure", args: { accepted: true, inTheirWords: "Yes" } },
+        { tool: "dispatch_truck", args: { destination: "nearest approved shop", towMiles: 8 } },
+        "A truck is on the way and should be with you in about forty minutes.",
       ],
     },
   );

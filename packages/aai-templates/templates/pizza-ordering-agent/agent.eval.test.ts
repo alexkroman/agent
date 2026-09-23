@@ -13,7 +13,14 @@ import type { SessionEvent } from "@alexkroman1/aai";
 // SCRIPTED model (its `stubReply`), which still boots this agent, still
 // resolves `tools/`, and still executes the tool a script names — so a stub run
 // proves the wiring and proves nothing about what the agent chose.
-import { lastStateIn, statesIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
+import {
+  lastStateIn,
+  lastToolResultIn,
+  statesIn,
+  toolNames,
+  toolResultIn,
+} from "@alexkroman1/aai-runtime/eval";
+import { evalSimulation } from "@alexkroman1/aai-runtime/eval/simulate";
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -157,5 +164,64 @@ describeEval(agentDef, (test) => {
       expect(pushedViews(session.events()).filter((view) => view.orderPlaced)).toEqual([]);
     },
     { stubReply: [{ tool: "place_order" }, "There's nothing in your order yet."] },
+  );
+
+  test(
+    "a simulated caller orders a pizza and gets it placed",
+    async ({ session, mode }) => {
+      // Every case above is one line the test author wrote. A real order is a
+      // few turns the CALLER steers: they name the pizza, maybe forget the
+      // crust, and say when they are done. A second model plays that caller,
+      // so what is under test is whether the order survives a conversation
+      // nobody scripted — the cart in the slot, across however many turns it
+      // took. Keyless, the caller and the judge are scripted too, and the case
+      // proves the loop is wired and nothing else.
+      const { simulate, judge } = evalSimulation({
+        agent: agentDef,
+        mode,
+        target: session,
+        stubCaller: [
+          "Hi, can I get a large pepperoni pizza, regular crust?",
+          "That's everything, please place the order.",
+          { tool: "end_call", args: { reason: "order placed" } },
+        ],
+      });
+      const call = await simulate({
+        persona: "a hungry customer calling a pizza shop, who answers in short sentences",
+        goal:
+          "order exactly one large pepperoni pizza on regular crust, then have the order " +
+          "placed and hear the order number",
+      });
+
+      expect(call.endedBy, call.transcript()).toBe("caller");
+      // Deterministic first: the pizza the caller wanted went into the cart,
+      // and the order that was placed had it in it. `place_order` resets the
+      // cart it read, so its RESULT is where the placed order is on record.
+      const calls = call.metrics.toolCalls;
+      const added = calls.filter((c) => c.name === "add_pizza");
+      expect(added.length, call.transcript()).toBeGreaterThan(0);
+      expect(added.at(-1)?.args).toMatchObject({ size: "large" });
+      const placed = z.object({ orderNumber: z.number(), pizzas: z.number(), total: z.string() });
+      expect(lastToolResultIn(calls, "place_order", placed).pizzas).toBe(1);
+
+      // What the tool results cannot show is what the caller HEARD. The prompt
+      // says every price comes from a tool and every change is confirmed.
+      const verdict = await judge(call, [
+        "The agent confirmed the pizza it added (size and toppings) back to the caller.",
+        "After placing the order, the agent told the caller an order number.",
+      ]);
+      expect(verdict.pass, verdict.explain()).toBe(true);
+    },
+    {
+      stubReply: [
+        {
+          tool: "add_pizza",
+          args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 },
+        },
+        "Added a large pepperoni on regular crust. Anything else?",
+        { tool: "place_order" },
+        "Your order is placed. It should be ready in about twenty minutes.",
+      ],
+    },
   );
 });
