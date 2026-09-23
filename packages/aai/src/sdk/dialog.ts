@@ -483,11 +483,13 @@ export function dialog(
           // `undefined` whenever `sendFrom` is not, so the two arms cannot both
           // contribute an event (declaring both throws at declaration).
           const event = sendFrom !== undefined && isSuccess(result) ? sendFrom(result) : fixed;
-          // Re-READ rather than reusing `at` when nothing is sent: the LLM loop
-          // runs a step's tool calls concurrently, so a sibling may have moved
-          // the dialog while this body was awaiting, and reporting the position
-          // this call started at would describe a conversation that has moved on.
-          const moved = event === undefined ? position(ctx) : send(ctx, event);
+          // A step's tool calls run CONCURRENTLY, so a sibling may have moved the
+          // dialog during the await. The gate is RE-CHECKED (synchronously, right
+          // before the send) so the event cannot fire a transition out of a state
+          // this tool was never allowed in — see `DialogToolDef.when` — and the
+          // position is re-READ, since `at` describes a conversation moved on.
+          const stillHere = allowed.some((state) => matches(ctx, state));
+          const moved = event === undefined || !stillHere ? position(ctx) : send(ctx, event);
           return { ...moved, result };
         },
       };

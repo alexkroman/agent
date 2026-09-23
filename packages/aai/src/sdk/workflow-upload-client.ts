@@ -293,14 +293,14 @@ function newClientUploadId(): string {
  * twice, so a field added to `UploadPartsRequest` had two call sites to reach
  * and one of them would be found by a test.
  *
- * Answers `undefined` when the parts path declined, exactly as `uploadInParts`
- * does — the file has not moved and the caller falls through to the single-body
- * route.
+ * Declining is not this function's call: the callers ask `partsSettings` and
+ * `partsPlan` first and only come here with a plan, so this resolves the stored
+ * ref or throws.
  */
 function storeInParts(
   req: Omit<UploadPartsRequest, "send">,
   firstResume: boolean | undefined,
-): Promise<UploadRef | undefined> {
+): Promise<UploadRef> {
   return withResumes(
     (round) =>
       uploadInParts({
@@ -344,13 +344,10 @@ export async function uploadFile(
     const id = newClientUploadId();
     // No `resume` on the first round: nothing has been stored under an id minted
     // one line above.
-    const stored = await storeInParts(
+    return storeInParts(
       { base, headers, fail, id, file, name, type, options, settings, plan },
       undefined,
     );
-    // `undefined` means this path declined; the file has not moved, so it goes the
-    // ordinary way below.
-    if (stored) return stored;
   }
   const res = await sendUpload(
     "POST",
@@ -411,11 +408,10 @@ export async function streamUploadFile(
     // The caller's own `resume` decides the FIRST round, because only the caller
     // knows whether this id already holds bytes — it chose the id. Every round
     // after a failure is a resume regardless.
-    const stored = await storeInParts(
+    return storeInParts(
       { base, headers, fail, id, file, name, type, options, settings, plan },
       options?.resume,
     );
-    if (stored) return stored;
   }
   const res = await sendUpload(
     "PUT",

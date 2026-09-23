@@ -74,7 +74,7 @@ describe("add_dependency / remove_dependency (spawn mocked)", () => {
 
   test("a timeout kill is annotated with the signal", async () => {
     runNpmMock.mockResolvedValue(
-      npmResult({ exitCode: null, signal: "SIGTERM", stdout: "partial" }),
+      npmResult({ exitCode: null, signal: "SIGTERM", timedOut: true, stdout: "partial" }),
     );
 
     const result = await execute("add_dependency", { package: "slow-pkg" });

@@ -46,15 +46,20 @@ type PartBytes = {
  * aborts every window in flight, so what `mapConcurrent` reports is that abort
  * rather than its cause, and raising it would name the symptom — "aborted" — for a
  * caller whose real problem is that the agent refused a receipt.
+ *
+ * **`failed` IS the first-failure latch**, for parts and claims alike: both call
+ * `failed.abort(err)` when they fail, and an `AbortController` keeps the reason
+ * of the FIRST abort and ignores the rest. So the cause is `failed.signal.reason`,
+ * whichever side produced it. The claimer used to keep a second copy of the same
+ * rule for this function to ask, which is two places for one decision.
  */
 export async function sendEveryPart(ctx: {
   missing: readonly Part[];
   width: number;
   sendPart: (part: Part) => Promise<void>;
   failed: AbortController;
-  claimer: Claimer;
 }): Promise<void> {
-  const { missing, width, sendPart, failed, claimer } = ctx;
+  const { missing, width, sendPart, failed } = ctx;
   try {
     // `mapConcurrent` rather than a pool written here, and it is the SDK's own — a
     // window over a cursor with exactly the semantics this needs, including the one
@@ -72,7 +77,7 @@ export async function sendEveryPart(ctx: {
       }
     });
   } catch (err: unknown) {
-    throw claimer.failure() ?? err;
+    throw failed.signal.aborted ? failed.signal.reason : err;
   }
 }
 

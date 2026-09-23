@@ -1093,6 +1093,7 @@ interface SonioxSttOptions extends ProviderCredentialOptions {
 export type SpawnCappedResult = {
     exitCode: number | null;
     signal: NodeJS.Signals | null;
+    timedOut: boolean;
     stdout: string;
     stderr: string;
 };

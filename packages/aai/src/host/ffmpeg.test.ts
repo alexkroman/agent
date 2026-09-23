@@ -13,6 +13,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
+  FFMPEG_KILL_GRACE_MS,
   FFMPEG_STDERR_TAIL_CHARS,
   type FfmpegError,
   isFfmpegError,
@@ -251,9 +252,70 @@ describe("runFfmpeg", () => {
     const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
     controller.abort();
     child.error(abortError());
+    child.close(null, "SIGTERM");
 
     const err = await failureOf(run);
     expect(err.kind).toBe("aborted");
+  });
+
+  /**
+   * Node emits the `AbortError` BEFORE the killed child exits. Settling there
+   * dropped ffmpeg's log, exit code and signal from every aborted or timed-out
+   * run — the runs whose error a human actually reads — so the outcome now
+   * waits for `close`.
+   */
+  test("an aborted run keeps the log ffmpeg wrote before it was killed", async () => {
+    const child = installChild();
+    const controller = new AbortController();
+    const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+    child.stderrText("frame=  42 fps=0.0 q=-1.0 size=N/A\n");
+    controller.abort();
+    child.error(abortError());
+    child.stderrText("Exiting normally, received signal 15.\n");
+    child.close(null, "SIGTERM");
+
+    const err = await failureOf(run);
+    expect(err.kind).toBe("aborted");
+    expect(err.stderr).toContain("frame=  42");
+    expect(err.stderr).toContain("received signal 15");
+    expect(err.signal).toBe("SIGTERM");
+  });
+
+  test("SIGKILLs an aborted child that does not exit on SIGTERM", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = installChild();
+      const controller = new AbortController();
+      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+      controller.abort();
+      child.error(abortError());
+      expect(child.kills).toEqual([]);
+      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS);
+      expect(child.kills).toEqual(["SIGKILL"]);
+      child.close(null, "SIGKILL");
+      const err = await failureOf(run);
+      expect(err.kind).toBe("aborted");
+      expect(err.signal).toBe("SIGKILL");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a child that exits within the grace period is never SIGKILLed", async () => {
+    vi.useFakeTimers();
+    try {
+      const child = installChild();
+      const controller = new AbortController();
+      const run = runFfmpeg(["-i", "in.wav", "out.wav"], { signal: controller.signal });
+      controller.abort();
+      child.error(abortError());
+      child.close(null, "SIGTERM");
+      await failureOf(run);
+      vi.advanceTimersByTime(FFMPEG_KILL_GRACE_MS * 2);
+      expect(child.kills).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /**

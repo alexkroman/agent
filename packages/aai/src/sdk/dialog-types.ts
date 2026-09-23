@@ -87,6 +87,14 @@ export interface DialogToolDef<P extends ToolInputSchema, R, E> {
    * Every name is checked against the machine's own states when the tool is
    * DECLARED, so a typo is a throw at startup rather than a tool that is
    * silently unreachable for the life of the agent.
+   *
+   * **The gate holds for the SEND as well as the body.** A step's tool calls run
+   * concurrently, so a sibling can move the dialog while this body is awaiting.
+   * If it has left every `when` state by the time `execute` settles, the body's
+   * result is still returned, but `send`/`sendFrom` is NOT applied, and the
+   * position in the result says where the sibling left the conversation.
+   * Otherwise the event would fire whatever transition the new state declares
+   * for it, moving the dialog out of a state this tool was never allowed in.
    */
   when: string | readonly string[];
   /**

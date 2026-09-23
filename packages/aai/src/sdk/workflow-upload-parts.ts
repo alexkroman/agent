@@ -264,13 +264,14 @@ function claimBatchOf(advertised: number | undefined): number {
 }
 
 /**
- * Store one file as concurrent parts, or resolve `undefined` to say this path
- * declined.
+ * Store one file as concurrent parts. Resolves with the stored ref, or throws.
  *
- * `undefined` is not a failure and every one of its causes is in the module doc;
- * the caller answers it by sending the file the ordinary way.
+ * This used to be able to resolve `undefined` to say the path declined. Every
+ * reason to decline (see the module doc) is now settled BEFORE the call, by
+ * `partsSettings` and `partsPlan`, so a caller holding a plan has already been
+ * told yes and the type no longer offers a case no path produces.
  */
-export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef | undefined> {
+export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef> {
   const { total, parts } = req.plan;
 
   const uploads = `${req.base}/uploads/${encodeURIComponent(req.id)}`;
@@ -355,7 +356,6 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
     width: req.settings.concurrency ?? UPLOAD_PART_CONCURRENCY,
     sendPart,
     failed,
-    claimer,
   });
   // Before the closing read, and this is the ordering the whole batched path rests
   // on: `/info` is what decides the upload is complete, and a claim still in the air

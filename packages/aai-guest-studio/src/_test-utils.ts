@@ -12,6 +12,7 @@ import type { runNpm } from "./spawn.ts";
 export const npmResult = (over: Partial<Awaited<ReturnType<typeof runNpm>>> = {}) => ({
   exitCode: 0 as number | null,
   signal: null as NodeJS.Signals | null,
+  timedOut: false,
   stdout: "",
   stderr: "",
   ...over,

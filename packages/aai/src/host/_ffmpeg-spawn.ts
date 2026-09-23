@@ -61,6 +61,15 @@ export const DEFAULT_FFMPEG_TIMEOUT_MS = 10 * 60_000;
 export const FFMPEG_STDERR_TAIL_CHARS = 4000;
 
 /**
+ * How long an aborted child gets to exit on SIGTERM before it is SIGKILLed.
+ *
+ * ffmpeg finalizes its output on SIGTERM (it writes the trailer of a
+ * half-done file), which takes well under a second; a child still alive after
+ * this is not going to exit on its own.
+ */
+export const FFMPEG_KILL_GRACE_MS = 5000;
+
+/**
  * How many bytes a run may write to stdout before it is killed.
  *
  * 64 MiB. Only piped output counts against it (`pipe:1`), and it exists because
@@ -177,12 +186,21 @@ export function resolveBinary(
 
 /**
  * Spawn one ffmpeg-family binary under the four properties the module doc
- * states, and settle on the first of `error` or `close`.
+ * states.
  *
- * Both fire for a spawn failure and for an abort (verified: ENOENT emits
- * `error` then `close(-2, null)`), so the handler that fires FIRST has to be
- * the one that decides — a `close` believed over an `error` would report a
- * missing binary as exit code -2.
+ * Both `error` and `close` fire for a spawn failure and for an abort
+ * (verified: ENOENT emits `error` then `close(-2, null)`), and the two cases
+ * are decided at DIFFERENT events on purpose:
+ *
+ * - A spawn failure settles at `error`. There is no process, so `close` has
+ *   nothing to add, and a `close` believed over the `error` would report a
+ *   missing binary as exit code -2.
+ * - An abort (the caller's or the deadline's) settles at `close`. Node emits
+ *   the `AbortError` BEFORE the killed child has exited, so settling there
+ *   threw away ffmpeg's stderr — the one diagnosis the log exists to carry —
+ *   along with the exit code and signal, on exactly the runs a human reads the
+ *   error for. The `AbortError` only arms the SIGKILL escalation below; the
+ *   outcome waits for the child.
  */
 export function spawnFfmpeg(
   binary: string,
@@ -203,6 +221,12 @@ export function spawnFfmpeg(
     });
     const fail = (opt: Omit<ConstructorParameters<typeof FfmpegError>[0], "binary" | "argv">) =>
       reject(new FfmpegError({ ...opt, binary, argv: args }));
+
+    // Node's `signal` option sends SIGTERM once and never follows up, so a child
+    // that ignores it (or is stuck in uninterruptible I/O) would hold the
+    // promise past its own deadline forever. Armed by the AbortError, cleared
+    // by `close`; unref'd so it cannot keep a finishing host alive.
+    let escalation: ReturnType<typeof setTimeout> | undefined;
 
     const chunks: Buffer[] = [];
     let stdoutBytes = 0;
@@ -251,7 +275,12 @@ export function spawnFfmpeg(
           cause: err,
         });
       }
-      if (err.name === "AbortError") return fail(abortFailure(deadline, timeoutMs, binary));
+      if (err.name === "AbortError") {
+        // Not settled here — see the function doc. `close` follows the kill.
+        escalation ??= setTimeout(() => child.kill("SIGKILL"), FFMPEG_KILL_GRACE_MS);
+        escalation.unref?.();
+        return;
+      }
       return fail({
         kind: "exit",
         message: `${binary} failed to run: ${err.message}`,
@@ -260,6 +289,7 @@ export function spawnFfmpeg(
     });
 
     child.on("close", (exitCode, closeSignal) => {
+      clearTimeout(escalation);
       const durationMs = performance.now() - startedAt;
       if (overflowed) {
         return fail({
@@ -280,7 +310,14 @@ export function spawnFfmpeg(
         return resolve({ stdout: Buffer.concat(chunks), stderr: stderrTail.text(), durationMs });
       }
       const stderr = stderrTail.text();
-      if (signal.aborted) return fail({ ...abortFailure(deadline, timeoutMs, binary), stderr });
+      if (signal.aborted) {
+        return fail({
+          ...abortFailure(deadline, timeoutMs, binary),
+          exitCode,
+          signal: closeSignal,
+          stderr,
+        });
+      }
       return fail({
         kind: "exit",
         message:
