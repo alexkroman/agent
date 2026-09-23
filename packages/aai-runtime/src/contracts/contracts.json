@@ -35,8 +35,8 @@
     "dropped": {}
   },
   "session": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "session-state": {
@@ -65,8 +65,8 @@
     "dropped": {}
   },
   "tracing": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "uploads": {

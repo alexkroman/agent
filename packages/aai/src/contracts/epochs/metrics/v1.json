@@ -1,0 +1,15 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "metrics",
+  "epoch": 1,
+  "sha256": "9774242f01643442cdcf54709e8edab3f1035de958cadf5b5c876b35b339aba0",
+  "exports": [
+    "MetricStat",
+    "MetricsCollectedEvent",
+    "MetricsCollector",
+    "MetricsCollectorOptions",
+    "MetricsSample",
+    "MetricsSummary",
+    "createMetricsCollector"
+  ]
+}
