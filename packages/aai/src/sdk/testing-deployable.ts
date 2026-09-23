@@ -42,6 +42,7 @@ import { createToolContext } from "./_testing-context.ts";
 import { type AgentConfig, type AgentConfigSource, toAgentConfig } from "./agent-config.ts";
 import { systemPromptResolver } from "./agent-instructions.ts";
 import type { BuiltinTool } from "./builtin-tools.ts";
+import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { BuiltinToolSchema } from "./type-schemas.ts";
 import { errorMessage } from "./utils.ts";
@@ -326,7 +327,8 @@ export function expectPromptBuiltinsDeclared(def: AgentConfigSource): BuiltinToo
       `${prefix} the system prompt commands no builtin at all, so there is nothing to check — ${hint}`,
     );
   }
-  const declared = new Set<string>(config.builtinTools ?? []);
+  // Unset means the default surface, which is what a deploy serves.
+  const declared = new Set<string>(config.builtinTools ?? DEFAULT_BUILTIN_TOOLS);
   const missing = commanded.filter((name) => !declared.has(name));
   if (missing.length > 0) {
     throw new Error(

@@ -65,7 +65,10 @@ export function mergeBuiltinSurface(
   const providedNames = new Set(provided.schemas.map((s) => s.name));
   const declared = agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS;
   const names = declared.filter((name) => !providedNames.has(name));
-  const shadowed = declared.filter((name) => providedNames.has(name));
+  // Only an entry the author WROTE is reported: a `tools/think.ts` beside an
+  // unset `builtinTools` is the file replacing the default, which is the
+  // policy working, not an entry that silently does nothing.
+  const shadowed = (agent.builtinTools ?? []).filter((name) => providedNames.has(name));
   if (shadowed.length > 0) {
     logger?.info?.(
       `builtinTools ${shadowed.map((name) => `"${name}"`).join(", ")} ${shadowed.length === 1 ? "is" : "are"} inert: a tools/ file of the same name is what the model will call. Rename the file if that was not the intent.`,

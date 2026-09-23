@@ -25,10 +25,10 @@
  * - `"recall"` — Read back facts saved with `remember`.
  * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
  *
- * When `builtinTools` is not set, NONE are enabled
- * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
- * asks for rather than something it has to notice and switch off. Name the
- * ones you want; `[]` and omitting the field mean the same thing.
+ * When `builtinTools` is not set, only `think` is enabled
+ * (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
+ * for by name. Setting the field replaces the default rather than extending
+ * it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
  *
  * @public
  */

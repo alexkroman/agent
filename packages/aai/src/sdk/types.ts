@@ -258,12 +258,12 @@ export interface AgentDef
    */
   toolChoice?: ToolChoice;
   /**
-   * Built-in server-side tools enabled for this agent. Unset enables NONE
-   * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
-   * asks for rather than something it has to notice and switch off, so `[]` and
-   * omitting the field mean the same thing. See {@link BuiltinTool} for the
-   * catalog.
-   * @defaultValue `[]` (`DEFAULT_BUILTIN_TOOLS`)
+   * Built-in server-side tools enabled for this agent. Unset enables only
+   * `think` (`DEFAULT_BUILTIN_TOOLS`), a silent reasoning scratchpad the model
+   * uses between tool calls; every other built-in is opt-in by name. Setting
+   * the field REPLACES the default — include `"think"` to keep it, and pass
+   * `[]` for no built-ins at all. See {@link BuiltinTool} for the catalog.
+   * @defaultValue `["think"]` (`DEFAULT_BUILTIN_TOOLS`)
    */
   builtinTools?: readonly BuiltinTool[];
   /**

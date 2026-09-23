@@ -126,36 +126,39 @@ follow up on the conversation. Do not mention this instruction.`;
 
 /**
  * Built-in tools enabled when an agent does not set `builtinTools` at all —
- * **none**. An agent gets exactly the tools it declares.
+ * **`think`**, and only `think`.
  *
- * These were the four "cognitive" builtins: a private reasoning scratchpad
- * (`think`), session notes (`remember`/`recall`), and a safe calculator. They
- * are still available; they are simply opt-in now via
- * `agent({ builtinTools: ["think", ...] })`.
+ * `think` is a no-op tool whose only effect is a designated reasoning step
+ * between tool calls: the model reads a tool result, reconciles it against a
+ * dense policy, and only then commits to the next action. That is the failure
+ * mode tau-bench's airline and retail domains punish, and Anthropic's
+ * published measurement of exactly this tool ("The 'think' tool", Mar 2025)
+ * moved airline pass^1 from 0.332 to 0.404 on its own (0.584 with a prompt
+ * saying what to think about — which is what its `guidance` line is) and
+ * retail from 0.783 to 0.812, beating extended thinking in both. It costs
+ * nothing on a turn where the model does not call it, and a thought emits no
+ * TTS, so it is silent on a voice call. This repo's own paired comparison on
+ * tau2 pointed the same way (4/5 correct writes with it against 3/5 without).
  *
- * The evidence that kept them is worth keeping too, because it argues the
- * other way and a future change should have to answer it. Trimming to
- * `["calculate"]` was tried on a latency theory — each builtin costs an LLM
- * round trip before the agent says anything — and that theory did not survive
- * measurement: on tau2's voice tasks the model never invoked `think` or
- * `calculate` at all, not even when the prompt demanded a calculator for a
- * dollar figure it was about to quote. So an unused builtin costs little, and
- * the one paired comparison available favoured keeping `think` (4/5 correct
- * writes with it against 3/5 without).
+ * The rest stay opt-in via `agent({ builtinTools: [...] })`, and `[]` is how
+ * an agent turns `think` off. Setting the field REPLACES the default rather
+ * than extending it, so an agent that names `["web_search"]` gets web search
+ * and no `think` — name it too to keep it.
  *
- * What that measurement did NOT weigh is the prompt. Declaring builtins makes
- * `hasTools` true, which appends the whole tool preamble, and adds a
- * "Built-in Tool Usage" block on top — for an agent with no tools of its own
- * that is the difference between a ~7.1k and a ~10.9k character system prompt,
- * on a scaffold already carrying three layers that legislate the same
- * behaviours. Defaulting to none makes the tool surface something an agent
- * asks for rather than something it has to notice and switch off.
+ * The cost this default accepts is the prompt. Any builtin makes `hasTools`
+ * true, which appends the tool preamble plus a "Built-in tool usage" line, so
+ * an agent with no tools of its own now carries both (roughly 7.1k → 10.9k
+ * characters when this was last measured, before `think` alone). That was the
+ * reason the default was empty; the published tau-bench result is the reason
+ * it is not, and an agent for which the trade is wrong writes
+ * `builtinTools: []`.
  */
 // `as const satisfies` rather than a bare annotation: the annotation erased the
-// type-level fact that this list is EMPTY, which is what let two docs (and the
-// scaffold guide shipped to users) go on claiming a four-tool "cognitive set"
-// default long after it was removed, with nothing able to check them.
-export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[];
+// type-level fact of which tools this list holds, which is what let two docs
+// (and the scaffold guide shipped to users) go on claiming a four-tool
+// "cognitive set" default long after it was removed, with nothing able to
+// check them.
+export const DEFAULT_BUILTIN_TOOLS = ["think"] as const satisfies readonly BuiltinTool[];
 
 /**
  * Cap (characters) on a tool result's JSON serialization **as the CLIENT sees

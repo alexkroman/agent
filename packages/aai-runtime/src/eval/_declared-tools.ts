@@ -32,6 +32,7 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
 import { announceEvalMode } from "./_announce.ts";
 import type { StubScript } from "./stub-llm.ts";
 
@@ -91,7 +92,14 @@ export function checkStubReplyTools(
   // `mergeBuiltinSurface` serves. Reading only `tools` made every builtin a
   // false positive: three shipped templates script `run_code`/`visit_webpage`
   // against a `builtinTools` entry, and the guard called each one undeclared.
-  const declared = [...Object.keys(agent.tools ?? {}), ...(agent.builtinTools ?? [])];
+  // Unset means DEFAULT_BUILTIN_TOOLS, as it does in `mergeBuiltinSurface`
+  // — but only what the author WROTE decides the hint below, since the default
+  // is on every def, the mistaken authored one included.
+  const authored = [...Object.keys(agent.tools ?? {}), ...(agent.builtinTools ?? [])];
+  const declared = [
+    ...Object.keys(agent.tools ?? {}),
+    ...(agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS),
+  ];
   const missing = toolsNamedBy(script).find((name) => !declared.includes(name));
   if (missing === undefined) return;
   throw new Error(
@@ -103,7 +111,7 @@ export function checkStubReplyTools(
       // The empty table is the authored-def mistake and nothing else; a
       // non-empty one that misses a name is a rename or a typo, and the hint
       // would be a non-sequitur. `toolOf` splits its own message the same way.
-      (declared.length > 0
+      (authored.length > 0
         ? `Fix the name in stubReply, add tools/${missing}.ts, or name it in builtinTools.`
         : AUTHORED_DEF_HINT),
   );

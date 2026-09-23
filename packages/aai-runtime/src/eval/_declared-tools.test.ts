@@ -47,7 +47,7 @@ describe("checkStubReplyTools", () => {
         { tool: "look_up_order", args: { orderId: "W1234" } },
         "It shipped.",
       ]),
-    ).toThrow(/look_up_order.*does not declare.*It declares: \(none\)/s);
+    ).toThrow(/look_up_order.*does not declare.*It declares: think\./s);
   });
 
   test("and the refusal carries the authored-def hint, which is the actual fix", () => {
@@ -69,7 +69,7 @@ describe("checkStubReplyTools", () => {
       message = error instanceof Error ? error.message : String(error);
     }
     expect(message).toContain("look_up_ordr");
-    expect(message).toContain("It declares: look_up_order.");
+    expect(message).toContain("It declares: look_up_order, think.");
     expect(message).toContain("tools/look_up_ordr.ts");
     expect(message).not.toContain(AUTHORED_DEF_HINT);
   });
