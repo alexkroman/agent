@@ -6,8 +6,8 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 
 ## Commands and exports
 
-Binary: `aai` — subcommands: init, dev, start, test, eval, build, list, pull,
-push, publish, delete, login, secret, logs, workflow, templates.
+Binary: `aai` — subcommands: init, dev, console, start, test, eval, build, list,
+pull, push, publish, delete, login, secret, logs, workflow, templates.
 
 **That list is PINNED to the registry** (`cli.test.ts`, "the subcommand list in
 this package's guide names exactly what `cli.ts` registers"), because it went
@@ -139,6 +139,28 @@ vitest's CLI `--exclude` is PUSHED onto `defaultExclude` rather than replacing
 it (verified in vitest 4.1's own `resolved.cliExclude` handling), so
 `node_modules` stays excluded and the one pattern buys the same test/eval
 disjointness the CLI gets from its filter.
+
+**`aai console` is `runtime.connect` with a microphone** (`console.ts`,
+`_console-session.ts`, `_console-audio.ts`). It loads the agent exactly as
+`aai dev` does (`loadWorker`, `resolveAgentEnv`, the shell-credential
+fallback), builds a runtime in-process and runs ONE session over a `ClientSink`
+that plays audio and prints the transcript — no server, no socket, no browser.
+Four things about it are decisions:
+
+- **SoX subprocesses, not a native addon.** `rec`/`play` open the default
+  devices on all three OSes with one command line and cost no install-time
+  build; a missing binary fails as `audio_device` naming the install command.
+- **A barge-in KILLS and respawns `play`**, because a pipe has no "discard
+  buffer" verb and the runtime's pacer can only drop what it still holds. The
+  lead is 400 ms rather than the browser's 1500 for the same reason: nothing
+  between a process and its own sound card needs riding out.
+- **A FATAL `error.reported` ends the command**, as it ends a phone call — a
+  session that can never speak would otherwise leave the developer talking to
+  silence.
+- **In JSON mode the conversation goes to stderr**, since a pipe auto-selects
+  JSON mode and that mode owes stdout one line.
+
+There is no echo cancellation, so it tells the developer to use headphones.
 
 **`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
 `cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over

@@ -188,6 +188,7 @@ export type {
   LogLevel,
   S2sConfig,
 } from "./runtime-config.ts";
+export type { SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
 export {
   type AgentServer,
   createRuntimeServer,

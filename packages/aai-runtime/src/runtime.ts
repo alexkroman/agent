@@ -16,6 +16,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
+import { connectSession } from "./runtime-connect.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
@@ -469,6 +470,14 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     toolSchemas,
     createSession,
     startSession,
+    connect: (sink, connectOpts) =>
+      connectSession(sink, connectOpts, {
+        sessions,
+        readyConfig,
+        logger,
+        sessionStartTimeoutMs,
+        createSession: (id, client, o) => createSession({ id, agent: agent.name, client, ...o }),
+      }),
     shutdown,
     readyConfig,
     // The event log, exposed for the same reason `workflows` below is: a surface

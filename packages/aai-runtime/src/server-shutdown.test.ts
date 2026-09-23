@@ -30,6 +30,7 @@ async function startServer(
     executeTool: vi.fn().mockResolvedValue(""),
     toolSchemas: [],
     createSession: vi.fn() as Runtime["createSession"],
+    connect: vi.fn() as Runtime["connect"],
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },
     startSession: vi.fn(),
     shutdown: spy,

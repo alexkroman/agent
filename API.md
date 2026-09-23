@@ -11467,6 +11467,7 @@ type RunStatus = WorkflowRunStatus;
 export type Runtime = AgentRuntime & {
     executeTool: ExecuteTool;
     toolSchemas: ToolSchema[];
+    connect(sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
     createSession(options: {
         id: string;
         agent: string;
@@ -11570,6 +11571,19 @@ export type SessionAuthOptions = {
     verify?: SessionVerifier | undefined;
     allowedOrigins?: readonly string[] | undefined;
 };
+
+// @public
+export type SessionConnection = {
+    readonly id: string;
+    readonly readyConfig: ReadyConfig;
+    sendAudio(pcm16: Uint8Array): void;
+    sendCommand(command: SessionCommand): void;
+    close(): void;
+    readonly ended: Promise<void>;
+};
+
+// @public
+export type SessionConnectOptions = Pick<SessionStartOptions, "skipGreeting" | "resumeFrom" | "logContext" | "onSessionEnd" | "audioLeadMs">;
 
 // @public
 export type SessionEventPage = {
@@ -11975,7 +11989,7 @@ import type { GenerateResult } from '@alexkroman1/aai';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
-import { OwnedMap } from '@alexkroman1/aai/internal';
+import type { OwnedMap } from '@alexkroman1/aai/internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
@@ -12005,6 +12019,20 @@ export function applyWorkflowJournalDdl(options: {
     db: Db;
     logger: Logger;
 }): Promise<boolean>;
+
+// @public
+export type AttachSessionOptions = {
+    sessions: OwnedMap<string, ServerSession>;
+    createSession: (sessionId: string, client: ClientSink) => ServerSession;
+    readyConfig: ReadyConfig;
+    logContext?: Record<string, string>;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    logger?: Logger;
+    sessionStartTimeoutMs?: number;
+    resumeFrom?: string;
+    closeAfterFailure?: () => void;
+};
 
 // @internal
 export const consoleLogger: Logger;
@@ -12649,20 +12677,11 @@ export const WORKFLOW_QUEUE_PATH = "/workflow-queue";
 export function workflowJournalDdl(schema?: string): string[];
 
 // @public
-type WsSessionOptions = {
-    sessions: OwnedMap<string, ServerSession>;
-    createSession: (sessionId: string, client: ClientSink) => ServerSession;
-    readyConfig: ReadyConfig;
-    logContext?: Record<string, string>;
+type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     onOpen?: () => void;
     onClose?: () => void;
-    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
-    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
-    logger?: Logger;
     audioLeadMs?: number;
-    sessionStartTimeoutMs?: number;
     keepaliveIntervalMs?: number;
-    resumeFrom?: string;
 };
 ```
 

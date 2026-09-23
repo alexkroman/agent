@@ -2,10 +2,11 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|start|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
+USAGE aai init|dev|console|start|test|eval|build|list|pull|push|publish|delete|login|secret|logs|workflow|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
+    console    Talk to the agent through your microphone and speakers
       start    Serve the built agent (production)
        test    Run the project's tests
        eval    Run agent behaviour evals against a live model

@@ -1141,6 +1141,8 @@
     "SESSION_UNAUTHORIZED_CLOSE_CODE",
     "ServerSession",
     "SessionAuthOptions",
+    "SessionConnectOptions",
+    "SessionConnection",
     "SessionEventPage",
     "SessionEventStream",
     "SessionIdentity",
@@ -1232,6 +1234,7 @@
     "withToolsDir"
   ],
   "@alexkroman1/aai-runtime/internal": [
+    "AttachSessionOptions",
     "CONTAINED_ENV",
     "EGRESS_KEEP_ALIVE_MS",
     "JournalConformanceSuite",
