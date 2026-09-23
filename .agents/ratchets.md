@@ -609,6 +609,11 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   nothing until it broke, and `check:publish-protocols` structurally cannot
   cover it — see "`check:scaffold` exists because the sync ran only during a
   release" in `packages/aai-templates/CLAUDE.md`.
+- **`pnpm check:shell`** (`scripts/check-shell.mjs`) — ShellCheck over every
+  tracked `*.sh` and extensionless `sh`/`bash`-shebang file, since Biome reads
+  no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
+  announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
+  `check.yml` sets. Floored at the measured script count.
 - **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
   template, plus the scaffold's `server.mjs`, `global.d.ts` and two configs,
   compiled under the tsconfig `aai init` ships (derived at run time by

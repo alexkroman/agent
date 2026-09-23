@@ -33,5 +33,5 @@ export const base = {
   reporters: ["html", "clear-text", "progress"],
   incremental: true,
   concurrency: 4,
-  timeoutMS: 60000,
+  timeoutMS: 60_000,
 };

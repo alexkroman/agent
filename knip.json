@@ -48,11 +48,7 @@
   // project-environment pair that its comment claimed callers were using.
   //
   // "types" stays excluded pending the @internal tagging pass.
-  "exclude": [
-    "types",
-    "optionalPeerDependencies",
-    "duplicates"
-  ],
+  "exclude": ["types", "optionalPeerDependencies", "duplicates"],
   "workspaces": {
     ".": {
       // WHAT A PIPELINE INVOKES, and nothing else.
@@ -142,18 +138,12 @@
       ]
     },
     "packages/aai-cli": {
-      "entry": [
-        "**/*.test.ts",
-        "src/_test-utils.ts"
-      ],
+      "entry": ["**/*.test.ts", "src/_test-utils.ts"],
       // SoX's `rec` and `play` — the microphone and speaker `aai console`
       // spawns (`_console-audio.ts`). A system audio tool, deliberately not a
       // dependency: nothing else in the CLI needs a sound card, and a missing
       // one fails that command alone, naming the install command.
-      "ignoreBinaries": [
-        "rec",
-        "play"
-      ],
+      "ignoreBinaries": ["rec", "play"]
       // NO `ignoreDependencies` for `workflow`, and the entry that used to sit
       // here is worth a note because it came and went twice. It existed for
       // FIXTURE SOURCE — template literals the workflow specs write into a
@@ -177,9 +167,7 @@
     // users and is compiled from here by `check:template-types`, so nothing in
     // this package imports it.
     "packages/aai-templates": {
-      "ignore": [
-        "scaffold/**"
-      ],
+      "ignore": ["scaffold/**"],
       // NO `ignoreDependencies` for `@alexkroman1/aai-runtime` any more, and the
       // reason is worth knowing before adding one back. It sat here because
       // `scaffold/server.mjs` — ignored above, shipped to users, and compiled
@@ -198,15 +186,10 @@
       // before it, the scaffold's two configs were type-checked by no program in
       // the repo. Dropping either dependency does not make the file resolve; it
       // makes the gate stop covering it.
-      "ignoreDependencies": [
-        "@tailwindcss/vite",
-        "@vitejs/plugin-react"
-      ]
+      "ignoreDependencies": ["@tailwindcss/vite", "@vitejs/plugin-react"]
     },
     "packages/aai-guest": {
-      "entry": [
-        "**/*.test.ts"
-      ],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true,
       // These are declared so a STUDIO WORKSPACE can resolve them, not because
       // this package imports them: they are the third-party half of
@@ -241,15 +224,11 @@
       ]
     },
     "packages/aai-guest-core": {
-      "entry": [
-        "**/*.test.ts"
-      ],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true
     },
     "packages/aai-guest-studio": {
-      "entry": [
-        "**/*.test.ts"
-      ],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true,
       // Declared so a STUDIO WORKSPACE can resolve them, not because this
       // package imports them: they are the third-party half of
@@ -271,40 +250,27 @@
       ]
     },
     "packages/aai-server": {
-      "entry": [
-        "**/*.test.ts"
-      ],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true,
-      "ignoreBinaries": [
-        "modal"
-      ]
+      "ignoreBinaries": ["modal"]
     },
     "packages/aai-gates": {
       // Every file here is a test that nothing imports — the whole package is
       // entry points. `_gate-support.ts` is reached through them.
-      "entry": [
-        "**/*.test.ts"
-      ],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true,
       // `oxc-parser` is imported by the gate specs that need a real parse
       // (`test-assertion-gate`, `guard-invariants-scanner-rules`) — knip reads
       // those as entry points and so does not follow the import back to the
       // manifest.
-      "ignoreDependencies": [
-        "oxc-parser"
-      ]
+      "ignoreDependencies": ["oxc-parser"]
     },
     "packages/aai-evals": {
-      "entry": [
-        "**/*.test.ts",
-        "**/*.eval.test.ts"
-      ],
+      "entry": ["**/*.test.ts", "**/*.eval.test.ts"],
       "includeEntryExports": true
     },
     "packages/aai-studio-client": {
-      "entry": [
-        "**/*.test.{ts,tsx}"
-      ],
+      "entry": ["**/*.test.{ts,tsx}"],
       "includeEntryExports": true
     },
     "docs": {
@@ -316,10 +282,7 @@
       // reports the dependency, rather than the config silently rendering
       // without it.
       "typedoc": {
-        "config": [
-          "typedoc.json",
-          "typedoc.markdown.json"
-        ]
+        "config": ["typedoc.json", "typedoc.markdown.json"]
       }
     },
     "packages/aai-studio-server": {
@@ -341,9 +304,7 @@
       // offers only what this manifest names — so dropping this entry does not
       // make the import unused, it makes the bundle unbootable.
       // `bundled-deps.test.ts` fails if the dependency goes away.
-      "ignoreDependencies": [
-        "modal"
-      ]
+      "ignoreDependencies": ["modal"]
     }
   }
 }

@@ -55,6 +55,7 @@ export const TURBO_TASKS = {
     "check:sherif",
     "check:knip",
     "check:markdown",
+    "check:shell",
     "lint:root",
     "test:coverage",
     "check:integration",

@@ -131,9 +131,7 @@
     // inherit that exclusion — it bundles the templates and the scaffold, whose
     // markdown (scaffold/CLAUDE.md above all) is shipped product.
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "!**/*.test.ts",
@@ -141,9 +139,7 @@
         "!**/*.test-d.ts",
         "!**/*.md"
       ],
-      "outputs": [
-        "dist/**"
-      ]
+      "outputs": ["dist/**"]
     },
     // Tests read more than TypeScript: JSON fixtures (`aai/host/fixtures/`,
     // `aai-ui/fixtures/`, `aai/sdk/compat-fixtures/`) and snapshots
@@ -159,35 +155,15 @@
     // it in `env` also puts it in the hash, so a forks run and a threads run
     // cannot share a cache entry.
     "test": {
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.md",
-        "../../vitest.shared.ts"
-      ],
-      "env": [
-        "CI",
-        "VITEST_POOL"
-      ]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
+      "env": ["CI", "VITEST_POOL"]
     },
     "test:coverage": {
-      "dependsOn": [
-        "^build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.md",
-        "../../vitest.shared.ts"
-      ],
-      "outputs": [
-        "coverage/**"
-      ],
-      "env": [
-        "CI",
-        "VITEST_POOL"
-      ]
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
+      "outputs": ["coverage/**"],
+      "env": ["CI", "VITEST_POOL"]
     },
     // `dependsOn: ["build"]` is SCHEDULING, not a requirement: every package
     // type-checks with no `dist` present anywhere, because `@dev/source`
@@ -196,42 +172,23 @@
     // and fight for cores (measured on 4 cores: `turbo run build typecheck
     // --force`, 21.2s with the dependency, 25.7s without).
     "typecheck": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "**/*.ts",
-        "**/*.tsx",
-        "tsconfig*.json"
-      ]
+      "dependsOn": ["build"],
+      "inputs": ["**/*.ts", "**/*.tsx", "tsconfig*.json"]
     },
     // `biome check .` lints JSON and CSS as well as TS/TSX — a formatting error
     // injected into `packages/aai/typedoc.json` is reported by biome but left
     // the lint hash untouched while this listed only `**/*.ts`/`**/*.tsx`.
     // `$TURBO_DEFAULT$` keeps this correct as biome grows languages.
     "lint": {
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "../../biome.json"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", "../../biome.json"]
     },
     "check:publint": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "dist/**",
-        "package.json"
-      ]
+      "dependsOn": ["build"],
+      "inputs": ["dist/**", "package.json"]
     },
     "check:attw": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "dist/**",
-        "package.json"
-      ]
+      "dependsOn": ["build"],
+      "inputs": ["dist/**", "package.json"]
     },
     // The integration tier is now in-memory ONLY — multiple modules, no
     // filesystem, no subprocess, no port, no database (see the profile docs in
@@ -244,9 +201,7 @@
     // the default run. That is the rule `AAI_TEST_PM` and `VITEST_POOL` are in
     // `env` for.
     "check:integration": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "env": [
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
@@ -262,11 +217,7 @@
         // required run and a skippable one must not share a cache entry.
         "AAI_REQUIRE_REFERENCE_STACK"
       ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.md",
-        "../../vitest.shared.ts"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"]
     },
     // A real subprocess, a real HTTP/WebSocket port, a real bundler, or a real
     // Postgres. Split out of `check:integration` because one config could not
@@ -282,9 +233,7 @@
     // task DOES: a required run and a skippable one must not share a cache
     // entry.
     "check:scenario": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "env": [
         "AAI_TEST_PG_URL",
         "AAI_REQUIRE_PG",
@@ -346,11 +295,7 @@
         "VITEST_SETUP",
         "VITEST_POOL"
       ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.md",
-        "../../vitest.shared.ts"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"]
     },
     // AAI_TEST_PM is the documented way to reproduce a user report under npm or
     // yarn (`AAI_TEST_PM=npm pnpm test:e2e`). `pnpm test:e2e` IS `turbo run
@@ -384,14 +329,8 @@
     // `vitest.shared.ts`, capture again; before this entry it was
     // byte-identical at `261096f60c7229f6`.
     "check:e2e": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.md",
-        "../../vitest.shared.ts"
-      ],
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
       "env": [
         "AAI_TEST_PM",
         "AAI_FAULT_PROFILE",
@@ -450,9 +389,7 @@
     // every package that declares the task rather than any one of them.
     "check:eval": {
       "cache": false,
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "env": [
         "AAI_EVAL_CONTRACTS",
         "AAI_REQUIRE_EVAL",
@@ -495,11 +432,7 @@
       ]
     },
     "//#check:syncpack": {
-      "inputs": [
-        "package.json",
-        "packages/*/package.json",
-        ".syncpackrc.json"
-      ]
+      "inputs": ["package.json", "packages/*/package.json", ".syncpackrc.json"]
     },
     // The other half of the same tool, on the same inputs: `check:syncpack`
     // reads dependency VERSIONS, this reads manifest SHAPE (key order, and the
@@ -513,11 +446,7 @@
     // `dist/` and the custom condition the whole workspace is built on would
     // stop working. The config names it first.
     "//#check:format": {
-      "inputs": [
-        "package.json",
-        "packages/*/package.json",
-        ".syncpackrc.json"
-      ]
+      "inputs": ["package.json", "packages/*/package.json", ".syncpackrc.json"]
     },
     // Duplicate versions of one package resolved side by side in the lockfile.
     // pnpm answers this directly and nothing asked it: the tree carried
@@ -529,19 +458,10 @@
     // Keyed on the lockfile, so a clean tree is a cache hit rather than a
     // resolution.
     "//#check:dedupe": {
-      "inputs": [
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-        "package.json",
-        "packages/*/package.json"
-      ]
+      "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "packages/*/package.json"]
     },
     "//#check:sherif": {
-      "inputs": [
-        "package.json",
-        "packages/*/package.json",
-        "pnpm-workspace.yaml"
-      ]
+      "inputs": ["package.json", "packages/*/package.json", "pnpm-workspace.yaml"]
     },
     "//#check:knip": {
       "inputs": [
@@ -553,9 +473,7 @@
       ]
     },
     "//#check:markdown": {
-      "inputs": [
-        "**/*.md"
-      ]
+      "inputs": ["**/*.md"]
     },
     // Everything Biome lints that lives OUTSIDE a package, which `turbo run lint`
     // structurally cannot reach: that task runs `biome check .` from each
@@ -569,13 +487,29 @@
     // Renamed from `//#lint:scripts` because the target is no longer only
     // `scripts/`. `*.ts` is expanded by the SHELL — biome does not expand globs
     // itself (`biome check "*.ts"` reports "No such file or directory").
+    //
+    // The root's own `*.mjs` and `*.json` (the stryker configs, `turbo.json`,
+    // `knip.json`, `konsistent.json`, …) were outside `files.includes` too, so
+    // nothing read them. `API-EXPORTS.json` stays out: it is generated, and
+    // `check:api-report` already holds it byte for byte.
     "//#lint:root": {
       "inputs": [
         "scripts/**",
         "examples/**",
         "*.ts",
+        "*.mjs",
+        "*.json",
+        ".markdownlint-cli2.jsonc",
+        ".syncpackrc.json",
         "biome.json"
       ]
+    },
+    // ShellCheck over every tracked shell script — see `scripts/check-shell.mjs`.
+    // `AAI_REQUIRE_SHELLCHECK` is declared because strict env mode would strip
+    // it, and a missing binary would then SKIP in the one job meant to fail.
+    "//#check:shell": {
+      "inputs": ["**/*.sh", "scripts/check-shell.mjs"],
+      "env": ["AAI_REQUIRE_SHELLCHECK", "SHELLCHECK"]
     },
     // The root-level TypeScript, which no package's `typecheck` could reach:
     // each of those runs under its own package tsconfig, and the root
@@ -635,11 +569,7 @@
         "$TURBO_ROOT$/packages/aai-ui/typedoc.json",
         "$TURBO_ROOT$/packages/aai-runtime/typedoc.json"
       ],
-      "outputs": [
-        "dist/**",
-        "src/content/docs/reference/**",
-        ".astro/**"
-      ]
+      "outputs": ["dist/**", "src/content/docs/reference/**", ".astro/**"]
     }
   }
 }

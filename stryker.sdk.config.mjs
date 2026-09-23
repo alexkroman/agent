@@ -32,5 +32,5 @@ export default {
   ],
   htmlReporter: { fileName: "reports/mutation/sdk/index.html" },
   incrementalFile: ".stryker-incremental-sdk.json",
-  timeoutMS: 30000,
+  timeoutMS: 30_000,
 };

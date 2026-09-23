@@ -1,12 +1,17 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
   "files": {
     "includes": [
       "packages/**",
       "scripts/**",
       "*.ts",
+      "*.mjs",
+      "*.json",
+      ".markdownlint-cli2.jsonc",
+      ".syncpackrc.json",
       "examples/**",
       "docs/**",
+      "!API-EXPORTS.json",
       "!**/node_modules",
       "!**/dist",
       "!docs/public/reference",
@@ -178,6 +183,10 @@
     {
       "includes": ["docs/typedoc*.json"],
       "json": { "parser": { "allowComments": true } }
+    },
+    {
+      "includes": ["knip.json"],
+      "json": { "parser": { "allowComments": true, "allowTrailingCommas": true } }
     },
     {
       "includes": ["packages/*/src/contracts/compatibility/**"],
