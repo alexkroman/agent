@@ -72,7 +72,7 @@ export function parseSweepArgs() {
     // describe is claimed. See `SweepArgs`.
     return /** @type {SweepArgs} */ (parseArgs({ options: OPTIONS, strict: true }).values);
   } catch (err) {
-    console.error(`upload-sweep: ${err.message}`);
+    console.error(`upload-sweep: ${err instanceof Error ? err.message : String(err)}`);
     usage();
     process.exit(2);
   }

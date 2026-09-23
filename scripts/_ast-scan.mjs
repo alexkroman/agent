@@ -141,7 +141,7 @@ export function lineIndexOf(source) {
     let high = starts.length - 1;
     while (low < high) {
       const mid = (low + high + 1) >> 1;
-      if (starts[mid] <= offset) low = mid;
+      if ((starts[mid] ?? Number.POSITIVE_INFINITY) <= offset) low = mid;
       else high = mid - 1;
     }
     return low + 1;
@@ -165,8 +165,8 @@ export function lineIndexOf(source) {
 export function parseSource(file, source) {
   const parsed = parseSync(file, source);
   if (parsed.errors.length > 0) {
-    const first = parsed.errors[0];
-    throw new Error(`${file}: ${first.message ?? String(first)}`);
+    const [first] = parsed.errors;
+    throw new Error(`${file}: ${first?.message ?? String(first)}`);
   }
   return parsed.program;
 }
@@ -221,6 +221,9 @@ function parseableFiles(pathspecs) {
   ].filter((file) => PARSEABLE.has(extensionOf(file)));
 }
 
+/** A caught value's message: an `Error`'s own, else its string form. */
+const messageOf = (error) => (error instanceof Error ? error.message : String(error));
+
 /**
  * The node-rule twin of `_ratchet.mjs`'s `scanGroups`, returning the SAME
  * `{ counts, occurrences, total }` shape.
@@ -274,7 +277,7 @@ export function scanNodeGroups(groups, { filter, minFiles = 0 } = {}) {
     try {
       program = parseSource(file, source);
     } catch (error) {
-      failures.push(error.message);
+      failures.push(messageOf(error));
       continue;
     }
     const index = lineIndexOf(source);

@@ -88,7 +88,7 @@ let actual;
 try {
   actual = readFileSync(DESTINATION, "utf8");
 } catch (error) {
-  if (error.code !== "ENOENT") throw error;
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   actual = null;
 }
 

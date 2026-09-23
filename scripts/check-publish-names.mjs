@@ -102,7 +102,7 @@ for (const dir of publishablePackages(ROOT)) {
   try {
     manifests.push({ dir, path: pkgJsonPath, pkg: readManifest(pkgJsonPath) });
   } catch (err) {
-    errors.push(`${pkgJsonPath}: ${err.message}`);
+    errors.push(`${pkgJsonPath}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

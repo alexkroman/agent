@@ -130,7 +130,7 @@ touching the scaffold:
 
 | Gate | What it holds |
 | --- | --- |
-| `pnpm check:template-types` | every template type-checks under the **scaffold's** tsconfig — the one a user actually gets — not the repo's stricter one |
+| `pnpm check:template-types` | every template type-checks under the **scaffold's** tsconfig — the one a user actually gets — not the repo's stricter one — then again with `exactOptionalPropertyTypes` on, the flag a stricter consumer may enable |
 | `pnpm check:scaffold` | `scaffold/package.json` still matches the workspace's dependency versions (`pnpm sync:scaffold` fixes it) |
 | `pnpm check:agent-guide` | `packages/aai/AGENT_GUIDE.md` is the current copy of `scaffold/CLAUDE.md` (`pnpm sync:agent-guide` fixes it) |
 | `pnpm check:konsistent` | the `agent-templates` convention: an `agent.ts` with a default export, and a `client.tsx` that imports the stylesheet |

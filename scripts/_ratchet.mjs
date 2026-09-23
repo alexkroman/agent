@@ -81,7 +81,7 @@ export function git(args, { allowNoMatch = false, cwd = REPO_ROOT } = {}) {
   try {
     return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, cwd });
   } catch (err) {
-    if (allowNoMatch && err.status === 1) return "";
+    if (allowNoMatch && err instanceof Error && "status" in err && err.status === 1) return "";
     throw err;
   }
 }

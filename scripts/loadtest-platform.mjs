@@ -75,7 +75,7 @@ async function drive(url) {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           samples.push(performance.now() - at);
         } catch (err) {
-          const key = String(err?.message ?? err).slice(0, 60);
+          const key = (err instanceof Error ? err.message : String(err)).slice(0, 60);
           errors.set(key, (errors.get(key) ?? 0) + 1);
         }
       }
@@ -198,18 +198,22 @@ async function sessionBurst() {
   };
 }
 
+/** @type {[label: string, url: string][]} */
+const direct = GUEST
+  ? [
+      ["guest /client-config (DIRECT)", `${GUEST}/client-config`],
+      ["guest /workflows (DIRECT)", `${GUEST}/workflows`],
+    ]
+  : [];
+
+/** @type {[label: string, url: string][]} */
 const targets = [
   // Answered by the platform itself, so it is the floor every proxied number is
   // read against — no deploy lookup, no sandbox.
   ["platform /health", `${PLATFORM}/health`],
   [`platform /${SLUG}/client-config (PROXIED)`, `${PLATFORM}/${SLUG}/client-config`],
   [`platform /${SLUG}/workflows (PROXIED)`, `${PLATFORM}/${SLUG}/workflows`],
-  ...(GUEST
-    ? [
-        ["guest /client-config (DIRECT)", `${GUEST}/client-config`],
-        ["guest /workflows (DIRECT)", `${GUEST}/workflows`],
-      ]
-    : []),
+  ...direct,
 ];
 
 if (!GUEST) {

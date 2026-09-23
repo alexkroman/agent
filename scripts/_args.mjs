@@ -201,7 +201,8 @@ export function parseLeadingFlags({ script, options, argv }) {
   const args = [...(argv ?? process.argv.slice(2))];
   const own = [];
   while (args.length > 0) {
-    const next = args[0];
+    const [next] = args;
+    if (next === undefined) break;
     if (next === "--") {
       args.shift();
       break;

@@ -70,9 +70,11 @@ export function runScaffoldTsc({ name, include, overrides = {} }) {
     // produced an empty diagnostic block under a heading like "a documentation
     // example does not compile", pointing the reader at the templates when the
     // problem was the toolchain.
-    const stdout = String(err.stdout ?? "");
-    const stderr = String(err.stderr ?? "");
-    const spawnFailure = err.stdout === undefined && err.stderr === undefined ? String(err) : "";
+    const out = err instanceof Error && "stdout" in err ? err.stdout : undefined;
+    const errOut = err instanceof Error && "stderr" in err ? err.stderr : undefined;
+    const stdout = String(out ?? "");
+    const stderr = String(errOut ?? "");
+    const spawnFailure = out === undefined && errOut === undefined ? String(err) : "";
     const output = [stdout, stderr, spawnFailure].filter((part) => part.trim() !== "").join("\n");
     return { ok: false, output };
   } finally {

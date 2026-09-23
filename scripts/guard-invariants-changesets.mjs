@@ -112,8 +112,9 @@ export function parseChangesetFrontmatter(source) {
   if (end === -1) return { error: "unterminated YAML frontmatter — no closing `---`" };
 
   const entries = [];
-  for (let index = 1; index < end; index++) {
-    const text = lines[index].trim();
+  for (const [offset, line] of lines.slice(1, end).entries()) {
+    const index = offset + 1;
+    const text = line.trim();
     if (text === "" || text.startsWith("#")) continue;
     const match = /^(?<quote>["']?)(?<name>.+?)\k<quote>\s*:\s*(?<bump>\S+)\s*$/.exec(text);
     if (match?.groups === undefined) {
@@ -246,14 +247,16 @@ export function checkChangesetConsumable(file, source, versionable) {
   const parsed = parseChangesetFrontmatter(source);
   // A malformed changeset is checkChangeset's finding, not this one's — one
   // mistake should not be reported twice.
-  if ("error" in parsed || parsed.entries.length === 0) return [];
+  if ("error" in parsed) return [];
+  const [first] = parsed.entries;
+  if (first === undefined) return [];
   if (parsed.entries.some(({ name }) => versionable.has(name))) return [];
 
   const named = parsed.entries.map(({ name }) => name).join(", ");
   return [
     {
       file,
-      line: parsed.entries[0].line,
+      line: first.line,
       text:
         `names only packages changesets will not version (${named}), so it can never be ` +
         "consumed: `changeset version` changes nothing, the release action pushes an empty " +

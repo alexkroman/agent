@@ -16,10 +16,10 @@
  * lib declarations from disk and writes nothing.
  */
 
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 import { sole } from "./_gate-support.ts";
 
-type Probe = { compatible: boolean; problems: string[]; added: string[] };
+type Probe = { compatible: boolean; problems: string[]; unproven: string[]; added: string[] };
 const { probeCompatibility } =
   sole(
     import.meta.glob<{
@@ -70,6 +70,7 @@ const probe = (newBody: string, oldBody = BASE): Probe =>
   probeCompatibility?.({ oldBody, newBody, dir: DIR }) ?? {
     compatible: false,
     problems: ["probeCompatibility-not-importable"],
+    unproven: [],
     added: [],
   };
 
@@ -78,6 +79,14 @@ const edit = (from: string, to: string) => {
   if (!BASE.includes(from)) throw new Error(`the fixture no longer contains ${from}`);
   return BASE.replace(from, to);
 };
+
+// The first probe in a process loads the TypeScript 6 checker and parses its lib
+// and `@types/node` (~1.4s here, past 5s on a loaded CI runner with coverage);
+// every later one reuses both (~40ms). That is a one-time FIXTURE cost, so it is
+// paid here rather than charged to whichever test happens to run first.
+beforeAll(() => {
+  probe(BASE);
+});
 
 describe("the probe is importable, and not vacuous", () => {
   test("an identical rollup is compatible", () => {
@@ -175,5 +184,166 @@ describe("rejected — a real break still needs `--bump`", () => {
     const result = probe(from("b"), from("a"));
     expect(result.compatible).toBe(false);
     expect(result.problems.join("\n")).toContain("Thing");
+  });
+});
+
+/**
+ * Members TypeScript relates BIVARIANTLY — method shorthand, and a class's
+ * constructor — so a narrowed parameter there passed both directions of the
+ * old probe. Each rejection sits beside the widening it must still accept.
+ */
+const METHODS = `// @public
+export interface Channel {
+    send(message: string | number): void;
+    close?(reason: string | number): void;
+    on(event: "open", listener: () => void): this;
+    on(event: "data", listener: (chunk: string | number) => void): this;
+    map<T extends string | number>(fn: (value: T) => T): T[];
+    label?: string;
+}
+
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public
+export type Clock = {
+    sleep<const Label extends string>(label: Label & Literal<Label>, ms: number): Promise<void>;
+    note?: string;
+};
+
+// @public
+export declare const transport: {
+    post(message: string | number): void;
+    end?(reason: string | number): void;
+};
+
+// @public
+export declare class Sink {
+    constructor(target: string | number);
+    write(chunk: string | number): void;
+    static open(path: string | number): Sink;
+}
+`;
+
+const methods = (from: string, to: string) => {
+  if (!METHODS.includes(from)) throw new Error(`the fixture no longer contains ${from}`);
+  return METHODS.replace(from, to);
+};
+
+describe("methods and constructors are compared STRICTLY, not bivariantly", () => {
+  test("an unchanged method-bearing rollup is still compatible", () => {
+    // Add an optional member to each type so none short-circuits on identity:
+    // every method is really compared.
+    const next = methods("    label?: string;", "    label?: string;\n    tag?: string;")
+      .replace("    note?: string;", "    note?: string;\n    zone?: string;")
+      .replace("    write(chunk", "    flush?(): void;\n    write(chunk");
+    const result = probe(next, METHODS);
+    expect(result.problems).toEqual([]);
+    expect(result.compatible).toBe(true);
+  });
+
+  // Widening is accepted where only a VALUE is compared (new assignable to
+  // old). `Channel` and `Sink`'s instance type are compared both ways —
+  // they are received as well as built — so a widened member there fails the
+  // other direction, as it did before methods were compared strictly.
+  test.each([
+    [
+      "a widened method parameter",
+      methods("post(message: string | number)", "post(message: unknown)"),
+    ],
+    [
+      "a widened optional-method parameter",
+      methods("end?(reason: string | number)", "end?(reason: unknown)"),
+    ],
+    [
+      "a widened static method parameter",
+      methods("open(path: string | number)", "open(path: unknown)"),
+    ],
+    [
+      "a widened constructor parameter",
+      methods("constructor(target: string | number)", "constructor(target: unknown)"),
+    ],
+  ])("accepted: %s", (_label, next) => {
+    const result = probe(next, METHODS);
+    expect(result.problems).toEqual([]);
+    expect(result.compatible).toBe(true);
+  });
+
+  test.each([
+    [
+      "a narrowed method parameter",
+      methods("send(message: string | number)", "send(message: string)"),
+      "Channel",
+    ],
+    [
+      "a narrowed method parameter on a value",
+      methods("post(message: string | number)", "post(message: string)"),
+      "transport",
+    ],
+    [
+      "a narrowed optional-method parameter",
+      methods("close?(reason: string | number)", "close?(reason: string)"),
+      "Channel",
+    ],
+    [
+      "a narrowed parameter in ONE overload",
+      methods("(chunk: string | number) => void): this", "(chunk: string) => void): this"),
+      "Channel",
+    ],
+    [
+      "a narrowed generic method constraint",
+      methods("map<T extends string | number>", "map<T extends string>"),
+      "Channel",
+    ],
+    [
+      "a narrowed class method parameter",
+      methods("write(chunk: string | number)", "write(chunk: string)"),
+      "Sink",
+    ],
+    [
+      "a narrowed static method parameter",
+      methods("open(path: string | number)", "open(path: string)"),
+      "Sink",
+    ],
+    [
+      "a narrowed constructor parameter",
+      methods("constructor(target: string | number)", "constructor(target: string)"),
+      "Sink",
+    ],
+  ])("rejected: %s", (_label, next, name) => {
+    const result = probe(next, METHODS);
+    expect(result.compatible).toBe(false);
+    expect(
+      result.problems.some((problem) => problem.startsWith(`${name}:`)),
+      `expected a finding naming ${name}, got:\n${result.problems.join("\n")}`,
+    ).toBe(true);
+  });
+});
+
+describe("`any` proves nothing, so a one-sided one is reported", () => {
+  test("a member loosened to `any` is UNPROVEN, not compatible", () => {
+    const result = probe(edit("    value: string;", "    value: any;"));
+    expect(result.compatible).toBe(false);
+    expect(result.unproven.some((p) => p.startsWith("ToolResult:") && p.includes("value"))).toBe(
+      true,
+    );
+    // Nothing FAILED: every problem is an unproven position.
+    expect(result.problems.every((p) => result.unproven.includes(p))).toBe(true);
+  });
+
+  test("a parameter tightened FROM `any` is reported, naming the side", () => {
+    const old = edit("tool(options: ToolOptions)", "tool(options: any)");
+    const result = probe(BASE, old);
+    expect(result.compatible).toBe(false);
+    expect(result.unproven.join("\n")).toMatch(/^tool: .*parameter 1 \(options\).*OLD side only/m);
+  });
+
+  test("an `any` on BOTH sides is unchanged, and not reported", () => {
+    const old = edit("    value: string;", "    value: any;");
+    const result = probe(
+      old.replace("    ok: boolean;", "    ok: boolean;\n    note?: string;"),
+      old,
+    );
+    expect(result.problems).toEqual([]);
+    expect(result.compatible).toBe(true);
   });
 });

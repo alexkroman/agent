@@ -49,6 +49,11 @@ catalog:
 catalogs:
   typedoc:
     typescript: ~6.0.0
+    # The same 6.x compiler under a second name, for the ROOT's scripts: the
+    # root already declares `typescript` (the 7.x the repo builds with), so
+    # the capability-contract probe (`scripts/_api-contracts-compat.mjs`)
+    # cannot reach the JS compiler API under that name. See its header.
+    typescript-6: npm:typescript@~6.0.0
 
 ignoredBuiltDependencies:
   - esbuild

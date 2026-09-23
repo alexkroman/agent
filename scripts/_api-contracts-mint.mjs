@@ -110,8 +110,11 @@ function probeAgainst(pkg, capability, v, generated) {
     };
   }
   const probe = probeCompatibility({ oldBody, newBody: generated.body, dir: pkg.dir });
-  return probe.compatible
-    ? { kind: "revision", epoch: v, added: probe.added }
+  if (probe.compatible) return { kind: "revision", epoch: v, added: probe.added };
+  // Every finding a one-sided `any`: nothing FAILED, the probe just cannot
+  // decide those positions — which a human classifies, not a "major" guess.
+  return probe.problems.every((problem) => probe.unproven.includes(problem))
+    ? { kind: "unproven", why: probe.problems.join("\n    ") }
     : { kind: "break", epoch: v, problems: probe.problems };
 }
 

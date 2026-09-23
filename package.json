@@ -121,6 +121,7 @@
     "syncpack": "^15.3.3",
     "turbo": "^2.10.12",
     "typescript": "catalog:",
+    "typescript-6": "catalog:typedoc",
     "vitest": "catalog:",
     "yaml": "^2.9.0"
   },

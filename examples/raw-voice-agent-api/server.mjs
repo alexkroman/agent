@@ -53,7 +53,11 @@ async function handleToken(res) {
     res.end(body); // already { "token": "..." }
   } catch (err) {
     res.writeHead(502, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: `Token request error: ${err.message}` }));
+    res.end(
+      JSON.stringify({
+        error: `Token request error: ${err instanceof Error ? err.message : String(err)}`,
+      }),
+    );
   }
 }
 
