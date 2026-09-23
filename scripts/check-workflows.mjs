@@ -101,6 +101,9 @@ function workflowFiles() {
     .filter((file) => /\.ya?ml$/.test(file));
 }
 
+/** Nothing to clean up: the policy was read in place, or there was none. */
+const noCleanup = () => undefined;
+
 /**
  * The zizmor arguments naming its policy: the BASE ref's copy when `--base` is
  * given, else the working tree's. Returns the args and a cleanup.
@@ -109,7 +112,7 @@ function policyArgs() {
   if (FLAGS.base === undefined) {
     return {
       args: existsSync(join(ROOT, POLICY)) ? ["--config", POLICY] : ["--no-config"],
-      done() {},
+      done: noCleanup,
     };
   }
   const shown = spawnSync("git", ["show", `${FLAGS.base}:${POLICY}`], {
@@ -122,7 +125,7 @@ function policyArgs() {
         `${GATE}: ${POLICY} is not on ${FLAGS.base} yet — auditing under zizmor's defaults until it lands.`,
       );
     }
-    return { args: ["--no-config"], done() {} };
+    return { args: ["--no-config"], done: noCleanup };
   }
   const dir = mkdtempSync(join(tmpdir(), "zizmor-policy-"));
   const file = join(dir, "zizmor.yml");
@@ -143,7 +146,8 @@ if (files.length < MIN_WORKFLOWS) {
 let failed = false;
 for (const tool of tools) {
   let args = [...files];
-  let done = () => {};
+  /** @type {() => void} */
+  let done = noCleanup;
   if (tool.name === "zizmor") {
     const policy = policyArgs();
     done = policy.done;

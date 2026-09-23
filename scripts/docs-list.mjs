@@ -107,6 +107,12 @@ const { values: FLAGS } = parseScriptArgs({
   },
 });
 
+/** Code-unit order, so the generated tables do not move with the locale. */
+function byCodeUnit(a, b) {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 /** Every guide path, repo-relative, sorted by code unit within its group. */
 function guidePaths() {
   const listed = execFileSync(
@@ -118,7 +124,7 @@ function guidePaths() {
     .filter(Boolean);
   return [...new Set(listed)]
     .filter((path) => GROUPS.some((group) => group.match.test(path)))
-    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    .sort(byCodeUnit);
 }
 
 /**
