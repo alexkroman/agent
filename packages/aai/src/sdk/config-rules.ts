@@ -178,6 +178,9 @@ const PIPELINE_ONLY_TUNING = {
   // own tag rather than a fifth scalar, so it cannot skip this list and with
   // it `assertPipelineTuning` — the same reason the phrase lists got theirs.
   userTurnLimit: "user-turn-limit",
+  // A closed set of POLICY names, not free text — its own tag so the mapped
+  // type below can hand it the literal union rather than `string`.
+  turnDetection: "turn-detection",
 } as const satisfies Record<
   keyof PipelineVoiceTuning,
   // The six value shapes a pipeline-only tuning field may have. Written
@@ -191,7 +194,7 @@ const PIPELINE_ONLY_TUNING = {
   // declarations rather than dials, and they get
   // their own tags so that a field cannot skip this list and with it
   // `assertPipelineTuning`.
-  "number" | "string" | "boolean" | "phrases" | "user-turn-limit"
+  "number" | "string" | "boolean" | "phrases" | "user-turn-limit" | "turn-detection"
 >;
 
 type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
@@ -217,7 +220,9 @@ export type PipelineTuning = {
             ? string
             : (typeof PIPELINE_ONLY_TUNING)[K] extends "user-turn-limit"
               ? UserTurnLimit
-              : readonly string[])
+              : (typeof PIPELINE_ONLY_TUNING)[K] extends "turn-detection"
+                ? "auto" | "manual"
+                : readonly string[])
     | undefined;
 };
 

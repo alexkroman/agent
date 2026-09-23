@@ -113,6 +113,31 @@ describe("openEvalSession", () => {
     }
   });
 
+  test("say() presses and releases for a push-to-talk agent, which answers nothing otherwise", async () => {
+    // A `turnDetection: "manual"` agent HOLDS every final until the client
+    // commits, so a harness that only emitted the final would time out on a
+    // working agent. Framed the way the client frames it, the turn is answered.
+    const { llm, providerEnv, release } = scriptedAgent({
+      steps: [[{ type: "text", text: "Noted." }]],
+    });
+    const session = await openEvalSession({
+      agent: agent({ name: "Walkie", turnDetection: "manual" }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const turn = await session.say("Remember to call the plumber");
+      expect(turn.text).toBe("Noted.");
+      expect(turn.completed).toBe(true);
+      expect(
+        turn.events.filter((e) => e.type === "user-transcript.committed").map((e) => e.text),
+      ).toEqual(["Remember to call the plumber"]);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
   test("sayAll drives every line in order and hands back one turn each", async () => {
     const { llm, providerEnv, release } = scriptedAgent({
       steps: [

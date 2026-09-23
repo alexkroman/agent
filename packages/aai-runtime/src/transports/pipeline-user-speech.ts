@@ -10,6 +10,7 @@ import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/hos
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import type { Logger } from "../runtime-config.ts";
 import { createAgentSpeakingPredicate } from "./pipeline-barge-in-policy.ts";
+import { createManualTurn, type ManualTurn } from "./pipeline-manual-turn.ts";
 import {
   createFalseInterruptionRecovery,
   type FalseInterruptionRecovery,
@@ -35,6 +36,8 @@ export interface UserActivity {
   recovery: FalseInterruptionRecovery;
   speechEdges: SpeechEdgeTracker;
   sttEvents: SttEventHandlers;
+  /** Push-to-talk state, or the inert `AUTO_TURN_DETECTION` — see pipeline-manual-turn.ts. */
+  manualTurn: ManualTurn;
 }
 
 /**
@@ -71,6 +74,8 @@ export function createUserActivity(deps: {
   onInterrupted(): void;
   /** Cap one user turn by words and/or time; unset is no cap. See `UserTurnLimit`. */
   userTurnLimit: UserTurnLimit | undefined;
+  /** Who ends the caller's turn — see `AgentDef.turnDetection`. Unset is `"auto"`. */
+  turnDetection: "auto" | "manual" | undefined;
   /**
    * Ask the transcriber to end the caller's turn now — what a crossed cap
    * does. The transport owns this because only it holds the STT session, and
@@ -109,7 +114,28 @@ export function createUserActivity(deps: {
   ): void;
 }): UserActivity {
   const { log, sid, callbacks } = deps;
-  const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
+  // Answer one committed user turn: the record, then the reply. Hoisted so the
+  // STT handlers (a final, under "auto") and push-to-talk (a commit, under
+  // "manual") answer a turn the same way.
+  const commitUserTurn = (text: string): void => {
+    // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with.
+    log.debug("Pipeline turn committed", { sid, text });
+    callbacks.report({ type: "user-transcript.committed", text });
+    deps.runChainedTurn(text, "Pipeline turn crashed");
+  };
+  const manualTurn = createManualTurn(deps.turnDetection, {
+    forceEndOfTurn: deps.forceEndOfTurn,
+    commitUserTurn,
+    isActive: () => !deps.isTerminated(),
+    log,
+    sid,
+  });
+  // A held push-to-talk window is the caller's floor: nothing may nudge or
+  // resume into it any more than into a reply that is playing.
+  const isBusy = (): boolean =>
+    deps.isTurnInFlight() ||
+    deps.isPlaybackPending() ||
+    (manualTurn.enabled && manualTurn.isOpen());
   // Does the agent HAVE the floor? One definition, two readers — see
   // createAgentSpeakingPredicate for why that matters and what each term of it
   // is for.
@@ -133,7 +159,10 @@ export function createUserActivity(deps: {
       // a final, which commits on the ordinary path — so a reader of the
       // stream sees the cap fire and then the turn it cut, in that order.
       callbacks.report({ type: "user-turn.exceeded", limit, words, durationMs });
-      deps.forceEndOfTurn();
+      // Under push-to-talk a forced final would only be HELD, so the cap ends
+      // the turn the way the caller's own release would have.
+      if (manualTurn.enabled) manualTurn.commit();
+      else deps.forceEndOfTurn();
     },
   });
   const edgesWithLimit = {
@@ -219,12 +248,8 @@ export function createUserActivity(deps: {
     nudger,
     callbacks,
     speculation: deps.speculation,
-    commitUserTurn(text: string): void {
-      // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with.
-      log.debug("Pipeline turn committed", { sid, text });
-      callbacks.report({ type: "user-transcript.committed", text });
-      deps.runChainedTurn(text, "Pipeline turn crashed");
-    },
+    commitUserTurn,
+    manualTurn,
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
     onInterrupted: deps.onInterrupted,
@@ -233,5 +258,5 @@ export function createUserActivity(deps: {
     sid,
   });
 
-  return { nudger, recovery, speechEdges, sttEvents };
+  return { nudger, recovery, speechEdges, sttEvents, manualTurn };
 }

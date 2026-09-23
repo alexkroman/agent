@@ -17,6 +17,7 @@ import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-interna
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import { createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
+import type { ManualTurn } from "./pipeline-manual-turn.ts";
 import type { FalseInterruptionRecovery } from "./pipeline-recovery.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
@@ -134,10 +135,32 @@ export function createSttEventHandlers(deps: {
    * edge, not here — see `pipeline-user-turn-limit.ts`.
    */
   turnLimit: UserTurnLimiter;
+  /**
+   * Push-to-talk, or the inert `AUTO_TURN_DETECTION`. When enabled it owns
+   * every final (held until the client commits) and the caption, and no
+   * transcript barges in — opening a turn is the barge-in there.
+   */
+  manualTurn: ManualTurn;
   log: Logger;
   sid: string;
 }): SttEventHandlers {
-  const { speechEdges, recovery, nudger, callbacks, log, agentIsSpeaking, turnLimit } = deps;
+  const { speechEdges, recovery, nudger, callbacks, log, agentIsSpeaking, turnLimit, manualTurn } =
+    deps;
+
+  /**
+   * An interim under push-to-talk: caption the WHOLE held turn, never barge in,
+   * never speculate — no pause is a turn boundary, so a speculation built on
+   * one could only be discarded. A partial outside a turn is not shown.
+   */
+  function onManualPartial(text: string, words: number, meta?: SttTurnMeta): void {
+    const caption = manualTurn.onPartial(text);
+    if (caption === undefined || words < 1) return;
+    callbacks.report({
+      type: "user-transcript.updated",
+      text: caption,
+      ...omitUndefined({ eotConfidence: meta?.endOfTurnConfidence }),
+    });
+  }
 
   /**
    * Arm false-interruption recovery for the partial-triggered barge-in that is
@@ -216,6 +239,10 @@ export function createSttEventHandlers(deps: {
         // partial arms. Fires at most once per utterance — see the latch.
         turnLimit.onPartial(text, words);
       }
+      if (manualTurn.enabled) {
+        onManualPartial(text, words, meta);
+        return;
+      }
       if (!bargeIn.partialInterrupts(words)) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
@@ -282,6 +309,14 @@ export function createSttEventHandlers(deps: {
       speechEdges.speechStarted();
       // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
+      // Push-to-talk: the final is one piece of a turn the CLIENT ends, so it
+      // is held rather than answered — and it cannot barge in, because opening
+      // the turn already did.
+      if (manualTurn.enabled) {
+        speechEdges.speechEnded();
+        manualTurn.onFinal(trimmed);
+        return;
+      }
       // Interrupt the agent's reply only when it is actually speaking and the
       // utterance is clearly intentional (>= threshold). Anything else does NOT
       // interrupt — the turn is answered once the reply finishes (chainTurn

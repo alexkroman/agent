@@ -225,6 +225,10 @@ export const AgentConfigSchema = z.object({
       message: "userTurnLimit must set maxWords, maxDurationMs, or both",
     })
     .optional(),
+  // Who ends the caller's turn: the transcriber on a pause, or the client's
+  // push-to-talk commit. An enum rather than a boolean so a third policy (a
+  // semantic end-of-turn model, say) is a member rather than a second flag.
+  turnDetection: z.enum(["auto", "manual"]).optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

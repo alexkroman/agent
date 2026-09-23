@@ -299,6 +299,7 @@ describe("toAgentConfig — pipeline voice tuning", () => {
     ["resumeFalseInterruption", false],
     ["preemptiveGeneration", true],
     ["userTurnLimit", { maxWords: 60 }],
+    ["turnDetection", "manual"],
   ])("rejects %s in s2s mode", (field, value) => {
     expect(() => config({ s2s: assemblyAIS2s(), [field]: value })).toThrow(
       new RegExp(`${field} requires pipeline mode`),
@@ -649,5 +650,26 @@ describe("temperature scope", () => {
 
   test("unset stays unset — the model's own default applies", () => {
     expect(rawConfig({ name: "Line" }).temperature).toBeUndefined();
+  });
+
+  describe("turnDetection", () => {
+    test("carries either policy onto the config", () => {
+      expect(config({ ...pipelineFields, turnDetection: "manual" }).turnDetection).toBe("manual");
+      expect(config({ ...pipelineFields, turnDetection: "auto" }).turnDetection).toBe("auto");
+    });
+
+    test("is absent by default — the transcriber ends the turn", () => {
+      expect(config(pipelineFields)).not.toHaveProperty("turnDetection");
+    });
+
+    test("refuses a policy that is not one of the two", () => {
+      expect(() => rawConfig({ ...pipelineFields, turnDetection: "vad" })).toThrow(/turnDetection/);
+    });
+
+    test("is refused on a text agent, which has no microphone to gate", () => {
+      expect(() => rawConfig({ name: "chat", text: true, turnDetection: "manual" })).toThrow(
+        /turnDetection requires pipeline mode/,
+      );
+    });
   });
 });

@@ -91,6 +91,13 @@ describe("SessionCommandSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  test.each(["user_turn_start", "user_turn_commit", "user_turn_clear"])(
+    "accepts the push-to-talk command %s",
+    (type) => {
+      expect(SessionCommandSchema.safeParse({ type }).success).toBe(true);
+    },
+  );
+
   test("accepts playback_progress", () => {
     const result = SessionCommandSchema.safeParse({ type: "playback_progress", bufferedMs: 250 });
     expect(result.success).toBe(true);

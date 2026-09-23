@@ -9,7 +9,7 @@
  * `session-tool-steps.ts` came out of the same file on the same principle.
  *
  * Every case here is a decision rather than a forward, which is why the switch
- * reads long for five commands: two of them deliberately do LESS than the obvious
+ * reads long for eight commands: two of them deliberately do LESS than the obvious
  * thing (`audio_ready` is inert, `playback_progress` does not touch the idle
  * deadline) and one deliberately does less than its transport-reported namesake
  * (`cancel` aborts the reply's tools without swapping the reply object).
@@ -60,6 +60,39 @@ export type CommandDispatcher = (cmd: SessionCommand) => void;
 export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
   const { sessionId, emit, log, transport } = deps;
   let sawPlaybackReport = false;
+  // Once per session, like `sawPlaybackReport`: a transport with no turn verbs
+  // (both S2S services) is sent the same three commands on every press.
+  let warnedNoTurnVerbs = false;
+  const turnVerbsOrWarn = (type: string): boolean => {
+    if (transport.startUserTurn !== undefined) return true;
+    if (!warnedNoTurnVerbs) {
+      warnedNoTurnVerbs = true;
+      log.warn(
+        `Client sent ${type}, but this session's transport cannot end a caller's turn — push-to-talk needs a pipeline agent declaring turnDetection: "manual".`,
+        { sid: sessionId },
+      );
+    }
+    return false;
+  };
+  /** The three push-to-talk edges — see the verbs on `Transport`. */
+  const userTurn = (type: "user_turn_start" | "user_turn_commit" | "user_turn_clear"): void => {
+    if (!turnVerbsOrWarn(type)) return;
+    if (type === "user_turn_commit") {
+      transport.commitUserTurn?.();
+      return;
+    }
+    if (type === "user_turn_clear") {
+      transport.clearUserTurn?.();
+      return;
+    }
+    // Opening a turn interrupts the agent the way a client `cancel` does — and
+    // exactly when there was something to interrupt, so a press into silence
+    // reports no cancellation that did not happen.
+    if (transport.startUserTurn?.() === true) {
+      deps.abortReplyTools();
+      emit({ type: "reply.cancelled" });
+    }
+  };
 
   return function dispatch(cmd: SessionCommand): void {
     switch (cmd.type) {
@@ -84,6 +117,11 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
         deps.abortReplyTools();
         transport.cancelReply();
         emit({ type: "reply.cancelled" });
+        return;
+      case "user_turn_start":
+      case "user_turn_commit":
+      case "user_turn_clear":
+        userTurn(cmd.type);
         return;
       case "reset":
         deps.cancelReply();

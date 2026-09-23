@@ -30,9 +30,11 @@
     "dropped": {}
   },
   "session": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "BrowserSession gained three required methods (startUserTurn, commitUserTurn, clearUserTurn) and SessionActions with it, so a hand-written epoch-1 BrowserSession or SessionActions double no longer satisfies the type. aai-ui has no external implementers of either, and a consumer that only CALLS the session is unaffected."
+    }
   },
   "theme": {
     "current": 1,

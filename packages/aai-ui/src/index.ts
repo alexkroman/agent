@@ -266,6 +266,14 @@ export {
 // none after unmount. The primitive under `useCopy`, public in its own right
 // for the "Saved" note a chrome writes beside an editor.
 export { type UseFlashResult, useFlash } from "./use-flash.ts";
+// A hold-to-speak button for a `turnDetection: "manual"` agent — pointer
+// capture, key repeat, a lost keyup and an unmount mid-hold, all of which
+// otherwise leave the microphone open on a turn nothing will answer.
+export {
+  type UsePushToTalkOptions,
+  type UsePushToTalkResult,
+  usePushToTalk,
+} from "./use-push-to-talk.ts";
 // The opaque, storage-backed key `useWorkflowSubmit` looks a run up by. It
 // mints one of these for itself now, so this is for the page that wants a
 // different one — an account's id, or a key that outlives the tab.

@@ -269,6 +269,23 @@ export interface Transport {
    */
   injectTurn?(instruction: string): void;
   /**
+   * Push-to-talk: the client OPENED a turn (`user_turn_start`). Answers `true`
+   * when opening it interrupted the agent — a reply in flight or still playing
+   * — so the session can do what a client `cancel` does to the reply's tools
+   * and report `reply.cancelled`; `false` otherwise.
+   *
+   * These three verbs are OPTIONAL for the reason `injectTurn` is: neither S2S
+   * service lets the host end a caller's turn, so there is nothing to call. A
+   * pipeline transport implements them whatever the agent's policy and logs
+   * once when an `"auto"` agent is sent one, since its transcriber already owns
+   * the turn. See `transports/pipeline-manual-turn.ts`.
+   */
+  startUserTurn?(): boolean;
+  /** Push-to-talk: close the turn and answer everything heard inside it. */
+  commitUserTurn?(): void;
+  /** Push-to-talk: close the turn and discard everything heard inside it. */
+  clearUserTurn?(): void;
+  /**
    * Re-read the session's {@link SystemPromptOption} and push it to the
    * provider if — and only if — it has CHANGED since the last push.
    *

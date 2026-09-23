@@ -36,6 +36,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "text",
   "toolChoice",
   "tts",
+  "turnDetection",
   "usageLimits",
   "userTurnLimit",
   "voicePresets",
@@ -79,6 +80,15 @@ exports[`protocol schema shapes > SessionCommandSchema option shapes 1`] = `
     "error",
     "result",
     "toolCallId",
+    "type",
+  ],
+  "user_turn_clear": [
+    "type",
+  ],
+  "user_turn_commit": [
+    "type",
+  ],
+  "user_turn_start": [
     "type",
   ],
 }

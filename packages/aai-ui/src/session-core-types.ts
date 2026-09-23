@@ -177,6 +177,28 @@ export type BrowserSession = {
   /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
   /**
+   * Push-to-talk: OPEN a turn — the button went down. Stops the agent if it is
+   * speaking (discarding its queued audio here at once, rather than a round
+   * trip later) and lets the microphone through to the transcriber.
+   *
+   * Only an agent declaring `turnDetection: "manual"` honours the three
+   * push-to-talk methods; any other agent logs once and ignores them, because
+   * its transcriber already ends each turn on a pause. `usePushToTalk` is the
+   * hook a button is built on.
+   */
+  startUserTurn(): void;
+  /**
+   * Push-to-talk: CLOSE the turn and have the agent answer everything said
+   * since {@link BrowserSession.startUserTurn} — the button came up.
+   */
+  commitUserTurn(): void;
+  /**
+   * Push-to-talk: close the turn and THROW AWAY what was said in it — a
+   * cancelled press (the pointer left the button, Escape). The agent answers
+   * nothing.
+   */
+  clearUserTurn(): void;
+  /**
    * Clear messages, transcripts, and error state while keeping the current
    * connection (unlike `reset()`, which also reconnects).
    */

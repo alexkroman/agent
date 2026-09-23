@@ -873,6 +873,7 @@ export default agent({
   preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   userTurnLimit?: { maxWords?: number;       // pipeline only — cap ONE user turn: end it after this many words
                     maxDurationMs?: number };//   and/or this long (ms). Default: no cap. Emits `user-turn.exceeded`.
+  turnDetection?: "auto" | "manual";         // pipeline only — "manual" is push-to-talk: the CLIENT ends each turn
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
   minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
@@ -1971,19 +1972,18 @@ a barge-in turns out to be noise — no user turn ever commits. The wait is not
 configurable: the resume fires once the transcript stream goes quiet with no
 final, so it can never race a real turn the STT is still endpointing.
 `userTurnLimit` (default: no cap) bounds ONE user turn — `{ maxWords }`,
-`{ maxDurationMs }`, or both. End-of-turn is the transcriber's and is driven by
-silence, so a caller who never pauses never ends a turn; past either cap the
-transcriber ends it as a pause would — what was heard commits, the agent answers
-it, the rest opens the next turn. Each cut is a `user-turn.exceeded` event
+`{ maxDurationMs }`, or both. A caller who never pauses never ends a turn; past
+either cap the transcriber ends it as a pause would — what was heard commits,
+the rest opens the next turn. Each cut is a `user-turn.exceeded` event
 (`limit`, `words`, `durationMs`); `{}` is refused. Inert (logged once) on a
 transcriber that cannot end a turn on demand; the default `assemblyAIStt()` can.
-`preemptiveGeneration` (default **`false`**) starts generating the reply as
-soon as transcription is confident the caller has finished, and uses that
-already-running answer if the committed transcript matches. It is off because
-the measurement came back negative (net **+8ms per caller turn** on a
-tool-calling agent, 44% of LLM requests thrown away). A speculation never
-speaks, calls a tool, or enters history until the real turn adopts it, so the
-worst case is a wasted request; worth trying on a text-heavy agent only.
+`turnDetection: "manual"` is PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`):
+the mic is heard only while held, all of it is ONE turn answered on release,
+and pressing is the barge-in.
+`preemptiveGeneration` (default **`false`**) starts the reply from a confident
+interim and adopts it if the committed transcript matches. Off because it
+measured net **+8ms per turn**, 44% of requests thrown away; a speculation never
+speaks or calls a tool until adopted.
 
 ## Providers
 

@@ -36,6 +36,9 @@ type BrowserSession = {
         signal?: AbortSignal;
     }): void;
     cancel(): void;
+    startUserTurn(): void;
+    commitUserTurn(): void;
+    clearUserTurn(): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;

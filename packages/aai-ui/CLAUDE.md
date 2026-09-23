@@ -199,6 +199,9 @@ Two consequences it cannot check, worth knowing before adding a component here:
   (audio-result, workflow-run-panel)
 - `use-session-controls.ts` — the two flags and four methods a control row
   renders from; `<SessionControls>` is built on it
+- `use-push-to-talk.ts` — the hold-to-talk button over `startUserTurn` /
+  `commitUserTurn` / `clearUserTurn`, for a `turnDetection: "manual"` agent. Its
+  module doc lists the four ways a hand-written button leaves a turn open
 
 ## `useConversation` is the conversation; `MessageList` is one renderer of it
 

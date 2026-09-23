@@ -59,7 +59,17 @@ export function SessionProvider({
  */
 export type SessionActions = Pick<
   BrowserSession,
-  "start" | "cancel" | "resetState" | "reset" | "restart" | "disconnect" | "toggle" | "end"
+  | "start"
+  | "cancel"
+  | "startUserTurn"
+  | "commitUserTurn"
+  | "clearUserTurn"
+  | "resetState"
+  | "reset"
+  | "restart"
+  | "disconnect"
+  | "toggle"
+  | "end"
 >;
 
 /**
@@ -93,7 +103,8 @@ export function useSessionCore(): BrowserSession {
 
 /**
  * The session's control methods — `start`, `cancel`, `resetState`, `reset`,
- * `restart`, `disconnect`, `toggle`, `end` — with **no snapshot
+ * `restart`, `disconnect`, `toggle`, `end`, and the three push-to-talk edges
+ * (`startUserTurn`, `commitUserTurn`, `clearUserTurn`) — with **no snapshot
  * subscription**.
  *
  * This is the narrow half of {@link useSession}, and it is the half a custom
@@ -144,7 +155,7 @@ export function useSessionCore(): BrowserSession {
  * }
  * ```
  *
- * @returns The eight control methods — see {@link SessionActions}.
+ * @returns The control methods — see {@link SessionActions}.
  *
  * @public
  */
@@ -158,6 +169,9 @@ export function useSessionActions(): SessionActions {
     () => ({
       start: core.start,
       cancel: core.cancel,
+      startUserTurn: core.startUserTurn,
+      commitUserTurn: core.commitUserTurn,
+      clearUserTurn: core.clearUserTurn,
       resetState: core.resetState,
       reset: core.reset,
       restart: core.restart,
@@ -197,7 +211,7 @@ export function useSession(): Session {
   const core = useSessionCore();
   const snapshot = useSyncExternalStore(core.subscribe, core.getSnapshot);
   // The actions come from `useSessionActions` rather than being copied off the
-  // core a second time: this hook and that one must hand out the same eight
+  // core a second time: this hook and that one must hand out the same
   // methods, and a hand-written second copy is where that stops being true.
   const actions = useSessionActions();
   // Methods are stable per core; memoizing the merged object keeps the

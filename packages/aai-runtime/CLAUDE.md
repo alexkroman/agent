@@ -1553,6 +1553,19 @@ conversation a reset is supposed to discard, so re-greeting alone would open a
 "new" conversation the model can still see the whole of. Clearing it means
 tracking every `conversation.item` id to delete, which is its own change.
 
+## Push-to-talk holds the turn in the TRANSPORT
+
+`agent({ turnDetection: "manual" })` moves the end of a caller's turn from the
+transcriber to the client. `transports/pipeline-manual-turn.ts` owns it and its
+module doc is the argument: finals are HELD while a turn is open and answered as
+one on `user_turn_commit`; the mic is SILENCED (zeros, so the transcriber's
+clock keeps pace) outside a turn; a final landing with no turn open is dropped,
+which is what keeps a late or discarded utterance out of the next one. Opening a
+turn is the barge-in — `startUserTurn()` answers whether it interrupted, and
+`session-commands.ts` then does what a client `cancel` does. Both S2S transports
+omit the verbs. The eval harness's `say()` presses and releases for a manual
+agent, or every case would wait on a commit that never comes.
+
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the session that started a run take

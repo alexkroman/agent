@@ -277,6 +277,11 @@ export interface PipelineTransportOptions {
    * resolved, because "no cap" has no number to resolve to.
    */
   userTurnLimit?: UserTurnLimit | undefined;
+  /**
+   * Who ends the caller's turn — see `AgentDef.turnDetection`. Unset is
+   * `"auto"`, read straight off the options like `userTurnLimit`.
+   */
+  turnDetection?: "auto" | "manual" | undefined;
 }
 
 /**

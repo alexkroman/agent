@@ -10,8 +10,10 @@
 import type { Message } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
+import { silentLogger } from "../_test-utils.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
 import type { PipelineHistory } from "./pipeline-history.ts";
+import { AUTO_TURN_DETECTION } from "./pipeline-manual-turn.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import type { SpeculationController } from "./pipeline-speculation.ts";
 import { createPipelineCommands, type PipelineCommandDeps } from "./pipeline-transport-commands.ts";
@@ -108,11 +110,15 @@ function harness(overrides: { terminated?: boolean } = {}) {
     speechEdges: { reset: note("speechEdges.reset") },
     nudger: { arm: note("nudger.arm"), onUserSpeech: note("nudger.onUserSpeech") },
     speculation,
+    manualTurn: AUTO_TURN_DETECTION,
+    isBusy: () => false,
     abortInFlightTurn: note("abortInFlightTurn"),
     runChainedTurn: (text, label, kind) => {
       calls.push(`runChainedTurn(${text}|${label}|${JSON.stringify(kind)})`);
     },
     isTerminated: () => overrides.terminated === true,
+    log: silentLogger,
+    sid: "s1",
   };
 
   const transport = createPipelineCommands(deps);

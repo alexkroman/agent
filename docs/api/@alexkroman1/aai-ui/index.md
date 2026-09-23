@@ -2360,6 +2360,48 @@ function SaveNote({ onSave }: { onSave: () => Promise<void> }) {
 
 ***
 
+### usePushToTalk()
+
+```ts
+function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
+```
+
+Hold-to-speak over the session's push-to-talk methods, with the four ways a
+turn gets stuck open handled — see this module's doc.
+
+Must be used inside the provider `mountClient()` installs, against an agent
+declaring `turnDetection: "manual"`; any other agent ignores the commands and
+its server says so once.
+
+#### Parameters
+
+##### options?
+
+[`UsePushToTalkOptions`](#usepushtotalkoptions)
+
+#### Returns
+
+[`UsePushToTalkResult`](#usepushtotalkresult)
+
+#### Example
+
+**A hold-to-talk button**
+
+```tsx
+import { usePushToTalk } from "@alexkroman1/aai-ui";
+
+function TalkButton() {
+  const { talking, buttonProps } = usePushToTalk();
+  return (
+    <button type="button" {...buttonProps}>
+      {talking ? "Listening… release to send" : "Hold to talk (or hold Space)"}
+    </button>
+  );
+}
+```
+
+***
+
 ### useRunKey()
 
 ```ts
@@ -2439,7 +2481,8 @@ function useSessionActions(): SessionActions;
 ```
 
 The session's control methods — `start`, `cancel`, `resetState`, `reset`,
-`restart`, `disconnect`, `toggle`, `end` — with **no snapshot
+`restart`, `disconnect`, `toggle`, `end`, and the three push-to-talk edges
+(`startUserTurn`, `commitUserTurn`, `clearUserTurn`) — with **no snapshot
 subscription**.
 
 This is the narrow half of [useSession](#usesession), and it is the half a custom
@@ -2476,7 +2519,7 @@ Throws outside the provider `mountClient()` installs, like every session hook.
 
 [`SessionActions`](#sessionactions)
 
-The eight control methods — see [SessionActions](#sessionactions).
+The control methods — see [SessionActions](#sessionactions).
 
 #### Example
 
@@ -4100,6 +4143,8 @@ The player's `aria-label`: what this audio IS — `"Summary read aloud"`.
 type BrowserSession = {
   [dispose]: void;
   cancel: void;
+  clearUserTurn: void;
+  commitUserTurn: void;
   connect: void;
   disconnect: void;
   end: void;
@@ -4108,6 +4153,7 @@ type BrowserSession = {
   resetState: void;
   restart: void;
   start: void;
+  startUserTurn: void;
   subscribe: () => void;
   toggle: void;
 };
@@ -4140,6 +4186,33 @@ cancel(): void;
 ```
 
 Cancel the current agent turn and discard in-flight TTS audio.
+
+###### Returns
+
+`void`
+
+##### clearUserTurn()
+
+```ts
+clearUserTurn(): void;
+```
+
+Push-to-talk: close the turn and THROW AWAY what was said in it — a
+cancelled press (the pointer left the button, Escape). The agent answers
+nothing.
+
+###### Returns
+
+`void`
+
+##### commitUserTurn()
+
+```ts
+commitUserTurn(): void;
+```
+
+Push-to-talk: CLOSE the turn and have the agent answer everything said
+since [BrowserSession.startUserTurn](#startuserturn) — the button came up.
 
 ###### Returns
 
@@ -4281,6 +4354,25 @@ start(): void;
 Start the session for the first time: sets `started` and `running`, then
 connects. Use this for the initial "start conversation" action;
 afterwards `toggle()` is the pause/resume control.
+
+###### Returns
+
+`void`
+
+##### startUserTurn()
+
+```ts
+startUserTurn(): void;
+```
+
+Push-to-talk: OPEN a turn — the button went down. Stops the agent if it is
+speaking (discarding its queued audio here at once, rather than a round
+trip later) and lets the microphone through to the transcriber.
+
+Only an agent declaring `turnDetection: "manual"` honours the three
+push-to-talk methods; any other agent logs once and ignores them, because
+its transcriber already ends each turn on a pause. `usePushToTalk` is the
+hook a button is built on.
 
 ###### Returns
 
@@ -5490,6 +5582,9 @@ client→server inputs are audio and the control methods above.
 type SessionActions = Pick<BrowserSession, 
   | "start"
   | "cancel"
+  | "startUserTurn"
+  | "commitUserTurn"
+  | "clearUserTurn"
   | "resetState"
   | "reset"
   | "restart"
@@ -6535,6 +6630,215 @@ readonly value: T | null;
 ```
 
 What is being shown right now, or `null` between flashes.
+
+***
+
+### UsePushToTalkOptions
+
+```ts
+type UsePushToTalkOptions = {
+  holdKey?: string | false;
+};
+```
+
+Options for [usePushToTalk](#usepushtotalk).
+
+#### Properties
+
+##### holdKey?
+
+```ts
+optional holdKey?: string | false;
+```
+
+The keyboard key that holds the turn open, as a `KeyboardEvent.code` —
+`"Space"` by default, so the whole page is a walkie-talkie. `false` turns
+the global key off; the button itself still answers Space and Enter while
+it has focus.
+
+***
+
+### UsePushToTalkResult
+
+```ts
+type UsePushToTalkResult = {
+  buttonProps: {
+     aria-pressed: boolean;
+     disabled: boolean;
+     onContextMenu: (event: {
+        preventDefault: void;
+     }) => void;
+     onKeyDown: (event: {
+        key: string;
+        repeat: boolean;
+        preventDefault: void;
+     }) => void;
+     onKeyUp: (event: {
+        key: string;
+        preventDefault: void;
+     }) => void;
+     onPointerCancel: () => void;
+     onPointerDown: (event: {
+        currentTarget: Element;
+        pointerId: number;
+     }) => void;
+     onPointerUp: () => void;
+  };
+  cancel: () => void;
+  press: () => void;
+  ready: boolean;
+  release: () => void;
+  talking: boolean;
+};
+```
+
+What [usePushToTalk](#usepushtotalk) returns.
+
+#### Properties
+
+##### buttonProps
+
+```ts
+buttonProps: {
+  aria-pressed: boolean;
+  disabled: boolean;
+  onContextMenu: (event: {
+     preventDefault: void;
+  }) => void;
+  onKeyDown: (event: {
+     key: string;
+     repeat: boolean;
+     preventDefault: void;
+  }) => void;
+  onKeyUp: (event: {
+     key: string;
+     preventDefault: void;
+  }) => void;
+  onPointerCancel: () => void;
+  onPointerDown: (event: {
+     currentTarget: Element;
+     pointerId: number;
+  }) => void;
+  onPointerUp: () => void;
+};
+```
+
+Spread onto a `<button>`: pointer capture, the keyboard pair, and
+`aria-pressed`. The handlers are the whole contract — style it however you
+like.
+
+###### aria-pressed
+
+```ts
+aria-pressed: boolean;
+```
+
+###### disabled
+
+```ts
+disabled: boolean;
+```
+
+###### onContextMenu
+
+```ts
+(event: {
+  preventDefault: void;
+}) => void
+```
+
+###### onKeyDown
+
+```ts
+(event: {
+  key: string;
+  repeat: boolean;
+  preventDefault: void;
+}) => void
+```
+
+###### onKeyUp
+
+```ts
+(event: {
+  key: string;
+  preventDefault: void;
+}) => void
+```
+
+###### onPointerCancel
+
+```ts
+() => void
+```
+
+###### onPointerDown
+
+```ts
+(event: {
+  currentTarget: Element;
+  pointerId: number;
+}) => void
+```
+
+###### onPointerUp
+
+```ts
+() => void
+```
+
+##### cancel
+
+```ts
+cancel: () => void;
+```
+
+Close the turn and discard it — nothing is answered. Ignored unless held.
+
+###### Returns
+
+`void`
+
+##### press
+
+```ts
+press: () => void;
+```
+
+Open a turn. Interrupts the agent if it is speaking. Ignored while held.
+
+###### Returns
+
+`void`
+
+##### ready
+
+```ts
+ready: boolean;
+```
+
+Whether pressing would do anything: the call is live. False before Start
+and while paused, which is when a button should render disabled.
+
+##### release
+
+```ts
+release: () => void;
+```
+
+Close the turn and have the agent answer it. Ignored unless held.
+
+###### Returns
+
+`void`
+
+##### talking
+
+```ts
+talking: boolean;
+```
+
+Whether a turn is being held open right now — the button is DOWN.
 
 ***
 
@@ -7707,7 +8011,7 @@ End a run's `sleep()` early, resolving how many pending sleeps were
 interrupted.
 
 `0` is an answer, not a failure — the run finished, was never sleeping, or is
-gone. Same shape as [WorkflowApi.cancel](#cancel-1) answering false, and for the
+gone. Same shape as [WorkflowApi.cancel](#cancel-2) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
 [WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with

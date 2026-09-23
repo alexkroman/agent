@@ -3528,6 +3528,50 @@ Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
 its voice).
 
+##### turnDetection?
+
+```ts
+optional turnDetection?: "auto" | "manual";
+```
+
+Pipeline mode only. WHO decides that the caller's turn is over.
+
+- `"auto"` — the transcriber does, on a pause. What every agent has always
+  done.
+- `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
+  reaches the transcriber only between a `user_turn_start` and the
+  `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
+  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `usePushToTalk` hook). Everything transcribed in that window, across
+  however many pauses, is ONE turn, and nothing is answered until the
+  commit. Outside the window the microphone is replaced with silence
+  server-side, so a caller talking to someone else in the room is never
+  heard.
+
+Under `"manual"` the caller's speech never barges in by itself — opening a
+turn is what interrupts the agent, so the button IS the barge-in — and
+preemptive generation is skipped, since no pause is a turn boundary. A
+`userTurnLimit` still applies and, when it fires, commits the turn exactly
+as the client's commit would have.
+
+###### Default Value
+
+`"auto"`
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Walkie",
+  // Nothing the caller says is answered until they let go of the button.
+  turnDetection: "manual",
+});
+```
+
+###### Inherited from
+
+[`PipelineVoiceTuning`](#pipelinevoicetuning).[`turnDetection`](#turndetection-1)
+
 ##### usageLimits?
 
 ```ts
@@ -6151,6 +6195,46 @@ reply that was ready sooner waits.
 
 `0` (`DEFAULT_START_SPEAKING_FLOOR_MS`) — today's behaviour.
 Vapi's own default is 0.4s; see that constant for why this one is not.
+
+##### turnDetection?
+
+```ts
+optional turnDetection?: "auto" | "manual";
+```
+
+Pipeline mode only. WHO decides that the caller's turn is over.
+
+- `"auto"` — the transcriber does, on a pause. What every agent has always
+  done.
+- `"manual"` — the CLIENT does, which is push-to-talk. The caller's audio
+  reaches the transcriber only between a `user_turn_start` and the
+  `user_turn_commit` or `user_turn_clear` that closes it (`aai-ui`'s
+  `startUserTurn` / `commitUserTurn` / `clearUserTurn`, or its
+  `usePushToTalk` hook). Everything transcribed in that window, across
+  however many pauses, is ONE turn, and nothing is answered until the
+  commit. Outside the window the microphone is replaced with silence
+  server-side, so a caller talking to someone else in the room is never
+  heard.
+
+Under `"manual"` the caller's speech never barges in by itself — opening a
+turn is what interrupts the agent, so the button IS the barge-in — and
+preemptive generation is skipped, since no pause is a turn boundary. A
+`userTurnLimit` still applies and, when it fires, commits the turn exactly
+as the client's commit would have.
+
+###### Default Value
+
+`"auto"`
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Walkie",
+  // Nothing the caller says is answered until they let go of the button.
+  turnDetection: "manual",
+});
+```
 
 ##### userTurnLimit?
 

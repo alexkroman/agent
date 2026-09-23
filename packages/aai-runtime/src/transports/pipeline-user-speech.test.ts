@@ -268,6 +268,7 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     // No cap on a user turn — the shipped default; `pipeline-user-turn-limit.test.ts`
     // owns the cap.
     userTurnLimit: undefined,
+    turnDetection: undefined,
     forceEndOfTurn: vi.fn(),
     isTerminated: () => false,
     isSessionActive: () => true,

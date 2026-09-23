@@ -452,7 +452,12 @@ async function openWithFakes(
     // module having reordered its own start, not a case doing anything.
     invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
     const from = events.length;
+    // A push-to-talk agent answers only what was RELEASED: frame the utterance
+    // as its client does, or the final is held and every case times out.
+    const manual = options.agent.turnDetection === "manual";
+    if (manual) session.command({ type: "user_turn_start" });
     stt.commit(text);
+    if (manual) session.command({ type: "user_turn_commit" });
     await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
     const turn = events.slice(from);
     assertTurnMeasurable(

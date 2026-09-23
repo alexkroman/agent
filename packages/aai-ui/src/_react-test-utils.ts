@@ -57,6 +57,15 @@ export function createMockSessionCore(
     cancel() {
       /* noop */
     },
+    startUserTurn() {
+      /* noop */
+    },
+    commitUserTurn() {
+      /* noop */
+    },
+    clearUserTurn() {
+      /* noop */
+    },
     resetState() {
       /* noop */
     },

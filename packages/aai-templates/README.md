@@ -83,6 +83,7 @@ work off to a durable workflow.
 | `code-interpreter-agent` | voice | a problem solver that answers by writing and running code — the `run_code` builtin |
 | `medication-safety-agent` | voice | a drug-interaction checker over openFDA — the smallest custom tool on a live REST API, beside `web_search`, `run_code` and `fetch_json` |
 | `entertainment-picks-agent` | voice | a late-night picker for movies, music and books — a slot beside `useEvent`, with a synced recommendation log |
+| `push-to-talk-agent` | voice | a hold-to-talk notebook — `turnDetection: "manual"` plus `usePushToTalk()`: the caller ends each turn by letting go, so a note can span pauses and nothing said with the button up is heard |
 | `pizza-ordering-agent` | voice | a pizza counter that keeps a real cart — the smallest stateful agent: one `sessionSlot`, six tools, one projection |
 | `text-adventure-agent` | voice | a spoken text adventure — the world lives in a slot, custom chrome renders it |
 | `tabletop-rpg-agent` | voice | a solo tabletop narrator — game state in a slot, a nested dialog and a final one |

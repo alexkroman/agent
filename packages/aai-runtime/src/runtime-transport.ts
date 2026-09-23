@@ -240,6 +240,7 @@ export function createTransportFactory(
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,
       userTurnLimit: agentConfig.userTurnLimit,
+      turnDetection: agentConfig.turnDetection,
       minBargeInWords: agentConfig.minBargeInWords,
       interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
       // Not an agent field: the pair the STT stage resolved, so a rule's

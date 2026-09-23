@@ -36,6 +36,7 @@ import {
   STOPPED,
 } from "./session-core-types.ts";
 import { buildWsUrl } from "./session-core-url.ts";
+import { createUserTurnActions } from "./session-core-user-turn.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type VoiceSessionOptions } from "./types.ts";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
@@ -405,6 +406,16 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     sendJson({ type: "cancel" });
   }
 
+  // Push-to-talk's three edges — see `session-core-user-turn.ts`.
+  const { startUserTurn, commitUserTurn, clearUserTurn } = createUserTurnActions({
+    snapshot: () => currentSnapshot,
+    connected: () => openSocket() !== null,
+    bargeIn: () => bargeIn(conn, audio),
+    agentState,
+    updateState,
+    sendJson,
+  });
+
   function reset(): void {
     bargeIn(conn, audio);
     if (openSocket()) {
@@ -467,6 +478,9 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     subscribe,
     connect,
     cancel,
+    startUserTurn,
+    commitUserTurn,
+    clearUserTurn,
     resetState,
     reset,
     disconnect,
