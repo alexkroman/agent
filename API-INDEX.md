@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 423 names
 - [Browser client](#browser-client) — 138 names
 - [Testing and evals](#testing-and-evals) — 214 names
-- [Hosting and tooling](#hosting-and-tooling) — 253 names
+- [Hosting and tooling](#hosting-and-tooling) — 254 names
 - [Framework internals](#framework-internals) — 305 names
 
 ## Agent authoring
@@ -197,7 +197,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StandardSchemaIssue` | interface | `@alexkroman1/aai` |  | One validation issue in a failed Standard Schema result. |
 | `StandardSchemaResult` | type | `@alexkroman1/aai` |  | A successful or failed Standard Schema validation. |
 | `StandardSchemaV1` | interface | `@alexkroman1/aai` |  | The [Standard Schema](https://standardschema.dev) V1 interface, inlined as the spec recommends (it is a types-only contract). |
-| `StartOptions` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-cli/start`) | `aai:workflow-api` | Per-run options for `WorkflowClient.start`. |
+| `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start`. |
 | `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` and `SessionSlot.projection` are, and what `agent({ syncState })` takes. |
 | `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Workflow-app params: `page: "static"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
 | `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
@@ -839,6 +839,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `PackageManifest` | type | `@alexkroman1/aai/workspace-files` |  | A parsed `package.json` — open-ended, since only a few fields are merged. |
 | `PipelineTuning` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ProjectConfig` | type | `@alexkroman1/aai-cli/project-config` |  |  |
+| `ProjectServerOptions` | interface | `@alexkroman1/aai-cli/start` |  | Options for `createProjectServer` and `executeStart`. |
 | `ProviderDescriptorSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ProviderEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Env acceptable for provider-credential resolution (STT/TTS/LLM openers, `ctx.generate`): the agent's own env or a host-fallback env. |
 | `ReadyConfig` | type | `@alexkroman1/aai/protocol` |  | Protocol-level session config returned to the client on connect. |

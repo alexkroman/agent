@@ -959,7 +959,7 @@
   "@alexkroman1/aai-cli/start": [
     "CLIENT_ARTIFACT_REL",
     "DEFAULT_START_PORT",
-    "StartOptions",
+    "ProjectServerOptions",
     "StartResult",
     "createProjectServer",
     "executeStart",

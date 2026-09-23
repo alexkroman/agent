@@ -11,19 +11,19 @@ import { AgentServer } from '@alexkroman1/aai-runtime';
 export const CLIENT_ARTIFACT_REL: string;
 
 // @public
-export function createProjectServer(options: StartOptions): Promise<AgentServer>;
+export function createProjectServer(options: ProjectServerOptions): Promise<AgentServer>;
 
 // @public
 export const DEFAULT_START_PORT = 3000;
 
 // @public
-export function executeStart(options: StartOptions): Promise<StartResult>;
+export function executeStart(options: ProjectServerOptions): Promise<StartResult>;
 
 // @public
 export function loadBuiltAgent(cwd: string): Promise<AgentDef>;
 
 // @public
-export interface StartOptions {
+export interface ProjectServerOptions {
     cwd: string;
     host?: string | undefined;
     port?: number | undefined;

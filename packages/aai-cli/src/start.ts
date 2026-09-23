@@ -65,7 +65,7 @@ export { CLIENT_ARTIFACT_REL } from "./_artifacts.ts";
 export const DEFAULT_START_PORT = 3000;
 
 /** Options for {@link createProjectServer} and {@link executeStart}. */
-export interface StartOptions {
+export interface ProjectServerOptions {
   /** Project root — the directory holding `agent.ts` and `.aai/`. */
   cwd: string;
   /** Port to bind. Defaults to `PORT`, then {@link DEFAULT_START_PORT}. */
@@ -138,7 +138,7 @@ function resolveClientDir(cwd: string): string {
  * }
  * ```
  */
-export async function createProjectServer(options: StartOptions): Promise<AgentServer> {
+export async function createProjectServer(options: ProjectServerOptions): Promise<AgentServer> {
   const { cwd } = options;
   const agent = await loadBuiltAgent(cwd);
   // `.env.example` counts as a declaration here — see `DEPLOY_ENV_FILES`, which
@@ -206,7 +206,7 @@ export interface StartResult {
  * rejected would surface as an unhandled rejection, i.e. a crash with a stack
  * trace on Ctrl-C, instead of the non-zero exit a failed shutdown should be.
  */
-export async function executeStart(options: StartOptions): Promise<StartResult> {
+export async function executeStart(options: ProjectServerOptions): Promise<StartResult> {
   // Before the server, so the first model call a request causes is already
   // reported. Awaited rather than detached (the guest harness's trade): this
   // boot has no sandbox cold-start budget to protect, and awaiting is what
