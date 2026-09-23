@@ -4,7 +4,7 @@ import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 
 describe("createPipelineHistory", () => {
@@ -403,6 +403,41 @@ describe("createPipelineHistory — LLM history cap and tool-call pairing", () =
       h.pushLlm(toolCallMsg(id), toolResultMsg(id));
       expect(orphanToolResults(h.llm)).toEqual([]);
     }
+  });
+
+  // A step that ended on an unsafe finish reason: the SDK never ran the call,
+  // so the step's messages are the call ALONE (`../tool-call-pairs.ts`).
+  test("a pushed tool call with no result is answered on the way in, and reported", () => {
+    const warn = vi.fn();
+    const h = createPipelineHistory(undefined, { log: { warn }, sid: "s1" });
+    h.pushLlm({ role: "user", content: "look it up" });
+    h.pushLlm(toolCallMsg("c1"));
+    expect(h.llm.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
+    expect(h.llm[2]).toMatchObject({
+      content: [{ type: "tool-result", toolCallId: "c1", output: { type: "error-json" } }],
+    });
+    expect(warn).toHaveBeenCalledWith("Orphaned tool call repaired", {
+      sid: "s1",
+      toolCallId: "c1",
+      toolName: "lookup",
+    });
+    // Paired now, so the next write finds nothing to do.
+    h.pushLlm({ role: "user", content: "and?" });
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  test("a rewrite that removes a call does not strand its result", () => {
+    const h = createPipelineHistory();
+    // Matched by identity against the message as STORED, which is what
+    // `pushLlm` answers.
+    const [, call] = h.pushLlm(
+      { role: "user", content: "q" },
+      toolCallMsg("c1"),
+      toolResultMsg("c1"),
+    );
+    if (call === undefined) throw new Error("nothing stored");
+    h.rewrite({ llm: new Map([[call, null]]) });
+    expect(h.llm.map((m) => m.role)).toEqual(["user"]);
   });
 });
 

@@ -62,6 +62,7 @@ import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
+import { pairToolCallsLogged } from "./tool-call-pairs.ts";
 import { createToolDispatcher, executeToolCall, type SubagentRunner } from "./tool-executor.ts";
 import type { StepUsage, UsageMeter } from "./usage-meter.ts";
 
@@ -189,6 +190,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       sub,
       maxRevisions,
       logger,
+      sessionId,
       ...omitUndefined({ signal: parent.signal }),
       // The PARENT's meter, off the bag the tool call already carried: a
       // delegated run spends on the session that delegated, which is the whole
@@ -236,6 +238,8 @@ type GuardedRun = {
   agent: ToolLoopAgent;
   sub: SubagentDef;
   task: string;
+  /** For the log line a repaired tool pair writes. */
+  sessionId: string;
   maxRevisions: number;
   logger: Logger;
   signal?: AbortSignal | undefined;
@@ -327,7 +331,10 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
       return { ...answer, ...parsed, revisions, accepted: false, complaint };
     }
 
-    messages.push(...result.responseMessages, { role: "user", content: reviseRequest(complaint) });
+    // PAIRED, because the revision SENDS this: an attempt whose last step ended
+    // on an unexecuted tool call would refuse it outright (`tool-call-pairs.ts`).
+    const kept = pairToolCallsLogged(result.responseMessages, logger, run.sessionId);
+    messages.push(...kept, { role: "user", content: reviseRequest(complaint) });
     revisions += 1;
   }
 }

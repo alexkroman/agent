@@ -120,7 +120,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Pipeline transport owns its conversation memory (ServerSession does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
-  const history = createPipelineHistory(sessionConfig.history);
+  const history = createPipelineHistory(sessionConfig.history, { log, sid: opts.sid });
   // Bounds what each STEP sends the model, in TOKENS, and learns the request's
   // fixed cost from the provider's own reported usage — so it is built once per
   // SESSION, and it bounds the REQUEST and never `history`. The argument for

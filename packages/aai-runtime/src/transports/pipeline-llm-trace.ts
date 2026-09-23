@@ -21,11 +21,28 @@
  * The three marks are the ones that discriminate between the causes above —
  * time to the first stream part (the model started producing), time to the
  * first tool call (it chose to act rather than speak), and total.
+ *
+ * **It also names the turn's tool calls, and any the turn left UNEXECUTED.** A
+ * step that ends on an unsafe finish reason (`length`, `other`, …) carries a
+ * tool call the AI SDK refuses to run, and the only trace that used to leave
+ * was `firstToolMs === totalMs` and a history that broke every later request
+ * (`../tool-call-pairs.ts`). So the line carries `toolCalls`, and a step that
+ * finished with a call still unanswered adds `unexecutedToolCalls` plus the
+ * step's finish reason — and a warn of its own, since that is a turn the caller
+ * heard nothing from.
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../runtime-config.ts";
 import type { LlmTiming } from "./pipeline-turn-metrics.ts";
+
+/** The fields of a stream part the trace reads beyond its type. */
+export interface TracePart {
+  readonly toolCallId?: string | undefined;
+  readonly toolName?: string | undefined;
+  readonly finishReason?: string | undefined;
+  readonly rawFinishReason?: string | undefined;
+}
 
 /** Per-turn timing recorder — see {@link createTurnTrace}. */
 export interface TurnTrace {
@@ -34,7 +51,7 @@ export interface TurnTrace {
    * time-to-first-part clock. See {@link isModelPart} for why not every part
    * qualifies.
    */
-  onPart(kind: string): void;
+  onPart(kind: string, part?: TracePart): void;
   /** Emit the turn's one summary line. Idempotent. */
   done(opts: { steps: number; aborted: boolean }): void;
 }
@@ -66,6 +83,50 @@ function isModelPart(kind: string): boolean {
 }
 
 /**
+ * The turn's tool calls, and which of them a FINISHED step left without a
+ * result — see the module doc. A call counts as unexecuted only once a
+ * `finish-step` follows it unanswered: a run abandoned mid-step (a barge-in,
+ * a poisoned adoption) never finished the step, and its call is not one the
+ * SDK declined to run.
+ */
+function createToolLedger(): {
+  onPart(kind: string, part: TracePart | undefined): void;
+  summary(): Record<string, unknown>;
+  unexecuted(): readonly string[];
+} {
+  const names: string[] = [];
+  const pending = new Map<string, string>();
+  const unexecuted: string[] = [];
+  let finishReason: string | undefined;
+  let rawFinishReason: string | undefined;
+  return {
+    onPart(kind, part) {
+      const id = part?.toolCallId ?? "";
+      if (kind === "tool-call") {
+        names.push(part?.toolName ?? "");
+        pending.set(id, part?.toolName ?? "");
+      } else if (kind === "tool-result" || kind === "tool-error") {
+        pending.delete(id);
+      } else if (kind === "finish-step") {
+        unexecuted.push(...pending.values());
+        pending.clear();
+        finishReason = part?.finishReason;
+        rawFinishReason = part?.rawFinishReason;
+      }
+    },
+    summary() {
+      if (unexecuted.length === 0) return names.length > 0 ? { toolCalls: names } : {};
+      return {
+        toolCalls: names,
+        unexecutedToolCalls: unexecuted,
+        ...omitUndefined({ finishReason, rawFinishReason }),
+      };
+    },
+    unexecuted: () => unexecuted,
+  };
+}
+
+/**
  * Start timing a turn.
  *
  * `adopted` distinguishes a turn that inherited a speculation's already-running
@@ -88,9 +149,11 @@ export function createTurnTrace(deps: {
   // a MESSAGE count (a tool step contributes two).
   let finishedSteps = 0;
   let finished = false;
+  const tools = createToolLedger();
 
   return {
-    onPart(kind: string): void {
+    onPart(kind: string, part?: TracePart): void {
+      tools.onPart(kind, part);
       if (kind === "finish-step") finishedSteps++;
       if (!isModelPart(kind)) return;
       firstPartMs ??= now() - startedAt;
@@ -112,7 +175,14 @@ export function createTurnTrace(deps: {
         totalMs,
         steps,
         ...(aborted ? { aborted: true } : {}),
+        ...tools.summary(),
       });
+      if (tools.unexecuted().length > 0) {
+        deps.log.warn("LLM turn ended with unexecuted tool calls", {
+          sid: deps.sid,
+          ...tools.summary(),
+        });
+      }
     },
   };
 }

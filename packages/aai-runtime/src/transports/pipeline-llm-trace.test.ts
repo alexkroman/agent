@@ -10,6 +10,7 @@ import { createTurnTrace } from "./pipeline-llm-trace.ts";
 /** A logger that records `info` calls, plus a clock the test drives. */
 function setup(adopted = false): {
   info: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
   trace: ReturnType<typeof createTurnTrace>;
   advance(ms: number): void;
 } {
@@ -23,6 +24,7 @@ function setup(adopted = false): {
   });
   return {
     info: log.info,
+    warn: log.warn,
     trace,
     advance(ms) {
       t += ms;
@@ -141,5 +143,51 @@ describe("createTurnTrace", () => {
     trace.done({ steps: 9, aborted: true });
     expect(info).toHaveBeenCalledTimes(1);
     expect(meta(info)).toMatchObject({ steps: 1 });
+  });
+
+  test("names the turn's tool calls, and nothing more when every one was answered", () => {
+    const { info, warn, trace } = setup();
+    trace.onPart("tool-call", { toolCallId: "a", toolName: "lookup" });
+    trace.onPart("tool-result", { toolCallId: "a" });
+    trace.onPart("finish-step", { finishReason: "tool-calls" });
+    trace.onPart("tool-call", { toolCallId: "b", toolName: "refund" });
+    trace.onPart("tool-error", { toolCallId: "b" });
+    trace.onPart("finish-step", { finishReason: "tool-calls" });
+    trace.done({ steps: 4, aborted: false });
+    expect(meta(info)).toMatchObject({ toolCalls: ["lookup", "refund"] });
+    expect(meta(info)).not.toHaveProperty("unexecutedToolCalls");
+    expect(meta(info)).not.toHaveProperty("finishReason");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // The production shape: the step FINISHED on an unsafe reason with its call
+  // still open, which the AI SDK declines to execute (`../tool-call-pairs.ts`).
+  test("a step that finished with a call unanswered names it, the finish reason, and warns", () => {
+    const { info, warn, trace } = setup();
+    trace.onPart("tool-call", { toolCallId: "c1", toolName: "get_order" });
+    trace.onPart("finish-step", { finishReason: "other", rawFinishReason: "end_turn" });
+    trace.done({ steps: 1, aborted: false });
+    const expected = {
+      toolCalls: ["get_order"],
+      unexecutedToolCalls: ["get_order"],
+      finishReason: "other",
+      rawFinishReason: "end_turn",
+    };
+    expect(meta(info)).toMatchObject(expected);
+    expect(warn).toHaveBeenCalledWith("LLM turn ended with unexecuted tool calls", {
+      sid: "s1",
+      ...expected,
+    });
+  });
+
+  // A barge-in (or a poisoned adoption) abandons the step before it finishes:
+  // that call was not DECLINED by the SDK, and warning about it would be noise.
+  test("a call whose step never finished is not reported as unexecuted", () => {
+    const { info, warn, trace } = setup();
+    trace.onPart("tool-call", { toolCallId: "c1", toolName: "lookup" });
+    trace.done({ steps: 0, aborted: true });
+    expect(meta(info)).toMatchObject({ toolCalls: ["lookup"] });
+    expect(meta(info)).not.toHaveProperty("unexecutedToolCalls");
+    expect(warn).not.toHaveBeenCalled();
   });
 });

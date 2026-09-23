@@ -87,6 +87,7 @@ import type {
   TextTurnResult,
 } from "./text-agent-types.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
+import { pairToolCallsLogged } from "./tool-call-pairs.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
 import { createFatalToolLatch, type FatalToolLatch, withFatalSignal } from "./tool-error-policy.ts";
 import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
@@ -357,7 +358,11 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
             instructions?.(sessionContext) ??
             staticSystemPrompt(agent.systemPrompt),
         }),
-        messages: turn.messages,
+        // PAIRED: a caller that appends each run's `response.messages` carries
+        // forward whatever the last step left, and a tool call that step never
+        // executed (an unsafe finish reason) would refuse every later turn —
+        // see `tool-call-pairs.ts`. A no-op for a well-formed history.
+        messages: [...pairToolCallsLogged(turn.messages, logger, sessionId)],
         tools: turnTools,
         toolChoice,
         // Only when set — some models ignore it and warn. Per-turn beats the

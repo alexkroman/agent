@@ -7,6 +7,7 @@
 
 import type { ModelMessage } from "ai";
 import type { TapeEntry } from "./pipeline-llm-stream.ts";
+import type { TurnTrace } from "./pipeline-llm-trace.ts";
 import type { StreamPart, StreamPartHandler } from "./pipeline-stream-parts.ts";
 
 /** Wrap a plain part stream as tape entries, so both paths drain one shape. */
@@ -31,7 +32,7 @@ export async function drainEntries(
     collected: ModelMessage[];
     onStepPersisted?: (() => void) | undefined;
     /** Per-turn timing; sees every part, including the ones handled below. */
-    trace?: { onPart(kind: string): void } | undefined;
+    trace?: Pick<TurnTrace, "onPart"> | undefined;
   },
 ): Promise<{ lateToolCall: boolean; spokeBeforeRestart: boolean }> {
   let lateToolCall = false;
@@ -49,7 +50,7 @@ export async function drainEntries(
     }
     // Before the adopted-run break below, so a late tool call is still timed —
     // that turn is about to be restarted and its cost is the thing worth seeing.
-    opts.trace?.onPart(entry.part.type);
+    opts.trace?.onPart(entry.part.type, entry.part);
     if (opts.adopted && entry.part.type === "tool-call") {
       lateToolCall = true;
       break;
