@@ -382,6 +382,10 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
           // Before `forceFinalAnswer`, which owns the same key on the reserved
           // step — see `_prepare-step.ts`.
           resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+          // No `toolErrorBudget` here, deliberately: it exists because a voice
+          // caller hears every failed round trip as silence. A text caller is
+          // code, often a coding loop whose next call is meant to follow a
+          // failure, and it can install its own `prepareStep`.
           forceFinal,
         ),
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
