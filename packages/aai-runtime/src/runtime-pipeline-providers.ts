@@ -61,7 +61,7 @@ function resolvePipelineProviders(
  * AssemblyAI key could not boot, dying on "AssemblyAI LLM: missing API key"
  * under `aai dev` and answering 500 on the workflow API of a deployed app whose
  * workflows are fine. (`requiredProviderEnvVars` is the same rule for the
- * preflights; "Workflow apps" in `packages/aai-ui/CLAUDE.md` has the story.)
+ * preflights; "Workflow apps" in `packages/aai-ui/src/CLAUDE.md` has the story.)
  *
  * DEFERRED rather than skipped, because one path can still open a session on a
  * static agent — an embedder passing `createRuntimeServer({ telephony: true })` — and

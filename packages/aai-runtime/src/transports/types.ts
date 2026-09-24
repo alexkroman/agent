@@ -290,8 +290,9 @@ export interface Transport {
    *
    * **AssemblyAI S2S implements it and never will.** That service runs the tool
    * loop itself, so the host has no per-turn moment to resolve a prompt AT — see
-   * "Only the pipeline can honour a per-turn prompt" in the package guide. The
-   * runtime resolves its prompt ONCE for that transport, which is what shipped.
+   * "The system prompt is resolved PER TURN" in
+   * `packages/aai-runtime/src/transports/CLAUDE.md`. The runtime resolves its
+   * prompt ONCE for that transport, which is what shipped.
    *
    * The caller so far is nothing: this is the seam a `dialog()` phase change
    * will reach for, in the same change that installs the prompt suffix (see

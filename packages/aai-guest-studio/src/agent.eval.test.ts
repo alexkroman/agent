@@ -175,8 +175,8 @@ function wroteScript(call: EvalToolCall): boolean {
  * agent that simply wrote it right the first time.
  *
  * A THROW rather than an `expect`, and not only because `noMisplacedAssertion`
- * matches lexical position (it does — see "Testing this package"): it is the
- * rule the published readers already follow. The finding is a sentence naming
+ * matches lexical position (it does — see "Testing notes" in this package's
+ * guide): it is the rule the published readers already follow. The finding is a sentence naming
  * the file the agent was told about and abandoned, and a `toBe(true)` over a
  * boolean would lose it.
  */

@@ -58,8 +58,8 @@ of them.
 (`platformGuestOptions`), never the agent's — the distinction that already cost
 a deployment, and the safer read besides: an agent may set any `AAI_*` key as a
 secret, so under the tenant spelling an agent would choose the base URL and
-bearer its own journal was sent to. `CLAUDE.md`'s "`AAI_PUBLIC_BASE_URL` is what
-a THIRD PARTY dials" carries the rest.
+bearer its own journal was sent to. `src/workflow/CLAUDE.md`'s
+"`AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials" carries the rest.
 
 **Memory is last and the boot line SAYS so.** A durability tradeoff absent from
 the log reads as a bug, and this is the one an author is most likely to hit by
@@ -92,8 +92,9 @@ module doc carries the argument. The one thing to know first: it is a
 and none is answered from a read that started before it asked. `settledSince`
 exists to rely on exactly that; a cache would silently defeat it.
 `ReplayOptions.steps` is the third — the step read is issued BESIDE the
-`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (the
-admin pool note under "Stateless server", `packages/aai-server/CLAUDE.md`).
+`running` compare-and-set — and `ADMIN_POOL_MAX` was widened with them (see
+"The admin pool bounds guest THROUGHPUT" in
+`packages/aai-server/src/platform/CLAUDE.md`).
 
 **The record read joined them, and `setStatus`'s `expect` is what made that
 possible.** `execute` opened with `await journal.getRun(runId)` and only then
@@ -389,11 +390,11 @@ non-negative number. So only the first delivery's 60s abort costs one of
 `QUEUE_MAX_ATTEMPTS`, and a walk of any length parks at attempt 1 forever.
 
 **The GUEST's liveness signal is a separate defect with the same cause**, and it
-is the sharper one: `packages/aai-guest/CLAUDE.md` under "Lifecycle is
-guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read as
-an idle guest and a step longer than the idle window never completed. Parking is
-what made that reachable, because before it the redundant walks were the thing
-holding the guest open.
+is the sharper one: `packages/aai-guest/src/harness/CLAUDE.md` under "Lifecycle
+is guest-owned" — the idle reaper counted HTTP responses, so the 60s abort read
+as an idle guest and a step longer than the idle window never completed. Parking
+is what made that reachable, because before it the redundant walks were the
+thing holding the guest open.
 
 ## What the tiers of test each cover, and why none substitutes
 

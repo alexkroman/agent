@@ -63,7 +63,7 @@ Required Modal Secret named ``aai-server`` with (at least):
   install returns its ``installation_id`` directly. All of them or none: a half-configured App
   is the state where the install link works and every sync fails, so absence
   reads as "not configured" and the studio's GitHub card renders nothing (see
-  "Sync to GitHub" in ``packages/aai-studio-server/CLAUDE.md``). The private
+  "Sync to GitHub" in ``packages/aai-studio-server/GITHUB-SYNC-CLAUDE.md``). The private
   key may be pasted intact, ``\n``-escaped, or base64 — all three normalize
   to one value, which matters because it is also the HMAC key behind the
   install ``state``, so two replicas disagreeing by a newline would reject

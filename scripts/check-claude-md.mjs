@@ -1,86 +1,76 @@
 #!/usr/bin/env node
 
 /**
- * Agent-guide size gate.
+ * Agent-guide size gate, in two tiers.
  *
- * Every guide is loaded into an agent's context in full, and the tool that
- * reads them stops honouring one past ~150k characters — silently, which is
- * the whole problem: nothing warns, the guide is simply half-absent and the
- * agent works from whatever survived. The root file reached 233k that way, one
- * well-justified paragraph at a time.
+ * Usage:
+ *   node scripts/check-claude-md.mjs            # verify
+ *   node scripts/check-claude-md.mjs --update   # lower/remove baseline entries to match the tree
  *
- * The ROOT guide is `AGENTS.md`; the root `CLAUDE.md` is a one-line
- * `@AGENTS.md` import so both names resolve to one file. Package guides are
- * `CLAUDE.md` (Claude Code auto-loads a package's guide when working in that
- * directory). So the glob covers both names, and the root shim is checked for
- * being a shim rather than measured — an 11-character file passing a 120k cap
- * proves nothing, while a shim that grew back into a second copy of the guide
- * is the actual failure this pattern invites.
+ * - **Auto-loaded** guides — the root `AGENTS.md`, every `CLAUDE.md` in a
+ *   package (root or nested directory) and `docs/CLAUDE.md` — are capped at
+ *   {@link MAX_AUTO_CHARS}. Claude Code loads these without being asked, so
+ *   every task in that directory pays for all of them before reading code.
+ * - **Reference** files — `*-CLAUDE.md` siblings, `.agents/*.md`, and the
+ *   scaffold and template `CLAUDE.md`s (product artifacts, not auto-loaded repo
+ *   docs) — keep {@link MAX_REFERENCE_CHARS}, 20% under the ~150k point past
+ *   which an agent's read silently drops the rest.
  *
- * So the cap here is 20% UNDER that ceiling, leaving room for a section to be
- * added without the next author having to split a file mid-task. The fix when
- * this fails is almost never to delete rationale: move the section into the
- * owning package's `CLAUDE.md` (which Claude Code loads when working in that
- * directory) and leave a pointer, as the root file's "Package guides" table
- * does.
+ * An auto-loaded guide still over its cap is listed in
+ * `scripts/claude-md-baseline.json` at its recorded size. The baseline is
+ * shrink-only: a listed file fails when it grows past its entry AND when it
+ * shrinks below it (so the gain is locked in), an entry for a missing file
+ * fails, and `--update` only ever lowers or removes entries — never raises one
+ * or adds a file, so an increase is a hand edit in a reviewable diff.
  *
- * `.agents/*.md` is included for the same reason the guides are: those files
- * exist so AGENTS.md can stay small, and an agent reads one whole when it
- * follows the pointer. A cap that stopped at the root would just relocate the
- * problem.
+ * The root `CLAUDE.md` is pinned to `@AGENTS.md` rather than measured: content
+ * pasted there would be read by Claude Code and no other tool.
  *
- * `packages/aai-templates/scaffold/CLAUDE.md` is INCLUDED deliberately. It is
- * a product artifact — embedded in the studio system prompt and shipped inside
- * the `@alexkroman1/aai` tarball as `AGENT_GUIDE.md` — so it is read by an
- * agent in exactly the same way, and it cannot be split at all (it has no
- * packages to push sections into, and a `@path` import would not help: an
- * import is expanded into context at launch too). It is the one file where the
- * answer really is to cut. Note the cap is NOT about a scaffolded project's own
- * context any more — `layerScaffold` writes a pointer at the SDK copy instead
- * of copying this file — it is about the studio prompt and about an agent that
- * follows that pointer and reads the whole thing.
- *
- * Wired up as `pnpm check:claude-md`, and paired with
- * `packages/aai-gates/src/claude-md-limit.test.ts`, which asserts the same two
- * lines from the ordinary test run (and that this script's cap still matches
- * the one it checks). Keep MAX_CHARS below in step with the BUDGET there.
+ * Paired with `packages/aai-gates/src/claude-md-limit.test.ts`, which reads the
+ * same baseline and asserts both caps match the ones here.
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { repoRoot } from "./_fs.mjs";
+import { parseScriptArgs } from "./_args.mjs";
+import { compareNames, repoRoot } from "./_fs.mjs";
 
 const ROOT = repoRoot(import.meta.url);
+const BASELINE = "scripts/claude-md-baseline.json";
 
-/** 20% under the 150k limit. */
-const MAX_CHARS = 120_000;
-
-/**
- * A guide at or past this fraction of the cap is reported as nearly full.
- *
- * The pass/fail line alone is not enough here, and the reason is specific to
- * how these files grow. A guide gains a paragraph as a SIDE EFFECT of shipping
- * something else — you fixed a subtle thing, you write down why — so the author
- * who trips the cap is never the author who filled it, and the fix (move a
- * section into the owning package's guide, leave a pointer) is a documentation
- * refactor landing inside an unrelated change. Two guides have been at 99-100%
- * for some time; #1058 hit that twice, splitting `aai/CLAUDE.md` at 100% and
- * `aai-server/CLAUDE.md` at 99.9%, both mid-branch and neither related to the
- * feature.
- *
- * So a nearly-full guide is announced while there is still room to plan the
- * split, and every run prints the remaining characters rather than a bare
- * percentage: "1,022 chars left" is a decision, "99% of cap" is a shrug.
- */
+/** Cap for a guide Claude Code loads unasked. */
+const MAX_AUTO_CHARS = 40_000;
+/** Cap for a file read on demand: 20% under the ~150k truncation point. */
+const MAX_REFERENCE_CHARS = 120_000;
+/** A file at or past this fraction of its cap is reported as nearly full. */
 const WARN_RATIO = 0.9;
 
-// `--others --exclude-standard` includes new, not-yet-committed files (but not
-// gitignored ones), so a freshly-added oversized guide is caught too.
-// Deduped: during a conflicted merge or rebase `--cached` lists a path once per
-// merge stage, so a conflicted guide would otherwise be read and reported three
-// times.
+const { values: FLAGS } = parseScriptArgs({
+  script: import.meta.url,
+  options: { update: { type: "boolean" } },
+});
+
+/** Product artifacts: shipped to users, never auto-loaded as repo docs. */
+const PRODUCT = /^packages\/aai-templates\/(scaffold|templates)\//;
+
+/**
+ * `auto` for a guide Claude Code loads unasked, else `reference`.
+ *
+ * Decided by name: any `CLAUDE.md` outside the product trees is auto-loaded in
+ * its directory, wherever it sits, so a new nested guide gets the tight cap
+ * without this list learning about it.
+ */
+function tierOf(path) {
+  if (path === "AGENTS.md") return "auto";
+  if (/(^|\/)CLAUDE\.md$/.test(path) && !PRODUCT.test(path)) return "auto";
+  return "reference";
+}
+
+// `*` in a pathspec crosses `/`, so `*CLAUDE.md` finds nested guides too.
+// `--others --exclude-standard` catches a new, unstaged guide; the Set dedupes
+// the per-stage rows `--cached` prints during a conflicted merge.
 const files = [
   ...new Set(
     execFileSync(
@@ -92,21 +82,15 @@ const files = [
         "--exclude-standard",
         "*CLAUDE.md",
         "AGENTS.md",
-        // The on-demand references AGENTS.md's "Detailed references" table
-        // points at. They are read by an agent exactly the way a guide is —
-        // whole, into context — so the same cap applies. Leaving them out
-        // would move the failure rather than fix it: a section pushed here to
-        // get the root under the cap would sit in a file nothing measures.
         ".agents/*.md",
       ],
-      {
-        cwd: ROOT,
-        encoding: "utf8",
-      },
+      { cwd: ROOT, encoding: "utf8" },
     )
       .split("\n")
       .filter(Boolean)
-      .filter((path) => !path.includes("node_modules/")),
+      .filter((path) => !path.includes("node_modules/"))
+      // A tracked file deleted in the working tree is not a guide any more.
+      .filter((path) => existsSync(join(ROOT, path))),
   ),
 ].sort();
 
@@ -115,119 +99,178 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-// The root shim must stay a shim. Both names have to resolve to ONE guide;
-// content pasted here would be loaded by Claude Code and by nothing else, so
-// the two would diverge with no symptom until an agent using another tool
-// worked from the older half.
 const ROOT_SHIM = "CLAUDE.md";
 const ROOT_GUIDE = "AGENTS.md";
 if (files.includes(ROOT_SHIM)) {
   const shim = readFileSync(join(ROOT, ROOT_SHIM), "utf8").trim();
   if (shim !== `@${ROOT_GUIDE}`) {
     console.error(
-      `\ncheck-claude-md: ${ROOT_SHIM} must contain exactly "@${ROOT_GUIDE}" and nothing else.\n\n` +
-        `The root guide lives in ${ROOT_GUIDE} — the name every agent tool reads. ` +
-        `${ROOT_SHIM}\nimports it so Claude Code sees the same file. Put the content in ` +
-        `${ROOT_GUIDE}.\n`,
+      `\ncheck-claude-md: ${ROOT_SHIM} must contain exactly "@${ROOT_GUIDE}" and nothing else.\n` +
+        `Put the content in ${ROOT_GUIDE}, which ${ROOT_SHIM} imports.\n`,
     );
     process.exit(1);
   }
 }
 
-const guides = files.map((path) => {
-  const size = readFileSync(join(ROOT, path), "utf8").length;
-  return { path, size, remaining: MAX_CHARS - size };
-});
+/** @type {{ _description?: string, guides?: Record<string, number> }} */
+const baselineFile = JSON.parse(readFileSync(join(ROOT, BASELINE), "utf8"));
+const baseline = baselineFile.guides ?? {};
 
-const violations = guides.filter((g) => g.size > MAX_CHARS);
-const nearlyFull = guides
-  .filter((g) => g.size <= MAX_CHARS && g.size >= MAX_CHARS * WARN_RATIO)
-  .sort((a, b) => a.remaining - b.remaining);
-
-const pct = (size) => Math.round((size / MAX_CHARS) * 100);
 const num = (n) => n.toLocaleString("en-US");
 
-/**
- * How many of a guide's biggest sections to name when it is nearly full.
- *
- * Enough to see where the budget actually went, few enough to read at a glance.
- * Five covers the majority of every guide measured here — `scaffold/CLAUDE.md`'s
- * top section alone is a third of it.
- */
-const TOP_SECTIONS = 5;
+const guides = files
+  .filter((path) => path !== ROOT_SHIM)
+  .map((path) => {
+    const size = readFileSync(join(ROOT, path), "utf8").length;
+    const tier = tierOf(path);
+    const cap = tier === "auto" ? MAX_AUTO_CHARS : MAX_REFERENCE_CHARS;
+    const recorded = tier === "auto" ? baseline[path] : undefined;
+    return { path, size, tier, cap, recorded, limit: recorded ?? cap };
+  });
+const byPath = new Map(guides.map((g) => [g.path, g]));
 
-/**
- * A guide's `##` sections, largest first.
- *
- * The remedy this gate prints is "move a section" or "cut", and both are
- * decisions about WHICH section — so a report that gives only a total leaves
- * the author to measure by hand, which is what happened: one session shaved
- * prose across four passes to recover a few hundred characters, having never
- * seen that a single section held 33% of the file. `check-file-length.mjs`
- * already made this argument one level down ("plan the split now rather than at
- * the cap") and prints headroom per file for it; this is the same move per
- * section.
- *
- * Split on `\n## ` rather than any heading level: `###` is a subsection of a
- * decision already made, and naming those would bury the one that matters.
- */
-function topSections(text, limit = TOP_SECTIONS) {
-  const sections = text.split(/\n(?=## )/).map((body) => ({
-    title: (body.split("\n", 1)[0] ?? "").replace(/^#+ /, "").trim() || "(preamble)",
-    size: body.length,
-  }));
-  return sections.sort((a, b) => b.size - a.size).slice(0, limit);
+/** A guide's `##` sections, largest first — the remedy is a choice of section. */
+function topSections(text, limit = 5) {
+  return text
+    .split(/\n(?=## )/)
+    .map((body) => ({
+      title: (body.split("\n", 1)[0] ?? "").replace(/^#+ /, "").trim() || "(preamble)",
+      size: body.length,
+    }))
+    .sort((a, b) => b.size - a.size)
+    .slice(0, limit);
 }
 
-/** The biggest sections of one guide, as report lines. */
 function sectionReport(path) {
   const text = readFileSync(join(ROOT, path), "utf8");
   const lines = [`    where ${path}'s characters are:`];
   for (const { title, size } of topSections(text)) {
-    lines.push(`      ${num(size).padStart(7)}  ${pct(size).toString().padStart(3)}%  ${title}`);
+    const pct = Math.round((size / text.length) * 100);
+    lines.push(`      ${num(size).padStart(7)}  ${String(pct).padStart(3)}%  ${title}`);
   }
   return lines.join("\n");
 }
 
-const REMEDY =
-  "Move a section into the owning package's CLAUDE.md and leave a pointer;\n" +
-  'see the root AGENTS.md\'s "Package guides" table and "Updating AGENTS.md".\n' +
-  "The scaffold guide is the one that has to be CUT instead — it ships to\n" +
-  "users inside the SDK tarball, is embedded in the studio prompt, and has no\n" +
-  "packages to push into.\n";
-
-if (violations.length > 0) {
-  console.error(
-    `\ncheck-claude-md: ${violations.length} file(s) over the ${num(MAX_CHARS)} char cap:\n`,
-  );
-  for (const { path, size } of violations) {
-    console.error(`  ${path} — ${num(size)} chars (${pct(size)}% of cap)`);
-    console.error(sectionReport(path));
+// --- Baseline problems: entries that name no auto-loaded guide, or exceed the
+// reference cap (a hand-raised entry cannot buy past the truncation margin).
+const baselineErrors = [];
+for (const [path, recorded] of Object.entries(baseline)) {
+  const guide = byPath.get(path);
+  if (guide === undefined) {
+    baselineErrors.push(`${path}: baselined but no such guide exists (stale entry)`);
+  } else if (guide.tier !== "auto") {
+    baselineErrors.push(`${path}: baselined but is a reference file, capped at ${num(guide.cap)}`);
+  } else if (!Number.isInteger(recorded) || recorded > MAX_REFERENCE_CHARS) {
+    baselineErrors.push(
+      `${path}: entry ${recorded} is not an integer ≤ ${num(MAX_REFERENCE_CHARS)}`,
+    );
   }
-  console.error(`\n${REMEDY}`);
-  process.exit(1);
 }
+
+if (FLAGS.update === true) {
+  /** @type {Record<string, number>} */
+  const next = {};
+  const refused = [];
+  for (const [path, recorded] of Object.entries(baseline)) {
+    const guide = byPath.get(path);
+    if (guide === undefined || guide.tier !== "auto") continue; // stale → removed
+    if (guide.size <= MAX_AUTO_CHARS) continue; // under the cap → removed
+    if (guide.size > recorded) refused.push(guide);
+    next[path] = Math.min(recorded, guide.size);
+  }
+  const sorted = Object.fromEntries(Object.entries(next).sort(([a], [b]) => compareNames(a, b)));
+  const out = { ...baselineFile, guides: sorted };
+  writeFileSync(join(ROOT, BASELINE), `${JSON.stringify(out, null, 2)}\n`);
+  const removed = Object.keys(baseline).filter((p) => !(p in sorted));
+  const lowered = Object.keys(sorted).filter((p) => (sorted[p] ?? 0) < (baseline[p] ?? 0));
+  console.log(
+    `check-claude-md: ${BASELINE} updated — ${lowered.length} lowered, ${removed.length} removed.`,
+  );
+  const unlisted = guides.filter(
+    (g) => g.tier === "auto" && g.recorded === undefined && g.size > MAX_AUTO_CHARS,
+  );
+  if (refused.length > 0 || unlisted.length > 0) {
+    for (const g of refused) {
+      console.error(`  ${g.path} grew to ${num(g.size)} past its entry — --update never raises`);
+    }
+    for (const g of unlisted) {
+      console.error(
+        `  ${g.path} is ${num(g.size)}, over ${num(MAX_AUTO_CHARS)} and unlisted — --update never adds`,
+      );
+    }
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+const violations = guides.filter((g) => g.size > g.limit);
+const slack = guides.filter((g) => g.recorded !== undefined && g.size < g.recorded);
+const nearlyFull = guides
+  .filter((g) => g.recorded === undefined && g.size <= g.cap && g.size >= g.cap * WARN_RATIO)
+  .sort((a, b) => b.size / b.cap - a.size / a.cap);
 
 const widest = Math.max(...guides.map((g) => g.path.length));
-for (const { path, size, remaining } of guides) {
+for (const { path, size, tier, limit, recorded } of guides) {
+  const note = recorded === undefined ? "" : "  (baselined)";
   console.log(
-    `  ${path.padEnd(widest)}  ${num(size).padStart(8)} chars  ${String(pct(size)).padStart(3)}%  ` +
-      `${num(remaining).padStart(8)} left`,
+    `  ${path.padEnd(widest)}  ${tier.padEnd(9)}  ${num(size).padStart(8)} / ${num(limit).padStart(7)}${note}`,
   );
 }
-console.log(`\ncheck-claude-md: ${files.length} file(s) within the ${num(MAX_CHARS)} char cap.`);
 
-// A warning, not a failure: the guide is still readable in full, and failing
-// here would block the author who merely arrived last. It is loud because the
-// alternative is finding out from a gate in the middle of an unrelated change.
+const REMEDY =
+  "Move a section into the CLAUDE.md of the directory whose files it governs\n" +
+  "(or into a *-CLAUDE.md sibling / .agents/ file if it is reference), leave a\n" +
+  'pointer, and cut history — see AGENTS.md, "Updating agent guides". The scaffold\n' +
+  "guide ships to users and has to be cut instead.\n";
+
+let failed = false;
+if (baselineErrors.length > 0) {
+  failed = true;
+  console.error(`\ncheck-claude-md: ${BASELINE} is invalid:`);
+  for (const line of baselineErrors) console.error(`  ${line}`);
+  console.error("Run `pnpm claude-md:update` to drop stale entries.");
+}
+if (violations.length > 0) {
+  failed = true;
+  console.error(`\ncheck-claude-md: ${violations.length} file(s) over their limit:\n`);
+  for (const g of violations) {
+    const why =
+      g.recorded === undefined
+        ? `the ${g.tier}-tier cap of ${num(g.cap)}`
+        : `its baseline of ${num(g.recorded)} (shrink-only; ${BASELINE})`;
+    console.error(`  ${g.path} — ${num(g.size)} chars, over ${why}`);
+    console.error(sectionReport(g.path));
+  }
+  console.error(`\n${REMEDY}`);
+}
+if (slack.length > 0) {
+  failed = true;
+  console.error(`\ncheck-claude-md: ${slack.length} baselined guide(s) shrank — lock the gain in:`);
+  for (const g of slack) {
+    console.error(`  ${g.path} — ${num(g.size)} chars, baseline ${num(g.recorded ?? 0)}`);
+  }
+  console.error("Run `pnpm claude-md:update` and commit the lowered baseline.");
+}
+if (failed) process.exit(1);
+
+console.log(
+  `\ncheck-claude-md: ${guides.length} file(s) within limits ` +
+    `(auto-loaded ${num(MAX_AUTO_CHARS)}, reference ${num(MAX_REFERENCE_CHARS)}, ` +
+    `${Object.keys(baseline).length} baselined).`,
+);
+
+// Advisory: the author who trips a cap is rarely the one who filled it, so
+// announce the split while there is still room to plan it.
 if (nearlyFull.length > 0) {
   console.warn(
-    `\ncheck-claude-md: ${nearlyFull.length} guide(s) past ${Math.round(WARN_RATIO * 100)}% of the cap — ` +
+    `\ncheck-claude-md: ${nearlyFull.length} file(s) past ${Math.round(WARN_RATIO * 100)}% of their cap — ` +
       "split before adding more:\n",
   );
-  for (const { path, size, remaining } of nearlyFull) {
-    console.warn(`  ${path} — ${num(size)} chars, only ${num(remaining)} left (${pct(size)}%)`);
-    console.warn(sectionReport(path));
+  for (const g of nearlyFull) {
+    console.warn(
+      `  ${g.path} — ${num(g.size)} chars, ${num(g.cap - g.size)} left of ${num(g.cap)}`,
+    );
+    console.warn(sectionReport(g.path));
   }
   console.warn(`\n${REMEDY}`);
 }

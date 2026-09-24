@@ -474,7 +474,7 @@ def build_image(*, port: int, extra_env: dict[str, str] | None = None):
         # Keep the major in lockstep with ``DEFAULT_SANDBOX_IMAGE``
         # (aai-server/modal-sandbox.ts): the host and its guest sandboxes run
         # the same runtime by design, which is what makes the harness the dev
-        # server (see "Dev/prod parity" in CLAUDE.md).
+        # server (see "Dev/prod parity" in packages/aai-guest/CLAUDE.md).
         modal.Image.from_registry("node:26-slim", add_python="3.13")
         .apt_install("ca-certificates")
         # pnpm comes from npm, NOT corepack. Node stopped shipping corepack in

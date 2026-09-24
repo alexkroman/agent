@@ -371,7 +371,8 @@ Four things to know before reaching for it:
   failed spawn is a failed spawn.
 
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
-  exists for — see "Two questions, two sentinels" above, which owns the account.
+  exists for — see "Two questions, two sentinels" in `CLAUDE.md`,
+  which owns the account.
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox/errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
@@ -408,7 +409,7 @@ Four things to know before reaching for it:
   Modal App sandboxes are created under (default `aai-server`). **Its major
   tracks the SERVICE image's and `.node-version`, and that split floor decides
   which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
-  "The guest image's Node major, and the split floor it creates" in
+  "The snapshot image" in
   `packages/aai-guest/CLAUDE.md`.
 - **Modal reports a `skopeo` manifest miss as `Image build for im-<id> failed
   with the exception:` and then NOTHING** — no tag, no registry, no remedy — one
@@ -550,9 +551,9 @@ Four things to know before reaching for it:
   `aai-guest/limits.ts`; the window also covers the boot gap before the
   first dial). AGENT guests have no host socket, so they own their own
   lifecycle instead: self-exit after `AGENT_IDLE_EXIT_MS` with zero
-  sessions (see `packages/aai-guest/CLAUDE.md`). Either way, once the exec has
-  exited, Modal's `idleTimeoutMs` (`SANDBOX_IDLE_TIMEOUT_SECS`, default
-  15 min) terminates the sandbox. These are backstops, not the normal
+  sessions (see `packages/aai-guest/src/harness/CLAUDE.md`). Either way, once
+  the exec has exited, Modal's `idleTimeoutMs` (`SANDBOX_IDLE_TIMEOUT_SECS`,
+  default 15 min) terminates the sandbox. These are backstops, not the normal
   path: Modal delivers stop signals to the container's **Python** runtime,
   never to a bare `subprocess.Popen` child, so `run_node`
   (scripts/modal_image.py) forwards SIGTERM/SIGINT to the node process and

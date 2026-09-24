@@ -57,7 +57,7 @@ import { type SessionErrorCode, SessionErrorCodeSchema } from "@alexkroman1/aai/
  * WIRE says; this is what the runtime then does, and the two can disagree in a
  * way that is invisible to a client: a `terminated` site that forgot to close
  * its provider link leaves a billed session running behind a call the client
- * has ended, which is the `endSession` bug recorded in `packages/aai/CLAUDE.md`.
+ * has ended, which is the `endSession` bug recorded in `packages/aai/S2S-CLAUDE.md`.
  */
 export type SessionErrorRecovery =
   /** The session is over: the transport tears down and the client ends the call. */
@@ -234,7 +234,7 @@ export const SESSION_ERROR_SITES: readonly SessionErrorSite[] = [
     transport: "s2s",
     // The service's own in-band `error` frame does NOT close the socket — the
     // conversation continues — so reporting it fatal left a session that looked
-    // live and was deaf. See `packages/aai/CLAUDE.md`.
+    // live and was deaf. See `packages/aai/S2S-CLAUDE.md`.
     recovery: "reported-only",
     driven: {
       owner: "packages/aai-runtime/src/integration/s2s-fuzz.integration.test.ts",

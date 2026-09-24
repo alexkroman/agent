@@ -81,7 +81,7 @@ export type NetworkProfile = {
   /**
    * Throughput ceiling in bits/s, or `Infinity`. Both legs are uncompressed
    * PCM16 (384 kbps down at 24 kHz), so a link that cannot carry the bitrate
-   * cannot be fixed by any buffer — that claim is in the aai-ui guide and this
+   * cannot be fixed by any buffer — that claim is in `src/worklets/CLAUDE.md` and this
    * is what makes it measurable.
    */
   bitsPerSecond?: number;

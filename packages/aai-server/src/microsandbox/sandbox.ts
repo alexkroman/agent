@@ -104,7 +104,7 @@ export const LOCAL_GUEST_IMAGE_TAG = "aai-guest-harness:local";
  * `link-digest-workflow` template in a guest (typecheck, then both bundles, as
  * `studio/build.ts` runs them) peaks at **1219 MB**, and it is the WORKER
  * bundle that gets there — 106 MB after the typecheck, ~1200 MB after
- * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/CLAUDE.md`
+ * `buildWorker`. That corroborates the 1.29 GB wedge `aai-server/MODAL-CLAUDE.md`
  * records, and it means 480 MiB was never survivable.
  *
  * 4096 is therefore ~3.4x a SMALL project's peak, kept because a real workspace
@@ -134,7 +134,7 @@ export const DEFAULT_GUEST_CPUS = 4;
  * Rolldown's thread pool, pinned to one.
  *
  * The in-guest build's peak is NATIVE memory, not V8's — which is why
- * `--max-old-space-size` cannot bound it (`aai-server/CLAUDE.md`) — and each
+ * `--max-old-space-size` cannot bound it (`aai-server/MODAL-CLAUDE.md`) — and each
  * Rolldown worker carries its own arena. The names come out of the binding
  * itself (`strings` on `rolldown-binding.*.node`): `ROLLDOWN_WORKER_THREADS`
  * and `ROLLDOWN_MAX_BLOCKING_THREADS` are Rolldown's own, `RAYON_NUM_THREADS`

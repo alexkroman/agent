@@ -161,7 +161,7 @@ export const GUEST_PORT = 8080;
  * writes boot artifacts before its exec and pre-issues `sb.tunnels()` so the
  * round trip overlaps that write — and those differences are load-bearing, not
  * drift (see "An agent spawn's steps are ordered by what they actually depend
- * on" in CLAUDE.md). Merging the surrounding `Promise.all`s would re-serialize
+ * on" in MODAL-CLAUDE.md). Merging the surrounding `Promise.all`s would re-serialize
  * exactly what the tests there pin.
  */
 export function guestOrigin(tunnels: Record<number, { host: string; port: number }>): string {
@@ -172,7 +172,7 @@ export function guestOrigin(tunnels: Record<number, { host: string; port: number
   return `wss://${tunnel.host}:${tunnel.port}`;
 }
 
-/** Probe evaluation interval — half of it is dead spawn time; see CLAUDE.md. */
+/** Probe evaluation interval — half of it is dead spawn time; see MODAL-CLAUDE.md. */
 const READINESS_PROBE_INTERVAL_MS = 100;
 
 /**

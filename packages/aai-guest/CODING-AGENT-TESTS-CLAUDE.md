@@ -14,13 +14,15 @@ How the studio's coding agent is tested, all five tiers of it. A SIBLING of
 `packages/aai-guest/CLAUDE.md` rather than a second package guide: Claude Code
 auto-loads only `CLAUDE.md`, and this is REFERENCE — read once you are already
 writing or reading a test for this agent, never something an agent needs
-resident to act at all. The guide's own "The coding agent is an ordinary
-`agent()`" section is what you want first; this is the layer above it.
+resident to act at all. "The coding agent is an ordinary `agent()`" in
+`packages/aai-guest-studio/CLAUDE.md` is what you want first; this is the layer
+above it.
 
 It is here because that guide reached 95% of the 120,000-character cap with
 these two sections in it. Repo-wide conventions and the tier table live in the
-root `AGENTS.md`; `packages/aai-guest/CLAUDE.md`'s "Testing this package"
-still owns `_test-utils.ts`, the tier violations and the scenario-tier split.
+root `AGENTS.md`; `packages/aai-guest-core/CLAUDE.md`'s "What `test-utils.ts`
+owes" owns the shared helpers, and `packages/aai-guest-studio/CLAUDE.md`'s
+"Testing notes" the scenario-tier split.
 
 ## The coding agent is tested at the AGENT level too
 

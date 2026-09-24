@@ -13,7 +13,7 @@
  * copies, one of them 30 lines, each ending in `as unknown as LanguageModel` —
  * and a hand-written provider fake is exactly the artifact this repo has learned
  * not to leave to a call site: **the fakes' fidelity is where the false findings
- * came from, every time** (`packages/aai-runtime/CLAUDE.md`, on the S2S fuzz).
+ * came from, every time** (`packages/aai-runtime/src/integration/CLAUDE.md`).
  *
  * The concrete instance is the `finish` part. A step that ends in a tool call
  * must report `tool-calls`, and the reason must be the `{ unified, raw }` PAIR

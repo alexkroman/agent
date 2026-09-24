@@ -9,8 +9,7 @@ read_when: >-
 
 A SIBLING of `packages/aai-server/CLAUDE.md`, for the reason
 [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md) beside it is one: Claude Code auto-loads
-only `CLAUDE.md`, so nothing here is resident, and that guide is at 99% of the
-120,000-char cap with no other package to push a section into. The RULE lives
+only `CLAUDE.md`, so nothing here is resident. The RULE lives
 there, under "Queryable run state is not `workflow_runs`' job", because a
 decision somebody needs resident while editing a migration belongs in the
 resident guide. What is HERE is the evidence, which is reference: the index

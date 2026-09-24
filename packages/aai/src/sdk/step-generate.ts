@@ -207,7 +207,7 @@ export async function stepGenerate(
       // The same setting the shipped voice pipeline sends, and for the same
       // measured reason: on a hybrid-thinking model, reasoning roughly doubles
       // time to first token for no gain on work shaped like this. See
-      // `packages/aai/CLAUDE.md`'s `llm({ provider: "assemblyai" })` rows.
+      // "The gateway default model" in `packages/aai/src/sdk/providers/CLAUDE.md`.
       reasoning_effort: "none",
       // `omitUndefined` rather than two spread-ternaries: an unset knob must be
       // ABSENT from the body, not present as `undefined`, and this is the one

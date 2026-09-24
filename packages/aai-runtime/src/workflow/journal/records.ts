@@ -86,7 +86,7 @@ export type StepEntry = {
    * the gap between one step's finish and the next's — which is the previous
    * step's cost PLUS whatever the body did between them, and is nothing at all
    * for the first step of a run or the first after a wait. The 660 MiB
-   * production case in `packages/aai-runtime/CLAUDE.md` is described in terms
+   * production case in `packages/aai-runtime/JOURNAL-CLAUDE.md` is described in terms
    * nobody could query.
    *
    * An absolute instant rather than a `durationMs`, because the difference is

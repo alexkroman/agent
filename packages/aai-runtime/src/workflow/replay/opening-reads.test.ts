@@ -10,7 +10,7 @@
  *
  * On the platform arm each read is one `POST /:slug/workflow-journal`, measured
  * at ~840 ms — see "A journal read is a round trip, and four shapes issued it N
- * times" in `packages/aai-runtime/CLAUDE.md`. `workflow/engine.ts` prefetches
+ * times" in `packages/aai-runtime/JOURNAL-CLAUDE.md`. `workflow/engine.ts` prefetches
  * the pair beside the run record and its `running` compare-and-set and hands
  * both promises down, so a DEPLOYED delivery pays one latency for its whole
  * opening; what this pins is the path with nothing to prefetch, where the

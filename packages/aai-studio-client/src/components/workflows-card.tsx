@@ -12,8 +12,8 @@
 // **It reads the AGENT's API, not a studio route.** There is no studio endpoint
 // in front of this and deliberately so: the platform already brokers
 // `/:slug/workflows/*` for exactly this shape of caller, the studio shares that
-// origin by construction (see "One public origin" in
-// packages/aai-server/CLAUDE.md), so `connect-src 'self'` already permits it. A
+// origin by construction (see "Origin and CORS" in
+// packages/aai-studio-server/CLAUDE.md), so `connect-src 'self'` already permits it. A
 // second route would be a second thing to keep in step with the run shape.
 //
 // **Reading it can BOOT the agent's sandbox**, because brokering does. That is

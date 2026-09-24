@@ -294,7 +294,7 @@ describe("createPipelineHistory — LLM history cap and tool-call pairing", () =
   // DEFAULT_MAX_HISTORY, so every trim lands on a turn boundary.
   //
   // A SHORT generated list of tool-call counts, consumed CYCLICALLY over a
-  // fixed number of turns (AGENTS.md, "Property tests run on fast-check"). The
+  // fixed number of turns (.agents/testing.md, "Property tests run on fast-check"). The
   // run makes `TURNS` decisions, and generating one entry per decision would
   // shrink to a wall of numbers rather than to a readable turn-shape cycle.
   // This replaced a hand-rolled LCG over a single fixed walk, which forfeited

@@ -5,7 +5,7 @@
  *
  * **Rate conversion belongs at the edge, and the telephony bridge IS the
  * edge.** The host deliberately does not resample for its own clients (see
- * "The host does not resample" in `packages/aai/CLAUDE.md`) — every other
+ * "The Voice Agent API accepts ONE sample rate" in `packages/aai/S2S-CLAUDE.md`) — every other
  * client owns its rate, so asking it to send the advertised rate is both
  * cheaper and more honest than papering over it in the hot path. A phone
  * carrier is the one client that cannot comply: 8 kHz μ-law is what the PSTN

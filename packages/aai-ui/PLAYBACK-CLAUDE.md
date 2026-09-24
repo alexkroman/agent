@@ -11,9 +11,7 @@ A SIBLING of this package's guide rather than a second one — the shape
 `AGENTS.md` describes under "Package guides": Claude Code auto-loads only
 `CLAUDE.md`, so this is read on demand, which is the right shape for the
 MEASUREMENTS behind two constants and the wrong one for a rule someone needs
-resident. It moved here when `CLAUDE.md` reached the 120,000-character cap with
-three hundred characters to spare. Nothing was cut; the section is below as it
-stood, and `CLAUDE.md` keeps a pointer under the same heading.
+resident. `src/worklets/CLAUDE.md` points here.
 
 ## Tuning playback against a REAL reply, not a generated one
 

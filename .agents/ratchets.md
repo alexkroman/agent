@@ -297,378 +297,33 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   claim was a bare `await` that HANGS rather than fails. A file that will not
   PARSE fails the run; skipping it would understate every count the gate prints.
 
-- **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps every guide
-  (this file, each package's `CLAUDE.md`, the scaffold's included) at
-  **120,000 characters**, 20% under
-  the ~150k ceiling past which an agent's context silently drops the rest of
-  the file. Silently is the problem: nothing warns, the guide is just
-  half-absent, which is how the root file reached 233k one well-justified
-  paragraph at a time. The fix when it fails is to MOVE a section into the
-  owning package's guide and leave a pointer (see "Package guides" and
-  "Updating AGENTS.md"), not to delete rationale — except in the scaffold
-  guide, which ships to users and has no packages to push sections into.
-  It also PINS the root `CLAUDE.md` to the single line `@AGENTS.md`: a shim
-  that grew back into a second copy of the guide is the failure this two-name
-  pattern invites — Claude Code would read it and every other agent tool would
-  read `AGENTS.md`, with no symptom until the two halves disagreed.
-  **The same cap is also a TEST**
-  (`packages/aai-gates/src/claude-md-limit.test.ts`), so it fails in the
-  ordinary test run and not only in `pnpm check` — an agent editing a guide
-  sees it without knowing this gate exists. It asserts both lines separately
-  (over budget = refactor before adding more; over 150k = a guide is being
-  truncated right now), that the root still links every package guide, and
-  that the script and CI wiring still agree with it.
-- **`pnpm check:api-nameable`** (`scripts/check-api-nameable.mjs`) — a type a
-  published signature references and NO subpath of its package exports. The
-  value passes, and the consumer cannot write the type down. Three things
-  already touched this and none FAILED — `includeForgottenExports` RECORDS such
-  a type, TypeDoc only covers what it renders, and `check:api-contracts` then
-  hashed a declaration without asking whether it is importable — so the surface
-  a consumer must satisfy and the one it can NAME had drifted apart unmeasured.
-  It cost `@alexkroman1/aai-runtime`'s eval and workflow-test surface, which could
-  not be rendered at all until four types were exported. Scored per PACKAGE and
-  baselined rather than absolute (some must stay unnameable: the `*Misuse`
-  compile-error types); its own doc argues both, and the two floors.
-- **`pnpm check:api-contracts`** carries two shrink-only baselines beside the
-  epochs, both in `packages/<pkg>/src/contracts/` and both lowered — never
-  raised — by `node scripts/api-contracts.mjs --update-internal`:
-  `internal-surface.json` (`@internal` names on a public subpath) and
-  `unowned-surface.json` — every declaration a capability HASH covers that no
-  capability owns, split into `unowned` (exported by some published subpath,
-  e.g. `AgentConfig` on `/manifest`) and `forgotten`
-  (`ae-forgotten-export`: exported by none). This is the second half of what
-  `check:api-nameable` measures, asked of the contract instead of the package:
-  a new ownerless type fails, `--bump`/`--update` refuse the capability that
-  reaches it, and the remedy is ONE owner, because a body hashed in three
-  capabilities is three epochs per change. It opened at 35 names in `aai` and
-  5 in `aai-runtime`, and stands at 26 and 4 now: the session event vocabulary
-  (`aai:events`), the Standard Schema types (`aai:standard-schema`), dialog's
-  event-name helpers and `ClientConfigResponseSchema` got owners. The gate
-  also fails a branch that grew any capability by
-  more than one epoch or one revision against the merge-base. That half is a
-  property of a BRANCH, the same exception `check:deploy-changeset` is, and it
-  clears the same bar: without a base it SAYS it did not run (every tree check
-  still does) rather than printing a checkmark over it. CI checks out full
-  history, so there it always runs. It also fails any CURRENT epoch whose
-  pinned rollup no longer probes compatible with ITSELF — a rollup imports its
-  siblings' current `dist`, so an export moving elsewhere rots it with no
-  change of its own (five `aai-runtime` rollups had, unnoticed). The mechanism
-  is `docs/CLAUDE.md`'s "The authoring surface is versioned in epochs".
-- **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
-  50% per-file statement floor over what `test:coverage` wrote, because the
-  `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module
-  landing untested. **Its ratchet runs the other way** — coverage may only go up,
-  so `--update` refuses to lower an entry and never creates one; `--seed` is the
-  bootstrap, opened at 15 files. Runs per package in CI's coverage matrix
-  (`--package`). The script's own doc carries the rest.
-
-- **`pnpm check:module-tests`** — a co-located test per module; read the script.
-
-- **`pnpm check:duplication`** (`scripts/check-duplication.mjs`) — jscpd v4
-  clone detection (≥50 tokens over ≥5 lines) over shipped source in
-  `packages/` and `scripts/`, holding each FILE to the number of its lines that
-  sit inside a clone, recorded in `scripts/duplication-baseline.json`. Same
-  contract and machinery as `check:hatches`: `--update` lowers, never raises.
-  Tests, `src/contracts/`, templates and scaffold are out, each for a reason
-  the script states. **A clone has two ends**, so a paste INTO `a.ts` can fail
-  on an untouched `b.ts`; the report names both ends, and the fix is removing
-  your copy, not raising `b.ts`. jscpd is loaded through `createRequire`
-  because 4.3.0's ESM build imports `colors/safe` without an extension.
-
-- **`pnpm check:guest-contract`** (`scripts/check-guest-contract.mjs`) — ties
-  `GUEST_CONTRACT_VERSION` (`aai-guest-core/src/limits.ts`) to the surface it
-  versions: the exec-env keys `agentBootEnv` writes, the `/manage/*` paths and
-  response keys, and the `CreateGuestRuntime`/`GuestRuntime` handshake types,
-  parsed with oxc and hashed with comments stripped into
-  `scripts/guest-contract.json`. An agent sandbox runs the harness PINNED at
-  deploy time and CI builds both ends from one commit, so no test can see them
-  disagree — the number used to be bumped by memory. A moved hash under an
-  unchanged version FAILS naming what moved; settle it with a bump plus
-  `--record "<reason>"`, or `--revise "<reason>"` when no pinned guest can
-  observe it. History is append-only — the epoch mechanism, cut down to one
-  contract. Its first run found `AAI_UPLOAD_BROKER_URL` and `AAI_DEBUG` in the
-  boot env with no mention in the version's changelog.
-
-**`pnpm debt:report` reads all of it back, and is deliberately NOT a gate.**
-Every baseline records a to-do list that is only consulted when a branch trips
-it, and the epoch tree records something richer — a written reason per break,
-and an epoch number that counts breaks since the reset. `scripts/debt-report.mjs`
-prints the capabilities that churn most (with their latest drop reason), the
-guest-contract history, every `*-baseline`/`*-allowlist`/`*-denylist` ledger
-DISCOVERED by filename (so a new ratchet joins by existing), and the files that
-sit in more than one ledger — usually one root cause behind several symptoms.
-`--json` for a dashboard. It exits 0 whatever it finds: nothing in it has a
-right answer to enforce, and "a threshold nothing enforces reads as a gate".
-
-- **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
-  — enforces **structural** conventions: the shapes that are wrong only in
-  relation to their siblings, which is why no per-file tool can see them.
-  Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." Their count is not
-  written here — a hand-kept one went stale twice. They cover the four things
-  this repo restates by hand — the
-  per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
-  `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
-  four published ones) and each `vitest.config.ts` importing `sharedConfig`;
-  `*-barrel.ts` files being pure re-export surfaces; the **dependency-graph
-  boundaries** under "Dependency flow" (aai imports no sibling, aai-runtime
-  imports only aai, the CLI imports neither server nor guest, the guest imports
-  no server code, the SERVER imports no guest source, neither browser bundle
-  — aai-ui, the studio client — imports platform or runtime code, the studio
-  server and the evals keep one legitimate edge each, `sdk/` reaches no `host/`
-  module, and a TEMPLATE imports no internal subpath and no private package —
-  shipped product, so an import that resolves here is absent from a user's
-  install and `check:template-types` compiles it clean);
-  and the repeated-by-construction shapes — every
-  STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
-  factory / `resolve*Settings` set, checked by SIGNATURE (its own Options in,
-  the stage type out) and for importing no vendor SDK,
-  every CHANNEL module's `*_CHANNEL_KIND` / `*ChannelOptions` / factory set (no
-  `*_API_KEY_ENV`: a channel's credential is its destination and is passed in,
-  never read from the agent env), each store factory returning the interface it
-  implements, and every template's `agent.ts` + `agent.test.ts` + `client.tsx` +
-  `tools/` default exports.
-  Four more were prose in this file until a roster in one of them went stale:
-  `test-helper-modules`, `published-testing-split`, `concurrency-primitives`
-  and `guest-route-exposure`, plus `type-level-tests` (a `.test-d.ts` really
-  asserts with `expectTypeOf`), which was never enforced at all. Each carries
-  its deleted paragraph as its `description` — that field is where the argument
-  goes, so a violation explains itself and a reviewer never re-explains it.
-  `pnpm check:konsistent-config` (`konsistent validate`) checks the config
-  against its schema without touching the tree.
-
-  `template-tools` was once retired on the ground that a DISCOVERED tool leaves
-  nothing per-file to assert. The DEFAULT EXPORT is what discovery reads, so
-  that is what it asserts now. See "A `tools/` file IS the tool" in
-  `packages/aai-templates/CLAUDE.md`.
-
-  Two things to know before editing `konsistent.json`. **A convention that
-  matches nothing passes** — a typo'd `paths` glob checks zero files and prints
-  the same "No violations found" as a healthy run, with no error anywhere, so
-  `packages/aai-gates/src/konsistent-config.test.ts` asserts every pattern's
-  literal prefix exists (plus that each convention is named, described, and
-  declares at least one predicate). **A deny list also goes stale by SILENCE**,
-  there being no allow-list form, so that test derives the package set from the
-  manifests and asserts the boundary matrix is TOTAL. And **the case maps
-  compose**:
-  `kebabToCamelMap` is DERIVED from `kebabToPascalMap` when absent, so
-  declaring `openai: OpenAI` for the type names also makes the factory
-  `openAIS2s`. That is the wanted derivation; the identity entries that used to
-  suppress it (`openai: openai`, `openrouter: openrouter`) are gone with the
-  lowercase spellings they kept alive. `elevenlabs: elevenLabs` stays, being a
-  real override rather than an identity.
-
-  The exact version pin, and the predicate-catalog trap that comes with it, are
-  in `packages/aai-templates/CLAUDE.md`.
-
-  [konsistent]: https://github.com/vercel-labs/konsistent
-
-- **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
-  `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Numbered rules, each printing WHY the invariant exists and what to use
-  instead, so a violation is self-correcting and a reviewer never re-explains
-  it.
-
-  **`node scripts/guard-invariants.mjs --rules` prints the catalogue.** There
-  used to be a copy of it here, a `# | Rule | Instead` table of all 32, and it
-  went stale twice — it stopped at 23, then at 28 — while the one DERIVED line
-  beside it, the printed count, stayed right. That is the same failure the
-  script's own prose catalogue was deleted for, and the file already said so
-  about itself ("when it disagrees with `--rules`, `--rules` is right"), which
-  is an instruction to read the other thing rather than a reason to keep this
-  one. So there is no copy now: the catalogue is computed from the `id`,
-  `label` and `remedy` every rule carries, and a new rule joins it by existing.
-
-  Rule IDs are **stable** — they appear in commit messages and in the baseline,
-  so a deleted rule leaves its number retired rather than letting a later rule
-  inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
-  checked; 15, reserved). Several are at zero and enforced
-  absolutely; the rest carry per-file baselines. **Rule 3 is back at zero**: it
-  used to carry a baselined entry that was never a violation — a wrapped
-  `Promise.race([` was matched by its opening LINE, which cannot see whether a
-  timer is among the elements, so a timer-free race scored. It is a node rule
-  now and looks at the elements, which is the difference between over-reporting
-  as the cheap error and not having to choose.
-
-  **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
-  presence, which `omitUndefined` *is*, so its matches rewrite without changing
-  behaviour; `...(x && { x })` also drops `""`, `0` and `false`, so widening rule
-  2 to reach it would have the gate recommend a behaviour change on 145 lines.
-  Rule 22 counts that family instead, the first rule here **seeded as debt** (145
-  across 75 files, goal zero) — its entries are lines nobody has read yet.
-
-  **Eight scopes, eight corpus FLOORS**, and three were missing — the
-  shipped-source corpus rules 11 and 27 share (1,224 files, and 11 is the
-  Windows-portability rule whose regressions are invisible on every machine
-  that runs CI), rule 12's guest HTTP surface, and rule 13's 175 template
-  files. The last two derive their corpus from `git ls-files`, which
-  exits **0** on a pathspec matching nothing where `git grep` exits 1 — that
-  asymmetry is exactly why the grep-based rules announced their own blindness
-  and these two could not.
-
-  **TWO ENGINES, chosen by what a rule ASKS.** A **line rule** carries a POSIX
-  ERE for `git grep -E`; a **node rule** carries a `match(node)` over a real
-  parse (`oxc-parser`, via `scripts/_ast-scan.mjs`, predicates in
-  `-nodes.mjs`). Everything else is shared — one baseline, one `--update`
-  contract, one report — so a rule keeps its id, key and budgets across a
-  migration, and the gate interleaves both lists by id. Ask whether the thing
-  banned is a **name** or a **shape**: `delete process.env.X` (5), a `/tmp`
-  literal (11), an `on*` declaration (16) are names, and grep answers them
-  exactly; "a callback that is `async`", "a delay that is zero", "a timer among
-  a race's elements" are shapes, and **every gap this gate has ever had was a
-  shape written as a pattern.** The timing family (3, 4, 19, 21, 23, 31) is all
-  six of them and went first — its module doc lists the four misses that closed,
-  including a rule 21 printing `0 ✓` over two live `expect.poll` calls Biome had
-  wrapped. Line rules keep one thing the parse gives up: they see code inside a
-  TEMPLATE LITERAL, which several fixtures write out and then execute. Parsing
-  the repo costs ~1.6 s; the gate went 1.2 s to 2.4 s.
-
-  **The rule definitions are seven modules behind one barrel.**
-  `guard-invariants-rules.mjs` re-exports `LINE_RULES` and `NODE_RULES` (each
-  sorted by id) and the scope constants; under it sit `-ere.mjs` and `-nodes.mjs`
-  (the two vocabularies), `-scopes.mjs` (the corpora), and four rule groups —
-  `-rules-timing.mjs` / `-rules-shape.mjs` / `-rules-state.mjs` /
-  `-rules-workflow.mjs`, the last holding the two rules over a shipped
-  `workflows/` body, which left the timing module when rule 31 took it past the
-  source cap.
-  **Every LINE-rule module is in the gate's `SELF_REFERENTIAL` set**,
-  because each `label` and `re` describes the thing it bans — a split that
-  forgot one file would be the fifth time this repo pays for that trap. The two
-  node modules are absent by proof rather than by oversight: a node rule's own
-  definition cannot match it, a remedy quoting the anti-pattern being a string
-  literal and not a call — the entry was removed and the gate stayed green. A
-  rule may also carry `samples: { matches, ignores }`, where a widened pattern's
-  proof belongs: rule 3 shipped for months with a single-line positive sample
-  while blind to the multi-line form. A node rule's samples are SOURCE, so that
-  gap is not expressible — but a node rule can still be silently dead, and rule
-  31 was, matching nothing until `unwrap` existed (oxc preserves
-  `ParenthesizedExpression`). Its own sample caught it.
-  The per-file baselines carry the same `--update`-only-lowers contract as
-  `check:hatches`.
-
-  **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
-  that file is a bare `{path: count}` map written by `--update`, with
-  `_description` its only prose, so a reason recorded there would be erased by
-  the next regeneration. It lives at the OCCURRENCE, in a comment beside the
-  line. A roster used to be duplicated here and is not, for the reason the
-  script's own prose copy of the rule catalogue was deleted: a hand-kept list of
-  baseline entries goes stale while the generated one stays right. Read the
-  entries out of the baseline and the reasons off the lines they sit on. The one
-  rule whose entries are NOT yet defended decisions is 22 — see above.
-
-  Rule 4's nine are zero-delay yields that cannot use `flush()`/`tick()`:
-  `tool-executor.ts`'s `setImmediate` between tool calls (shipped source, where
-  a test helper is not the remedy), the S2S fuzz harness's `drain()` — its own
-  doc has the measurement, `setTimeout(0)`'s ~1 ms floor costing that suite
-  ~60 s across tens of thousands of yields with no timer in the path to jump
-  ahead of — and six in packages not importing `aai/host/_test-utils.ts`.
-
-  **The frozen `src/contracts/compatibility/**` examples are no longer
-  baselined at
-  all** — they are excluded from every line rule by a pathspec in
-  `SOURCE_PATHSPECS` (read the comment there). That is the rule, not a
-  convenience: an exemption is per FILE *and* per RULE, so the next widened rule
-  re-opens the hole a per-file baseline had closed. Which is exactly what rule
-  2's widening did — four reviewers reported the same frozen file
-  independently.
-
-  **Four of these rules found real bugs on the day they were written**, which is
-  the argument for the whole gate. Rule 2 caught two `omitUndefined` conversions
-  the documented 44-site sweep had missed. Rule 11 came out of a Windows CI leg
-  failing on two shipped modules writing to a literal `/tmp` — drive-relative on
-  Windows — both of which also run under `aai dev`, so the bug was never
-  guest-only. Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`,
-  which `biome.json` excluded from linting until then.
-
-  **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
-  a mistake**, in the release path. A changeset whose package key is a typo is
-  IGNORED rather than rejected: `pnpm changeset status --since=origin/main` —
-  what the pre-push hook already runs — prints an empty bump list and exits 0,
-  verified by adding `"@alexkroman1/aai-typo": patch`. The release silently does
-  not happen and it surfaces after merge, on a branch that is gone. The rest of
-  the argument, including why it is its own module, is in
-  `scripts/guard-invariants-changesets.mjs`.
-
-  Rule 19 found a **sixth** hand-rolled `sleep` no gate could see:
-  `host/workflow-notify.ts` held a raw NUL byte, making the file BINARY to
-  `git grep` — silently exempt from every rule and from `check:hatches`.
-  Fixing the byte is what let the rule find the copy.
-
-  **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
-  path), so its gate spec asserts every path exists; it also made
-  `SELF_REFERENTIAL` per-rule rather than per-file.
-
-  Two things any new rule must respect — a dead pattern prints the same
-  checkmark as a rule upheld, and the rules module matches its own rules.
-  `guard-invariants-gate.test.ts` specs both; aai-templates' guide argues it.
-
-- **`pnpm check:deploy-changeset`** (`scripts/check-deploy-changeset.mjs`) — a
-  branch that changes code the PLATFORM DEPLOY carries must add a changeset that
-  ships it. `ship.yml` arms its deploy on a version bump to `aai-server` or
-  `aai-studio-server` and NOT on a source change (see "Fixed release coupling"),
-  while `changeset status` is satisfied by an EMPTY changeset — so a branch could
-  rewrite the platform, pass every other gate in this list, merge, and ship
-  nothing. **That is #1341**, the failure the version gate is accused of causing
-  and a changeset is the answer to; this is what says so at push time instead of
-  leaving it to whoever notices production is a release behind.
-
-  Four packages are in scope, because four reach production only through a
-  deploy: the two server packages, plus `aai-studio-client` (its `dist/` is baked
-  into the Modal image) and `aai-guest` (its harness is baked into the guest
-  image, whose tag the server PINS at deploy time). Two of them are CARRIERS —
-  the ones whose version bump actually arms the deploy — and a satisfying
-  changeset has to name one. `guard-invariants` rule 20's `SHIPS_VIA` is the same
-  model from the other side and the two COMPOSE: that rule catches a changeset
-  naming `aai-studio-client` without a carrier, this one catches a branch that
-  named neither, which is the case a rule reading changeset CONTENT cannot see.
-
-  **It is deliberately stricter than the mechanism.** An SDK changeset bumps both
-  carriers as dependents (`updateInternalDependencies: "patch"`), so it would
-  ship the platform anyway — and accepting that would have passed #1341, which
-  shipped precisely because something else was being released. Naming a carrier
-  means the platform ships because the author said so. For the same reason only
-  the changesets the BRANCH adds or edits count; a pending one on `main` bumps a
-  carrier for any branch cut while it sat there, which is the accident.
-
-  Two mechanical notes. The diff is **merge-base to WORKING TREE**, untracked
-  files included — `base...HEAD` compares two commits, so `pnpm check` would
-  print a checkmark over uncommitted work, and a brand-new module and a
-  brand-new changeset are both invisible to `git diff`. And a **carrier version
-  bump satisfies it directly**, using `ship.yml`'s own `bumped()` predicate:
-  that is what keeps the Version Packages PR green, since that branch deletes
-  the changesets and writes the version lines, and reading the mechanism beats
-  exempting a branch NAME. There is no opt-out and no allowlist — a path that
-  does not ship is a fact about the PATH, so it belongs in `isShippedSource`.
-  `aai-templates` has the same shape by the npm route and is deliberately out of
-  scope.
-
-- **`pnpm check:agent-guide`** (`scripts/sync-agent-guide.mjs`) — asserts
-  `packages/aai/AGENT_GUIDE.md` is the current copy of
-  `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
-  inside the SDK" below. Same silent-staleness shape as `check:guest-toolchain`.
-- **`pnpm check:authoring-guide`** (`scripts/check-authoring-guide.mjs`) —
-  `check:agent-guide` says the shipped guide is CURRENT; this says it is
-  COMPLETE. Every contracted authoring capability must be named in the guide's
-  CODE, never prose. Thirteen were absent; its own doc has the rest.
-- **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
-  asserts `packages/aai-templates/scaffold/package.json` still matches the
-  workspace. Third file in this committed-copy shape and the only one that
-  SHIPS, so it is where a catalogued bump is applied twice. It was enforced by
-  nothing until it broke, and `check:publish-protocols` structurally cannot
-  cover it — see "`check:scaffold` exists because the sync ran only during a
-  release" in `packages/aai-templates/CLAUDE.md`.
+- **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps agent
+  guides in two tiers. **Auto-loaded** guides (`AGENTS.md`, every package or
+  directory `CLAUDE.md`, `docs/CLAUDE.md`) get **40,000 characters**, because
+  Claude Code loads them unasked on every task in that directory.
+  **Reference** files (`*-CLAUDE.md` siblings, `.agents/*.md`, the scaffold and
+  template guides) get **120,000**, 20% under the ~150k point past which a read
+  silently drops the rest. An auto-loaded guide still over 40k is listed in
+  `scripts/claude-md-baseline.json`, which is shrink-only: growing past an
+  entry fails, shrinking below one fails until `pnpm claude-md:update` records
+  it, a stale entry fails, and `--update` never raises or adds. When it fails,
+  move the section to the `CLAUDE.md` of the directory it governs and leave a
+  pointer (the report names the largest `##` sections); the scaffold guide has
+  to be cut. It also pins the root `CLAUDE.md` to `@AGENTS.md`. Mirrored as a
+  test, `packages/aai-gates/src/claude-md-limit.test.ts`, which reads the same
+  baseline and asserts the caps match.
 - **`pnpm check:shell`** (`scripts/check-shell.mjs`) — ShellCheck over every
   tracked `*.sh` and extensionless `sh`/`bash`-shebang file, since Biome reads
   no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
   announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
   `check.yml` sets. Floored at the measured script count.
 - **`pnpm check:guide-index`** (`scripts/docs-list.mjs --check`) — every agent
-  guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md` and its
-  `*-CLAUDE.md` siblings) opens with a frontmatter block holding exactly
-  `summary` and `read_when`, and AGENTS.md's three guide tables match what
-  `pnpm sync:guide-index` generates from them. The tables were hand-kept and
-  drifted twice. `pnpm docs:list` prints the same index for a reader. Floored
-  at 30 guides.
+  guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md`, its
+  `*-CLAUDE.md` siblings, and directory guides under `src/`) opens with a
+  frontmatter block holding exactly `summary` and `read_when`, and AGENTS.md's
+  four guide tables match what `pnpm sync:guide-index` generates from them; a
+  missing marker pair fails. Hand-kept tables drift. `pnpm docs:list` prints
+  the same index for a reader. Floored at 30 guides.
 - **`pnpm check:workflows`** (`scripts/check-workflows.mjs`) — actionlint and
   zizmor over `.github/workflows/`, the config agents edit most and which
   nothing read before GitHub ran it. actionlint type-checks expressions,
@@ -732,14 +387,14 @@ The general rule, which is what the `src/` restructuring cost four times over:
 **a path or specifier written down in a gate needs an assertion that it still
 resolves, sited before anything reads it.** TypeScript cannot supply one — a
 gate script runs outside the program it checks, and the whole reason these
-lists exist is to reach files nothing imports (see "Before splitting another
-prefix" in `packages/aai-runtime/CLAUDE.md`). What is available instead is the
-choice between a named finding and a silent narrowing, and it is made per
-mechanism: `check-optional-peers.mjs` fails when a `TEST_ONLY_EDGES` exemption
-names a subpath that is gone, `JOURNAL_BACKENDS`' sweep fails when a registered
-`module` is absent from the tree, and this floor covers the third shape. A
-`readFileSync` over a path literal with no such assertion is the shape to
-refuse in review.
+lists exist is to reach files nothing imports (see "Before turning another
+prefix into a directory" in `packages/aai-runtime/CLAUDE.md`). What is available
+instead is the choice between a named finding and a silent narrowing, and it is
+made per mechanism: `check-optional-peers.mjs` fails when a `TEST_ONLY_EDGES`
+exemption names a subpath that is gone, `JOURNAL_BACKENDS`' sweep fails when a
+registered `module` is absent from the tree, and this floor covers the third
+shape. A `readFileSync` over a path literal with no such assertion is the shape
+to refuse in review.
 
 These are pure fs checks (no build needed), so they run up front and fail fast.
 To tighten quality over time, lower the entries in the file-length allowlist and

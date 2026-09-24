@@ -8,7 +8,7 @@
  * Modal; the person who wrote the tool could not read it anywhere. This is the
  * store that makes it readable — held BY THE GUEST, because a guest's stdout is
  * the one thing only the guest is guaranteed to have (see
- * "Why the buffer lives in the guest" in `packages/aai-guest/CLAUDE.md`).
+ * "Why the buffer lives in the guest" in `packages/aai-guest/src/harness/CLAUDE.md`).
  *
  * Three properties are what the readers need, and each is a decision:
  *

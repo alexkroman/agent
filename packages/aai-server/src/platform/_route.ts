@@ -227,7 +227,7 @@ function traced(call: ReservedCall): Record<string, unknown> {
  * A guest-called platform route is one `POST` holding one of `ADMIN_POOL_MAX`
  * connections for its whole duration, and the measured cost of the busiest of
  * them — the journal RPC, at ~840 ms of server time
- * (`packages/aai-runtime/CLAUDE.md`, "A journal read is a round trip") — was a
+ * (`packages/aai-runtime/JOURNAL-CLAUDE.md`, "A journal read is a round trip") — was a
  * total with no breakdown. So the one question an operator actually has about it
  * had no answer from inside the system: is that our own pool queueing, or is it
  * the proxy and the round trip? Those have opposite remedies — the first is a
@@ -275,7 +275,7 @@ function traced(call: ReservedCall): Record<string, unknown> {
  *
  * There was no statement line: `workMs` was computed in the `catch` below and
  * nowhere else, so the breakdown two guides advertised as computable
- * (`aai-runtime/_trace-context.ts`, and `packages/aai-runtime/CLAUDE.md`'s "A
+ * (`aai-runtime/_trace-context.ts`, and `packages/aai-runtime/JOURNAL-CLAUDE.md`'s "A
  * journal read is a round trip") was absent from every request that WORKED.
  * Measured on a local platform run with `AAI_DEBUG=1`: 11 `waitedMs` lines and
  * zero `workMs`. So the one question the timing was added to answer — was the

@@ -102,7 +102,7 @@ export { createPgRateLimiter, createRateLimiter } from "aai-server/http";
 /**
  * EVERY studio window, Postgres-backed, from one factory — the shape
  * `createPgAgentRateLimiters` already established on the agent surface, and
- * for the reason that fix is written up in this package's guide.
+ * for the reason given under "Rate limits" in `packages/aai-studio-server/src/CLAUDE.md`.
  *
  * The composition root used to hand-list the windows one at a time, and a
  * window added to this module but not to that list falls through to

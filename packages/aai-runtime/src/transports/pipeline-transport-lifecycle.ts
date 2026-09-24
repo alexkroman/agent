@@ -7,7 +7,7 @@
  * Split from pipeline-transport.ts, which keeps turn orchestration. The line
  * between them is the one the rest of that file is organized around: a turn
  * can fail without ending the session (see "A failing TURN is not a failing
- * SESSION" in the package guide), and every path in HERE is the other kind.
+ * SESSION" in `packages/aai/CLAUDE.md`), and every path in HERE is the other kind.
  * Keeping them apart is what stops a turn-level fix reaching for `terminate`.
  *
  * The `terminated` flag stays with the transport rather than moving here,

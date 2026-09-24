@@ -86,9 +86,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
 `kind` on
   `POST /studio/projects`, stamped on the workspace, and read back at every
   session install to pick the coding agent's system prompt (see "A project has a
-  KIND" in `packages/aai-studio-server/CLAUDE.md`). So it is settable ONLY here
-  — `app.tsx`'s create mutation is the one call that carries it, and nothing in
-  the project view can change it afterwards.
+  KIND" in `packages/aai-studio-server/src/prompts/CLAUDE.md`). So it is
+  settable ONLY here — `app.tsx`'s create mutation is the one call that carries
+  it, and nothing in the project view can change it afterwards.
   - **Each position owns its copy AND its starter catalog.** The heading, blurb
     and placeholder come from `KIND_COPY`, and the chips from `STARTERS[kind]` —
     two separate lists rather than one tagged list, because a workflow-mode pick
@@ -304,8 +304,8 @@ each with a copy button, pointing at
     (Twilio Console → Auth Token; Telnyx Portal → Public Key) rather than just
     the variable, because a variable name alone is not an instruction.
   - The origin comes from `window.location.origin` rather than the server: the
-    studio and the agent surface are one origin by construction (see "One
-    public origin" in `packages/aai-server/CLAUDE.md`).
+    studio and the agent surface are one origin by construction (see "Origin
+    and CORS" in `packages/aai-studio-server/CLAUDE.md`).
   - Clipboard handling is shared with the CLI commands (`use-copy.ts`) — the
     flash is keyed by the copied TEXT so one row's "Copied" does not light up
     every button, and there is one live timer so a second click cannot have
@@ -618,8 +618,9 @@ a cursor, which a reconnecting stream would have to re-derive anyway.
     follows nothing — so one wiring test asserts that, A/B'd against the div.
   - **The footer says the log is not durable**, once, because it is not: the
     ring lives in the sandbox and goes when the sandbox does (see "Why the
-    buffer lives in the guest" in `packages/aai-guest/CLAUDE.md`). A pane that
-    presented this as a log FILE would be lying about what it can show.
+    buffer lives in the guest" in `packages/aai-guest/src/harness/CLAUDE.md`). A
+    pane that presented this as a log FILE would be lying about what it can
+    show.
   - Preview is the default target because it is what the pane beside it shows —
     the agent the user is iterating on; Production is a deliberate switch, and
     each is disabled until that environment has an agent.
@@ -764,7 +765,8 @@ a cursor, which a reconnecting stream would have to re-derive anyway.
 - **The pane probes before it frames** (`useAgentPageReady` in
   `panes/preview.tsx`): a stamped `previewSlug` is not proof the platform serves
   `/:slug/`. The stamp outlives the deploy behind it (the swept-agent case the
-  wake path regenerates — see `packages/aai-studio-server/CLAUDE.md`) and a
+  wake path regenerates — see "Waking a preview" in
+  `packages/aai-studio-server/src/CLAUDE.md`) and a
   first or repeat deploy takes
   seconds to land, and `GET /:slug/` answers a slug with no agents row with
   a bare `{"error":"HTML not found"}` — which rendered as the ENTIRE pane,
@@ -1068,8 +1070,8 @@ driven by a
 - `useCopy` / `useFlash` (`components/phone-card.tsx`, and the since-removed
 `components/cli-commands.tsx`) — they were EXTRACTED here and have moved INTO
 `aai-ui`, which had a third copy of the
-  flash inside its own URL chips. See "The flash primitive is `aai-ui`'s" in
-  `packages/aai-ui/CLAUDE.md`.
+  flash inside its own URL chips. See `useFlash`/`useCopy` under "Forms" in
+  `packages/aai-ui/src/components/CLAUDE.md`.
 
 The direction that is never right is the other one: `aai-ui` may not import
 this package or anything platform-side (`browser-package-boundary` in

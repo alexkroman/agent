@@ -95,8 +95,8 @@ test("a tool reaches session state through a slot, with no annotation", () => {
   //
   // **It is a repo-wide trap, not a fact about `ToolDef`** — a degraded matcher
   // reads as coverage and pins nothing, so before reaching for
-  // `toMatchObjectType` on any type here, read "toMatchObjectType cannot see a
-  // type carrying an optional OBJECT-typed property" in `.agents/testing.md`.
+  // `toMatchObjectType` on any type here, read "`toMatchObjectType` silently degrades on a
+  // type with an optional OBJECT-typed property" in `.agents/testing.md`.
   expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
   expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>();
 });

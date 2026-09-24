@@ -21,6 +21,7 @@ tmp/
 !.claude/settings.json
 !.claude/hooks/
 !.claude/plans/
+!.claude/skills/
 .tsbuildinfo/
 coverage/
 reports/

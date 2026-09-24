@@ -91,7 +91,7 @@
         //
         // `gen-gateway-models.mjs` is the one script a pipeline never runs:
         // `check:gateway-models` shells out to it, by path, at runtime. Manual
-        // on purpose — see AGENTS.md, "Two manual diagnostics".
+        // on purpose — see .agents/testing.md, "Two manual diagnostics".
         "scripts/gen-gateway-models.mjs",
         "stryker*.config.mjs"
       ],

@@ -36,8 +36,8 @@
 //
 // **It reads the AGENT's API, not a studio route** — the same posture as the
 // Workflows pane, and for the same reasons: the platform already brokers
-// `/:slug/workflows/*`, the studio shares that origin by construction (see "One
-// public origin" in packages/aai-server/CLAUDE.md), so `connect-src 'self'`
+// `/:slug/workflows/*`, the studio shares that origin by construction (see "Origin
+// and CORS" in packages/aai-studio-server/CLAUDE.md), so `connect-src 'self'`
 // already permits it, and a studio route in front would be a second thing to
 // keep in step with the listing shape. Reading it can BOOT the sandbox, which
 // is why the listing is fetched once and held (`staleTime: Infinity`) under a

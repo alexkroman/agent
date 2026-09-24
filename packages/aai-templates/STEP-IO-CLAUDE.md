@@ -5,8 +5,8 @@ read_when: >-
   writing a workflow step in a template
 ---
 
-<!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: the guide is
-at its 120,000-character cap, and this is the reference account behind its
+<!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: this is the
+reference account behind its
 section "A step can authenticate now, so no template's I/O is a fixture" —
 which keeps the rule (the three `/step` exports and the retry vocabulary) and
 points here for the argument and the measurements. -->
@@ -82,7 +82,7 @@ that subpath may not import) was answered by the same `Symbol.for` slot
 dependency-free. What forced the question was not the duplication but the second
 reader — a step's narration now also reaches the SERVER LOG, with the attempt
 number appended past the first, so a retrying fan-out is legible without a page
-open. `packages/aai-ui/CLAUDE.md` carries the argument.
+open. `packages/aai-ui/src/CLAUDE.md` carries the argument.
 
 The same sweep took two more copies with it: `isTransientStatus` (the
 408/429/5xx split each template had spelled out) and `retryAfter`, which is what
@@ -258,7 +258,7 @@ test and the agent holding it.
 with no bundler was `scaffold/server.mjs`, which now boots the BUILT worker — so
 every path to a tool goes through a bundler or through a glob, and there is no
 runtime directory scan in the repo (see "Self-hosting is the scaffold's default"
-below).
+in `CLAUDE.md`).
 
 Note what this DROPS: a `tools:` map checked each tool's assignability against
 the agent's state type, so a tool whose state shape disagreed was a compile error

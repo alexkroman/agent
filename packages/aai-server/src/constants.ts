@@ -136,7 +136,7 @@ export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
  * Bounding it cannot orphan the guest, which is the only reason waiting was
  * ever justified. An agent-mode guest owns its own idleness and self-exits
  * after `AGENT_IDLE_EXIT_MS` with zero sessions (see
- * `packages/aai-guest/CLAUDE.md`), and Modal's `idleTimeoutMs`/`timeoutMs` sit
+ * `packages/aai-guest/src/harness/CLAUDE.md`), and Modal's `idleTimeoutMs`/`timeoutMs` sit
  * behind that — so a boot we walk away from is reclaimed on the guest's clock.
  * Waiting out the full budget does not reclaim it any better; it just spends
  * the container's stop grace, and a SIGKILL orphans the guest anyway while

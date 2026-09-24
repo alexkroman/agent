@@ -1,7 +1,7 @@
 ---
 summary: >-
   The host runtime: why it is its own package, the one-way dependency on the
-  SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam
+  SDK, the `host-internal` seam, the published surface, and package-wide rules
 read_when: >-
   working on sessions, transports, providers or workflows on the host side
 ---
@@ -12,1873 +12,220 @@ read_when: >-
 `agent.ts`: `createRuntime`, `createAgentServer`, the session core, the
 transports, the provider openers, the workflow API, and the WebSocket handler.
 
+## Directory guides
+
+Rules that govern one area live beside the files they govern, and Claude Code
+loads them when you work there:
+
+- [`src/CLAUDE.md`](src/CLAUDE.md) — the flat `src/` modules: session
+  lifecycle and vocabularies, `createAgentServer`, tools, subagents, the prompt
+  suffix, dialogs/personas wiring, hook commits, the upload store, the egress
+  pools, reply metrics.
+- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — capabilities, epochs,
+  and the frozen compatibility templates.
+- [`src/transports/CLAUDE.md`](src/transports/CLAUDE.md) — pipeline/S2S
+  behaviour: `speech_started`, per-turn prompt resolution, heard history,
+  context budget, reset, push-to-talk.
+- [`src/workflow/CLAUDE.md`](src/workflow/CLAUDE.md) — journal selection,
+  webhook URLs, the two base URLs, run notify, the typed-JSON codec.
+- [`src/workflow/api/CLAUDE.md`](src/workflow/api/CLAUDE.md) — HTTP status
+  classification and upload-id checks.
+- [`src/integration/CLAUDE.md`](src/integration/CLAUDE.md) — the S2S and
+  history-rollback property tests.
+- [`src/telephony/CLAUDE.md`](src/telephony/CLAUDE.md) — where the phone-call
+  design lives.
+
+Reference siblings, read on demand: [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)
+(journal + replay engine), [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md)
+(text mode, `/eval`), [`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) (dialog knobs),
+[`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md) (tool results and throws).
+
 ## What this package is, and what it is NOT
 
-**It is the HOST half of what used to be one package.** `@alexkroman1/aai` is
-the authoring surface — `agent()`, `tool()`, `sessionSlot()`, the provider
-FACTORIES — and everything in it is what a user types. This package is what
-reads those declarations and runs them. An `agent.ts` imports nothing from
-here.
+**It is the HOST half.** `@alexkroman1/aai` is the authoring surface —
+`agent()`, `tool()`, `sessionSlot()`, the provider FACTORIES — and this package
+reads those declarations and runs them. An `agent.ts` imports nothing from here.
 
-The split is along a line the SDK already drew: **a provider factory returns a
-pure DESCRIPTOR** (`{ kind, options }`) and imports no vendor SDK, and the
-host-side resolver is what turns a descriptor into an open socket. That is why
-the vendor packages are dependencies of this package and not of the SDK.
-
-Two things came out of the split, and both are the reason not to undo it:
-
-- **21 dependencies left the authoring install.** Every `@ai-sdk/*` adapter,
-  `@deepgram/sdk`, `@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`,
-  `assemblyai`, `ai`, `postgres`, `ws`, `@workflow/world*` — none of which an
-  `agent.ts` touches, all of which were in every user's `node_modules`.
-- **~220 exports left the authoring reference**, which was two thirds of a
-  combined API doc aimed at people writing agents.
+A provider factory returns a pure DESCRIPTOR (`{ kind, options }`) and imports
+no vendor SDK; the resolver here turns it into an open socket. So the vendor
+packages (`@ai-sdk/*`, `@deepgram/sdk`, `ai`, `postgres`, `ws`, …) are
+dependencies of this package, never of the SDK — keep them out of every
+authoring install.
 
 ## The dependency direction is one-way, and it is enforced
 
-`aai-runtime` → `aai`. Never the reverse. `@alexkroman1/aai` may not import
-this package: it is published, this package is published, and a cycle between
-them would be unresolvable at install time as well as unbuildable.
+`aai-runtime` → `aai`. Never the reverse: both are published, and a cycle would
+be unresolvable at install time as well as unbuildable.
 
-Fifteen `host/` modules deliberately did NOT move, because published SDK
-subpaths need them: `ssrf.ts`, `builtin-tools.ts`, `builtin-run-code.ts`,
-`web-search.ts`, `page-design.ts`, `session-notes.ts`, `_calculate.ts`,
-`_fetch-capped.ts`, `_undici.ts` (`@alexkroman1/aai/tools`), `ffmpeg.ts` and
-its two helpers (`/ffmpeg`), `slugify.ts` (`/slugify`), and
-`workspace-files.ts` (`/workspace-files`). This package imports them back
-through those public subpaths.
+Fifteen `host/` modules stay in the SDK because published SDK subpaths need
+them: `ssrf.ts`, `builtin-tools.ts`, `builtin-run-code.ts`, `web-search.ts`,
+`page-design.ts`, `session-notes.ts`, `_calculate.ts`, `_fetch-capped.ts`,
+`_undici.ts` (`/tools`), `ffmpeg.ts` and its two helpers (`/ffmpeg`),
+`slugify.ts` (`/slugify`), `workspace-files.ts` (`/workspace-files`). This
+package imports them back through those public subpaths.
 
 ## `@alexkroman1/aai/host-internal` is the seam
 
-79 SDK symbols are needed by this package and are NOT authoring API — mostly
-tuning constants (`DEFAULT_STT_SAMPLE_RATE`, `MAX_CLIENT_WS_BUFFERED_BYTES`,
-`STT_FRAME_TARGET_MS`), the `resolve*Settings` functions every provider module
-declares, and a handful of helpers (`freezeStorable`, `serializeToolFailure`,
-`mapStream`, `toToolJsonSchema`).
+SDK symbols this package needs that are NOT authoring API — tuning constants
+(`DEFAULT_STT_SAMPLE_RATE`, `MAX_CLIENT_WS_BUFFERED_BYTES`), the
+`resolve*Settings` functions, helpers like `freezeStorable`,
+`serializeToolFailure`, `mapStream`, `toToolJsonSchema` — cross on
+`@alexkroman1/aai/host-internal`, which is on `NON_AUTHORING_SUBPATHS`: no
+capability, no epoch, no TypeDoc page, no semver promise.
 
-They cross on `@alexkroman1/aai/host-internal`, a subpath that exists for
-exactly this and is on `NON_AUTHORING_SUBPATHS` — no capability, no epoch, no
-TypeDoc page, no semver promise.
-
-**Three other FRAMEWORK packages import it directly, and that is the intended
-route rather than a leak.** The guest's studio chat needs
-`ASSEMBLYAI_LLM_API_KEY_ENV`, the studio server's model selection needs
-`gatewayModelIds`, and the template gate needs
-`ASSEMBLYAI_TTS_DEPRECATED_VOICES` — all SDK internals, none of them authoring
-API. Handing them on through `@alexkroman1/aai-runtime/internal` was tried and
-is worse: an importer's tsconfig then pulls this package's whole module graph
-into its own program, which broke `aai-templates`' typecheck on an unrelated
-`BodyInit` mismatch in `_upload-blobs-*.ts`. What the subpath excludes is an
-AGENT, not a package.
-
-**It is NOT `./internal`, and the reason is a documented invariant.** That
-subpath is deliberately ZOD-FREE, and three of the 79 (`EMPTY_PARAMS`,
-`isConvertibleSchema`, `toToolJsonSchema`) are the schema-conversion helpers,
-which import zod by construction. Widening `./internal` to fit them would have
-silently deleted the rule, so the host support surface got its own name.
-
-When you need a new SDK symbol here: if it is authoring API, import it from the
-public subpath that owns it. If it is not, add it to `host-internal.ts`. Do not
-reach for a relative path into `../aai/sdk/` — Biome's `noRestrictedImports`
-rejects it, and `tsconfig.build.json` reports it as `TS6059`.
+- **Other framework packages import it directly** (the guest's studio chat, the
+  studio server's model selection, the template gate). Do not re-route them
+  through `@alexkroman1/aai-runtime/internal`: an importer's tsconfig would then
+  pull this package's whole module graph into its program (it broke
+  `aai-templates`' typecheck on a `BodyInit` mismatch in `_upload-blobs-*.ts`).
+  What the subpath excludes is an AGENT, not a package.
+- **It is not `./internal`**, because that subpath is deliberately ZOD-FREE and
+  the schema helpers (`EMPTY_PARAMS`, `isConvertibleSchema`,
+  `toToolJsonSchema`) import zod.
+- **Adding a symbol:** authoring API → import from the public subpath that owns
+  it; otherwise add it to `host-internal.ts`. Never a relative path into
+  `../aai/sdk/` — Biome's `noRestrictedImports` rejects it and
+  `tsconfig.build.json` reports `TS6059`.
 
 ## Layout
 
 The filename prefix is the grouping: `runtime-*` (the runtime object and its
-wiring), `session-*` (one session's lifecycle), `ws-*` / `_ws*` (the socket
-layer), `_upload-*` (the upload store), plus `providers/`, `transports/` and
-`telephony/`.
+wiring), `session-*` (one session), `ws-*` / `_ws*` (the socket layer),
+`_upload-*` (the upload store), plus `providers/`, `transports/`,
+`telephony/`, `eval/`, `testing/` and `session-state/`.
 
-**The durable-workflow half is a DIRECTORY**, and it is the one prefix that
-outgrew the scheme: `workflow-*` had reached 166 files, a third of the package.
-The prefix became the path — `workflow/api/auth.ts` is `workflow/api/auth.ts` —
-with `api/`, `replay/` and `journal/` for the three clusters that were 20+ files
-each. Two groups moved in that never carried the prefix: the `_workflow-*` spec
-harnesses, and `journal-conformance*` (the `JournalStore` contract, which
-imports the backends directly). `step-*` deliberately stayed — those are the
-SDK's step primitives, not the replay engine.
+**The durable-workflow half is the directory `workflow/`**, with `api/`,
+`replay/` and `journal/` for its three largest clusters. It holds the
+`_workflow-*` harnesses and `journal-conformance*` too; `step-*` deliberately
+stays flat — those are the SDK's step primitives, not the replay engine.
 
-**Before splitting another prefix, find what discovers it by FILENAME.** Six
-path-keyed mechanisms broke on this move and none of them is a compiler error:
-three suites here scan for their own subject (a `startsWith("workflow-journal-")`
-matches nothing once that prefix is a directory, and a registry then compares
-two empty sets), plus `RUNTIME_ROUTE_SOURCES` in `guard-invariants-scopes.mjs`,
-`check-optional-peers.mjs`'s per-SPECIFIER exemptions, and three baseline JSONs.
-The three suites failed loudly only because each carries an
-`expect(found.length).toBeGreaterThan(0)` floor under its scan;
-[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) carries the rest.
+**Before turning another prefix into a directory, find everything that
+discovers it by FILENAME** — none of it is a compiler error: suites that scan
+for their own subject (`startsWith("workflow-journal-")`),
+`RUNTIME_ROUTE_SOURCES` in `guard-invariants-scopes.mjs`,
+`check-optional-peers.mjs`'s per-specifier exemptions, and baseline JSONs. A
+scan must carry an `expect(found.length).toBeGreaterThan(0)` floor so an empty
+match fails loudly. [`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md) has the rest.
 
-## A session reaches its client through ONE lifecycle; the socket is an adapter
+## The published surface: two barrels and a rule between them
 
-`session-attach.ts` is the transport-neutral lifecycle of one client
-connection: claim the id (evicting a superseded session on a resume), announce
-`session.configured`, start under the deadline, buffer input while starting and
-replay it once ready, report a failed start, and run end-of-session cleanup
-exactly once. It takes a `ClientSink` for output and returns an
-`AttachedSession` (`sendAudio`, `sendCommand`, `detach`, `ended`) for input.
-The phase machine is still `ws-session-lifecycle.ts`.
+The capabilities and their epochs are in
+[`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md); what follows is which
+barrel a name goes on.
 
-**Two adapters sit on it, and a third kind of I/O is a third adapter, never a
-second lifecycle.** `wireSessionSocket` keeps only what a socket has — frame
-parsing, the keepalive ping, close codes, and the `bufferedAmount` guard in
-`ws-client-sink.ts`. `connectSession(runtime, sink)` is the PUBLIC one, for a
-host with its own audio I/O (`aai console` is its first consumer) — a free
-function over the handle rather than a `Runtime.connect` method, because
-`Runtime` is SEALED (below). Pacing is
-`paced-client-sink.ts`, wrapped around ANY sink, because its two ordering rules
-(turn-closing events wait behind held audio; a cancel or reset discards it) are
-properties of holding audio back, not of the wire.
-
-**`connectSession` detaches itself when the RUNTIME closes the sink** (a resume
-takeover, a failed start). A socket adapter learns that from its own close
-event; a caller-owned sink has none, so without it the session would sit
-`ready` with nobody left to end it.
-
-**Telephony still enters as a fake socket**, and that is the known remainder:
-`startTelephonySession` goes through `SessionRuntime`, which the guest's LAZY
-runtime facade implements with `startSession` only — a `connect` there has to
-return a connection synchronously before the runtime exists. Porting the bridge
-means giving that facade a buffered `connect` first.
-
-## Telephony: a phone call is an ordinary session
-
-`WS /phone` (`telephony/`) runs a carrier's media stream — Twilio Media
-Streams, Telnyx media streaming — as an ordinary session, served by
-`createRuntimeServer` for exactly the carriers `AgentDef.telephony` names and
-for none if it names nothing (`enabledCarriers` in `telephony-server.ts` is the
-one resolution of that declaration, and the boot line prints what it returns).
-**The whole account is in
-`packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
-shim design and the rule that no telephony branch may exist below the bridge,
-the four decisions above the bridge (pacing, LEARNED rates, low-pass before
-downsampling), what a `CarrierCodec` owes, and the two deliberate gaps. It is
-the harness that serves this in production; the platform's TwiML webhook route
-is in `packages/aai-server/CLAUDE.md`, "Telephony". This pointer used to sit in
-`packages/aai/CLAUDE.md` under a `host/telephony/` path that has not existed
-since the split, and that guide is at its cap.
-
-## The published surface is versioned in epochs
-
-The capabilities under `contracts/` (read the tree for the list — this line
-has been wrong twice) are each a named slice of what an embedder writes
-against, from `server` and `runtime` to `eval`. The
-mechanism is the repo's — see "The authoring surface is versioned in epochs" in
-`docs/CLAUDE.md`, which owns all three artifacts over this surface (the reports,
-the epochs and the renderings); `AGENTS.md` keeps the four obligations a change
-owes — and what it means here is that a signature change on any
-of the public names on that surface is RECORDED — a checked revision
-(`--update`) when compatible, else CLASSIFIED (`--bump … --drop "<reason>"` or
-`--retain`) — rather than discovered by whoever's build breaks.
-
-`tools` is the smallest — one name, `withToolsDir` — and it is
-its own capability rather than part of `runtime` because it assembles the
-DEFINITION a runtime is handed rather than any part of the engine. See "Tool
-discovery off the platform" below.
-
-`eval` is the only capability spanning TWO subpaths — see "Driving an agent
-from text is a published surface" below. Four came OUT of older ones because a
-feature added to a capability made every change to it an epoch of the host:
-`auth` (`/auth` — `createSessionAuth` and the session ticket, out of `server`),
-`metrics` (`/metrics` — the sink registry, out of `tracing`), `eval-simulate`
-(`/eval/simulate` — `simulateCall`, `judgeCall`, `evalSimulation`, which were
-intersected into `EvalTestContext`) and `eval-assert` (on `/eval` —
-`expectCalled`, `lastToolResultIn`). A new feature gets its own capability,
-and its own subpath when a different reader imports it.
+- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`) is exactly the names the
+  capabilities select.** `API-EXPORTS.json` is the count — never write one here.
+  Nothing on it is `@internal`; `contracts/internal-surface.json` is at 0 and the
+  ratchet only shrinks.
+- **`@alexkroman1/aai-runtime/internal` (`internal.ts`) is cross-package
+  infrastructure** for `aai-server`, `aai-cli` and `aai-guest`: session-state
+  backends, the journal and its DDL, the platform route table, the queue-name
+  grammar, the delivery door (`handleWorkflowRequest`, `WORKFLOW_QUEUE_PATH`),
+  the typed-JSON storage codec, the step-env publisher, the upload store,
+  `consoleLogger`, and SDK pass-throughs. It is on `NON_AUTHORING_SUBPATHS` in
+  `scripts/_api-contracts-tree.mjs`: no capability, no epoch, no semver.
+- **A name is on `/internal` because something IMPORTS it.** Intra-package use
+  is relative imports, so an unimported `@internal` name is simply not
+  re-exported. Do not add a clause in anticipation of a consumer.
+- **Never re-export another package's non-semver names on the root barrel** —
+  the SDK's per-SUBPATH exemption for `host-internal` does not follow them, and
+  a contract would then promise epochs on SDK internals.
+- **API Extractor reads `@internal` at the DECLARATION site**; a
+  `/** @internal */` on a re-export clause is silently ignored. Making a name
+  public means removing the tag where it is declared and adding it to a
+  capability under `contracts/entrypoints/`, not re-exporting it.
+- **A type no published function accepts or returns is not a contract** — a
+  contracted type whose constructor is internal is a finding.
+- **The 17-name opener contract stays on the root barrel** — konsistent's
+  `runtime-opener-contract-on-root-barrel` refuses the tidy-up and carries the
+  argument. The opener types are declared here (`providers/openers.ts`).
+- The server-side session is `ServerSession` (in `/internal`); `aai-ui`'s is
+  `BrowserSession`. Keep the side of the wire in any new name that both
+  packages might publish.
 
 ### The handles a caller RECEIVES are sealed
 
 `Runtime` carries `[runtimeBrand]: true` and `SessionAuth` `[sessionAuthBrand]`
-— each a `declare const … : unique symbol` exported TYPE-ONLY, so no value
-exists, an object literal cannot carry the key, and only `createRuntime` /
-`createSessionAuth` mint one (a cast in the one factory). That is what lets a
-received handle grow a member in a minor: nobody outside this package can have
-written one by hand. `aai-ui`'s `BrowserSession` is the case that forced it —
-push-to-talk added three required methods and broke every hand-written double.
-A DOUBLE implements the unsealed slice a consumer takes (`SessionRuntime` for
-`createRuntimeServer`), never the sealed handle. Methods that would widen a
-sealed handle become free functions over it (`connectSession`) or a sub-handle.
-A handle that is only ever received (`AgentServer`, `TextAgent`, `EvalSession`
-and the rest) is tagged `@sealed` in its TSDoc instead, so the probe compares it
-like a value and a new member is a revision. `EvalTurn` is not: a
-`SimulationTarget` a caller implements returns one.
-
-**The seams are gone from the public types.** `RuntimeOptions.generate` went
-first, then the other `@internal` members — the two S2S socket factories,
-`s2sConfig`, `sessionStartTimeoutMs`, the relay `executeTool`/`toolSchemas`/
-`onToolResult` and `toolGuidance` — each reachable anyway, since API Extractor
-reads the tag at the declaration. They are `HostRuntimeOptions`, and
-`Runtime.executeTool`/`.toolSchemas`/`.createSession` are `HostRuntime`; both
-come from `createRuntimeWithSeams` (`runtime.ts`), which host mode, the eval
-harness and the specs reach by relative import. `EvalSessionOptions.generate`
-is `HostEvalSessionOptions` (`openEvalSessionWithSeams`) the same way. The
-fields every entry point shares are ONE `HostAgentOptions` that
-`RuntimeOptions`, `TextAgentOptions` and both eval bags extend; `env` and `llm`
-are not in it because their types differ per entry point. The forwarding
-check (`agent-server-forwarding.ts`) also holds the fields `AgentServerOptions`
-now DECLARES (`agent: AgentDef`, `journal?: JournalStore`, rather than
-`RuntimeOptions["…"]`) assignable to what they are forwarded to — `TypeDrift`,
-beside `ForwardingGap`.
-
-**`auth` stays a server FIELD, and not a use of the `upgrade` hook.** The hook
-answers synchronously, so an async ticket check cannot decide there; a claimed
-socket cannot be handed back to the session path; resume ownership is recorded
-on the session the server starts; and the ticket subprotocol must be kept out
-of the server's own handshake reply. So the field holds one opaque
-`SessionAuth`, and every type behind it is the `auth` capability's.
-
-The split shipped this package with no `contracts/` tree, so for its first days
-221 exports moved with nothing recording it, while `aai` and `aai-ui` could not
-change a parameter without a gate asking which. That asymmetry is the whole
-reason this exists.
-
-**A RETAINED epoch owes a frozen, compiling TEMPLATE** under
-`contracts/compatibility/<capability>/v<N>.ts`, and `pnpm typecheck` is what
-enforces it. **There are none today**: the reset to epoch 1 left nothing
-superseded (`docs/CLAUDE.md`, "Every capability restarts at epoch 1"). Restate
-no count here — it has been wrong twice; read the tree. Editing a template to
-make an error go away defeats the mechanism: the error IS the finding, and an
-API changes by a new epoch carrying a new template.
-
-**A template rather than an example, and the distinction is the point.** `aai`
-and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and
-the useful artifact is a fragment of one. This package's consumers embed it —
-they stand up a host, a carrier codec, a state backend — so the useful artifact
-is a starter they COPY and edit, composed front to back, with the edit points
-marked and no design commentary in the way (that material is in this guide,
-which is where a reader can find it without opening twelve files). Each is the
-starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
-carrying a new template, never an edit to a frozen one.
-
-**A template does not exercise every contracted name, and that is not a hole in
-the gate.** The epoch hash covers the capability's REPORT, which carries every
-name the entrypoint selects — so a signature change on `twilioCodec` moves
-`telephony`'s hash and demands a classification whether or not any template
-mentions it. Classification coverage is every name; what the rest lack is a
-compile-time exercise. The gap is deliberate and per name:
-`createRuntimeServer`/`createHostServer` are a different artifact from the bootstrap
-(embedding into an existing runtime, and a multi-tenant host-mode server);
-`telnyxCodec`/`twilioCodec` are the shipped carriers a third-carrier template
-exists to be an alternative to. Contorting a starter to touch all of them is how
-these files became catalogues the first time. Where a name's absence is a
-finding rather than a choice, it is in the list below.
-
-### The root barrel had 50 names it does not own
-
-Opting in is what surfaced it. `authoringSurface` reported **153** public names
-where the package declares 103; the other fifty were re-exports of
-`@alexkroman1/aai/host-internal`, which the SDK itself deny-lists from its own
-contracted surface as "not semver-covered". **The exemption is per SUBPATH, so
-re-publishing those names on this package's root barrel defeated it** — they
-were back on the one surface an embedder autocompletes over, one package along,
-and a contract over them would have promised epochs on the SDK's internals.
-
-A release tag cannot fix that from here: **API Extractor reads `@internal` at
-the DECLARATION site, so a `/** @internal */` on a re-export clause member is
-silently ignored.** Verified before relying on it — the name stayed `@public` in
-the regenerated report. The mechanism that does work is a subpath, which is what
-`aai` uses twice for the same reason.
-
-So `@alexkroman1/aai-runtime/internal` carries the platform-infrastructure
-pass-throughs — seven of them now: the builtins resolver, the SSRF-safe fetch,
-the step-env publisher, the containment flag, and the upload byte constants plus
-the id grammar — and `NON_AUTHORING_SUBPATHS` in
-`scripts/_api-contracts-tree.mjs` names it so a name arriving there joins no
-capability. It opened at 31; the other 24 were moved off the barrel wholesale
-and imported by nothing, and the rule that took them back off is below.
-`aai-server`, `aai-cli` and `aai-guest` import from what is left — which is
-honest, since they are the cross-package consumers the seam exists for.
-
-**The 17-name OPENER CONTRACT deliberately stayed on the root barrel**, and
-konsistent's `runtime-opener-contract-on-root-barrel` is what refuses the
-tidy-up — it names the three registrars, `resolveLlm` and the six opener types,
-each with the module it must be re-exported FROM, and its description carries
-the argument. The types are DECLARED here now (`providers/openers.ts`), not in
-the SDK: nothing there used them, and a capability naming another package's
-type hashes none of it.
-
-### `ServerSession` is what `SessionCore` became, and the collision is closed
-
-Root `AGENTS.md`'s "Disambiguating cross-package names" used to record one live
-collision — `SessionCore`, one word for the two sides of one wire: here the
-SERVER session bridging a `Transport` to the client protocol, in `aai-ui` the
-BROWSER session (socket + audio + state). Neither reference page named the
-other, and both were even declared in a file called `session-core-types.ts`. It
-is `ServerSession` here and `BrowserSession` there now, so each reference page
-says which side of the wire it describes without the reader having to know which
-package they landed in.
-
-That table used to carry four rows, and what the `/internal` split
-resolved was never written down: `createSessionCore`, `createWorkflowApi` and
-`WorkflowApiOptions` went to `@alexkroman1/aai-runtime/internal` — a public name
-against an `/internal` one is not a collision, it is what `/internal` is for —
-and then off the published surface entirely, under that subpath's "a name is
-here because something IMPORTS it" rule. They are relative-import internals
-now, so `API-EXPORTS.json` shows only `aai-ui`'s counterparts — and after the
-rename those do not even share a word with these: `createBrowserSession`
-against this package's `createSessionCore`, which keeps its name precisely
-because nothing publishes it.
-
-**Which is why the rename was affordable at all**, and it INVERTS the old "do not
-rename either half" advice. That advice held while both sides were contracted; an
-unpublished name has no epoch, no frozen example and no semver promise, so
-renaming the runtime halves cost a sweep rather than an epoch a side.
-`ServerSession` itself has since followed them to `/internal`: nothing published
-could hand one out.
-
-### The root barrel is the CONTRACTED surface, and nothing else
-
-`contracts/internal-surface.json` opened at **68** and stands at **0**. Those 68
-were the SECOND tranche off the root barrel, and unlike the 31 above they are
-this package's OWN declarations rather than pass-through of the SDK's: tagged
-`@internal` where they are declared, reachable anyway from the one page an
-embedder autocompletes over, and therefore covered by no capability and promised
-by nothing but a comment. They now sit on `@alexkroman1/aai-runtime/internal`
-beside the pass-through tranche, which is the same move that took `aai` from 74
-to 0.
-
-**The division is now mechanical, and it is worth stating as a rule.**
-
-- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the names the
-  capabilities select — `API-EXPORTS.json` is the count, never a number written
-  out here, which went stale twice. A name here has an epoch and a report.
-  Nothing on it is
-  `@internal` — that is what the zero means, and the ratchet is what holds it.
-- **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
-  infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the session-state
-  backends and their tables, the durable JOURNAL and its DDL, the platform route
-  table, the queue-name grammar and its classifier, the delivery door
-  (`handleWorkflowRequest`, `WORKFLOW_QUEUE_PATH`), the typed-JSON storage codec,
-  the step-env publisher, the upload store, and the shipped `consoleLogger`. No
-  capability, no epoch, no semver promise.
-
-  **A name is on it because something IMPORTS it.** Both tranches were assembled
-  by moving whole `@internal` blocks off the root barrel, which is why the
-  subpath opened at 99 names of which **33** were imported anywhere in the repo.
-  The other 66 were not a smaller version of the ratchet problem: for a name
-  already tagged `@internal` at its DECLARATION, simply not re-exporting it is
-  cheaper than publishing it somewhere quieter — intra-package use is relative
-  imports, so nothing breaks, and a name reachable from no subpath cannot be
-  autocompleted, reported on, or depended upon. They are gone, and adding a
-  clause here in anticipation of a consumer is a surface with no reader. There
-  used to be three structural exceptions — `WakeHintOptions`,
-  `WakeHintPublisher` and `WorldKind`, unimported but named by the signature of
-  something that was. All three went with the code that named them, so a name
-  arriving here now owes an importer.
-
-A contracted TYPE whose CONSTRUCTOR is not is a finding, not a shape to copy,
-and the four there were are gone the same way: `ServerSession`,
-`SessionStateBackend`/`SessionStateStore` and the upload store left the
-contracts for `/internal` (no public signature takes or returns one), and
-`WdkAdapter`/`WorkflowClientOptions` left every subpath, since
-`createWorkflowClient` is unexported. The rule for the next one: a type no
-published function accepts or returns is not a contract.
-
-**Making one of them public is not a re-export.** The `@internal` tag comes OFF
-at the declaration site and the name joins a capability under
-`contracts/entrypoints/`, which is what buys it an epoch and obliges a template.
-Adding it to `runtime-barrel.ts` with the tag still attached puts it straight
-back on the ratchet, and the ratchet may only shrink — a `/** @internal */` on
-the re-export clause does not help, for the API Extractor reason above.
-
-### What writing the templates found
-
-Four things this surface cannot demonstrate about itself (two capabilities
-publishing a type whose constructor is `@internal`, `WdkAdapter`'s nine methods
-with no partial-implementation affordance, `TextTurnResult` letting an upstream
-minor force an epoch), plus the one real defect they caught. **In
-[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "What writing the `aai-runtime` epoch
-templates found"** — that guide owns the epochs; this one is at its cap.
-
-### Self-hosted durable workflows: there is no world to start any more
-
-**This section used to be four times as long, and deleting it is the clearest
-measure of what the DevKit removal bought.** `createAgentServer` had to
-`configureWorkflowWorld` (writing `WORKFLOW_TARGET_WORLD` and two more keys into
-`process.env`), then `publishStepEnv`, then build a compiled `WorkflowSurface`
-out of the `workflowCode`/`stepCode` pair `aai build` left on the worker bundle,
-then `startWorkflowWorldIfDeclared` — in that order, and BEFORE the bind
-whenever the port was known, so no request could reach a `getWorld()` that would
-resolve and memoize an unconfigured world. `listen(0)` could not honour that and
-had its own branch. Get any of it wrong and a self-hosted run sat `pending`
-forever with nothing logged.
-
-The replay engine executes a run in THIS process off the agent's own `workflows`
-declaration. There is no artifact to load, no world to resolve, no memoization
-window, and no port-0 special case. What is left of the sequence is one line:
-
-- **`publishWorkflowStepEnv()` at CONSTRUCTION**, guarded on the agent declaring
-  workflows. The guard is not frugality — it writes a module-global, so
-  publishing for every `createAgentServer` would leak one test's env into the
-  next (`unstubEnvs` only undoes `vi.stubEnv`). It publishes the AGENT env
-  rather than `providerEnv`, so a step sees exactly what `.env` declares and
-  cannot come to depend on a shell-exported key that will not exist after a
-  deploy.
-
-  **It sat just before the BIND, which reads as "as early as possible" and was
-  really "only on the path `aai dev` takes".** `AgentServer.node` (below) means
-  a host can bind the server without going through this door's `listen()`, and
-  such a deployment then published no step env at all: every `stepEnv` read fell
-  through to `process.env`, so a key that resolved locally was absent in
-  production with nothing raised at either end — the parity rule `ctx.env`
-  follows, broken by the deployment shape. Construction is the one point every
-  route in goes through. Nothing was waiting for the bind: the ordering this
-  replaces belonged to the DevKit world, and the replay engine resolves none.
-
-Two things the old wiring's failure taught, which still hold:
-
-- **A test has to boot a workflow through this DOOR.** The e2e suite's
-  `npm start` leg used `pizza-ordering-agent`, which declares no workflows, and
-  the one durable leg ran under `aai dev` — so the door nobody tested was the
-  one that did not work. `aai-cli`'s `e2e.test.ts` covers both now, and the
-  `pack + build + boot` subset boots every template it builds, a workflow app
-  among them.
-- **The scaffold PROMISES this.** `server.mjs` documents `PUBLIC_URL` as what to
-  set "whenever a durable workflow has to hand a URL to somebody else", and
-  `AgentServerOptions.env`'s own doc treats a dropped `DATABASE_URL` as a bug
-  because a workflow upload's record would otherwise vanish before a resumed run
-  read it. `ensureWorkflowJournalSchema` is on the PUBLIC barrel for the same
-  reason — see "The tables come WITH the database" in
-  `workflow/journal/postgres.ts`.
-
-**The other half is the delivery door.** `createAgentServer` composes
-`handleWorkflowRequest` into `createRuntimeServer`'s `request` hook, so this
-door is wired identically to `aai dev`'s and the harness's — but it supplies no
-`allowRemote`, so `POST /workflow-queue` answers 401. That is correct: a
-self-hosted server has no platform-owned queue to be vouched for by, and the
-engine's own in-process timers are what deliver. What the composition buys is
-that a door cannot silently LACK the route.
-
-**What is still NOT wired is host mode** (`createHostServer`): its sessions run
-caller-supplied agents, which declare no workflows.
-
-### A server is HANDED to a serverless host, never started by one
-
-`AgentServer.node` is the wired `node:http` server underneath, and it is on the
-handle because a serverless platform is given a server rather than asked to run
-one: Vercel's Node runtime wants `export default <http.Server>` from the module
-and binds the socket itself. Without it the only route was to `listen()` on an
-ephemeral port inside the function and proxy HTTP plus upgrades to it — a hop
-that buys nothing, since the thing being proxied to is this exact object.
-
-It costs one field because `createRuntimeServer` already builds the server fully
-before binding, and `createHostServer` returns that handle unchanged. Two
-consequences are the part worth knowing:
-
-- **`port` is ASKED of the server, not latched by `listen()`.** A host that
-  bound `node` itself never calls our `listen`, and a recorded port answered
-  `undefined` for a server that was plainly serving. `close()` moved the same
-  way — it gates on `httpServer.listening` rather than on a port this handle
-  recorded, so a socket bound through `node` is really released rather than
-  leaked with nothing to report it.
-- **Anything `listen()` does that is not the BIND is a bug.** The step env was
-  exactly that (above), and it is the shape to check the next time something is
-  added there: a host that binds `node` skips `listen()` entirely, so a step
-  performed there runs in dev and not in production, silently. `listen()` is now
-  the bind plus the boot line, and nothing else.
-
-**What a serverless host does NOT get is a WebSocket.** Vercel Functions are
-request/response only and never deliver the `upgrade` event, so `/websocket` and
-`/phone` are unreachable there however this server is mounted — a voice agent
-needs a platform that keeps a socket open. The HTTP surface (`/health`,
-`/client-config`, `/workflows/*`, the webhook route, static assets) is
-unaffected, which is what a `page: "static"` workflow app needs and all it needs.
-
-**`server.mjs` deliberately still calls `listen()`.** `npm start` is a
-long-lived process that owns its own lifecycle — it binds a port from `PORT`,
-prints a boot line, and installs `SIGINT`/`SIGTERM` handlers — which is the
-opposite of what a function host wants, and there is no way to tell the two
-apart at run time that is not a guess. A serverless deployment is a SECOND,
-tiny entry module beside it, not a mode of that one.
-
-### `createAgentServer` forwards what only it can
-
-A front door has a failure mode the pair underneath does not: an option it does
-not carry is unreachable, because dropping back to `createRuntime` +
-`createRuntimeServer` to set one means restating by hand every field the wrapper
-derives — the silent drop the wrapper exists to prevent. `telephony` was the
-sharp instance. It defaulted to `!isStatic` in `createRuntimeServer`, `createAgentServer`
-did not forward it, so every server built through the documented door — the
-scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone` with no
-way to switch it off. It is a DECLARATION now, read off the agent like `page`
-and defaulting to no carrier at all. `page` was worse: the AGENT declares it,
-and nothing
-carried the declaration through, so a `page: "static"` agent still got the voice
-surfaces and a voice `GET /client-config`. It is read off the agent now, beside
-`name` and `greeting`, with an explicit field still winning.
-
-**`env` was the third, and it is why "belongs to the other door" is not a safe
-reason to drop an option.** This guide used to call `RuntimeServerOptions.env`
-half of "the host-mode pair" and leave it out on that ground: host mode is
-`createHostServer`'s business, so an env on this door looked like an option for
-a feature this door does not have. But `createRuntimeServer` reads FOUR things
-out of that record and only one of them is the host gate —
-`AAI_WORKFLOW_API_TOKEN`, documented in `workflow/api.ts` as what CLOSES
-`/workflows/*`; `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over; and
-`DATABASE_URL`, which is where a workflow upload's RECORD lives. So an operator
-who set the token was still serving the workflow API, and its upload WRITE
-routes, wide open, and an operator with a provisioned database still had uploads
-land in this process's temp directory and vanish before a resumed run could read
-them. The guest harness had the identical bug with the identical three symptoms
-— it called `createRuntimeServer` with no `env` at all — which is the tell that
-the classification was wrong rather than the wiring.
-
-It is forwarded now, minus the gate, through `agentServerEnv` (`server-env.ts`,
-shared with the guest so the filter has one spelling): `?host=1` lets a caller
-supply its own agent definition and run it on the operator's credentials, so
-that key arriving with the other three would turn one secret into an
-unauthenticated surface. `hostBaseAgent` really does belong to the other door.
-**And the lesson for the next option is where the test went**: the token WAS
-covered, by a spec that called `createRuntimeServer` directly, which is exactly
-why the wrapper's version survived it. A forwarding spec has to take the door a
-caller takes.
-
-**`journal` was the fourth, and it is why this is a CHECK now rather than a
-rule.** `RuntimeOptions.journal` takes a host-supplied `JournalStore` — the
-whole point being that a deployment which already owns a database keeps its
-durable runs there — and this door did not forward it, so the only way to supply
-one was to drop back to `createRuntime` + `createRuntimeServer` and restate by
-hand every field the wrapper derives. Found writing
-`contracts/compatibility/server/v8.ts`, which could not name
-`AgentServerOptions["journal"]` while the option was nonetheless IN this
-capability's report (the `agent: RuntimeOptions["agent"]` rollup).
-
-**`agent-server-forwarding.ts` is what stops a fifth.** Every `RuntimeOptions`
-member is either on `AgentServerOptions` or on an explicit
-`UnforwardedRuntimeOption` deny-list with its reason, and `ForwardingGap` is the
-subtraction — `never` today, and the NAME of the offending member the moment one
-is added. That fails `turbo run typecheck` AND the build, because the module is
-compiled by `tsconfig.build.json` and a build failure cannot be skipped by a test
-filter. It is the same shape as `AgentConfigSchema`'s
-`HOST_ONLY_AGENT_FIELDS` subtraction one package over, and for the same reason:
-every field here is optional, so an omission is valid TypeScript and presents as
-a working server quietly ignoring part of its own configuration.
-
-Two things about it worth knowing. It is checked in BOTH directions — a
-`StaleExcuse` (an entry naming a member `RuntimeOptions` no longer has) and a
-`RedundantExcuse` (one the door now forwards) each fail the same way, and the
-first direction caught THREE wrong entries on its first run: a draft excused
-`name`, `greeting` and `hostBaseAgent`, none of which is a `RuntimeOptions`
-member at all. And the enforcement really is `tsc` rather than the suite — the
-spec beside it is type-level, so a gap reports three passing tests; that file
-says so rather than implying otherwise.
-
-`uploadBroker` came with the three above; the remaining absences are now
-DECISIONS, each with a reason at its deny-list entry rather than in this guide.
-`name` and `greeting` are derived, which is the whole point.
-The unreachable `RuntimeOptions` members are the sandbox seams (`runCode`,
-`fetch`, `workflows`), the provider triple `stt`/`llm`/`tts` (which the agent
-declares), and two tuning numbers (`shutdownTimeoutMs`, `toolTimeoutMs`); the
-testing seams are `HostRuntimeOptions` and not members at all. Forward one when
-somebody needs it, not before.
-
-## A session may install more than one prompt SUFFIX, and the slot is KEYED
-
-`SessionSystemPrompt.setSuffix(key, render)`. It was unkeyed, last-writer-wins,
-on the argument that "a session has one dialog, and a second installer is a
-wiring mistake rather than a composition." A second installer then arrived and
-silently deleted the dialogs' suffix: a session lost its active instruction from
-every request, with nothing failing and no way to see it short of reading the
-prompt on the wire. **That installer has since been removed and the dialogs are
-again the only one — the key stays**, because it costs nothing and it is what
-stops the next installer repeating that failure.
-
-Sources render in KEY order, and an empty answer contributes NOTHING — not a
-blank line, not a separator — which is what keeps a session whose sources all
-have nothing to say byte-identical to one with no sources at all. Adding a
-second installer means picking a key and nothing else.
-
-## Subagents: `ctx.delegate` is a second tool loop
-
-`subagent.ts` implements the `ctx.delegate` capability (`sdk/subagent.ts` in
-`@alexkroman1/aai` holds the contract). A subagent is the AI SDK's own subagent
-pattern — a `ToolLoopAgent` invoked from inside a tool's `execute` — with the
-three things that pattern leaves to the author supplied by the runtime instead,
-and each of the three is a bug an author would otherwise write:
-
-- **The model** resolves through the same `resolveLlm` registry as the pipeline
-  and `ctx.generate`, credentials from the agent env. A hand-built
-  `new ToolLoopAgent({ model })` in a tool body has no way to reach that env, so
-  it reads `process.env` — on a platform where every provider key is
-  user-provided and `process.env` holds none of them.
-- **The tools** go through `executeToolCall` like every other tool call, so a
-  subagent's tools get argument coercion, Standard Schema validation, the
-  per-call deadline, a real `ToolContext`, and failure-shaped-as-a-tool-result.
-  The alternative is a second, thinner tool runtime inside the first.
-- **The step budget** spends its last step with `toolChoice: "none"`, via the
-  same `forceFinalAnswer` the voice pipeline and `createTextAgent` use, so a
-  capped subagent ANSWERS rather than stopping mid-chain — which for a subagent
-  is worse than for a turn, because its final message is the ONLY thing that
-  crosses back.
-
-**The runner is handed a tool call's own option bag, not a list of
-dependencies.** `SubagentRunner` (declared in `tool-executor.ts`, beside the
-bag) takes `ToolCallDefaults` — `Omit<ExecuteToolCallOptions, "tool">`, derived
-by subtraction — because a delegated run's tools are ORDINARY tool calls and
-re-enter `executeToolCall` with that same bag. So what the runner needs from a
-tool call is exactly what a tool call already has, and a capability added to a
-tool context cannot be silently missing from a delegated one. The two types are
-mutually recursive for the same reason, which is why one of them is declared
-next to the other rather than beside its implementation.
-
-**A subagent's context is the parent's, minus the conversation.** Its tools see
-the same `env`, slots, `db` and `sessionId` — it is the same session, and a
-subagent that could not read the cart would be a worse tool than the one that
-delegated to it. What it does not see is `ctx.messages`: the isolation a
-subagent exists FOR is the context window, and one handed the transcript has
-given that back. `DelegateOptions.task` is what carries anything from the
-conversation, which is why the contract insists it be a complete brief.
-
-**A GUARDRAIL is a fourth thing the runtime supplies**, and for the same reason
-as the other three: an author can write the loop around `ctx.delegate` and
-cannot write it correctly. `SubagentDef.guardrail` judges one attempt and may
-return a complaint; `runUntilAccepted` then re-runs the subagent with its own
-rejected answer AND the complaint appended to the conversation it already has,
-so the tool results the first attempt paid for are still in the window when the
-model is told what was wrong with them. The only version available outside this
-function starts a FRESH run, which re-reads the four pages to fix the citation
-it was holding the source for. Exhausting `maxRevisions` (default 1 — a revision
-is another full run, and the caller is on a phone) returns the last attempt with
-`accepted: false` rather than throwing: there IS an answer, and whether to read
-it out is the calling tool's decision, not the runtime's.
-
-**`expectedOutput` is appended as its own `## EXPECTED OUTPUT` section**, before
-the per-call `context` so a call may refine what the definition asks for. It is
-the "tell it to summarize" rule of the contract above, made structural — the
-single most common way a subagent disappoints, previously carried by a sentence
-every author had to remember.
-
-**A STEP delegates too**: `sdk/step-delegate.ts` holds a `Symbol.for` slot
-that `step-delegate.ts` here fills with this same runner, SESSIONLESS.
-Both module docs own the rest.
-
-**A ROSTER is lowered before this package sees it.** `agent({ subagents })`
-mints one `delegate` tool in `agent()` (`sdk/subagent-roster.ts`), so what
-arrives here is an ordinary tool whose body calls `ctx.delegate` — no branch in
-`setupSubagents`, no second dispatch path, and nothing to wire on the sandbox
-arm, where the host holds a serialized config that could never carry a
-`SubagentDef`'s functions anyway.
-
-**A delegated run spends on the DELEGATING SESSION's budget**, per step, and is
-refused before each attempt once that budget is gone — a revision included,
-since a revision is another full run. The meter rides on the tool call's own
-option bag (`ExecuteToolCallOptions.usage`, carried into `ToolCallDefaults` by
-subtraction), which is the same route `ctx.generate` takes and the reason
-neither needed a second wiring. It shipped counting NEITHER, so a `usageLimits`
-on a delegating agent bounded only the conversation; `usage-meter.ts`'s header
-carries what feeds the meter now, what still does not, and why a workflow step
-is out of scope rather than merely unwired. A SESSIONLESS parent
-(`step-delegate.ts`) has no meter, and absent means uncounted, never refused.
-
-**Delegation is one level deep.** A subagent's own tools get a `ctx.delegate`
-that rejects with `NESTED_DELEGATE_MESSAGE`, naming the rule. A subagent that
-may delegate can delegate to itself, and nothing at this seam can see the
-recursion — a depth counter would bound the bill without making it quotable,
-which on a phone call is the number that matters. The refusal REPLACES the
-runner rather than dropping it, so the message says why rather than reporting a
-capability that happens not to be wired here.
-
-**What crosses back is the answer plus a cost report, never a transcript.**
-`DelegateResult.toolCalls` carries the CALLS and not their results: the results
-are what stayed inside the subagent's window, and a caller handed them back has
-undone the delegation. The calls are enough for a voice agent to say something
-true about the wait ("I checked four sources"), which is what the field is for.
-
-Wired in three places, all of them the same two lines: `setupSubagents` in
-`runtime-tools.ts` (both the sandbox and self-hosted paths) and
-`createTextAgent`. `createSubagentRunner` memoizes its models per descriptor
-OBJECT like `createGenerateFn`, so a subagent declared at module scope reuses
-one client across a session's delegations.
-
-**The worked example is the `topic-briefing-agent` template**, which exists for
-this and is arranged so the three reasons to pay a subagent's latency are each
-visible in one place: a context window the caller does not pay for (a researcher
-reads whole pages; what crosses back is its final paragraph), parallelism
-(`tools/research_topic.ts` fans every angle out at once, so the caller waits for
-the slowest rather than the sum — `allSettled`, because a caller would rather
-hear three angles and an apology than an error), and tools isolated by
-capability (`researcher` searches AND browses on six steps, `factChecker` only
-searches, on two, on a cheaper model). Compare `web-research-agent`, which puts
-the search builtins on the agent ITSELF — right for one lookup, wrong once a
-question has four sides. Two things it states in place because they are how a
-subagent disappoints: its instructions END with "your final message is the only
-thing the desk receives", and every angle is written as a COMPLETE brief, since
-a subagent has not heard the call. This account lives here rather than in
-`packages/aai-templates/CLAUDE.md` because that guide is at its 120,000-char
-cap; the row there points back.
-
-**Testing it does not mean running a model.** `createScriptedOneShotModel`
-(`_fake-llm.ts`) answers a script one entry per `doGenerate`, which is what a
-non-streaming tool loop needs; on the SDK side `stubDelegate`
-(`@alexkroman1/aai/testing`) fakes the capability itself, routed by subagent
-name. Both exist because the alternative — a spec that asserts on a subagent's
-steps — is a spec asserting on a provider's choices.
+— each a type-only `unique symbol`, so only `createRuntime` /
+`createSessionAuth` can mint one and a received handle can grow a member in a
+minor. Rules that follow:
+
+- A test DOUBLE implements the unsealed slice a consumer takes
+  (`SessionRuntime` for `createRuntimeServer`), never the sealed handle.
+- A method that would widen a sealed handle becomes a free function over it
+  (`connectSession`) or a sub-handle.
+- A handle that is only ever received (`AgentServer`, `TextAgent`,
+  `EvalSession`, …) is tagged `@sealed` in TSDoc so a new member is a revision.
+  `EvalTurn` is not — a caller-implemented `SimulationTarget` returns one.
+- **Test seams are not public types.** They live on `HostRuntimeOptions` /
+  `HostRuntime` via `createRuntimeWithSeams` (`runtime.ts`) and on
+  `HostEvalSessionOptions` via `openEvalSessionWithSeams`, reached by relative
+  import. Fields shared by every entry point are one `HostAgentOptions`
+  (`env` and `llm` are excluded — their types differ per entry point).
+- **`auth` stays a server FIELD, not an `upgrade`-hook use**: the hook answers
+  synchronously, a claimed socket cannot be handed back, resume ownership is
+  recorded on the session the server starts, and the ticket subprotocol must be
+  kept out of the handshake reply.
+
+### Four subpaths are RENDERED, and the root barrel is not
+
+`typedoc.json` names only `eval-barrel`, `eval-vitest-barrel`,
+`eval-simulate-barrel` and `testing-barrel` — they are written by whoever wrote
+the `agent.ts`, so they belong in the authoring reference. The root barrel,
+`/internal`, `/auth`, `/metrics` and `/tracing` stay deny-listed in
+`scripts/docs-markdown.mjs`. See [`docs/CLAUDE.md`](../../docs/CLAUDE.md),
+"Rendering `aai-runtime` is a docs decision", for the files one change touches
+together.
 
 ## Driving an agent from text is a published surface
 
-**Moved to [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md)** beside this file:
-the text-agent surface itself, why a workflow app is evaluated by RUNNING it,
-and why a keyless run gets a SCRIPTED model rather than a skip. Which subpaths a
-template eval may import from is konsistent's
-`template-eval-runtime-subpaths` (`/eval`, `/eval/simulate` and `/eval/vitest`,
-and nowhere else).
-
-## Tool discovery off the platform
-
-`withToolsDir(def, dir)` (`tools-dir.ts`) is the only thing in the repo that
-turns a DIRECTORY into a tool registry, and it is here rather than beside
-`toolRegistry` in the SDK for the ordinary reason: `node:fs/promises` plus a
-dynamic `import()`, and `@alexkroman1/aai` has to stay loadable in a browser.
-
-The gap it closes was real and specific. A tool is registered by EXISTING —
-`agent()` refuses a `tools` argument with a type whose text names the file to
-create — so somebody has to read the directory, and on the two paths that ship
-an agent that somebody is a bundler (the CLI's generated worker entry; a spec's
-`import.meta.glob`). A plain Node process serving `agent.ts` has neither, which
-made the SDK's central idiom UNREACHABLE on exactly the path with the fewest
-moving parts: `examples/self-hosted-server` shipped a README promising "adding a
-tool is adding a FILE" beside code that could not do it, and the only way to
-give that agent a tool was the hand-written `name → import` map the type error
-exists to prevent.
-
-**It adds a source, never a second set of rules.** The name grammar, the
-co-located-spec skip, the nested-file error, the default-export checks and the
-collision message stay in `toolRegistry`, and the attach stays in `withTools`;
-this reads a directory and calls them. `sdk/tool-registry.ts`'s module doc is
-the statement of that invariant — every source arrives as `path → module`, which
-is what stops a second builder from growing a second behaviour.
-
-Two mechanics worth not rediscovering. The module keys are relative to the
-directory scanned, because `toolRegistry` derives a name from the segment after
-the last `tools/` and an absolute key under a directory NOT literally named
-`tools` reads as a nested file — the right diagnostic for the wrong reason. And
-the scan is recursive so a file one directory deep reaches that nested-file
-error instead of being silently absent, which is the failure the whole mechanism
-replaces. A MISSING directory throws for the same reason.
-
-## A settled tool call writes a `role: "tool"` message, and the shape has ONE home
-
-`ctx.messages`' third arm is real in all three modes and on resume: a settled
-call contributes `{ role: "tool", content, toolName?, toolCallId? }`, so a tool
-reads what an earlier tool in the same reply answered. The author-facing account
-is `packages/aai/CLAUDE.md`, "`ctx.messages` has a THIRD arm, and it used to be
-dead".
-
-Two rules for anyone editing this package:
-
-- **Build it with `toolResultMessage()` (`_tool-result-message.ts`), never a
-  literal.** Four producers converge there — `to-vercel-tools.ts` (the
-  `recordToolResult` sink), `text-agent.ts`, `session-tool-steps.ts` and
-  `session-event-history.ts` — and the function CAPS the result, which is what
-  makes a live history and a resumed one byte-identical. A fifth producer joins
-  them there.
-- **Read the arm by ROLE, never by the presence of a field.** A completion whose
-  `tool.called` fell off the front of the event log has no name to give.
-
-**Both traps this can spring are SILENT, and they are in
-[`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md)** beside this file, with
-the producer table and the cap argument: `RestoredToolCall.afterMessageIndex`
-indexes the CLIENT-visible list, so interleaving tool messages without re-basing
-the anchors puts a resumed conversation's tool rows under the wrong turns while
-the frame still validates; and `toModelMessage` maps any non-`user` role to
-`assistant`, so a `"tool"` message seeded into the LLM view tells the model it
-SAID the tool's serialized output — which is why `pipeline-history.ts` filters
-`seed()` through `isLlmSeedable`.
-
-## A tool's throw is CLASSIFIED, and only the author can call one FATAL
-
-`ToolDef.onError` is the seam: `execute` RETURNING a `ToolFailure` is the author
-saying "the model can recover", `execute` throwing is a bug, and `onError` is
-the only way to say which kind of bug. `tool-error-policy.ts` decides
-(`resolveToolError` → `default` / `recovered` / `fatal`, plus `FatalToolError`
-and `isFatalToolError`), and its module doc is the argument. **A tool with no
-`onError` behaves exactly as it did before the field existed.**
-
-**A fatal verdict really does stop the turn in pipeline and text mode** — but
-not by the rejection, which the AI SDK swallows and steps past. `FatalToolLatch`
-is the side channel that carries it out (`withFatalSignal` folds it into the
-REQUEST signal, never the turn's, or the stop reads as a barge-in). **S2S cannot
-abort** and degrades to a serialized failure: the provider owns the loop.
-
-`onUncaught` widened to `(message, { fatal })` to carry the distinction, and
-**the wire's `fatal` deliberately stayed `false` for both arms**: in this
-codebase a `fatal: true` error frame means the SESSION is over, and `aai-ui`
-answers one by releasing the microphone and ending the call.
-
-**The four guard rules — a cancelled call never reaches `onError`, `undefined`
-means "not handled", a thenable return is refused fatally, and a handler that
-throws for its own reason is fatal — are in
-[`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md)** with the mistake each one
-prevents.
-
-## A tool can SPEAK, and a filler line may not open the barge-in gate
-
-`ToolDef.messages` declares four kinds of line per tool — `start` (as the call
-begins), `delayed` (a ladder while it runs), `complete` and `failed` (when it
-lands). `tool-messages-runner.ts` speaks them, `to-vercel-tools.ts` drives it
-from inside `execute`, and the whole design — the four kinds, the
-variant-versus-stage rule, the argument conditions — is on
-`aai/sdk/tool-messages.ts`.
-
-**Two rules an editor of this package has to carry around.** Everything else is
-in the runner's module doc and in
-[`TOOL-OUTCOMES-CLAUDE.md`](TOOL-OUTCOMES-CLAUDE.md).
-
-**A `role: "assistant"` completion means the model is NOT CALLED, and the
-mechanism is `stopWhen`.** The line is spoken from inside the tool call and
-latches `ToolSpeechController.verbatim()`; `startLlmStream` folds that latch in
-beside `stepCountIs`, so the step that produced the tool result is the turn's
-last. Two consequences that are easy to miss: the sentence is in no step's
-response messages, so `consumeLlmStream` APPENDS it to the turn's model
-messages (without which the next turn's model does not know the agent said it),
-and the latch is per TURN — `beginTurn()` clears it, or the turn after a
-verbatim answer would refuse to call the model at all.
-
-**Filler goes out `record: false`, and nothing here may abort anything.** START
-and DELAYED ride the same flag the dead-air cover rides, which is what
-`HeardTracker.spokeRecordable()` reads — so a turn that has played only tool
-filler still cannot be spoken over, the invariant "Stop dead-air filler from
-opening the barge-in gate" established. The runner owns no signal, cancels no
-TTS and flushes nothing; the only thing it can delay is its own tool call, under
-`blocking`, bounded by `pTimeout` at the call site. A `blocking` wait is an
-ESTIMATE of the line's spoken length and deliberately not a provider
-acknowledgement: waiting on the TTS session means touching the lifecycle of the
-reply in flight, which is the move behind the measured failure where a dead-air
-probe killed the real reply and the agent went mute for 21-38s.
-
-And the generic cover STANDS DOWN while a tool is covering its own gap
-(`toolCovering` in `pipeline-stream-parts.ts`) — Vapi's "idle messages are
-disabled during tool calls", for the same reason: two sentences about one
-silence, the second of them generic.
-
-## Four subpaths are RENDERED, and the root barrel is not
-
-`typedoc.json` here names `dist/eval-barrel.d.ts`, `dist/eval-vitest-barrel.d.ts`,
-`dist/eval-simulate-barrel.d.ts` and `dist/testing-barrel.d.ts` — and nothing
-else (`/auth` and `/metrics` are embedder surfaces, deny-listed beside
-`/tracing` in `scripts/docs-markdown.mjs`). The split is by READER rather
-than by package: an eval and a workflow spec are written by whoever wrote the
-`agent.ts`, in the same vitest project, beside `@alexkroman1/aai/testing`, so
-they belong in the authoring reference. The root barrel and `/internal` stay
-deny-listed in `scripts/docs-markdown.mjs` for the reasons written there.
-
-The `aai` README teaches `describeEval` and then links the rendered reference,
-which is what made the absence a defect rather than a preference. **See
-[`docs/CLAUDE.md`](../../docs/CLAUDE.md), "Rendering `aai-runtime` is a docs
-decision"** for the files one change has to touch together and what the render
-found — three unnameable types on this surface, plus five dead `{@link}`s that
-had been invisible while nothing rendered these subpaths.
-
-## A run's journal has THREE homes, and the order between them is a decision
-
-`selectJournal` (`workflow/runtime.ts`) picks the replay engine's journal:
-**platform, then postgres, then memory**, and the boot line names whichever won.
-`createPlatformJournal` posts one `POST /:slug/workflow-journal` per operation,
-`createPostgresJournal` runs on the agent's own `DATABASE_URL`, and memory is a
-`Map`.
-
-**The order is not "most specific wins", and it is what closed the bug.** A
-deployed guest reaches NEITHER durable backend — the platform provisions no
-tenant database — so before platform came first every deployed run journaled
-into a sandbox that self-exits after `AGENT_IDLE_EXIT_MS`, and a step's result,
-its attempt count and an open approval window died with it while the run sat
-suspended looking healthy. **Memory is last and the boot line SAYS so**: a
-durability tradeoff absent from the log reads as a bug.
-
-**The platform pair is read from THIS PROCESS's environment**
-(`platformGuestOptions`), never the agent's. An agent may set any `AAI_*` key as
-a secret, so under the tenant spelling an agent would choose the base URL and
-bearer its own journal was sent to.
-
-**Everything else about the journal and the replay engine is
-[`JOURNAL-CLAUDE.md`](JOURNAL-CLAUDE.md)** beside this file, and it is REFERENCE
-— read it when you are working on the journal, a backend, or the engine's walk,
-and not before. What is there: the four round trips a delivery used to cost and
-what collapsed them; the determinism affordances (`ctx.now`, `ctx.random`,
-`ctx.uuid`) and their own key space; why a wait is keyed by NAME and `ctx.sleep`
-takes a label; why a step body may not WAIT and how the engine refuses one that
-does; what a run record and a step entry each pin down; a parked delivery's
-back-off curve; the attempt LEASE and its expiry; that a failure of the JOURNAL
-is not a failure of the RUN; and the tiers of journal test with the three
-`JournalStore` contract points the suite refused to decide.
-
-## An upload's bytes are OBJECTS, and its record has two homes
-
-**An upload ID is checked at the ROUTER, for every `/uploads/:id` route.** The
-grammar check (`UPLOAD_TOKEN_RE`, 1-64 of `[A-Za-z0-9_-]`) used to sit inside the
-two writes that take a caller-chosen id, so the other three handed a bad id to the
-store — where `assertUploadToken` throws a plain `Error`, `sendUploadFailure` can
-only classify the store's five typed failures, and the router's catch turned a
-plainly bad request into `500 Internal server error` with the reason in the log
-and nowhere else. One class of mistake, two statuses: `POST …/not..valid/parts`
-answered 400 and named the grammar, `GET …/not..valid/info` answered 500. It is
-`uploadIdOr400` (`workflow/api/uploads.ts`) for all five now, which also keeps the
-grammar a BOUNDARY — an id that would escape the store never reaches one, whichever
-verb asked. A well-formed id nothing stored is still a 404: "malformed" and
-"reclaimed" are different answers and a client acts differently on each.
-
-One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords` for
-the record, `UploadBackend` for one object per `UPLOAD_PART_BYTES` window — and
-it names neither's home. It used to hold the bytes itself, a `bytea` row per
-megabyte or a file per upload under `aai dev`, and **`_upload-blobs.ts` carries
-the four costs that got them out of Postgres** — storage price, WAL and backup
-amplification, the app's own queries sharing their pool, and the platform's
-forward reading a slow drain as a dead guest.
-
-**The pairing follows the WORLD, off the same `DATABASE_URL`: an upload must
-be at least as durable as the runs that read it.** With a database the record
-goes in it and the bytes need a bucket — no bucket is the ONE refusal left,
-since those runs outlive this container and a directory here cannot serve one
-resuming elsewhere. With none the world is LOCAL, so both go in its data
-directory (`_upload-files.ts`): per-process in a guest, the project's
-`.workflow-data` under `aai dev`, where a restart re-enqueues the runs it finds
-and finds their uploads. Same shape as the deleted file backend, opposite of
-its bug — which was pairing a directory with runs in POSTGRES — and it is what
-gives a databaseless studio agent uploads at all. `installWorkflowSupport`
-ANNOUNCES the local home once: a tradeoff absent from the log reads as a bug.
-
-**A FINISHED upload is immutable, at both layers.** A part write is keyed by its
-OFFSET and the merge replaces whatever window was there, so
-`PUT …/parts?offset=` against a completed upload used to answer 200 and rewrite
-the bytes under it — `size` and `complete` unchanged, so a step reading that
-window had nothing to notice; a SHORTER replacement collapsed `size` and flipped
-`complete` back to `false`; a LONGER one recorded two overlapping windows, after
-which a `read` of two megabytes returned three. Upload ids are the caller's to
-choose and the workflow API is unauthenticated unless `AAI_WORKFLOW_API_TOKEN`
-is set, so none of it needed a credential. `UploadCompleteError` (409) is the
-refusal, `assertUploadOpen` is the check, and two things about it are decisions:
-the KIND refusal is checked FIRST (a finished streamed upload keeps its 400 "not
-a parts upload" rather than changing status when its body ends), and a re-sent
-CLAIM naming only windows the record already holds at the same lengths is a
-NO-OP rather than a 409 — a claim is re-sent on a dropped response, so the
-request that COMPLETED an upload is exactly the one whose answer can be lost,
-and 409 is in neither `RETRYABLE_STATUS` nor the resume vocabulary. The BYTE
-route refuses in parallel and independently
-(`aai-server/upload-handler.ts`'s `assertUploadOpen`): a rewrite there changes
-no record at all, so the store's refusal cannot see it.
-
-**A STREAMED upload's first windows are CUT SMALL**, and that is a progress fix
-rather than tuning. Nothing in a window is readable — and therefore nothing is
-published as `size` — until the whole window is stored, so at a flat
-`UPLOAD_PART_BYTES` a stream under 8 MiB reported `size: 0` for its entire life
-and then the whole file at once. `size` was honest throughout (it is the
-contiguous READABLE prefix), which is why the fix is the CUT and not the number:
-a `size` counting bytes that merely arrived would send a reader to a window that
-is not there. `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
-`UPLOAD_PART_BYTES` — 1, 2, 4, 8, 8, … MiB — so a maximal upload gains three
-windows and `platform/uploads.ts`'s O(N²) `parts` tripwire is untouched, where a
-flat 1 MiB cut would have been eight times the windows. `grow` is exactly
-`publish`: only a published window's arrival is observable, and only a published
-cut may be non-uniform, because `create` derives its boundary list from
-`windowList`, which assumes the grid.
-
-**Neither direction takes turns with the socket.** A whole-file write puts
-`UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
-byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
-`mapStream` (below), which is where the ordering, the memory bound, and the
-whole-window buffering that keeps a failed write re-sendable are argued.
-
-## Every call this runtime makes of its OWN goes through a POOL, and there are two
-
-`_egress-fetch.ts` holds both: `rpcFetch` for a platform route (a kilobyte of
-JSON, one per step transition — the FALLBACK now, under one multiplexed socket
-per guest: [`PLATFORM-SOCKET-CLAUDE.md`](../aai-server/PLATFORM-SOCKET-CLAUDE.md))
-and `blobFetch` for a window's bytes. They were
-one pool, so a claim's 32 concurrent probes competed for the sockets a journal
-write queued behind — and one `allowH2` answer served both, though the
-measurement behind it is about multi-megabyte bodies exhausting a flow-control
-window and a kilobyte cannot exhaust one. Both still default to HTTP/1.1;
-`AAI_EGRESS_RPC_HTTP2` is a switch on the pool where the answer is unmeasured,
-and the byte pool deliberately has none. `_egress-pool.ts` builds them, and
-`step-fetch.ts` takes a third. **`globalThis.fetch` is banned here by
-`guard-invariants` rule 29**, whose remedy carries the argument.
-
-`sdk/step-fetch.ts` measured the problem and fixed it for a STEP's outbound call:
-undici 8 — the copy backing `globalThis.fetch` from Node 26 — defaults `allowH2`
-to `true`, so N concurrent requests to one origin are multiplexed onto ONE TCP
-connection sharing one flow-control window, and a capacity limit then arrives as
-a stream reset carrying no HTTP status. 14 of 16 concurrent 17.66 MB requests
-landed on the global against 16/16 on HTTP/1.1.
-
-**What that left behind is that the RUNTIME's own calls are the same shape**, and
-five of them were still on the global: the upload broker's byte operations
-(`_upload-blobs-brokered.ts`), the operator-bucket ones beside them
-(`_upload-blobs-http.ts`), every platform RPC (`platform-rpc.ts`), and the
-run-event STREAM read in the DevKit-era `workflow-platform-storage.ts` — which
-was the worst case of all, a read meant to stay open on the same window as a
-burst of byte probes. That module is gone with the DevKit's storage RPC; the
-rule it motivated is not, and `platform-rpc.ts` is what every journal, queue,
-session-state and upload-record call goes through now.
-
-Observed on a deployed transcription workflow uploading ~64 MB in 8 MB windows:
-
-```text
-Workflow run event read failed { runId: 'wrun_…', error: 'fetch failed', failures: 2 }
-Workflow API request failed { error: 'fetch failed' }
-PUT …/workflows/uploads/<id>/parts -> 500 Internal Server Error (execution: 37.9 s)
-```
-
-Three things in that log are ONE fault, which is the tell. The failures are
-simultaneous across UNRELATED routes — a claim's bucket probes and the event
-stream's storage reads — because those requests shared a connection. The error is
-`fetch failed` with no status, which is what a reset looks like from `fetch`. And
-`BYTE_OP_ATTEMPTS`' ~750 ms of retry could not help, because re-issuing in
-lockstep onto the connection that just reset IS the failure rather than the cure.
-
-Four things about the pool worth not rediscovering:
-
-- **It is per PROCESS, where the step pool is per `AgentServer`.** That pool is
-  rebuilt on every `aai dev` file save; this one is addressed by the process's own
-  environment and serves callers with no server to hang a lifetime off —
-  `platformPost` is reached from four clients holding nothing but a base and a
-  bearer. So it is a lazy singleton, and `closeEgressFetch()` RESETS it rather
-  than poisoning it: a caller holding `egressFetch` across a close gets a fresh
-  pool on its next request.
-- **undici's timeouts are LEFT ALONE at their 300s defaults, which are TIGHTER
-  than the step pool's.** Here the callers bound the REQUEST
-  (`BYTE_OP_TIMEOUT_MS`, `PlatformCall.timeoutMs`) and nothing bounds draining
-  the body afterwards — exactly what a window `read` does — so undici's
-  body-inactivity timeout is the only limit that path has. The step pool RAISES
-  both to `STEP_FETCH_INACTIVITY_MS` (10 min) because a step's body can be
-  gigabytes; it had them OFF, on an argument half of which ("or the DevKit's step
-  budget") was retired with the DevKit, so a user-written `stepFetch` passing no
-  signal was bounded by no layer at all. Both undici timers are
-  inactivity/phase timers rather than total-duration ones, which is what lets one
-  number serve a JSON call and a 660 MiB upload alike — the constant carries the
-  undici mechanics and the arithmetic.
-- **The `fetch?:` seam stays optional.** Only the DEFAULT was the bug, and making
-  it required is a breaking change: `createHttpUploadBackend` is a published export
-  a self-hoster calls.
-- **Bodies must be plain.** This goes through `pinnedFetch`, so `host/_undici.ts`'s
-  rule applies — a `FormData`, `Blob`, `Headers` or `Request` from the GLOBAL
-  undici brand-checks against the wrong classes and is silently stringified. Every
-  caller here passes a `Uint8Array` or a string, which is what made the swap safe.
-  `providers/_openai-stream-repair.ts` is the rule's one baselined occurrence for
-  the mirror-image reason, recorded at the line.
-
-### A transport failure is a 503, and it used to be an opaque 500
-
-The amplification half, and its own bug. `fetch` rejecting with
-`TypeError: fetch failed` reached the router as an unnamed rejection, so
-`answerHandlerFailure` answered `500 { error: "Internal server error" }` with no
-`Retry-After` — six times on one claim, ~40 s each, the browser re-sending 8 MB
-windows it had already stored into the same fault. `workflowApiErrorStatus` had
-a table entry for a full disk (507) and a saturated pool (503) and none for the
-hop OUT, which is the same finding those two entries record: a client cannot
-back off on a 500, an operator cannot triage it, and a load balancer cannot shed
-on it.
-
-`isTransportFailure` (`workflow/api/http.ts`) walks the `cause` chain — the code
-is almost never on the value that was thrown — against a closed vocabulary, and
-answers 503 with `Retry-After: 1`. Three properties are decisions:
-
-- **`ENOTFOUND` is deliberately absent.** A hostname that does not resolve is a
-  misconfiguration, and "retry shortly" hides a permanent fault behind a client's
-  loop forever. `EAI_AGAIN`, the temporary DNS failure, is in for the mirror
-  reason.
-- **It is checked LAST of the 5xx entries.** A full disk and an exhausted pool
-  both surface transport-shaped codes on their way out, and each has advice this
-  one cannot give.
-- **It is not `isCallerGone`**, which reads `ECONNRESET` off the TOP-level value
-  and is checked first. An inbound socket that closed must not get a 503 written
-  to it.
+In [`TEXT-AGENT-CLAUDE.md`](TEXT-AGENT-CLAUDE.md): the text-agent surface, why
+a workflow app is evaluated by RUNNING it, and why a keyless run gets a
+SCRIPTED model. Which subpaths a template eval may import is konsistent's
+`template-eval-runtime-subpaths` (`/eval`, `/eval/simulate`, `/eval/vitest`).
 
 ## A deployed guest has TWO copies of this package
 
 The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
-it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`, so a
-deployed agent runs the SDK version it was tested against
-(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both are loaded in one
-process, and **anything this package uses to rendezvous between them has to be
-keyed on `globalThis`, not on a module-level value.**
+it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
+(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
+process, so **anything used to rendezvous between them must be keyed on
+`globalThis` (`Symbol.for`), never a module-level value.**
 
-The instance that got this wrong was the workflow run context, and its own doc
-had already stated the failure — "two stores would each see only their own
-`run()` calls, so a `stepReport()` reaching the wrong one would silently find no
-context and degrade to log-only" — while taking a module-level
-`new AsyncLocalStorage()`, which is one store per COPY rather than one per
-process. So the reporter `installWorkflowSupport` published belonged to the
-harness's copy and the run context belonged to the bundle's:
-
-```text
-Workflow: Transcribing 45:00–46:32. {}
-```
-
-The empty context object is the whole symptom, and it reads as cosmetic. It is
-not: the same lookup decides whether a narration line is STREAMED, so a
-fifty-minute transcription reported no progress to a watching page at all, and
-the attempt suffix that tells a reader a fan-out is retrying could never appear.
-Every other signal was healthy, the log line being unconditional.
-
-**It survived the DevKit because the arms this replaced resolved once.**
-`getStepMetadata` and `getWritable` came from the `workflow` package, which the
-guest image resolved from its own `node_modules` and both copies shared.
-Removing those arms made the store's own warning come true — which is the
-general shape of this whole removal: a seam the DevKit's world covered, inherited
-without being enumerated.
-
-The store is `Symbol.for`-keyed now, the same mechanism the step reporter slot
-one module over already used, and for the same reason. **`vi.resetModules()` is
-a second copy**, which is what makes this testable in one process —
+The workflow run context (`workflow/run-context.ts`) and the metrics sink
+registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a
+module-level `AsyncLocalStorage` gives one store per COPY, and the symptom is an
+empty context `{}` on narration lines plus no streamed progress. **Test it with
+`vi.resetModules()`**, which yields a second copy in one process —
 `workflow/run-context.test.ts` loads two and asserts a context entered through
-one is visible through the other. A/B'd: both cross-copy cases fail against the
-module-level form.
-
-## A callback URL comes from `publicWebhookUrl`, and the route is on `createRuntimeServer`
-
-`ctx.workflows.publicWebhookUrl(token)` mints the one workflow URL that LEAVES
-the system — `RuntimeOptions.publicUrl` plus `WORKFLOW_WEBHOOK_PREFIX`, the same
-constant the router parses, so the URL handed out and the path that answers it
-cannot drift. It exists because the DevKit's own `hook.url` was **guest-local**:
-composed from `getWorkflowMetadata().url`, i.e. `http://localhost:<port>` off
-the running process, which names the inside of a sandbox that has self-exited by
-the time a payment provider calls back.
-
-**The route is mounted in `createRuntimeServer`, and that is a correction rather
-than a detail.** It used to be mounted by `createWorkflowSurface`, which returns
-early unless the bundle carries both `workflowCode` and `stepCode` — the DevKit
-transform's output. When the replay engine replaced the DevKit those strings
-stopped being produced and the route mounted on NO door, so every callback a
-deployed run had handed out answered 404 permanently.
-
-Nothing in the system could see that. A run waiting on a hook that never arrives
-is indistinguishable from a payer who never paid, so it reports as healthily
-suspended and the failure lands weeks later on somebody else's server, on a URL
-nobody can re-issue. Two properties keep it closed:
-
-- **It hangs off `createRuntimeServer`**, which every front door goes through —
-  `aai dev`, a self-hosted `server.mjs`, a deployed guest — so it cannot come to
-  depend on a build artifact again.
-- **It reads `runtime.workflows` through a LAZY getter**, like the workflow API
-  beside it, because the guest builds its runtime on the first request that
-  needs one; a captured value is `undefined` for the life of the server.
-
-`WorkflowClient.signal` is the delivery, and a `false` from it is a **404, never
-a 5xx**: the caller is a third party whose retry loop reads 5xx as "come back",
-so a miss used to be retried against an error forever. 404 stops it, and it is
-stable — a closed hook does not reopen. `workflow/webhook.ts` owns that
-reasoning; `workflow/http-adapter.ts` is why the failure status is a parameter
-(a queue callback wants the 500 the world retries, and this route must never
-emit one).
-
-Three properties of the URL itself are load-bearing:
-
-- **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
-  platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
-  passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
-  BACKEND origin (Vite proxies the browser surface and not the `/.well-known/`
-  routes, so the port a developer opens would 404 a delivery).
-  Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
-  one of its three deployments.
-- **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
-  same bug with the failure moved days later and onto somebody else's server.
-- **It takes the token, because a hook's token is the caller's.** Derive it in one
-  exported helper the body and the tool both import — the rule {@link signal}
-  already states. `createWebhook()`'s own token is random and body-side only,
-  so a URL that has to be minted from a TOOL wants `createHook({ token })`.
-
-CLOSED for a BODY and its steps too, through the slot this note predicted:
-`stepWebhookUrl(token)` on `@alexkroman1/aai/step` reads a `Symbol.for` slot
-that a host fills with a MINTER — `publishWorkflowWebhookUrl(publicUrl)` in
-`workflow/serve.ts`, beside `workflowWebhookUrl`, which is the one place base +
-prefix + encoded token are composed. The minter, rather than the origin, is what
-is published: the route belongs to the package that ANSWERS it, so the SDK never
-spells this path and the two cannot drift. The guest publishes at bundle load
-(before the surface is built, so a boot-time queue delivery cannot race it) from
-the `AAI_PUBLIC_BASE_URL` in its exec env — which is why `requireStepEnv` could
-not have done this job: that variable is the SPAWNER's and never reaches the
-agent env. Unfilled, the reader THROWS naming the configuration; `aai dev` does
-not publish one yet, and a laptop origin would not be reachable anyway.
-`workflow/client.ts`'s own inline composition is the copy still owed a fold onto
-`workflowWebhookUrl`.
-
-## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
-
-`resolvePlatformQueue` (`workflow/platform-world.ts`) resolves the base every
-platform client in this package POSTs to — run storage, the queue, session state,
-upload records — and it reads **`AAI_PLATFORM_BASE_URL`**, falling back to
-`AAI_PUBLIC_BASE_URL`. Those were one key, and the two claims can require
-OPPOSITE values:
-
-| | `AAI_PUBLIC_BASE_URL` | `AAI_PLATFORM_BASE_URL` |
-| --- | --- | --- |
-| Claim | "a third party reaches this agent here" | "the platform is dialable here" |
-| Reader | `publicUrl` → `publicWebhookUrl` (above) | `resolvePlatformQueue` |
-| Must resolve from | the internet | **inside the sandbox** |
-
-Under the platform's `microsandbox` backend they are different strings, and the
-collision was total rather than partial: the guest's port and the platform's are
-both 8080, so `127.0.0.1:8080` inside a microVM is the guest's own harness rather
-than a closed port. Every platform call was POSTed to the caller itself and
-answered by `server.ts`'s own 404 handler —
-
-```text
-guest [microsandbox:64953] stderr: POST /<slug>/workflow-storage 404
-Workflow API request failed { error: 'storage runs.list answered HTTP 404' }
-```
-
-— so every durable run in a studio preview died at its first `events.create`, and
-session state fell to memory beside it. The public key must NOT be rewritten to
-the microVM's host alias (a webhook URL minted from it is unreachable for exactly
-the caller it is for), which is why one key could not serve both and why the
-platform derives the second one separately (`agentPlatformBaseUrl` in
-`aai-server/public-origin.ts`, from the server's OWN port in local dev, so a
-preview needs nothing configured).
-
-**The fallback is not politeness.** An agent sandbox runs the harness image PINNED
-at deploy time, so a guest older than this key receives only the public one and
-would otherwise lose its platform world entirely — durable runs silently onto the
-DevKit's local world, session state silently onto memory, which are the two
-failures `platformGuestOptions` exists to stop being silent. On every backend but
-`microsandbox` the two values are identical, which is what makes the fallback
-restore that guest's exact prior behaviour rather than merely quiet it.
-
-**What let it ship is worth more than the fix, and all three are still debt.** A
-unit test PINNED the bug (`expect(x).toBe(unrewritten)` is sound only while `x`
-has one reader, and the comment beside it named the one it knew about); the
-platform's real-microVM scenario tier names this bug class three times in its own
-doc and regression-tests one of them, the bundle URL; and
-`AAI_REQUIRE_MICROSANDBOX` is declared in `turbo.json` and exported by
-nothing, so the only tier that sees real microVM behaviour has never gated a
-merge.
-
-## A reply's metrics are ONE frame, and every reader takes it from there
-
-`metrics.collected` is reported once per settled reply by the pipeline
-transport — STT endpointing, LLM TTFT/duration/steps/tokens, TTS TTFB/characters
-and `latencyMs` (committed turn → first audio). `transports/pipeline-turn-metrics.ts`
-assembles it from marks the existing producers already took for their log lines
-(`pipeline-llm-trace.ts`, `pipeline-audio-out.ts`); the log lines stay. Three
-rules, each argued in that module or in `aai`'s `protocol-events-metrics.ts`:
-
-- **A stage that did not happen is ABSENT, never zero** — a greeting has no STT,
-  a refused turn no LLM. A zero averages in as the fast case.
-- **The STT marks are QUEUED per committed text and CLAIMED by the turn that
-  answers that text** — the next reply to start is not always the final's (two
-  finals behind a speaking agent, a turn a reset dropped), and a greeting or
-  nudge answers no final. A partial is forgotten when its utterance closes.
-- **Tokens are the meter's DELTA across the reply**, so a tool's `ctx.generate`
-  inside it counts.
-
-Readers: the client (it is an ordinary event), `agent({ events })`, and the
-process-wide SINKS in `metrics-sink.ts` (`registerMetricsSink`, exported from
-`/metrics`). The sink registry is `Symbol.for`-keyed for the two-copies reason
-above — the harness's copy starts the exporter, the bundle's records. With a
-collector configured, `startTracing` registers `otelMetricsSink` over a
-`MeterProvider` (`_metrics-otel.ts`); its two peers are loaded SEPARATELY from
-the trace peers and a missing one is a warning, never a throw, because the same
-`OTEL_EXPORTER_OTLP_ENDPOINT` arms both. S2S and text mode emit no frame yet.
-
-## S2S property test
-
-**A fast-check PROPERTY TEST covers the S2S stack**
-(`integration/s2s-fuzz.integration.test.ts` plus `_s2s-fuzz-model.ts`,
-`_s2s-fuzz-harness.ts`, `_s2s-fuzz-commands.ts`; same command, also keyless).
-**The spec's own module doc and `_s2s-fuzz-model.ts`'s carry the design** — why
-the SOCKET is the only fake (every S2S spec that predates it stubs a
-neighbouring layer, and the bugs it found live in the seams), why nothing here
-uses a TIMER (the hand-rolled walk it replaced could not re-run a
-counterexample, and this one runs in ~150ms), and the ledgers the oracles read.
-Four things worth knowing before adding to it:
-
-- **Model-based COMMANDS, where the pipeline fuzz generates a script.** Legality
-  lives in each command's `check()` against a model that IS the provider state
-  machine, so an illegal frame is never generated and a counterexample contains
-  only the commands that ran — reverting the three fixes reproduces them from
-  `[session.error(rate_limited)]`, `[drop.transient, openSocket,
-  session.error(session_not_found)]` and `[drop.transient]`.
-- **Three properties, differentiated by a per-run `faultBudget`** (0 / 2 / 3):
-  turns, reconnects, retirement. One combined property cannot serve both ends —
-  at 2 faults per 40 commands a tool call rarely survived to be answered (the
-  central oracle ran 7 times out of 80 executions), and at 0 there are no
-  resumes to redeliver across.
-- **A finding is only reachable if the run does not excuse it first.** The
-  tool-answer exemptions (interrupted turn, client reset, retired session, link
-  not ready, a SIBLING call of the same reply still running — results flush per
-  reply as a BATCH) are broad enough to silence the oracle completely, so each
-  increments a `skip:<why>` counter and the floors are on the CHECKED counts.
-  `toolAnsweredAcrossResume` has been near zero through three separate
-  mistakes; it is the floor that stands between a live oracle and a decorative
-  one. `S2S_FUZZ_COVERAGE=1` prints the table. Note a resumed session inherits
-  the dead socket's unanswered tool calls — that is what `session.resume` MEANS,
-  and it is the premise the tool-answer oracle rests on.
-- **The fakes' fidelity is where the false findings came from**, every time.
-  Three drafts blamed the transport for behaviour their own fake had invented:
-  an `executeTool` ignoring its abort signal (the real one settles promptly via
-  `pTimeout({ signal })`, so `stop()` looked like it hung forever), one ignoring
-  an ALREADY-aborted signal (what a `tool.call` after a client cancel receives),
-  and one that rejected where the real executor always RESOLVES with a
-  `serializeToolFailure(...)` string. Check the real collaborator's contract
-  before believing a finding.
-
-## A hook's write needs a commit, and a guard
-
-`agent({ events })` handlers may WRITE session state — `SessionEventContext`
-carries `slots`, and the authoring half of that line is in
-`packages/aai/CLAUDE.md`, "A session event hook WRITES state, and still cannot
-SPEAK". What this package owes it is two mechanics, both in
-`session-emitter.ts` and both wired rather than documented and hoped for:
-
-- **The COMMIT.** `slot.update` is synchronous by contract and cannot flush
-  itself, and the only other commit point in the runtime is the tool executor's
-  `finally` — so a hook write on a session that then ran no tool never reached
-  the backend, and its `syncState` projection never repainted. `runHooks` runs
-  the same pair (`syncStateToClient`, then `stateStore.flush`) through
-  `ToolSetup.commitSessionState`, fire-and-forget because the emit path is
-  synchronous and a live call must not wait on a round trip.
-
-  **Paid only by a batch that WROTE**, which is what `watchWrites` is for: it
-  wraps the session's `SlotStore` for the duration of one event's handlers and
-  reports whether `write` was called. A pass-through wrapper rather than a flag
-  on the store, because that store is shared with the tool executor and a flag on
-  it could not tell a hook's write from a tool's. The overwhelming majority of
-  handlers log a line or bump a counter, and a flush per event would put a
-  backend round trip on the transcript path of every turn.
-
-  An `async` handler's write lands after the synchronous pass, so a second commit
-  is chained onto the pending promises and skipped when nothing further was
-  written.
-
-- **The re-entry GUARD.** A commit emits `state.updated`, so a handler for that
-  event which wrote would emit another, forever. `announcing` is set while hooks
-  run AND while a commit made on their behalf runs; a nested emit is still
-  recorded and still sent to the client, and announces nothing. A hook observes
-  the SESSION, not the other hooks. This is not defensive — removing the flag and
-  running `session-emitter.test.ts` fails with `RangeError: Maximum call stack
-  size exceeded`, and that A/B is what the test exists to keep.
-
-`commitSessionState` is absent on the SANDBOX tool path for the same reason
-`pushStateSnapshot` is — the runtime holds no state there. A hook's write still
-lands in the store; what it loses is the commit.
-
-## The session takes two VOCABULARIES, not nineteen callbacks
-
-`ServerSession` takes a `command(cmd)` — one `SessionCommand`, what the CLIENT asks
-for — and a `report(event)` — one `TransportEventBody`, what the TRANSPORT
-observed. `TransportCallbacks` is the same `report` from the other side. That is
-the whole inbound surface, plus the two audio paths. It used to be one method per
-thing, the same names declared on both sides with a forwarding table between them
-and a stub in every harness: **157 `on*` declarations across eleven files, 78 of
-them test scaffolding**, none of which decided anything.
-
-Three rules, and `guard-invariants` rule 16 checks the first per file:
-
-- **A callback survives exactly when there is NO EVENT for it** — binary audio,
-  `onReplyStarted` (the wire has no `reply.started`, and minting one is a protocol
-  change), `onSessionReady`, and the socket-lifecycle hooks a caller must ACT on.
-- **Report `agent-transcript.committed` or `.updated`, never a boolean.** Those
-  two names carry exactly what `onAgentTranscript(text, interrupted)` plus a
-  separate partial callback used to; only the committed one enters history.
-- **`reply.completed` is the PROVIDER's claim, not the turn's end** — the one
-  report whose name and emitted event can come apart. See `session-reply-done.ts`.
-
-**Audio is not joining the hook surface, and not for cost reasons.** A handler
-runs synchronously off `emit` and an async one is never awaited
-(`session-emitter.ts`), so no subscriber can add latency to a turn. What keeps
-audio out is MEMBERSHIP: `playback_progress` is a client→server command and audio
-frames are binary, so neither is in the event vocabulary and neither can be a hook.
-
-**Read `transports/types.ts`** for the boundary and the full argument;
-`session-core.ts` and `session-commands.ts` own the two dispatchers.
-
-## `speech_started` means "the agent is yielding", on BOTH transports
-
-The two transports derive this event differently and a client cannot tell them
-apart, so pipeline mode holds it back to match S2S rather than emitting what it
-happens to know. In S2S the service fires its speech-started the moment it stops
-generating, so the event coincides with a real interruption. Pipeline mode has
-no VAD and derives the edge from the STT transcript stream, where the FIRST
-non-empty partial opened it — one word of a cough, a backchannel, or a phrase
-the caller addressed to someone else in the room. `minBargeInWords` and
-`interruptionMinDurationMs` correctly declined to abort the reply for those, so
-the agent kept talking; the client had been told it stopped.
-
-**That divergence is not cosmetic, because clients act on it.** tau2-bench's
-harness DISCARDS its entire agent playout buffer on `speech_started` and has no
-`cancelled` handler at all, so the one event that really means "the agent
-stopped" is ignored and the one that did not is treated as authoritative — a
-reply still being spoken was thrown away mid-sentence. (`aai-ui` reads the event
-as informational and stops playback on `cancelled`, which is why this never
-showed up in the browser.) Measured by replaying the benchmark's own recorded
-caller audio against a live pipeline agent, on the run's 10 conversations
-richest in these signals: **184 `speech_started` against 87 `cancelled` — 53% of
-the events the client acted on were not interruptions at all.** The agent
-yielded to non-directed speech on 12 of 12 occasions and then sat silent a
-median 5.9s (real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
-between agent segments are ≤0.6s).
-
-So while the agent holds the floor the edge is HELD, and released only when a
-barge-in really fires (alongside `cancelled`) or when the agent stops speaking
-on its own; while the agent is silent it passes straight through, because there
-is no floor to yield. Live captions are unaffected either way —
-`user-transcript.updated` is emitted independently of the gate.
-**`transports/pipeline-speech-edges.ts` owns the mechanism**, and its two
-layers are deliberately separate: `createSpeechEdgeTracker` decides WHEN an utterance
-starts and ends (pipeline mode has no VAD, so this is derived from partials and
-finals, with a watchdog for utterances that never commit), and
-`createGatedSpeechEdges` decides WHETHER the client is told. The turn
-orchestration consuming both is `transports/pipeline-user-speech.ts`.
-
-The property to preserve — and what the specs in `transports/pipeline-voice-events.test.ts`
-pin — is that **the score no longer depends on how the client reads the event**.
-Across the panel, the spread between a client that truncates on
-`speech_started` and one that truncates on `cancelled` collapsed from up to
-**66.7 points** (R_Y 89.7% vs 46.7%; S_BC 33.3% vs 100%) to **≤2.7 points**
-(R_Y 44.1% both ways). Note which direction R_Y moved: the benchmark's
-flattering 90% yield rate was an ARTIFACT of the same bug that wrecked
-selectivity — truncating on a signal that arrives ~470ms after the first partial
-makes yields look instant. A correct client's yield rate against the old code
-was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
-reverting the gate.
-
-## The system prompt is resolved PER TURN, and one transport cannot
-
-`TransportSessionConfig.systemPrompt` is a `SystemPromptOption` — `string | (()
-=> string)` — with one reader, `resolveSystemPrompt` (`transports/types.ts`).
-The same shape as `SkipGreetingOption` beside it, and for the same reason: a
-second `resolveSystemPrompt?: () => string` field next to the string would give
-every read site a precedence to remember, and a site that forgot would send the
-frozen string on a session that had a resolver — silent, because the model
-answers fluently under instructions that moved on rather than failing.
-
-**A plain string is byte-identical to what shipped.** It resolves to itself, at
-the same place the frozen value used to be read.
-
-**This is NOT the type an author writes**, and the distinction is worth holding
-onto because the two nearly collided. `agent({ systemPrompt })` takes
-`AgentSystemPrompt` — `string | ((ctx: AgentSessionContext) => string)`,
-declared in the SDK's `sdk/agent-instructions.ts` — and a resolver of that kind
-needs the SESSION, which a transport does not have and should not be handed.
-The runtime asks it one layer up, in `runtime-system-prompt.ts`, where the
-session context lives; what reaches a transport is the assembled prompt or a
-nullary thunk over `SessionSystemPrompt.resolve()`. Two names, because they are
-two things: an authoring field and a transport seam.
-
-Who resolves, and when:
-
-| Transport | Resolves | Why there |
-| --- | --- | --- |
-| pipeline | at each `startLlmStream` | the ONE place a `streamText` request is assembled, so the turn about to run gets the prompt current at that instant |
-| OpenAI Realtime | at open, then on `refreshSystemPrompt()` | `instructions` is session state on the SERVICE; the method sends an `instructions`-only `session.update` and ONLY on a change |
-| AssemblyAI S2S | **once, at construction** | the service runs the tool loop itself, so the host is never on the path between two turns and has no moment to resolve at |
-
-That last row is the asymmetry to know before wiring anything to this seam: an
-S2S agent learns about a `dialog()` phase through tool results alone, exactly as
-every agent did before. `buildAssemblyS2sTransport` (`runtime-transport.ts`) is
-where the single resolution happens and says so.
-
-**A speculation records the prompt it was BUILT on, and adoption re-checks it.**
-Preemptive generation launches from an interim transcript, deliberately while
-the caller is still talking, so a phase can advance between the launch and the
-final that would adopt the stream. The request in flight already carries the old
-instructions and `system` cannot be amended mid-stream, so `take()` discards
-with `prompt-moved` — the same shape as `history-moved` beside it, and the same
-argument: request parity is the premise adoption rests on. The controller
-resolves ONCE and hands the string to `start`, so the recorded key cannot differ
-from what the request carried.
-
-**The extension point is `SessionSystemPrompt.setSuffix`**
-(`runtime-system-prompt.ts`). The base prompt stays cached per calendar day —
-`buildSystemPrompt` stamps the date through `Intl.DateTimeFormat`, which is why
-that cache exists at all — and a session appends to it rather than rebuilding
-it. An empty suffix returns the base string ITSELF, with no separator
-appended, so a phase machine with nothing to say moves the prompt by not one
-byte. `openSessionDialogs` is what calls it — see the section below.
-
-## Dialogs are wired to a SESSION here
-
-`agent({ dialogs })` is what makes a `dialog()` more than a tool gate: session
-events reach it, its per-state deadlines are armed, its active instruction
-becomes the prompt suffix above, and three of its five per-state voice knobs are
-applied — the other two are refused, with a warning naming the state. The bridge
-is `runtime-dialogs.ts`; `runtime-dialog-knobs.ts` decides which knobs this
-runtime can honour, and `transports/pipeline-dialog-knobs.ts` applies them.
-
-**[`DIALOG-CLAUDE.md`](DIALOG-CLAUDE.md) beside this file carries all of it** —
-the four decisions (why the bridge runs before the agent's `events` hooks, how
-two dialogs compose, what the deadline clock runs from, and which knobs are live
-against which are impossible), the mechanics not worth rediscovering, and the two
-things deliberately not done. This guide is at its cap.
-
-## Personas are wired to a SESSION here
-
-`agent({ personas })` is what makes a roster more than a tool gate:
-`runtime-personas.ts` installs the active persona's section as a second keyed
-prompt suffix (`"active-persona"`, sorting AHEAD of `"dialogs"` — who is
-speaking, then where in their script they are), pushes it to a transport that
-holds its prompt as session state when it CHANGED (re-rendered only on
-`tool.completed` and `state.updated`, the two events a handoff can land under),
-and hands the pipeline the persona's `toolChoice`/`temperature` as a
-`prepareStep` preparer composed between the agent's reset and the dialog
-state's (`transports/pipeline-persona-knobs.ts`). A stale slot — a persona a
-redeploy renamed — answers as the entry persona with a warning rather than a
-throw out of prompt assembly.
-
-**The tool set is deliberately NOT narrowed per step, and that was measured
-rather than chosen.** The AI SDK's `filterActiveTools` applies to the EXECUTION
-set as well as to what the model is sent, so a call naming a hidden tool is a
-`NoSuchToolError` the pipeline reports as an invalid call with no
-`tool.completed` — never the SDK gate's refusal saying who to hand off to. The
-knobs module's doc carries it; the persona eval in `front-desk-agent` is what
-found it.
-
-## A step's REQUEST is bounded in tokens; the message cap only guards growth
-
-`DEFAULT_MAX_HISTORY` counts MESSAGES, which does not predict what a request
-costs: one `retail-orders-agent`-shaped tool result is ~106 KB, so 200 overflow
-any window and the request fails at the provider mid-call.
-`transports/pipeline-context-budget.ts` bounds it as a **`prepareStep`
-preparer** — the SDK's per-step hook, whose `messages` override is what the step
-SENDS — so `PipelineHistory` keeps everything (client replay, resume and
-`ctx.messages` read it) and only the request is trimmed. **That module's doc
-carries the argument**, and this guide is at its cap: the window comes from
-`ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`, an unknown
-one yields NO preparer rather than a guess, and the count is CALIBRATED against
-each step's reported `usage.inputTokens` (hence one budget per SESSION).
-
-**Two preparers now share the one slot, so they COMPOSE** (`_prepare-step.ts`,
-promoted out of `text-agent.ts`): the budget owns `messages`,
-`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight into
-the slot deletes the other, silently.
-
-## A rollback at the cap used to cost a real turn
-
-`transports/pipeline-history.ts` keeps two capped views, and
-`dropTrailingUser` — what rolls back an injected prompt (a false-interruption
-resume, a silence nudge, `injectTurn`) whose turn left no trace — POPPED where
-the push had already TRIMMED. So a rollback landing at
-`DEFAULT_MAX_HISTORY` undid the append and not the eviction the append caused:
-push at 200 trims the oldest message and lands at 200, the pop leaves 199, and
-one real conversation turn was gone for the rest of the call. **Nothing in the
-system could see it** — both views are the right shape afterwards, one turn
-shallower — and it survived two complete unit suites because every depth
-anybody writes by hand is well under 200.
-
-A push now records what it evicted and a pop that undoes THAT push unshifts it
-back. Three properties of the bookkeeping are load-bearing and are argued at
-`PushUndo`: one slot PER VIEW (a turn pushes the user message into
-`conversation` and then into `llm`, so a shared slot would be invalidated by
-the second half of the pair that filled the first), recorded only for a push of
-exactly ONE message, and consumed by IDENTITY rather than by content. `capLlm`'s
-healed tool-pair halves count as part of the eviction, so a restore hands back
-the array the push found rather than a prefix of it.
-
-`integration/pipeline-history-rollback.integration.test.ts` is the oracle — a
-fast-check property over generated fill scripts, driving both the module's door
-and the real one (`persistBargeIn` with a `syntheticPrompt`), whose oracle is a
-snapshot of the two views taken before the push. It was written RED and shrinks
-to a one-element script; two deterministic pins sit beside it in
-`pipeline-history.test.ts`. The defect was originally recorded, and deferred, in
-`session-history-replay-equivalence.test.ts`'s module doc; that property
-compares TAILS for an unrelated reason that still holds (the two sides trim
-different sequences), and its `liveTrims` floor stands after re-measurement.
-
-## History records what was HEARD, not what was generated
-
-An interrupted reply lands in history as the words the caller is estimated to
-have actually heard, marked `[interrupted]` — not everything the model produced.
-A reply cut before anything was audible records **nothing at all** (its
-completed tool steps still do). That is LiveKit's rule, and it exists because
-TTS runs behind the text: a barge-in discards whatever is still in the
-provider's buffer, so the old record told the model it had delivered
-information the caller never got, and the model then never repeated it.
-
-**One cursor, one owner** — `transports/pipeline-heard.ts`
-(`createHeardTracker`). It answers exactly one question: given this reply's TTS
-text and its forwarded audio, which characters did the caller hear? History
-truncation and the false-interruption resume anchor (`buildTailResumePrompt`)
-are two READERS of that one answer, which is what keeps the resume prompt from
-quoting words the record denies. It also owns the playback clock, so the
-barge-in gate reads the same object.
-
-Two tiers of accuracy, decided at RUNTIME rather than by a capability flag: a
-provider that reports word timings (AssemblyAI TTS's `WordBoundaries` frames,
-parsed in `providers/tts/assemblyai-words.ts`) gives a cursor at the last word
-whose audio WHOLLY elapsed; Cartesia and Rime both HAVE a timing frame that is
-not wired up, so they degrade to a proportional estimate snapped to a word —
-exactly what was there before, so nothing regresses, and the zero case needs no
-timings at all. Both roundings err toward UNDER-keeping, deliberately:
-over-keeping is the measured failure, while under-keeping costs a word or two of
-redundancy that the resume prompt's "without repeating what they already heard"
-absorbs.
-
-**The proportional estimate is CLAMPED, because `spoken.length / audioMs` is
-not a speech rate** (`MAX_SPEECH_CHARS_PER_MS` in
-`transports/pipeline-heard.ts`). Text runs ahead of synthesis by however far the
-LLM is ahead of the voice — widest mid-reply, which is exactly when a barge-in
-happens — so the raw ratio reads
-text nobody has spoken yet as heard: an LLM streaming ~200 chars/s against a
-provider synthesizing at 1x hands over a 300-character reply inside 1.5s, so
-five seconds in the ratio claims all 300 characters against the ~75 the caller
-actually heard. No causal bound fixes that, because the gap is PROPORTIONAL
-rather than additive. The rate has to come from the language instead: English
-narration runs 14-18 characters a second, so the ceiling sits at the top of that
-band and the estimate takes the MIN of it and the observed ratio — a voice
-slower than the ceiling is still tracked. The constant's doc carries the
-arithmetic.
-
-**The lag is `HEARD_AUDIO_LAG_MS` (750), and it is DERIVED rather than
-measured** — its row in the defaults table in `packages/aai/CLAUDE.md` carries
-the decomposition and why it is a second constant; do not restate it here.
-
-**The client's committed transcript and the history entry now diverge on
-purpose.** The caption still shows everything that reached TTS, because it was
-published as interims while the audio was being synthesized. It CANNOT be
-corrected after the fact to match the shorter record: emitting an
-`agent_transcript` after `cancelled` is the measured 19-of-73 double-transcript
-bug (`persistInterruptedTurn` in `transports/pipeline-history.ts` — read it there).
-
-Two mechanisms this leans on: the audio gate (a cancelled turn's late audio AND
-its late word timings are both dropped by it, so no second epoch was invented),
-and `emitText`'s `record` flag, which now decides what may be truncated into
-history as well as what reaches `onDelta` — filler is audible, so it moves the
-heard POSITION, and is never recordable. The TTS coalescer flushes when that
-flag flips so no batched send ever mixes the two.
-
-**The GREETING follows the same rule** — it is a fixed line spoken as a reply
-of its own, and `createLineReply` (`transports/pipeline-lines.ts`) writes its
-history once PLAYBACK is over — not when synthesis is, which is faster than
-real time — so a barge-in anywhere in the line records the heard prefix through
-`persistInterruptedTurn`. It used to push the whole line up front, so a caller
-who cut it off after two words left a record saying all of it was delivered.
-
-**A cut AFTER the body committed is taken back too** — during the TTS drain,
-in the client's playback tail, or while a chained reply queues behind it (35 of
-36 barge-ins in one tau2 run). The committed reply registers with the cursor
-(`HeardTracker.markPersisted`), which keeps it, placed on the clock, until its
-audio has played; a cut that finds it unplayed rewrites the record in place
-(`transports/pipeline-heard-history.ts`): heard prefix + `[interrupted]`, or no
-text, tool steps kept. Logs `Pipeline heard-history truncated`.
-
-## A `reset` starts a conversation, so it GREETS
-
-The client `reset` frame — aai-ui's "New Conversation" button — discards the
-conversation, and a conversation that begins without the agent's declared
-opening line is not the one the agent declares. The pipeline transport greeted
-only from `onAudioReady`, once per CALL, so every conversation after the first
-opened on silence: the caller cleared the transcript and then sat listening to
-a live mic with nothing to prompt them. `reset()` therefore ends by calling
-`lifecycle.greet()` — queued AFTER `gate.invalidateAll()` so the strand that
-kills the pre-reset turns cannot catch it, and on the turn chain so it runs
-after the aborted turn unwinds rather than interleaving with it.
-
-**`skipGreeting` deliberately does not reach `greet()`.** It is a RESUME flag
-scoped to a connection's start ("this caller already heard the opening line"),
-which is the opposite claim from a reset. That is also why aai-ui's `reset()`
-drops the resume identity when the socket is already closed: there the redial
-IS the new conversation, and a `?sessionId=`/`resume=1` reconnect would rejoin
-the old one — server history kept, greeting suppressed.
-
-**Neither S2S transport re-greets, and that is a known gap rather than a
-decision.** AssemblyAI S2S has no `reset()` at all (its greeting is dispatched
-service-side from the session config, with no protocol verb to replay it), and
-OpenAI Realtime has none either — its `sendGreeting()` is a one-shot
-`response.create` that could be re-issued, but the service still holds the
-conversation a reset is supposed to discard, so re-greeting alone would open a
-"new" conversation the model can still see the whole of. Clearing it means
-tracking every `conversation.item` id to delete, which is its own change.
-
-## Push-to-talk holds the turn in the TRANSPORT
-
-`agent({ turnDetection: "manual" })` moves the end of a caller's turn from the
-transcriber to the client. `transports/pipeline-manual-turn.ts` owns it and its
-module doc is the argument: finals are HELD while a turn is open and answered as
-one on `user_turn_commit`; the mic is SILENCED (zeros, so the transcriber's
-clock keeps pace) outside a turn; a final landing with no turn open is dropped,
-which is what keeps a late or discarded utterance out of the next one. Opening a
-turn is the barge-in — `startUserTurn()` answers whether it interrupted, and
-`session-commands.ts` then does what a client `cancel` does. Both S2S transports
-omit the verbs. The eval harness's `say()` presses and releases for a manual
-agent, or every case would wait on a commit that never comes.
-
-## A run can tell the caller it finished
-
-`start(def, input, { key, notify })` makes the session that started a run take
-an UNPROMPTED, interruptible turn when it lands — the promise
-`research-handoff-agent` used to make ("I'll let you know") and had no way to
-keep. `Transport.injectTurn` is the primitive (pipeline only; S2S has no such
-verb, so there it is a logged no-op). **See `workflow/notify.ts`'s module doc**
-for the rest.
-
-## An envelope is only the codec's if the codec WROTE it
-
-`workflow/typed-json.ts` tags binary as `{ __type: "Uint8Array", data }` and a
-date as `{ __type: "Date", iso }`, and both revivers recognise one
-**structurally** — nothing in the shape says who wrote it. So an author's own
-object of that shape went in one end and a `Uint8Array` came out the other, at
-any nesting depth, with nothing raised. A run's `input` arrives from
-`POST /workflows/runs`, which is public HTTP, so that was type confusion across
-a trust boundary: a step declaring `z.object({ __type: z.string() })` received
-bytes instead.
-
-**The fix is round-trip TOTALITY, not a guard per shape.**
-`workflow/typed-json-escape.ts` renames an author's reserved keys on encode
-(`__type` → `___type`, `___type` → `____type`) and back on decode. That map is
-injective and nothing maps onto `__type`, so decode inverts it exactly. Three
-things about it are load-bearing and easy to undo by accident:
-
-- **A key rename, never a wrapper.** `{ __type: "escape", value: v }` does not
-  terminate — `v` still carries the tag, and the reviver runs bottom-up, so it
-  would revive the inner envelope before the wrapper could stop it.
-- **The pattern is `/^__+type$/`, the whole family.** Escaping only the bare
-  `__type` collides an author's own `___type` with somebody else's escape.
-- **The rebuild is `Object.fromEntries`, never `out[key] = …`.** `JSON.parse`
-  makes `__proto__` a real own property and assignment invokes the prototype
-  SETTER: the key vanishes from the copy and the copy's prototype becomes
-  author-controlled. Measured on all three spellings; only the assignment loop
-  lost it.
-
-Decode still accepts a **bare** `__type` envelope, so `@workflow/world-local`'s
-own transport and every row already written are unaffected — which is why the
-deployment order is decoder-first.
-
-**Totality is a property of the ESCAPE, not of the envelope set, which is what
-makes the set extensible.** `Map` and `Set` joined it — `{ __type: "Map",
-entries: [[k, v], …] }` and `{ __type: "Set", values: […] }`, storage codec
-only, exactly where the date envelope sits and for the same reason. The escape
-never reads the tag's VALUE, so nothing in `workflow/typed-json-escape.ts`
-changed. Two rules for a third kind: encode PAIRS and let the replacer recurse
-on both halves (a `Map`'s keys are values, not strings), and refuse a malformed
-payload rather than let a constructor invent one. The remaining hole is that
-this codec still has no unsupported-type GUARD, so any other exotic value
-journals as `{}` — a structural check at the step boundary, not a fourth
-envelope.
-
-Two related strictnesses came with it, both replacing an invented value with a
-throw, and both classified at the callers that already existed for them
-(`decodeBody` catches into a 400; the guest fails the step). `Buffer.from(s,
-"base64")` DROPS characters outside the alphabet, so a malformed payload decoded
-to arbitrary bytes; it is `Uint8Array.fromBase64(…, { lastChunkHandling:
-"strict" })` now. And an `iso` that will not parse throws rather than reviving
-the `NaN` that stalled every durable run. `iso: null` still revives an invalid
-`Date`, because that is the ENCODER's own spelling of one.
-
-**The date asymmetry that remains is deliberate**: the storage RPC emits the date
-envelope because both ends are ours, the queue path never does because the
-DevKit's `createQueueHandler` is the far end and has no date envelope to read.
-After escaping, neither codec REVIVES an author's date-shaped object, so the two
-agree on the shape and differ only on what they emit.
-
-### The suite is the point as much as the fix
-
-`workflow/typed-json-property.test.ts` states the round trip over a **generated**
-domain, and it is the pattern to copy for the other codecs in this repo. Its
-object keys are drawn from a pool containing the reserved family and
-`__proto__`, and its strings from one containing `"Uint8Array"`, `"Date"` and
-both valid and invalid base64 — so a generated value is an envelope-shaped object
-a measured ~300 times per run, which is the case a hand-listed domain cannot
-reach: author data that looks exactly like the codec's own output. The 27 named
-cases stay beside it as regression pins; a pin says "this value still works", a
-property says "no value breaks it".
-
-**A coverage floor earned its place on the first run.** The first draft reached
-ZERO complete forged envelopes across 8,000 generated values — a full envelope
-needs two particular keys carrying two particular values in one record, which is
-too rare to hit by chance — while every round-trip property passed green. Without
-the floor the suite would have read as a proof of exactly the property it was not
-testing. `envelopeShape` constructs them deliberately; the floors sit at roughly
-half the observed minimum over 12 runs, with the ranges recorded in place.
-
-**A/B every mutation, including the test's own inputs.** Five reverts of the fix
-are each caught, and two of them — the `__proto__` rebuild and the one-level
-escape — are caught by the generated properties rather than by any named case.
-Two of the test's own inputs were wrong in ways that would have made them pass
-vacuously: `{ __proto__: … }` written as an object LITERAL is the
-prototype-setter syntax and creates no own property, and a server-side case using
-`runs.get` answered 400 whether or not the fix was in, because a `Uint8Array` is
-not a run id. Both are noted where they sit.
+one is visible through the other.
 
 ## Runtime invariants
 
 `@alexkroman1/aai/internal` publishes `invariant(condition, name, detail?)`,
-`InvariantViolation` and `isInvariantViolation`. The seam lives in the SDK
-because every package depends on it; the invariants stated against it are
-mostly this package's, which is why the argument is here.
+`InvariantViolation` and `isInvariantViolation`. State a property once where it
+is maintained, and every test, load run and production session becomes a
+detector for it.
 
-**The economics are the point.** A review of ~38 defects fixed in one 48-hour
-window found every one at a boundary the test suite owned both sides of — the
-suite is almost entirely CONFIRMATORY, pinning fixes after the fact. An
-invariant inverts that: state the property once, where it has to be
-maintained, and every existing test file, every load run, every `aai dev`
-session and production itself becomes a detector for it, including the paths
-nobody wrote a test for.
+- **It throws; it is never a log.** A violation is a bug in this process by
+  construction; a peer's input is validated by a schema, not by this. A WRONG
+  invariant turns a working path into an outage, so add one only for a property
+  this code establishes and nothing else can perturb.
+- **`detail` is a THUNK**, run only on the failing path so a violation reports
+  the actual numbers. Its call is wrapped, so a second throw inside it cannot
+  lose the finding.
+- **No SAMPLING.** Every invariant today is O(1); add a rate only with the
+  first O(n) caller. O(n) whole-log checks belong in a harness
+  (`workflow/journal/_invariants.ts`).
+- **Never inside an error handler** — a throw there turns a 500 into an
+  unhandled rejection. The workflow API's classification is swept over a pure
+  function instead (`src/workflow/api/CLAUDE.md`).
 
-Three rules come with it:
-
-- **It throws; it is never a log.** A logged invariant goes to a stream nobody
-  reads, on a request that returned a wrong answer anyway. Every violation is
-  a bug in this process by construction — the conditions are ours to maintain,
-  and a peer's input is validated by a schema rather than by this. The risk is
-  stated rather than hidden: a WRONG invariant turns a working path into an
-  outage, so a condition goes in only when it is a property this code
-  establishes and nothing else can perturb.
-- **`detail` is a THUNK.** It runs only on the failing path, so a violation
-  reports the actual numbers for free — the difference between
-  `session.page.tail violated: {"startIndex":0,"events":4,"tail":0}` and a
-  bare assertion. Its call is wrapped, because a thunk reading the state that
-  just went inconsistent is the likeliest place for a second throw, and
-  reporting ITS `TypeError` would lose the finding entirely.
-- **There is deliberately no SAMPLING.** The obvious design checks always in
-  dev and on a fraction of calls in production so an expensive condition can
-  stay on. Every invariant here today is O(1) — a comparison between two
-  numbers the caller already holds — so a thunk would allocate a closure to
-  avoid work cheaper than the closure. A rate nothing needs is a knob nobody
-  tunes and a path nobody exercises, the shape this repo has been bitten by
-  four times (`.size-limit.json`, the `ls-lint` config, the root coverage
-  thresholds, the `.turbo` cache path). It belongs with its first O(n) caller.
-
-**Where one does NOT go: inside an error handler.** A throw there turns a 500
-into an unhandled rejection, and an oracle meant to find conditions nobody has
-classified yet is the last one you want failing that way the first time it is
-right. The workflow API's classification is swept over a pure function
-instead — see "Every environmental error is classified" below.
-
-**Stating one wrong is cheap, and that is a feature.** The first draft of
-`session.page.tail` said `tail >= startIndex + events.length` with no empty
-guard, and two existing specs failed inside eight seconds: a read STARTING
-past the tail is legitimate and answers zero events, about which the tail says
-nothing. An invariant is exercised by the whole suite the moment it lands.
-
-### The two stated so far
+Stated so far:
 
 - **`session.page.tail`** (`session-event-stream.ts`) — a page cannot contain
-  events its own tail says do not exist. This is the cold-read bug that
-  shipped: four events beside `tail: 0`, because the tail came from the
-  in-process map and the events from a durable backend. Reverting that fix now
-  reports `{"sessionId":"s-1","startIndex":0,"events":4,"tail":0}` from every
-  read that reaches it, not only from the spec that walks to it.
+  events its own tail says do not exist (a read starting past the tail is
+  legitimate and answers zero events).
 - **`capacity.line.terms`** (`aai-server/platform-db-capacity.ts`) — the terms
-  a boot line names must COMPOSE the total it prints, never add to it. See
-  "The boot line describes the reading it was built from" in that package.
-
-## Every environmental error is classified
-
-`workflow/api/error-status.ts` maps a thrown value to a status, and
-`workflow/api/error-classification.test.ts` requires that there be no THIRD
-state: every environmental code a Node service here can meet is either mapped
-or named in `DELIBERATELY_INTERNAL` with a reason a 500 is right. "Nobody
-thought about this code" is what both of the window's
-500-that-should-have-been-503 defects were.
-
-The sweep found eight unclassified codes on its first run, none of which had
-an incident behind them: `ENETDOWN`, `ENOTCONN` and `EAGAIN` are ordinary
-transport failures and joined the table; `EMFILE`, `ENFILE`, `ENOBUFS` and
-`ENOMEM` are a FOURTH condition the table had no entry for — this process out
-of a local resource, which is neither "the database is at capacity" nor
-"could not reach the platform" — and got `isResourceExhausted` and a 503 of
-their own, ordered BEFORE the transport entry because a descriptor limit
-surfaces on a socket operation and looks transport-shaped on the way out. The
-eighth, `UND_ERR_RESPONSE_STATUS_CODE`, is declared internal: a response
-arrived, so there is nothing transient to wait for.
-
-**One divergence is pinned as a known gap rather than fixed.** `isCallerGone`
-reads `code === "ECONNRESET"` off the TOP-level value and the transport entry
-is guarded by `!isCallerGone(err)`, so a reset arriving WRAPPED — how `fetch`
-delivers one — is a 503, while the identical condition arriving BARE is read
-as the caller hanging up and falls through to 500. For a real inbound hangup
-that is harmless and deliberate. The open question is whether anything
-OUTBOUND throws a bare top-level `ECONNRESET` here: a `postgres` driver error
-carries its code at the top level, unlike `fetch`, in which case a client
-waiting on `POST /runs` gets a 500 with no `Retry-After` AND the failure is
-logged as "caller went away". Direction is not recoverable from the code
-alone; `syscall` is the candidate discriminator, since Node's inbound
-`aborted` error carries none. Not guessed at.
+  a boot line names must COMPOSE the total it prints. See "The boot line
+  describes the reading it was built from" in that package.

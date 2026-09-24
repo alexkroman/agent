@@ -5,8 +5,8 @@
 //
 // It binds a port, materializes a workspace on disk and — for `bash` — spawns a
 // subprocess, which is what puts it here rather than in the 5s unit tier. The
-// package guide names that violation outright ("A test's TIER is what it
-// touches, and this package is the worst offender"), and the budget was not
+// package guide names that violation outright ("Tier = what a test touches",
+// under "Testing notes"), and the budget was not
 // theoretical: this file lost a `vi.waitFor` race on a loaded CI runner, and
 // its own in-file notes record two earlier ones at the same assertions.
 //

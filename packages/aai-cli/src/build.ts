@@ -192,7 +192,7 @@ export async function executeBuild(opts: {
   // Evaluate locally to validate the agent export and report its name.
   // `aai deploy` imports its bundle too (for the credential preflight), so
   // both commands run the developer's own project code — see the note in
-  // packages/aai-cli/src/CLAUDE.md.
+  // "CLI credential destinations" in packages/aai-cli/CLAUDE.md.
   const agentDef = await evalWorkerBundle(bundle.worker);
   // Legal, and worth saying — today that is a voice outside the catalog, whose
   // whole failure mode is that nothing says anything until the agent is live

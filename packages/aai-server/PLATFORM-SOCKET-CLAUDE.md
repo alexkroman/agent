@@ -12,10 +12,10 @@ Reference for ONE wire, whose two ends live in two packages:
 `packages/aai-server/src/platform-socket-handler.ts` (the platform answers).
 
 A SIBLING of this package's guide rather than a section in it, for the reason
-`AGENTS.md` gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: every guide in
-this repo is at the 120,000-character cap, and no single package owns both ends
-of this. Read it when you are changing either end, the frame schema, or the
-capacity assumptions. Nothing in it is needed to work elsewhere.
+`AGENTS.md` gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: it is
+REFERENCE, and no single package owns both ends of this. Read it when you are
+changing either end, the frame schema, or the capacity assumptions. Nothing in
+it is needed to work elsewhere.
 
 ## What changed
 

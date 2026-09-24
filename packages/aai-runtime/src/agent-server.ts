@@ -255,7 +255,7 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
    * session or a delivery can reach a store, and the bind is the moment the
    * first one becomes possible. But `listen()` is also the one thing a
    * serverless host skips — it is handed `AgentServer.node` and binds the socket
-   * itself — and this package's guide records the rule that came out of the step
+   * itself — and `src/CLAUDE.md` records the rule that came out of the step
    * env doing exactly that: anything `listen()` does that is not the bind runs
    * in dev and silently not in production. So the WORK starts here, at the point
    * every route in goes through, and `listen()` only waits for it. A host that
