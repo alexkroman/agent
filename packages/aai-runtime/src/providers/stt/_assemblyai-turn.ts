@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Reading a `Turn` event: the two word-confidence statistics, and which turn
- * counts as the COMMIT when the service is formatting.
+ * Reading a `Turn` event: which turn counts as the COMMIT when the service is
+ * formatting, and the audio span the turn's words cover.
  *
  * Both are pure functions over the event shape rather than branches inside the
  * opener's handler, because both are policy: what "the recognizer's confidence
@@ -22,7 +22,33 @@ export interface AssemblyAITurnLike {
   readonly transcript?: string | undefined;
   readonly end_of_turn?: boolean | undefined;
   readonly turn_is_formatted?: boolean | undefined;
-  readonly words?: readonly { readonly confidence?: unknown }[] | undefined;
+  readonly words?:
+    | readonly {
+        readonly confidence?: unknown;
+        readonly start?: unknown;
+        readonly end?: unknown;
+      }[]
+    | undefined;
+}
+
+/**
+ * The audio span a turn's words cover, in ms on the service's stream axis
+ * (earliest `start` to latest `end`), or `undefined` when no word carries a
+ * usable pair. Words are read defensively for the reason on
+ * {@link AssemblyAITurnLike}: a turn with no words is a real message.
+ */
+export function turnWordSpanMs(
+  event: AssemblyAITurnLike,
+): { startMs: number; endMs: number } | undefined {
+  let startMs = Number.POSITIVE_INFINITY;
+  let endMs = Number.NEGATIVE_INFINITY;
+  for (const word of event.words ?? []) {
+    if (typeof word.start !== "number" || typeof word.end !== "number") continue;
+    if (!(Number.isFinite(word.start) && Number.isFinite(word.end))) continue;
+    startMs = Math.min(startMs, word.start);
+    endMs = Math.max(endMs, word.end);
+  }
+  return endMs >= startMs ? { startMs, endMs } : undefined;
 }
 
 /**

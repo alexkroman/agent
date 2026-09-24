@@ -3,7 +3,7 @@
   "capability": "providers",
   "epoch": 2,
   "rule": 2,
-  "sha256": "e2ed38510a1432fd44531a37c1b5493d088fa543ddd27fdd2ae7f5b4eba06ed5",
+  "sha256": "09aa9e5fa420a011b15786258eb9b3402ffc7956c4949c341782392697b78fb2",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",
@@ -28,5 +28,20 @@
     "resolveLlm",
     "salvageJson"
   ],
-  "rollup": "9cb3b0156ae0d5bbba48b06da43cc94d17256087164fe24dfec44d9e213d9c35"
+  "rollup": "9cb3b0156ae0d5bbba48b06da43cc94d17256087164fe24dfec44d9e213d9c35",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "e2ed38510a1432fd44531a37c1b5493d088fa543ddd27fdd2ae7f5b4eba06ed5",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "09aa9e5fa420a011b15786258eb9b3402ffc7956c4949c341782392697b78fb2",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

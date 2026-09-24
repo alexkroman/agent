@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { silentLogger } from "../_test-utils.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
 import { AUTO_TURN_DETECTION } from "./pipeline-manual-turn.ts";
 import { createSttEventHandlers } from "./pipeline-stt-handlers.ts";
 import { NO_USER_TURN_LIMIT } from "./pipeline-user-turn-limit.ts";
@@ -139,5 +139,135 @@ describe("onSttPartial", () => {
     const { handlers } = makeHandlers({ callbacks: { report: (event) => events.push(event) } });
     handlers.onSttPartial("cancel my");
     expect(events).toEqual([{ type: "user-transcript.updated", text: "cancel my" }]);
+  });
+});
+
+/**
+ * The relative-level veto, at the handlers' seam. The shape it was written
+ * for: a television behind the caller, transcribed and barging in on the
+ * reply — its loudest audio about 18 dB under anything the caller said.
+ */
+describe("the relative-level veto", () => {
+  const CALLER = -16;
+  const BACKGROUND = -34;
+
+  function makeVetoHandlers() {
+    // `thinking`: a turn in flight that has put nothing on the line yet.
+    const state = { speaking: false, thinking: false };
+    const log = makeLogger();
+    const abortInFlightTurn = vi.fn();
+    const made = makeHandlers({
+      isTurnInFlight: () => state.speaking || state.thinking,
+      hasTurnSpoken: () => state.speaking,
+      agentIsSpeaking: () => state.speaking,
+      audioOnLine: () => state.speaking,
+      utteranceOpenedOverSpeech: () => state.speaking,
+      abortInFlightTurn,
+      log,
+    });
+    const infoLines = (message: string) =>
+      log.info.mock.calls.filter(([m]) => m === message).map(([, fields]) => fields);
+    return { ...made, state, log, abortInFlightTurn, infoLines };
+  }
+
+  /** Two caller turns committed into silence: the reference is established. */
+  function establish(h: ReturnType<typeof makeVetoHandlers>): void {
+    h.handlers.onSttFinal("my order number is four", { inputPeakDbfs: CALLER });
+    h.handlers.onSttFinal("it came yesterday", { inputPeakDbfs: CALLER });
+    h.committed.length = 0;
+  }
+
+  test("a quiet interim cannot barge in, and the veto is logged once per utterance", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    h.state.speaking = true;
+    h.handlers.onSttPartial("police stopped", { inputPeakDbfs: BACKGROUND });
+    h.handlers.onSttPartial("police stopped him", { inputPeakDbfs: BACKGROUND });
+    expect(h.abortInFlightTurn).not.toHaveBeenCalled();
+    expect(h.reported).not.toContain("reply.cancelled");
+    expect(h.infoLines("Pipeline barge-in vetoed (quiet)")).toEqual([
+      { sid: "s1", peakDb: BACKGROUND, refDb: CALLER, text: "police stopped" },
+    ]);
+  });
+
+  test("a loud interim still barges in, and says how loud it was", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    h.state.speaking = true;
+    h.handlers.onSttPartial("wait no", { inputPeakDbfs: -18 });
+    expect(h.abortInFlightTurn).toHaveBeenCalledOnce();
+    expect(h.reported).toContain("reply.cancelled");
+    expect(h.infoLines("Pipeline barge-in")).toEqual([{ sid: "s1", peakDb: -18, refDb: CALLER }]);
+  });
+
+  test("a quiet final while the agent speaks is not a turn and does not interrupt", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    const endedBefore = h.edges.ended;
+    h.state.speaking = true;
+    h.handlers.onSttFinal("was the driver of that vehicle", { inputPeakDbfs: BACKGROUND });
+    expect(h.committed).toEqual([]);
+    expect(h.abortInFlightTurn).not.toHaveBeenCalled();
+    // The edge is left to the idle watchdog, as for any utterance with no turn.
+    expect(h.edges.ended).toBe(endedBefore);
+    expect(h.infoLines("Pipeline quiet final dropped")).toEqual([
+      { sid: "s1", peakDb: BACKGROUND, refDb: CALLER, text: "was the driver of that vehicle" },
+    ]);
+  });
+
+  test("a quiet final while a reply is only being prepared still commits (chained, not lost)", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    h.state.thinking = true;
+    h.handlers.onSttFinal("hello are you still there", { inputPeakDbfs: BACKGROUND });
+    expect(h.committed).toEqual([{ text: "hello are you still there" }]);
+    expect(h.abortInFlightTurn).not.toHaveBeenCalled();
+    expect(h.infoLines("Pipeline quiet final dropped")).toEqual([]);
+  });
+
+  test("a quiet final into a silent agent still commits, as it always has", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    h.handlers.onSttFinal("mm-hmm", { inputPeakDbfs: BACKGROUND });
+    expect(h.committed).toEqual([{ text: "mm-hmm" }]);
+    expect(h.infoLines("Pipeline committed turn level").at(-1)).toEqual({
+      sid: "s1",
+      peakDb: BACKGROUND,
+      refDb: CALLER,
+    });
+  });
+
+  test("fails open before a reference exists and without a measured peak", () => {
+    const h = makeVetoHandlers();
+    h.handlers.onSttFinal("hello", { inputPeakDbfs: CALLER });
+    h.state.speaking = true;
+    // One committed utterance is not a reference yet.
+    h.handlers.onSttPartial("police stopped him", { inputPeakDbfs: BACKGROUND });
+    expect(h.abortInFlightTurn).toHaveBeenCalledOnce();
+
+    const later = makeVetoHandlers();
+    establish(later);
+    later.state.speaking = true;
+    later.handlers.onSttPartial("police stopped him");
+    later.handlers.onSttFinal("police stopped him there");
+    expect(later.abortInFlightTurn).toHaveBeenCalledTimes(2);
+    expect(later.committed).toEqual([{ text: "police stopped him there" }]);
+  });
+
+  test("vetoed and quiet utterances never move the reference", () => {
+    const h = makeVetoHandlers();
+    establish(h);
+    for (let i = 0; i < 10; i++) {
+      h.state.speaking = true;
+      h.handlers.onSttFinal("breaking news tonight", { inputPeakDbfs: BACKGROUND });
+      h.state.speaking = false;
+      h.handlers.onSttFinal("more at eleven", { inputPeakDbfs: BACKGROUND });
+    }
+    h.state.speaking = true;
+    h.handlers.onSttPartial("police stopped him", { inputPeakDbfs: BACKGROUND });
+    expect(h.abortInFlightTurn).not.toHaveBeenCalled();
+    expect(h.infoLines("Pipeline barge-in vetoed (quiet)").at(-1)).toMatchObject({
+      refDb: CALLER,
+    });
   });
 });

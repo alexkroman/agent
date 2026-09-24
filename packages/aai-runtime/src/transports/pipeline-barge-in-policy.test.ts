@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The three-input precedence, stated one input at a time.
+ * The precedence, stated one input at a time.
  *
  * It was FOUR, and the removed one is worth naming here: the two barge-in
  * phrase lists used to sit above both thresholds, so an "interruption phrase"
@@ -116,6 +116,28 @@ describe("an utterance that began into silence", () => {
     const policy = makePolicy({ openedOverSpeech: true });
     expect(policy.partialInterrupts(3)).toBe(true);
     expect(policy.finalInterrupts("wait stop please")).toBe(true);
+  });
+});
+
+describe("step 4: the relative-level veto", () => {
+  test("a quiet utterance cannot barge in, by interim or by final", () => {
+    const policy = makePolicy({ minBargeInWords: 1 });
+    expect(policy.partialInterrupts(6, true)).toBe(false);
+    expect(policy.finalInterrupts("police stopped him at the corner", true)).toBe(false);
+  });
+
+  test("a loud one still does — the veto is the only thing that changed", () => {
+    const policy = makePolicy({ minBargeInWords: 1 });
+    expect(policy.partialInterrupts(6, false)).toBe(true);
+    expect(policy.finalInterrupts("wait, that is wrong", false)).toBe(true);
+  });
+
+  test("it only ever blocks: nothing the other steps refuse is let through", () => {
+    const silent = makePolicy({ agentIsSpeaking: false, minBargeInWords: 1 });
+    expect(silent.partialInterrupts(6, false)).toBe(false);
+    expect(silent.finalInterrupts("wait, that is wrong", false)).toBe(false);
+    const short = makePolicy({ minBargeInWords: 3 });
+    expect(short.partialInterrupts(2, false)).toBe(false);
   });
 });
 

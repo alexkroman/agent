@@ -10195,6 +10195,7 @@ export interface SttSession {
 // @public
 export type SttTurnMeta = {
     endOfTurnConfidence?: number;
+    inputPeakDbfs?: number;
 };
 
 // @public
@@ -11426,6 +11427,7 @@ export interface SttSession {
 // @public
 export type SttTurnMeta = {
     endOfTurnConfidence?: number;
+    inputPeakDbfs?: number;
 };
 
 // @public
