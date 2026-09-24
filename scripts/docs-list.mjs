@@ -6,7 +6,7 @@
  * Usage:
  *   node scripts/docs-list.mjs           # every guide: path, summary, when to read it
  *   node scripts/docs-list.mjs --json    # the same, for a program
- *   node scripts/docs-list.mjs --write   # regenerate AGENTS.md's three guide tables
+ *   node scripts/docs-list.mjs --write   # regenerate AGENTS.md's four guide tables
  *   node scripts/docs-list.mjs --check   # fail on a missing/malformed header or a stale table
  *
  * `pnpm docs:list` is the cheap way for an agent to find the guide that owns a
@@ -16,11 +16,7 @@
  *
  * ## Why the tables are generated
  *
- * AGENTS.md indexes 37 guides in three hand-kept tables, and a hand-kept index
- * drifts the way every other hand-kept list in this repo has: the sibling
- * table's own prose said "Fifteen files" over a table of sixteen when this
- * landed, and an earlier pass had found four siblings missing from it
- * altogether. The description now lives IN the guide, as
+ * A hand-kept index drifts, so the description lives IN the guide, as
  *
  *   ---
  *   summary: >-
@@ -37,12 +33,15 @@
  *
  * ## What counts as a guide
  *
- * The four shapes `claude-md-limit.test.ts` measures, minus two: the root
+ * The shapes `claude-md-limit.test.ts` measures, minus two: the root
  * AGENTS.md (it IS the index) and `scaffold/CLAUDE.md`, which is a product
  * artifact shipped to users as the SDK's `AGENT_GUIDE.md`, not repo docs.
+ * Directory guides (`packages/<pkg>/src/**\/CLAUDE.md`) are matched under
+ * `src/` only, which keeps the scaffold and template trees (package root, not
+ * `src/`) out by construction.
  * Discovery is `git ls-files --cached --others --exclude-standard` filtered by a
- * REGEX rather than a pathspec — a pathspec `*` crosses `/` (AGENTS.md, "A
- * pathspec is fnmatch WITHOUT FNM_PATHNAME"), so `packages/*\/CLAUDE.md` would
+ * REGEX rather than a pathspec — a pathspec `*` crosses `/` (.agents/ratchets.md,
+ * under "check:file-length"), so `packages/*\/CLAUDE.md` would
  * also match the scaffold's — and includes untracked files, so a guide written
  * a minute ago is checked before it is ever staged.
  */
@@ -63,7 +62,7 @@ const INDEX = "AGENTS.md";
 const KEYS = ["summary", "read_when"];
 
 /**
- * The three tables, in the order AGENTS.md shows them. `docs/CLAUDE.md` is a
+ * The four tables, in the order AGENTS.md shows them. `docs/CLAUDE.md` is a
  * guide the lister reports but no table holds: AGENTS.md introduces it in prose,
  * because it owns three artifacts rather than one package.
  */
@@ -87,6 +86,13 @@ const GROUPS = [
     title: "Sibling guides",
     header: "| Sibling | Covers |",
     match: /^packages\/[^/]+\/[A-Z0-9-]+-CLAUDE\.md$/,
+    cell: (path) => `\`${path}\``,
+  },
+  {
+    id: "directories",
+    title: "Directory guides",
+    header: "| Guide | Covers |",
+    match: /^packages\/[^/]+\/src\/(?:.+\/)?CLAUDE\.md$/,
     cell: (path) => `\`${path}\``,
   },
   {

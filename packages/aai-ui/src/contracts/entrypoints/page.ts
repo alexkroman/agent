@@ -4,7 +4,7 @@
  *
  * The workflow-app mount: `mountPage()`, for an `agent({ page: "static" })` front
  * door with no session, no socket and no audio. A second mount rather than a
- * flag on `mountClient()` — see "Workflow apps" in `packages/aai-ui/CLAUDE.md`.
+ * flag on `mountClient()` — see "Mounting and factories" in `packages/aai-ui/src/CLAUDE.md`.
  *
  * `fetchClientConfig` belongs here for the same reason: it is the page's
  * replacement for the `GET client-config` lookup each mount performs for the

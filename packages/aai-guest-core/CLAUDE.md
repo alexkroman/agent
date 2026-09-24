@@ -68,3 +68,24 @@ to its `src/` through `@dev/source`, so v8 measures a dependency's modules too:
 a floor of 83. Each package's `vitest.config.ts` excludes its siblings by name
 — `include: ["src/**"]` does NOT do it, since the siblings' paths end in `src/`
 and match the same glob.
+
+## What `test-utils.ts` owes
+
+Everything more than one guest suite needs:
+
+- **`useTempDir(prefix)` / `useTempDirs(prefix)`** — a scratch dir (or pool)
+  that registers its own `beforeEach`/`afterEach`, so creation and cleanup can't
+  come apart. Never open-code `mkdtemp` + `rm`.
+- **`installFakeHostChannel({ autoAnswer })`** — the one fake host control
+  channel, with `lastRequest()` / `lastResponse()` narrowing a `JsonRpcMessage`
+  by runtime check. Don't re-narrow `sent.at(-1)` ad hoc.
+- **`runTool`** — the only way to call a coding-agent tool; never reach past it
+  to `execute` (see "The coding agent is an ordinary `agent()`" in
+  `packages/aai-guest-studio/CLAUDE.md`).
+- **`materialize(dir, files)`** — `withBuildDir`'s middle argument.
+
+## Error text comes from the SDK's `errorMessage`
+
+Never a local `errMsg`/ternary: `errorMessage` (`@alexkroman1/aai`) also unwraps
+a non-`Error` object with a string `message` — what a thrown value looks like
+after crossing `rpc.ts`'s JSON-RPC boundary. Covered once in `sdk/utils.test.ts`.

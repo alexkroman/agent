@@ -26,7 +26,7 @@
  *
  * A `terminated` row gets the mirror image: the adopted provider sessions must
  * be CLOSED. A session reported dead whose provider link is still open is the
- * `endSession` defect recorded in `packages/aai/CLAUDE.md` — billed, relaying,
+ * `endSession` defect recorded in `packages/aai/S2S-CLAUDE.md` — billed, relaying,
  * and invisible to a client that has already hung up.
  */
 

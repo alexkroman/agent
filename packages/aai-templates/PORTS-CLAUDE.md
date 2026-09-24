@@ -5,8 +5,8 @@ read_when: >-
   porting another framework's example, or editing a ported template
 ---
 
-<!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: the guide is
-at its 120,000-character cap, and these are reference accounts for someone
+<!-- A SIBLING of packages/aai-templates/CLAUDE.md, read on demand: these are
+reference accounts for someone
 already inside one of the ported templates. The tables that say which template
 ports what stay in CLAUDE.md, under "Six templates are ports of
 LangChain/LangGraph agents", "One template is a port of a CrewAI flow" and "Two

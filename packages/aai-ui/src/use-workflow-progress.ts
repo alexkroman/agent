@@ -118,8 +118,8 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
  * `@alexkroman1/aai/step` and `RETRYABLE_STATUS` is `sdk/_upload-retry.ts`'s
  * internal, so neither is reachable from a browser bundle — this package may
  * not import the step surface, and an `_`-prefixed module may not be imported
- * cross-package at all. Hoisting one of them onto `/utils` (where this guide's
- * own prose already claims `isTransientStatus` lives) is the fix that would
+ * cross-package at all. Hoisting one of them onto `/utils` (the SDK's
+ * `/step` subpath is where `isTransientStatus` lives today) is the fix that would
  * delete this; it is a published-surface change and therefore not this one.
  *
  * Everything else is treated as a stable answer, which keeps a permanent

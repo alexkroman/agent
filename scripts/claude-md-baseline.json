@@ -1,0 +1,6 @@
+{
+  "_description": "Shrink-only size budgets for AUTO-LOADED agent guides still over the 40,000-char cap. A listed guide may be at most its recorded size, and must be re-recorded when it shrinks; a guide not listed must be at most 40,000. `pnpm claude-md:update` lowers entries and removes ones for guides now under the cap or gone, and never raises or adds one — an increase is a hand edit in a reviewable diff. See the header of scripts/check-claude-md.mjs.",
+  "guides": {
+    "packages/aai-studio-client/CLAUDE.md": 79366
+  }
+}

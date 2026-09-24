@@ -2,8 +2,8 @@
 /**
  * Where the platform lives, as far as this page is concerned.
  *
- * The studio and the agent surface are ONE origin by construction (see "One
- * public origin" in packages/aai-server/CLAUDE.md), so the page's own origin is
+ * The studio and the agent surface are ONE origin by construction (see "Origin
+ * and CORS" in packages/aai-studio-server/CLAUDE.md), so the page's own origin is
  * the platform's and no round trip asks the server for it. That reasoning was
  * written out three times — the top bar's production link, the phone card's
  * webhook URLs, and the workflows card's agent API — each with its own copy of

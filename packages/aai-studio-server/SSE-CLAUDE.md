@@ -9,8 +9,8 @@ read_when: >-
 
 # packages/aai-studio-server — long-lived responses
 
-A SIBLING of `packages/aai-studio-server/CLAUDE.md`, read on demand: that guide
-is at its 120,000-character cap, and this section is REFERENCE for someone
+A SIBLING of `packages/aai-studio-server/CLAUDE.md`, read on demand: this
+section is REFERENCE for someone
 already working in this area.
 
 ## Long-lived responses (SSE)

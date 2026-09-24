@@ -32,7 +32,7 @@
  * **Pacing stays ON, deliberately.** A carrier accepts audio far faster than
  * it plays it and buffers the rest, which is precisely the shape that made
  * unpaced host-mode sessions destroy 36% of all agent audio (see
- * "Host-mode audio pacing" in `packages/aai/CLAUDE.md`): the backlog builds
+ * "Host-mode audio pacing" in `packages/aai-cli/CLAUDE.md`): the backlog builds
  * on the far side, where `PacedAudioSink.clear()` cannot reach it. Paced, the
  * backlog stays here and a barge-in drops it. The carrier's own buffer is
  * emptied by the `clear` frame — see {@link CarrierCodec.clear}.

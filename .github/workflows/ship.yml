@@ -385,8 +385,8 @@ jobs:
           deploy=false
           migrate=false
           # A SHELL glob, which stops at one level, rather than a git pathspec:
-          # a pathspec `*` crosses `/` (AGENTS.md, "A pathspec is fnmatch
-          # WITHOUT FNM_PATHNAME"), so `packages/*/package.json` as a pathspec
+          # a pathspec `*` crosses `/` (.agents/ratchets.md, under
+          # "check:file-length"), so `packages/*/package.json` as a pathspec
           # also matches `packages/aai-templates/scaffold/package.json` and
           # `packages/aai-guest/toolchain/package.json`. Neither carries a
           # `version` field today, so that is a latent false positive rather

@@ -7,7 +7,7 @@
  * everything left there is the retry policy"* — when the stale-snapshot read
  * below pushed it past the 500-line cap. Read that module first: its "An
  * attempt is a LEASE" section is the statement of the invariant, and
- * `packages/aai-runtime/CLAUDE.md` carries the account.
+ * `packages/aai-runtime/JOURNAL-CLAUDE.md` carries the account.
  *
  * Two things happen here and they are ordered on purpose. A settled step is
  * answered from the journal, and only then is the budget consulted — because a
@@ -36,7 +36,7 @@ import type { StepAttemptOptions } from "./step.ts";
  * has to clear the longest walk that can legitimately be running, or a live
  * walk's charge expires and the ceiling stops bounding anything. Production
  * walks have been measured at 285 s and ~900 s (see "A parked delivery asks to
- * come back PROPORTIONATELY" in `packages/aai-runtime/CLAUDE.md`), a step's own
+ * come back PROPORTIONATELY" in `packages/aai-runtime/JOURNAL-CLAUDE.md`), a step's own
  * `stepFetch` may run for `STEP_FETCH_INACTIVITY_MS` at a time, and a fan-out
  * queues behind `StepGate`. An hour is above all of it with room to spare.
  *

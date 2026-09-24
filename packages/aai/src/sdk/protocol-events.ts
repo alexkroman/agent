@@ -345,7 +345,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   ev("reply.cancelled"),
   /**
    * The conversation was discarded and a new one begins — which is why the
-   * transports GREET on it (see "A `reset` starts a conversation" in the SDK
+   * transports GREET on it (see "A `reset` GREETS" in the SDK
    * guide).
    */
   ev("session.reset"),

@@ -21,7 +21,7 @@
  *
  * Note this means the per-property doc comments on the intersections do not
  * reach the published reference — see "A memoized component must NAME its
- * props type" in `packages/aai-ui/CLAUDE.md` — which is why each component's
+ * props type" in `packages/aai-ui/src/components/CLAUDE.md` — which is why each component's
  * own description carries what a caller needs.
  */
 

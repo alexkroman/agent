@@ -10,8 +10,8 @@ read_when: >-
 
 A SIBLING of `CLAUDE.md`, not a second package guide: Claude Code auto-loads
 only `CLAUDE.md`, so this is read on demand, which is the right shape for
-REFERENCE. That guide is at its 120,000-char cap and carries the one-paragraph
-version of each section below.
+REFERENCE. The package guides carry the one-paragraph version of each section
+below.
 
 What is here is the handful of helpers a tool body reaches for that are neither
 a primitive (`sessionSlot`, `dialog`, `workflow`) nor a provider: the speech

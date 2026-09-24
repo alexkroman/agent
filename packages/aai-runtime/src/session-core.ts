@@ -237,7 +237,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // The COMMITTED event only, which is what makes the stream's assistant
         // turns the session's own rather than a re-derivation. An INTERRUPTED
         // reply is reported as `.updated` and enters no history — see the event's
-        // own doc, and "History records what was HEARD" in the SDK guide. A
+        // own doc, and "History records what was HEARD" in `transports/CLAUDE.md`. A
         // committed RECOVERY phrase is the third case and the one this used to
         // get wrong: emitted, because the caller heard it, and never recorded.
         pushConversation(event);

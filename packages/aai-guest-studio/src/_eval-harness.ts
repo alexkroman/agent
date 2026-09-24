@@ -3,7 +3,7 @@
  * The studio coding agent's own eval harness — the templates' eval suite,
  * pointed at `createStudioAgent`.
  *
- * "The coding agent has an eval of its own" in `packages/aai-guest/CLAUDE.md`
+ * "The coding agent has an eval of its own" in `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`
  * carries the account: why it is in this package rather than in `aai-evals`,
  * what it measures that the HTTP starter eval cannot and vice versa, and the
  * one honest limit — the system prompt. Four facts belong at this seam, because

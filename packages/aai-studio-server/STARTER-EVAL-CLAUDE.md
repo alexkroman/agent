@@ -13,10 +13,9 @@ read_when: >-
 Reference for the eval that drives this package's own product surface. The
 package guide's "Studio starter evals" section is the summary and the commands;
 this file is the reasoning behind them, and it is a SIBLING rather than a section
-of `CLAUDE.md` because that guide is at 99% of the 120,000-char budget
-(`check:claude-md`) and a section pushed out of a full guide is exactly what a
-sibling is for. The eval FRAMEWORK — the recording runner, the spread report, the
-assertion vocabulary, why a live eval reports rather than gates — is
+of `CLAUDE.md` because it is reference, read on demand. The eval FRAMEWORK — the
+recording runner, the spread report, the assertion vocabulary, why a live eval
+reports rather than gates — is
 [`packages/aai-evals/CLAUDE.md`](../aai-evals/CLAUDE.md).
 
 ## Five files, and why they are in this package
@@ -186,7 +185,7 @@ and adjudicates the tool set, the tool descriptions, each tool's own result pros
 and the model. **The shipped prompt is graded by the HTTP target here and by
 nothing there** — a stronger reason to keep both than the deployed-path one, and
 the reason a prompt change still has to be measured through a live studio. See
-"The coding agent has an eval of its own" in `packages/aai-guest/CLAUDE.md`.
+"The coding agent has an eval of its own" in `packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`.
 
 Note which package sees both halves: only this one, over HTTP, sees prompt AND
 tools together. Nothing in the workspace can import both.

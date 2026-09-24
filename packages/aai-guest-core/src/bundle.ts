@@ -123,7 +123,7 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
  *
  * Not `AAI_PLATFORM_BASE_URL`, which is the other claim entirely: "the platform
  * is dialable here", from INSIDE the sandbox. See
- * `aai-runtime/CLAUDE.md`, "`AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials".
+ * `aai-runtime/src/workflow/CLAUDE.md`, "`AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials".
  */
 function publicBaseUrl(): string | undefined {
   return process.env.AAI_PUBLIC_BASE_URL?.trim() || undefined;

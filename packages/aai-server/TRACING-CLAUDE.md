@@ -10,8 +10,7 @@ read_when: >-
 A sibling of `CLAUDE.md` rather than a section in it, for the reason the guide
 gives for `MODAL-CLAUDE.md` and `SCHEMA-CLAUDE.md`: this is REFERENCE — which
 env vars turn it on, which spans exist, what an operator must not assume — not
-a rule that has to be resident in every agent's context. It is also the only
-shape that fit: that guide sits 81 characters under the 120,000-char cap.
+a rule that has to be resident in every agent's context.
 
 ## It is OFF unless a collector is configured, and that is the whole switch
 

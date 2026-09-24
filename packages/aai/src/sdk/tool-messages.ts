@@ -25,7 +25,7 @@
  * caption and stop there. They never enter `ctx.messages`, the model's view, or
  * a committed transcript, and — the property the barge-in gate turns on — they
  * never count as the agent having spoken. See "A filler line may not open the
- * barge-in gate" in `packages/aai-runtime/CLAUDE.md`.
+ * barge-in gate" in `packages/aai-runtime/src/CLAUDE.md`.
  */
 
 import { z } from "zod";

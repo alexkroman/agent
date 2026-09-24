@@ -16,7 +16,7 @@
  * That is the symmetry to lead with, because it settles whether this is worth
  * paying for. A `sessionSlot`'s value is checked in BOTH backends before it is
  * stored — `Map` → `{}`, `Date` → string, `NaN` → null: *the values that corrupt
- * do not throw, so `JSON.stringify` is not the check* (`packages/aai/CLAUDE.md`,
+ * do not throw, so `JSON.stringify` is not the check* (`packages/aai/src/sdk/CLAUDE.md`,
  * "A slot OWNS its session state"). A step's output goes through the journal's
  * own codec, is read back days later by a different process and possibly a
  * different bundle, and had no check of any kind. It is exactly as durable and
@@ -57,8 +57,8 @@
  * A read-side failure is NOT a step failure and must never be journaled as one.
  * The step SUCCEEDED — days ago, and its entry says so — and what has gone wrong
  * is a disagreement between the journal and the code now walking it. Journaling
- * `failed` over it would break the rule "An attempt is a LEASE, not a tally"
- * states in `packages/aai-runtime/CLAUDE.md` and this package pays for twice
+ * `failed` over it would break the rule "An attempt is a LEASE, and it EXPIRES"
+ * states in `packages/aai-runtime/JOURNAL-CLAUDE.md` and this package pays for twice
  * already: **only a walk whose own body threw may write a `failed` entry.** So it
  * is a verdict about the WALK, in the family of a divergence and a
  * `StepAbandonedError` — a {@link FatalError} recorded through `replayRun`'s

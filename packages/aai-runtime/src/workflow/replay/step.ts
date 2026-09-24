@@ -30,8 +30,8 @@
  * `claimAttempt` was a tally, charged before the body and never given back, and
  * ONE number served two jobs that pull in opposite directions: how many times to
  * TRY (what an author writes `maxAttempts` for) and how many workers may DIE
- * holding this step. **`packages/aai-runtime/CLAUDE.md`, "An attempt is a LEASE,
- * not a tally", carries the whole account** — the property harness that shrank
+ * holding this step. **`packages/aai-runtime/JOURNAL-CLAUDE.md`, "An attempt is a LEASE,
+ * and it EXPIRES", carries the whole account** — the property harness that shrank
  * the defect to a two-node body, the `failed` entry it appended over a step that
  * then succeeded, and the measurement showing the residual below is reachable.
  * What is here is the shape:

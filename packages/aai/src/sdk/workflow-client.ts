@@ -241,7 +241,8 @@ export type WorkflowClient = {
    *
    * Synchronous, and it THROWS when no public URL is configured, naming the
    * option. The token is the CALLER's, exactly as {@link signal} takes it. See
-   * "A callback URL comes from `publicWebhookUrl`" in `packages/aai/CLAUDE.md`.
+   * "A callback URL comes from `publicWebhookUrl`" in
+   * `packages/aai/src/sdk/CLAUDE.md`.
    */
   publicWebhookUrl(token: string): string;
   /**
