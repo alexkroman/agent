@@ -10,12 +10,10 @@ import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-inte
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "./_compact-records.ts";
-import { emptyRequiredFailure, emptyRequiredStrings } from "./_empty-required-args.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
-import type { Logger } from "./runtime-config.ts";
 import { coerceToolArgs } from "./tool-arg-coercion.ts";
 import { type FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
-import type { ToolCallSpeech, ToolSpeechController } from "./tool-messages-runner.ts";
+import type { ToolSpeechController } from "./tool-messages-runner.ts";
 
 interface ToVercelToolsContext {
   executeTool: ExecuteTool;
@@ -61,8 +59,6 @@ interface ToVercelToolsContext {
    */
   toolSpeech?: ToolSpeechController;
   signal?: AbortSignal;
-  /** For the one line a call refused for a blank required argument writes. */
-  log?: Logger;
 }
 
 /**
@@ -116,48 +112,32 @@ export function toVercelTools(
           (args ?? {}) as Readonly<Record<string, unknown>>,
           schema.parameters,
         );
-        // A required text field left blank: the call cannot succeed, so it is
-        // refused here — never executed, never relayed — and answered with a
-        // failure naming the fields (`_empty-required-args.ts`). No tool speech
-        // either: a start line would announce work that is not happening, and
-        // a verbatim `failed` line would end the turn before the model can ask.
-        const blank = emptyRequiredStrings(input, schema.parameters);
+        const { signal, executeOptions } = callOptions(options, ctx.signal);
+        // Snapshot history so concurrent mutation from a newer turn can't
+        // leak into this tool's view.
+        const history = ctx.messages().slice();
+        // The tool's own voice for the length of this call: the START line
+        // (awaited only when it is `blocking`) and the delay ladder, both
+        // stopped on every exit path below.
+        const speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
         let result: string;
-        let speech: ToolCallSpeech | undefined;
-        if (blank.length > 0) {
-          ctx.log?.info("empty required argument; call not executed", {
-            sid: ctx.sessionId,
-            toolName: schema.name,
-            fields: blank,
-          });
-          result = emptyRequiredFailure(blank, schema.name);
-        } else {
-          const { signal, executeOptions } = callOptions(options, ctx.signal);
-          // Snapshot history so concurrent mutation from a newer turn can't
-          // leak into this tool's view.
-          const history = ctx.messages().slice();
-          // The tool's own voice for the length of this call: the START line
-          // (awaited only when it is `blocking`) and the delay ladder, both
-          // stopped on every exit path below.
-          speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
-          try {
-            await speech?.start();
-            result = await ctx.executeTool(
-              schema.name,
-              input,
-              ctx.sessionId,
-              history,
-              executeOptions,
-            );
-          } catch (err: unknown) {
-            speech?.dispose();
-            // The ONE rejection `executeTool` produces (see its doc): a failure
-            // the author declared unrecoverable. Announced before it is
-            // re-thrown, because the throw itself goes nowhere useful — the AI
-            // SDK catches it, emits a `tool-error` part and keeps stepping.
-            if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
-            throw err;
-          }
+        try {
+          await speech?.start();
+          result = await ctx.executeTool(
+            schema.name,
+            input,
+            ctx.sessionId,
+            history,
+            executeOptions,
+          );
+        } catch (err: unknown) {
+          speech?.dispose();
+          // The ONE rejection `executeTool` produces (see its doc): a failure
+          // the author declared unrecoverable. Announced before it is re-thrown,
+          // because the throw itself goes nowhere useful — the AI SDK catches
+          // it, emits a `tool-error` part and keeps stepping.
+          if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
+          throw err;
         }
         // Stops the ladder and speaks the outcome. The MODEL's copy is what
         // comes back — a `role: "system"` completion annotates it with its

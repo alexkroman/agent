@@ -181,18 +181,6 @@ subagent revision pair what they send. A call nothing ran gets an error result
 not a fifth producer of a `role: "tool"` CONVERSATION message — the synthetic
 result lives only in the model's view, like the step messages it repairs.
 
-## A call with a BLANK required text argument is refused, not run
-
-`_empty-required-args.ts` answers a call whose required, plain-string field is
-missing, non-string or blank after trim with `serializeToolFailure` naming the
-fields, without calling `executeTool` — so a relay never sends it and the client
-is never owed a result. Two call sites: `to-vercel-tools.ts` (before tool speech
-begins, so no start line, ladder or verbatim `failed` line — the model must stay
-free to ask) and `session-tool-steps.ts` (after the `maxSteps` refusal, and
-shaped like it). Both record the refusal as the call's result, so every call
-stays paired. In S2S relay mode the `tool.completed` frame still goes out for a
-call the client never saw, exactly as the `maxSteps` refusal's does.
-
 ## Read the arm by ROLE, never by field presence
 
 `toolName` and `toolCallId` are optional, and the absence of one is not a

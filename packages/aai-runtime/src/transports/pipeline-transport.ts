@@ -274,14 +274,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Built once per session, not per turn: per-call aborts still track the
   // owning turn because streamText forwards its own abortSignal into each
   // execute's options, which takes precedence in toVercelTools.
-  // Speaks tool `messages` (`tool-messages-runner.ts`); per session, each turn binds a channel.
+  // Speaks whatever `messages` a tool declares — see `tool-messages-runner.ts`.
+  // Session-scoped like the tool set; the turn binds its own speech channel.
   const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
 
   const tools = toVercelTools(toolSchemas, {
     executeTool,
     sessionId: opts.sid,
     toolSpeech,
-    log,
     // The one thing that makes `ToolDef.onError`'s fatal arm stop a turn rather
     // than merely reject a call: the AI SDK swallows the rejection, so the
     // latch is how the in-flight request finds out.
