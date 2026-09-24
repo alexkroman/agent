@@ -102,6 +102,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     sessionId: opts.id,
     agentConfig: opts.agentConfig,
     executeTool: opts.executeTool,
+    toolSchemas: opts.toolSchemas ?? [],
     emit,
     log,
     history: () => history,

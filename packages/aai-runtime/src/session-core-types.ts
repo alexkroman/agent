@@ -13,7 +13,7 @@
 
 import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
-import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type {
   ClientSink,
   ReadyConfig,
@@ -42,6 +42,12 @@ export type ServerSessionOptions = {
   emitter: SessionEmitter;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
+  /**
+   * The declared tools, read for one thing: a provider-run (S2S) call that
+   * leaves a required text argument blank is refused before `executeTool` —
+   * see `_empty-required-args.ts`. Absent means nothing is refused.
+   */
+  toolSchemas?: readonly ToolSchema[];
   transport: Transport;
   logger?: Logger;
   /**

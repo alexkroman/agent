@@ -333,8 +333,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         ...sessionOpts,
         skipGreeting: resolveSkipGreeting(skipGreeting, resumed, findings),
       },
-      // The THUNK, not its value: a transport that can resolve per turn does,
-      // and one that cannot resolves it once (see `runtime-transport.ts`).
+      // The THUNK: a per-turn transport resolves it per turn, others once (`runtime-transport.ts`).
       systemPrompt: () => dialogs.prompt.resolve(),
       callbacks,
       guardrails,
@@ -349,6 +348,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       emitter,
       agentConfig,
       executeTool,
+      toolSchemas,
       transport,
       logger,
       ...omitUndefined({ onToolResult: options.onToolResult }),

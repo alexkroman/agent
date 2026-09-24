@@ -219,7 +219,10 @@ describe("fixture replay with real executor (transport layer)", () => {
           description: "Get weather",
           inputSchema: z.object({
             city: z.string(),
-            country: z.string(), // required but not in fixture
+            // Required but not in the fixture. A NUMBER, because a missing
+            // required string is refused earlier (`_empty-required-args.ts`)
+            // and would never reach the Zod validation this spec is about.
+            days: z.number(),
           }),
           execute: () => "should not run",
         },
@@ -234,7 +237,7 @@ describe("fixture replay with real executor (transport layer)", () => {
 
     const [, resultStr] = firstToolResult(ctx);
     expect(resultStr).toContain("Invalid arguments");
-    expect(resultStr).toContain("country");
+    expect(resultStr).toContain("days");
   });
 
   test("interrupted agent transcript is not pushed to conversation history", async () => {

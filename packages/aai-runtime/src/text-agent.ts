@@ -296,6 +296,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
     return toVercelTools(builtins.schemas, {
       executeTool,
       sessionId,
+      log: logger,
       onFatalToolError: (error) => fatalTool.report(error),
       messages: () => view,
       recordToolResult: (message) => {
@@ -321,6 +322,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
   const tools = toVercelTools(builtins.schemas, {
     executeTool,
     sessionId,
+    log: logger,
     messages: () => [],
   });
 

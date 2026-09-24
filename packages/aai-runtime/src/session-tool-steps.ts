@@ -26,9 +26,10 @@ import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
-import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { compactRecordsForModel } from "./_compact-records.ts";
+import { emptyRequiredFailure, emptyRequiredStrings } from "./_empty-required-args.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
@@ -50,6 +51,8 @@ export type ToolStepDeps = {
   sessionId: string;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
+  /** The declared tools — a call leaving a required text field blank is refused. */
+  toolSchemas: readonly ToolSchema[];
   emit: SessionEmitter["emit"];
   log: Logger;
   /** The live conversation, snapshotted per call. */
@@ -105,6 +108,23 @@ export function runToolStep(
     });
     emit({ type: "tool.completed", toolCallId: callId, result: "{}" });
     deps.recordToolResult(toolResultMessage({ result: "{}", toolName: name, toolCallId: callId }));
+    return undefined;
+  }
+  // A required text field left blank is refused without running (or relaying)
+  // the call — `_empty-required-args.ts`. Answered like a RETURNED failure: the
+  // provider, the event and the history all carry the same serialized string.
+  const schema = deps.toolSchemas.find((t) => t.name === name);
+  const blank = schema ? emptyRequiredStrings(args, schema.parameters) : [];
+  if (blank.length > 0) {
+    log.info("empty required argument; call not executed", {
+      sid: deps.sessionId,
+      toolName: name,
+      fields: blank,
+    });
+    const result = emptyRequiredFailure(blank, name);
+    reply.pendingTools.push({ callId, result });
+    emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
+    deps.recordToolResult(toolResultMessage({ result, toolName: name, toolCallId: callId }));
     return undefined;
   }
   return (async () => {

@@ -166,6 +166,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       tools: toVercelTools(schemas, {
         executeTool,
         sessionId,
+        log: logger,
         // A subagent's tools read an EMPTY `ctx.messages`, deliberately: the
         // session transcript is exactly the context this indirection exists to
         // keep out of the subagent's window.
