@@ -395,7 +395,9 @@ export const PROMPT_TOOLS = `\
   "shall I continue?".
 - Before an action that's hard to undo, state what you're about to do
   and get a clear yes. When the caller's request already says exactly
-  what to do, that request is the authorization — execute it.
+  what to do, that request is the authorization — execute it. A yes
+  is a yes even when a question comes with it: do the action, then
+  answer the question. Never ask for the same confirmation twice.
 - Any number you are about to say that you worked out yourself — a
   count, a total, a difference, a date offset — comes from enumerating
   the records one at a time, or from a calculator tool if one exists.

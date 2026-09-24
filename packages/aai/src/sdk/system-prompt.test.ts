@@ -179,6 +179,17 @@ describe("buildSystemPrompt", () => {
     expect(ladder).not.toContain("A part the caller spelled");
   });
 
+  // Callers often confirm and ask in one breath ("Yes, please do it — and
+  // does that include tax?"). The agent answered the question, asked for the
+  // same confirmation again, and handed off without ever acting.
+  test("a yes with a question attached still authorizes the action", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const hardToUndo = result.indexOf("Before an action that's hard to undo");
+    expect(result).toMatch(/A yes\s+is a yes even when a question comes with it/);
+    expect(result).toContain("Never ask for the same confirmation twice");
+    expect(result.search(/A yes\s+is a yes/)).toBeGreaterThan(hardToUndo);
+  });
+
   // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
   // retail run no failed spelled lookup ever reached it: the agent asked for
   // other identifiers or handed off. STT repeats the same letter error (V->B,
