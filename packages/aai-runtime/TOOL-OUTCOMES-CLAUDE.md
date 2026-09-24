@@ -41,6 +41,16 @@ tool one thing during the call and a shorter thing after a resume, with nothing
 reporting the difference. The model is unaffected: the whole result goes to the
 provider, not through here.
 
+**The model's copy is SHAPED, and only it.** `_compact-records.ts` renders any
+collection of three or more same-shaped scalar records as rows — one record per
+line under one header — because models misread a field against its neighbours
+in long nested JSON. It is applied where the provider's copy is chosen
+(`forModel` in `to-vercel-tools.ts`, `pendingTools` in `session-tool-steps.ts`),
+never here: the recorded message and the `tool.completed` frame keep the tool's
+own string. The pipeline's LLM view keeps the step's messages, so later turns
+read the rows too. Anything that does not qualify is passed through
+byte-identical.
+
 `toolName` and `toolCallId` are OMITTED rather than set to `undefined`
 (`omitUndefined`). Under `exactOptionalPropertyTypes` those are different types,
 and a `{ toolName: undefined }` reaching a `structuredClone` or a JSON round

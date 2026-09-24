@@ -9,6 +9,7 @@ import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
+import { compactRecordsForModel } from "./_compact-records.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
 import { coerceToolArgs } from "./tool-arg-coercion.ts";
 import { type FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
@@ -141,8 +142,11 @@ export function toVercelTools(
         // Stops the ladder and speaks the outcome. The MODEL's copy is what
         // comes back — a `role: "system"` completion annotates it with its
         // hint — while the line below records the tool's OWN result, the same
-        // split the S2S arm makes on its failure path.
-        const forModel = speech?.settled(result) ?? result;
+        // split the S2S arm makes on its failure path. Record collections are
+        // rendered as rows in that copy alone (`_compact-records.ts`); the AI
+        // SDK keeps it in the step's messages, so later turns read rows too.
+        const shaped = compactRecordsForModel(result);
+        const forModel = speech?.settled(shaped) ?? shaped;
         // AFTER the call, so a tool never reads its own result back, and in
         // COMPLETION order, which is the only order that is true: the loop runs
         // a step's calls concurrently, so two siblings finishing out of issue

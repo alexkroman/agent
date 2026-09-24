@@ -224,6 +224,26 @@ describe("createSessionCore — tool call pending results", () => {
     expect(sink.events.some((e) => e.type === "tool.completed")).toBe(true);
   });
 
+  test("the provider reads a record collection as rows; the tool.completed event keeps the tool's own string", async () => {
+    const raw = JSON.stringify([
+      { id: "1", ok: true },
+      { id: "2", ok: false },
+      { id: "3", ok: true },
+    ]);
+    const { core, sink, transport } = makeCore({ executeTool: vi.fn(async () => raw) });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "my_tool", args: {} });
+    await flush();
+    core.report({ type: "reply.completed" });
+    const rows =
+      "3 records (key column: index): index | id | ok\n0 | 1 | true\n1 | 2 | false\n2 | 3 | true";
+    await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("cid", rows));
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ type: "tool.completed", result: raw }),
+    );
+  });
+
   test("a barged-in reply's late tool result is not forwarded to the next reply", async () => {
     const slow = Promise.withResolvers<string>();
     const executeTool = vi.fn(() => slow.promise);
