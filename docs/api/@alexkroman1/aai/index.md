@@ -12019,10 +12019,10 @@ new type. That failure is NOT the step's — the step succeeded, days ago —
 so it fails the run the way a divergence does and journals nothing.
 
 Durable session state has been checked structurally in both backends for a
-long time (`packages/aai/CLAUDE.md`, "A slot OWNS its session state": `Map`
-→ `{}`, `Date` → string, `NaN` → null — the values that corrupt do not
-throw, so `JSON.stringify` is not the check). A step's output is exactly as
-durable and had no check at all.
+long time (`packages/aai/src/sdk/CLAUDE.md`, "A slot OWNS its session
+state": `Map` → `{}`, `Date` → string, `NaN` → null — the values that
+corrupt do not throw, so `JSON.stringify` is not the check). A step's
+output is exactly as durable and had no check at all.
 
 A schema that COERCES is supported and often the better answer: what is
 journaled is what the schema passed, never the raw value, so the next walk
@@ -13851,7 +13851,8 @@ guest-local and use this for anything leaving the system.
 
 Synchronous, and it THROWS when no public URL is configured, naming the
 option. The token is the CALLER's, exactly as [signal](#signal-2) takes it. See
-"A callback URL comes from `publicWebhookUrl`" in `packages/aai/CLAUDE.md`.
+"A callback URL comes from `publicWebhookUrl`" in
+`packages/aai/src/sdk/CLAUDE.md`.
 
 ###### Parameters
 

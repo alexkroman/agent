@@ -2684,7 +2684,7 @@ Which try this is, 1-based.
 The WALK's count, not the journal's charge. Two overlapping deliveries of
 one run each start at 1, because `maxAttempts` means how many times to try
 and how many workers happen to be trying is not that number — see "An
-attempt is a LEASE, not a tally" in `packages/aai-runtime/CLAUDE.md`.
+attempt is a LEASE, and it EXPIRES" in `packages/aai-runtime/JOURNAL-CLAUDE.md`.
 
 ##### isLastAttempt
 
