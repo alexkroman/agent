@@ -140,6 +140,25 @@ describe("buildSystemPrompt", () => {
     expect(askAgain).toBeGreaterThan(confusions);
   });
 
+  // On a tau2-bench retail run the caller spelled a first name correctly and
+  // the transcript held the letters, yet every retry sent the mis-heard
+  // spoken word instead; other retries varied a surname and ZIP heard
+  // identically every time. 13 of 21 failed lookups contradicted a spelling
+  // already in the transcript. The ladder must say which evidence wins and
+  // what not to vary.
+  test("the ladder prefers a spelling and varies only the uncertain part", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    const askAgain = ladder.indexOf("Only now ask the caller");
+    const spellingWins = ladder.indexOf("the spelling wins");
+    const dontVary = ladder.indexOf("don't vary it");
+    expect(spellingWins).toBeGreaterThan(-1);
+    expect(spellingWins).toBeLessThan(askAgain);
+    expect(dontVary).toBeGreaterThan(-1);
+    expect(dontVary).toBeLessThan(askAgain);
+    expect(ladder).toContain("spell the name out as well");
+  });
+
   // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
   // retail run no failed spelled lookup ever reached it: the agent asked for
   // other identifiers or handed off. STT repeats the same letter error (V->B,

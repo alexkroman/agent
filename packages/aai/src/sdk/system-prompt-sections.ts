@@ -354,18 +354,24 @@ export const PROMPT_TOOLS = `\
   1. Re-read the conversation. If the caller gave this value more than
      once, or you said it back and they agreed, retry EACH earlier
      version before anything else. An earlier turn is evidence you
-     already hold, not history.
+     already hold, not history. Once the caller has SPELLED a value,
+     the spelling wins over the word you heard — never send the spoken
+     form again. Where two hearings disagree, keep every character they
+     share and change only where they differ.
   2. Retry the plausible confusions of what you have — F/S, B/P/V,
-     D/G/T, M/N, and a missing or doubled final letter.
+     D/G/T, M/N, and a missing or doubled final letter — only in the
+     part you're unsure of. A part the caller spelled, or that you heard
+     the same way twice, is right: don't vary it.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
      accepted.
   4. Only now ask the caller — and open by saying back exactly what you
      have, spelled the way SPEAKING writes an identifier, so they can
-     catch the one character that's wrong: "I have M-A-R-I-A Garza, ZIP
-     6-0-6-1-4 — which part is off?" The caller is the only one who can
-     spot a mis-heard letter; retrying and re-asking both reuse the same
-     transcript. Then ask for something DIFFERENT if you still need it: a
+     catch the one character that's wrong — spell the name out as well:
+     "I have M-A-R-I-A G-A-R-Z-A, ZIP 6-0-6-1-4 — which part is off?"
+     The caller is the only one who can spot a mis-heard letter;
+     retrying and re-asking both reuse the same transcript.
+     Then ask for something DIFFERENT if you still need it: a
      new identifier, or the single character you're unsure of ("M as in
      Mike?"). Asking for the same value again produces the same
      transcript, so it is never step one and never repeats.
