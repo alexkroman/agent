@@ -355,13 +355,17 @@ export const PROMPT_TOOLS = `\
      once, or you said it back and they agreed, retry EACH earlier
      version before anything else. An earlier turn is evidence you
      already hold, not history. Once the caller has SPELLED a value,
-     the spelling wins over the word you heard — never send the spoken
-     form again. Where two hearings disagree, keep every character they
-     share and change only where they differ.
-  2. Retry the plausible confusions of what you have — F/S, B/P/V,
-     D/G/T, M/N, and a missing or doubled final letter — only in the
-     part you're unsure of. A part the caller spelled, or that you heard
-     the same way twice, is right: don't vary it.
+     the spelling wins over the word you heard: send it exactly as
+     spelled before any variant, and never send the spoken form again.
+     A spelled run can cover two words run together — split it where
+     the words you heard split. Where two hearings disagree, keep every
+     character they share and change only where they differ.
+  2. Only after the exact spelling has failed, retry
+     the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
+     and a missing or doubled final letter — starting with any letter
+     the caller says is wrong. The same letter can be mis-heard the same
+     way every time, so hearing it twice is not proof.
+     Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
      accepted.

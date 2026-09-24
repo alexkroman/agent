@@ -151,12 +151,32 @@ describe("buildSystemPrompt", () => {
     const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
     const askAgain = ladder.indexOf("Only now ask the caller");
     const spellingWins = ladder.indexOf("the spelling wins");
-    const dontVary = ladder.indexOf("don't vary it");
+    const dontVary = ladder.indexOf("Digits heard the same way twice are right");
     expect(spellingWins).toBeGreaterThan(-1);
     expect(spellingWins).toBeLessThan(askAgain);
     expect(dontVary).toBeGreaterThan(-1);
     expect(dontVary).toBeLessThan(askAgain);
     expect(ladder).toContain("spell the name out as well");
+  });
+
+  // Two failure shapes pulled against each other. A caller spelled first and
+  // last name as ONE run ("Y-U-S-U-F-L-I") and the agent kept sending the
+  // spoken surname, never seeing a separate spelling of it. Elsewhere STT
+  // heard the same wrong letter on every spelling (V as B), and a rule that
+  // called a twice-heard spelling "right" stopped the listed confusion that
+  // fixed it — while dropping that rule let correct spellings be varied. The
+  // ladder now orders it: the exact spelling first (split a merged run),
+  // confusions only after it fails, digits held fixed.
+  test("the ladder sends a spelling exactly first and only then tries confusions", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    expect(ladder).toContain("send it exactly as");
+    expect(ladder).toContain("split it where");
+    const exactFirst = ladder.indexOf("send it exactly as");
+    const onlyAfter = ladder.indexOf("Only after the exact spelling has failed");
+    expect(onlyAfter).toBeGreaterThan(exactFirst);
+    expect(ladder).toContain("hearing it twice is not proof");
+    expect(ladder).not.toContain("A part the caller spelled");
   });
 
   // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
