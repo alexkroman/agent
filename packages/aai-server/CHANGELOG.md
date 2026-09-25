@@ -1,5 +1,44 @@
 # @alexkroman1/aai-server
 
+## 5.3.10
+
+### Patch Changes
+
+- 1446ed4: Reduce technical debt: retire escape hatches and guard-rule violations with real types, de-duplicate aai-runtime's journal conformance cases and upload routes, add a test seam to `aai dev`'s server and watcher, and add unit tests for 20 untested modules. No behaviour change.
+- fa9f694: Slim `@alexkroman1/aai-runtime`'s contracted surface to what an embedder writes against.
+  
+  - **Moved to `@alexkroman1/aai-runtime/internal`** (no public signature took or returned them): `ServerSession`, `TransportEventBody`, `TransportEventType`, `StateSyncSession`, `StoredSessionEvent`, `SessionStateBackend`, `SessionStateStore`, `UploadStore`, `UploadBackend`, `HttpUploadBackendOptions`, `createHttpUploadBackend`, `createMemoryUploadBackend`, `partKey`, `partsOf`, `UPLOADS_TABLE`, and the CLI's `requiredProviderEnvVars`, `withHostCredentialFallback`, `CARRIER_PARAM` and `TELEPHONY_PATH`. `HostCredentialEnv` is no longer re-exported (import it from `@alexkroman1/aai/host-internal`).
+  - **Removed from every subpath**: `WdkAdapter`, `WdkRunRecord`, `WdkStreamOptions`, `WorkflowClientOptions` — nothing published accepted them. `WdkRunRecord.status` is `WorkflowRunStatus` now.
+  - **`Runtime` loses `executeTool`, `toolSchemas` and `createSession`**, and `RuntimeOptions` loses `createWebSocket`, `createOpenaiRealtimeWebSocket`, `s2sConfig`, `sessionStartTimeoutMs`, `executeTool`, `toolSchemas`, `onToolResult` and `toolGuidance` — testing and relay seams, now host-only. `EvalSessionOptions` (and so `DescribeEvalOptions`) loses `generate`.
+  - **New `HostAgentOptions`**, the fields `RuntimeOptions`, `TextAgentOptions`, `EvalSessionOptions` and `EvalTextAgentOptions` share. `RuntimeOptions`' shared fields no longer accept an explicit `undefined`.
+  - **The opener contract (`SttOpener`, `SttSession`, `TtsOpener`, … `Unsubscribe`) is declared in this package** rather than re-exported from `@alexkroman1/aai/host-internal`, which no longer carries it. `OpenerRegistryEntry` takes the kind's options type as a second parameter, and `registerSttKind`/`registerTtsKind` infer it.
+  - **Closed unions opened**: `CarrierName` is `string` (validated at run time), and the `telephony` option of `createAgentServer`/`createRuntimeServer` takes carrier names rather than the SDK's closed union. `Logger` is an interface with the same four methods.
+  - Received-only handles are tagged `@sealed`.
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [04c4f49]
+- Updated dependencies [fa9f694]
+- Updated dependencies [feb93f7]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [c551022]
+- Updated dependencies [1446ed4]
+- Updated dependencies [fa9f694]
+- Updated dependencies [c551022]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [e43664a]
+- Updated dependencies [c551022]
+  - @alexkroman1/aai@19.0.0
+  - @alexkroman1/aai-runtime@19.0.0
+  - aai-guest@0.6.10
+
 ## 5.3.9
 
 ### Patch Changes

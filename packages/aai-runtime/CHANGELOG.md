@@ -1,5 +1,79 @@
 # @alexkroman1/aai-runtime
 
+## 19.0.0
+
+### Major Changes
+
+- fa9f694: Slim `@alexkroman1/aai-runtime`'s contracted surface to what an embedder writes against.
+  
+  - **Moved to `@alexkroman1/aai-runtime/internal`** (no public signature took or returned them): `ServerSession`, `TransportEventBody`, `TransportEventType`, `StateSyncSession`, `StoredSessionEvent`, `SessionStateBackend`, `SessionStateStore`, `UploadStore`, `UploadBackend`, `HttpUploadBackendOptions`, `createHttpUploadBackend`, `createMemoryUploadBackend`, `partKey`, `partsOf`, `UPLOADS_TABLE`, and the CLI's `requiredProviderEnvVars`, `withHostCredentialFallback`, `CARRIER_PARAM` and `TELEPHONY_PATH`. `HostCredentialEnv` is no longer re-exported (import it from `@alexkroman1/aai/host-internal`).
+  - **Removed from every subpath**: `WdkAdapter`, `WdkRunRecord`, `WdkStreamOptions`, `WorkflowClientOptions` — nothing published accepted them. `WdkRunRecord.status` is `WorkflowRunStatus` now.
+  - **`Runtime` loses `executeTool`, `toolSchemas` and `createSession`**, and `RuntimeOptions` loses `createWebSocket`, `createOpenaiRealtimeWebSocket`, `s2sConfig`, `sessionStartTimeoutMs`, `executeTool`, `toolSchemas`, `onToolResult` and `toolGuidance` — testing and relay seams, now host-only. `EvalSessionOptions` (and so `DescribeEvalOptions`) loses `generate`.
+  - **New `HostAgentOptions`**, the fields `RuntimeOptions`, `TextAgentOptions`, `EvalSessionOptions` and `EvalTextAgentOptions` share. `RuntimeOptions`' shared fields no longer accept an explicit `undefined`.
+  - **The opener contract (`SttOpener`, `SttSession`, `TtsOpener`, … `Unsubscribe`) is declared in this package** rather than re-exported from `@alexkroman1/aai/host-internal`, which no longer carries it. `OpenerRegistryEntry` takes the kind's options type as a second parameter, and `registerSttKind`/`registerTtsKind` infer it.
+  - **Closed unions opened**: `CarrierName` is `string` (validated at run time), and the `telephony` option of `createAgentServer`/`createRuntimeServer` takes carrier names rather than the SDK's closed union. `Logger` is an interface with the same four methods.
+  - Received-only handles are tagged `@sealed`.
+
+### Patch Changes
+
+- c551022: The model now reads a tool result's collections of same-shaped records as rows.
+  An array of three or more objects, or an object whose three or more values are
+  objects (an id-keyed map), whose records share one key set and hold only scalar
+  values (nested objects of scalars flatten to dotted keys such as
+  `options.color`) is rendered as a header line plus one line per record, fields
+  separated by ` | `, every value verbatim and in the original order. Models
+  misread a field against its neighbours in long nested JSON — picking a minimum
+  from records flagged unavailable, or swapping a flag between two records — and a
+  row keeps each record's fields on one line.
+  
+  Only the copy the model reads changes, for pipeline, text-agent and S2S tools
+  alike, whether the tool returned an object or a JSON string (a relayed result).
+  The recorded `role: "tool"` message and the client's `tool.completed` frame
+  keep the tool's own result. A result with nothing to render, a tool failure,
+  non-JSON text, or a result over `MAX_TOOL_RESULT_CHARS` reaches the model
+  exactly as before.
+- 04c4f49: Eval sessions leave the `think` builtin's scratchpad calls out of `EvalTurn.toolCalls` and `session.toolCalls()` (an authored `tools/think.ts` is still recorded; `events` are unchanged), and `judgeCall` no longer sends `temperature`, which the gateway's GPT-5 models reject. Templates drop `temperature` for the same reason, research-planner's replan schema is strict-mode compatible and no longer re-queues a finished step when the replan fails, and text-adventure pins the golden chalice to the Pine Forest.
+- feb93f7: A tool call the model made but the AI SDK never executed no longer breaks the
+  rest of the session. When a step ended on a tool call with an unsafe finish
+  reason (`length`, `other`, `content-filter` — a gateway that omits
+  `finish_reason` reads as `other`), the SDK declined to run the call, and the
+  call was saved to the conversation with no result. Every later turn then failed
+  with `Tool result is missing for tool call <id>.` until the caller hung up.
+  
+  Conversation history now pairs every tool call with a result when it is written:
+  a call nothing executed gets an error result (`"This tool call was not
+  executed."`), so the model can call it again, and a result with no call is
+  dropped. The same guard covers `createTextAgent` requests and subagent
+  revisions. Each repair logs `Orphaned tool call repaired`. The per-turn
+  `LLM turn` line now names the turn's tool calls and, when a finished step left
+  one unexecuted, the finish reason, with a warning of its own. An invalid or
+  failing tool call now logs `Tool call failed` with the tool name and the error.
+- c551022: Pipeline mode no longer lets background audio in the caller's channel — a television, a quiet aside across the room — barge in on a reply. Each transcript now carries the loudest level of the audio under its words (`SttTurnMeta.inputPeakDbfs`, reported by the AssemblyAI adapter on the service's own audio clock), and an utterance more than 12 dB below the caller's running speech level (the median of their recent committed turns, established after two) may not interrupt; a quiet final that lands while the agent is speaking its reply is dropped rather than committed as a turn (one begun into the agent's silent thinking time still commits). The rule only ever blocks a barge-in, fails open when no level or reference is available, and leaves a quiet final into a silent agent committed as before.
+- c551022: A voice turn whose tool calls keep failing now stops calling tools and answers
+  the caller. Within one turn, the next step is forced to `toolChoice: "none"` as
+  soon as the model repeats a call (same tool, same arguments) that already failed
+  in that turn, or once three tool results in that turn have failed. A failure is
+  a tool error, a `{"error": ...}` result, or a result string starting with
+  `Error`. Before, the model could keep retrying until `maxSteps` while the caller
+  heard only filler. Each forced answer logs `tool-error budget spent; forcing an
+  answer` once per turn. `createTextAgent` is unchanged.
+- e43664a: Tighten promise handling found by the new type-aware lint: `aai start` awaits tracing shutdown inside an async stop routine, the in-process workflow engine's `dispatch` option now types the promise the engine already awaited, and `useCopy` checks for a missing clipboard explicitly.
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [1446ed4]
+- Updated dependencies [c551022]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+  - @alexkroman1/aai@19.0.0
+
 ## 18.0.0
 
 ### Major Changes

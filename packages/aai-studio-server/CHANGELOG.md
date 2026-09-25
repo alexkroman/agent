@@ -1,5 +1,38 @@
 # aai-studio-server
 
+## 0.11.21
+
+### Patch Changes
+
+- 1446ed4: Reduce technical debt: retire escape hatches and guard-rule violations with real types, de-duplicate aai-runtime's journal conformance cases and upload routes, add a test seam to `aai dev`'s server and watcher, and add unit tests for 20 untested modules. No behaviour change.
+- e43664a: The studio's sandbox "Try again" button no longer discards the re-broker's promise (found by the new type-aware promise lint).
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [04c4f49]
+- Updated dependencies [fa9f694]
+- Updated dependencies [feb93f7]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [c551022]
+- Updated dependencies [1446ed4]
+- Updated dependencies [fa9f694]
+- Updated dependencies [c551022]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [e43664a]
+- Updated dependencies [c551022]
+  - @alexkroman1/aai@19.0.0
+  - @alexkroman1/aai-runtime@19.0.0
+  - aai-server@5.3.10
+  - @alexkroman1/aai-ui@19.0.0
+  - aai-studio-client@0.7.6
+
 ## 0.11.20
 
 ### Patch Changes

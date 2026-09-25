@@ -1,5 +1,63 @@
 # @alexkroman1/aai
 
+## 19.0.0
+
+### Major Changes
+
+- fa9f694: **Authoring-core typing: open vocabularies written inline, inferred persona names, typed custom events, and `slot.snapshot`.** Breaking in two small places, called out first.
+  
+  - **Breaking: `KnownVoicePresetName` and `KnownTurnDetectionMode` are no longer exported.** `VoicePresetName` is `"echoVerification" | "speechNormalization" | "natoAlphabet" | (string & {})` and `TurnDetectionMode` is `"auto" | "manual" | (string & {})`, with the known names written inline; `VOICE_PRESETS` is `Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>`. A published closed half made every added name a break of that export; inline, a name added later is a compatible change. Code that named a `Known…` type can spell the literals, or use `keyof typeof VOICE_PRESETS`.
+  - **Breaking (types only): `BuiltinTool` and `TelephonyCarrier` are open** — the shipped names inline `| (string & {})`. A name this release does not ship compiles, is accepted by `AgentConfigSchema`, and is warned about by `agentConfigWarnings` (`aai build` / `aai dev`) instead of being refused: the runtime already skipped an unknown builtin and dropped an unknown carrier, so the warning is what keeps a typo from being a tool or a phone route that silently never appears. Code that indexed a closed record by `TelephonyCarrier` should key off `(typeof TELEPHONY_CARRIERS)[number]` instead.
+  - **`persona()` and `personas()` infer the roster's names.** `PersonaDef<N>`, `Personas<N>` and `PersonaPosition<N>` take the names as a type parameter (defaulting to `string`, so existing annotations still fit), and `Personas.handoff(ctx, to)` takes `PersonaDef<N> | N` — a misspelled handoff target is now a compile error rather than a throw on a live call.
+  - **`ClientEventMap`**: an augmentable interface on the root barrel. Declare an event's payload with `declare module "@alexkroman1/aai" { interface ClientEventMap { "order.progress": { done: number; total: number } } }` and `ctx.send("order.progress", …)` type-checks it; an undeclared name still takes `unknown`.
+  - **`SessionSlot.snapshot(ctx)`** returns a mutable deep copy of the value, typed `T` — replacing `structuredClone(slot.get(ctx)) as Parameters<typeof slot.set>[1]`.
+  - **`ToolSet`** (`Readonly<Record<string, ToolDef>>`) names the tool-map shape `AgentDef.tools`, `PersonaDef.tools` and `SubagentDef.tools` share.
+  - Received-only handles and results (`ToolContext`, `AgentSessionContext`, `SessionEventContext`, `DialogPosition`, `DialogToolResult`, `HandoffResult`, `PersonaPosition`, `DelegateResult`, `GenerateResult`, `Dialog`, `SessionSlot`, `Personas`, `Procedure`) are tagged `@sealed`: an author receives them and never constructs or implements one, so they may gain members in a minor release.
+- fa9f694: **Open vocabularies spell their literals inline, a typed `runTool`, and narrower testing and workflow types.** Breaking.
+  
+  - **`KnownLlmProvider`, `KnownGatewayModel` and `AssemblyAITtsVoiceId` are no longer exported** from `@alexkroman1/aai/llm` / `/tts`. Their literals are written into the open types instead — `LlmProviderName`, `AssemblyAIGatewayModel` and `AssemblyAITtsVoice` are each `"a" | "b" | … | (string & {})` — so autocomplete is unchanged, and a regenerated gateway catalog, a new built-in provider or a new voice no longer changes a closed type an author could import. `KnownLlmProvider` and `KnownGatewayModel` are on `@alexkroman1/aai/host-internal` for the host's own totality checks. A spec that keyed a `Record<KnownLlmProvider, …>` writes `Record<string, …>`; one that cast `Object.keys(ASSEMBLYAI_TTS_VOICES)` to voice ids uses `ttsVoiceIds()`.
+  - **New `ttsVoiceInfo(voice)`** (`/tts`): the catalog row for an open voice id, or `undefined` for one this release does not list — own keys only, so `"toString"` is not a voice. `ASSEMBLYAI_TTS_DEFAULT_VOICE` is typed `AssemblyAITtsVoice`.
+  - **More open vocabularies:** `AssemblyAIReasoningEffort`, `OpenAIS2sVoice` and `OpenAIS2sOptions.model` (`"gpt-realtime-2" | "gpt-realtime" | …`) accept any string; `AssemblyAISttOptions.model`/`voiceFocus` and `DeepgramSttOptions.model` spell `(string & {})` rather than `| string`, so their literals autocomplete. An AssemblyAI descriptor's `providerOptions.reasoningEffort` is now forwarded whatever level it names (a non-string or empty one is still dropped).
+  - **New `LlmSpec`** (root and `/llm`): the one type of every `llm` field — `agent({ llm })`, `subagent({ llm })`, `ctx.generate({ llm })`. `subagent` and `generate` took `LlmProvider | string`, with no autocomplete; they now take the same gateway ids `agent()` does.
+  - **`runTool(tool, args?, ctx?)`** (`/testing`) takes the tool itself — a tool file's default export — and is typed end to end: the arguments are checked against its `execute` and the result is what it returns, so `(await run("x", ctx)) as {…}` casts go away. The name form is unchanged.
+  - **`expectDeployable` returns `DeployedConfig`** (new, with `DeployedStage`, on `/testing`) — the resolved config narrowed to the fields a spec reads (`name`, `systemPrompt`, `mode` — now always present — the four stages, `builtinTools`, `turnDetection`, `usageLimits`, `mcpServers`, `requiredEnv`) — instead of the whole `AgentConfig`, and takes any value with a `name` (validation is its job at run time). `expectPromptBuiltinsDeclared` takes `{ systemPrompt?, builtinTools? }`.
+  - **`WorkflowInputOf` / `WorkflowOutputOf` match `run`'s shape** rather than naming `WorkflowDef`; every def reads identically.
+  - **`WorkflowApi`'s option bags are named** — `WorkflowApiCallOptions`, `WorkflowStartOptions` (what `WorkflowApi.start` takes; `StartOptions` stays `ctx.workflows.start`'s `{ key, notify }`), `WorkflowStartAndWaitOptions`, `WorkflowGetOptions`, `WorkflowRunListOptions`, `WorkflowStreamOutputOptions`, `WorkflowFollowOutputOptions` — each the shape the method already took.
+  - **`ChannelHandler<O>`** is generic on the options `render`/`advice` read; `registerChannelHandler(handler, options)` registers one with the function that narrows a descriptor's raw options into `O`. The one-argument form is unchanged.
+  - `TranscribeProgress.status` autocompletes (`"queued" | "processing"` / `"completed"`, still open).
+
+### Patch Changes
+
+- b694949: The default voice prompt no longer lets the agent say a value the caller calls
+  "saved" or "on file" isn't there while a result it already fetched holds it: any
+  fetched result counts, not only the record the caller named, and the value's
+  parts are taken from that one record — never combined from two.
+- b694949: The default voice prompt now resolves a choice the caller defines by pointing
+  at something else they have ("same as my other one") from THAT record: the
+  agent opens it instead of asking the caller to recall the value, and never
+  takes the value from the thing being replaced.
+- b694949: The default voice prompt no longer claims that a once-only limit on one kind of
+  change never blocks a different kind; that is false wherever one change rules
+  out another. The editable-first ordering rule for changes to one record stays.
+- b694949: The default voice prompt now orders several agreed changes to one record so the
+  ones that leave it editable come first and the one that locks it comes last,
+  and says a once-only limit on one kind of change does not block a different
+  kind.
+- 7f6e8d6: `DEFAULT_SYSTEM_PROMPT`'s TOOLS section gains a last bullet: when a tool parameter names a type, category, mode, or key rather than taking free text, the model sends the category the caller named in the parameter's value format (lowercase, underscores for spaces, no possessives — "a gift card" becomes `gift_card`), and treats a schema example as a format, not a menu to pick from. Voice callers name categories in speech, and the model was copying the spoken phrase into code-like parameters. In offline replay on the SDK's own prompt assembly (N=10), spoken-form values fell from 5/10 to 0-1/10; a wording without the "not a menu" clause made the model substitute the schema's example value 4/10, and this wording 0-1/10. Affects every agent that uses the default prompt and has tools; no export or signature changed.
+- 7f6e8d6: A value the caller described, or one an earlier tool result supplies, now counts as present. `DEFAULT_SYSTEM_PROMPT`'s TOOLS section gains a last bullet: a place the caller described instead of spelling out ("my office", "the one you just found") is still their value — send their words, or the address from the earlier result they point to, and let the tool resolve or reject it, asking only if the call fails. The `think` builtin's guidance gains the matching clause: an argument fillable from the caller's description or an earlier result (an id, a name, the item they pointed to) is present, and a requested step is never stopped just because a value is less exact than the model would like. Voice callers name places and items by description; the model refused to pass them and asked for exact values, and the think step's "check every required argument" made it judge an id-bearing earlier result as missing an argument and stop mid-chain. In offline replay, stop-mid-chain after `think` fell from 7/90 to 1/30, asks for a described place from 2/10 to 0/10, and asks for truly missing identifiers were unchanged. No export or signature changed.
+- 1446ed4: Reduce technical debt: retire escape hatches and guard-rule violations with real types, de-duplicate aai-runtime's journal conformance cases and upload routes, add a test seam to `aai dev`'s server and watcher, and add unit tests for 20 untested modules. No behaviour change.
+- c551022: The default prompt's mis-hearing ladder now orders its retries: a spelled value is sent exactly as spelled before any variant (a spelled run covering two words is split where the heard words split), and only after that fails are the letter confusions tried — starting with a letter the caller says is wrong. A letter heard the same way twice is no longer treated as proof, since speech-to-text repeats the same mis-hearing; digits heard the same way twice stay fixed.
+- c551022: The default prompt's mis-hearing ladder now says which evidence wins when a lookup on a spoken value fails: once the caller has spelled a value, the spelling beats the word that was heard, and retries change only the characters two hearings disagree on — a part the caller spelled, or that was heard the same way twice, is not varied. The read-back before asking again spells the name out as well.
+- b694949: The default voice prompt's mis-hearing ladder now tries a SPOKEN name's other
+  common spellings (first name and surname alike) once the exact spelling has
+  failed. Letter confusions never turn one common spelling of a name into
+  another, so a lookup on the heard spelling failed on every retry and the call
+  never reached the account.
+- b694949: The default voice prompt now writes a free-text value the way the records the
+  agent fetched write the same field (an abbreviated field stays abbreviated),
+  rather than in the caller's spoken form.
+- c551022: The default prompt now says that a caller's yes still authorizes the action when a question comes with it — do the action, then answer — and never to ask for the same confirmation twice. Agents were answering the attached question, re-asking for confirmation and handing off without acting.
+
 ## 18.0.0
 
 ### Major Changes
