@@ -23,9 +23,12 @@
  * modules imported it from and which the context budget took past the file-line
  * cap; a preparer belongs with the seam that composes preparers rather than
  * inside the one turn assembler that happens to have declared it first.
+ * {@link toolErrorBudget}, the voice pipeline's other forced answer, sits here
+ * for the same reason.
  */
 
 import type { ToolChoice } from "@alexkroman1/aai";
+import { isRecord, isToolFailure, safeJsonParse } from "@alexkroman1/aai/utils";
 import type { PrepareStepFunction, PrepareStepResult, ToolSet } from "ai";
 import type { Logger } from "./runtime-config.ts";
 
@@ -120,4 +123,129 @@ export function forceFinalAnswer(
     log.info("maxSteps reached; forcing a final answer with no tools", { maxSteps, sid });
     return { toolChoice: "none" };
   };
+}
+
+/**
+ * How many failed tool results one turn may collect before its next step is
+ * spent on an answer. Internal, not a knob — see {@link toolErrorBudget}.
+ */
+export const TOOL_ERROR_BUDGET = 3;
+
+/** The slice of a finished step {@link toolErrorBudget} reads: its content. */
+type ToolErrorBudgetStep = { readonly content: readonly unknown[] };
+
+/**
+ * Stop a turn that keeps calling tools that keep failing, and make it speak.
+ *
+ * In a voice turn every tool round trip is silence the caller sits through —
+ * at best a filler line — and a model that has been refused tends to try
+ * again: the same call with the same arguments after an `Error: ...` result,
+ * or a string of identity lookups that each come back empty, while the caller
+ * asks whether anyone is still there. `forceFinalAnswer` bounds that only at
+ * `maxSteps`, which is long enough to lose the caller.
+ *
+ * So the next step is forced to `toolChoice: "none"` — the model keeps every
+ * result in context, and its only move is to tell the caller what happened —
+ * as soon as EITHER:
+ *
+ * - the step just finished repeats a call (same tool, same canonical-JSON
+ *   arguments) that already FAILED earlier in this turn — a retry that cannot
+ *   answer differently; or
+ * - {@link TOOL_ERROR_BUDGET} tool results in this turn have failed.
+ *
+ * "This turn" is `steps`, which the AI SDK scopes to one `streamText` call, so
+ * failures in earlier turns never count: a caller who corrects their details
+ * gets a fresh budget. See {@link isFailedToolResult} for what a failure is.
+ *
+ * Returns a fresh preparer per call, because it logs once per TURN: build one
+ * per request, never one per session.
+ *
+ * @internal
+ */
+export function toolErrorBudget(
+  log: Logger,
+  sid: string,
+): (opts: { steps: readonly ToolErrorBudgetStep[] }) => { toolChoice: "none" } | undefined {
+  let fired = false;
+  return ({ steps }) => {
+    const last = steps.at(-1);
+    if (last === undefined) return;
+    const failed = new Set<string>();
+    let errors = 0;
+    for (const step of steps.slice(0, -1)) errors += collectFailures(step, failed);
+    const identicalRepeat = last.content.some(
+      (part) => isToolPart(part) && part.type === "tool-call" && failed.has(callKey(part)),
+    );
+    errors += collectFailures(last, failed);
+    if (!(identicalRepeat || errors >= TOOL_ERROR_BUDGET)) return;
+    if (!fired) {
+      fired = true;
+      log.info("tool-error budget spent; forcing an answer", { sid, errors, identicalRepeat });
+    }
+    return { toolChoice: "none" };
+  };
+}
+
+/** A tool part of a step's content, narrowed to the fields this reads. */
+type ToolPart = { type: string; toolName?: unknown; input?: unknown; output?: unknown };
+
+function isToolPart(part: unknown): part is ToolPart {
+  return isRecord(part) && typeof part.type === "string";
+}
+
+/** Add each failed call in `step` to `failed` by key; return how many failed. */
+function collectFailures(step: ToolErrorBudgetStep, failed: Set<string>): number {
+  let count = 0;
+  for (const part of step.content) {
+    if (!isToolPart(part)) continue;
+    const isFailure =
+      part.type === "tool-error" ||
+      (part.type === "tool-result" && isFailedToolResult(part.output));
+    if (!isFailure) continue;
+    failed.add(callKey(part));
+    count += 1;
+  }
+  return count;
+}
+
+/** `(toolName, canonical-JSON input)` — key order does not make a call new. */
+function callKey(part: ToolPart): string {
+  return JSON.stringify([part.toolName, canonicalJson(part.input)]);
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!isRecord(value)) return value;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) sorted[key] = canonicalJson(value[key]);
+  return sorted;
+}
+
+/**
+ * Whether a `tool-result` part's output is a failure the model was handed.
+ *
+ * Three shapes, because three producers reach a step's content:
+ *
+ * - this runtime's own failures — a throw, a refused schema, a cancelled or
+ *   unknown call, a relay that could not dispatch — all resolve to the
+ *   `serializeToolFailure` string `{"error":"..."}`, and an author's returned
+ *   `toolFailure(...)` object is the same shape before it is serialized. That
+ *   is the test `tool-messages-runner.ts` already uses to pick a `failed` line;
+ * - a string that starts with `Error` (case-sensitive, after trimming) — the
+ *   conventional shape of a tool's own error text;
+ * - a model-message tool output (`{ type, value }`): `error-text` and
+ *   `error-json` are failures by declaration, and a `value` string is judged
+ *   by the two rules above.
+ *
+ * A `tool-error` part — the AI SDK's own arm for a call whose `execute`
+ * rejected — needs no inspection and is counted by the caller.
+ */
+export function isFailedToolResult(output: unknown): boolean {
+  if (typeof output === "string") {
+    return output.trim().startsWith("Error") || isToolFailure(safeJsonParse(output));
+  }
+  if (!isRecord(output)) return false;
+  if (output.type === "error-text" || output.type === "error-json") return true;
+  if (typeof output.value === "string") return isFailedToolResult(output.value);
+  return isToolFailure(output);
 }

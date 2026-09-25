@@ -8,9 +8,12 @@ import { describe, expect, test, vi } from "vitest";
 import {
   composePrepareStep,
   forceFinalAnswer,
+  isFailedToolResult,
   resetToolChoiceAfterFirstStep,
+  TOOL_ERROR_BUDGET,
+  toolErrorBudget,
 } from "./_prepare-step.ts";
-import { silentLogger } from "./runtime-config.ts";
+import { type Logger, silentLogger } from "./runtime-config.ts";
 
 /** The `prepareStep` options object, with only the fields a case varies set. */
 function step(
@@ -140,5 +143,128 @@ describe("resetToolChoiceAfterFirstStep", () => {
     // `stepNumber`, but the seam between them is typed and stays typed.
     expect(await composed(step({ stepNumber: 1 }))).toEqual({ toolChoice: "auto" });
     expect(await composed(step({ stepNumber: 2 }))).toEqual({ toolChoice: "none" });
+  });
+});
+
+// A tool round trip is silence on a phone call. The cases below are the shapes
+// seen in recorded voice runs: repeated identity lookups that each failed while
+// the caller asked whether anyone was there, and one call retried with
+// identical arguments after each `Error: ...` result.
+describe("toolErrorBudget", () => {
+  type Part = Record<string, unknown>;
+  const call = (toolName: string, input: unknown): Part => ({
+    type: "tool-call",
+    toolCallId: "c",
+    toolName,
+    input,
+  });
+  const result = (toolName: string, input: unknown, output: unknown): Part => ({
+    type: "tool-result",
+    toolCallId: "c",
+    toolName,
+    input,
+    output,
+  });
+  /** One finished step: a call and its result. */
+  const round = (toolName: string, input: unknown, output: unknown): { content: Part[] } => ({
+    content: [call(toolName, input), result(toolName, input, output)],
+  });
+  const failure = '{"error":"No record matches those details."}';
+
+  test("distinct calls with fewer than the budget's failures say nothing", () => {
+    const budget = toolErrorBudget(silentLogger, "sid");
+    expect(budget({ steps: [] })).toBeUndefined();
+    const steps = [
+      round("find_user", { name: "Ada" }, failure),
+      round("find_user", { email: "ada@example.com" }, "Error: not found"),
+      round("find_user", { zip: "12345" }, '{"id":"u1"}'),
+    ];
+    expect(budget({ steps })).toBeUndefined();
+  });
+
+  test("an identical retry of a failed call forces an answer", () => {
+    const budget = toolErrorBudget(silentLogger, "sid");
+    const steps = [
+      round("find_user", { name: "Ada", zip: "1" }, "Error: not found"),
+      // Same call, keys in another order: canonical JSON makes it identical.
+      { content: [call("find_user", { zip: "1", name: "Ada" })] },
+    ];
+    expect(budget({ steps })).toEqual({ toolChoice: "none" });
+  });
+
+  test("retrying a call that SUCCEEDED is not a repeat", () => {
+    const budget = toolErrorBudget(silentLogger, "sid");
+    const steps = [
+      round("get_order", { id: 1 }, '{"ok":true}'),
+      round("get_order", { id: 1 }, "{}"),
+    ];
+    expect(budget({ steps })).toBeUndefined();
+  });
+
+  test("the budget's worth of failures forces an answer", () => {
+    expect(TOOL_ERROR_BUDGET).toBe(3);
+    const budget = toolErrorBudget(silentLogger, "sid");
+    const steps = [
+      round("find_user", { name: "Ada" }, failure),
+      { content: [{ type: "tool-error", toolName: "find_user", input: { a: 1 }, error: "boom" }] },
+      round("find_user", { email: "x" }, { type: "error-text", value: "denied" }),
+    ];
+    expect(budget({ steps: steps.slice(0, 2) })).toBeUndefined();
+    expect(budget({ steps })).toEqual({ toolChoice: "none" });
+  });
+
+  test("failures in earlier turns never count — steps are one turn's", () => {
+    // Each turn is its own `streamText` call and gets its own preparer and
+    // its own `steps`, so a fresh turn after three failed ones starts clean.
+    for (let turn = 0; turn < 3; turn++) {
+      const budget = toolErrorBudget(silentLogger, "sid");
+      expect(budget({ steps: [round("find_user", { name: "Ada" }, failure)] })).toBeUndefined();
+    }
+  });
+
+  test("logs once per turn when it fires", () => {
+    const info = vi.fn();
+    const log: Logger = { ...silentLogger, info };
+    const budget = toolErrorBudget(log, "sid-1");
+    const steps = [round("t", { q: 1 }, failure), { content: [call("t", { q: 1 })] }];
+    budget({ steps });
+    budget({ steps });
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith("tool-error budget spent; forcing an answer", {
+      sid: "sid-1",
+      errors: 1,
+      identicalRepeat: true,
+    });
+  });
+
+  test("composes before forceFinalAnswer and overrides a dialog pin", async () => {
+    const dialogPin = (): { toolChoice: "required" } => ({ toolChoice: "required" });
+    const composed = composePrepareStep(
+      dialogPin,
+      toolErrorBudget(silentLogger, "sid"),
+      forceFinalAnswer(5, silentLogger, "sid"),
+    );
+    const failed = round("t", { q: 1 }, failure);
+    const options = step({ stepNumber: 1 });
+    expect(await composed({ ...options, steps: [] })).toEqual({ toolChoice: "required" });
+    const repeat = { ...options, stepNumber: 2, steps: [failed, failed] as typeof options.steps };
+    expect(await composed(repeat)).toEqual({ toolChoice: "none" });
+  });
+});
+
+describe("isFailedToolResult", () => {
+  test.each([
+    ['{"error":"x"}', true],
+    ["  Error: user not found", true],
+    [{ error: "x" }, true],
+    [{ type: "error-json", value: { code: 1 } }, true],
+    [{ type: "text", value: "Error: nope" }, true],
+    ["error: lower case is not the convention", false],
+    ['{"id":"u1"}', false],
+    [{ type: "text", value: "found it" }, false],
+    [undefined, false],
+    [42, false],
+  ])("%j → %s", (output, expected) => {
+    expect(isFailedToolResult(output)).toBe(expected);
   });
 });

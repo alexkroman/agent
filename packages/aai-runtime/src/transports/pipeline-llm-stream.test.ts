@@ -582,6 +582,35 @@ describe("the context budget and forceFinalAnswer share the prepareStep slot", (
   });
 });
 
+// A tool round trip is silence on a call, so a turn whose tool calls keep
+// failing must be made to speak long before `maxSteps`. Driven through the real
+// assembler, so dropping the preparer from the composition fails here.
+describe("the tool-error budget forces an answer mid-turn", () => {
+  const failing = {
+    lookup: tool({
+      description: "Always fails",
+      inputSchema: z.object({ q: z.string() }),
+      execute: () => "Error: no match",
+    }),
+  };
+  const lookup = (id: string): ScriptedPart => ({
+    type: "tool-call",
+    toolCallId: id,
+    toolName: "lookup",
+    input: '{"q":"a"}',
+  });
+
+  test("an identical retry of a failed call makes the next step tool-free", async () => {
+    const llm = createFakeLanguageModel({
+      steps: [[lookup("c1")], [lookup("c2")], [{ type: "text", text: "Sorry, no match." }]],
+    });
+    await consume({ llm, sid: "budget-4", maxSteps: 8, tools: failing });
+    expect(llm.calls).toHaveLength(3);
+    expect(llm.calls[1]?.toolChoice).toMatchObject({ type: "auto" });
+    expect(llm.calls[2]?.toolChoice).toMatchObject({ type: "none" });
+  });
+});
+
 // The seam that makes a state-addressed prompt possible: `startLlmStream` is the
 // ONE place a `streamText` request is assembled, so it is the one place the
 // prompt has to be READ rather than captured. See SystemPromptOption.

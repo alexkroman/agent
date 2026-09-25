@@ -20,6 +20,7 @@ import {
   composePrepareStep,
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
+  toolErrorBudget,
 } from "../_prepare-step.ts";
 import { createToolCallRepair } from "../tool-call-repair.ts";
 import { withFatalSignal } from "../tool-error-policy.ts";
@@ -122,9 +123,9 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // Evaluated after each step, and the latch is set during the step's tool
     // execution, so it is already true when the SDK asks.
     stopWhen: [stepCountIs(req.maxSteps + 1), () => req.toolSpeech?.verbatim() !== undefined],
-    // ONE slot, FIVE things to say — see `_prepare-step.ts`. Last writer wins
+    // ONE slot, SIX things to say — see `_prepare-step.ts`. Last writer wins
     // per key, so the ORDER is `ToolChoice`'s documented scope precedence
-    // (agent → persona → dialog state → forced final step) written out:
+    // (agent → persona → dialog state → forced answers) written out:
     //
     // 1. the context budget, which owns `messages` and shares no key with the
     //    four below;
@@ -140,15 +141,24 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     //    must call a tool (or must not) silently stopped meaning it after the
     //    first step of every turn, on every agent whose own `toolChoice`
     //    demands something;
-    // 5. `forceFinalAnswer`, which owns the same key on the one step the budget
-    //    reserved and must win there over all four.
+    // 5. the tool-error budget, which forces `"none"` once this turn's tool
+    //    calls keep failing (an identical retry of a failed call, or three
+    //    failures) — AFTER the dialog state, because a state that pins a tool
+    //    must not keep the model calling one that cannot succeed while the
+    //    caller waits in silence; it says nothing on any other step, so every
+    //    pin above stands until the budget is spent;
+    // 6. `forceFinalAnswer`, which owns the same key on the one step the budget
+    //    reserved and must win there over all five. Both force `"none"`, so
+    //    their relative order changes no request — last only by convention.
     //
     // Writing any of them straight into the slot deletes the others, silently.
+    // Built HERE, per request, because the error budget counts one turn.
     prepareStep: composePrepareStep(
       req.contextBudget,
       resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),
       req.personaStep,
       req.dialogStep,
+      toolErrorBudget(req.log, req.sid),
       forceFinalAnswer(req.maxSteps, req.log, req.sid),
     ),
     abortSignal: req.signal,

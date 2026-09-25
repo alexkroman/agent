@@ -370,18 +370,28 @@ export const PROMPT_TOOLS = `\
   1. Re-read the conversation. If the caller gave this value more than
      once, or you said it back and they agreed, retry EACH earlier
      version before anything else. An earlier turn is evidence you
-     already hold, not history.
-  2. Retry the plausible confusions of what you have — F/S, B/P/V,
-     D/G/T, M/N, and a missing or doubled final letter.
+     already hold, not history. Once the caller has SPELLED a value,
+     the spelling wins over the word you heard: send it exactly as
+     spelled before any variant, and never send the spoken form again.
+     A spelled run can cover two words run together — split it where
+     the words you heard split. Where two hearings disagree, keep every
+     character they share and change only where they differ.
+  2. Only after the exact spelling has failed, retry
+     the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
+     and a missing or doubled final letter — starting with any letter
+     the caller says is wrong. The same letter can be mis-heard the same
+     way every time, so hearing it twice is not proof.
+     Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
      accepted.
   4. Only now ask the caller — and open by saying back exactly what you
      have, spelled the way SPEAKING writes an identifier, so they can
-     catch the one character that's wrong: "I have M-A-R-I-A Garza, ZIP
-     6-0-6-1-4 — which part is off?" The caller is the only one who can
-     spot a mis-heard letter; retrying and re-asking both reuse the same
-     transcript. Then ask for something DIFFERENT if you still need it: a
+     catch the one character that's wrong — spell the name out as well:
+     "I have M-A-R-I-A G-A-R-Z-A, ZIP 6-0-6-1-4 — which part is off?"
+     The caller is the only one who can spot a mis-heard letter;
+     retrying and re-asking both reuse the same transcript.
+     Then ask for something DIFFERENT if you still need it: a
      new identifier, or the single character you're unsure of ("M as in
      Mike?"). Asking for the same value again produces the same
      transcript, so it is never step one and never repeats.
@@ -401,7 +411,9 @@ export const PROMPT_TOOLS = `\
   "shall I continue?".
 - Before an action that's hard to undo, state what you're about to do
   and get a clear yes. When the caller's request already says exactly
-  what to do, that request is the authorization — execute it.
+  what to do, that request is the authorization — execute it. A yes
+  is a yes even when a question comes with it: do the action, then
+  answer the question. Never ask for the same confirmation twice.
 - Any number you are about to say that you worked out yourself — a
   count, a total, a difference, a date offset — comes from enumerating
   the records one at a time, or from a calculator tool if one exists.

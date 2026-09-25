@@ -35,6 +35,12 @@
  * 3. **The two thresholds.** `minBargeInWords`, and then — for an interim
  *    only — `interruptionMinDurationMs`.
  *
+ * 4. **The relative-level veto.** An utterance whose loudest audio is far
+ *    below the caller's own speech level is not the caller — a television, an
+ *    aside across the room — and may not take the floor however many words it
+ *    has. It is a VETO: it can only turn a yes into a no, and it fails open
+ *    (no measurement is never quiet). `pipeline-caller-level.ts` owns the rule.
+ *
  * A committed FINAL skips step 3's second half, as it always has: a final is
  * demonstrably real speech, so there is nothing for a sustained-speech gate to
  * establish.
@@ -112,11 +118,11 @@ export interface BargeInPolicy {
    * Should this INTERIM transcript interrupt? `words` is the caller's
    * already-counted word total (the scan is bounded, so it is not recomputed
    * here). It takes no TEXT: nothing left in this policy reads the caller's
-   * wording.
+   * wording. `quiet` is the level veto — see the module doc, step 4.
    */
-  partialInterrupts(words: number): boolean;
-  /** Should this committed FINAL replace the in-flight reply? */
-  finalInterrupts(text: string): boolean;
+  partialInterrupts(words: number, quiet?: boolean): boolean;
+  /** Should this committed FINAL replace the in-flight reply? `quiet` as above. */
+  finalInterrupts(text: string, quiet?: boolean): boolean;
 }
 
 export function createBargeInPolicy(deps: {
@@ -135,16 +141,17 @@ export function createBargeInPolicy(deps: {
   utteranceDurationMs: () => number;
 }): BargeInPolicy {
   return {
-    partialInterrupts(words: number): boolean {
+    partialInterrupts(words: number, quiet = false): boolean {
       if (!(deps.agentIsSpeaking() && deps.utteranceOpenedOverSpeech())) return false;
       if (words < deps.minBargeInWords()) return false;
       const gate = deps.interruptionMinDurationMs();
-      return !(gate > 0 && deps.utteranceDurationMs() < gate);
+      if (gate > 0 && deps.utteranceDurationMs() < gate) return false;
+      return !quiet;
     },
 
-    finalInterrupts(text: string): boolean {
+    finalInterrupts(text: string, quiet = false): boolean {
       if (!(deps.agentIsSpeaking() && deps.utteranceOpenedOverSpeech())) return false;
-      return hasMinWords(text, deps.minBargeInWords());
+      return hasMinWords(text, deps.minBargeInWords()) && !quiet;
     },
   };
 }

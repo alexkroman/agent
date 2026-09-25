@@ -9,6 +9,7 @@ import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
+import { compactRecordsForModel } from "./_compact-records.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
 import { coerceToolArgs } from "./tool-arg-coercion.ts";
 import { type FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
@@ -101,9 +102,20 @@ export function toVercelTools(
   ctx: ToVercelToolsContext,
 ): Record<string, Tool> {
   const out: Record<string, Tool> = {};
+  const hinted = new HintedModelCopies();
   for (const schema of schemas) {
     out[schema.name] = tool({
       ...declarationOf(schema),
+      // The MODEL's copy of a result. `execute` returns the tool's own string,
+      // because that is what the stream's `tool-result` part carries and a
+      // `tool.completed` event is built from that part; the AI SDK asks this
+      // for what the provider is sent. Rows are recomputed from the tool's own
+      // string — the only copy that cannot be recomputed is one a tool message
+      // hint was appended to, which `execute` keeps under the call's id.
+      toModelOutput: ({ toolCallId, output }) => ({
+        type: "text",
+        value: hinted.get(toolCallId) ?? compactRecordsForModel(String(output)),
+      }),
       execute: async (args: unknown, options: ToolExecutionOptions<unknown>) => {
         // Repair stringified scalars ("1500", "true") toward the schema's
         // declared types before the tool (or a relay observer) sees them.
@@ -138,11 +150,20 @@ export function toVercelTools(
           if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
           throw err;
         }
-        // Stops the ladder and speaks the outcome. The MODEL's copy is what
-        // comes back — a `role: "system"` completion annotates it with its
-        // hint — while the line below records the tool's OWN result, the same
-        // split the S2S arm makes on its failure path.
-        const forModel = speech?.settled(result) ?? result;
+        // Stops the ladder and speaks the outcome. A `role: "system"` completion
+        // annotates the result with its hint, which the model and the
+        // `tool.completed` event both carry, while the line below records the
+        // tool's OWN result — the same split the S2S arm makes on its failure
+        // path. Record collections are rendered as rows in the MODEL's copy
+        // alone (`_compact-records.ts`, via `toModelOutput` above); the AI SDK
+        // keeps that copy in the step's messages, so later turns read rows too.
+        const shaped = compactRecordsForModel(result);
+        const forModel = speech?.settled(shaped) ?? shaped;
+        // `settled` returns what it was given, or that with a hint APPENDED, so
+        // the hint is the tail past `shaped` and goes after the tool's own
+        // string just the same.
+        const hint = forModel.slice(shaped.length);
+        if (hint !== "" && shaped !== result) hinted.keep(options.toolCallId, forModel);
         // AFTER the call, so a tool never reads its own result back, and in
         // COMPLETION order, which is the only order that is true: the loop runs
         // a step's calls concurrently, so two siblings finishing out of issue
@@ -160,11 +181,36 @@ export function toVercelTools(
             toolCallId: options.toolCallId,
           }),
         );
-        return forModel;
+        return result + hint;
       },
     });
   }
   return out;
+}
+
+/**
+ * Model copies that `toModelOutput` cannot recompute from the tool's own
+ * string — rows AND a tool-message hint — keyed by tool call id.
+ *
+ * The AI SDK may ask for one call's model output more than once within the
+ * step, so `get` reads without deleting; the tool set lives for a whole
+ * session, so the store is capped instead. A call needs its entry only until
+ * its step ends, and an evicted one degrades to rows without the hint.
+ */
+class HintedModelCopies {
+  static readonly #CAP = 32;
+  readonly #copies = new Map<string, string>();
+
+  keep(toolCallId: string, copy: string): void {
+    this.#copies.set(toolCallId, copy);
+    if (this.#copies.size <= HintedModelCopies.#CAP) return;
+    const oldest = this.#copies.keys().next().value;
+    if (oldest !== undefined) this.#copies.delete(oldest);
+  }
+
+  get(toolCallId: string): string | undefined {
+    return this.#copies.get(toolCallId);
+  }
 }
 
 /**

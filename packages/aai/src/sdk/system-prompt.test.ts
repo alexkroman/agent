@@ -140,6 +140,56 @@ describe("buildSystemPrompt", () => {
     expect(askAgain).toBeGreaterThan(confusions);
   });
 
+  // On a tau2-bench retail run the caller spelled a first name correctly and
+  // the transcript held the letters, yet every retry sent the mis-heard
+  // spoken word instead; other retries varied a surname and ZIP heard
+  // identically every time. 13 of 21 failed lookups contradicted a spelling
+  // already in the transcript. The ladder must say which evidence wins and
+  // what not to vary.
+  test("the ladder prefers a spelling and varies only the uncertain part", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    const askAgain = ladder.indexOf("Only now ask the caller");
+    const spellingWins = ladder.indexOf("the spelling wins");
+    const dontVary = ladder.indexOf("Digits heard the same way twice are right");
+    expect(spellingWins).toBeGreaterThan(-1);
+    expect(spellingWins).toBeLessThan(askAgain);
+    expect(dontVary).toBeGreaterThan(-1);
+    expect(dontVary).toBeLessThan(askAgain);
+    expect(ladder).toContain("spell the name out as well");
+  });
+
+  // Two failure shapes pulled against each other. A caller spelled first and
+  // last name as ONE run ("Y-U-S-U-F-L-I") and the agent kept sending the
+  // spoken surname, never seeing a separate spelling of it. Elsewhere STT
+  // heard the same wrong letter on every spelling (V as B), and a rule that
+  // called a twice-heard spelling "right" stopped the listed confusion that
+  // fixed it — while dropping that rule let correct spellings be varied. The
+  // ladder now orders it: the exact spelling first (split a merged run),
+  // confusions only after it fails, digits held fixed.
+  test("the ladder sends a spelling exactly first and only then tries confusions", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    expect(ladder).toContain("send it exactly as");
+    expect(ladder).toContain("split it where");
+    const exactFirst = ladder.indexOf("send it exactly as");
+    const onlyAfter = ladder.indexOf("Only after the exact spelling has failed");
+    expect(onlyAfter).toBeGreaterThan(exactFirst);
+    expect(ladder).toContain("hearing it twice is not proof");
+    expect(ladder).not.toContain("A part the caller spelled");
+  });
+
+  // Callers often confirm and ask in one breath ("Yes, please do it — and
+  // does that include tax?"). The agent answered the question, asked for the
+  // same confirmation again, and handed off without ever acting.
+  test("a yes with a question attached still authorizes the action", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const hardToUndo = result.indexOf("Before an action that's hard to undo");
+    expect(result).toMatch(/A yes\s+is a yes even when a question comes with it/);
+    expect(result).toContain("Never ask for the same confirmation twice");
+    expect(result.search(/A yes\s+is a yes/)).toBeGreaterThan(hardToUndo);
+  });
+
   // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
   // retail run no failed spelled lookup ever reached it: the agent asked for
   // other identifiers or handed off. STT repeats the same letter error (V->B,

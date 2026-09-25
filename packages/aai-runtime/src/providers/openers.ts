@@ -77,6 +77,21 @@ export type SttTurnMeta = {
    * measured against the current one rather than guessed at.
    */
   endOfTurnConfidence?: number;
+  /**
+   * The loudest inbound audio under this transcript's words, in dBFS: RMS
+   * over 50 ms blocks of the PCM16 the provider actually sent, across the
+   * words' span on the service's own audio clock (padded 100 ms either side).
+   * Omitted when the provider reports no word timings, or the span falls
+   * outside the audio it still has a level for.
+   *
+   * Read against the caller's own speech level, not as an absolute: a
+   * transcript far quieter than the caller's committed turns is audio the
+   * caller did not speak into the microphone (a television, a conversation
+   * across the room), and the pipeline transport will not let it interrupt a
+   * reply. A custom provider may report it on the same terms or omit it; an
+   * omitted level never blocks anything.
+   */
+  inputPeakDbfs?: number;
 };
 
 export type SttEvents = {

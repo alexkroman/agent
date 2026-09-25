@@ -17,6 +17,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SttTurnMeta } from "../providers/openers.ts";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import { createBargeInPolicy } from "./pipeline-barge-in-policy.ts";
+import { type CallerLevelReading, createCallerLevel } from "./pipeline-caller-level.ts";
 import type { ManualTurn } from "./pipeline-manual-turn.ts";
 import type { FalseInterruptionRecovery } from "./pipeline-recovery.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
@@ -211,6 +212,64 @@ export function createSttEventHandlers(deps: {
     utteranceDurationMs: () => speechEdges.durationMs(),
   });
 
+  // The caller's running speech level, and the once-per-utterance latch on the
+  // veto's log line — cleared by any partial the veto did not block and by
+  // every final, so each utterance it blocks is named once however many
+  // interims it produces. See pipeline-caller-level.ts.
+  const callerLevel = createCallerLevel();
+  let vetoLogged = false;
+  function levelFields(reading: CallerLevelReading, text: string): Record<string, unknown> {
+    return { sid: deps.sid, peakDb: reading.peakDb, refDb: reading.refDb, text };
+  }
+
+  /**
+   * Would this interim barge in, and does the level veto stop it? The veto is
+   * logged only when it is what said no.
+   */
+  function partialBargesIn(text: string, words: number, reading: CallerLevelReading): boolean {
+    if (bargeIn.partialInterrupts(words, reading.quiet)) return true;
+    if (reading.quiet && bargeIn.partialInterrupts(words)) {
+      if (!vetoLogged) log.info("Pipeline barge-in vetoed (quiet)", levelFields(reading, text));
+      vetoLogged = true;
+    } else {
+      vetoLogged = false;
+    }
+    return false;
+  }
+
+  /**
+   * A quiet final that lands while the agent HAS THE FLOOR (real reply speech
+   * on the line — `agentIsSpeaking`, the barge-in rules' own predicate) is not
+   * the caller answering it, so it is not a turn: dropped as if the STT had
+   * never sent it. The utterance's edge is left to its idle watchdog, which is
+   * what closes an utterance that commits nothing (and fires a
+   * false-interruption resume, should one be armed).
+   *
+   * NOT on a turn merely in flight, nor over filler: an utterance begun into
+   * the agent's silent thinking time commits as a chained turn, answered once
+   * the reply lands (see `createBargeInPolicy`), and a soft "are you still
+   * there?" is exactly such an utterance — dropping it would lose the caller's
+   * words outright. A quiet final into a silent agent still commits too.
+   */
+  function dropsQuietFinal(text: string, reading: CallerLevelReading): boolean {
+    if (!(reading.quiet && deps.agentIsSpeaking())) return false;
+    log.info("Pipeline quiet final dropped", levelFields(reading, text));
+    return true;
+  }
+
+  /**
+   * Log the level a committed turn carried, against the reference it was read
+   * with — the record the veto's threshold is validated from — and let it
+   * feed that reference.
+   */
+  function recordCommittedLevel(reading: CallerLevelReading): void {
+    if (reading.peakDb !== undefined) {
+      const { peakDb, refDb } = reading;
+      log.info("Pipeline committed turn level", { sid: deps.sid, peakDb, refDb });
+    }
+    callerLevel.onCommitted(reading);
+  }
+
   return {
     onSttPartial(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
@@ -255,7 +314,7 @@ export function createSttEventHandlers(deps: {
         onManualPartial(text, words, meta);
         return;
       }
-      if (!bargeIn.partialInterrupts(words)) {
+      if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs))) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
@@ -269,7 +328,8 @@ export function createSttEventHandlers(deps: {
         deps.speculation.onPartial(text, meta?.endOfTurnConfidence);
         return;
       }
-      log.info("Pipeline barge-in", { sid: deps.sid });
+      const { peakDb, refDb } = callerLevel.read(meta?.inputPeakDbfs);
+      log.info("Pipeline barge-in", { sid: deps.sid, peakDb, refDb });
       armBargeInRecovery();
       // The caller has the floor: hold agent audio for the backoff window, so
       // the reply that follows does not land on top of the utterance that
@@ -284,7 +344,7 @@ export function createSttEventHandlers(deps: {
       emitPartial();
     },
 
-    onSttFinal(text: string): void {
+    onSttFinal(text: string, meta?: SttTurnMeta): void {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
@@ -292,6 +352,9 @@ export function createSttEventHandlers(deps: {
       // Finals that differ from the commit locate a loss in aggregation; a
       // commit that matches the finals locates it in STT instead.
       log.debug("Pipeline STT final", { sid: deps.sid, text: trimmed });
+      vetoLogged = false;
+      const level = callerLevel.read(meta?.inputPeakDbfs);
+      if (!manualTurn.enabled && dropsQuietFinal(trimmed, level)) return;
       // Before anything else this handler does: a speculation this final cannot
       // match is billed for as long as it runs, so it is aborted at the
       // earliest possible instant rather than when the turn chain drains.
@@ -334,8 +397,12 @@ export function createSttEventHandlers(deps: {
       // interrupt — the turn is answered once the reply finishes (chainTurn
       // defers it), so neither short answers ("yes", a ZIP) spoken over the
       // agent nor re-prompts into a not-yet-spoken reply are lost.
-      if (bargeIn.finalInterrupts(trimmed)) {
-        log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
+      if (bargeIn.finalInterrupts(trimmed, level.quiet)) {
+        log.info("Pipeline replacing in-flight turn", {
+          sid: deps.sid,
+          peakDb: level.peakDb,
+          refDb: level.refDb,
+        });
         deps.onInterrupted();
         deps.abortInFlightTurn();
         deps.edgeGate.release();
@@ -345,6 +412,7 @@ export function createSttEventHandlers(deps: {
       // utterance's pauses into one final) is the STT provider's job — the
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
+      recordCommittedLevel(level);
       deps.commitUserTurn(trimmed);
     },
   };

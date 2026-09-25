@@ -30,7 +30,8 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../openers.ts";
-import { isCommittingTurn } from "./_assemblyai-turn.ts";
+import { isCommittingTurn, turnWordSpanMs } from "./_assemblyai-turn.ts";
+import { createInputLevelLedger } from "./_input-level-ledger.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
@@ -232,6 +233,10 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
       suppressDiscardedSocketError(transcriber);
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
+      // Levels of the audio this socket has SENT, on the service's own clock —
+      // what `inputPeakDbfs` is read from. Per socket: a reconnect restarts
+      // the service's clock, and a new session restarts this one with it.
+      const levels = createInputLevelLedger(openOpts.sampleRate);
       const shell = createSttSessionShell({
         emitter,
         teardown: () => transcriber.close(),
@@ -274,8 +279,10 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         //
         // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
         // distinguishes the two, and "the provider said nothing" is the absent case.
+        const span = turnWordSpanMs(event);
+        const inputPeakDbfs = span && levels.peakDbfs(span.startMs, span.endMs);
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
-          ...omitUndefined({ endOfTurnConfidence }),
+          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs }),
         });
       });
 
@@ -299,10 +306,12 @@ export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
         sampleRate: openOpts.sampleRate,
         minFlushMs: STT_FRAME_FLOOR_MS,
         // `slice` copies just the sent bytes; the accumulator is reused.
-        send: (frame) =>
+        send: (frame) => {
+          levels.record(frame);
           transcriber.sendAudio(
             frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
-          ),
+          );
+        },
       });
 
       // Drop audio frames while the provider link is stalled — mic audio is

@@ -28,6 +28,7 @@ import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { compactRecordsForModel } from "./_compact-records.ts";
 import { toolResultMessage } from "./_tool-result-message.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
@@ -122,7 +123,10 @@ export function runToolStep(
       // about the cap an author gets wrong — `warnOversizedResult` in
       // `tool-executor.ts` says so once per tool, since a result that arrives
       // here over the cap is re-sent to the provider on every later turn.
-      reply.pendingTools.push({ callId, result });
+      //
+      // The PROVIDER's copy renders record collections as rows
+      // (`_compact-records.ts`); the event and the history keep the tool's own.
+      reply.pendingTools.push({ callId, result: compactRecordsForModel(result) });
       emit({ type: "tool.completed", toolCallId: callId, result: capToolResult(result) });
       deps.recordToolResult(toolResultMessage({ result, toolName: name, toolCallId: callId }));
     } catch (err) {
