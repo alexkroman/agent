@@ -211,7 +211,7 @@ describe("toVercelTools — message snapshot isolation", () => {
     expect(observedInsideExecute).toHaveLength(1);
     expect(observedInsideExecute?.[0]).toMatchObject({ content: "first" });
   });
-  test("the model's copy renders a record collection as rows; the recorded result stays raw", async () => {
+  test("only the model's copy renders a record collection as rows; the call's result stays raw", async () => {
     const raw = JSON.stringify({
       a: { color: "red", price: 1 },
       b: { color: "blue", price: 2 },
@@ -229,9 +229,20 @@ describe("toVercelTools — message snapshot isolation", () => {
       { city: "SF" },
       { toolCallId: "tc", messages: [] },
     );
-    expect(result).toBe(
-      "3 records (key column: key): key | color | price\na | red | 1\nb | blue | 2\nc | green | 3",
-    );
+    // What `execute` returns is what the stream's `tool-result` part carries,
+    // and a `tool.completed` event is built from that part: an eval reading it
+    // with a schema parses it as JSON.
+    expect(result).toBe(raw);
     expect(recordToolResult).toHaveBeenCalledWith(expect.objectContaining({ content: raw }));
+    const forModel = await tools.get_weather?.toModelOutput?.({
+      toolCallId: "tc",
+      input: { city: "SF" },
+      output: result,
+    });
+    expect(forModel).toEqual({
+      type: "text",
+      value:
+        "3 records (key column: key): key | color | price\na | red | 1\nb | blue | 2\nc | green | 3",
+    });
   });
 });
