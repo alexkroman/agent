@@ -151,6 +151,13 @@ function createFetchJson(
 // nothing — the value is the designated reasoning step the model takes
 // before acting. Tool-call-only steps emit no TTS in pipeline mode, so
 // thoughts are silent on a voice call.
+//
+// The guidance's "is present" sentence is ours, not the spec's: "check that
+// you have every required argument" alone made the model judge an argument
+// missing when an earlier result supplied it only as an id, or the caller had
+// described it rather than spelled it out, and stop mid-chain. Offline replay:
+// stop-mid-chain after think 7/90 pooled without the sentence, 1/30 with it;
+// asks for a truly missing identifier were unchanged.
 
 const thinkParams = z.object({
   thought: z.string().describe("A thought to think about."),
@@ -162,6 +169,10 @@ function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
       "Before any write action, and after any tool result that is unexpected or an error, " +
       "use the think tool as a private scratchpad: list the specific policy rules that apply, " +
       "check that you have every required argument, and verify the planned action complies. " +
+      "An argument you can fill from the caller's own description or from an earlier tool " +
+      "result (an id, a name, the item they pointed to) is present — pass that and let the " +
+      "tool accept or reject it; never stop a requested step, or ask, just because a value is " +
+      "less exact than you would like. " +
       "Thoughts are never shown or spoken to the customer.",
     description:
       "Use the tool to think about something. It will not obtain new information or change the " +

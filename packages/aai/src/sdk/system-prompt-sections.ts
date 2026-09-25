@@ -319,6 +319,15 @@ export const PROMPT_LISTENING = `\
  * replay on this prompt's own assembly (N=10): spoken-form values 5/10 ->
  * 0-1/10. Its "not a menu" clause is load-bearing — a first wording without it
  * made the model swap in the schema's EXAMPLE value 4/10; with it, 0-1/10.
+ *
+ * **The described-place bullet (last) applies the same principle to
+ * locations: a value the caller described ("my office", "the one you just
+ * found"), or one an earlier tool result supplies, counts as present. The
+ * model refused to pass descriptions and asked the caller for an exact
+ * value the tool could have resolved. Offline replay (N=10): asks for a
+ * described place 2/10 -> 0/10, while asks for a truly missing identifier
+ * were unchanged (0/60 reference values sent). The `think` guidance in
+ * `host/builtin-tools.ts` carries the matching clause.
  */
 export const PROMPT_TOOLS = `\
 ## TOOLS
@@ -411,4 +420,8 @@ export const PROMPT_TOOLS = `\
   parameter's value FORMAT: lowercase, underscores for spaces, no
   possessives ("a gift card" -> gift_card). Keep the caller's thing —
   an example in the schema shows the format, not a menu to choose
-  from.`;
+  from.
+- A PLACE the caller described instead of spelling out — "my office",
+  "the train station", "the one you just found" — is still their value:
+  send their words (or the address from the earlier result they point
+  to) and let the tool resolve or reject it. Ask only if the call fails.`;
