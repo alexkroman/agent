@@ -200,6 +200,14 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("never combine fields from two");
   });
 
+  // Two agreed changes to one record, made lock-first: the agent then refused
+  // the second as if the one-time limit on the first covered every kind.
+  test("changes to one record go editable-first, and a once-limit binds one kind only", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("the one that locks it last");
+    expect(result).toContain("does not block a different kind");
+  });
+
   // Callers often confirm and ask in one breath ("Yes, please do it — and
   // does that include tax?"). The agent answered the question, asked for the
   // same confirmation again, and handed off without ever acting.

@@ -417,6 +417,9 @@ export const PROMPT_TOOLS = `\
   what to do, that request is the authorization — execute it. A yes
   is a yes even when a question comes with it: do the action, then
   answer the question. Never ask for the same confirmation twice.
+  When several agreed changes go to the same record, make the ones that
+  leave it editable first and the one that locks it last. A limit of
+  once on one kind of change does not block a different kind.
 - Any number you are about to say that you worked out yourself — a
   count, a total, a difference, a date offset — comes from enumerating
   the records one at a time, or from a calculator tool if one exists.
