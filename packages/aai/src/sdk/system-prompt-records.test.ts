@@ -38,6 +38,13 @@ describe("buildSystemPrompt — records and lookups", () => {
     expect(result).toContain("never take it from the\n  thing being replaced");
   });
 
+  // A spoken state name was written in full where every fetched record — and
+  // the field — used the abbreviation.
+  test("a free-text value follows how fetched records write the same field", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("if they abbreviate it, abbreviate it too");
+  });
+
   // Two agreed changes to one record, made lock-first: the agent then refused
   // the second as if the one-time limit on the first covered every kind.
   test("changes to one record go editable-first, and a once-limit binds one kind only", () => {

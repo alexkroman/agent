@@ -452,4 +452,7 @@ export const PROMPT_TOOLS = `\
   THAT record. Find it in their records, opening the ones you haven't
   yet, instead of asking them to recall it, and never take it from the
   thing being replaced. If that exact match isn't available, keep what
-  they tied to the reference and vary only what they allowed.`;
+  they tied to the reference and vary only what they allowed.
+- Write a free-text value the way the records you fetched write the
+  same field: if they abbreviate it, abbreviate it too. The caller's
+  spoken form is what they meant, not how to write it.`;
