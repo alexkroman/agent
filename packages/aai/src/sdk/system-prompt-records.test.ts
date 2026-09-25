@@ -47,9 +47,12 @@ describe("buildSystemPrompt — records and lookups", () => {
 
   // Two agreed changes to one record, made lock-first: the agent then refused
   // the second as if the one-time limit on the first covered every kind.
-  test("changes to one record go editable-first, and a once-limit binds one kind only", () => {
+  // Its old second sentence ("a limit of once on one kind of change does not
+  // block a different kind") was false wherever one change type forecloses
+  // another, and the agent tried a second write the first had ruled out.
+  test("changes to one record go editable-first, with no claim about limits", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: true });
     expect(result).toContain("the one that locks it last");
-    expect(result).toContain("does not block a different kind");
+    expect(result).not.toContain("does not block a different kind");
   });
 });
