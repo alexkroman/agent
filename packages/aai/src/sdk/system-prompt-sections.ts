@@ -380,7 +380,10 @@ export const PROMPT_TOOLS = `\
      the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
      and a missing or doubled final letter — starting with any letter
      the caller says is wrong. The same letter can be mis-heard the same
-     way every time, so hearing it twice is not proof.
+     way every time, so hearing it twice is not proof. A name the
+     caller SAID rather than spelled is a sound, not a spelling: also
+     try its other common spellings, first name and surname alike
+     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed).
      Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is

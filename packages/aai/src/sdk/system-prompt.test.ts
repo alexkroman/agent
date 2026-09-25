@@ -179,6 +179,18 @@ describe("buildSystemPrompt", () => {
     expect(ladder).not.toContain("A part the caller spelled");
   });
 
+  // A name heard SPOKEN ("Sophia") was sent eight times in one call while the
+  // account was spelled the other common way; letter confusions never turn one
+  // spelling of a name into the other, so the ladder never reached it.
+  test("the ladder tries a spoken name's other common spellings after the exact one", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    const onlyAfter = ladder.indexOf("Only after the exact spelling has failed");
+    const spoken = ladder.indexOf("its other common spellings");
+    expect(spoken).toBeGreaterThan(onlyAfter);
+    expect(ladder).toContain("first name and surname alike");
+  });
+
   // Callers often confirm and ask in one breath ("Yes, please do it — and
   // does that include tax?"). The agent answered the question, asked for the
   // same confirmation again, and handed off without ever acting.
