@@ -1,5 +1,26 @@
 # @alexkroman1/aai-ui
 
+## 19.0.0
+
+### Patch Changes
+
+- e43664a: Tighten promise handling found by the new type-aware lint: `aai start` awaits tracing shutdown inside an async stop routine, the in-process workflow engine's `dispatch` option now types the promise the engine already awaited, and `useCopy` checks for a missing clipboard explicitly.
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [fa9f694]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [7f6e8d6]
+- Updated dependencies [1446ed4]
+- Updated dependencies [c551022]
+- Updated dependencies [c551022]
+- Updated dependencies [b694949]
+- Updated dependencies [b694949]
+- Updated dependencies [c551022]
+  - @alexkroman1/aai@19.0.0
+
 ## 18.0.0
 
 ### Major Changes
