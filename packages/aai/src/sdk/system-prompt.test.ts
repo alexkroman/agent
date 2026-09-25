@@ -191,6 +191,15 @@ describe("buildSystemPrompt", () => {
     expect(ladder).toContain("first name and surname alike");
   });
 
+  // The agent told the caller a value "isn't on file" because the record they
+  // named lacked it — while another result it had already fetched held it —
+  // and elsewhere wrote an address built from two records' fields.
+  test("a value on file counts if any fetched result holds it, taken from one record", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("present if ANY result");
+    expect(result).toContain("never combine fields from two");
+  });
+
   // Callers often confirm and ask in one breath ("Yes, please do it — and
   // does that include tax?"). The agent answered the question, asked for the
   // same confirmation again, and handed off without ever acting.

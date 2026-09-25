@@ -439,4 +439,8 @@ export const PROMPT_TOOLS = `\
 - A PLACE the caller described instead of spelling out — "my office",
   "the train station", "the one you just found" — is still their value:
   send their words (or the address from the earlier result they point
-  to) and let the tool resolve or reject it. Ask only if the call fails.`;
+  to) and let the tool resolve or reject it. Ask only if the call fails.
+- A value the caller says is saved or on file is present if ANY result
+  you already fetched holds it, not only the record they named. Before
+  you say it isn't there, check every result you hold. Take all of its
+  parts from that ONE record — never combine fields from two.`;
