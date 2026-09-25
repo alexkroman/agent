@@ -312,6 +312,22 @@ export const PROMPT_LISTENING = `\
  * value being handled, and the tool result is always closer. Only the sending
  * direction ever needed the rule: a mistyped argument is a failed lookup,
  * while a respelled spoken id is the same record with the hyphens moved.
+ *
+ * **The value-format bullet (last) exists because callers NAME categories in
+ * speech, possessives and spaces included, and the model copied the spoken
+ * phrase straight into code-like parameters. Measured by offline
+ * replay on this prompt's own assembly (N=10): spoken-form values 5/10 ->
+ * 0-1/10. Its "not a menu" clause is load-bearing — a first wording without it
+ * made the model swap in the schema's EXAMPLE value 4/10; with it, 0-1/10.
+ *
+ * **The described-place bullet (last) applies the same principle to
+ * locations: a value the caller described ("my office", "the one you just
+ * found"), or one an earlier tool result supplies, counts as present. The
+ * model refused to pass descriptions and asked the caller for an exact
+ * value the tool could have resolved. Offline replay (N=10): asks for a
+ * described place 2/10 -> 0/10, while asks for a truly missing identifier
+ * were unchanged (0/60 reference values sent). The `think` guidance in
+ * `host/builtin-tools.ts` carries the matching clause.
  */
 export const PROMPT_TOOLS = `\
 ## TOOLS
@@ -398,4 +414,14 @@ export const PROMPT_TOOLS = `\
   longer covers it.
 - If you're stuck after exhausting the retries above, say so, offer what
   you can do instead, and hand off if a transfer or escalation tool
-  exists.`;
+  exists.
+- When a parameter names a type, category, mode, or key rather than
+  taking the caller's free text, send what the caller named in that
+  parameter's value FORMAT: lowercase, underscores for spaces, no
+  possessives ("a gift card" -> gift_card). Keep the caller's thing —
+  an example in the schema shows the format, not a menu to choose
+  from.
+- A PLACE the caller described instead of spelling out — "my office",
+  "the train station", "the one you just found" — is still their value:
+  send their words (or the address from the earlier result they point
+  to) and let the tool resolve or reject it. Ask only if the call fails.`;
