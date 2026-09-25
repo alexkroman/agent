@@ -380,7 +380,10 @@ export const PROMPT_TOOLS = `\
      the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
      and a missing or doubled final letter — starting with any letter
      the caller says is wrong. The same letter can be mis-heard the same
-     way every time, so hearing it twice is not proof.
+     way every time, so hearing it twice is not proof. A name the
+     caller SAID rather than spelled is a sound, not a spelling: also
+     try its other common spellings, first name and surname alike
+     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed).
      Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
@@ -414,6 +417,8 @@ export const PROMPT_TOOLS = `\
   what to do, that request is the authorization — execute it. A yes
   is a yes even when a question comes with it: do the action, then
   answer the question. Never ask for the same confirmation twice.
+  When several agreed changes go to the same record, make the ones that
+  leave it editable first and the one that locks it last.
 - Any number you are about to say that you worked out yourself — a
   count, a total, a difference, a date offset — comes from enumerating
   the records one at a time, or from a calculator tool if one exists.
@@ -436,4 +441,17 @@ export const PROMPT_TOOLS = `\
 - A PLACE the caller described instead of spelling out — "my office",
   "the train station", "the one you just found" — is still their value:
   send their words (or the address from the earlier result they point
-  to) and let the tool resolve or reject it. Ask only if the call fails.`;
+  to) and let the tool resolve or reject it. Ask only if the call fails.
+- A value the caller says is saved or on file is present if ANY result
+  you already fetched holds it, not only the record they named. Before
+  you say it isn't there, check every result you hold. Take all of its
+  parts from that ONE record — never combine fields from two.
+- A choice the caller defines by pointing at something else they have
+  — "same as my other one", "like last time" — takes its value from
+  THAT record. Find it in their records, opening the ones you haven't
+  yet, instead of asking them to recall it, and never take it from the
+  thing being replaced. If that exact match isn't available, keep what
+  they tied to the reference and vary only what they allowed.
+- Write a free-text value the way the records you fetched write the
+  same field: if they abbreviate it, abbreviate it too. The caller's
+  spoken form is what they meant, not how to write it.`;
