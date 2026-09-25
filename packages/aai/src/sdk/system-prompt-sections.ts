@@ -446,4 +446,10 @@ export const PROMPT_TOOLS = `\
 - A value the caller says is saved or on file is present if ANY result
   you already fetched holds it, not only the record they named. Before
   you say it isn't there, check every result you hold. Take all of its
-  parts from that ONE record — never combine fields from two.`;
+  parts from that ONE record — never combine fields from two.
+- A choice the caller defines by pointing at something else they have
+  — "same as my other one", "like last time" — takes its value from
+  THAT record. Find it in their records, opening the ones you haven't
+  yet, instead of asking them to recall it, and never take it from the
+  thing being replaced. If that exact match isn't available, keep what
+  they tied to the reference and vary only what they allowed.`;
