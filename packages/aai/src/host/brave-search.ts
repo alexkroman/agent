@@ -11,19 +11,15 @@
  * the key for not being bot-challenged. Brave was `web_search`'s backend
  * once, and was dropped only because the key was required for everyone.
  *
- * The key is read from the AGENT's env on every call (`ctx.env`), never from
- * the host's `process.env` — the platform owns no provider credential. It is
- * not added to `requiredEnv` for you, the same rule an MCP server's `tokenEnv`
- * follows: list it there so a deploy checks it.
+ * The key handling — agent env only, not derived into `requiredEnv` — is
+ * `_keyed-api.ts`'s, shared with `google_places`.
  */
 
 import { Parser } from "htmlparser2";
 import { z } from "zod";
-import { missingEnvMessage } from "../sdk/_missing-env.ts";
-import { MAX_JSON_BYTES } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
-import { fetchCappedJson } from "./_fetch-capped.ts";
+import { fetchKeyedJson } from "./_keyed-api.ts";
 import { builtinFetch } from "./ssrf.ts";
 
 /** The agent-env variable `brave_search` reads its subscription token from. */
@@ -75,15 +71,6 @@ function plainText(html: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** The model reads this, so a rejected key is named as the fix rather than a status. */
-function braveError(status: number | undefined, error: string): string {
-  if (status === 401 || status === 403 || status === 422) {
-    return `Brave Search rejected ${BRAVE_API_KEY_ENV} (${error}) — check the key is valid and has a Search plan`;
-  }
-  if (status === 429) return `Brave Search rate limit reached (${error}) — try again shortly`;
-  return `Brave Search request failed: ${error}`;
-}
-
 export function createBraveSearch(
   fetchFn = builtinFetch(),
 ): ToolDef<typeof braveSearchParams> & { guidance: string } {
@@ -97,18 +84,20 @@ export function createBraveSearch(
       "known. Use freshness to restrict to recent pages.",
     inputSchema: braveSearchParams,
     async execute(args, ctx) {
-      const key = ctx.env[BRAVE_API_KEY_ENV]?.trim();
-      if (!key) return { error: missingEnvMessage(BRAVE_API_KEY_ENV) };
       const count = Math.max(1, Math.min(args.max_results ?? 5, MAX_SEARCH_RESULTS));
       const params = new URLSearchParams({ q: args.query, count: String(count) });
       if (args.freshness) params.set("freshness", FRESHNESS[args.freshness]);
-      const res = await fetchCappedJson(`${BRAVE_ENDPOINT}?${params}`, {
+      const res = await fetchKeyedJson(ctx, {
+        service: "Brave Search",
+        keyEnv: BRAVE_API_KEY_ENV,
+        keyHint: "has a Search plan",
+        // Brave answers a malformed subscription token with 422.
+        rejectedStatuses: [422],
+        url: `${BRAVE_ENDPOINT}?${params}`,
+        headers: (key) => ({ "X-Subscription-Token": key }),
         fetch: fetchFn,
-        accept: "application/json",
-        headers: { "X-Subscription-Token": key },
-        maxBytes: MAX_JSON_BYTES,
       });
-      if (!res.ok) return { error: braveError(res.status, res.error) };
+      if (!res.ok) return { error: res.error };
       const parsed = BraveResponseSchema.safeParse(res.value);
       if (!parsed.success) return { error: "Brave Search response had an unexpected shape" };
       return (parsed.data.web?.results ?? []).slice(0, count).map((r) =>

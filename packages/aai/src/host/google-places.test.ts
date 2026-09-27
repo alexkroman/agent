@@ -113,7 +113,7 @@ describe("google_places", () => {
     );
     expect(result).toEqual({
       error:
-        "Google Places rejected the request (403 Forbidden) — check GOOGLE_PLACES_API_KEY is valid and has the Places API (New) enabled",
+        "Google Places rejected GOOGLE_PLACES_API_KEY (403 Forbidden) — check the key is valid and has the Places API (New) enabled",
     });
   });
 });

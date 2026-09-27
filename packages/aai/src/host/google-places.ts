@@ -11,17 +11,14 @@
  * details, rating, price level, hours — is a cost decision this module makes
  * once, and it is the set a voice agent actually reads out.
  *
- * The key is read from the AGENT's env on every call, never the host's
- * `process.env`, and is not added to `requiredEnv` for you — the rule
- * `brave-search.ts` states in full.
+ * The key handling — agent env only, not derived into `requiredEnv` — is
+ * `_keyed-api.ts`'s, shared with `brave_search`.
  */
 
 import { z } from "zod";
-import { missingEnvMessage } from "../sdk/_missing-env.ts";
-import { MAX_JSON_BYTES } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
-import { fetchCappedJson } from "./_fetch-capped.ts";
+import { fetchKeyedJson } from "./_keyed-api.ts";
 import { builtinFetch } from "./ssrf.ts";
 
 /** The agent-env variable `google_places` reads its API key from. */
@@ -93,16 +90,6 @@ function closure(status: string | undefined): string | undefined {
   return status.toLowerCase().replace(/_/g, " ");
 }
 
-function placesError(status: number | undefined, error: string): string {
-  // Google answers a bad or unauthorised key with 400 API_KEY_INVALID or 403
-  // PERMISSION_DENIED; the body is not read, so both are named by status.
-  if (status === 400 || status === 401 || status === 403) {
-    return `Google Places rejected the request (${error}) — check ${GOOGLE_PLACES_API_KEY_ENV} is valid and has the Places API (New) enabled`;
-  }
-  if (status === 429) return `Google Places quota reached (${error}) — try again shortly`;
-  return `Google Places request failed: ${error}`;
-}
-
 export function createGooglePlaces(
   fetchFn = builtinFetch(),
 ): ToolDef<typeof googlePlacesParams> & { guidance: string } {
@@ -116,26 +103,30 @@ export function createGooglePlaces(
       "open now, weekly hours, website, and a Google Maps link, where Google has them.",
     inputSchema: googlePlacesParams,
     async execute(args, ctx) {
-      const key = ctx.env[GOOGLE_PLACES_API_KEY_ENV]?.trim();
-      if (!key) return { error: missingEnvMessage(GOOGLE_PLACES_API_KEY_ENV) };
       const count = Math.max(1, Math.min(args.max_results ?? 5, MAX_PLACES));
-      const res = await fetchCappedJson(SEARCH_TEXT_ENDPOINT, {
-        fetch: fetchFn,
-        accept: "application/json",
-        headers: {
+      const res = await fetchKeyedJson(ctx, {
+        service: "Google Places",
+        keyEnv: GOOGLE_PLACES_API_KEY_ENV,
+        keyHint: "has the Places API (New) enabled",
+        // Google answers an invalid key with 400 API_KEY_INVALID; the body is
+        // not read, so it is named by status.
+        rejectedStatuses: [400],
+        url: SEARCH_TEXT_ENDPOINT,
+        headers: (key) => ({
           "Content-Type": "application/json",
           "X-Goog-Api-Key": key,
           "X-Goog-FieldMask": FIELD_MASK,
-        },
-        // `openNow: false` would be read as a filter too, so it is sent only as true.
+        }),
+        // `openNow` only when asked: false and absent mean the same, and the
+        // request stays the minimal one.
         body: JSON.stringify({
           textQuery: args.query,
           pageSize: count,
           openNow: args.open_now || undefined,
         }),
-        maxBytes: MAX_JSON_BYTES,
+        fetch: fetchFn,
       });
-      if (!res.ok) return { error: placesError(res.status, res.error) };
+      if (!res.ok) return { error: res.error };
       const parsed = SearchTextResponseSchema.safeParse(res.value);
       if (!parsed.success) return { error: "Google Places response had an unexpected shape" };
       // Absent fields are dropped rather than sent as `undefined`, so the model
