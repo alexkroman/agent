@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 import { MAX_JSON_BYTES } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { fetchCappedJson } from "./_fetch-capped.ts";
 import { builtinFetch } from "./ssrf.ts";
@@ -299,7 +300,7 @@ function dailyRows(daily: NonNullable<Forecast["daily"]>) {
 function shapeForecast(forecast: Forecast, place: GeocodeResult, units: Units) {
   const imperial = units === "imperial";
   const { current, daily } = forecast;
-  return {
+  return omitUndefined({
     location: placeName(place),
     timezone: forecast.timezone ?? place.timezone,
     units: {
@@ -308,19 +309,17 @@ function shapeForecast(forecast: Forecast, place: GeocodeResult, units: Units) {
       wind: imperial ? "mph" : "km/h",
       precipitation: imperial ? "in" : "mm",
     },
-    ...(current && {
-      current: {
-        time: current.time,
-        conditions: conditions(current.weather_code),
-        temperature: current.temperature_2m,
-        feelsLike: current.apparent_temperature,
-        humidityPercent: current.relative_humidity_2m,
-        windSpeed: current.wind_speed_10m,
-        precipitation: current.precipitation,
-      },
-    }),
-    ...(daily && { daily: dailyRows(daily) }),
-  };
+    current: current && {
+      time: current.time,
+      conditions: conditions(current.weather_code),
+      temperature: current.temperature_2m,
+      feelsLike: current.apparent_temperature,
+      humidityPercent: current.relative_humidity_2m,
+      windSpeed: current.wind_speed_10m,
+      precipitation: current.precipitation,
+    },
+    daily: daily && dailyRows(daily),
+  });
 }
 
 export function createOpenMeteo(

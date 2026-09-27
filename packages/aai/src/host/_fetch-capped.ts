@@ -29,6 +29,7 @@
  */
 
 import { FETCH_TIMEOUT_MS, TOOL_USER_AGENT } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { errorMessage } from "../sdk/utils.ts";
 
 /** Options for {@link fetchCappedText}. @internal */
@@ -108,15 +109,19 @@ async function readCapped(
 export async function fetchCappedText(url: string, opts: FetchCappedOptions): Promise<CappedText> {
   const preamble =
     opts.accept === undefined ? undefined : { "User-Agent": TOOL_USER_AGENT, Accept: opts.accept };
-  const resp = await opts.fetch(url, {
-    headers: { ...preamble, ...opts.headers },
-    ...(opts.body === undefined ? {} : { method: "POST", body: opts.body }),
-    // A fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body, always.
-    // There used to be a caller-supplied `signal` here that REPLACED it, which
-    // no caller ever passed and which would have silently retired this module's
-    // own byte-read deadline for whoever did.
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const resp = await opts.fetch(
+    url,
+    omitUndefined({
+      headers: { ...preamble, ...opts.headers },
+      method: opts.body === undefined ? undefined : "POST",
+      body: opts.body,
+      // A fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body, always.
+      // There used to be a caller-supplied `signal` here that REPLACED it, which
+      // no caller ever passed and which would have silently retired this module's
+      // own byte-read deadline for whoever did.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    }),
+  );
   if (!resp.ok) {
     // Nothing reads a failed body, and an undrained one keeps the connection
     // pinned until the timeout.

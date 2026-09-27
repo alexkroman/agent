@@ -21,6 +21,7 @@ import { Parser } from "htmlparser2";
 import { z } from "zod";
 import { missingEnvMessage } from "../sdk/_missing-env.ts";
 import { MAX_JSON_BYTES } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { fetchCappedJson } from "./_fetch-capped.ts";
 import { builtinFetch } from "./ssrf.ts";
@@ -110,12 +111,14 @@ export function createBraveSearch(
       if (!res.ok) return { error: braveError(res.status, res.error) };
       const parsed = BraveResponseSchema.safeParse(res.value);
       if (!parsed.success) return { error: "Brave Search response had an unexpected shape" };
-      return (parsed.data.web?.results ?? []).slice(0, count).map((r) => ({
-        title: plainText(r.title),
-        url: r.url,
-        description: plainText(r.description ?? ""),
-        ...(r.age ? { age: r.age } : {}),
-      }));
+      return (parsed.data.web?.results ?? []).slice(0, count).map((r) =>
+        omitUndefined({
+          title: plainText(r.title),
+          url: r.url,
+          description: plainText(r.description ?? ""),
+          age: r.age || undefined,
+        }),
+      );
     },
   };
 }

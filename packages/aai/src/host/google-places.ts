@@ -127,10 +127,11 @@ export function createGooglePlaces(
           "X-Goog-Api-Key": key,
           "X-Goog-FieldMask": FIELD_MASK,
         },
+        // `openNow: false` would be read as a filter too, so it is sent only as true.
         body: JSON.stringify({
           textQuery: args.query,
           pageSize: count,
-          ...(args.open_now ? { openNow: true } : {}),
+          openNow: args.open_now || undefined,
         }),
         maxBytes: MAX_JSON_BYTES,
       });
