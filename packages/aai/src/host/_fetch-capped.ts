@@ -29,6 +29,7 @@
  */
 
 import { FETCH_TIMEOUT_MS, TOOL_USER_AGENT } from "../sdk/constants.ts";
+import { errorMessage } from "../sdk/utils.ts";
 
 /** Options for {@link fetchCappedText}. @internal */
 export type FetchCappedOptions = {
@@ -44,6 +45,11 @@ export type FetchCappedOptions = {
   accept?: string | undefined;
   /** Extra headers, merged over (and able to replace) the pair above. */
   headers?: Record<string, string> | undefined;
+  /**
+   * A request body, which makes the request a POST. Only `google_places` sends
+   * one — the Places API (New) text search has no GET form.
+   */
+  body?: string | undefined;
 };
 
 /**
@@ -104,6 +110,7 @@ export async function fetchCappedText(url: string, opts: FetchCappedOptions): Pr
     opts.accept === undefined ? undefined : { "User-Agent": TOOL_USER_AGENT, Accept: opts.accept };
   const resp = await opts.fetch(url, {
     headers: { ...preamble, ...opts.headers },
+    ...(opts.body === undefined ? {} : { method: "POST", body: opts.body }),
     // A fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body, always.
     // There used to be a caller-supplied `signal` here that REPLACED it, which
     // no caller ever passed and which would have silently retired this module's
@@ -126,4 +133,41 @@ export async function fetchCappedText(url: string, opts: FetchCappedOptions): Pr
   // A bodyless response (204, HEAD) has nothing to read and nothing to cap.
   if (!resp.body) return { ok: true, text: "", truncated: false };
   return { ok: true, ...(await readCapped(resp.body, opts.maxBytes)) };
+}
+
+/**
+ * A parsed JSON body, or the one-line reason there is none.
+ *
+ * @internal
+ */
+export type CappedJson =
+  | { ok: true; value: unknown }
+  | { ok: false; status?: number; error: string };
+
+/**
+ * {@link fetchCappedText} for the builtins that call a fixed JSON API
+ * (`open_meteo`, `brave_search`, `google_places`) — the read, the refusal of a
+ * clipped body, and the parse, which each of them would otherwise restate.
+ *
+ * Unlike its sibling it never throws: a network failure or SSRF rejection is an
+ * `{ ok: false }` too, because all three answer the model with an `error` field
+ * rather than a thrown turn. `status` is set only for an HTTP failure, so a
+ * caller can name a rejected credential (401/403) apart from a flaky network.
+ *
+ * @internal
+ */
+export async function fetchCappedJson(url: string, opts: FetchCappedOptions): Promise<CappedJson> {
+  let body: CappedText;
+  try {
+    body = await fetchCappedText(url, opts);
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+  if (!body.ok) return { ok: false, status: body.status, error: body.error };
+  if (body.truncated) return { ok: false, error: "Response too large" };
+  try {
+    return { ok: true, value: JSON.parse(body.text) as unknown };
+  } catch {
+    return { ok: false, error: "Response was not valid JSON" };
+  }
 }

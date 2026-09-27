@@ -2042,23 +2042,27 @@ it, `[]` for none.
 
 | Tool | Description | Params |
 | --- | --- | --- |
-| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `maxResults?` (default 5) |
+| `web_search` | Search the web (DuckDuckGo), no key | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
-| `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
+| `get_page_design` | Fetch URL's raw HTML + CSS to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
 | `run_code` | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout) | `code` |
 | `think` | Private reasoning scratchpad, no side effects | `thought` |
 | `remember` | Save a confirmed fact to session notes | `key`, `value` |
 | `recall` | Read session notes saved with `remember` | `key?` |
 | `calculate` | Safe arithmetic evaluator, no code execution | `expression` |
+| `open_meteo` | Weather + forecast (Open-Meteo), no key | `location`, `days?`, `units?` |
+| `brave_search` | Brave Search API — `BRAVE_API_KEY` | `query`, `max_results?`, `freshness?` |
+| `google_places` | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY` | `query`, `max_results?`, `open_now?` |
+
+A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
 
 **Every builtin in this table is a tool the MODEL calls — not a function
 your code can call.** Listing one in `builtinTools` adds it to the model's
 tool set; it does not import anything into `agent.ts`. There is no
 `fetch_json()` you can call from a tool's `execute`.
 
-So the two ways to reach an API are genuinely different designs, and both
-are valid:
+So there are two valid designs for reaching an API:
 
 - **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
   should decide the URL and read the JSON — general lookups you cannot
@@ -2067,19 +2071,13 @@ are valid:
   URL and the shape — a specific endpoint, auth, or a response you want to
   reshape before the model sees it.
 
-The network builtins take model-controlled URLs, so they are SSRF-screened
-when the runtime is not inside a container (private/loopback blocked). Your
-own tool code has open egress either way.
+Network builtins are SSRF-screened outside a container (private/loopback
+blocked). Your own tool code has open egress either way.
 
 ## Calling an external API from your own tool code
 
 `fetch` inside a tool's `execute` works directly — no declaration needed,
-identical under `aai dev` and deployed. This is the right choice when your
-code owns the URL.
-
-Reaching for the `fetch_json` builtin instead is a different design, not a
-shortcut for the same one: it hands URL choice to the model. You cannot
-call it from `execute` — see the builtin table above.
+identical under `aai dev` and deployed. Right when your code owns the URL.
 
 ## Small helpers — `@alexkroman1/aai/utils`
 

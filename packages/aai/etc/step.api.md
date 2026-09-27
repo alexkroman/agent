@@ -20,7 +20,7 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
 
 // @public
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;

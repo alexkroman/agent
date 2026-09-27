@@ -132,6 +132,9 @@ describe("type ↔ schema alignment", () => {
         "remember",
         "recall",
         "calculate",
+        "open_meteo",
+        "brave_search",
+        "google_places",
       ]
     `);
   });

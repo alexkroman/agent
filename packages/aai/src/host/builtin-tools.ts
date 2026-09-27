@@ -25,7 +25,10 @@ import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
+import { createBraveSearch } from "./brave-search.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
+import { createGooglePlaces } from "./google-places.ts";
+import { createOpenMeteo } from "./open-meteo.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
@@ -318,6 +321,13 @@ const FETCH_BUILTINS: Record<
   visit_webpage: createVisitWebpage,
   get_page_design: (fetchImpl = builtinFetch()) => createGetPageDesign(fetchImpl),
   fetch_json: createFetchJson,
+  // Fixed-host API clients. Their URLs are ours, not the model's, but they take
+  // the same screened fetch so every network builtin has one egress path — and
+  // so a spec injects one double for all of them. Two read a key from the
+  // agent env at call time; `open_meteo` is keyless.
+  open_meteo: createOpenMeteo,
+  brave_search: createBraveSearch,
+  google_places: createGooglePlaces,
 };
 
 /**

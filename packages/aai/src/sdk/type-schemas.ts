@@ -39,6 +39,9 @@ export const BuiltinToolSchema = z.enum([
   "remember",
   "recall",
   "calculate",
+  "open_meteo",
+  "brave_search",
+  "google_places",
 ]);
 
 /**

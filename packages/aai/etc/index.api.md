@@ -153,7 +153,7 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | (string & {});
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
 
 // @public
 export interface ClientEventMap {
