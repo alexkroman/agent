@@ -33,6 +33,7 @@ import {
   createPostgresStateBackend,
   createSessionEventStream,
   createSessionStateStore,
+  SESSION_CLIENT_TABLE,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   sessionStateDdl,
@@ -122,11 +123,14 @@ describeWithPg("session state over a real Postgres", () => {
       await sql(statement);
     }
     // The grants `provisionAppDatabase` issues alongside that DDL, spelled the
-    // same way — so a change to what the platform grants fails here.
+    // same way — so a change to what the platform grants fails here. EVERY table
+    // the DDL creates: `discard` reads the client table in the same statement
+    // that deletes slots, so a tenant missing that one grant reclaims nothing.
     await sql(`grant usage, create on schema ${APP_DB_SCHEMA} to "${APP_DB}"`);
     await sql(
       `grant select, insert, update, delete on ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE},` +
-        ` ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} to "${APP_DB}"`,
+        ` ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE},` +
+        ` ${APP_DB_SCHEMA}.${SESSION_CLIENT_TABLE} to "${APP_DB}"`,
     );
     tenantDb = createPostgresDb({ url: tenantUrl() });
   });

@@ -225,6 +225,7 @@ export { createPlatformStateBackend } from "./session-state/backends/platform.ts
 // `WORKFLOW_WAKE_TABLE` below states for its own table.
 export {
   createPostgresStateBackend,
+  SESSION_CLIENT_TABLE,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   // The tables' DDL, applied by whoever CREATES an app schema — the platform, at
