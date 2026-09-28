@@ -142,6 +142,34 @@ export const PROMPT_PERSONALITY = `\
  * worth knowing before a future reader "strengthens" it with a claim the voice
  * does not support. What DOES reach the speaker is a leaked reasoning tag:
  * `<thought>` came out as the word "thought".
+ *
+ * **The address, unit and acronym rules came from the agent's REAL call audio,
+ * not only from synthesized probes.** The agent channel of 52 tau2-bench
+ * retail calls was put back through STT and diffed against what the agent
+ * wrote, and 2,680 agent turns across 17 runs were counted for each written
+ * shape. The model hyphenated a ZIP on its own but wrote it bare inside an
+ * address in 2.6% of turns ("Chicago, Illinois 60612", "New York, NY 10093"),
+ * so the address is named rather than left to the general rule. Units glued
+ * to a number (1.9% of turns) came out as letters — `24MP` "twenty four M P",
+ * `16GB` "sixteen G B" on some reads and "gigabytes" on others, `1080p` "one
+ * thousand eighty P" — while `1000ml` was read "milliliters", so the rule is
+ * about the unit's WORD, not about every abbreviation. `RMA` was read "room A"
+ * on 2 of 2 syntheses and `HEPA` "ichipa" on 1 of 2; the acronym rule covers
+ * the first and deliberately leaves the second whole, since spelling out a
+ * word people say as a word is its own mis-reading.
+ *
+ * **That STT round trip is NOT a judge of numbers or emails, and reads as one.**
+ * Even with formatting off, AssemblyAI STT normalizes internally and speaks the
+ * result back: audio of `1-0-3-7` read digit by digit came back "ten thirty
+ * seven", `7-2-8-5` "seven thousand two hundred eighty five", and a spoken
+ * "dot" in an email was dropped (and once invented where none was said). The
+ * audio was right each time — synthesized duration matched the digit reading
+ * (`1-0-3-7` 2.94s vs "one zero three seven" 3.04s vs "ten thirty-seven"
+ * 2.44s) and the TTS's own `WordBoundaries` frames list the "dot". The hyphen
+ * rule stands; a future audit that "finds" it failing should check the audio's
+ * length before the rule. The same caveat touches the table above, which was
+ * read back through the same STT: its email rows' missing "dot" is probably
+ * the recognizer's, not the voice's.
  */
 export const PROMPT_SPEAKING = `\
 ## SPEAKING
@@ -204,6 +232,15 @@ export const PROMPT_SPEAKING = `\
   thousand three hundred one at example com", and another address came
   out as different words entirely. Don't spell the letters either —
   that loses the "at". Spell one character only to settle an ambiguity.
+- An ADDRESS keeps the identifier rule: its ZIP is hyphenated like any
+  code, and its state is a word ("Chicago, Illinois, 6-0-6-1-2"),
+  never "IL 60612" or "NY".
+- Write a unit as its word: "24 megapixels", "16 gigabytes",
+  "ten-eighty-p". Letters glued to a number are read out one by one —
+  "24MP" is "twenty-four M P".
+- An acronym people say as separate letters is hyphenated like a code:
+  "R-M-A", because "RMA" written whole is read "room A". One people
+  say as a word ("HEPA") stays whole.
 - Put a value the caller has to write down — an identifier, an amount,
   an address, an email — in your FIRST sentence. Most of a long reply
   is never heard, and a value saved for the end is the part that goes

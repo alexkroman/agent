@@ -651,6 +651,17 @@ type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
 };
 
 // @public
+export function localStt(options?: LocalSttOptions): SttProvider;
+
+// @public
+export interface LocalSttOptions extends ProviderCredentialOptions {
+    language?: string;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    url?: string;
+}
+
+// @public
 export function openAICompatibleLlm(options: OpenAICompatibleLlmOptions): LlmProvider;
 
 // @public
@@ -663,12 +674,22 @@ export interface OpenAICompatibleLlmOptions {
 }
 
 // @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
 ```
 
 ## `@alexkroman1/aai/ffmpeg`
@@ -1554,6 +1575,17 @@ type LlmProviderName = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "go
 // @public
 type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
+// @public
+export const LOCAL_STT_KIND: "local";
+
+// @public
+interface LocalSttOptions extends ProviderCredentialOptions {
+    language?: string;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    url?: string;
+}
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
 
@@ -1755,6 +1787,14 @@ export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
 export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
+};
+
+// @public
+export function resolveLocalSttSettings(options: LocalSttOptions): {
+    url: string;
+    minTurnSilenceMs: number;
+    maxTurnSilenceMs: number;
+    language?: string;
 };
 
 // @public

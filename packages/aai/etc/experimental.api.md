@@ -18,6 +18,17 @@ type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
 };
 
 // @public
+export function localStt(options?: LocalSttOptions): SttProvider;
+
+// @public
+export interface LocalSttOptions extends ProviderCredentialOptions {
+    language?: string;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    url?: string;
+}
+
+// @public
 export function openAICompatibleLlm(options: OpenAICompatibleLlmOptions): LlmProvider;
 
 // @public
@@ -30,12 +41,22 @@ export interface OpenAICompatibleLlmOptions {
 }
 
 // @public
+interface ProviderCredentialOptions {
+    apiKeyEnv?: string;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
     readonly options: Options;
 }
+
+// @public
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+    readonly __stage?: "stt";
+};
 
 // (No @packageDocumentation comment for this package)
 

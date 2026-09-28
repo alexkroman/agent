@@ -13,6 +13,7 @@
  * `@cartesia/cartesia-js`.
  */
 
+import type { LocalSttOptions } from "@alexkroman1/aai/experimental";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import {
   ASSEMBLYAI_S2S_API_KEY_ENV,
@@ -27,6 +28,7 @@ import {
   DEEPGRAM_KIND,
   ELEVENLABS_API_KEY_ENV,
   ELEVENLABS_KIND,
+  LOCAL_STT_KIND,
   OPENAI_S2S_API_KEY_ENV,
   OPENAI_S2S_KIND,
   RIME_API_KEY_ENV,
@@ -159,6 +161,16 @@ const STT_REGISTRY: Record<string, AnyOpenerEntry<SttOpener>> = {
     envVar: SONIOX_API_KEY_ENV,
     open: (d: { options: SonioxSttOptions }) =>
       lazyOpener(SONIOX_KIND, async () => (await import("./stt/soniox.ts")).openSoniox(d.options)),
+  },
+  // A model on the developer's own machine takes no credential by default, so
+  // the entry names NO env var: `requiredProviderEnvVars` then demands none,
+  // and a descriptor's `apiKeyEnv` still routes a bearer token when set.
+  [LOCAL_STT_KIND]: {
+    envVar: "",
+    open: (d: { options: LocalSttOptions }) =>
+      lazyOpener(LOCAL_STT_KIND, async () =>
+        (await import("./stt/local.ts")).openLocalStt(d.options),
+      ),
   },
 };
 
@@ -458,6 +470,8 @@ function refreshProviderEnvVars(): void {
     // the injected AssemblyAI pipeline, which no registry entry represents.
     ASSEMBLYAI_STT_API_KEY_ENV,
   ]);
+  // A credential-free kind (`local`) registers "", which is no variable name.
+  derived.delete("");
   allProviderEnvVars.length = 0;
   allProviderEnvVars.push(...derived);
 }

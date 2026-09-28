@@ -31,6 +31,8 @@ import { omitUndefined } from "./sdk/omit-undefined.ts";
 import { llm } from "./sdk/providers/llm/llm.ts";
 import type { LlmProvider } from "./sdk/providers.ts";
 
+export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
+
 /** Options for {@link openAICompatibleLlm}. */
 export interface OpenAICompatibleLlmOptions {
   /**

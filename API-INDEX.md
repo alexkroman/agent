@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 430 names
+- [Agent authoring](#agent-authoring) — 432 names
 - [Browser client](#browser-client) — 137 names
 - [Testing and evals](#testing-and-evals) — 216 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 326 names
+- [Framework internals](#framework-internals) — 328 names
 
 ## Agent authoring
 
@@ -337,6 +337,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `isTransientStatus` | function | `@alexkroman1/aai/step` | `aai:step` | Will another attempt plausibly answer differently? |
 | `isoDate` | function | `@alexkroman1/aai` | `aai:calendar` | A calendar date argument: `YYYY-MM-DD`, and a real date. |
 | `llm`, `LlmOptions` | function | `@alexkroman1/aai/llm` | `aai:llm` | Build an LLM descriptor for `agent({ llm })`, `subagent({ llm })` or `ctx.generate({ llm })`. |
+| `localStt`, `LocalSttOptions` | function | `@alexkroman1/aai/experimental` |  | Build a local-model STT descriptor. |
 | `mapConcurrent` | function | `@alexkroman1/aai/step` | `aai:step` | Map `items` through `run`, at most `width` at a time, in a replay-safe order. |
 | `mapSettled` | function | `@alexkroman1/aai/step` | `aai:step` | Map `items` through `run`, at most `width` at a time, settling each item rather than racing to the first rejection. |
 | `mcpToolName` | function | `@alexkroman1/aai` | `aai:agent` | The name the MODEL calls, for one remote tool on one server. |
@@ -1084,6 +1085,7 @@ trace or a type error can be traced back to something.
 | `KNOWN_LLM_PROVIDERS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `KnownGatewayModel` | type | `@alexkroman1/aai/host-internal` |  | The ids this catalog was generated with — the literal half of `AssemblyAIGatewayModel`, derived rather than listed twice. |
 | `KnownLlmProvider` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `LOCAL_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents memory abuse via `ctx.send`. |
@@ -1307,6 +1309,7 @@ trace or a type error can be traced back to something.
 | `resolveCartesiaTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveDeepgramSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveElevenLabsSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveLocalSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveRimeTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveSonioxSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `runAgentGuardrails` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

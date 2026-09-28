@@ -5,12 +5,10 @@ import type { SonioxSttOptions } from "@alexkroman1/aai/stt";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
-import { createAudioSendGate } from "../../_audio-gate.ts";
-import { pcm16ToBytes } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import { dropSocket, openGuardedWs } from "../_socket.ts";
-import { closeOnAbort, createSttSessionShell, requireApiKey } from "../_utils.ts";
+import { dropSocket, openGuardedWs, wireSttPcmSocket } from "../_socket.ts";
+import { createSttSessionShell, requireApiKey } from "../_utils.ts";
 import {
   createSttError,
   type SttEvents,
@@ -203,24 +201,10 @@ export function openSoniox(opts: SonioxSttOptions = {}): SttOpener {
         if (res) handleResponse(res, emit, finalBuf);
       });
 
-      ws.on("error", (err: Error) => shell.onSocketError(err));
-      ws.on("close", (code: number) => shell.onSocketClose(code));
-
-      closeOnAbort(openOpts.signal, shell.close);
-
-      // Drop audio frames while the provider link is stalled — mic audio is
-      // real-time paced and loss-tolerant; see _audio-gate.ts.
-      const audioGate = createAudioSendGate({
-        bufferedAmount: () => ws.bufferedAmount,
-        label: "Soniox STT",
-      });
+      const sendAudio = wireSttPcmSocket(ws, shell, openOpts.signal, "Soniox STT");
 
       return {
-        sendAudio(pcm: Int16Array) {
-          if (shell.isClosed() || ws.readyState !== WebSocket.OPEN) return;
-          if (audioGate.shouldDrop()) return;
-          ws.send(pcm16ToBytes(pcm), { binary: true });
-        },
+        sendAudio,
         on: shell.on,
         close: shell.close,
       };
