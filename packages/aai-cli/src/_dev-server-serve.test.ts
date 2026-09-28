@@ -82,6 +82,7 @@ describe("viteDevConfig", () => {
     const proxy = config.server?.proxy as Record<string, unknown>;
     // Without ws:true the served client's WebSocket never connects.
     expect(proxy["/websocket"]).toEqual({ target: "http://127.0.0.1:3001", ws: true });
+    expect(proxy["/inbox"]).toEqual({ target: "http://127.0.0.1:3001", ws: true });
     expect(proxy["/health"]).toBe("http://127.0.0.1:3001");
   });
 

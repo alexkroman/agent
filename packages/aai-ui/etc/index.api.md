@@ -89,6 +89,8 @@ export type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -145,7 +147,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -363,6 +365,8 @@ export type Session = SessionSnapshot & SessionActions;
 export type SessionActions = {
     start(): void;
     cancel(): void;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     restart(): void;
@@ -423,6 +427,7 @@ export { SessionErrorCode }
 export type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
+    readonly micMuted: boolean;
     readonly apiUrl: string;
     readonly contentVersion: number;
     readonly messages: ChatMessage[];
@@ -790,6 +795,9 @@ export type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
     resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

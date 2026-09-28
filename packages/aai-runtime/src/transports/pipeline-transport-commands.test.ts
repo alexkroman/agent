@@ -120,6 +120,7 @@ function harness(overrides: { terminated?: boolean } = {}) {
     nudger: { arm: note("nudger.arm"), onUserSpeech: note("nudger.onUserSpeech") },
     speculation,
     manualTurn: AUTO_TURN_DETECTION,
+    commitTypedTurn: note("commitTypedTurn"),
     isBusy: () => false,
     abortInFlightTurn: note("abortInFlightTurn"),
     runChainedTurn: (text, label, kind) => {
@@ -136,13 +137,13 @@ function harness(overrides: { terminated?: boolean } = {}) {
   // this module defines all four. Narrowed once here so every case below calls
   // them unconditionally — a `?.` in each test would pass just as happily
   // against a transport that had stopped defining one.
-  const { injectTurn, seedHistory, reset, onPlaybackProgress } = transport;
-  if (!(injectTurn && seedHistory && reset && onPlaybackProgress)) {
+  const { injectTurn, seedHistory, reset, onPlaybackProgress, sendUserText } = transport;
+  if (!(injectTurn && seedHistory && reset && onPlaybackProgress && sendUserText)) {
     throw new Error("createPipelineCommands must define every optional Transport verb");
   }
   return {
     transport,
-    verbs: { injectTurn, seedHistory, reset, onPlaybackProgress },
+    verbs: { injectTurn, seedHistory, reset, onPlaybackProgress, sendUserText },
     calls,
     seeded,
     sendAudio,
@@ -213,6 +214,15 @@ describe("createPipelineCommands", () => {
     ]);
   });
 
+  test("sendUserText hands the typed turn to the user-activity path, under either policy", () => {
+    // Deliberately NOT behind `manualOrWarn`: the push-to-talk verbs are about
+    // who ends a SPOKEN turn, and a typed turn is complete when it arrives. The
+    // interruption and the reports are `commitTypedTurn`'s, not this router's.
+    const { verbs, calls } = harness();
+    verbs.sendUserText("what's the weather");
+    expect(calls).toEqual(["commitTypedTurn(what's the weather)"]);
+  });
+
   test("seedHistory hands the client's resent conversation straight to history", () => {
     // A reconnect resends what the browser held; both views are restored so the
     // resumed agent keeps memory of the prior conversation. The list is passed
@@ -261,13 +271,14 @@ describe("createPipelineCommands", () => {
 
 describe("after teardown", () => {
   test("the verbs that touch a gone session go quiet, and the others still run", () => {
-    // `isTerminated` guards audio, cancel, inject and playback reports — each
+    // `isTerminated` guards audio, cancel, inject, typed turns and playback reports — each
     // reaches a collaborator that belongs to a session which no longer exists.
     // `seedHistory` and `reset` deliberately do not consult it.
     const { transport, verbs, calls, sendAudio } = harness({ terminated: true });
     transport.sendUserAudio(new Uint8Array([0, 1]));
     transport.cancelReply();
     verbs.injectTurn("hello?");
+    verbs.sendUserText("anyone there?");
     verbs.onPlaybackProgress(50);
     expect(sendAudio).not.toHaveBeenCalled();
     expect(calls).toEqual([]);

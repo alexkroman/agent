@@ -67,6 +67,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "inbox": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "llm": {
     "current": 10,
     "supported": [10],
@@ -98,9 +103,11 @@
     "dropped": {}
   },
   "protocol": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "SessionCommand gains user_text; an exhaustive switch over it no longer compiles"
+    }
   },
   "random": {
     "current": 1,

@@ -56,9 +56,15 @@ describe("resolveAllBuiltins schemas", () => {
       "open_meteo",
       "brave_search",
       "google_places",
+      "text_me",
     ]);
-    expect(schemas.map((s) => s.name)).toEqual(["open_meteo", "brave_search", "google_places"]);
-    expect(guidance).toHaveLength(3);
+    expect(schemas.map((s) => s.name)).toEqual([
+      "open_meteo",
+      "brave_search",
+      "google_places",
+      "text_me",
+    ]);
+    expect(guidance).toHaveLength(4);
   });
 
   test("unknown tool name returns empty", () => {

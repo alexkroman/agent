@@ -1690,6 +1690,13 @@ turn is the barge-in — `startUserTurn()` answers whether it interrupted, and
 omit the verbs. The eval harness's `say()` presses and releases for a manual
 agent, or every case would wait on a commit that never comes.
 
+**A typed turn (`user_text`) is a committed transcript with no transcriber.**
+`Transport.sendUserText` → `commitTypedTurn` in `pipeline-user-speech.ts`: it
+cuts a reply in flight or playing (reporting `reply.cancelled` itself, BEFORE the
+`user-transcript.committed`, so the stream's order is right), then commits on the
+same path a final does — under either `turnDetection`. S2S omits the verb; the
+dispatcher warns once.
+
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the session that started a run take

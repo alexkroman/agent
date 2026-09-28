@@ -82,6 +82,10 @@ exports[`protocol schema shapes > SessionCommandSchema option shapes 1`] = `
     "toolCallId",
     "type",
   ],
+  "user_text": [
+    "text",
+    "type",
+  ],
   "user_turn_clear": [
     "type",
   ],

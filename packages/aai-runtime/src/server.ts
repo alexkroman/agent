@@ -357,6 +357,12 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
       });
       return;
     }
+    if (routeMatches(SERVER_ROUTES.inbox, url)) {
+      // Behind the same gate as a session: a notice makes the device speak.
+      const upgrade = { req, socket, head, wss, url, resumeFrom: undefined, logger };
+      admitSessionUpgrade(sessionGate, upgrade, (ws) => workflowSupport.inbox.attach(ws, req.url));
+      return;
+    }
     if (!routeMatches(SERVER_ROUTES.session, url)) {
       // No other upgrade consumer exists on this server: an unmatched upgrade
       // socket would otherwise dangle forever with no error handling.
@@ -365,7 +371,7 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     }
 
     const wantsHost = requestQuery(req.url).has("host");
-    const startOpts = parseWsUpgradeParams(req.url ?? "");
+    const startOpts = parseWsUpgradeParams(req.url ?? "", logger);
 
     // The gate runs BEFORE the handshake; with none configured this is the bare
     // `wss.handleUpgrade` it replaced. See `session-auth.ts`.

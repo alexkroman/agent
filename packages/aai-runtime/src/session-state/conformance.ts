@@ -162,6 +162,7 @@
  * @internal
  */
 
+import { sessionStateClientConformance } from "./conformance-clients.ts";
 import { sessionStateEventConformance } from "./conformance-events.ts";
 import { type SessionStateArm, sessionStateSlotConformance } from "./conformance-slots.ts";
 
@@ -254,4 +255,5 @@ export const SESSION_STATE_BACKENDS: readonly SessionStateBackendEntry[] = [
 export function sessionStateConformance(arm: SessionStateArm): void {
   sessionStateSlotConformance(arm);
   sessionStateEventConformance(arm);
+  if (arm.clientLog) sessionStateClientConformance(arm);
 }

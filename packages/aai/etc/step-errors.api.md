@@ -126,6 +126,7 @@ type StepGenerateOptions = {
     timeoutMs?: number;
     temperature?: number;
     maxTokens?: number;
+    responseSchema?: Record<string, unknown>;
 };
 
 // @public

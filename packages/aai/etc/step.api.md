@@ -20,7 +20,7 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
@@ -31,6 +31,61 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+export type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public
+export type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+export type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+export type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+export type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+export class ClientUnreachableError extends RetryableError {
+    constructor(clientId: string, reason: ClientUnreachableReason, retryAfterMs: number);
+    // (undocumented)
+    readonly clientId: string;
+    // (undocumented)
+    readonly reason: ClientUnreachableReason;
+}
+
+// @public
+export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+
+// @public
+export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
+
+// @public
+export const DEFAULT_CLIENT_RETRY_MS = 30000;
 
 // @public
 type DelegateFn = {
@@ -205,6 +260,19 @@ export type ReadUploadOptions = {
 export function requireStepEnv(name: string): string;
 
 // @public
+class RetryableError extends Error {
+    constructor(message: string, options?: RetryableErrorOptions);
+    static is(value: unknown): value is RetryableError;
+    readonly retryAfter: Date;
+}
+
+// @public
+type RetryableErrorOptions = {
+    retryAfter?: number | Date;
+    cause?: unknown;
+};
+
+// @public
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
@@ -295,6 +363,18 @@ export const STEP_SPEAK_SAMPLE_RATE: number;
 export const STEP_SPEAK_TIMEOUT_MS: number;
 
 // @public
+export function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+
+// @public
+export type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
+
+// @public
 export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
 
 // @public
@@ -347,6 +427,7 @@ export type StepGenerateOptions = {
     timeoutMs?: number;
     temperature?: number;
     maxTokens?: number;
+    responseSchema?: Record<string, unknown>;
 };
 
 // @public
@@ -360,6 +441,16 @@ export type StepInfo = {
 
 // @public
 export function stepInfo(): StepInfo | undefined;
+
+// @public
+export function stepNotifyClient(clientId: string, notice: ClientNotice, options?: StepNotifyClientOptions): Promise<void>;
+
+// @public
+export type StepNotifyClientOptions = {
+    ackTimeoutMs?: number;
+    retryAfterMs?: number;
+    signal?: AbortSignal;
+};
 
 // @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

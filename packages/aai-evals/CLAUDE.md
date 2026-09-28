@@ -282,10 +282,10 @@ gate.
 ## Level 1 does NOT drive `?host=1`, and the plan expected it to
 
 The plan this tier came from left "does level 1 use host mode?" open, and the
-answer is that it CANNOT: **the client protocol has no text command.**
-`sdk/protocol-commands.ts` carries five commands (`audio_ready`, `cancel`,
-`reset`, `playback_progress`, `tool_result`) and a user turn reaches a session as
-PCM and nothing else — so a text-driven level 1 has no socket to speak down.
+answer was that it CANNOT: the client protocol had no text command. It has one
+now (`user_text`), and the answer stands: that is a TYPED turn, answered past
+the transcriber (no quiet-final drop, no push-to-talk window, no barge-in
+gates), so a level 1 driven through it grades a path a voice caller never takes.
 Host mode is unaffected and unblocked (the per-session agent-definition resolver
 that would have needed it cannot be built safely); it is simply the wrong seam
 for a text target, and the right seam is below the wire.

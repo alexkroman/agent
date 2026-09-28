@@ -80,6 +80,14 @@ export type StepGenerateOptions = {
   temperature?: number;
   /** Cap on the reply, forwarded only when set. */
   maxTokens?: number;
+  /**
+   * A JSON Schema the reply must match, sent as the gateway's `response_format`
+   * (`json_schema`) so the model is CONSTRAINED to it rather than asked. The reply
+   * still arrives as a string: {@link stepGenerateJson} is the call that parses and
+   * validates it, and passes this for you. The gateway supports it on GPT-4.1/5.x,
+   * Gemini and Claude models, not on gpt-oss.
+   */
+  responseSchema?: Record<string, unknown>;
 };
 
 /**
@@ -212,7 +220,17 @@ export async function stepGenerate(
       // `omitUndefined` rather than two spread-ternaries: an unset knob must be
       // ABSENT from the body, not present as `undefined`, and this is the one
       // spelling of that (`guard-invariants.mjs` rule 2).
-      ...omitUndefined({ temperature: options.temperature, max_tokens: options.maxTokens }),
+      ...omitUndefined({
+        temperature: options.temperature,
+        max_tokens: options.maxTokens,
+        response_format:
+          options.responseSchema === undefined
+            ? undefined
+            : {
+                type: "json_schema",
+                json_schema: { name: "reply", schema: options.responseSchema },
+              },
+      }),
     }),
     signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });

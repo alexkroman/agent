@@ -10,7 +10,7 @@
  *
  * Names stay as they were. The complaint the split answers is that commands and
  * events shared one namespace with one shape — which no longer holds — and
- * renaming these too would be churn on eight literals no author ever writes:
+ * renaming these too would be churn on literals no author ever writes:
  * the events are what the hook surface makes author-visible, and these are what
  * `aai-ui` sends.
  *
@@ -19,7 +19,7 @@
 
 import { z } from "zod";
 import { capToolResult } from "../internal.ts";
-import { MAX_PLAYBACK_BUFFERED_MS } from "./constants.ts";
+import { MAX_PLAYBACK_BUFFERED_MS, MAX_TRANSCRIPT_CHARS } from "./constants.ts";
 
 /** Helper: a command carrying nothing but its own name. */
 const cmd = <T extends string>(t: T) => z.object({ type: z.literal(t) });
@@ -39,6 +39,28 @@ export const SessionCommandSchema = z.discriminatedUnion("type", [
   cmd("user_turn_start"),
   cmd("user_turn_commit"),
   cmd("user_turn_clear"),
+  z.object({
+    /**
+     * A TYPED user turn: the caller wrote `text` instead of saying it.
+     *
+     * Answered exactly as if the transcriber had committed `text` — it
+     * interrupts a reply in flight the way a new turn does, lands in the
+     * retained stream as the same `user-transcript.committed` a spoken turn
+     * produces (so `messages`, history and a resume all see it), and the agent
+     * answers it aloud. Honoured whatever the agent's `turnDetection`, since it
+     * bypasses the transcriber that policy is about. Only the pipeline can take
+     * it: an S2S service owns its own conversation and has no text input, so
+     * such a session logs once and ignores the command.
+     *
+     * Trimmed, and REJECTED rather than truncated past the cap — unlike
+     * `tool_result`, nothing on the server waits on this frame, and answering
+     * the first 100k characters of a message as though they were the whole of
+     * it is worse than answering nothing. The cap is the event's own
+     * (`MAX_TRANSCRIPT_CHARS`), because this text becomes that event.
+     */
+    type: z.literal("user_text"),
+    text: z.string().trim().min(1).max(MAX_TRANSCRIPT_CHARS),
+  }),
   z.object({
     /**
      * How much forwarded agent audio the client still holds UNPLAYED.

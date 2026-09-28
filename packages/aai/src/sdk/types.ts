@@ -7,6 +7,7 @@ import type { AgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
+import type { AgentSessionLifecycle } from "./agent-session-lifecycle.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 // Imported as well as re-exported below, for the reason `ToolDef` is: a
 // re-export does not bring the name into this module's scope, and
@@ -149,15 +150,15 @@ export {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Five groups of fields live on interfaces this extends, each because the
+ * Six groups of fields live on interfaces this extends, each because the
  * group shares ONE rule that is derived from the declaration rather than
  * restated beside it: {@link PipelineVoiceTuning} (pipeline transport or
  * nothing), {@link AgentModelTuning} (this runtime assembles the request, so
  * S2S refuses them), {@link AgentGuardrails} (the only declarations that may
  * stop a turn), {@link AgentObservation} (the two that deliberately may
- * not) and {@link AgentVoicePresets} (paid for on every model request).
- * `agent()` and the deploy-time config check both derive their field
- * lists from those interfaces, so a new one cannot skip either gate.
+ * not), {@link AgentVoicePresets} (paid for on every model request) and
+ * {@link AgentSessionLifecycle} (once per session). `agent()` and the deploy-time
+ * config check derive their field lists from those, so no field skips either gate.
  *
  * @public
  */
@@ -166,7 +167,8 @@ export interface AgentDef
     AgentModelTuning,
     AgentGuardrails,
     AgentObservation,
-    AgentVoicePresets {
+    AgentVoicePresets,
+    AgentSessionLifecycle {
   /** Display name shown by the default client UI. */
   name: string;
   /**

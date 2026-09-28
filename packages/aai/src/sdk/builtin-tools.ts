@@ -31,8 +31,11 @@
  * - `"google_places"` — Find businesses and places (address, phone, hours,
  *   rating) with the Google Places API. Reads `GOOGLE_PLACES_API_KEY` from the
  *   agent env.
+ * - `"text_me"` — Text the owner something too long to say, through Textbelt.
+ *   Reads `TEXTBELT_KEY` and `SMS_TO_PHONE`; the recipient is never the
+ *   model's choice (see `allowedSmsRecipient` in `@alexkroman1/aai/channels`).
  *
- * The two keyed builtins read their key from `ctx.env` on each
+ * The three keyed builtins read their key from `ctx.env` on each
  * call and answer the model with an error naming the variable when it is
  * unset. Nothing adds the key to `requiredEnv` for you — list it there so a
  * deploy checks it, the same rule an MCP server's `tokenEnv` follows.
@@ -66,4 +69,5 @@ export type BuiltinTool =
   | "open_meteo"
   | "brave_search"
   | "google_places"
+  | "text_me"
   | (string & {});

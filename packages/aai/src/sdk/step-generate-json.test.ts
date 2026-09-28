@@ -65,6 +65,47 @@ describe("stepGenerateJson", () => {
     expect((gateway.calls[0] as { system: string }).system).toContain("matching this JSON Schema");
   });
 
+  test("constrains the request with the schema as response_format, not only the prompt", async () => {
+    // Described alone, a reasoning-off model answered a list-shaped system prompt with
+    // bullets on every retry (the research template's planAngles).
+    const gateway = install('{"headline":"H","points":[]}');
+
+    await stepGenerateJson("The article.", { schema: Reply });
+
+    const body = gateway.calls[0]?.body as {
+      response_format: {
+        type: string;
+        json_schema: { name: string; schema: Record<string, unknown> };
+      };
+    };
+    expect(body.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "reply" },
+    });
+    const sent = body.response_format.json_schema.schema;
+    expect(Object.keys(sent.properties as object)).toEqual(["headline", "points"]);
+    expect(sent).not.toHaveProperty("$schema");
+  });
+
+  test("a TRANSFORMING schema is constrained by its input side, which Zod can render", async () => {
+    // The research template's lenient list: output-side conversion throws on the
+    // transform, and giving up there sent the call with no shape at all.
+    const gateway = install('{"angles":["a","",3]}');
+    const Lenient = z.object({
+      angles: z
+        .array(z.unknown())
+        .transform((v) => v.filter((x): x is string => typeof x === "string" && x !== ""))
+        .catch([]),
+    });
+
+    expect(await stepGenerateJson("Plan.", { schema: Lenient })).toEqual({ angles: ["a"] });
+    const call = gateway.calls[0] as { system: string; body: Record<string, unknown> };
+    expect(call.system).toContain('"angles"');
+    expect(call.body.response_format).toMatchObject({
+      json_schema: { schema: { properties: { angles: { type: "array" } } } },
+    });
+  });
+
   test("a schema that cannot render JSON Schema still validates, and constrains nothing", async () => {
     // The zero-zod duck type: a vendor exposing neither `toJSONSchema()` nor
     // `toJsonSchema()` degrades to the old behaviour rather than failing.
@@ -79,6 +120,7 @@ describe("stepGenerateJson", () => {
 
     expect(await stepGenerateJson("Go.", { schema: plain, system: "Be terse." })).toEqual({ n: 1 });
     expect((gateway.calls[0] as { system: string }).system).toBe("Be terse.");
+    expect(gateway.calls[0]?.body).not.toHaveProperty("response_format");
   });
 
   test("does not leak `schema` into the request body", async () => {

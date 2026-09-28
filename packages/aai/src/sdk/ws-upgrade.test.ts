@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { parseWsUpgradeParams } from "./ws-upgrade.ts";
 
 describe("parseWsUpgradeParams", () => {
@@ -80,5 +80,42 @@ describe("parseWsUpgradeParams", () => {
     for (const ok of [crypto.randomUUID(), "a", "A-Z_0-9-abc", "x".repeat(128)]) {
       expect.soft(parseWsUpgradeParams(`/websocket?sessionId=${ok}`).resumeFrom, ok).toBe(ok);
     }
+  });
+
+  test("location is passed through, whitespace-normalized, and bounded", () => {
+    const addr = "123 Example St, Portland, OR 97201";
+    const q = (v: string) =>
+      parseWsUpgradeParams(`/websocket?resume=1&location=${encodeURIComponent(v)}`);
+    expect(q(addr)).toEqual({ skipGreeting: true, clientLocation: addr });
+    expect(q("  123 Example St,\n Portland\u0000, OR  ").clientLocation).toBe(
+      "123 Example St, Portland , OR",
+    );
+    expect(q("   ").clientLocation).toBeUndefined();
+    expect(q("x".repeat(201)).clientLocation).toBeUndefined();
+    expect(parseWsUpgradeParams("/websocket?resume=1")).toEqual({ skipGreeting: true });
+  });
+
+  test("client names the device, and an unusable one is dropped rather than refused", () => {
+    const q = (v: string) =>
+      parseWsUpgradeParams(`/websocket?resume=1&client=${encodeURIComponent(v)}`);
+    expect(q("kitchen-speaker_2")).toEqual({ skipGreeting: true, clientId: "kitchen-speaker_2" });
+    for (const bad of ["", "has space", "a/b", "x".repeat(65)]) {
+      expect.soft(q(bad).clientId, JSON.stringify(bad)).toBeUndefined();
+    }
+  });
+
+  test("phone is normalized to E.164, and an invalid one is dropped with a warning that omits it", () => {
+    const warn = vi.fn();
+    const q = (v: string) =>
+      parseWsUpgradeParams(`/websocket?resume=1&phone=${encodeURIComponent(v)}`, { warn });
+    expect(q("+1 (503) 555-0123")).toEqual({ skipGreeting: true, clientPhone: "+15035550123" });
+    expect(warn).not.toHaveBeenCalled();
+    expect(q("5035550123")).toEqual({ skipGreeting: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain("5035550123");
+    // Absent or blank is no report at all, not an invalid one.
+    expect(q("  ")).toEqual({ skipGreeting: true });
+    expect(parseWsUpgradeParams("/websocket?resume=1", { warn })).toEqual({ skipGreeting: true });
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

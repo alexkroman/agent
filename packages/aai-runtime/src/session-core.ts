@@ -30,7 +30,7 @@ import { createCommandDispatcher } from "./session-commands.ts";
 // into scope, and `createSessionCore`'s signature needs both. Same trap the
 // root guide records for `ToolContext` in `sdk/types.ts`.
 import type { ServerSession, ServerSessionOptions } from "./session-core-types.ts";
-import { historyMessageOf } from "./session-event-history.ts";
+import { historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
@@ -341,8 +341,10 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     restoreHistory(messages, toolCalls = []) {
       pushMessages(...messages);
       // Forward to the transport so pipeline mode's LLM sees the restored
-      // context on resume (S2S restores context service-side via resume).
-      opts.transport.seedHistory?.(messages);
+      // context on resume (S2S restores context service-side via resume). The
+      // model's view carries each prior tool call as a text digest rather than
+      // losing it — see `modelHistoryOf`.
+      opts.transport.seedHistory?.(messages, modelHistoryOf(messages, toolCalls));
       // And to the CLIENT, which is the half that was missing: everything above
       // restores the conversation for the MODEL, and a reconnecting browser
       // stopped replaying its own on the grounds that the server had taken this

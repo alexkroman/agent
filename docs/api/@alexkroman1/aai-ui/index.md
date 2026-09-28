@@ -2480,8 +2480,9 @@ function Controls() {
 function useSessionActions(): SessionActions;
 ```
 
-The session's control methods — `start`, `cancel`, `resetState`, `reset`,
-`restart`, `disconnect`, `toggle`, `end` — with **no snapshot subscription**.
+The session's control methods — `start`, `cancel`, `sendText`,
+`setMicMuted`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`,
+`end` — with **no snapshot subscription**.
 Push-to-talk is not among them: that is `usePushToTalk`.
 
 This is the narrow half of [useSession](#usesession), and it is the half a custom
@@ -2502,7 +2503,7 @@ from the snapshot at all and subscribes to all of it for `session.start`.
 category as the providers and `buildAgentUrl` that live on
 `@alexkroman1/aai-ui/internal`. A client that holds it can subscribe out of
 band of React, dial a socket the mount did not, and dispose the session under
-the tree that is rendering it. What comes back from here is the SAME eight
+the tree that is rendering it. What comes back from here is the SAME
 methods `useSession()` already publishes on its result, built into a fresh
 object rather than passed through, so the store is not reachable from it.
 There is no new capability here — only the existing one without the
@@ -4153,6 +4154,8 @@ type BrowserSession = {
   reset: void;
   resetState: void;
   restart: void;
+  sendText: void;
+  setMicMuted: void;
   start: void;
   subscribe: () => void;
   toggle: void;
@@ -4322,6 +4325,81 @@ stock shell could not, because [Controls](#controls) called `reset()` for them.
 ```ts
 declare const session: import("@alexkroman1/aai-ui").Session;
 session.restart();
+```
+
+##### sendText()
+
+```ts
+sendText(text: string): void;
+```
+
+Send a TYPED user turn: the agent answers `text` exactly as if the caller
+had said it — aloud, with tools, under any `turnDetection`.
+
+Interrupts the agent if it is speaking or thinking (its queued audio is
+discarded here at once, as `cancel()` does). The message is NOT echoed into
+`messages` locally: the server reports it as the same
+`user-transcript.committed` a spoken turn produces, and that is what adds
+the row — so it is also what a resumed session replays.
+
+`text` is trimmed; an empty message, or a call while disconnected, sends
+nothing. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
+the server. A speech-to-speech agent cannot take a typed turn: the server
+logs a warning once and the message is ignored.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+declare const session: import("@alexkroman1/aai-ui").Session;
+session.sendText("What's the weather tomorrow?");
+```
+
+##### setMicMuted()
+
+```ts
+setMicMuted(muted: boolean): void;
+```
+
+Mute or unmute the microphone WITHOUT dropping the session — the gate a
+hold-to-talk button over an agent with automatic turn detection is built
+on (mute by default, unmute while held).
+
+While muted the session keeps streaming frames of the same length and
+cadence, zero-filled, so the server's transcriber hears silence: its
+automatic endpointing closes the turn on release, and the stream's clock
+stays true. Purely local — no command is sent and a speaking agent is not
+interrupted (call `cancel()` for that).
+
+UI state rather than connection state: it survives reconnects, resumes,
+`disconnect()` → `connect()` and `end()`, and may be set before the first
+`connect()` so a session opens already muted. Read it back as
+`micMuted` on the snapshot.
+
+###### Parameters
+
+###### muted
+
+`boolean`
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+declare const session: import("@alexkroman1/aai-ui").Session;
+session.setMicMuted(true); // typed-only until the talk button is held
 ```
 
 ##### start()
@@ -4543,7 +4621,13 @@ The sender of the message.
 ### ClientConfig
 
 ```ts
-type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+type ClientConfig = Pick<VoiceSessionOptions, 
+  | "onSessionId"
+  | "resumeSessionId"
+  | "location"
+  | "phone"
+  | "client"
+  | "WebSocket"> & {
   buttonText?: string;
   component?: ComponentType;
   icon?: ReactNode;
@@ -5563,10 +5647,10 @@ What [useSession](#usesession) returns: the live [SessionSnapshot](#sessionsnaps
 (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
 `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
 control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
-`disconnect`, `cancel`, `end`).
+`disconnect`, `cancel`, `end`, `sendText`, `setMicMuted`).
 
-Note there is no text-send method — sessions are voice-only; the only
-client→server inputs are audio and the control methods above.
+`sendText(text)` is the one input besides the microphone: a typed turn the
+agent answers aloud, as if it had been spoken.
 
 ***
 
@@ -5580,6 +5664,8 @@ type SessionActions = {
   reset: void;
   resetState: void;
   restart: void;
+  sendText: void;
+  setMicMuted: void;
   start: void;
   toggle: void;
 };
@@ -5668,6 +5754,42 @@ restart(): void;
 ```
 
 End the call and begin a fresh one — see [BrowserSession.restart](#restart).
+
+###### Returns
+
+`void`
+
+##### sendText()
+
+```ts
+sendText(text: string): void;
+```
+
+Send a typed user turn, answered as if spoken — see [BrowserSession.sendText](#sendtext).
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### setMicMuted()
+
+```ts
+setMicMuted(muted: boolean): void;
+```
+
+Mute or unmute the mic without dropping the session — see [BrowserSession.setMicMuted](#setmicmuted).
+
+###### Parameters
+
+###### muted
+
+`boolean`
 
 ###### Returns
 
@@ -6009,6 +6131,7 @@ type SessionSnapshot = {
   customEvents: AgentCustomEvent[];
   error: SessionError | null;
   messages: ChatMessage[];
+  micMuted: boolean;
   recording: boolean;
   running: boolean;
   started: boolean;
@@ -6117,6 +6240,17 @@ readonly messages: ChatMessage[];
 The conversation so far, oldest first — user and assistant turns only.
 Tool activity is NOT in here; it is in `toolCalls`. Capped, so the oldest
 entries slide off a long call.
+
+##### micMuted
+
+```ts
+readonly micMuted: boolean;
+```
+
+Whether the caller has MUTED the microphone — see
+[BrowserSession.setMicMuted](#setmicmuted). Independent of `recording`: a muted
+mic stays open and keeps streaming (as silence), so `recording` stays
+`true`. UI state, so it survives reconnects, `disconnect()` and `end()`.
 
 ##### recording
 
@@ -7516,7 +7650,10 @@ synchronous mode. Omitted (the default) returns as soon as the run exists.
 
 ```ts
 type VoiceSessionOptions = {
+  client?: string | (() => string | undefined);
+  location?: string | (() => string | undefined);
   onSessionId?: (sessionId: string) => void;
+  phone?: string | (() => string | undefined);
   platformUrl: string;
   resumeSessionId?: string;
   WebSocket?: WebSocketConstructor;
@@ -7529,6 +7666,56 @@ defaults `platformUrl` from `location.href`, while `createBrowserSession`
 requires it.
 
 #### Properties
+
+##### client?
+
+```ts
+optional client?: string | (() => string | undefined);
+```
+
+The name of THIS client — a device id — sent as `?client=` on every
+connection attempt, with the same rules as [location](#location): a string or a
+getter asked per attempt, trimmed, an empty answer sends none.
+
+It is the id a tool reads with `sessionClientId(ctx)` and the one a client
+holds its `WS /inbox?client=` socket open under, so a tool can hand it to a
+workflow run and the run's `stepNotifyClient` reaches this client AFTER the
+voice session has ended (a reminder, a finished research job). Send the
+same id the inbox socket uses, or the run delivers to a client that is not
+listening.
+
+Letters, digits, `-` and `_`, at most 64 characters: the server checks it
+against the same pattern the inbox uses and ignores one that does not
+match — the session still opens, it just has no client id.
+
+It is also the key of this client's DURABLE conversation: every connection
+that sends it is seeded with that client's earlier sessions. The server
+takes it on the client's word and authenticates nothing, so on a server
+reachable from a network (a LAN-listening dev server, a self-hosted one)
+the id is the ONLY credential for that history — anyone who can reach the
+server and knows the id reads what was said. Use an unguessable id.
+
+##### location?
+
+```ts
+optional location?: string | (() => string | undefined);
+```
+
+Where the client is — e.g. a street address or `"Portland, Oregon"` — sent
+as `?location=` on every connection attempt (the first, a resume and each
+reconnect, brokered or not). Location-aware builtins read it: `open_meteo`
+falls back to it when the model names no place, and `google_places` biases
+its searches toward it.
+
+A string, or a getter asked on EVERY attempt — so a UI whose location can
+change (a settings field) passes `() => current` and the next reconnect
+carries the new value without a remount. An empty or `undefined` answer
+sends none. The server strips control characters and ignores a value
+longer than 200 characters.
+
+Treat it as personal data: like the session id it travels as a query
+parameter (browsers cannot set WebSocket headers), so it may appear in
+proxy and access logs.
 
 ##### onSessionId?
 
@@ -7554,6 +7741,25 @@ in proxy and server access logs — don't put them in shared URLs.
 ###### Returns
 
 `void`
+
+##### phone?
+
+```ts
+optional phone?: string | (() => string | undefined);
+```
+
+The phone number of whoever owns this client — sent as `?phone=` on every
+connection attempt, with the same rules as [location](#location): a string or a
+getter asked per attempt, trimmed, an empty answer sends none. A tool reads
+it with `sessionClientPhone(ctx)`, e.g. to text the caller a link.
+
+Give it in E.164 form, with the `+` and country code (`"+1 503 555 0123"`):
+the server strips spaces, dashes, dots and parentheses and then needs a `+`
+and 8–15 digits. A bare `"5035550123"` is NOT assumed to be North American
+— it is dropped (the server logs that it was, never the value).
+
+The server takes it on the client's word. Personal data: it travels as a
+query parameter, so it may appear in proxy and access logs.
 
 ##### platformUrl
 

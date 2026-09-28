@@ -62,6 +62,9 @@ symbol exported from two subpaths appears under both.
 
 ```ts
 // @public
+export function allowedSmsRecipient(claimed: string | undefined, env: SmsRecipientEnv): string | undefined;
+
+// @public
 export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
     readonly __surface?: "channel";
 };
@@ -135,6 +138,9 @@ export function explainChannelFailure(channel: Channel, detail: string): string;
 export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
 
 // @public
+export function explainTextbeltChannelFailure(detail: string): string;
+
+// @public
 export function isSlackWebhookUrl(value: string): boolean;
 
 // @public
@@ -159,6 +165,9 @@ export function renderSlackChannelPayload(message: ChannelMessage, options: Slac
 export function renderSlackPlainText(message: ChannelMessage): string;
 
 // @public
+export function renderTextbeltText(message: ChannelMessage): string;
+
+// @public
 export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
@@ -180,6 +189,36 @@ export function slackChannel(options: SlackChannelOptions): SlackChannel;
 export interface SlackChannelOptions {
     readonly textParam?: string;
     readonly webhookUrl: string;
+}
+
+// @public
+export interface SmsRecipientEnv {
+    readonly SMS_ALLOWED_PHONES?: string | undefined;
+    readonly SMS_TO_PHONE?: string | undefined;
+}
+
+// @public
+export const TEXTBELT_CHANNEL_HANDLER: ChannelHandler<TextbeltChannelOptions>;
+
+// @public
+export const TEXTBELT_CHANNEL_KIND = "textbelt";
+
+// @public
+export const TEXTBELT_MAX_MESSAGE_CHARS = 1000;
+
+// @public
+export type TextbeltChannel = Channel & {
+    readonly kind: typeof TEXTBELT_CHANNEL_KIND;
+    readonly options: TextbeltChannelOptions & Record<string, unknown>;
+};
+
+// @public
+export function textbeltChannel(options: TextbeltChannelOptions): TextbeltChannel;
+
+// @public
+export interface TextbeltChannelOptions {
+    readonly key: string;
+    readonly to: string;
 }
 ```
 
@@ -205,7 +244,7 @@ export const BASH_TIMEOUT_MAX_MS: number;
 export const BASH_TIMEOUT_MS: number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -1301,7 +1340,7 @@ export function buildSystemPrompt(config: AgentConfig, options: {
 }): string;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export type BuiltinToolOptions = {
@@ -1322,12 +1361,80 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @internal
+export type ChannelOutbox = (entry: ChannelOutboxEntry) => void | Promise<void>;
+
+// @internal
+export type ChannelOutboxEntry = {
+    kind: string;
+    to?: string;
+    body: Record<string, unknown>;
+};
+
+// @internal
+export const CLIENT_ID_RE: RegExp;
+
+// @internal
+export const CLIENT_INBOX_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE: string;
+
 // @public
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @internal
+export type ClientNotifier = (clientId: string, notice: ClientNotice, options: {
+    ackTimeoutMs: number;
+    signal?: AbortSignal | undefined;
+}) => Promise<"acked" | ClientUnreachableReason>;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @internal
+export type ClientTranscriptReader = (clientId: string, options: StepClientTranscriptOptions) => Promise<ClientTranscript>;
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
@@ -1522,6 +1629,11 @@ type GenerateResult = {
 };
 
 // @public
+export function getSessionLocation(ctx: {
+    sessionId: string;
+}): string | undefined;
+
+// @public
 type GuardrailVerdict = true | string;
 
 // @public
@@ -1706,6 +1818,18 @@ type ProviderFields = {
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
 
 // @internal
+export function publishChannelOutbox(sink: ChannelOutbox | undefined): void;
+
+// @internal
+export function publishClientNotifier(notify: ClientNotifier | undefined): void;
+
+// @internal
+export function publishClientTranscriptReader(reader: ClientTranscriptReader | undefined): void;
+
+// @internal
+export function publishedClientTranscriptReader(): ClientTranscriptReader | undefined;
+
+// @internal
 export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void;
 
 // @internal
@@ -1879,6 +2003,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
 
+// @internal
+export function setSessionClient(sessionId: string, clientId: string): void;
+
+// @public
+export function setSessionLocation(sessionId: string, location: string): void;
+
+// @internal
+export function setSessionPhone(sessionId: string, phone: string): void;
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -1980,6 +2113,15 @@ export const STEP_FETCH_PIPELINING = 1;
 
 // @internal
 export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @internal
 export type StepDelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;
@@ -2440,7 +2582,7 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -2500,6 +2642,12 @@ export interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+}
+
+// @public
+export interface AgentSessionLifecycle {
+    onSessionEnd?: (ctx: SessionEndContext) => unknown;
+    sessionContext?: (ctx: SessionContextArgs) => Promise<SessionContext | undefined> | SessionContext | undefined;
 }
 
 // @public
@@ -2576,7 +2724,7 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export interface ClientEventMap {
@@ -3189,6 +3337,35 @@ export function safeJsonParse(text: string): unknown;
 
 // @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+
+// @public
+export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
+export function sessionClientPhone(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
+export type SessionContext = {
+    instructions?: string | undefined;
+    historySince?: number | undefined;
+};
+
+// @public @sealed
+export interface SessionContextArgs {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    signal: AbortSignal;
+}
+
+// @public @sealed
+export interface SessionEndContext {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    lastEventIndex: number;
+    sessionId: string;
+    workflows: WorkflowClient;
+}
 
 // @public
 export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
@@ -3857,7 +4034,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "personas" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "personas" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
@@ -4205,9 +4382,14 @@ export interface OwnedMap<K, V> {
 export const PACER_BURST_MS = 100;
 
 // @internal
-export function parseWsUpgradeParams(rawUrl: string): {
+export function parseWsUpgradeParams(rawUrl: string, log?: {
+    warn(message: string): void;
+}): {
     resumeFrom?: string;
     skipGreeting: boolean;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
 };
 
 // @internal
@@ -4621,7 +4803,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -4681,6 +4863,12 @@ interface AgentSessionContext {
 }
 
 // @public
+interface AgentSessionLifecycle {
+    onSessionEnd?: (ctx: SessionEndContext) => unknown;
+    sessionContext?: (ctx: SessionContextArgs) => Promise<SessionContext | undefined> | SessionContext | undefined;
+}
+
+// @public
 type AgentSystemPrompt = string | AgentInstructions;
 
 // @public (undocumented)
@@ -4713,7 +4901,7 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -4864,7 +5052,7 @@ interface HandoffResult {
 }
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -5007,6 +5195,29 @@ type RandomSource = () => number;
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
+
+// @public
+type SessionContext = {
+    instructions?: string | undefined;
+    historySince?: number | undefined;
+};
+
+// @public @sealed
+interface SessionContextArgs {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    signal: AbortSignal;
+}
+
+// @public @sealed
+interface SessionEndContext {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    lastEventIndex: number;
+    sessionId: string;
+    workflows: WorkflowClient;
+}
 
 // @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
@@ -6022,6 +6233,9 @@ export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"user_turn_clear">;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_text">;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"playback_progress">;
     bufferedMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
@@ -6354,7 +6568,7 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
@@ -6365,6 +6579,61 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+export type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public
+export type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+export type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+export type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+export type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+export class ClientUnreachableError extends RetryableError {
+    constructor(clientId: string, reason: ClientUnreachableReason, retryAfterMs: number);
+    // (undocumented)
+    readonly clientId: string;
+    // (undocumented)
+    readonly reason: ClientUnreachableReason;
+}
+
+// @public
+export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+
+// @public
+export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
+
+// @public
+export const DEFAULT_CLIENT_RETRY_MS = 30000;
 
 // @public
 type DelegateFn = {
@@ -6539,6 +6808,19 @@ export type ReadUploadOptions = {
 export function requireStepEnv(name: string): string;
 
 // @public
+class RetryableError extends Error {
+    constructor(message: string, options?: RetryableErrorOptions);
+    static is(value: unknown): value is RetryableError;
+    readonly retryAfter: Date;
+}
+
+// @public
+type RetryableErrorOptions = {
+    retryAfter?: number | Date;
+    cause?: unknown;
+};
+
+// @public
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
@@ -6629,6 +6911,18 @@ export const STEP_SPEAK_SAMPLE_RATE: number;
 export const STEP_SPEAK_TIMEOUT_MS: number;
 
 // @public
+export function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+
+// @public
+export type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
+
+// @public
 export function stepDelegate(subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
 
 // @public
@@ -6681,6 +6975,7 @@ export type StepGenerateOptions = {
     timeoutMs?: number;
     temperature?: number;
     maxTokens?: number;
+    responseSchema?: Record<string, unknown>;
 };
 
 // @public
@@ -6694,6 +6989,16 @@ export type StepInfo = {
 
 // @public
 export function stepInfo(): StepInfo | undefined;
+
+// @public
+export function stepNotifyClient(clientId: string, notice: ClientNotice, options?: StepNotifyClientOptions): Promise<void>;
+
+// @public
+export type StepNotifyClientOptions = {
+    ackTimeoutMs?: number;
+    retryAfterMs?: number;
+    signal?: AbortSignal;
+};
 
 // @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -7240,6 +7545,7 @@ type StepGenerateOptions = {
     timeoutMs?: number;
     temperature?: number;
     maxTokens?: number;
+    responseSchema?: Record<string, unknown>;
 };
 
 // @public
@@ -7477,7 +7783,7 @@ type AnyWorkflowDef<R = unknown> = {
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -7485,6 +7791,46 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
 export function commandedBuiltins(config: {
@@ -7835,6 +8181,15 @@ type StartOptions = {
 };
 
 // @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
+
+// @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -7859,6 +8214,44 @@ type StreamOptions = {
 
 // @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
+export type StubClientInbox = {
+    calls: StubClientInboxCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+
+// @public
+export type StubClientInboxCall = {
+    clientId: string;
+    notice: ClientNotice;
+};
+
+// @public
+export type StubClientInboxOptions = {
+    answer?: "acked" | ClientUnreachableReason | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason) | undefined;
+};
+
+// @public
+export type StubClientTranscript = {
+    calls: StubClientTranscriptCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubClientTranscript;
+
+// @public
+export type StubClientTranscriptAnswer = ClientTranscript | ((call: StubClientTranscriptCall) => ClientTranscript);
+
+// @public
+export type StubClientTranscriptCall = {
+    clientId: string;
+    options: StepClientTranscriptOptions;
+};
 
 // @public
 export interface StubDelegate {
@@ -8199,6 +8592,8 @@ export type ToolContextOverrides = {
     delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;
     desk?: StubDelegate | undefined;
+    clientId?: string | undefined;
+    clientPhone?: string | undefined;
 };
 
 // @public
@@ -8437,7 +8832,7 @@ type AnyWorkflowDef<R = unknown> = {
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -11350,6 +11745,9 @@ export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "w
 export type SessionStartOptions = {
     skipGreeting?: boolean;
     resumeFrom?: string;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -11691,6 +12089,22 @@ export type AttachSessionOptions = {
 
 // @public
 export const CARRIER_PARAM = "carrier";
+
+// @public
+export type ClientSessionLog = {
+    bindClient(sessionId: string, clientId: string): Promise<void>;
+    clientSessions(clientId: string, options: {
+        since?: number | undefined;
+        limit: number;
+    }): Promise<readonly ClientSessionRecord[]>;
+};
+
+// @public
+export type ClientSessionRecord = {
+    sessionId: string;
+    startedAt: number;
+    lastEventAt: number;
+};
 
 // @internal
 export const consoleLogger: Logger;
@@ -12094,6 +12508,11 @@ export const SERVER_ROUTES: {
         readonly path: "/phone";
         readonly match: "prefix";
     };
+    readonly inbox: {
+        readonly transport: "ws";
+        readonly path: "/inbox";
+        readonly match: "exact";
+    };
 };
 
 // @internal
@@ -12156,6 +12575,7 @@ type SessionStateArm = {
     label: string;
     backend: () => SessionStateBackend;
     uid: () => string;
+    clientLog?: boolean | undefined;
 };
 
 // @public
@@ -12165,6 +12585,8 @@ export type SessionStateBackend = {
     load(sessionId: string): Promise<Map<string, string>>;
     commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
     discard(sessionId: string): Promise<void>;
+    bindClient?: ClientSessionLog["bindClient"];
+    clientSessions?: ClientSessionLog["clientSessions"];
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
@@ -12391,6 +12813,9 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     onClose?: () => void;
     audioLeadMs?: number;
     keepaliveIntervalMs?: number;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
 };
 ```
 
@@ -12846,6 +13271,8 @@ export type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -12902,7 +13329,7 @@ export function ChatView(input: {
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
-export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
@@ -13120,6 +13547,8 @@ export type Session = SessionSnapshot & SessionActions;
 export type SessionActions = {
     start(): void;
     cancel(): void;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     restart(): void;
@@ -13180,6 +13609,7 @@ export { SessionErrorCode }
 export type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
+    readonly micMuted: boolean;
     readonly apiUrl: string;
     readonly contentVersion: number;
     readonly messages: ChatMessage[];
@@ -13547,6 +13977,9 @@ export type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
     resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 
@@ -13690,6 +14123,8 @@ type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -13751,6 +14186,7 @@ export function SessionProvider(input: {
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
+    readonly micMuted: boolean;
     readonly apiUrl: string;
     readonly contentVersion: number;
     readonly messages: ChatMessage[];

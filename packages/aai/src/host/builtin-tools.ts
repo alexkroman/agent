@@ -23,6 +23,7 @@ import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts"
 import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
+import { builtinCover } from "./_builtin-cover.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
 import { createBraveSearch } from "./brave-search.ts";
@@ -32,6 +33,7 @@ import { createOpenMeteo } from "./open-meteo.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
+import { createTextMe } from "./text-me.ts";
 import { createWebSearch } from "./web-search.ts";
 
 // Compiled once: `convert()` rebuilds the selector index per call (116 µs vs
@@ -58,6 +60,7 @@ function createVisitWebpage(
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
     inputSchema: visitWebpageParams,
+    messages: builtinCover("I'm reading the page."),
     async execute(args, _ctx) {
       const { url } = args;
       // Bounded at the READ — see `_fetch-capped.ts`. A page past the budget is
@@ -128,6 +131,7 @@ function createFetchJson(
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     inputSchema: fetchJsonParams,
+    messages: builtinCover("I'm waiting on that service."),
     async execute(args, _ctx) {
       const { url, headers } = args;
       // The URL is prompt-injectable, so the cap has to bound what is READ:
@@ -323,11 +327,12 @@ const FETCH_BUILTINS: Record<
   fetch_json: createFetchJson,
   // Fixed-host API clients. Their URLs are ours, not the model's, but they take
   // the same screened fetch so every network builtin has one egress path — and
-  // so a spec injects one double for all of them. Two read a key from the
+  // so a spec injects one double for all of them. Three read a key from the
   // agent env at call time; `open_meteo` is keyless.
   open_meteo: createOpenMeteo,
   brave_search: createBraveSearch,
   google_places: createGooglePlaces,
+  text_me: createTextMe,
 };
 
 /**

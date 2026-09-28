@@ -228,8 +228,14 @@ export interface Transport {
    * Pipeline mode owns the LLM message list, so client-resent history must
    * reach it here or a resumed agent has no memory. S2S transports keep
    * context service-side (via session.resume) and omit this.
+   *
+   * `modelView`, when given, is what the MODEL's own list is seeded with in
+   * place of `messages` — the same conversation with each prior tool call
+   * rendered as a text digest (`modelHistoryOf` in `session-event-history.ts`),
+   * because a lone `tool` result is an orphan the provider rejects. `messages`
+   * still seeds the tool-facing view whole.
    */
-  seedHistory?(messages: readonly Message[]): void;
+  seedHistory?(messages: readonly Message[], modelView?: readonly Message[]): void;
   /**
    * Clear the transport's conversation state (client `reset`). Pipeline mode
    * clears its message list; S2S has no client-side history to drop.
@@ -274,6 +280,19 @@ export interface Transport {
   commitUserTurn?(): void;
   /** Push-to-talk: close the turn and discard everything heard inside it. */
   clearUserTurn?(): void;
+  /**
+   * A TYPED user turn (the client's `user_text`): answer `text` exactly as if
+   * the transcriber had committed it. The transport reports everything itself
+   * — `reply.cancelled` first when a reply was in flight or still playing,
+   * then the `user-transcript.committed` — because that ORDER is the stream's,
+   * and a session emitting the cancel after the verb returned would record the
+   * new turn before the reply it replaced ended.
+   *
+   * OPTIONAL for the reason `injectTurn` is: neither S2S service takes a user
+   * turn as text from the host, so there is nothing to call. The session logs
+   * that once and ignores the command.
+   */
+  sendUserText?(text: string): void;
   /**
    * Re-read the session's {@link SystemPromptOption} and push it to the
    * provider if — and only if — it has CHANGED since the last push.

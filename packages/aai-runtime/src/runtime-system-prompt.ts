@@ -9,6 +9,11 @@
  *   than a string: asked once per model request and folded in under the same
  *   precedence header a static prompt gets. Nothing of it is on the wire — the
  *   config carries only the static half — so it cannot live in the base.
+ * - The session's **context** — `sessionContext`'s `instructions`, awaited
+ *   ONCE at connect and fixed for the session. After the agent's own prompt
+ *   and before the suffix, because it is the last STABLE part: a provider's
+ *   prompt cache matches a prefix, so everything that does not change between
+ *   requests has to come before the part that does.
  * - The **suffix** is per TURN, resolved fresh every time a request is
  *   assembled, and empty on every session that ships today.
  *
@@ -84,6 +89,13 @@ export interface SessionSystemPrompt {
    * @param suffix the source, asked once per request
    */
   setSuffix(key: string, suffix: SystemPromptSuffix): void;
+  /**
+   * Install this session's context block — `sessionContext`'s `instructions`
+   * (`runtime-session-memory.ts`). Set once, before the first request, and
+   * then byte-stable: it is a CONSTANT for the session, not a source asked per
+   * request, which is exactly what distinguishes it from a suffix. `""` clears.
+   */
+  setContext(text: string): void;
 }
 
 /** The runtime-scoped prompt source: one base, one {@link SessionSystemPrompt} per session. */
@@ -162,13 +174,17 @@ export function createSystemPromptResolver(deps: {
     base,
     forSession(context: AgentSessionContext): SessionSystemPrompt {
       const suffixes = new Map<string, SystemPromptSuffix>();
+      let sessionContext = "";
       return {
         resolve(): string {
           const dynamic = deps.instructions?.(context) ?? "";
-          const text =
+          const agentText =
             dynamic === ""
               ? base()
               : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(dynamic)}`;
+          // The same identity rule as the suffix below: no context, no bytes.
+          const text =
+            sessionContext === "" ? agentText : `${agentText}${SUFFIX_SEPARATOR}${sessionContext}`;
           // Each source is asked once per request, and an empty answer
           // contributes NOTHING — not a blank line, not a separator — which is
           // what keeps a session whose sources all have nothing to say
@@ -187,6 +203,9 @@ export function createSystemPromptResolver(deps: {
         },
         setSuffix(key: string, next: SystemPromptSuffix): void {
           suffixes.set(key, next);
+        },
+        setContext(text: string): void {
+          sessionContext = text.trim();
         },
       };
     },

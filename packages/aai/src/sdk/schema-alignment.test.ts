@@ -135,6 +135,7 @@ describe("type ↔ schema alignment", () => {
         "open_meteo",
         "brave_search",
         "google_places",
+        "text_me",
       ]
     `);
   });

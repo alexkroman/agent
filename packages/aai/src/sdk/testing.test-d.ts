@@ -66,7 +66,8 @@ test("the overrides NAME every ToolContext field, and no other", () => {
   // `ToolContextOverrides` spells its fields out rather than mapping over
   // `keyof ToolContext`; this is what keeps the two in step. A field added to
   // `ToolContext` fails the first assertion until a spec can override it.
-  type Own = Exclude<keyof ToolContextOverrides, "model" | "desk">;
+  // `clientId`/`clientPhone` are not fields: they seed `sessionClientId`/`sessionClientPhone`.
+  type Own = Exclude<keyof ToolContextOverrides, "model" | "desk" | "clientId" | "clientPhone">;
   expectTypeOf<Exclude<keyof ToolContext, Own>>().toEqualTypeOf<never>();
   expectTypeOf<Exclude<Own, keyof ToolContext>>().toEqualTypeOf<never>();
 });

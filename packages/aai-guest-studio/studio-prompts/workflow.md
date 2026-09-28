@@ -1355,14 +1355,9 @@ Five things worth knowing:
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
   closing window is an outcome to branch on, not a failure, and the engine closes
   the hook as it shuts so a late answer cannot change what already happened.
-- **Racing the two WORKS, and is still not how to put a deadline on a wait.** A
-  wait no longer unwinds the stack — it hands back a promise that never settles
-  — so the body reaches every wait a `race` or an `all` puts in front of it and
-  the run suspends once, on the earliest deadline among them. Race only waits
-  that are independent. For a deadline ON a wait, use `timeoutMs`: it is
-  journaled WITH the hook, and its timeout arm CLOSES the hook before the body
-  continues — a race has no such moment, so a late signal could change a window
-  already timed out.
+- **Racing two independent waits WORKS** (the run suspends once, on the
+  earliest), but a deadline ON a wait is `timeoutMs`: it CLOSES the hook before
+  the body continues, so a late signal cannot change a window already timed out.
 - **`ctx.workflows.wakeUp(runId, { correlationIds: [id] })`** ends a sleep early,
   which is how a "send it now" tool cuts a scheduled wait short. Naming no ids
   wakes every outstanding SLEEP and deliberately not a `waitFor` deadline, so
@@ -1614,8 +1609,8 @@ export async function measure(uploadId: string) {
 ### Posting somewhere — `@alexkroman1/aai/channels`
 
 A run that finishes while nobody is on the line needs somewhere to put the
-result. `slackChannel({ webhookUrl })` names a destination and
-`sendToChannelOrFail(channel, message)` posts to it:
+result. `slackChannel({ webhookUrl })` (or `textbeltChannel({ key, to })`, an
+SMS) names a destination and `sendToChannelOrFail(channel, message)` posts to it:
 
 ```ts no-check
 import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
@@ -1625,7 +1620,7 @@ import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 export async function announce(headline: string, points: string[]) {
   const message: ChannelMessage = {
     text: headline,
-    sections: points.map((point) => ({ text: point })),
+    sections: points.map((point) => ({ body: point })),
   };
   return await sendToChannelOrFail(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
 }
@@ -1638,6 +1633,15 @@ rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
 before a run depends on it, and `explainChannelFailure` turns a refusal into a
 sentence a person can act on. `podcast-digest-workflow` is the worked example.
+
+### Reaching a device after the call
+
+A run reaches a device holding `WS /inbox?client=<id>` open: a tool passes
+`sessionClientId(ctx)` to the run, and a step's `stepNotifyClient` throws a
+retryable error until the device acks. Test: `stubClientInbox`.
+`?client=` also makes a device one conversation across connects (self-hosted):
+`sessionContext`, `onSessionEnd`, `stepClientTranscript`; its id is the only
+key.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
@@ -2629,22 +2633,17 @@ it, `[]` for none.
 | `open_meteo` | Weather + forecast (Open-Meteo), no key | `location`, `days?`, `units?` |
 | `brave_search` | Brave Search API — `BRAVE_API_KEY` | `query`, `max_results?`, `freshness?` |
 | `google_places` | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY` | `query`, `max_results?`, `open_now?` |
+| `text_me` | Text the owner (Textbelt) — `TEXTBELT_KEY`, `SMS_TO_PHONE`; a client's `?phone=` only if in `SMS_ALLOWED_PHONES` (`*`: any) | `message`, `url?` |
 
 A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
 
-**Every builtin in this table is a tool the MODEL calls — not a function
-your code can call.** Listing one in `builtinTools` adds it to the model's
-tool set; it does not import anything into `agent.ts`. There is no
-`fetch_json()` you can call from a tool's `execute`.
-
-So there are two valid designs for reaching an API:
+**Every builtin here is a tool the MODEL calls, not a function your code
+can call** — there is no `fetch_json()` for a tool's `execute`. So:
 
 - **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
-  should decide the URL and read the JSON — general lookups you cannot
-  enumerate ahead of time.
+  should decide the URL and read the JSON — lookups you cannot enumerate.
 - **Write your own tool** whose `execute` calls `fetch` when YOU own the
-  URL and the shape — a specific endpoint, auth, or a response you want to
-  reshape before the model sees it.
+  URL and the shape — a specific endpoint, auth, or a reshaped response.
 
 Network builtins are SSRF-screened outside a container (private/loopback
 blocked). Your own tool code has open egress either way.
@@ -2854,16 +2853,17 @@ to put it in.
 | `started` | `boolean` | Whether session started |
 | `running` | `boolean` | Whether session active |
 
-Methods: `start()`, `toggle()`, `end()`, `reset()`, `cancel()`,
-`disconnect()`, `resetState()`.
+Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`,
+and:
 
-- `end()` hangs up: it flips `started` back to `false` (a start-screen UI
-  shows its Start control again) and the next `start()` is a brand-new
-  session — fresh per-session tool state, greeting included. Use it for
-  End/Hang up/New game buttons.
-- `reset()` clears the conversation but keeps the call live (`started`
-  stays `true`) — the control stays on Stop/Resume, and per-session tool
-  state survives. Use it for a "clear chat" control, not for ending.
+- `end()` hangs up: `started` goes `false`; the next `start()` is a new
+  session (fresh tool state, greeting). For End/Hang up/New game.
+- `reset()` clears the conversation, keeping the call and tool state. For
+  "clear chat", not ending.
+- `sendText(text)`: a TYPED turn, answered as if spoken. The server's
+  transcript adds it to `messages`; don't. Pipeline agents only.
+- `setMicMuted(muted)`: mute without hanging up (streams silence), e.g.
+  hold-to-talk. Read as `micMuted`.
 
 ## UI hooks
 

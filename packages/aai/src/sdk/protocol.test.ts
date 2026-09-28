@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
+  MAX_TRANSCRIPT_CHARS,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
 import {
@@ -97,6 +98,42 @@ describe("SessionCommandSchema", () => {
       expect(SessionCommandSchema.safeParse({ type }).success).toBe(true);
     },
   );
+
+  describe("user_text", () => {
+    test("accepts a typed turn and hands the server its text trimmed", () => {
+      // Trimmed at the schema so every consumer — the dispatcher, the transport,
+      // the event it becomes — sees the same string, not one each trims itself.
+      const result = SessionCommandSchema.safeParse({ type: "user_text", text: "  hi there \n" });
+      expect(result.success && result.data).toEqual({ type: "user_text", text: "hi there" });
+    });
+
+    test.each([
+      ["empty", ""],
+      ["whitespace only", "   \n\t"],
+    ])("rejects %s text: a turn with nothing in it is not a turn", (_label, text) => {
+      expect(SessionCommandSchema.safeParse({ type: "user_text", text }).success).toBe(false);
+    });
+
+    test("rejects rather than truncates past the transcript cap it becomes", () => {
+      // The text becomes a `user-transcript.committed`, whose own cap is this
+      // one — so a command that parsed here could never produce an event that
+      // did not.
+      const at = "x".repeat(MAX_TRANSCRIPT_CHARS);
+      expect(SessionCommandSchema.safeParse({ type: "user_text", text: at }).success).toBe(true);
+      expect(SessionCommandSchema.safeParse({ type: "user_text", text: `${at}x` }).success).toBe(
+        false,
+      );
+    });
+
+    test("rejects a missing or non-string text", () => {
+      expect(SessionCommandSchema.safeParse({ type: "user_text" }).success).toBe(false);
+      expect(SessionCommandSchema.safeParse({ type: "user_text", text: 42 }).success).toBe(false);
+    });
+
+    test("is a recognised command type, so an invalid one warns instead of vanishing", () => {
+      expect(SESSION_COMMAND_TYPES.has("user_text")).toBe(true);
+    });
+  });
 
   test("accepts playback_progress", () => {
     const result = SessionCommandSchema.safeParse({ type: "playback_progress", bufferedMs: 250 });

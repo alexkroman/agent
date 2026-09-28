@@ -53,4 +53,63 @@ describe("mountClient (unmocked session core)", () => {
       handle.dispose();
     }
   });
+
+  it("forwards `location` to the session, so the socket URL carries it", () => {
+    // Picked through `ClientConfig` like `resumeSessionId`: a field declared on
+    // the options and dropped at the mount would compile and send nothing.
+    const handle = mountClient({
+      target: "#app",
+      platformUrl: "http://test.local",
+      location: "Portland, Oregon",
+      WebSocket: recordingWebSocketClass((socket) => {
+        sockets.push(socket);
+      }),
+    });
+    try {
+      act(() => {
+        handle.session.start();
+      });
+      expect(new URL(sockets[0]?.url ?? "").searchParams.get("location")).toBe("Portland, Oregon");
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it("forwards `phone` to the session, so the socket URL carries it", () => {
+    const handle = mountClient({
+      target: "#app",
+      platformUrl: "http://test.local",
+      phone: "+15035550123",
+      WebSocket: recordingWebSocketClass((socket) => {
+        sockets.push(socket);
+      }),
+    });
+    try {
+      act(() => {
+        handle.session.start();
+      });
+      expect(new URL(sockets[0]?.url ?? "").searchParams.get("phone")).toBe("+15035550123");
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it("forwards `client` to the session, so the socket URL carries it", () => {
+    const handle = mountClient({
+      target: "#app",
+      platformUrl: "http://test.local",
+      client: "kitchen-speaker",
+      WebSocket: recordingWebSocketClass((socket) => {
+        sockets.push(socket);
+      }),
+    });
+    try {
+      act(() => {
+        handle.session.start();
+      });
+      expect(new URL(sockets[0]?.url ?? "").searchParams.get("client")).toBe("kitchen-speaker");
+    } finally {
+      handle.dispose();
+    }
+  });
 });

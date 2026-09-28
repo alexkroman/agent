@@ -222,6 +222,32 @@ describe("`covering()` — what makes the generic dead-air cover stand down", ()
     expect(controller.covering()).toBe(false);
   });
 
+  test("`coveredThisTurn` stays true after the call settles, until the next turn", () => {
+    // The dead-air cover reads this one: once a tool has said how its wait
+    // sounds, the generic phrase would only land as a preamble to the answer.
+    const { controller } = harness();
+    controller.beginTurn();
+    expect(controller.coveredThisTurn()).toBe(false);
+    const call = controller.begin(
+      { delayed: [{ afterMs: 3000, content: "…" }] },
+      "a",
+      {},
+      undefined,
+    );
+    call?.dispose();
+    expect(controller.covering()).toBe(false);
+    expect(controller.coveredThisTurn()).toBe(true);
+    controller.beginTurn();
+    expect(controller.coveredThisTurn()).toBe(false);
+  });
+
+  test("`coveredThisTurn` is false for a tool that only declares an outcome", () => {
+    const { controller } = harness();
+    controller.beginTurn();
+    controller.begin({ complete: [{ content: "Done." }] }, "lookup", {}, undefined)?.dispose();
+    expect(controller.coveredThisTurn()).toBe(false);
+  });
+
   test("dispose is idempotent — a settle then a dispose does not double-count", () => {
     const { controller } = harness();
     const call = controller.begin({ start: [{ content: "One sec." }] }, "a", {}, undefined);

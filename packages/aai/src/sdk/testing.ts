@@ -29,8 +29,10 @@
  * - `testing-delegate.ts` — `stubDelegate`, the same seam one loop up: what a
  *   SUBAGENT concluded, without running one.
  * - `_testing-step-fetch.ts`, `testing-gateway.ts`, `testing-generate.ts`,
- *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts` — the
- *   slots a step reaches through, each answered in memory.
+ *   `testing-speech.ts`, `_testing-transcribe.ts`, `testing-uploads.ts`,
+ *   `testing-client-inbox.ts`, `testing-client-transcript.ts` — the slots a step
+ *   reaches through, each answered
+ *   in memory.
  * - `testing-workflows.ts` — run snapshots and progress streams, for a page;
  *   `testing-workflow-ctx.ts` — `createWorkflowContext`, the `ctx` a workflow BODY
  *   takes, which nothing else can hand it.
@@ -79,6 +81,20 @@ export {
   type StubTranscribeOptions,
   stubTranscribe,
 } from "./_testing-transcribe.ts";
+// A device answering `stepNotifyClient`, in memory.
+export {
+  type StubClientInbox,
+  type StubClientInboxCall,
+  type StubClientInboxOptions,
+  stubClientInbox,
+} from "./testing-client-inbox.ts";
+// A client's durable conversation answering `stepClientTranscript`, in memory.
+export {
+  type StubClientTranscript,
+  type StubClientTranscriptAnswer,
+  type StubClientTranscriptCall,
+  stubClientTranscript,
+} from "./testing-client-transcript.ts";
 export {
   type StubDelegate,
   type StubDelegateCall,

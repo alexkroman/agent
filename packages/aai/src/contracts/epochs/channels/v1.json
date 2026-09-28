@@ -3,7 +3,7 @@
   "capability": "channels",
   "epoch": 1,
   "rule": 2,
-  "sha256": "bdde10381707e8d959b8773ce4fb78e9ea4664cf8c8542052fa27a0d6c4ce8c3",
+  "sha256": "0b5f903148a8c872a73e11afaaccbd2f3c576438ecd2b9e8d20a28fd187a515c",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -17,9 +17,17 @@
     "SLACK_CHANNEL_KIND",
     "SlackChannel",
     "SlackChannelOptions",
+    "SmsRecipientEnv",
+    "TEXTBELT_CHANNEL_HANDLER",
+    "TEXTBELT_CHANNEL_KIND",
+    "TEXTBELT_MAX_MESSAGE_CHARS",
+    "TextbeltChannel",
+    "TextbeltChannelOptions",
+    "allowedSmsRecipient",
     "escapeSlackMrkdwn",
     "explainChannelFailure",
     "explainSlackChannelFailure",
+    "explainTextbeltChannelFailure",
     "isSlackWebhookUrl",
     "isSlackWorkflowTriggerUrl",
     "registerChannelHandler",
@@ -27,11 +35,14 @@
     "renderChannelPayload",
     "renderSlackChannelPayload",
     "renderSlackPlainText",
+    "renderTextbeltText",
     "sendToChannel",
-    "slackChannel"
+    "sessionClientPhone",
+    "slackChannel",
+    "textbeltChannel"
   ],
   "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -44,6 +55,12 @@
       "rule": 2,
       "sha256": "bdde10381707e8d959b8773ce4fb78e9ea4664cf8c8542052fa27a0d6c4ce8c3",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "0b5f903148a8c872a73e11afaaccbd2f3c576438ecd2b9e8d20a28fd187a515c",
+      "reason": "additive (checked): +SmsRecipientEnv, +TEXTBELT_CHANNEL_HANDLER, +TEXTBELT_CHANNEL_KIND, +TEXTBELT_MAX_MESSAGE_CHARS, +TextbeltChannel, +TextbeltChannelOptions, +allowedSmsRecipient, +explainTextbeltChannelFailure, +renderTextbeltText, +sessionClientPhone, +textbeltChannel"
     }
   ]
 }

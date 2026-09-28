@@ -205,41 +205,42 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sendTtsText = audioOut.sendTtsText;
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
-  const { nudger, recovery, speechEdges, sttEvents, manualTurn } = createUserActivity({
-    log,
-    sid: opts.sid,
-    callbacks,
-    silenceTimeoutMs: opts.silenceTimeoutMs,
-    silencePrompt: opts.silencePrompt,
-    resumeFalseInterruption,
-    speculation,
-    speechIdleTimeoutMs,
-    minBargeInWords: knobs.minBargeInWords,
-    interruptionMinDurationMs: knobs.interruptionMinDurationMs,
-    onInterrupted: audioOut.onInterrupted,
-    userTurnLimit: opts.userTurnLimit,
-    turnDetection: opts.turnDetection,
-    onUtteranceEnded: metrics.onUtteranceEnded,
-    // `providers` is reached lazily: this fires from an STT event, which only
-    // exists once `providers.open()` has run.
-    forceEndOfTurn: createForceEndOfTurn({
-      stt: () => providers.stt,
-      sttName: opts.stt.name,
+  const { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn } =
+    createUserActivity({
       log,
       sid: opts.sid,
-    }),
-    isTerminated: () => terminated,
-    isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
-    isTurnInFlight: () => turns.inFlight(),
-    isTurnDraining: () => turns.draining(),
-    isResumeTurnInFlight: () => turns.resumeInFlight(),
-    hasTurnSpoken: () => turns.spoke(),
-    isPlaybackPending: () => heard.pending(),
-    hasSpokenRecordable: () => heard.spokeRecordable(),
-    abortInFlightTurn: () => abortInFlightTurn(),
-    tailResumePrompt: () => heard.resumePrompt(),
-    runChainedTurn,
-  });
+      callbacks,
+      silenceTimeoutMs: opts.silenceTimeoutMs,
+      silencePrompt: opts.silencePrompt,
+      resumeFalseInterruption,
+      speculation,
+      speechIdleTimeoutMs,
+      minBargeInWords: knobs.minBargeInWords,
+      interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+      onInterrupted: audioOut.onInterrupted,
+      userTurnLimit: opts.userTurnLimit,
+      turnDetection: opts.turnDetection,
+      onUtteranceEnded: metrics.onUtteranceEnded,
+      // `providers` is reached lazily: this fires from an STT event, which only
+      // exists once `providers.open()` has run.
+      forceEndOfTurn: createForceEndOfTurn({
+        stt: () => providers.stt,
+        sttName: opts.stt.name,
+        log,
+        sid: opts.sid,
+      }),
+      isTerminated: () => terminated,
+      isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
+      isTurnInFlight: () => turns.inFlight(),
+      isTurnDraining: () => turns.draining(),
+      isResumeTurnInFlight: () => turns.resumeInFlight(),
+      hasTurnSpoken: () => turns.spoke(),
+      isPlaybackPending: () => heard.pending(),
+      hasSpokenRecordable: () => heard.spokeRecordable(),
+      abortInFlightTurn: () => abortInFlightTurn(),
+      tailResumePrompt: () => heard.resumePrompt(),
+      runChainedTurn,
+    });
 
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
   // pipeline-providers.ts; the (hoisted) handlers below route provider
@@ -488,6 +489,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     nudger,
     speculation,
     manualTurn,
+    commitTypedTurn,
     isBusy: () => turns.inFlight() || heard.pending(),
     abortInFlightTurn,
     runChainedTurn,

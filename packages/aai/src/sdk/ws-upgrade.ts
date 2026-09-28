@@ -1,6 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { omitUndefined } from "./omit-undefined.ts";
 import { requestQuery } from "./request-url.ts";
+import { normalizeE164 } from "./session-phone.ts";
+import { CLIENT_ID_RE } from "./step-notify-client.ts";
 
 /**
  * Shape a resumable session id must have to be honored.
@@ -22,13 +25,56 @@ import { requestQuery } from "./request-url.ts";
 const RESUME_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
+ * Longest `?location=` honored. A street address fits in a fraction of this;
+ * the bound exists because the value is kept per session on a public endpoint.
+ */
+const MAX_LOCATION_CHARS = 200;
+
+/**
+ * A client-reported location (`?location=`, e.g. a smart speaker's configured
+ * address), or `undefined` when absent or unusable. Control characters are
+ * stripped — the value is interpolated into third-party API requests — and an
+ * over-long one is dropped rather than truncated into a different place.
+ */
+function parseLocation(raw: string | null): string | undefined {
+  if (raw === null) return;
+  const location = raw
+    .replace(/\p{Cc}/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return location && location.length <= MAX_LOCATION_CHARS ? location : undefined;
+}
+
+/**
+ * A client-reported phone number (`?phone=`) in E.164 form, or `undefined`.
+ * An invalid one is dropped with a warning that names the parameter, never the
+ * value: it is personal data, and a malformed number is still someone's.
+ */
+function parsePhone(raw: string | null, log?: { warn(message: string): void }): string | undefined {
+  if (raw === null || raw.trim() === "") return;
+  const phone = normalizeE164(raw);
+  if (phone === undefined) {
+    log?.warn("ws: ?phone= is not an E.164 number (+ and 8-15 digits); ignored");
+  }
+  return phone;
+}
+
+/**
  * Parse WebSocket upgrade query params into session start options.
+ *
+ * `log`, when given, hears about a `?phone=` that was dropped as invalid.
  *
  * @internal
  */
-export function parseWsUpgradeParams(rawUrl: string): {
+export function parseWsUpgradeParams(
+  rawUrl: string,
+  log?: { warn(message: string): void },
+): {
   resumeFrom?: string;
   skipGreeting: boolean;
+  clientLocation?: string;
+  clientId?: string;
+  clientPhone?: string;
 } {
   const params = requestQuery(rawUrl);
   // Treat an empty `?sessionId=` as absent: a defined-but-empty id is not a
@@ -41,5 +87,21 @@ export function parseWsUpgradeParams(rawUrl: string): {
   // actually resuming should still be greeted.
   const resumeFrom = raw !== undefined && RESUME_ID_RE.test(raw) ? raw : undefined;
   const skipGreeting = resumeFrom !== undefined || params.has("resume");
-  return resumeFrom !== undefined ? { resumeFrom, skipGreeting } : { skipGreeting };
+  const clientLocation = parseLocation(params.get("location"));
+  // `?client=` names the device, so a tool can hand a run the id its `WS /inbox`
+  // socket is held under (see `session-client.ts`). Unusable = absent, like the
+  // session id above: it costs the device its reminders, never its session.
+  // It is ALSO the key of the device's durable conversation: a connect naming
+  // it is seeded with that client's history. On a server listening beyond
+  // loopback the id is the ONLY credential for that history — anyone who can
+  // reach the port and guess or overhear it reads what was said.
+  const rawClient = params.get("client");
+  const clientId = rawClient !== null && CLIENT_ID_RE.test(rawClient) ? rawClient : undefined;
+  // `?phone=` is what `sessionClientPhone(ctx)` answers (see `session-phone.ts`).
+  const clientPhone = parsePhone(params.get("phone"), log);
+  return {
+    ...omitUndefined({ resumeFrom }),
+    skipGreeting,
+    ...omitUndefined({ clientLocation, clientId, clientPhone }),
+  };
 }

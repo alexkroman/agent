@@ -82,5 +82,6 @@ describeWithPg("the session-state contract over a real Postgres", () => {
     label: "postgres",
     backend: () => backend,
     uid: sessionStateIds("pg"),
+    clientLog: true,
   });
 });

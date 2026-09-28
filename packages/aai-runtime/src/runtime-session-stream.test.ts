@@ -2,8 +2,10 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "./_test-utils.ts";
+import type { SessionMemory } from "./runtime-session-memory.ts";
 import { attachSessionStream, readAllEvents } from "./runtime-session-stream.ts";
 import { createSessionEventStream, SESSION_EVENT_READ_LIMIT } from "./session-event-stream.ts";
+import { createResumeFindings } from "./session-resume-found.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 
 const SID = "s-1";
@@ -219,6 +221,106 @@ describe("attachSessionStream", () => {
 
     // The events leading up to a failure are the ones most worth having.
     await expect(backend.countEvents(SID)).resolves.toBe(1);
+  });
+});
+
+describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
+  /** A memory whose `open` answers these prior sessions' events. */
+  function priorMemory(backendSid: string, texts: string[]) {
+    const backend = createMemoryStateBackend();
+    const other = createSessionEventStream({ backend });
+    for (const text of texts) other.append(backendSid, { type: "user-transcript.committed", text });
+    const ended = vi.fn<(lastEventIndex: number) => void>();
+    const memory: SessionMemory = {
+      open: async () => (await readAllEvents(other, backendSid)).slice(),
+      ended,
+    };
+    return { memory, ended };
+  }
+
+  test("a FRESH connect naming a client is seeded with its prior sessions", async () => {
+    const { memory } = priorMemory("earlier", ["remind me at six"]);
+    const core = makeMockCore();
+    const findings = createResumeFindings();
+    attachSessionStream(core, {
+      stream: createSessionEventStream({ backend: createMemoryStateBackend() }),
+      sessionId: SID,
+      resumed: false,
+      findings,
+      memory,
+    });
+
+    await core.start();
+
+    expect(core.restoreHistory).toHaveBeenCalledWith(
+      [{ role: "user", content: "remind me at six" }],
+      [],
+    );
+    // A client's history is not a resume finding: `?sessionId=` named nothing.
+    expect(findings.any()).toBe(false);
+  });
+
+  test("a resume restores prior sessions THEN its own log, in ONE call, never doubled", async () => {
+    const backend = createMemoryStateBackend();
+    const before = createSessionEventStream({ backend });
+    before.append(SID, { type: "user-transcript.committed", text: "mine" });
+    await before.flush(SID);
+    const { memory } = priorMemory("earlier", ["theirs"]);
+    const core = makeMockCore();
+    const findings = createResumeFindings();
+    attachSessionStream(core, {
+      stream: createSessionEventStream({ backend }),
+      sessionId: SID,
+      resumed: true,
+      findings,
+      memory,
+    });
+
+    await core.start();
+
+    expect(core.restoreHistory).toHaveBeenCalledTimes(1);
+    expect(core.restoreHistory).toHaveBeenCalledWith(
+      [
+        { role: "user", content: "theirs" },
+        { role: "user", content: "mine" },
+      ],
+      [],
+    );
+    expect(findings.any()).toBe(true);
+  });
+
+  test("stop tells the memory AFTER the flush, with the last index written", async () => {
+    const backend = createMemoryStateBackend();
+    const stream = createSessionEventStream({ backend });
+    const { memory, ended } = priorMemory("earlier", []);
+    const core = makeMockCore();
+    attachSessionStream(core, { stream, sessionId: SID, resumed: false, memory });
+    stream.append(SID, { type: "speech.started" });
+    stream.append(SID, { type: "speech.started" });
+    let storedWhenTold = -1;
+    ended.mockImplementation(() => {
+      void backend.countEvents(SID).then((n) => {
+        storedWhenTold = n;
+      });
+    });
+
+    await core.stop();
+
+    expect(ended).toHaveBeenCalledWith(1);
+    await vi.waitFor(() => expect(storedWhenTold).toBe(2));
+  });
+
+  test("a session that recorded nothing ends at -1", async () => {
+    const { memory, ended } = priorMemory("earlier", []);
+    const core = makeMockCore();
+    attachSessionStream(core, {
+      stream: createSessionEventStream({ backend: createMemoryStateBackend() }),
+      sessionId: SID,
+      resumed: false,
+      memory,
+    });
+    await core.stop();
+    expect(ended).toHaveBeenCalledWith(-1);
   });
 });
 

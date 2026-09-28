@@ -283,6 +283,47 @@ describe("createBrowserSession", () => {
       expect(lastSocket?.url).not.toContain("sessionId=");
     });
 
+    it("carries `location` on the first connect AND on the resume after it", () => {
+      // The server reads it from the upgrade, attempt by attempt — a reconnect
+      // without it would leave the resumed session not knowing where it is.
+      core = createBrowserSession({
+        platformUrl: "ws://localhost:3000",
+        WebSocket: MockWebSocketConstructor,
+        location: "12 Example St, Springfield",
+      });
+      core.connect();
+      expect(new URL(lastSocket?.url ?? "").searchParams.get("location")).toBe(
+        "12 Example St, Springfield",
+      );
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      core.disconnect();
+      core.connect();
+      const resumed = new URL(lastSocket?.url ?? "").searchParams;
+      expect(resumed.get("sessionId")).toBe("sess-123");
+      expect(resumed.get("location")).toBe("12 Example St, Springfield");
+    });
+
+    it("asks a `location` getter on every attempt, so a change needs no remount", () => {
+      let where: string | undefined = "Springfield, IL";
+      core = createBrowserSession({
+        platformUrl: "ws://localhost:3000",
+        WebSocket: MockWebSocketConstructor,
+        location: () => where,
+      });
+      core.connect();
+      expect(new URL(lastSocket?.url ?? "").searchParams.get("location")).toBe("Springfield, IL");
+      core.disconnect();
+      where = "Portland, Oregon";
+      core.connect();
+      expect(new URL(lastSocket?.url ?? "").searchParams.get("location")).toBe("Portland, Oregon");
+      // An answer of nothing — `undefined`, or blank — sends no parameter at all.
+      core.disconnect();
+      where = "  ";
+      core.connect();
+      expect(lastSocket?.url).not.toContain("location");
+    });
+
     it("first connect has no resume param", () => {
       core.connect();
       expect(lastSocket?.url).not.toContain("resume");

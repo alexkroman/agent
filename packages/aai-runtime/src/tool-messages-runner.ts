@@ -34,10 +34,14 @@
  * 3. **A caller who is talking is not talked over.** Every filler send checks
  *    `callerSpeaking()` first, the rule `pipeline-stream-parts.ts` already
  *    applies to the dead-air cover for the same measured reason.
- * 4. **The generic cover stands down while a tool is covering itself**, which
- *    is Vapi's "idle messages are disabled during tool calls" — see
- *    {@link ToolSpeechController.covering}. Without it a tool with a 3s rung
- *    and a session with a 2s dead-air window speak twice about one gap.
+ * 4. **The generic cover stands down for a turn whose tool covers itself**,
+ *    which is Vapi's "idle messages are disabled during tool calls" — see
+ *    {@link ToolSpeechController.covering} and
+ *    {@link ToolSpeechController.coveredThisTurn}. Without it a tool with a 3s
+ *    rung and a session with a 2s dead-air window speak twice about one gap —
+ *    and, once the call has returned, the generic phrase lands a beat before
+ *    the answer and plays as its preamble ("I'm checking on this. It's 59
+ *    degrees…"), covering no silence at all.
  */
 
 import type { RandomSource, ToolMessages } from "@alexkroman1/aai";
@@ -194,6 +198,19 @@ export type ToolSpeechController = {
    */
   covering(): boolean;
   /**
+   * Has a call with a START or a DELAYED line begun in this turn?
+   *
+   * Sticky until the next {@link ToolSpeechController.beginTurn}, which is the
+   * difference from {@link ToolSpeechController.covering}: a tool that declares
+   * its own cover has said how its wait should sound, and the gap after it
+   * returns is the model phrasing the answer — about a second, measured
+   * 2026-09-27 on a home-speaker `open_meteo` turn (tool call at 1.09s, answer
+   * done at 3.51s) where the generic opening phrase fired at 2.3s, after the
+   * call had returned, and played straight into the reply. The dead-air cover
+   * reads this and stays silent for the rest of the turn.
+   */
+  coveredThisTurn(): boolean;
+  /**
    * The verbatim completion this turn spoke, if any — and therefore the signal
    * that the model must NOT be called again.
    *
@@ -224,6 +241,8 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
   let channel: ToolSpeechChannel | undefined;
   /** Calls whose START/DELAYED lines are still the cover for this gap. */
   let coveringCalls = 0;
+  /** A covering call began this turn — see `coveredThisTurn`. */
+  let coveredTurn = false;
   let verbatim: string | undefined;
 
   /**
@@ -260,15 +279,20 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
     },
     beginTurn() {
       verbatim = undefined;
+      coveredTurn = false;
     },
     covering: () => coveringCalls > 0,
+    coveredThisTurn: () => coveredTurn,
     verbatim: () => verbatim,
     begin(messages, toolName, args, signal) {
       if (messages === undefined) return;
       const startMessage = selectToolMessage(messages.start, args, random);
       const ladder = planDelayedLadder(messages.delayed, args, random);
       const covers = startMessage !== undefined || ladder.length > 0;
-      if (covers) coveringCalls += 1;
+      if (covers) {
+        coveringCalls += 1;
+        coveredTurn = true;
+      }
       let rung = 0;
       let done = false;
       const startedAt = Date.now();

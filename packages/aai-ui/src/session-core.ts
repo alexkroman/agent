@@ -26,6 +26,7 @@ import {
   createMessageHandlers,
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
+import { createMicSender } from "./session-core-mic.ts";
 import { reconnectPending } from "./session-core-reconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
 import {
@@ -37,8 +38,8 @@ import {
   STOPPED,
 } from "./session-core-types.ts";
 import { buildWsUrl } from "./session-core-url.ts";
-import { createUserTurnActions } from "./session-core-user-turn.ts";
-import { MIC_SEND_MAX_BUFFERED_BYTES, type VoiceSessionOptions } from "./types.ts";
+import { createUserInput } from "./session-core-user-turn.ts";
+import type { VoiceSessionOptions } from "./types.ts";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     started: false,
     running: false,
     recording: false,
+    micMuted: false,
     // The programmatic endpoint — the LONG-LIVING platform URL
     // (`wss://host/my-agent/websocket`), derived up front so UIs can show it
     // before connecting. Deliberately NOT the brokered sandbox tunnel URL the
@@ -173,15 +175,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     openSocket()?.send(JSON.stringify(msg));
   }
 
-  function sendAudio(bytes: ArrayBuffer): void {
-    const ws = openSocket();
-    if (!ws) return;
-    // Backpressure: if the socket's send queue is backed up (slow network),
-    // drop this frame instead of queueing. Queued mic audio only adds latency
-    // and flushes stale speech into STT once the connection recovers.
-    if (ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
-    ws.send(bytes);
-  }
+  // Backpressure and the caller's mute — see `session-core-mic.ts`.
+  const mic = createMicSender({ conn, snapshot: () => currentSnapshot, updateState });
 
   // ─── Audio path ───────────────────────────────────────────────────────────
 
@@ -193,7 +188,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
    * frame and snapshot write the machine decides on but cannot make.
    */
   const audio = createAudioPath(
-    createAudioEffects({ conn, updateState, agentState, sendJson, sendAudio }),
+    createAudioEffects({ conn, updateState, agentState, sendJson, sendAudio: mic.sendAudio }),
   );
 
   // ─── Message handling ─────────────────────────────────────────────────────
@@ -407,8 +402,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     sendJson({ type: "cancel" });
   }
 
-  // Push-to-talk's three edges — see `session-core-user-turn.ts`.
-  const userTurn = createUserTurnActions({
+  // Push-to-talk's three edges and the typed turn — see `session-core-user-turn.ts`.
+  const { userTurn, sendText } = createUserInput({
     snapshot: () => currentSnapshot,
     connected: () => openSocket() !== null,
     bargeIn: () => bargeIn(conn, audio),
@@ -483,6 +478,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     connect,
     cancel,
     userTurn: Object.freeze(userTurn),
+    sendText,
+    setMicMuted: mic.setMicMuted,
     resetState,
     reset,
     disconnect,

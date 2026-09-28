@@ -32,7 +32,7 @@ type AnyWorkflowDef<R = unknown> = {
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -40,6 +40,46 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
 export function commandedBuiltins(config: {
@@ -390,6 +430,15 @@ type StartOptions = {
 };
 
 // @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
+
+// @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -414,6 +463,44 @@ type StreamOptions = {
 
 // @public
 export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
+export type StubClientInbox = {
+    calls: StubClientInboxCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+
+// @public
+export type StubClientInboxCall = {
+    clientId: string;
+    notice: ClientNotice;
+};
+
+// @public
+export type StubClientInboxOptions = {
+    answer?: "acked" | ClientUnreachableReason | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason) | undefined;
+};
+
+// @public
+export type StubClientTranscript = {
+    calls: StubClientTranscriptCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubClientTranscript;
+
+// @public
+export type StubClientTranscriptAnswer = ClientTranscript | ((call: StubClientTranscriptCall) => ClientTranscript);
+
+// @public
+export type StubClientTranscriptCall = {
+    clientId: string;
+    options: StepClientTranscriptOptions;
+};
 
 // @public
 export interface StubDelegate {
@@ -754,6 +841,8 @@ export type ToolContextOverrides = {
     delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;
     desk?: StubDelegate | undefined;
+    clientId?: string | undefined;
+    clientPhone?: string | undefined;
 };
 
 // @public

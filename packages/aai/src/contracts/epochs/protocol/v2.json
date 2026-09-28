@@ -1,0 +1,32 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "protocol",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "99cdc6cd6ecd2e378bd379a8333d87012a03775db94668eae02da6bc2fe4071c",
+  "exports": [
+    "CLIENT_CONFIG_METHODS",
+    "CLIENT_CONFIG_PATH",
+    "ClientSink",
+    "EVENT_ID_PREFIX",
+    "HostConfig",
+    "HostConfigMessageSchema",
+    "HostConfigSchema",
+    "ReadyConfig",
+    "ReadyConfigSchema",
+    "RestoredToolCall",
+    "RestoredToolCallSchema",
+    "SESSION_COMMAND_TYPES",
+    "SESSION_EVENT_TYPES",
+    "SessionCommand",
+    "SessionCommandSchema",
+    "SessionErrorCode",
+    "SessionErrorCodeSchema",
+    "SessionEventMeta",
+    "SessionEventMetaSchema",
+    "buildClientConfig",
+    "buildReadyConfig",
+    "lenientParse"
+  ],
+  "rollup": "b5970fdd5674ecda6769c8a1fc01df76be29a1b0e3999ab2185fd46d6efa6fd3"
+}

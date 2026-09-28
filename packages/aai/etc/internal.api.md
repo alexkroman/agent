@@ -247,9 +247,14 @@ export interface OwnedMap<K, V> {
 export const PACER_BURST_MS = 100;
 
 // @internal
-export function parseWsUpgradeParams(rawUrl: string): {
+export function parseWsUpgradeParams(rawUrl: string, log?: {
+    warn(message: string): void;
+}): {
     resumeFrom?: string;
     skipGreeting: boolean;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
 };
 
 // @internal

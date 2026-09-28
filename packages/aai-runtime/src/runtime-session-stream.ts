@@ -22,9 +22,26 @@
  *   failure path.
  * - **Flush on the way out.** The batch that has not been written yet is the
  *   part a crash costs, and a clean stop is the one time it costs nothing.
+ *   Only THEN is `onSessionEnd` told (`runtime-session-memory.ts`), so a run it
+ *   starts reads a log that already holds the session's last words.
+ *
+ * ## A client's prior sessions restore in the SAME call as a resume's own log
+ *
+ * A connect that names a client (`?client=`) is seeded with that client's recent
+ * prior sessions whether or not it resumed — `SessionMemory.open` answers them,
+ * never including this session's own id. They are concatenated BEFORE this
+ * session's own events and walked once, so there is one `history.restored`
+ * frame, one seed, one 200-message cap, and tool-call anchors counted over the
+ * whole list. Two calls would restore two overlapping windows, and a resume of
+ * the same live session would double its own turns.
+ *
+ * Only this session's OWN log counts as a resume "finding" something: the
+ * greeting decision (`session-resume-found.ts`) is about whether `?sessionId=`
+ * named a real conversation, and a client's history does not answer that.
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
+import type { SessionMemory } from "./runtime-session-memory.ts";
 import type { ServerSession } from "./session-core.ts";
 import { historyFromEvents } from "./session-event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
@@ -57,6 +74,12 @@ export async function readAllEvents(
   return all;
 }
 
+/** Whether these events restore anything at all — a turn, or a tool call. */
+function holdsConversation(events: readonly SessionEvent[]): boolean {
+  const { messages, toolCalls } = historyFromEvents(events);
+  return messages.length > 0 || toolCalls.length > 0;
+}
+
 /**
  * Wrap one session's `start` and `stop` so its event log continues on the way in
  * and is written out on the way out.
@@ -75,28 +98,27 @@ export function attachSessionStream(
      * `session-resume-found.ts`.
      */
     findings?: ResumeFindings | undefined;
+    /** Client binding, `sessionContext`, prior sessions and `onSessionEnd`. */
+    memory?: SessionMemory | undefined;
   },
 ): void {
-  const { stream, sessionId, resumed, findings } = opts;
+  const { stream, sessionId, resumed, findings, memory } = opts;
   const startCore = core.start.bind(core);
   core.start = async () => {
     await stream.hydrate(sessionId);
+    const prior = (await memory?.open()) ?? [];
     // Only on a RESUME. A fresh session's log is empty, so the read would be a
     // round trip that can only answer nothing — and `resumed` is known from the
     // socket's own `?sessionId=`, which is cheaper and more honest than
     // inferring it from a count.
-    if (resumed) {
-      const events = await readAllEvents(stream, sessionId);
-      // ONE walk for both, so a tool call's anchor and the message it points at
-      // cannot disagree — see `historyFromEvents`.
-      const { messages, toolCalls } = historyFromEvents(events);
-      if (messages.length > 0 || toolCalls.length > 0) {
-        core.restoreHistory(messages, toolCalls);
-        // Recorded only when there was something to restore: an EMPTY log is
-        // exactly the case that must fall through to a greeting.
-        findings?.record();
-      }
-    }
+    const own = resumed ? await readAllEvents(stream, sessionId) : [];
+    // Recorded only when the session's OWN log had something to restore: an
+    // EMPTY log is exactly the case that must fall through to a greeting.
+    if (own.length > 0 && holdsConversation(own)) findings?.record();
+    // ONE walk for both, so a tool call's anchor and the message it points at
+    // cannot disagree — see `historyFromEvents`.
+    const { messages, toolCalls } = historyFromEvents([...prior, ...own]);
+    if (messages.length > 0 || toolCalls.length > 0) core.restoreHistory(messages, toolCalls);
     await startCore();
   };
 
@@ -109,6 +131,8 @@ export function attachSessionStream(
       // what it recorded — the events leading up to a failure are the ones most
       // worth having. `flush` never rejects.
       await stream.flush(sessionId);
+      // `tail` is one past the last index assigned, so an empty log answers -1.
+      memory?.ended(stream.tail(sessionId) - 1);
     }
   };
 }

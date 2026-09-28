@@ -40,7 +40,7 @@ it:
   [stepTranscribeUpload](#steptranscribeupload) / [stepTranscribeSubmit](#steptranscribesubmit) /
   [stepTranscribePoll](#steptranscribepoll) for the async job API or
   [stepTranscribeSync](#steptranscribesync) for the one-request one, back in.
-- **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-2),
+- **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-3),
   for a body deciding whether a failure is worth another round, and
   [stepInfo](#stepinfo-1), which says which ATTEMPT this is and whether it is the
   last. That is what lets a step degrade rather than fail — a smaller model on
@@ -666,6 +666,46 @@ A `Response`, or its headers. Both spellings are accepted
 
 ***
 
+### stepClientTranscript()
+
+```ts
+function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+```
+
+Read what `clientId`'s sessions said — the durable log behind `?client=`.
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepClientTranscript } from "@alexkroman1/aai/step";
+
+export async function memorize(
+  input: { clientId: string; after?: { sessionId: string; index: number } },
+  ctx: WorkflowContext,
+) {
+  // Everything said since the last digest this run's caller recorded.
+  const { sessions } = await ctx.step("read", () =>
+    stepClientTranscript(input.clientId, { afterEventIndex: input.after }),
+  );
+  return { lines: sessions.reduce((n, s) => n + s.messages.length, 0) };
+}
+```
+
+#### Parameters
+
+##### clientId
+
+`string`
+
+##### options?
+
+[`StepClientTranscriptOptions`](#stepclienttranscriptoptions)
+
+#### Returns
+
+`Promise`\<[`ClientTranscript`](#clienttranscript)\>
+
+***
+
 ### stepDelegate()
 
 ```ts
@@ -860,7 +900,7 @@ minute apart:
 
 **The two lost requests matter more than the 2.7x.** On HTTP/2 a capacity
 limit arrives as a stream reset, and a stream error carries no HTTP status —
-so neither [isTransientStatus](#istransientstatus) nor [retryAfter](#retryafter-2) can see it, every
+so neither [isTransientStatus](#istransientstatus) nor [retryAfter](#retryafter-3) can see it, every
 sibling in a bounded fan-out retries in lockstep into the same reset, and the
 run dies on `TypeError: fetch failed` with its real cause two `cause` hops
 down. Over HTTP/1.1 the identical limit arrives as a `503` or `429` carrying
@@ -1041,6 +1081,64 @@ answer cannot change and reads as though it could.
 #### Returns
 
 [`StepInfo`](#stepinfo) \| `undefined`
+
+***
+
+### stepNotifyClient()
+
+```ts
+function stepNotifyClient(
+   clientId: string, 
+   notice: ClientNotice, 
+   options?: StepNotifyClientOptions
+): Promise<void>;
+```
+
+Push `notice` to the client connected to this agent's `WS /inbox` as
+`clientId`, and resolve once it acks.
+
+Throws [ClientUnreachableError](#clientunreachableerror) (retryable) when the client is not
+connected, is busy, or does not ack in time — so call it from a step and let
+the step's retries redeliver:
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepNotifyClient, stepSpeak } from "@alexkroman1/aai/step";
+
+export async function remindFlow(
+  input: { clientId: string; text: string; dueAt: number },
+  ctx: WorkflowContext,
+) {
+  await ctx.sleep("due", new Date(input.dueAt));
+  const { runId } = ctx;
+  await ctx.step(
+    "deliver",
+    async () => {
+      const spoken = await stepSpeak(`Reminder: ${input.text}`, { sampleRate: 16_000 });
+      await stepNotifyClient(input.clientId, { id: runId, event: "reminder", audio: spoken.pcm });
+    },
+    { maxAttempts: 120 }, // an hour of 30 s retries
+  );
+}
+```
+
+#### Parameters
+
+##### clientId
+
+`string`
+
+##### notice
+
+[`ClientNotice`](#clientnotice)
+
+##### options?
+
+[`StepNotifyClientOptions`](#stepnotifyclientoptions)
+
+#### Returns
+
+`Promise`\<`void`\>
 
 ***
 
@@ -1767,6 +1865,103 @@ for a format no header can describe — the same check
 
 ## Classes
 
+### ClientUnreachableError
+
+The client did not take the notice. Retryable: throw it (or let it
+propagate) and the step runs again after `retryAfter`.
+
+#### Extends
+
+- [`RetryableError`](step-errors.md#retryableerror)
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new ClientUnreachableError(
+   clientId: string, 
+   reason: ClientUnreachableReason, 
+   retryAfterMs: number
+): ClientUnreachableError;
+```
+
+###### Parameters
+
+###### clientId
+
+`string`
+
+###### reason
+
+[`ClientUnreachableReason`](#clientunreachablereason)
+
+###### retryAfterMs
+
+`number`
+
+###### Returns
+
+[`ClientUnreachableError`](#clientunreachableerror)
+
+###### Overrides
+
+[`RetryableError`](step-errors.md#retryableerror).[`constructor`](step-errors.md#constructor-1)
+
+#### Methods
+
+##### is()
+
+```ts
+static is(value: unknown): value is RetryableError;
+```
+
+Is `value` a [RetryableError](step-errors.md#retryableerror), including one from another copy of this module?
+
+###### Parameters
+
+###### value
+
+`unknown`
+
+###### Returns
+
+`value is RetryableError`
+
+###### Inherited from
+
+[`RetryableError`](step-errors.md#retryableerror).[`is`](step-errors.md#is-1)
+
+#### Properties
+
+##### clientId
+
+```ts
+readonly clientId: string;
+```
+
+##### reason
+
+```ts
+readonly reason: ClientUnreachableReason;
+```
+
+##### retryAfter
+
+```ts
+readonly retryAfter: Date;
+```
+
+When the next attempt may run. Always a `Date` — a number passed to the
+constructor is resolved against the clock AT CONSTRUCTION, which is the
+moment the caller meant.
+
+###### Inherited from
+
+[`RetryableError`](step-errors.md#retryableerror).[`retryAfter`](step-errors.md#retryafter)
+
+***
+
 ### StepGenerateError
 
 A model call that failed, with the one thing a step has to decide from.
@@ -1880,7 +2075,7 @@ A request that never got an answer.
 
 Its own class because the DISTINCTION is what a retry policy turns on: a
 response with a status can be classified ([isTransientStatus](#istransientstatus),
-[retryAfter](#retryafter-2)), and this cannot — so a caller's choice is between
+[retryAfter](#retryafter-3)), and this cannot — so a caller's choice is between
 retrying a connection failure and giving up on one, with nothing to read.
 Retrying is almost always right, which is why [StepTransportError](#steptransporterror) is
 what the SDK raises rather than making every step write the `catch`.
@@ -2126,6 +2321,227 @@ readonly stored: number;
 Bytes readable when the check ran — the PREFIX, never a total.
 
 ## Type Aliases
+
+### ClientNotice
+
+```ts
+type ClientNotice = {
+  audio?: Uint8Array;
+  data?: unknown;
+  event: string;
+  id: string;
+};
+```
+
+One thing to tell a client.
+
+#### Properties
+
+##### audio?
+
+```ts
+optional audio?: Uint8Array;
+```
+
+Bytes sent after the header as binary frames — audio the client plays, most
+often (`stepSpeak`'s `pcm`, at a rate the client expects).
+
+##### data?
+
+```ts
+optional data?: unknown;
+```
+
+Anything JSON-serializable the client reads alongside `event`.
+
+##### event
+
+```ts
+event: string;
+```
+
+What the client should do with it, e.g. `"reminder"`.
+
+##### id
+
+```ts
+id: string;
+```
+
+Identifies the DELIVERY, so a client can drop a repeat — the run id, when a
+run sends one notice. At most 128 characters.
+
+***
+
+### ClientTranscript
+
+```ts
+type ClientTranscript = {
+  sessions: ClientTranscriptSession[];
+};
+```
+
+What [stepClientTranscript](#stepclienttranscript) returns.
+
+#### Properties
+
+##### sessions
+
+```ts
+sessions: ClientTranscriptSession[];
+```
+
+Oldest session first.
+
+***
+
+### ClientTranscriptMessage
+
+```ts
+type ClientTranscriptMessage = {
+  at: number;
+  role: "user" | "assistant";
+  text: string;
+};
+```
+
+One committed line of a client's conversation.
+
+#### Properties
+
+##### at
+
+```ts
+at: number;
+```
+
+Epoch ms the line was recorded.
+
+##### role
+
+```ts
+role: "user" | "assistant";
+```
+
+##### text
+
+```ts
+text: string;
+```
+
+***
+
+### ClientTranscriptSession
+
+```ts
+type ClientTranscriptSession = {
+  lastEventIndex: number;
+  messages: ClientTranscriptMessage[];
+  sessionId: string;
+  startedAt: number;
+  tools: ClientTranscriptTool[];
+};
+```
+
+One of a client's sessions, as [stepClientTranscript](#stepclienttranscript) reads it.
+
+#### Properties
+
+##### lastEventIndex
+
+```ts
+lastEventIndex: number;
+```
+
+The index of the last event read for this session (`-1` when none) — the
+`index` half of the next call's `afterEventIndex`.
+
+##### messages
+
+```ts
+messages: ClientTranscriptMessage[];
+```
+
+##### sessionId
+
+```ts
+sessionId: string;
+```
+
+##### startedAt
+
+```ts
+startedAt: number;
+```
+
+Epoch ms the session was first bound to the client.
+
+##### tools
+
+```ts
+tools: ClientTranscriptTool[];
+```
+
+***
+
+### ClientTranscriptTool
+
+```ts
+type ClientTranscriptTool = {
+  args: Readonly<Record<string, unknown>> | undefined;
+  at: number;
+  name: string | undefined;
+  result: string;
+};
+```
+
+One settled tool call in a client's conversation.
+
+#### Properties
+
+##### args
+
+```ts
+args: Readonly<Record<string, unknown>> | undefined;
+```
+
+The arguments it was called with, when the call is still in the log.
+
+##### at
+
+```ts
+at: number;
+```
+
+Epoch ms the result was recorded.
+
+##### name
+
+```ts
+name: string | undefined;
+```
+
+The tool's name, or `undefined` when the log's front no longer holds the call.
+
+##### result
+
+```ts
+result: string;
+```
+
+What it returned, serialized and capped as the client's own frame carries it.
+
+***
+
+### ClientUnreachableReason
+
+```ts
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+```
+
+Why a notice was not taken.
+
+***
 
 ### MultipartBody
 
@@ -2479,6 +2895,58 @@ The voice that actually spoke, with the default filled in.
 
 ***
 
+### StepClientTranscriptOptions
+
+```ts
+type StepClientTranscriptOptions = {
+  afterEventIndex?: {
+     index: number;
+     sessionId: string;
+  };
+  since?: number;
+};
+```
+
+Options for [stepClientTranscript](#stepclienttranscript).
+
+#### Properties
+
+##### afterEventIndex?
+
+```ts
+optional afterEventIndex?: {
+  index: number;
+  sessionId: string;
+};
+```
+
+A cursor: only what came AFTER event `index` of session `sessionId` — the
+rest of that session, and every session that started after it. An unknown
+session id reads from the beginning, which is the safe way to be wrong for a
+summarizer that keys its own writes.
+
+###### index
+
+```ts
+index: number;
+```
+
+###### sessionId
+
+```ts
+sessionId: string;
+```
+
+##### since?
+
+```ts
+optional since?: number;
+```
+
+Epoch ms: only sessions active, and events recorded, at or after it.
+
+***
+
 ### StepFetchInit
 
 ```ts
@@ -2583,6 +3051,7 @@ type StepGenerateOptions = {
   gatewayUrl?: string;
   maxTokens?: number;
   model?: string;
+  responseSchema?: Record<string, unknown>;
   system?: string;
   temperature?: number;
   timeoutMs?: number;
@@ -2628,6 +3097,18 @@ optional model?: string;
 Gateway model id. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`, the same one
 an agent's own pipeline resolves, so a workflow and its agent do not
 silently run on different models.
+
+##### responseSchema?
+
+```ts
+optional responseSchema?: Record<string, unknown>;
+```
+
+A JSON Schema the reply must match, sent as the gateway's `response_format`
+(`json_schema`) so the model is CONSTRAINED to it rather than asked. The reply
+still arrives as a string: [stepGenerateJson](#stepgeneratejson) is the call that parses and
+validates it, and passes this for you. The gateway supports it on GPT-4.1/5.x,
+Gemini and Claude models, not on gpt-oss.
 
 ##### system?
 
@@ -2725,6 +3206,47 @@ readonly name: string;
 ```
 
 The step's own name, as `ctx.step` was given it.
+
+***
+
+### StepNotifyClientOptions
+
+```ts
+type StepNotifyClientOptions = {
+  ackTimeoutMs?: number;
+  retryAfterMs?: number;
+  signal?: AbortSignal;
+};
+```
+
+Options for [stepNotifyClient](#stepnotifyclient).
+
+#### Properties
+
+##### ackTimeoutMs?
+
+```ts
+optional ackTimeoutMs?: number;
+```
+
+How long to wait for the ack once the notice is sent. It covers the client
+TAKING it — reading the audio, for one that acks after queueing it — not the
+whole playback. Default [DEFAULT\_CLIENT\_ACK\_TIMEOUT\_MS](#default_client_ack_timeout_ms).
+
+##### retryAfterMs?
+
+```ts
+optional retryAfterMs?: number;
+```
+
+When the next attempt runs after the client was unreachable. Default
+[DEFAULT\_CLIENT\_RETRY\_MS](#default_client_retry_ms).
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
 
 ***
 
@@ -3223,7 +3745,7 @@ optional name?: string;
 Filename to store, e.g. `"summary.wav"`.
 
 Worth passing even though nothing reads it: it is what
-[UploadInfo.name](#name-2) answers, so it is the name a page puts on a
+[UploadInfo.name](#name-3) answers, so it is the name a page puts on a
 download link and the string a person sees instead of an opaque id.
 
 ##### type?
@@ -3239,6 +3761,26 @@ browser given an upload with none downloads a file it will not play
 inline. There is no sniffing anywhere in the store, by design.
 
 ## Variables
+
+### DEFAULT\_CLIENT\_ACK\_TIMEOUT\_MS
+
+```ts
+const DEFAULT_CLIENT_ACK_TIMEOUT_MS: 30000 = 30000;
+```
+
+Default [StepNotifyClientOptions.ackTimeoutMs](#acktimeoutms).
+
+***
+
+### DEFAULT\_CLIENT\_RETRY\_MS
+
+```ts
+const DEFAULT_CLIENT_RETRY_MS: 30000 = 30000;
+```
+
+Default [StepNotifyClientOptions.retryAfterMs](#retryafterms).
+
+***
 
 ### STEP\_SPEAK\_SAMPLE\_RATE
 

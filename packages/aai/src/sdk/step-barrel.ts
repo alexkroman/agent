@@ -81,6 +81,14 @@ export { mapConcurrent } from "./map-concurrent.ts";
 // apologize for rather than the end of the run.
 export { mapSettled, partitionSettled, type Settled } from "./map-settled.ts";
 export { type StepInfo, stepInfo } from "./step-attempt.ts";
+export {
+  type ClientTranscript,
+  type ClientTranscriptMessage,
+  type ClientTranscriptSession,
+  type ClientTranscriptTool,
+  type StepClientTranscriptOptions,
+  stepClientTranscript,
+} from "./step-client-transcript.ts";
 export { stepDelegate } from "./step-delegate.ts";
 export { requireStepEnv, stepEnv } from "./step-env.ts";
 export {
@@ -97,6 +105,15 @@ export {
   stepGenerateJson,
   stripJsonFence,
 } from "./step-generate-json.ts";
+export {
+  type ClientNotice,
+  ClientUnreachableError,
+  type ClientUnreachableReason,
+  DEFAULT_CLIENT_ACK_TIMEOUT_MS,
+  DEFAULT_CLIENT_RETRY_MS,
+  type StepNotifyClientOptions,
+  stepNotifyClient,
+} from "./step-notify-client.ts";
 export { stepEmit, stepReport } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {

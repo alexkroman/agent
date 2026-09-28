@@ -2,7 +2,7 @@
 /**
  * Push-to-talk's three edges on the browser session — `session.userTurn`'s
  * `start`, `commit` and `clear` — for an agent that declares
- * `turnDetection: "manual"`.
+ * `turnDetection: "manual"`; and `session.sendText`, a turn the caller TYPED.
  *
  * Split out of `session-core.ts` at the source-length cap. Each is a frame to
  * the server; what the server does with it is `aai-runtime`'s
@@ -30,20 +30,59 @@ export type UserTurnDeps = {
   sendJson: (msg: SessionCommand) => void;
 };
 
+/**
+ * The local half of an interruption: the agent stops here at once, the same
+ * barge-in `cancel()` makes — only when there is something to stop, so a
+ * press or a message into silence leaves a "listening" state alone. The
+ * server's `reply.cancelled` follows and finds nothing left to flush.
+ */
+function interruptLocally(deps: UserTurnDeps): void {
+  const { state } = deps.snapshot();
+  if (state === "speaking" || state === "thinking") {
+    deps.bargeIn();
+    deps.updateState(deps.agentState.apply({ type: "LISTEN" }));
+  }
+}
+
+/**
+ * Everything a caller's turn can be started by: push-to-talk's three edges
+ * and a TYPED turn — `session.userTurn` and `session.sendText`. One builder
+ * over one set of deps, because both are the same kind of thing (a user turn
+ * the client, not the transcriber, delimits) and both interrupt the same way.
+ *
+ * @internal
+ */
+export function createUserInput(deps: UserTurnDeps): {
+  userTurn: UserTurnControls;
+  sendText: (text: string) => void;
+} {
+  return {
+    userTurn: createUserTurnActions(deps),
+    sendText(text: string): void {
+      if (!deps.connected()) return;
+      // Trimmed here as well as on the server so an empty message is not a
+      // frame the server has to reject (and warn about).
+      const trimmed = text.trim();
+      if (trimmed === "") return;
+      // Typing over the agent means to replace what it is saying, exactly as
+      // pressing the button does.
+      interruptLocally(deps);
+      // No local echo into `messages`: the server answers with the same
+      // `user-transcript.committed` a spoken turn produces, and THAT is what
+      // adds the row — so a resumed session, which replays the stream, shows
+      // exactly what this one did.
+      deps.sendJson({ type: "user_text", text: trimmed });
+    },
+  };
+}
+
 /** Build the three push-to-talk edges. @internal */
 export function createUserTurnActions(deps: UserTurnDeps): UserTurnControls {
   return {
     start(): void {
       if (!deps.connected()) return;
-      // The agent stops the moment the button goes down, the same local
-      // barge-in `cancel()` makes — only when there is something to stop, so a
-      // press into silence leaves a "listening" state alone. The server's
-      // `reply.cancelled` follows and finds nothing left to flush.
-      const { state } = deps.snapshot();
-      if (state === "speaking" || state === "thinking") {
-        deps.bargeIn();
-        deps.updateState(deps.agentState.apply({ type: "LISTEN" }));
-      }
+      // The agent stops the moment the button goes down.
+      interruptLocally(deps);
       deps.sendJson({ type: "user_turn_start" });
     },
     commit(): void {

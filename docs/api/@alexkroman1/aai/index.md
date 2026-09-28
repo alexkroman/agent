@@ -1456,7 +1456,7 @@ function requireEnv(ctx: {
 }, name: string): string;
 ```
 
-Read a variable off [ToolContext.env](#env-2), failing by NAME when it is not set.
+Read a variable off [ToolContext.env](#env-4), failing by NAME when it is not set.
 
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
@@ -1651,6 +1651,104 @@ Parse JSON, returning `undefined` on malformed input. JSON cannot encode
 #### Returns
 
 `unknown`
+
+***
+
+### sessionClientId()
+
+```ts
+function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+```
+
+The client id this session's device connected with (`?client=` on
+`WS /websocket`), or `undefined` for a client that sent none — a browser tab,
+a phone call.
+
+Put it in a workflow's input to reach the same device after the session ends:
+
+```ts
+import { sessionClientId, tool, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const remind = workflow({
+  input: z.object({ clientId: z.string(), text: z.string() }),
+  run: async () => ({ delivered: true }),
+});
+
+export default tool({
+  description: "Remind them about something later, on this speaker.",
+  inputSchema: z.object({ text: z.string() }),
+  async execute({ text }, ctx) {
+    const clientId = sessionClientId(ctx);
+    if (!clientId) return { error: "This device cannot receive reminders." };
+    await ctx.workflows.start(remind, { clientId, text });
+    return { scheduled: true };
+  },
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+`string` \| `undefined`
+
+***
+
+### sessionClientPhone()
+
+```ts
+function sessionClientPhone(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+```
+
+The phone number this session's client reported (`?phone=` on
+`WS /websocket`, the `phone` option of `createBrowserSession` and
+`mountClient`), in E.164 form — `"+15035550123"` — or `undefined` when it
+reported none or an invalid one.
+
+**Trust model: it is whatever the connecting client CLAIMED.** Nothing
+verifies the caller owns the number. A tool that texts it is texting a
+number the browser supplied — fine for a single-owner home device whose
+owner typed their own number in, but NOT for a public agent, where anyone
+who can open a session could point your SMS tool at any number they like.
+
+So do not text it as is: pass it through `allowedSmsRecipient` (from
+`@alexkroman1/aai/channels`), which uses it only when it equals
+`SMS_TO_PHONE` or one of the comma-separated `SMS_ALLOWED_PHONES`, and
+otherwise falls back to `SMS_TO_PHONE`. The `text_me` builtin does exactly
+that. Personal data: do not log it.
+
+```ts
+import { sessionClientPhone, tool } from "@alexkroman1/aai";
+import { allowedSmsRecipient, sendToChannel, textbeltChannel } from "@alexkroman1/aai/channels";
+import { z } from "zod";
+
+export default tool({
+  description: "Text the owner a link.",
+  inputSchema: z.object({ url: z.string().url() }),
+  async execute({ url }, ctx) {
+    const to = allowedSmsRecipient(sessionClientPhone(ctx), ctx.env);
+    const key = ctx.env.TEXTBELT_KEY;
+    if (!to || !key) return { error: "Texting is not set up." };
+    await sendToChannel(textbeltChannel({ key, to }), { text: url });
+    return { sent: true };
+  },
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+`string` \| `undefined`
 
 ***
 
@@ -2597,19 +2695,19 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Five groups of fields live on interfaces this extends, each because the
+Six groups of fields live on interfaces this extends, each because the
 group shares ONE rule that is derived from the declaration rather than
 restated beside it: [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or
 nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
 S2S refuses them), [AgentGuardrails](#agentguardrails) (the only declarations that may
 stop a turn), [AgentObservation](#agentobservation) (the two that deliberately may
-not) and [AgentVoicePresets](#agentvoicepresets) (paid for on every model request).
-`agent()` and the deploy-time config check both derive their field
-lists from those interfaces, so a new one cannot skip either gate.
+not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model request) and
+[AgentSessionLifecycle](#agentsessionlifecycle) (once per session). `agent()` and the deploy-time
+config check derive their field lists from those, so no field skips either gate.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets)
+- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle)
 
 #### Properties
 
@@ -2994,6 +3092,35 @@ name: string;
 
 Display name shown by the default client UI.
 
+##### onSessionEnd?
+
+```ts
+optional onSessionEnd?: (ctx: SessionEndContext) => unknown;
+```
+
+Called each time a session stops — hang-up, disconnect or idle timeout —
+after its events are written, so a run it starts can read them back with
+`stepClientTranscript`.
+
+Fire-and-forget: its return value is discarded, an async one is not
+awaited by anything the caller waits on, and a throw is logged. Delivery is
+at-least-once across a restart, so key the work it starts (see
+[SessionEndContext.workflows](#workflows-1)).
+
+###### Parameters
+
+###### ctx
+
+[`SessionEndContext`](#sessionendcontext)
+
+###### Returns
+
+`unknown`
+
+###### Inherited from
+
+[`AgentSessionLifecycle`](#agentsessionlifecycle).[`onSessionEnd`](#onsessionend-1)
+
 ##### outputGuardrails?
 
 ```ts
@@ -3136,7 +3263,7 @@ Deploys check that every listed name is present in the agent's stored env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
 
-A tool reads them from [ToolContext.env](#env-2); a step has no
+A tool reads them from [ToolContext.env](#env-4); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
 `@alexkroman1/aai/step`, which resolve the same record.
 
@@ -3210,6 +3337,53 @@ speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
 Agent API, or `openAIS2s()`). Unset, the agent runs the default
 cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
 pipeline triple.
+
+##### sessionContext?
+
+```ts
+optional sessionContext?: (ctx: SessionContextArgs) => 
+  | SessionContext
+  | Promise<SessionContext | undefined>
+  | undefined;
+```
+
+Context for a session, fetched once when it connects and before its first
+model call.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Kitchen speaker",
+  async sessionContext({ clientId, env, signal }) {
+    if (!clientId) return undefined;
+    const res = await fetch(`${env.MEMORY_URL}/profile/${clientId}`, { signal });
+    const { summary, summarizedUntil } = await res.json();
+    return { instructions: summary, historySince: summarizedUntil };
+  },
+});
+```
+
+Bounded by `SESSION_CONTEXT_TIMEOUT_MS` (1.5 s): the caller is waiting to
+be heard. A throw, a timeout or `undefined` is logged and the session starts
+without it — a memory service that is down must not stop the speaker
+answering.
+
+###### Parameters
+
+###### ctx
+
+[`SessionContextArgs`](#sessioncontextargs)
+
+###### Returns
+
+  \| [`SessionContext`](#sessioncontext-2)
+  \| `Promise`\<[`SessionContext`](#sessioncontext-2) \| `undefined`\>
+  \| `undefined`
+
+###### Inherited from
+
+[`AgentSessionLifecycle`](#agentsessionlifecycle).[`sessionContext`](#sessioncontext-1)
 
 ##### silencePrompt?
 
@@ -4071,6 +4245,87 @@ constant with extra steps, and a guardrail that cannot count strikes can
 only judge one sentence at a time. Writing works too and lands like any
 other slot write — but a resolver runs on every request, so a resolver that
 writes is writing several times a turn.
+
+***
+
+### AgentSessionLifecycle
+
+The session-bracketing half of an agent declaration — see this module's
+header.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### onSessionEnd?
+
+```ts
+optional onSessionEnd?: (ctx: SessionEndContext) => unknown;
+```
+
+Called each time a session stops — hang-up, disconnect or idle timeout —
+after its events are written, so a run it starts can read them back with
+`stepClientTranscript`.
+
+Fire-and-forget: its return value is discarded, an async one is not
+awaited by anything the caller waits on, and a throw is logged. Delivery is
+at-least-once across a restart, so key the work it starts (see
+[SessionEndContext.workflows](#workflows-1)).
+
+###### Parameters
+
+###### ctx
+
+[`SessionEndContext`](#sessionendcontext)
+
+###### Returns
+
+`unknown`
+
+##### sessionContext?
+
+```ts
+optional sessionContext?: (ctx: SessionContextArgs) => 
+  | SessionContext
+  | Promise<SessionContext | undefined>
+  | undefined;
+```
+
+Context for a session, fetched once when it connects and before its first
+model call.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Kitchen speaker",
+  async sessionContext({ clientId, env, signal }) {
+    if (!clientId) return undefined;
+    const res = await fetch(`${env.MEMORY_URL}/profile/${clientId}`, { signal });
+    const { summary, summarizedUntil } = await res.json();
+    return { instructions: summary, historySince: summarizedUntil };
+  },
+});
+```
+
+Bounded by `SESSION_CONTEXT_TIMEOUT_MS` (1.5 s): the caller is waiting to
+be heard. A throw, a timeout or `undefined` is logged and the session starts
+without it — a memory service that is down must not stop the speaker
+answering.
+
+###### Parameters
+
+###### ctx
+
+[`SessionContextArgs`](#sessioncontextargs)
+
+###### Returns
+
+  \| [`SessionContext`](#sessioncontext-2)
+  \| `Promise`\<[`SessionContext`](#sessioncontext-2) \| `undefined`\>
+  \| `undefined`
 
 ***
 
@@ -6865,6 +7120,106 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### SessionContextArgs
+
+**`Sealed`**
+
+What [AgentSessionLifecycle.sessionContext](#sessioncontext) is called with.
+
+#### Properties
+
+##### clientId?
+
+```ts
+optional clientId?: string;
+```
+
+The client the socket named with `?client=`, when it named one — the key
+the app's own memory of that client is filed under. Absent for a browser
+tab or a phone call that sent none.
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's environment — the same view a tool reads as `ctx.env`.
+
+##### sessionId
+
+```ts
+sessionId: string;
+```
+
+The session about to start (a fresh id, or the one a `?sessionId=` resumed).
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+Aborted when the runtime stops waiting, `SESSION_CONTEXT_TIMEOUT_MS` after
+the call. Pass it to whatever you fetch with; an answer that arrives after
+it fired is dropped.
+
+***
+
+### SessionEndContext
+
+**`Sealed`**
+
+What [AgentSessionLifecycle.onSessionEnd](#onsessionend) is called with.
+
+#### Properties
+
+##### clientId?
+
+```ts
+optional clientId?: string;
+```
+
+The client it belonged to (`?client=`), when it named one.
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's environment — the same view a tool reads as `ctx.env`.
+
+##### lastEventIndex
+
+```ts
+lastEventIndex: number;
+```
+
+The index of the last event this session's log holds, already flushed — or
+`-1` for a session that recorded nothing. A session resumed and stopped
+again ends with a HIGHER index, which is what makes it a new key.
+
+##### sessionId
+
+```ts
+sessionId: string;
+```
+
+The session that stopped.
+
+##### workflows
+
+```ts
+workflows: WorkflowClient;
+```
+
+The same `start()` surface a tool's `ctx.workflows` is. Start the run that
+digests this session here, keyed so a second stop of the same session is a
+no-op: `{ key: \`${sessionId}:${lastEventIndex}\` }`.
 
 ***
 
@@ -10276,6 +10631,7 @@ type BuiltinTool =
   | "open_meteo"
   | "brave_search"
   | "google_places"
+  | "text_me"
   | string & {
 };
 ```
@@ -10302,8 +10658,11 @@ and provide capabilities like web search, code execution, and API access.
 - `"google_places"` — Find businesses and places (address, phone, hours,
   rating) with the Google Places API. Reads `GOOGLE_PLACES_API_KEY` from the
   agent env.
+- `"text_me"` — Text the owner something too long to say, through Textbelt.
+  Reads `TEXTBELT_KEY` and `SMS_TO_PHONE`; the recipient is never the
+  model's choice (see `allowedSmsRecipient` in `@alexkroman1/aai/channels`).
 
-The two keyed builtins read their key from `ctx.env` on each
+The three keyed builtins read their key from `ctx.env` on each
 call and answer the model with an error naming the variable when it is
 unset. Nothing adds the key to `requiredEnv` for you — list it there so a
 deploy checks it, the same rule an MCP server's `tokenEnv` follows.
@@ -11496,6 +11855,44 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SessionContext
+
+```ts
+type SessionContext = {
+  historySince?: number;
+  instructions?: string;
+};
+```
+
+What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
+
+#### Properties
+
+##### historySince?
+
+```ts
+optional historySince?: number;
+```
+
+Epoch ms. The client's prior sessions are loaded into the new one verbatim
+only from this instant on — sessions whose last event is older are left
+out, and so are older events of a session that straddles it. Set it to the
+point your `instructions` already summarize up to, so the model is not told
+the same thing twice. Absent, the runtime's own budget decides.
+
+##### instructions?
+
+```ts
+optional instructions?: string;
+```
+
+Text appended to the system prompt for the WHOLE session, after the agent's
+own prompt — a memory profile, a summary of older conversations, open
+reminders. Asked once, so it is byte-stable across the session's requests
+and the provider's prompt cache keeps working.
+
+***
+
 ### SessionEvent
 
 ```ts
@@ -12514,7 +12911,7 @@ deadlineAt: number;
 ```
 
 When THIS call's deadline expires, as epoch milliseconds — the instant the
-runtime will abort [ToolContext.signal](#signal-1) and hand the model a timeout.
+runtime will abort [ToolContext.signal](#signal-2) and hand the model a timeout.
 
 Read it to budget under the deadline rather than to be cut off by it: a
 tool that can answer partially (a search that has some results, a graph that
@@ -13865,7 +14262,7 @@ that has self-exited by the time the callback comes. Treat `hook.url` as
 guest-local and use this for anything leaving the system.
 
 Synchronous, and it THROWS when no public URL is configured, naming the
-option. The token is the CALLER's, exactly as [signal](#signal-2) takes it. See
+option. The token is the CALLER's, exactly as [signal](#signal-3) takes it. See
 "A callback URL comes from `publicWebhookUrl`" in `packages/aai/CLAUDE.md`.
 
 ###### Parameters

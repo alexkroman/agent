@@ -41,6 +41,7 @@ import {
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { builtinCover } from "./_builtin-cover.ts";
 import { fetchCappedText } from "./_fetch-capped.ts";
 
 /** Collapse runs of three or more blank lines left behind by a removed block. */
@@ -205,6 +206,7 @@ export function createGetPageDesign(
       "to study or mimic another website's design — colors, fonts, layout, spacing. For " +
       "reading a page's text content, use visit_webpage instead.",
     inputSchema: getPageDesignParams,
+    messages: builtinCover("I'm reading the page."),
     async execute(args, _ctx) {
       const { url } = args;
       const page = await fetchCappedText(url, {

@@ -29,6 +29,7 @@
  * still takes it from the module that declares the interface.
  */
 
+import type { ClientSessionRecord } from "../clients.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "../store.ts";
 
 /**
@@ -40,6 +41,12 @@ export function createMemoryStateBackend(): SessionStateBackend {
   const sessions = new Map<string, Map<string, string>>();
   /** One session's event log, keyed by index — sparse-tolerant, like the rows. */
   const events = new Map<string, Map<number, string>>();
+  /**
+   * Which client each bound session belongs to — the in-heap twin of
+   * `aai_client_sessions`, and like the rest of this backend it dies with the
+   * process. See `../clients.ts`.
+   */
+  const bindings = new Map<string, ClientSessionRecord & { clientId: string }>();
   return {
     name: "memory",
     durable: false,
@@ -56,6 +63,11 @@ export function createMemoryStateBackend(): SessionStateBackend {
     },
     discard: (sessionId) => {
       sessions.delete(sessionId);
+      // A session bound to a client keeps its EVENTS — they are that client's
+      // conversation, read by its next session and by `stepClientTranscript` —
+      // and gives up only its slots. The same predicate the Postgres `DISCARD_SQL`
+      // spells as `not exists`, which is what keeps this a valid double for it.
+      if (bindings.has(sessionId)) return Promise.resolve();
       // Events too, which is now the CONTRACT rather than this backend's own
       // choice. The Postgres one deliberately dropped slots only, under an
       // interface that hedged ("not always both"), so the shared conformance
@@ -81,6 +93,8 @@ export function createMemoryStateBackend(): SessionStateBackend {
         if (!log.has(event.index)) log.set(event.index, event.json);
       }
       events.set(sessionId, log);
+      const bound = bindings.get(sessionId);
+      if (bound) bound.lastEventAt = Date.now();
       return Promise.resolve();
     },
     readEvents: (sessionId, startIndex, limit) => {
@@ -109,6 +123,34 @@ export function createMemoryStateBackend(): SessionStateBackend {
       // stack overflow waiting for the cap to be raised.
       for (const index of log?.keys() ?? []) if (index > highest) highest = index;
       return Promise.resolve(highest + 1);
+    },
+    bindClient: (sessionId, clientId) => {
+      const now = Date.now();
+      const existing = bindings.get(sessionId);
+      // Keeps `startedAt`, moves the client — the contract `ClientSessionLog`
+      // states and the Postgres upsert's `do update` clause implements.
+      bindings.set(sessionId, {
+        sessionId,
+        clientId,
+        startedAt: existing?.startedAt ?? now,
+        lastEventAt: existing?.lastEventAt ?? now,
+      });
+      return Promise.resolve();
+    },
+    clientSessions: (clientId, { since, limit }) => {
+      const mine = [...bindings.values()]
+        .filter((b) => b.clientId === clientId && (since === undefined || b.lastEventAt >= since))
+        // Newest first, and a stable tiebreak on the id so two sessions bound in
+        // one millisecond answer in the same order the database's does.
+        .sort((a, b) => b.startedAt - a.startedAt || b.sessionId.localeCompare(a.sessionId))
+        .slice(0, limit);
+      return Promise.resolve(
+        mine.map(({ sessionId, startedAt, lastEventAt }) => ({
+          sessionId,
+          startedAt,
+          lastEventAt,
+        })),
+      );
     },
   };
 }

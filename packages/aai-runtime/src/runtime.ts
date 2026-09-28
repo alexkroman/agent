@@ -20,6 +20,7 @@ import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts"
 import { logResolvedRuntime, resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
 import { openSessionWiring, stopSessionsWithin } from "./runtime-session-controls.ts";
+import { openSessionMemory } from "./runtime-session-memory.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
@@ -150,7 +151,6 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
 
   // Per-session slot state, over Postgres when the app has a database and memory
   // otherwise, plus its grace-window sweeps — see `runtime-session-state.ts`.
-  // It REPLACES the `Map` this used to be.
   // The platform's session-state endpoint, when this guest was spawned by one. Read
   // from the same pair the platform world uses, so a deployment cannot end up with
   // durable runs and memory-only turns — or the reverse.
@@ -276,6 +276,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     ...omitUndefined({ instructions: systemPromptResolver(agent.systemPrompt) }),
   });
 
+  const recall = { agent, env, workflows, logger, history: sessionState.history };
   function createSession(sessionOpts: TransportSessionOpts): ServerSession {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
@@ -377,15 +378,14 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       findings,
     });
 
-    // The event log's own bookends: continue it on the way in (and restore the
-    // conversation from it on a resume), write out the batch on the way out. A
-    // separate wrapper from the state one because they are separate lifetimes —
-    // see `runtime-session-stream.ts`.
+    // The event log's own bookends — `runtime-session-stream.ts`, which also
+    // restores the client's prior sessions (`memory`) beside a resume's own log.
     attachSessionStream(core, {
       stream: sessionState.stream,
       sessionId: sessionOpts.id,
       resumed: sessionOpts.resumed === true,
       findings,
+      memory: openSessionMemory({ ...recall, sessionId: sessionOpts.id, prompt: dialogs.prompt }),
     });
 
     return core;
@@ -394,7 +394,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // ── AgentRuntime methods ──────────────────────────────────────────────
 
   function startSession(ws: SessionWebSocket, startOpts?: SessionStartOptions): void {
-    const resumeFrom = startOpts?.resumeFrom;
+    const { resumeFrom, clientLocation, clientId, clientPhone } = startOpts ?? {};
     const userOnSessionEnd = startOpts?.onSessionEnd;
     wireSessionSocket(ws, {
       sessions,
@@ -412,11 +412,9 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         }),
       readyConfig,
       logger,
-      ...omitUndefined({ logContext: startOpts?.logContext }),
-      ...omitUndefined({ onOpen: startOpts?.onOpen }),
-      ...omitUndefined({ onClose: startOpts?.onClose }),
+      ...omitUndefined({ logContext: startOpts?.logContext, audioLeadMs: startOpts?.audioLeadMs }),
+      ...omitUndefined({ onOpen: startOpts?.onOpen, onClose: startOpts?.onClose }),
       ...omitUndefined({ onSinkCreated: startOpts?.onSinkCreated }),
-      ...omitUndefined({ audioLeadMs: startOpts?.audioLeadMs }),
       // sinkMap/session-state cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's
       // entries when an old session's stop settles after a reconnect.
@@ -424,6 +422,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         userOnSessionEnd?.(sid, sink);
       },
       ...omitUndefined({ sessionStartTimeoutMs, resumeFrom }),
+      ...omitUndefined({ clientLocation, clientId, clientPhone }),
     });
   }
 
@@ -452,6 +451,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     sessionState.stream.clear();
     // Pending grace-window sweeps have nothing left to reclaim.
     sessionState.sweeps.clear();
+    sessionState.unpublish();
     // Release a runtime-owned DB pool (see the resolution comment above).
     // Fire-and-forget: releaseResources is sync and a drain failure on a
     // dying pool is not actionable.

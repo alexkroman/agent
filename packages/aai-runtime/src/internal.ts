@@ -233,6 +233,8 @@ export {
   // platform creates and the tables this backend queries can disagree.
   sessionStateDdl,
 } from "./session-state/backends/postgres.ts";
+// The client half of that backend, named by its two optional methods.
+export type { ClientSessionLog, ClientSessionRecord } from "./session-state/clients.ts";
 export {
   createSessionStateStore,
   type SessionStateBackend,

@@ -12,7 +12,7 @@
 import type { SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { makeCore } from "./_session-core-harness.ts";
+import { makeCore, makeTransport } from "./_session-core-harness.ts";
 
 describe("createSessionCore — history", () => {
   // History is private state, but it is not unobservable: every tool call is
@@ -58,6 +58,36 @@ describe("createSessionCore — history", () => {
     expect(executeTool.mock.calls[1]?.[3]).toEqual([
       { role: "user", content: "where is my order" },
       { role: "tool", content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+    ]);
+  });
+
+  test("the MODEL is seeded with each prior tool call as a digest, ctx.messages with the result", async () => {
+    // A lone `tool` result in the LLM view is an orphan the provider rejects,
+    // and dropping it lost the call from the model's memory. The transport
+    // gets both lists: the real one for tools, the digest one for the model.
+    const transport = { ...makeTransport(), seedHistory: vi.fn() };
+    const { core } = makeCore({ transport });
+    await core.start();
+    const messages = [
+      { role: "user" as const, content: "where is my order" },
+      { role: "tool" as const, content: '{"eta":"tue"}', toolName: "lookup", toolCallId: "c1" },
+      { role: "assistant" as const, content: "Tuesday." },
+    ];
+
+    core.restoreHistory(messages, [
+      {
+        callId: "c1",
+        name: "lookup",
+        args: { id: "4471" },
+        status: "done",
+        result: '{"eta":"tue"}',
+        afterMessageIndex: 0,
+      },
+    ]);
+
+    expect(transport.seedHistory).toHaveBeenCalledWith(messages, [
+      { role: "user", content: "where is my order" },
+      { role: "assistant", content: '[tool lookup({"id":"4471"}) → {"eta":"tue"}]\nTuesday.' },
     ]);
   });
 
