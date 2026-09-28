@@ -83,6 +83,7 @@ describe("useSessionActions", () => {
     expect(result.current.resetState).toBe(core.resetState);
     expect(result.current.reset).toBe(core.reset);
     expect(result.current.restart).toBe(core.restart);
+    expect(result.current.resume).toBe(core.resume);
     expect(result.current.disconnect).toBe(core.disconnect);
     expect(result.current.toggle).toBe(core.toggle);
     expect(result.current.end).toBe(core.end);
@@ -137,6 +138,7 @@ describe("useSessionActions", () => {
       "reset",
       "resetState",
       "restart",
+      "resume",
       "sendText",
       "setMicMuted",
       "start",

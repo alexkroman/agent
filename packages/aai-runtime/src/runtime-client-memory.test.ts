@@ -23,6 +23,7 @@ import {
   registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
+import { type ClientEventFeed, publishClientEventFeed } from "./client-event-feed.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 
 let unregister: (() => void) | undefined;
@@ -105,6 +106,72 @@ describe("a client's conversation across sessions, through the runtime", () => {
     expect(request).toContain("my name is Ana");
     await second.stop();
     await runtime.shutdown();
+  });
+
+  test("resuming an OLDER session of the client restores each turn exactly once", async () => {
+    // What a page picking a past conversation does: `resume(<older id>)`.
+    const { runtime } = runtimeFor({});
+    const client = `hall-${process.pid}`;
+    for (const [id, said] of [
+      ["older-session", "the plumber is at three"],
+      ["newer-session", "buy milk"],
+    ] as const) {
+      setSessionClient(id, client);
+      const session = runtime.createSession({ id, agent: "a", client: makeClientSink() });
+      await session.start();
+      session.report({ type: "user-transcript.committed", text: said });
+      await session.stop();
+    }
+
+    setSessionClient("older-session", client);
+    const sink = makeClientSink();
+    const resumed = runtime.createSession({
+      id: "older-session",
+      agent: "a",
+      client: sink,
+      resumed: true,
+    });
+    await resumed.start();
+    const restored = (sink.event as ReturnType<typeof vi.fn>).mock.calls
+      .map(([e]) => e as SessionEvent)
+      .find((e) => e.type === "history.restored");
+    const lines = (restored as { messages: { content: string }[] } | undefined)?.messages.map(
+      (m) => m.content,
+    );
+    // The other session is the seed; the resumed one's own log is read once.
+    expect(lines?.filter((l) => l === "the plumber is at three")).toHaveLength(1);
+    expect(lines?.filter((l) => l === "buy milk")).toHaveLength(1);
+    await resumed.stop();
+    await runtime.shutdown();
+  });
+
+  test("an /inbox?events=1 holder's feed hears the session live, and its end", async () => {
+    const feed = vi.fn<ClientEventFeed>();
+    publishClientEventFeed(feed);
+    try {
+      const { runtime } = runtimeFor({});
+      const client = `den-${process.pid}`;
+      setSessionClient("fed-session", client);
+      const session = runtime.createSession({
+        id: "fed-session",
+        agent: "a",
+        client: makeClientSink(),
+      });
+      await session.start();
+      session.report({ type: "user-transcript.committed", text: "lights off" });
+      await session.stop();
+      const frames = feed.mock.calls.map(([to, frame]) => {
+        expect(to).toBe(client);
+        return frame.type === "session_event" ? frame.event.type : frame.type;
+      });
+      // The greeting and the turn, as they were committed.
+      expect(frames).toContain("agent-transcript.committed");
+      expect(frames).toContain("user-transcript.committed");
+      expect(frames.at(-1)).toBe("session_ended");
+      await runtime.shutdown();
+    } finally {
+      publishClientEventFeed(undefined);
+    }
   });
 
   test("a session that named no client is seeded with nothing", async () => {

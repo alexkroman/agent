@@ -17,6 +17,7 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
 import { setSessionClient } from "./session-client.ts";
+import { setSessionLocation } from "./session-location.ts";
 import { setSessionPhone } from "./session-phone.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
@@ -163,6 +164,12 @@ export type ToolContextOverrides = {
    * Omitted, `sessionClientPhone` answers `undefined`.
    */
   clientPhone?: string | undefined;
+  /**
+   * Where this session's client is, as `sessionClientLocation(ctx)` — and the
+   * `google_places` / `open_meteo` builtins — will read it. Omitted, it answers
+   * `undefined`.
+   */
+  clientLocation?: string | undefined;
 };
 
 /**
@@ -342,7 +349,8 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   // a SCRIPT rather than as a function and a script must never land on the
   // context — see their docs on `ToolContextOverrides`. Everything else still
   // spreads last, so an override still wins.
-  const { generate, delegate, model, desk, clientId, clientPhone, ...rest } = overrides;
+  const { generate, delegate, model, desk, clientId, clientPhone, clientLocation, ...rest } =
+    overrides;
   // Built either way, so `ctx.model`/`ctx.desk` need no null check at an
   // assertion. An empty route table is what an unwired fake is: it records
   // nothing because nothing reaches it.
@@ -421,5 +429,6 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   };
   if (clientId !== undefined) setSessionClient(ctx.sessionId, clientId);
   if (clientPhone !== undefined) setSessionPhone(ctx.sessionId, clientPhone);
+  if (clientLocation !== undefined) setSessionLocation(ctx.sessionId, clientLocation);
   return ctx;
 }

@@ -140,6 +140,12 @@ export type GuestRuntime = {
    * schedule and a due message boots the guest and lands here.
    */
   deliverWorkflow?: unknown;
+  /**
+   * The bundle's `serveRoute` — `agent({ routes })`, for the `/api` surface.
+   * OPTIONAL for the `workflows` reason: a bundle built before routes returns a
+   * runtime without it, and `/api` is then left to static serving.
+   */
+  serveRoute?: unknown;
 };
 
 /**

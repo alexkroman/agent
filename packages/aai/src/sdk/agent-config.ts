@@ -328,6 +328,9 @@ export const HOST_ONLY_AGENT_FIELDS = [
   // the runtime holding the agent's own module — see `agent-session-lifecycle.ts`.
   "sessionContext",
   "onSessionEnd",
+  // Route handlers are functions as well, served by the runtime holding the
+  // agent's own module — see `agent-routes.ts`.
+  "routes",
 ] as const;
 
 /** A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). */

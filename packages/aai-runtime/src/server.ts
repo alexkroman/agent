@@ -21,6 +21,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { adoptRequestTrace } from "./_request-trace.ts";
+import { createAgentRoutesApi } from "./agent-routes-http.ts";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { agentGateToken } from "./server-env.ts";
@@ -57,15 +58,12 @@ export type {
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 /**
- * What the webhook route answers, as an `Allow` header.
- *
- * Derived from the route table rather than written beside it, so the verb the
- * dispatch gates on and the verb the refusal advertises cannot drift.
+ * What the webhook route answers, as an `Allow` header — derived from the route
+ * table, so the verb the dispatch gates on and the one refused cannot drift.
  */
 const WEBHOOK_ALLOWED_METHODS = WORKFLOW_CALLBACK_ROUTES.webhook.methods.join(", ");
 
-// A socket this server will not serve is turned away with a REASON — see
-// `session-decline.ts`, which owns the three refusal paths.
+// A socket this server will not serve is turned away with a REASON — see `session-decline.ts`.
 export { rejectingRuntime } from "./session-decline.ts";
 
 /**
@@ -89,9 +87,8 @@ const IDLE_SWEEP_MS = 25;
 const SERVER_HEADERS_TIMEOUT_MS = 20_000;
 
 /**
- * How long an idle keep-alive socket is kept between requests. Set explicitly
- * rather than left to Node's 5s default so the reap is a stated policy on a
- * public surface, not an implementation detail.
+ * How long an idle keep-alive socket is kept between requests — explicit rather
+ * than Node's 5s default, so the reap is a stated policy on a public surface.
  */
 const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
 
@@ -179,12 +176,10 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
   const workflowWebhook = createWebhookHandler(() => runtime.workflows, logger);
 
   /**
-   * The session event stream's read surface (`/session-events/:id`).
-   *
-   * Mounted beside the workflow API and for the same reason: every front door —
-   * `aai dev`, a self-hosted `createRuntimeServer`, a deployed guest — serves it
-   * identically, so a feature developed locally cannot 404 once deployed. Same
-   * lazy getter, for the same lazy-runtime reason.
+   * The session event stream's read surface (`/session-events/:id`), beside the
+   * workflow API for its reason: every front door — `aai dev`, a self-hosted
+   * `createRuntimeServer`, a deployed guest — serves it identically, so a feature
+   * developed locally cannot 404 once deployed. Same lazy getter, same reason.
    */
   const sessionEventsApi = createSessionEventsApi({
     stream: () => runtime.sessionEvents,
@@ -193,6 +188,10 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     ...omitUndefined({ token: agentGateToken(env, SESSION_EVENTS_TOKEN_ENV, logger) }),
     logger,
   });
+
+  // `/api/*`, the agent's own `routes` — same front doors, same lazy getter. See
+  // `agent-routes-http.ts`, which also carries why no authentication is added.
+  const agentRoutesApi = createAgentRoutesApi(() => runtime.serveRoute, logger);
 
   // Pre-connection client config: how the default client should talk to
   // this agent (see sdk/client-config.ts).
@@ -214,13 +213,14 @@ export function createRuntimeServer(options: RuntimeServerOptions): AgentServer 
     url: string,
     method: string,
   ): Promise<void> {
-    // Registered before static serving so a client asset can never shadow
-    // the client-config endpoint.
+    // Before static serving so a client asset can never shadow client-config.
     if (routeMatches(SERVER_ROUTES.clientConfig, url, method)) {
       sendClientConfig(res);
       return;
     }
 
+    // `/api/*` BEFORE static serving too, so no asset can shadow a declared route.
+    if (agentRoutesApi(req, res, url, method)) return;
     if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
     if (routeMatches(SERVER_ROUTES.root, url, method)) {

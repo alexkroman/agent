@@ -7,6 +7,7 @@ import type { AgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
+import type { AgentRoutes } from "./agent-routes.ts";
 import type { AgentSessionLifecycle } from "./agent-session-lifecycle.ts";
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 // Imported as well as re-exported below, for the reason `ToolDef` is: a
@@ -22,8 +23,7 @@ import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolSet`.
 import type { ToolChoice, ToolSet } from "./tool-def.ts";
-// Imported as well as re-exported below, for the reason `PipelineVoiceTuning`
-// is: `AgentDef` extends it.
+// Imported as well as re-exported below: `AgentDef` extends it.
 import type { AgentVoicePresets } from "./voice-presets.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
@@ -36,11 +36,7 @@ import type { WorkflowDef } from "./workflow.ts";
  * `agent-guardrails.ts` carries what a guardrail can and cannot prevent, which
  * is most of the design.
  */
-export type {
-  AgentGuardrail,
-  AgentGuardrails,
-  GuardrailVerdict,
-} from "./agent-guardrails.ts";
+export type { AgentGuardrail, AgentGuardrails, GuardrailVerdict } from "./agent-guardrails.ts";
 /**
  * A system prompt computed per request — see `agent-instructions.ts` for where
  * the resolved text lands and how often it is asked for.
@@ -150,15 +146,15 @@ export {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Six groups of fields live on interfaces this extends, each because the
- * group shares ONE rule that is derived from the declaration rather than
- * restated beside it: {@link PipelineVoiceTuning} (pipeline transport or
- * nothing), {@link AgentModelTuning} (this runtime assembles the request, so
- * S2S refuses them), {@link AgentGuardrails} (the only declarations that may
- * stop a turn), {@link AgentObservation} (the two that deliberately may
- * not), {@link AgentVoicePresets} (paid for on every model request) and
- * {@link AgentSessionLifecycle} (once per session). `agent()` and the deploy-time
- * config check derive their field lists from those, so no field skips either gate.
+ * Seven groups of fields live on interfaces this extends, each sharing ONE rule
+ * derived from the declaration rather than restated beside it:
+ * {@link PipelineVoiceTuning} (pipeline transport or nothing), {@link AgentModelTuning}
+ * (this runtime assembles the request, so S2S refuses them), {@link AgentGuardrails}
+ * (the only declarations that may stop a turn), {@link AgentObservation} (the two
+ * that deliberately may not), {@link AgentVoicePresets} (paid for on every model
+ * request), {@link AgentSessionLifecycle} (once per session) and {@link AgentRoutes}
+ * (no session at all). `agent()` and the deploy-time config check derive their
+ * field lists from those, so no field skips either gate.
  *
  * @public
  */
@@ -168,7 +164,8 @@ export interface AgentDef
     AgentGuardrails,
     AgentObservation,
     AgentVoicePresets,
-    AgentSessionLifecycle {
+    AgentSessionLifecycle,
+    AgentRoutes {
   /** Display name shown by the default client UI. */
   name: string;
   /**

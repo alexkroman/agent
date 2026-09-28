@@ -109,7 +109,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -159,6 +159,11 @@ interface AgentModelTuning extends ModelTuning {
 interface AgentObservation {
     events?: SessionEventHandlers;
     syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
+interface AgentRoutes {
+    routes?: Record<string, RouteHandler> | undefined;
 }
 
 // @public @sealed
@@ -215,6 +220,35 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
 
 // @public
 type DelegateFn = {
@@ -358,7 +392,7 @@ interface HandoffResult {
 }
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd", "routes"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -497,6 +531,27 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 // @public
 type RandomSource = () => number;
 
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+}
+
 // @public
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
@@ -506,6 +561,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
+    location?: string | undefined;
 };
 
 // @public @sealed
@@ -834,6 +890,15 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

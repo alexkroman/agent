@@ -100,6 +100,12 @@
  * `AgentSessionLifecycle` and its three context types are the sixth field
  * group, here for the field-group reason above: `sessionContext` and
  * `onSessionEnd` are written in the same `agent({ … })` literal as `name`.
+ * `sessionClientLocation` rides with them: it reads back the `location` a
+ * `SessionContext` answers.
+ *
+ * `AgentRoutes` is the seventh, with its request/context/handler types and
+ * `routeResponse`, for the same reason: `routes` is a field of the literal, and
+ * what a handler receives and returns is what declaring one looks like.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
@@ -120,6 +126,7 @@ export {
   type AgentModelTuning,
   type AgentObservation,
   type AgentParams,
+  type AgentRoutes,
   type AgentSessionContext,
   type AgentSessionLifecycle,
   type AgentSystemPrompt,
@@ -138,6 +145,11 @@ export {
   type PipelineAgentParams,
   type ProviderCredentialOptions,
   type ProviderDescriptor,
+  type RouteContext,
+  type RouteHandler,
+  type RouteRequest,
+  type RouteResponse,
+  routeResponse,
   type S2sAgentParams,
   type SessionContext,
   type SessionContextArgs,
@@ -145,6 +157,7 @@ export {
   type SessionEventContext,
   type SharedAgentParams,
   type StaticAgentParams,
+  sessionClientLocation,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,

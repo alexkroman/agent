@@ -4396,6 +4396,7 @@ readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 ```ts
 type ToolContextOverrides = {
   clientId?: string;
+  clientLocation?: string;
   clientPhone?: string;
   deadlineAt?: ToolContext["deadlineAt"];
   delegate?:   | ToolContext["delegate"]
@@ -4459,6 +4460,16 @@ recorded under the context's `sessionId` the way the runtime records a
 socket's `?client=`. Omitted, `sessionClientId` answers `undefined`, which is
 what a browser tab or a phone call gets.
 
+##### clientLocation?
+
+```ts
+optional clientLocation?: string;
+```
+
+Where this session's client is, as `sessionClientLocation(ctx)` — and the
+`google_places` / `open_meteo` builtins — will read it. Omitted, it answers
+`undefined`.
+
 ##### clientPhone?
 
 ```ts
@@ -4503,7 +4514,7 @@ The `stubDelegate` twin of `ToolContextOverrides.model`.
 optional env?: ToolContext["env"];
 ```
 
-See [ToolContext.env](index.md#env-4). Defaults to `{}`.
+See [ToolContext.env](index.md#env-5). Defaults to `{}`.
 
 ##### generate?
 
@@ -4576,7 +4587,7 @@ See [ToolContext.sessionId](index.md#sessionid-5). Defaults to a fresh id per ca
 optional signal?: ToolContext["signal"];
 ```
 
-See [ToolContext.signal](index.md#signal-2). Defaults to a signal that never aborts.
+See [ToolContext.signal](index.md#signal-3). Defaults to a signal that never aborts.
 
 ##### slots?
 
@@ -4592,7 +4603,7 @@ See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot
 optional workflows?: ToolContext["workflows"];
 ```
 
-See [ToolContext.workflows](index.md#workflows-2). Defaults to a client whose every method rejects.
+See [ToolContext.workflows](index.md#workflows-3). Defaults to a client whose every method rejects.
 
 ***
 

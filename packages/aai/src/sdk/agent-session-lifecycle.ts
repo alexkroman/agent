@@ -86,6 +86,17 @@ export type SessionContext = {
    * the same thing twice. Absent, the runtime's own budget decides.
    */
   historySince?: number | undefined;
+  /**
+   * Where this client is — the street address the app has on file for it.
+   * Recorded as the session's location, REPLACING the one the socket reported
+   * with `?location=`, so `google_places`, `open_meteo` and
+   * `sessionClientLocation(ctx)` use the app's answer: an address a person
+   * typed into the app's settings beats whatever a device was flashed with.
+   *
+   * Held to the socket's rule: control characters are stripped, and one over
+   * 200 characters is ignored. Personal data — the runtime never logs it.
+   */
+  location?: string | undefined;
 };
 
 /**

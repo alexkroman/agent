@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEndContext } from "@alexkroman1/aai";
-import { setSessionClient } from "@alexkroman1/aai/host-internal";
+import { type SessionEndContext, sessionClientLocation } from "@alexkroman1/aai";
+import { setSessionClient, setSessionLocation } from "@alexkroman1/aai/host-internal";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
@@ -74,6 +74,15 @@ describe("openSessionMemory", () => {
     setSessionClient(sessionId, "porch");
 
     expect(await memory.open()).toEqual([]);
+  });
+
+  test("the context's `location` replaces the one the socket reported", async () => {
+    const { memory, sessionId } = wire({
+      sessionContext: () => ({ location: "2 App Ave, Springfield" }),
+    });
+    setSessionLocation(sessionId, "1 Device Rd, Springfield");
+    await memory.open();
+    expect(sessionClientLocation({ sessionId })).toBe("2 App Ave, Springfield");
   });
 
   test("onSessionEnd is told the session, its client, the last index and a workflow client", async () => {

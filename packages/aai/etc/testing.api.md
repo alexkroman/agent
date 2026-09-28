@@ -843,6 +843,7 @@ export type ToolContextOverrides = {
     desk?: StubDelegate | undefined;
     clientId?: string | undefined;
     clientPhone?: string | undefined;
+    clientLocation?: string | undefined;
 };
 
 // @public

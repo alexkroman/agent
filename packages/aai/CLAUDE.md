@@ -191,7 +191,7 @@ getting the old rule wrong.
 helpers reading them), the eighteen narrowed `*Provider` aliases (gone), and
 `ProviderDescriptor` (the root alone).
 
-## Four groups of `AgentDef` fields, four modules, one rule each
+## `AgentDef` field groups: one module and one rule each
 
 `sdk/types.ts` sits at the source-length cap, so a group of fields that shares
 ONE rule is declared on its own interface and `AgentDef` extends it. That is not
@@ -204,6 +204,7 @@ group cannot skip the gate.
 | `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
 | `AgentGuardrails` | `agent-guardrails.ts` | the only declarations that may STOP a turn |
 | `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
+| `AgentRoutes` | `agent-routes.ts` | no session: `/api` handlers, data both ways across the bundle |
 
 `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
 total over `AgentModelTuning`, so a sixth knob that skips the table fails to

@@ -1456,7 +1456,7 @@ function requireEnv(ctx: {
 }, name: string): string;
 ```
 
-Read a variable off [ToolContext.env](#env-4), failing by NAME when it is not set.
+Read a variable off [ToolContext.env](#env-5), failing by NAME when it is not set.
 
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
@@ -1633,6 +1633,35 @@ async function startRun(url: string): Promise<string> {
 
 ***
 
+### routeResponse()
+
+```ts
+function routeResponse(status: number, body?: unknown): RouteResponse;
+```
+
+Answer a route with `status` and `body` instead of a plain 200:
+`return routeResponse(404, { error: "No such memory" })`,
+`return routeResponse(201, created)`.
+
+Throws a `RangeError` for a status that is not 2xx, 4xx or 5xx: a 1xx or a
+redirect is not a JSON answer, and a typo there should fail where it was made.
+
+#### Parameters
+
+##### status
+
+`number`
+
+##### body?
+
+`unknown`
+
+#### Returns
+
+[`RouteResponse`](#routeresponse)
+
+***
+
 ### safeJsonParse()
 
 ```ts
@@ -1686,6 +1715,52 @@ export default tool({
   },
 });
 ```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+`string` \| `undefined`
+
+***
+
+### sessionClientLocation()
+
+```ts
+function sessionClientLocation(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+```
+
+Where this session's client is — the location `sessionContext` answered for
+it, else the one its socket reported (`?location=` on `WS /websocket`, the
+`location` option of `createBrowserSession` and `mountClient`) — or
+`undefined` when neither said.
+
+The same value `google_places` and `open_meteo` default to, so a custom tool
+that searches "near me" agrees with them:
+
+```ts
+import { sessionClientLocation, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Find the nearest open pharmacy.",
+  inputSchema: z.object({}),
+  async execute(_args, ctx) {
+    const near = sessionClientLocation(ctx);
+    if (!near) return { error: "I don't know where this speaker is." };
+    const url = `${ctx.env.PHARMACY_API}/nearest?near=${encodeURIComponent(near)}`;
+    const res = await fetch(url);
+    return await res.json();
+  },
+});
+```
+
+**Trust model: it is whatever the client or the app CLAIMED.** Nothing
+geolocates the caller. Personal data: do not log it.
 
 #### Parameters
 
@@ -2695,19 +2770,19 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Six groups of fields live on interfaces this extends, each because the
-group shares ONE rule that is derived from the declaration rather than
-restated beside it: [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or
-nothing), [AgentModelTuning](#agentmodeltuning) (this runtime assembles the request, so
-S2S refuses them), [AgentGuardrails](#agentguardrails) (the only declarations that may
-stop a turn), [AgentObservation](#agentobservation) (the two that deliberately may
-not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model request) and
-[AgentSessionLifecycle](#agentsessionlifecycle) (once per session). `agent()` and the deploy-time
-config check derive their field lists from those, so no field skips either gate.
+Seven groups of fields live on interfaces this extends, each sharing ONE rule
+derived from the declaration rather than restated beside it:
+[PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or nothing), [AgentModelTuning](#agentmodeltuning)
+(this runtime assembles the request, so S2S refuses them), [AgentGuardrails](#agentguardrails)
+(the only declarations that may stop a turn), [AgentObservation](#agentobservation) (the two
+that deliberately may not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model
+request), [AgentSessionLifecycle](#agentsessionlifecycle) (once per session) and [AgentRoutes](#agentroutes)
+(no session at all). `agent()` and the deploy-time config check derive their
+field lists from those, so no field skips either gate.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle)
+- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes)
 
 #### Properties
 
@@ -3105,7 +3180,7 @@ after its events are written, so a run it starts can read them back with
 Fire-and-forget: its return value is discarded, an async one is not
 awaited by anything the caller waits on, and a throw is logged. Delivery is
 at-least-once across a restart, so key the work it starts (see
-[SessionEndContext.workflows](#workflows-1)).
+[SessionEndContext.workflows](#workflows-2)).
 
 ###### Parameters
 
@@ -3263,7 +3338,7 @@ Deploys check that every listed name is present in the agent's stored env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
 
-A tool reads them from [ToolContext.env](#env-4); a step has no
+A tool reads them from [ToolContext.env](#env-5); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
 `@alexkroman1/aai/step`, which resolve the same record.
 
@@ -3325,6 +3400,28 @@ rather than on a deadline of its own.
 ###### Inherited from
 
 [`PipelineVoiceTuning`](#pipelinevoicetuning).[`resumeFalseInterruption`](#resumefalseinterruption-1)
+
+##### routes?
+
+```ts
+optional routes?: Record<string, RouteHandler>;
+```
+
+JSON endpoints served under `/api`, keyed `"<METHOD> <path>"`:
+`"GET /memories"`, `"POST /memories/:id"`. A `:name` segment matches one
+path segment and is handed to the handler as `req.params.name`. The method
+is one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE`; a key that is not that
+shape fails the runtime's start rather than never matching.
+
+An unknown path is a JSON 404; a known path with the wrong method is a 405
+naming the methods it has. Bodies are capped (`MAX_ROUTE_BODY_BYTES` on
+`aai-runtime`, 64 KiB) and must be JSON.
+
+As open as the server itself — see this module's security note.
+
+###### Inherited from
+
+[`AgentRoutes`](#agentroutes).[`routes`](#routes-1)
 
 ##### s2s?
 
@@ -4204,6 +4301,36 @@ tool and mirrored into `useState`; 58% of generated agents built one.
 
 ***
 
+### AgentRoutes
+
+The `routes` field of an agent declaration — see this module's header.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### routes?
+
+```ts
+optional routes?: Record<string, RouteHandler>;
+```
+
+JSON endpoints served under `/api`, keyed `"<METHOD> <path>"`:
+`"GET /memories"`, `"POST /memories/:id"`. A `:name` segment matches one
+path segment and is handed to the handler as `req.params.name`. The method
+is one of `GET`, `POST`, `PUT`, `PATCH`, `DELETE`; a key that is not that
+shape fails the runtime's start rather than never matching.
+
+An unknown path is a JSON 404; a known path with the wrong method is a 405
+naming the methods it has. Bodies are capped (`MAX_ROUTE_BODY_BYTES` on
+`aai-runtime`, 64 KiB) and must be JSON.
+
+As open as the server itself — see this module's security note.
+
+***
+
 ### AgentSessionContext
 
 **`Sealed`**
@@ -4272,7 +4399,7 @@ after its events are written, so a run it starts can read them back with
 Fire-and-forget: its return value is discarded, an async one is not
 awaited by anything the caller waits on, and a throw is logged. Delivery is
 at-least-once across a restart, so key the work it starts (see
-[SessionEndContext.workflows](#workflows-1)).
+[SessionEndContext.workflows](#workflows-2)).
 
 ###### Parameters
 
@@ -7120,6 +7247,162 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### RouteContext
+
+**`Sealed`**
+
+What an `agent({ routes })` handler is called with beside its request.
+
+#### Methods
+
+##### clientTranscript()
+
+```ts
+clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+```
+
+What `clientId`'s sessions said — the same read, and the same answer, as
+`stepClientTranscript` on `@alexkroman1/aai/step`, bound to THIS runtime's
+log rather than to whichever runtime last published the step slot. The
+shape a page picking a conversation to continue lists from: each session's
+id, `startedAt`, and its `messages` (the first is a preview, the count is
+its length).
+
+Rejects for a malformed client id. A backend that keeps no client log (the
+platform's) answers no sessions.
+
+###### Parameters
+
+###### clientId
+
+`string`
+
+###### options?
+
+[`StepClientTranscriptOptions`](step.md#stepclienttranscriptoptions)
+
+###### Returns
+
+`Promise`\<[`ClientTranscript`](step.md#clienttranscript)\>
+
+#### Properties
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's environment — the same view a tool reads as `ctx.env`.
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+Aborted when the caller goes away. Pass it to whatever you fetch with.
+
+##### workflows
+
+```ts
+workflows: WorkflowClient;
+```
+
+The same client a tool's `ctx.workflows` is: start runs, and read them back
+— `find(workflow, clientId)` for the runs a tool keyed by client,
+`recent(workflow)` for the rest, `lastLine(runId)` for the newest progress.
+
+***
+
+### RouteRequest
+
+**`Sealed`**
+
+One request to an `agent({ routes })` handler, already parsed.
+
+#### Properties
+
+##### body
+
+```ts
+body: unknown;
+```
+
+The request body parsed as JSON — for `POST`, `PUT`, `PATCH` and `DELETE`;
+`undefined` for a `GET`, or for any request that sent no body. A body that
+is not JSON is refused with a 400 before the handler runs.
+
+##### clientId?
+
+```ts
+optional clientId?: string;
+```
+
+The `?client=` the request named, when it is a well-formed client id — the
+same id a device's voice socket and its `WS /inbox` are held under. A CLAIM:
+nothing authenticates it (see this module's security note).
+
+##### method
+
+```ts
+method: string;
+```
+
+The HTTP method, upper-case: `"GET"`, `"POST"`, `"PUT"`, `"PATCH"` or `"DELETE"`.
+
+##### params
+
+```ts
+params: Record<string, string>;
+```
+
+The `:name` segments of the route's pattern, decoded: `{ id: "42" }`.
+
+##### path
+
+```ts
+path: string;
+```
+
+The path the route matched, WITHOUT the `/api` prefix: `"/memories/42"`.
+
+##### query
+
+```ts
+query: Record<string, string>;
+```
+
+The query string, first value per key. `?client=` is in it too.
+
+***
+
+### RouteResponse
+
+**`Sealed`**
+
+A route's answer with a status of its own — what [routeResponse](#routeresponse-1) makes.
+
+#### Properties
+
+##### body
+
+```ts
+readonly body: unknown;
+```
+
+Sent as JSON; `undefined` sends no body at all (a 204, say).
+
+##### status
+
+```ts
+readonly status: number;
+```
+
+The HTTP status: 2xx, 4xx or 5xx.
 
 ***
 
@@ -11743,6 +12026,33 @@ one a caller substitutes.
 
 ***
 
+### RouteHandler
+
+```ts
+type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+```
+
+One `agent({ routes })` handler. Its return value is the response body, sent
+as JSON with status 200 (`undefined` is sent as `null`); return
+[routeResponse](#routeresponse-1) for any other status. A throw is a 500 whose body is
+`{ error: <the message> }` — never the stack.
+
+#### Parameters
+
+##### req
+
+[`RouteRequest`](#routerequest)
+
+##### ctx
+
+[`RouteContext`](#routecontext)
+
+#### Returns
+
+`unknown`
+
+***
+
 ### S2sAgentParams
 
 ```ts
@@ -11861,6 +12171,7 @@ Compile-time stage tag; never present at runtime.
 type SessionContext = {
   historySince?: number;
   instructions?: string;
+  location?: string;
 };
 ```
 
@@ -11890,6 +12201,21 @@ Text appended to the system prompt for the WHOLE session, after the agent's
 own prompt — a memory profile, a summary of older conversations, open
 reminders. Asked once, so it is byte-stable across the session's requests
 and the provider's prompt cache keeps working.
+
+##### location?
+
+```ts
+optional location?: string;
+```
+
+Where this client is — the street address the app has on file for it.
+Recorded as the session's location, REPLACING the one the socket reported
+with `?location=`, so `google_places`, `open_meteo` and
+`sessionClientLocation(ctx)` use the app's answer: an address a person
+typed into the app's settings beats whatever a device was flashed with.
+
+Held to the socket's rule: control characters are stripped, and one over
+200 characters is ignored. Personal data — the runtime never logs it.
 
 ***
 
@@ -12911,7 +13237,7 @@ deadlineAt: number;
 ```
 
 When THIS call's deadline expires, as epoch milliseconds — the instant the
-runtime will abort [ToolContext.signal](#signal-2) and hand the model a timeout.
+runtime will abort [ToolContext.signal](#signal-3) and hand the model a timeout.
 
 Read it to budget under the deadline rather than to be cut off by it: a
 tool that can answer partially (a search that has some results, a graph that
@@ -14262,7 +14588,7 @@ that has self-exited by the time the callback comes. Treat `hook.url` as
 guest-local and use this for anything leaving the system.
 
 Synchronous, and it THROWS when no public URL is configured, naming the
-option. The token is the CALLER's, exactly as [signal](#signal-3) takes it. See
+option. The token is the CALLER's, exactly as [signal](#signal-4) takes it. See
 "A callback URL comes from `publicWebhookUrl`" in `packages/aai/CLAUDE.md`.
 
 ###### Parameters

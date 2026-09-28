@@ -27,7 +27,7 @@ import type { CarrierName } from "./telephony/carriers.ts";
  */
 export type SessionRuntime = Pick<
   AgentRuntime,
-  "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow"
+  "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute"
 >;
 
 /**

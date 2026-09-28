@@ -297,6 +297,9 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
+export const RESUME_ID_RE: RegExp;
+
+// @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public

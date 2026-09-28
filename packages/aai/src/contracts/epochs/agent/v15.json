@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "5822c26054ae90b927d1d78ed31e85d47166ec993a78746b9327c96ea3b2367b",
+  "sha256": "abdda294cd81003cdac60023149a1bd1640d7dcac57ba681ac9e955bd869ec1a",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -12,6 +12,7 @@
     "AgentModelTuning",
     "AgentObservation",
     "AgentParams",
+    "AgentRoutes",
     "AgentSessionContext",
     "AgentSessionLifecycle",
     "AgentSystemPrompt",
@@ -27,6 +28,10 @@
     "PipelineAgentParams",
     "ProviderCredentialOptions",
     "ProviderDescriptor",
+    "RouteContext",
+    "RouteHandler",
+    "RouteRequest",
+    "RouteResponse",
     "S2sAgentParams",
     "SessionContext",
     "SessionContextArgs",
@@ -45,10 +50,12 @@
     "agent",
     "assemblyAIPipeline",
     "mcpToolName",
+    "routeResponse",
+    "sessionClientLocation",
     "workflowApp"
   ],
   "rollup": "adc0531f206162784e680b1c87de80c146fbbb9834dd64776027dd5bd6230535",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -59,8 +66,14 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "5822c26054ae90b927d1d78ed31e85d47166ec993a78746b9327c96ea3b2367b",
-      "reason": "additive (checked): +AgentSessionLifecycle, +SessionContext, +SessionContextArgs, +SessionEndContext"
+      "sha256": "95ddf3cd8af4c00edde91c662147c7d4dcb70e02ce0ce4fdd0673d0f8b65ee85",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "abdda294cd81003cdac60023149a1bd1640d7dcac57ba681ac9e955bd869ec1a",
+      "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionContext, +SessionContextArgs, +SessionEndContext, +routeResponse, +sessionClientLocation"
     }
   ]
 }

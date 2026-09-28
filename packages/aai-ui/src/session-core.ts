@@ -13,7 +13,7 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { createEpoch, WS_OPEN } from "@alexkroman1/aai/internal";
+import { createEpoch, RESUME_ID_RE, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import { createAudioEffects } from "./session-core-audio-effects.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
@@ -161,11 +161,9 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   }
 
   /**
-   * The socket, when there is one and it can carry a frame.
-   *
-   * Returning the socket rather than a boolean because every caller needs it
-   * next, and a predicate does not narrow `conn.ws` across the call. One
-   * spelling of the readiness test, which four call sites used to repeat.
+   * The socket, when there is one and it can carry a frame — the socket rather
+   * than a boolean because every caller needs it next, and a predicate does not
+   * narrow `conn.ws` across the call. One spelling of the readiness test.
    */
   function openSocket(): ConnState["ws"] {
     return conn.ws?.readyState === WS_OPEN ? conn.ws : null;
@@ -214,14 +212,11 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
 
   /**
    * React to the server's `session.configured` frame: record it and set up the
-   * session's audio path.
-   *
-   * **It no longer replays history, and the deletion is the point.** A reconnect
-   * used to push this snapshot's `messages` back, making the CLIENT the authority
-   * on the agent's memory; the server restores the conversation from its own
-   * retained event stream now, which also covers what a client cannot — a second
-   * tab, a call resuming onto a replacement sandbox, a reopened tab. This
-   * snapshot's `messages` are untouched: nothing clears the transcript on screen.
+   * session's audio path. **It no longer replays history, and that is the
+   * point**: a reconnect used to push `messages` back, making the CLIENT the
+   * authority on the agent's memory; the server restores the conversation from
+   * its own event stream now, covering what a client cannot (a second tab, a
+   * replacement sandbox, a reopened tab). The transcript on screen is untouched.
    */
   function onServerConfig(config: SessionConfigMessage): void {
     dialer.configured(config.sid);
@@ -469,6 +464,15 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     start();
   }
 
+  function resume(sessionId: string): void {
+    if (!RESUME_ID_RE.test(sessionId)) {
+      throw new RangeError(`resume: "${sessionId}" is not a session id (${RESUME_ID_RE})`);
+    }
+    end();
+    dialer.adopt(sessionId);
+    start();
+  }
+
   // Built WITHOUT the seal and cast once: the brand is type-only (see
   // `browserSessionBrand`), which is what makes this the one place a
   // `BrowserSession` exists.
@@ -487,6 +491,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     toggle,
     end,
     restart,
+    resume,
     [Symbol.dispose]() {
       disconnect();
     },

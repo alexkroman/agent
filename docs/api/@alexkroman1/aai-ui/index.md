@@ -2481,8 +2481,8 @@ function useSessionActions(): SessionActions;
 ```
 
 The session's control methods — `start`, `cancel`, `sendText`,
-`setMicMuted`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`,
-`end` — with **no snapshot subscription**.
+`setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`,
+`toggle`, `end` — with **no snapshot subscription**.
 Push-to-talk is not among them: that is `usePushToTalk`.
 
 This is the narrow half of [useSession](#usesession), and it is the half a custom
@@ -4154,6 +4154,7 @@ type BrowserSession = {
   reset: void;
   resetState: void;
   restart: void;
+  resume: void;
   sendText: void;
   setMicMuted: void;
   start: void;
@@ -4325,6 +4326,46 @@ stock shell could not, because [Controls](#controls) called `reset()` for them.
 ```ts
 declare const session: import("@alexkroman1/aai-ui").Session;
 session.restart();
+```
+
+##### resume()
+
+```ts
+resume(sessionId: string): void;
+```
+
+Continue an EARLIER session — one of this client's past conversations, say,
+picked from a list — without reloading the page: hang up the current call
+if there is one, clear the transcript on screen, and connect presenting
+`sessionId` as `?sessionId=`, so the server resumes THAT session.
+
+The server restores it the way a reload does: the session's own turns come
+back in `history.restored` (a session bound to a `client` keeps its events
+after it ends), together with the client's other prior sessions as seed —
+never counting this one twice. The greeting is skipped, as on any resume.
+The id is stored like a `config` frame's, so a reload continues it too.
+
+Throws a `RangeError` for an id the server would not honor (1-128 letters,
+digits, `-` or `_`) BEFORE touching the current call. An id that names no
+session the server has starts a fresh conversation under it, greeting
+skipped — the same answer a stale bookmark gets.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+declare const session: import("@alexkroman1/aai-ui").Session;
+declare const picked: { sessionId: string };
+session.resume(picked.sessionId);
 ```
 
 ##### sendText()
@@ -5646,7 +5687,7 @@ type Session = SessionSnapshot & SessionActions;
 What [useSession](#usesession) returns: the live [SessionSnapshot](#sessionsnapshot) fields
 (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
 `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
-control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
+control methods (`start`, `toggle`, `reset`, `restart`, `resume`, `resetState`,
 `disconnect`, `cancel`, `end`, `sendText`, `setMicMuted`).
 
 `sendText(text)` is the one input besides the microphone: a typed turn the
@@ -5664,6 +5705,7 @@ type SessionActions = {
   reset: void;
   resetState: void;
   restart: void;
+  resume: void;
   sendText: void;
   setMicMuted: void;
   start: void;
@@ -5754,6 +5796,24 @@ restart(): void;
 ```
 
 End the call and begin a fresh one — see [BrowserSession.restart](#restart).
+
+###### Returns
+
+`void`
+
+##### resume()
+
+```ts
+resume(sessionId: string): void;
+```
+
+Continue an earlier session by its id — see [BrowserSession.resume](#resume).
+
+###### Parameters
+
+###### sessionId
+
+`string`
 
 ###### Returns
 

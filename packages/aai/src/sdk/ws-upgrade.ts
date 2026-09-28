@@ -2,6 +2,7 @@
 
 import { omitUndefined } from "./omit-undefined.ts";
 import { requestQuery } from "./request-url.ts";
+import { normalizeClientLocation } from "./session-location.ts";
 import { normalizeE164 } from "./session-phone.ts";
 import { CLIENT_ID_RE } from "./step-notify-client.ts";
 
@@ -21,29 +22,13 @@ import { CLIENT_ID_RE } from "./step-notify-client.ts";
  * interpreted them as paths, but a client-chosen, unbounded map key retained
  * across the resume grace window is not something to leave to downstream
  * luck.
+ *
+ * Exported so a browser that is ASKED to resume a particular id (`resume(id)` on
+ * `aai-ui`'s session) refuses the same ids this would silently drop.
+ *
+ * @internal
  */
-const RESUME_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-
-/**
- * Longest `?location=` honored. A street address fits in a fraction of this;
- * the bound exists because the value is kept per session on a public endpoint.
- */
-const MAX_LOCATION_CHARS = 200;
-
-/**
- * A client-reported location (`?location=`, e.g. a smart speaker's configured
- * address), or `undefined` when absent or unusable. Control characters are
- * stripped — the value is interpolated into third-party API requests — and an
- * over-long one is dropped rather than truncated into a different place.
- */
-function parseLocation(raw: string | null): string | undefined {
-  if (raw === null) return;
-  const location = raw
-    .replace(/\p{Cc}/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return location && location.length <= MAX_LOCATION_CHARS ? location : undefined;
-}
+export const RESUME_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * A client-reported phone number (`?phone=`) in E.164 form, or `undefined`.
@@ -87,7 +72,9 @@ export function parseWsUpgradeParams(
   // actually resuming should still be greeted.
   const resumeFrom = raw !== undefined && RESUME_ID_RE.test(raw) ? raw : undefined;
   const skipGreeting = resumeFrom !== undefined || params.has("resume");
-  const clientLocation = parseLocation(params.get("location"));
+  // Control characters stripped and an over-long one dropped — the rule
+  // `sessionContext`'s `location` is held to as well (`session-location.ts`).
+  const clientLocation = normalizeClientLocation(params.get("location"));
   // `?client=` names the device, so a tool can hand a run the id its `WS /inbox`
   // socket is held under (see `session-client.ts`). Unusable = absent, like the
   // session id above: it costs the device its reminders, never its session.

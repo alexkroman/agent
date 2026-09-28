@@ -83,6 +83,8 @@ describe("viteDevConfig", () => {
     // Without ws:true the served client's WebSocket never connects.
     expect(proxy["/websocket"]).toEqual({ target: "http://127.0.0.1:3001", ws: true });
     expect(proxy["/inbox"]).toEqual({ target: "http://127.0.0.1:3001", ws: true });
+    // `agent({ routes })`: a page on the Vite port fetches `/api/*` same-origin.
+    expect(proxy["/api"]).toMatchObject({ target: "http://127.0.0.1:3001" });
     expect(proxy["/health"]).toBe("http://127.0.0.1:3001");
   });
 

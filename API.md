@@ -1752,6 +1752,9 @@ interface ModelTuning {
     temperature?: number;
 }
 
+// @internal
+export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
+
 // @public
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
@@ -1859,6 +1862,9 @@ type RandomSource = () => number;
 // @internal
 export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
+// @internal
+export function readRouteResponse(value: unknown): RouteResponse | undefined;
+
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
@@ -1956,6 +1962,12 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @public @sealed
+interface RouteResponse {
+    readonly body: unknown;
+    readonly status: number;
+}
+
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
@@ -2006,7 +2018,7 @@ type SessionMode = "s2s" | "pipeline" | "text";
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
 
-// @public
+// @internal
 export function setSessionLocation(sessionId: string, location: string): void;
 
 // @internal
@@ -2582,7 +2594,7 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -2636,6 +2648,11 @@ export interface AgentObservation {
 
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export interface AgentRoutes {
+    routes?: Record<string, RouteHandler> | undefined;
+}
 
 // @public @sealed
 export interface AgentSessionContext {
@@ -2732,6 +2749,35 @@ export interface ClientEventMap {
 
 // @public
 export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -3312,6 +3358,36 @@ export interface ResolveOneOptions<T> {
 // @public
 export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
+// @public @sealed
+export interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+export type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+export interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+}
+
+// @public @sealed
+export interface RouteResponse {
+    readonly body: unknown;
+    readonly status: number;
+}
+
+// @public
+export function routeResponse(status: number, body?: unknown): RouteResponse;
+
 // @public
 export type S2sAgentParams = SharedAgentParams & {
     s2s: S2sProvider;
@@ -3342,12 +3418,16 @@ export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "sessi
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
+export function sessionClientLocation(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
 export function sessionClientPhone(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
 export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
+    location?: string | undefined;
 };
 
 // @public @sealed
@@ -3775,6 +3855,15 @@ type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | Fron
 
 // @public
 type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @public
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -4432,6 +4521,9 @@ export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
+export const RESUME_ID_RE: RegExp;
+
+// @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
 // @public
@@ -4803,7 +4895,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -4853,6 +4945,11 @@ interface AgentModelTuning extends ModelTuning {
 interface AgentObservation {
     events?: SessionEventHandlers;
     syncState?: StateProjection | readonly StateProjection[];
+}
+
+// @public
+interface AgentRoutes {
+    routes?: Record<string, RouteHandler> | undefined;
 }
 
 // @public @sealed
@@ -4909,6 +5006,35 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
 
 // @public
 type DelegateFn = {
@@ -5052,7 +5178,7 @@ interface HandoffResult {
 }
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd", "routes"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -5191,6 +5317,27 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 // @public
 type RandomSource = () => number;
 
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+}
+
 // @public
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
@@ -5200,6 +5347,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
+    location?: string | undefined;
 };
 
 // @public @sealed
@@ -5528,6 +5676,15 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @public
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -8594,6 +8751,7 @@ export type ToolContextOverrides = {
     desk?: StubDelegate | undefined;
     clientId?: string | undefined;
     clientPhone?: string | undefined;
+    clientLocation?: string | undefined;
 };
 
 // @public
@@ -11232,6 +11390,18 @@ export type AgentRuntime = {
     readonly workflows?: WorkflowClient | undefined;
     readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
     readonly sessionEvents?: SessionEventStream | undefined;
+    readonly serveRoute?: ((call: {
+        method: string;
+        path: string;
+        query: Readonly<Record<string, string>>;
+        body: unknown;
+        clientId?: string | undefined;
+        signal: AbortSignal;
+    }) => Promise<{
+        status: number;
+        body: unknown;
+        headers?: Readonly<Record<string, string>> | undefined;
+    }>) | undefined;
 };
 
 // @public @sealed
@@ -11739,7 +11909,7 @@ export type SessionEventStream = {
 };
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow">;
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute">;
 
 // @public
 export type SessionStartOptions = {
@@ -12513,6 +12683,12 @@ export const SERVER_ROUTES: {
         readonly path: "/inbox";
         readonly match: "exact";
     };
+    readonly api: {
+        readonly transport: "http";
+        readonly path: "/api";
+        readonly match: "prefix";
+        readonly methods: readonly ["GET", "POST", "PUT", "PATCH", "DELETE"];
+    };
 };
 
 // @internal
@@ -13283,6 +13459,7 @@ export type BrowserSession = {
     toggle(): void;
     end(): void;
     restart(): void;
+    resume(sessionId: string): void;
     [Symbol.dispose](): void;
 };
 
@@ -13555,6 +13732,7 @@ export type SessionActions = {
     resetState(): void;
     reset(): void;
     restart(): void;
+    resume(sessionId: string): void;
     disconnect(): void;
     toggle(): void;
     end(): void;
@@ -14135,6 +14313,7 @@ type BrowserSession = {
     toggle(): void;
     end(): void;
     restart(): void;
+    resume(sessionId: string): void;
     [Symbol.dispose](): void;
 };
 
