@@ -52,8 +52,11 @@ export async function sessionCoords(
  */
 export function townOf(location: string): string {
   const parts = location.split(",").map((p) => p.trim());
-  // The street goes first: a five-digit house number looks like a postcode.
-  if (parts.length > 1 && /^\d/.test(parts[0] ?? "")) parts.shift();
+  // The street goes first — and every part of it: a five-digit house number looks like a
+  // postcode, and Google's formatting leads with the place ("Infinite Loop 1, 1 Infinite
+  // Loop, Cupertino, CA 95014, USA"), a number either side of the name. So drop leading
+  // parts with a digit in them until the first plain name, the town.
+  while (parts.length > 1 && /\d/.test(parts[0] ?? "")) parts.shift();
   const town = parts.map((p) => p.replace(/\b\d{4,}(-\d+)?\b/g, "").trim()).filter(Boolean);
   return town.join(", ") || location;
 }
