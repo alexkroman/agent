@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 137 names
 - [Testing and evals](#testing-and-evals) — 224 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 345 names
+- [Framework internals](#framework-internals) — 346 names
 
 ## Agent authoring
 
@@ -1191,6 +1191,7 @@ trace or a type error can be traced back to something.
 | `S2S_MAX_RESUME_ATTEMPTS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SANDBOX_ONLY_BUILTINS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SERVER_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `SESSION_CLIENT_TABLE` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SESSION_EVENT_TABLE` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `SESSION_KEEPALIVE_INTERVAL_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SESSION_RESUME_GRACE_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

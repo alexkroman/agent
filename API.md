@@ -12547,6 +12547,9 @@ export type ServerSession = {
 };
 
 // @internal
+export const SESSION_CLIENT_TABLE = "aai_client_sessions";
+
+// @internal
 export const SESSION_EVENT_TABLE = "aai_session_events";
 
 // @internal

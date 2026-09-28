@@ -1303,6 +1303,7 @@
     "PlatformSocket",
     "ProviderEnvVarsQuery",
     "SERVER_ROUTES",
+    "SESSION_CLIENT_TABLE",
     "SESSION_EVENT_TABLE",
     "SESSION_STATE_TABLE",
     "ServerRoute",
