@@ -560,6 +560,9 @@ export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "w
 export type SessionStartOptions = {
     skipGreeting?: boolean;
     resumeFrom?: string;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;

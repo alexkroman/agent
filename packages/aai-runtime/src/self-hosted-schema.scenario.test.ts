@@ -57,7 +57,11 @@ import { silentLogger } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import type { AgentServer } from "./server.ts";
-import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "./session-state/backends/postgres.ts";
+import {
+  SESSION_CLIENT_TABLE,
+  SESSION_EVENT_TABLE,
+  SESSION_STATE_TABLE,
+} from "./session-state/backends/postgres.ts";
 import {
   WORKFLOW_ATTEMPT_TABLE,
   WORKFLOW_HOOK_TABLE,
@@ -78,6 +82,7 @@ const SCHEMA = "self_hosted_schema";
 const OWED_TABLES = [
   SESSION_STATE_TABLE,
   SESSION_EVENT_TABLE,
+  SESSION_CLIENT_TABLE,
   WORKFLOW_RUN_TABLE,
   WORKFLOW_STEP_TABLE,
   WORKFLOW_ATTEMPT_TABLE,

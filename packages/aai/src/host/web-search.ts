@@ -25,6 +25,7 @@ import { z } from "zod";
 import { MAX_HTML_BYTES } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { builtinCover } from "./_builtin-cover.ts";
 import { type CappedText, fetchCappedText } from "./_fetch-capped.ts";
 import { builtinFetch } from "./ssrf.ts";
 
@@ -258,6 +259,7 @@ export function createWebSearch(
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts. No API key required.",
     inputSchema: webSearchParams,
+    messages: builtinCover("I'm searching the web."),
     async execute(args) {
       const { query, max_results: maxResults = 5 } = args;
       const count = Math.max(1, Math.min(maxResults, MAX_SEARCH_RESULTS));

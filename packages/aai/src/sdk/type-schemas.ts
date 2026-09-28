@@ -42,6 +42,7 @@ export const BuiltinToolSchema = z.enum([
   "open_meteo",
   "brave_search",
   "google_places",
+  "text_me",
 ]);
 
 /**

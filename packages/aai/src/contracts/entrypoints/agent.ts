@@ -97,6 +97,10 @@
  * accepts, and its keys and that field's type are one union. What `defaults`
  * covers is what an agent that declares NOTHING is given.
  *
+ * `AgentSessionLifecycle` and its three context types are the sixth field
+ * group, here for the field-group reason above: `sessionContext` and
+ * `onSessionEnd` are written in the same `agent({ … })` literal as `name`.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -117,6 +121,7 @@ export {
   type AgentObservation,
   type AgentParams,
   type AgentSessionContext,
+  type AgentSessionLifecycle,
   type AgentSystemPrompt,
   type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
@@ -134,6 +139,9 @@ export {
   type ProviderCredentialOptions,
   type ProviderDescriptor,
   type S2sAgentParams,
+  type SessionContext,
+  type SessionContextArgs,
+  type SessionEndContext,
   type SessionEventContext,
   type SharedAgentParams,
   type StaticAgentParams,

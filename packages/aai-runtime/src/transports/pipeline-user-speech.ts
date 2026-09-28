@@ -41,6 +41,11 @@ export interface UserActivity {
   sttEvents: SttEventHandlers;
   /** Push-to-talk state, or the inert `AUTO_TURN_DETECTION` — see pipeline-manual-turn.ts. */
   manualTurn: ManualTurn;
+  /**
+   * Answer a TYPED turn (the client's `user_text`) — see
+   * `Transport.sendUserText`, which is the only caller.
+   */
+  commitTypedTurn(text: string): void;
 }
 
 /**
@@ -279,5 +284,30 @@ export function createUserActivity(deps: {
     sid,
   });
 
-  return { nudger, recovery, speechEdges, sttEvents, manualTurn };
+  // A TYPED turn: the committed-transcript path with the transcriber taken
+  // out, so what it keeps is exactly the half of `onSttFinal` that is about a
+  // TURN rather than about speech. No speaking edge (nobody spoke), no level
+  // or word-count gate (nothing was heard to be quiet or short), and no
+  // post-interruption backoff (there is no utterance for the reply to land
+  // on top of). What it does not drop is the interruption: a caller who types
+  // over a reply meant to replace it, so a reply in flight or still playing is
+  // cut the way a barge-in cuts it — reported first, so the stream reads
+  // "cancelled, then the new turn" — and only when there was one, so a message
+  // into silence reports no cancellation that did not happen. Under
+  // push-to-talk it bypasses the window: typing is not holding the button.
+  const commitTypedTurn = (text: string): void => {
+    const interrupted = deps.isTurnInFlight() || deps.isPlaybackPending();
+    log.info("Pipeline typed user turn", { sid, interrupted });
+    // A committed turn proves the caller present: drop an armed resume and
+    // restore both budgets, as a spoken final does.
+    recovery.onUserTurn();
+    nudger.onUserTurn();
+    if (interrupted) {
+      deps.abortInFlightTurn();
+      callbacks.report({ type: "reply.cancelled" });
+    }
+    commitUserTurn(text);
+  };
+
+  return { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn };
 }

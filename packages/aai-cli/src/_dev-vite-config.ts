@@ -208,6 +208,10 @@ export function viteDevConfig(
         "/health": target,
         "/client-config": target,
         "/websocket": { target, ws: true },
+        // A device's idle socket (`WS /inbox?client=`, client-inbox.ts). It is derived
+        // from the voice URL's host, so it arrives on THIS port too: unlisted, Vite
+        // held the upgrade open unanswered and a reminder never reached the device.
+        "/inbox": { target, ws: true },
         // The workflow HTTP API. See the doc comment above: this is the entire
         // front door of a `page: "static"` app, not an extra. `bypass` is what
         // keeps the project's own `workflows/` SOURCE out of the prefix's

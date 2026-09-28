@@ -124,9 +124,9 @@ export interface PipelineHistory {
    *
    * `tool` messages reach the conversation view and NOT the LLM one — see the
    * module doc: a replayed result has no assistant `tool-call` message to
-   * answer, and both providers reject that outright.
-   */
-  seed(msgs: readonly Message[]): void;
+   * answer, and both providers reject that outright. `llmMsgs` (filtered alike)
+   * seeds the LLM view instead: `modelHistoryOf`'s tool digests. */
+  seed(msgs: readonly Message[], llmMsgs?: readonly Message[]): void;
   /** Clear both views. */
   reset(): void;
   /**
@@ -475,11 +475,11 @@ export function createPipelineHistory(
       llmUndo = null;
       revision.bump();
     },
-    seed(msgs: readonly Message[]): void {
-      if (msgs.length === 0) return;
+    seed(msgs: readonly Message[], llmMsgs?: readonly Message[]): void {
+      if (msgs.length === 0 && !llmMsgs?.length) return;
       conversation.push(...msgs);
       cap(conversation);
-      llm.push(...msgs.filter(isLlmSeedable).map(toModelMessage));
+      llm.push(...(llmMsgs ?? msgs).filter(isLlmSeedable).map(toModelMessage));
       capLlm(llm);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back

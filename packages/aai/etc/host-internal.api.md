@@ -488,7 +488,7 @@ export function buildSystemPrompt(config: AgentConfig, options: {
 }): string;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export type BuiltinToolOptions = {
@@ -509,12 +509,80 @@ interface CartesiaTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @internal
+export type ChannelOutbox = (entry: ChannelOutboxEntry) => void | Promise<void>;
+
+// @internal
+export type ChannelOutboxEntry = {
+    kind: string;
+    to?: string;
+    body: Record<string, unknown>;
+};
+
+// @internal
+export const CLIENT_ID_RE: RegExp;
+
+// @internal
+export const CLIENT_INBOX_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE: string;
+
 // @public
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @internal
+export type ClientNotifier = (clientId: string, notice: ClientNotice, options: {
+    ackTimeoutMs: number;
+    signal?: AbortSignal | undefined;
+}) => Promise<"acked" | ClientUnreachableReason>;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @internal
+export type ClientTranscriptReader = (clientId: string, options: StepClientTranscriptOptions) => Promise<ClientTranscript>;
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
@@ -709,6 +777,11 @@ type GenerateResult = {
 };
 
 // @public
+export function getSessionLocation(ctx: {
+    sessionId: string;
+}): string | undefined;
+
+// @public
 type GuardrailVerdict = true | string;
 
 // @public
@@ -893,6 +966,18 @@ type ProviderFields = {
 export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string;
 
 // @internal
+export function publishChannelOutbox(sink: ChannelOutbox | undefined): void;
+
+// @internal
+export function publishClientNotifier(notify: ClientNotifier | undefined): void;
+
+// @internal
+export function publishClientTranscriptReader(reader: ClientTranscriptReader | undefined): void;
+
+// @internal
+export function publishedClientTranscriptReader(): ClientTranscriptReader | undefined;
+
+// @internal
 export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void;
 
 // @internal
@@ -1066,6 +1151,15 @@ export const SESSION_RESUME_GRACE_MS = 120000;
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
 
+// @internal
+export function setSessionClient(sessionId: string, clientId: string): void;
+
+// @public
+export function setSessionLocation(sessionId: string, location: string): void;
+
+// @internal
+export function setSessionPhone(sessionId: string, phone: string): void;
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -1167,6 +1261,15 @@ export const STEP_FETCH_PIPELINING = 1;
 
 // @internal
 export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @internal
 export type StepDelegateFn = (subagent: SubagentDef, options: DelegateOptions) => Promise<DelegateResult>;

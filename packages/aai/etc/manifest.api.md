@@ -109,7 +109,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -169,6 +169,12 @@ interface AgentSessionContext {
 }
 
 // @public
+interface AgentSessionLifecycle {
+    onSessionEnd?: (ctx: SessionEndContext) => unknown;
+    sessionContext?: (ctx: SessionContextArgs) => Promise<SessionContext | undefined> | SessionContext | undefined;
+}
+
+// @public
 type AgentSystemPrompt = string | AgentInstructions;
 
 // @public (undocumented)
@@ -201,7 +207,7 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 interface ClientEventMap {
@@ -352,7 +358,7 @@ interface HandoffResult {
 }
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "subagents", "personas", "dialogs", "events", "inputGuardrails", "outputGuardrails", "sessionContext", "onSessionEnd"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -495,6 +501,29 @@ type RandomSource = () => number;
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
+
+// @public
+type SessionContext = {
+    instructions?: string | undefined;
+    historySince?: number | undefined;
+};
+
+// @public @sealed
+interface SessionContextArgs {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    signal: AbortSignal;
+}
+
+// @public @sealed
+interface SessionEndContext {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    lastEventIndex: number;
+    sessionId: string;
+    workflows: WorkflowClient;
+}
 
 // @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];

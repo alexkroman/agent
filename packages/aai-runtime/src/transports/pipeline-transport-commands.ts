@@ -48,6 +48,8 @@ export interface PipelineCommandDeps {
   speculation: SpeculationController;
   /** Push-to-talk state — gates the microphone and takes the three turn verbs. */
   manualTurn: ManualTurn;
+  /** Answer a typed turn — see `createUserActivity`'s `commitTypedTurn`. */
+  commitTypedTurn: (text: string) => void;
   /** A reply is in flight or still playing out — what opening a turn interrupts. */
   isBusy: () => boolean;
   abortInFlightTurn: () => void;
@@ -167,6 +169,14 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
       nudger.arm();
     },
 
+    sendUserText(text: string): void {
+      if (isTerminated()) return;
+      // Honoured under EITHER turn-detection policy, unlike the three verbs
+      // above: those are about who ends a SPOKEN turn, and a typed one is
+      // complete when it arrives.
+      deps.commitTypedTurn(text);
+    },
+
     injectTurn(instruction: string): void {
       if (isTerminated()) return;
       // The same path the silence nudge takes — queued on the turn chain, so it
@@ -176,10 +186,11 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
       runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
     },
 
-    seedHistory(messages: readonly Message[]): void {
+    seedHistory(messages: readonly Message[], modelView?: readonly Message[]): void {
       // Client-resent history on reconnect; restore both views so the resumed
-      // agent keeps memory of the prior conversation.
-      history.seed(messages);
+      // agent keeps memory of the prior conversation — the model's with its
+      // tool calls as digests, when the caller rendered them (see `seed`).
+      history.seed(messages, modelView);
     },
 
     onPlaybackProgress(bufferedMs: number): void {

@@ -66,6 +66,22 @@ export type AttachSessionOptions = {
 // @public
 export const CARRIER_PARAM = "carrier";
 
+// @public
+export type ClientSessionLog = {
+    bindClient(sessionId: string, clientId: string): Promise<void>;
+    clientSessions(clientId: string, options: {
+        since?: number | undefined;
+        limit: number;
+    }): Promise<readonly ClientSessionRecord[]>;
+};
+
+// @public
+export type ClientSessionRecord = {
+    sessionId: string;
+    startedAt: number;
+    lastEventAt: number;
+};
+
 // @internal
 export const consoleLogger: Logger;
 
@@ -468,6 +484,11 @@ export const SERVER_ROUTES: {
         readonly path: "/phone";
         readonly match: "prefix";
     };
+    readonly inbox: {
+        readonly transport: "ws";
+        readonly path: "/inbox";
+        readonly match: "exact";
+    };
 };
 
 // @internal
@@ -502,6 +523,9 @@ export type ServerSession = {
 };
 
 // @internal
+export const SESSION_CLIENT_TABLE = "aai_client_sessions";
+
+// @internal
 export const SESSION_EVENT_TABLE = "aai_session_events";
 
 // @internal
@@ -530,6 +554,7 @@ type SessionStateArm = {
     label: string;
     backend: () => SessionStateBackend;
     uid: () => string;
+    clientLog?: boolean | undefined;
 };
 
 // @public
@@ -539,6 +564,8 @@ export type SessionStateBackend = {
     load(sessionId: string): Promise<Map<string, string>>;
     commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
     discard(sessionId: string): Promise<void>;
+    bindClient?: ClientSessionLog["bindClient"];
+    clientSessions?: ClientSessionLog["clientSessions"];
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;
@@ -765,6 +792,9 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     onClose?: () => void;
     audioLeadMs?: number;
     keepaliveIntervalMs?: number;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
 };
 
 // (No @packageDocumentation comment for this package)

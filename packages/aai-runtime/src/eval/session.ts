@@ -24,11 +24,14 @@
  *
  * ## Why not a `?host=1` WebSocket
  *
- * Because the client protocol has no text command. A user turn reaches a session
- * as PCM and nothing else (`sdk/protocol-commands.ts` — five commands, none of
- * them an utterance), so a text-driven eval has no socket to speak down. Host
- * mode is unaffected; it is simply the wrong seam for a text target, and the
- * seam that IS right is the one below the wire.
+ * This was written when the client protocol had no text command, and the answer
+ * outlived that. There is one now — `user_text` in `sdk/protocol-commands.ts` —
+ * but it is a TYPED turn, answered past the transcriber: no quiet-final drop, no
+ * push-to-talk window, no barge-in thresholds. An eval driven through it would
+ * grade a path a voice caller never takes. The fake transcriber below commits
+ * `text` where a real one would (`stt.commit`), so the turn under test is the
+ * spoken one the agent ships for, and host mode stays the wrong seam for a text
+ * target — the seam that IS right is the one below the wire.
  *
  * The cost of that is stated rather than papered over: this does not exercise
  * `ws-handler.ts`, the audio pacer, or frame ordering. Those have unit and

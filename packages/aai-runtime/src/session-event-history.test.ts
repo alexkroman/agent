@@ -3,7 +3,13 @@
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { historyFromEvents, messagesFromEvents } from "./session-event-history.ts";
+import {
+  historyFromEvents,
+  messagesFromEvents,
+  modelHistoryOf,
+  TOOL_DIGEST_RESULT_CHARS,
+  toolDigest,
+} from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 
 /** Stamp a body, the way the log holds it. */
@@ -221,5 +227,58 @@ describe("historyFromEvents", () => {
     const visible = messages.filter((m) => m.role !== "tool").length;
     // The last call followed every visible message that survived the trim.
     expect(toolCalls.at(-1)?.afterMessageIndex).toBe(visible - 1);
+  });
+});
+
+describe("modelHistoryOf — prior tool calls as digests on the ASSISTANT side", () => {
+  const events = (bodies: SessionEventBody[]): SessionEvent[] =>
+    bodies.map((b) => stampSessionEvent(b));
+
+  test("a call is folded into the reply that followed it, and no `tool` message survives", () => {
+    const { messages, toolCalls } = historyFromEvents(
+      events([
+        { type: "user-transcript.committed", text: "weather in Portland?" },
+        {
+          type: "tool.called",
+          toolCallId: "c1",
+          toolName: "weather",
+          args: { city: "Portland" },
+        },
+        { type: "tool.completed", toolCallId: "c1", result: '{"temp":12}' },
+        { type: "agent-transcript.committed", text: "Twelve degrees." },
+      ]),
+    );
+
+    expect(modelHistoryOf(messages, toolCalls)).toEqual([
+      { role: "user", content: "weather in Portland?" },
+      {
+        role: "assistant",
+        content: '[tool weather({"city":"Portland"}) → {"temp":12}]\nTwelve degrees.',
+      },
+    ]);
+  });
+
+  test("a call with no reply after it is an assistant message of its own", () => {
+    const { messages, toolCalls } = historyFromEvents(
+      events([
+        { type: "user-transcript.committed", text: "set a timer" },
+        { type: "tool.called", toolCallId: "c1", toolName: "timer", args: { minutes: 5 } },
+        { type: "tool.completed", toolCallId: "c1", result: "ok" },
+        { type: "user-transcript.committed", text: "hello?" },
+      ]),
+    );
+
+    expect(modelHistoryOf(messages, toolCalls).map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+    ]);
+  });
+
+  test("a long result is capped and says so; a call whose `tool.called` is gone keeps its result", () => {
+    const digest = toolDigest({ result: "x".repeat(TOOL_DIGEST_RESULT_CHARS + 50) });
+    expect(digest.startsWith("[tool (unknown)() → ")).toBe(true);
+    expect(digest).toContain("… (truncated)");
+    expect(digest.length).toBeLessThan(TOOL_DIGEST_RESULT_CHARS + 50);
   });
 });

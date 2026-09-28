@@ -17,7 +17,7 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -77,6 +77,12 @@ export interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+}
+
+// @public
+export interface AgentSessionLifecycle {
+    onSessionEnd?: (ctx: SessionEndContext) => unknown;
+    sessionContext?: (ctx: SessionContextArgs) => Promise<SessionContext | undefined> | SessionContext | undefined;
 }
 
 // @public
@@ -153,7 +159,7 @@ interface AssemblyAITtsVoiceInfo {
 }
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | (string & {});
+export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
 // @public
 export interface ClientEventMap {
@@ -766,6 +772,35 @@ export function safeJsonParse(text: string): unknown;
 
 // @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
+
+// @public
+export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
+export function sessionClientPhone(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
+export type SessionContext = {
+    instructions?: string | undefined;
+    historySince?: number | undefined;
+};
+
+// @public @sealed
+export interface SessionContextArgs {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionId: string;
+    signal: AbortSignal;
+}
+
+// @public @sealed
+export interface SessionEndContext {
+    clientId?: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    lastEventIndex: number;
+    sessionId: string;
+    workflows: WorkflowClient;
+}
 
 // @public
 export type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
@@ -1434,7 +1469,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "personas" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "telephony" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | keyof AgentModelTuning | keyof AgentGuardrails | "system" | "systemPrompt" | "voicePresets" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "subagents" | "personas" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs" | "telephony" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

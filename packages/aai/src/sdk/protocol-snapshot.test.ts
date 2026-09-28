@@ -171,6 +171,7 @@ describe("client→server command wire format", () => {
     { type: "audio_ready" },
     { type: "cancel" },
     { type: "reset" },
+    { type: "user_text", text: "what's the weather" },
     { type: "playback_progress", bufferedMs: 1200 },
     { type: "tool_result", toolCallId: "tc1", result: "ok" },
   ];

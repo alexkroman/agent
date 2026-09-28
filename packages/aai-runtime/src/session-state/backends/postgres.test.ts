@@ -17,6 +17,7 @@ import { describe, expect, test } from "vitest";
 import {
   applySessionStateDdl,
   createPostgresStateBackend,
+  SESSION_CLIENT_TABLE,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
 } from "./postgres.ts";
@@ -68,10 +69,78 @@ describe("discard", () => {
     await backendOn(db).discard("s1");
 
     const sql = calls[0]?.sql ?? "";
-    expect(sql.match(/where session_id = \$1/g)).toHaveLength(2);
-    // One parameter, used twice — so the two arms cannot come to name different
+    // Three: the two deletes and the client-binding probe the event arm is
+    // guarded by — all on the one session.
+    expect(sql.match(/where session_id = \$1/g)).toHaveLength(3);
+    // One parameter, used throughout — so the arms cannot come to name different
     // sessions.
     expect(calls[0]?.params).toEqual(["s1"]);
+  });
+
+  test("keeps a CLIENT-bound session's events, in the same statement", async () => {
+    // Read in the statement rather than decided in the process, so a sweep in a
+    // process that never saw the bind (a restart between the two) still keeps
+    // the client's conversation. See `../clients.ts`.
+    const { db, calls } = recordingDb();
+
+    await backendOn(db).discard("s1");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sql).toContain(`not exists (select 1 from ${SESSION_CLIENT_TABLE}`);
+  });
+});
+
+describe("client sessions", () => {
+  test("bind is one upsert that keeps the first started_at", async () => {
+    const { db, calls } = recordingDb();
+
+    await backendOn(db).bindClient?.("s1", "kitchen");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.params).toEqual(["s1", "kitchen"]);
+    // Only the client moves on a re-bind; `started_at` is not in the update.
+    expect(calls[0]?.sql).toContain("do update set client_id = excluded.client_id");
+    expect(calls[0]?.sql).not.toMatch(/do update set[^;]*started_at/);
+  });
+
+  test("only a session THIS process bound touches the client table on append", async () => {
+    // An unbound session's write path must never name the client table, so a
+    // self-hosted schema whose migration predates it keeps storing events.
+    const { db, calls } = recordingDb();
+    const backend = backendOn(db);
+
+    await backend.appendEvents("free", [{ index: 0, json: "{}" }]);
+    expect(calls.map((c) => c.sql).join("\n")).not.toContain(SESSION_CLIENT_TABLE);
+
+    await backend.bindClient?.("bound", "kitchen");
+    calls.length = 0;
+    await backend.appendEvents("bound", [{ index: 0, json: "{}" }]);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.sql).toContain(`update ${SESSION_CLIENT_TABLE} set last_event_at`);
+    expect(calls[1]?.params).toEqual(["bound"]);
+
+    // Discarded (the grace sweep), it stops touching — a resume re-binds.
+    await backend.discard("bound");
+    calls.length = 0;
+    await backend.appendEvents("bound", [{ index: 1, json: "{}" }]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("list answers epoch-ms numbers, newest first, with `since` as a parameter", async () => {
+    const { db, calls } = recordingDb([
+      { session_id: "s2", started_at: "1700000000500.4", last_event_at: 1_700_000_009_000 },
+    ]);
+
+    const listed = await backendOn(db).clientSessions?.("kitchen", { limit: 5 });
+
+    expect(listed).toEqual([
+      { sessionId: "s2", startedAt: 1_700_000_000_500, lastEventAt: 1_700_000_009_000 },
+    ]);
+    expect(calls[0]?.params).toEqual(["kitchen", null, 5]);
+    expect(calls[0]?.sql).toContain("order by started_at desc");
+
+    await backendOn(db).clientSessions?.("kitchen", { since: 42, limit: 5 });
+    expect(calls[1]?.params).toEqual(["kitchen", 42, 5]);
   });
 });
 
@@ -152,7 +221,7 @@ describe("applySessionStateDdl", () => {
     };
   }
 
-  test("issues the DDL for BOTH tables", async () => {
+  test("issues the DDL for ALL THREE tables, and the client index", async () => {
     // The regression this closes: `aai dev` reported `sessionState: postgres,
     // durable: true` against a database where neither table existed, and every
     // session then died at start on the events one.
@@ -160,9 +229,11 @@ describe("applySessionStateDdl", () => {
     const { logger, warnings } = capturingLogger();
 
     expect(await applySessionStateDdl({ db, logger })).toBe(true);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
     expect(calls[0]?.sql).toContain(SESSION_STATE_TABLE);
     expect(calls[1]?.sql).toContain(SESSION_EVENT_TABLE);
+    expect(calls[2]?.sql).toContain(`create table if not exists ${SESSION_CLIENT_TABLE}`);
+    expect(calls[3]?.sql).toContain("create index if not exists");
     expect(warnings).toEqual([]);
   });
 
@@ -170,7 +241,7 @@ describe("applySessionStateDdl", () => {
     const { db, calls } = recordingDb();
     const { logger } = capturingLogger();
     await applySessionStateDdl({ db, logger });
-    for (const call of calls) expect(call.sql).toContain("create table if not exists");
+    for (const call of calls) expect(call.sql).toMatch(/create (table|index) if not exists/);
   });
 
   test("a failure WARNS and returns false rather than throwing", async () => {
@@ -188,6 +259,7 @@ describe("applySessionStateDdl", () => {
     // Names both tables, so the warning alone says what to create.
     expect(warnings[0]).toContain(SESSION_STATE_TABLE);
     expect(warnings[0]).toContain(SESSION_EVENT_TABLE);
+    expect(warnings[0]).toContain(SESSION_CLIENT_TABLE);
   });
 
   test("stops at the first failing statement", async () => {

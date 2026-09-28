@@ -117,6 +117,15 @@ do update set value = excluded.value, updated_at = now()`;
 export const SESSION_EVENT_TABLE = "aai_session_events";
 
 /**
+ * Which client each session belongs to — the third contract both ends derive
+ * from, and the one that makes a device's conversation outlive its sessions
+ * (`../clients.ts` has the argument).
+ *
+ * @internal
+ */
+export const SESSION_CLIENT_TABLE = "aai_client_sessions";
+
+/**
  * BOTH tables, in ONE statement.
  *
  * A CTE rather than two awaited queries, the same shape
@@ -130,6 +139,13 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
  * conformance table asks "discard drops NOBODY else's event log" beside the
  * reach itself.
  *
+ * **Except a session bound to a CLIENT keeps its events** — the `not exists`
+ * arm. Those rows are that client's conversation, read back by its next session
+ * and by `stepClientTranscript`, so the grace sweep reclaims the slots of a
+ * bound session and nothing else. Read in the same statement rather than
+ * decided above it, so a sweep in a process that never saw the bind (a restart
+ * between the two) still answers the same way.
+ *
  * **It sits BELOW `SESSION_EVENT_TABLE` and has to.** Naming the second table
  * moved this constant into that `const`'s temporal dead zone, which is a
  * module-load `ReferenceError` rather than a type error — three suites failed to
@@ -140,7 +156,8 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 const DISCARD_SQL = `with slots as (
   delete from ${SESSION_STATE_TABLE} where session_id = $1
 )
-delete from ${SESSION_EVENT_TABLE} where session_id = $1`;
+delete from ${SESSION_EVENT_TABLE} where session_id = $1
+  and not exists (select 1 from ${SESSION_CLIENT_TABLE} where session_id = $1)`;
 
 /**
  * `(session_id, event_index)` is the primary key, which is what makes a retried flush
@@ -160,6 +177,35 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
   created_at timestamptz not null default now(),
   primary key (session_id, event_index)
 )`;
+
+/**
+ * One row per SESSION that named a client, rather than a `client_id` column on
+ * either existing table — and the choice is forced by what each of those is.
+ *
+ * - The EVENT table has a row per event, so a column there repeats the id on
+ *   every one and "which sessions does this client have" becomes a `distinct`
+ *   over the whole log; a bind would also have to land before the first append
+ *   or leave early rows unlabelled.
+ * - The SLOT table is exactly what the grace sweep deletes, so a binding kept
+ *   there would be reclaimed with the cart two minutes after hang-up — the
+ *   opposite of the point.
+ *
+ * `session_id` is the key because a session belongs to ONE client (a re-bind
+ * moves it); `(client_id, started_at desc)` is the index the one read path
+ * walks, newest first. `last_event_at` is maintained by the backend while a
+ * bound session appends, so `historySince` can skip a whole session without
+ * reading its log.
+ */
+const CREATE_CLIENT_TABLE_SQL = (table: string) => `create table if not exists ${table} (
+  session_id text primary key,
+  client_id text not null,
+  started_at timestamptz not null default now(),
+  last_event_at timestamptz not null default now()
+)`;
+
+/** The index {@link CLIENT_SESSIONS_SQL} walks. `if not exists`, like the tables. */
+const CREATE_CLIENT_INDEX_SQL = (table: string) =>
+  `create index if not exists aai_client_sessions_by_client on ${table} (client_id, started_at desc)`;
 
 /**
  * The DDL an app's schema needs before a session can store anything.
@@ -194,6 +240,8 @@ export function sessionStateDdl(schema?: string): string[] {
   return [
     CREATE_TABLE_SQL(qualify(SESSION_STATE_TABLE)),
     CREATE_EVENT_TABLE_SQL(qualify(SESSION_EVENT_TABLE)),
+    CREATE_CLIENT_TABLE_SQL(qualify(SESSION_CLIENT_TABLE)),
+    CREATE_CLIENT_INDEX_SQL(qualify(SESSION_CLIENT_TABLE)),
   ];
 }
 
@@ -265,12 +313,13 @@ export async function applySessionStateDdl(options: { db: Db; logger: Logger }):
   try {
     // Sequentially, not `Promise.all`: two `create table if not exists` racing on
     // one connection is a needless way to meet Postgres's own catalog locks, and
-    // there are two statements.
+    // there are four statements.
     for (const statement of sessionStateDdl()) await options.db.query(statement);
     return true;
   } catch (err) {
     options.logger.warn(
-      `could not ensure the session-state tables (${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}) ` +
+      "could not ensure the session-state tables " +
+        `(${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}, ${SESSION_CLIENT_TABLE}) ` +
         `in DATABASE_URL: ${errorMessage(err)}. Sessions will fail to start unless a migration ` +
         "has already created them.",
     );
@@ -301,12 +350,44 @@ const NEXT_EVENT_INDEX_SQL = `select coalesce(max(event_index) + 1, 0)::int as c
 from ${SESSION_EVENT_TABLE} where session_id = $1`;
 
 /**
+ * Bind, keeping the first `started_at` — the `ClientSessionLog.bindClient`
+ * contract. `now()` for both clocks, so the database is the one clock the
+ * `since` comparison is made against.
+ */
+const BIND_CLIENT_SQL = `insert into ${SESSION_CLIENT_TABLE} (session_id, client_id)
+values ($1, $2)
+on conflict (session_id) do update set client_id = excluded.client_id`;
+
+/**
+ * A bound session appended: move its `last_event_at`. A separate statement
+ * rather than a CTE on {@link APPEND_EVENTS_SQL}, and issued only for sessions
+ * this process bound, so an UNBOUND session's write path never names the
+ * client table — a self-hosted schema whose migration predates it keeps storing
+ * events.
+ */
+const TOUCH_CLIENT_SQL = `update ${SESSION_CLIENT_TABLE} set last_event_at = now() where session_id = $1`;
+
+/**
+ * Newest first, `session_id` as the tiebreak (the memory backend sorts the
+ * same way). Epoch ms out, as `float8` so the driver hands back a number.
+ */
+const CLIENT_SESSIONS_SQL = `select session_id,
+  (extract(epoch from started_at) * 1000)::float8 as started_at,
+  (extract(epoch from last_event_at) * 1000)::float8 as last_event_at
+from ${SESSION_CLIENT_TABLE}
+where client_id = $1 and ($2::float8 is null or last_event_at >= to_timestamp($2::float8 / 1000))
+order by started_at desc, session_id desc
+limit $3`;
+
+/**
  * Session state stored in the app's own Postgres schema.
  *
  * @internal
  */
 export function createPostgresStateBackend(options: { db: Db }): SessionStateBackend {
   const { db } = options;
+  /** Sessions THIS process bound — the only ones whose appends touch the client table. */
+  const bound = new Set<string>();
   // No DDL here, deliberately: the tables come with the schema
   // (`sessionStateDdl`, applied by the platform when an app's database is
   // provisioned). This backend used to `create table if not exists` on both the
@@ -350,6 +431,9 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
       // The retention sweep STAYS, as the backstop it always was for the case
       // this call cannot reach: a session whose guest died before it discarded.
       await db.query(DISCARD_SQL, [sessionId]);
+      // The touch set is bounded by the sessions still inside their grace
+      // window: a resume after this re-binds, which puts it back.
+      bound.delete(sessionId);
     },
     async appendEvents(sessionId, pending) {
       await db.query(APPEND_EVENTS_SQL, [
@@ -357,6 +441,7 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
         pending.map((event) => event.index),
         pending.map((event) => event.json),
       ]);
+      if (bound.has(sessionId)) await db.query(TOUCH_CLIENT_SQL, [sessionId]);
     },
     async readEvents(sessionId, startIndex, limit) {
       const rows = await db.query<{ event_index: number; event: string }>(READ_EVENTS_SQL, [
@@ -369,6 +454,22 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
     async countEvents(sessionId) {
       const rows = await db.query<{ count: number }>(NEXT_EVENT_INDEX_SQL, [sessionId]);
       return rows[0]?.count ?? 0;
+    },
+    async bindClient(sessionId, clientId) {
+      await db.query(BIND_CLIENT_SQL, [sessionId, clientId]);
+      bound.add(sessionId);
+    },
+    async clientSessions(clientId, { since, limit }) {
+      const rows = await db.query<{
+        session_id: string;
+        started_at: number;
+        last_event_at: number;
+      }>(CLIENT_SESSIONS_SQL, [clientId, since ?? null, limit]);
+      return rows.map((row) => ({
+        sessionId: row.session_id,
+        startedAt: Math.round(Number(row.started_at)),
+        lastEventAt: Math.round(Number(row.last_event_at)),
+      }));
     },
   };
 }

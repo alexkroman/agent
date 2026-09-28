@@ -35,6 +35,7 @@ export function createMockSessionCore(
     started: false,
     running: true,
     recording: false,
+    micMuted: false,
     apiUrl: "ws://test.local/websocket",
     ...overrides,
   };
@@ -72,6 +73,13 @@ export function createMockSessionCore(
       clear() {
         /* noop */
       },
+    },
+    sendText() {
+      /* noop */
+    },
+    setMicMuted(muted: boolean) {
+      snapshot = { ...snapshot, micMuted: muted };
+      notify();
     },
     resetState() {
       /* noop */

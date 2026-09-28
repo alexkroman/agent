@@ -304,6 +304,9 @@ export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"user_turn_clear">;
 }, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_text">;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"playback_progress">;
     bufferedMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{

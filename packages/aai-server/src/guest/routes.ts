@@ -44,6 +44,11 @@ export const GUEST_ROUTES = {
    * `POST /:slug/phone` hands the carrier this URL and the carrier dials it.
    */
   phone: SERVER_ROUTES.phone.path,
+  /**
+   * PUBLIC device inbox: the idle socket a device holds so `stepNotifyClient`
+   * can reach it after its voice session closed. Same posture as `session`.
+   */
+  inbox: SERVER_ROUTES.inbox.path,
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
   /**
@@ -216,6 +221,8 @@ export const GUEST_ROUTE_EXPOSURE = {
   // answers with. That platform route is not a proxy of this one — it is the
   // webhook that hands out this URL — so this route is a direct dial.
   phone: { via: "direct-dial" },
+  // Dialled by the device itself, like `session`: it is handed the sandbox URL.
+  inbox: { via: "direct-dial" },
   // Both studio surfaces are dialled by the BROWSER, straight at the sandbox
   // tunnel, holding the chat token the session install minted — which is why
   // `studio-static.ts` has to put the sandbox origin in the page's

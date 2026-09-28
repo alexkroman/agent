@@ -64,6 +64,13 @@ export type SessionSnapshot = {
    */
   readonly recording: boolean;
   /**
+   * Whether the caller has MUTED the microphone — see
+   * {@link BrowserSession.setMicMuted}. Independent of `recording`: a muted
+   * mic stays open and keeps streaming (as silence), so `recording` stays
+   * `true`. UI state, so it survives reconnects, `disconnect()` and `end()`.
+   */
+  readonly micMuted: boolean;
+  /**
    * The WebSocket URL a program can connect to directly — the long-living
    * platform endpoint, e.g. `wss://host/my-agent/websocket`. Derived from
    * `platformUrl` at construction — available before connecting — and never
@@ -225,6 +232,51 @@ export type BrowserSession = {
   cancel(): void;
   /** Push-to-talk's three edges — see {@link UserTurnControls}. */
   readonly userTurn: UserTurnControls;
+  /**
+   * Send a TYPED user turn: the agent answers `text` exactly as if the caller
+   * had said it — aloud, with tools, under any `turnDetection`.
+   *
+   * Interrupts the agent if it is speaking or thinking (its queued audio is
+   * discarded here at once, as `cancel()` does). The message is NOT echoed into
+   * `messages` locally: the server reports it as the same
+   * `user-transcript.committed` a spoken turn produces, and that is what adds
+   * the row — so it is also what a resumed session replays.
+   *
+   * `text` is trimmed; an empty message, or a call while disconnected, sends
+   * nothing. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
+   * the server. A speech-to-speech agent cannot take a typed turn: the server
+   * logs a warning once and the message is ignored.
+   *
+   * @example
+   * ```ts
+   * declare const session: import("@alexkroman1/aai-ui").Session;
+   * session.sendText("What's the weather tomorrow?");
+   * ```
+   */
+  sendText(text: string): void;
+  /**
+   * Mute or unmute the microphone WITHOUT dropping the session — the gate a
+   * hold-to-talk button over an agent with automatic turn detection is built
+   * on (mute by default, unmute while held).
+   *
+   * While muted the session keeps streaming frames of the same length and
+   * cadence, zero-filled, so the server's transcriber hears silence: its
+   * automatic endpointing closes the turn on release, and the stream's clock
+   * stays true. Purely local — no command is sent and a speaking agent is not
+   * interrupted (call `cancel()` for that).
+   *
+   * UI state rather than connection state: it survives reconnects, resumes,
+   * `disconnect()` → `connect()` and `end()`, and may be set before the first
+   * `connect()` so a session opens already muted. Read it back as
+   * `micMuted` on the snapshot.
+   *
+   * @example
+   * ```ts
+   * declare const session: import("@alexkroman1/aai-ui").Session;
+   * session.setMicMuted(true); // typed-only until the talk button is held
+   * ```
+   */
+  setMicMuted(muted: boolean): void;
   /**
    * Clear messages, transcripts, and error state while keeping the current
    * connection (unlike `reset()`, which also reconnects).

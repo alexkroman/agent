@@ -213,6 +213,28 @@ describe("createPipelineHistory", () => {
     ]);
   });
 
+  test("a model view seeds the LLM with the digest, the conversation with the real result", () => {
+    // What `restoreHistory` hands over now: the tool call rendered as text on
+    // the assistant side, so the model remembers it without an orphan result.
+    const h = createPipelineHistory();
+    const conversation: Message[] = [
+      { role: "user", content: "hi" },
+      { role: "tool", content: "eta=tue", toolName: "lookup_order", toolCallId: "c1" },
+      { role: "assistant", content: "Tuesday." },
+    ];
+    h.seed(conversation, [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "[tool lookup_order() → eta=tue]\nTuesday." },
+      // Filtered the same way, so a stray result cannot slip through this door.
+      { role: "tool", content: "stray", toolCallId: "c9" },
+    ]);
+    expect(h.conversation).toEqual(conversation);
+    expect(h.llm).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "[tool lookup_order() → eta=tue]\nTuesday." },
+    ]);
+  });
+
   test("a CONSTRUCTOR seed makes the same subtraction as `seed`", () => {
     // Two doors onto one rule: `createPipelineHistory(seed)` is what the
     // transport takes at construction, `seed()` what a reconnect calls.

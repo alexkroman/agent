@@ -63,12 +63,15 @@ function makeState(backend: SessionStateBackend = createMemoryStateBackend()): {
   backend: SessionStateBackend;
 } {
   const store = createSessionStateStore({ backend, logger: makeLogger() });
+  const stream = createSessionEventStream({ backend });
   return {
     backend,
     state: {
       store,
-      stream: createSessionEventStream({ backend }),
+      stream,
       sweeps: createStateSweeps(store),
+      history: { backend, stream },
+      unpublish: () => undefined,
       describe: { backend: backend.name, durable: backend.durable },
     },
   };

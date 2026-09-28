@@ -36,8 +36,15 @@ import { stepFetch } from "../../step-fetch.ts";
 import { isTransientStatus, retryAfter } from "../../step-retry.ts";
 import { responseErrorMessage } from "../../utils.ts";
 import { SLACK_CHANNEL_HANDLER } from "../slack.ts";
+import {
+  TEXTBELT_CHANNEL_HANDLER,
+  TEXTBELT_CHANNEL_KIND,
+  textbeltOptions,
+  textbeltRefusal,
+} from "../textbelt.ts";
 import type { Channel, ChannelHandler, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
+import { channelOutboxEntry, publishedChannelOutbox } from "./outbox.ts";
 
 /**
  * A platform is not slow. A post that has not answered in 30s is not going to,
@@ -51,7 +58,7 @@ const CHANNEL_KINDS = new Map<string, ChannelHandler>();
  * Register a channel kind, so `sendToChannel` can dispatch a descriptor
  * carrying its tag.
  *
- * The SDK registers what it ships (Slack today). Call this for a destination
+ * The SDK registers what it ships (Slack and Textbelt). Call this for a destination
  * it does not — an internal notifier, a platform with no adapter here — and
  * the rest of the channel surface works unchanged: `slackChannel()` has no privileges
  * a hand-written descriptor factory lacks.
@@ -103,12 +110,33 @@ export function registerChannelHandler<O>(
   });
 }
 
+/**
+ * Readers for a platform that answers a REFUSAL with a 2xx — Textbelt says
+ * `200 {"success": false, "error": …}` — keyed by kind. Each returns the
+ * reason read out of a 2xx body, or `undefined` when it means delivered.
+ *
+ * Kept beside the registry rather than as a field on `ChannelHandler`: that
+ * interface is the shared, contract-hashed shape (guard-invariants rule 25),
+ * and only the SDK's own Textbelt channel needs this today.
+ */
+const CHANNEL_REFUSALS = new Map<string, (body: string) => string | undefined>();
+
+/** @internal Register a 2xx-refusal reader (`CHANNEL_REFUSALS`) for `kind`. */
+export function registerChannelRefusal(
+  kind: string,
+  refusal: (body: string) => string | undefined,
+): void {
+  CHANNEL_REFUSALS.set(kind, refusal);
+}
+
 /** The tags {@link sendToChannel} can dispatch, in registration order. */
 export function registeredChannelKindNames(): readonly string[] {
   return [...CHANNEL_KINDS.keys()];
 }
 
 registerChannelHandler(SLACK_CHANNEL_HANDLER);
+registerChannelHandler(TEXTBELT_CHANNEL_HANDLER, textbeltOptions);
+registerChannelRefusal(TEXTBELT_CHANNEL_KIND, textbeltRefusal);
 
 function handlerFor(channel: Channel): ChannelHandler {
   const handler = CHANNEL_KINDS.get(channel.kind);
@@ -164,7 +192,8 @@ export function explainChannelFailure(channel: Channel, detail: string): string 
  * (`@alexkroman1/aai/step-errors`) to skip the `.catch`.
  *
  * @returns whatever the platform answered with, or `"ok"` when it sent no body.
- * @throws {ChannelDeliveryError} on any non-2xx.
+ * @throws {ChannelDeliveryError} on any non-2xx, and on a 2xx the channel reads
+ *   as a refusal (Textbelt's `{"success": false}`), which is never retryable.
  *
  * @example
  * ```ts
@@ -181,14 +210,55 @@ export function explainChannelFailure(channel: Channel, detail: string): string 
  * @public
  */
 export async function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string> {
-  const payload = renderChannelPayload(channel, message);
-  const response = await stepFetch(payload.url, {
+  return await postToChannel(channel, message, stepFetch);
+}
+
+/** The `fetch` a post goes through: `stepFetch`, or a host's screened one. @internal */
+export type ChannelFetch = (
+  url: string,
+  init: { method: "POST"; headers: Record<string, string>; body: string; signal: AbortSignal },
+) => Promise<Response>;
+
+/**
+ * {@link sendToChannel} over a caller's `fetch` — how a HOST builtin posts
+ * through its own screened egress (`text_me`) with the verdicts unchanged.
+ *
+ * Every send, host or step, ends here — which is why a published channel
+ * outbox (`publishChannelOutbox`) is checked here and nowhere else.
+ *
+ * @internal
+ */
+export async function postToChannel(
+  channel: Channel,
+  message: ChannelMessage,
+  fetchFn: ChannelFetch,
+): Promise<string> {
+  const handler = handlerFor(channel);
+  const payload = handler.render(message, channel.options);
+  // A published OUTBOX takes the send instead of the network (`outbox.ts`):
+  // checked AFTER rendering, so a descriptor with a bad field still fails the
+  // way it would for real, and BEFORE `fetchFn`, so nothing leaves the process.
+  // The entry carries no URL and no credential field — see `channelOutboxEntry`.
+  const outbox = publishedChannelOutbox();
+  if (outbox !== undefined) {
+    await outbox(channelOutboxEntry(channel, payload));
+    return "ok";
+  }
+  const response = await fetchFn(payload.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...payload.headers },
     body: JSON.stringify(payload.body),
     signal: AbortSignal.timeout(CHANNEL_POST_TIMEOUT_MS),
   });
-  if (response.ok) return (await response.text()) || "ok";
+  if (response.ok) {
+    const body = await response.text();
+    const refused = CHANNEL_REFUSALS.get(channel.kind)?.(body);
+    if (refused === undefined) return body || "ok";
+    throw new ChannelDeliveryError(
+      `${handler.advice(channel.options, refused)} (HTTP ${response.status})`,
+      { channelKind: channel.kind, status: response.status, retryable: false },
+    );
+  }
 
   // `responseErrorMessage` rather than `await response.text()` and a
   // hand-rolled truncation: it prefers a JSON `error` field when the body has
@@ -199,7 +269,7 @@ export async function sendToChannel(channel: Channel, message: ChannelMessage): 
   throw new ChannelDeliveryError(
     retryable
       ? `${channel.kind} channel post failed: HTTP ${response.status}. ${detail}`
-      : `${explainChannelFailure(channel, detail)} (HTTP ${response.status})`,
+      : `${handler.advice(channel.options, detail)} (HTTP ${response.status})`,
     {
       channelKind: channel.kind,
       status: response.status,

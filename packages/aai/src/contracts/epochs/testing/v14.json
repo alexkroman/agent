@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "9a4dce767e49f2316d93ed6f907204285d8cbb271dd798ad6ba746d3e7812a3b",
+  "sha256": "9d15b484be1fc07c907bd01b3ede262dc6cefd4154656aed959c7f9947ba11ba",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -17,6 +17,12 @@
     "SentEvent",
     "StepRoute",
     "StepUnmatched",
+    "StubClientInbox",
+    "StubClientInboxCall",
+    "StubClientInboxOptions",
+    "StubClientTranscript",
+    "StubClientTranscriptAnswer",
+    "StubClientTranscriptCall",
     "StubDelegate",
     "StubDelegateCall",
     "StubDelegateReply",
@@ -88,6 +94,8 @@
     "runTool",
     "schemaInputIssues",
     "scriptedToolContext",
+    "stubClientInbox",
+    "stubClientTranscript",
     "stubDelegate",
     "stubGateway",
     "stubGatewayRoute",
@@ -103,5 +111,20 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad"
+  "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "9a4dce767e49f2316d93ed6f907204285d8cbb271dd798ad6ba746d3e7812a3b",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "9d15b484be1fc07c907bd01b3ede262dc6cefd4154656aed959c7f9947ba11ba",
+      "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +stubClientInbox, +stubClientTranscript"
+    }
+  ]
 }

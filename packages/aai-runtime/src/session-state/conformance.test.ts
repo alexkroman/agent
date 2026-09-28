@@ -87,6 +87,7 @@ const memoryArm: SessionStateArm = {
   label: "memory",
   backend: () => memoryBackend,
   uid: sessionStateIds("mem"),
+  clientLog: true,
 };
 
 sessionStateConformance(memoryArm);

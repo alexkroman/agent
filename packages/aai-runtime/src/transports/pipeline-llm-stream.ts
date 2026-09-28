@@ -313,7 +313,10 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // costs this function a cognitive-complexity point it does not have. It is
   // OMITTED rather than answering `false` for a caller with no controller, so
   // a tool-less turn's dead-air cover is byte-identical to what it was.
-  const toolCovering = toolSpeech === undefined ? undefined : () => toolSpeech.covering();
+  // `coveredThisTurn`, not `covering`: once a tool has declared its own cover,
+  // the generic phrase stays out of the rest of the turn — after the call
+  // returns it would only land as a preamble to the answer.
+  const toolCovering = toolSpeech === undefined ? undefined : () => toolSpeech.coveredThisTurn();
   // Response messages of completed steps — on the adopted path this module owns
   // the copy, since the speculation's own `collected` is behind the tape.
   const collected: ModelMessage[] = [];

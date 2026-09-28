@@ -184,3 +184,46 @@ describe("a systemPrompt RESOLVER", () => {
     );
   });
 });
+
+describe("a session's CONTEXT block (`sessionContext`'s instructions)", () => {
+  test("lands after the agent's own prompt and before the per-turn suffix", () => {
+    // Stable parts first: a provider's prompt cache matches a prefix, so the
+    // part that changes per turn has to be the last.
+    const session = createSystemPromptResolver({
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
+      hasTools: false,
+      toolGuidance: undefined,
+      instructions: () => "Agent resolver text.",
+    }).forSession(TEST_SESSION_CONTEXT);
+    session.setContext("They like jazz.");
+    session.setSuffix("dialogs", () => "Current phase: checkout.");
+
+    const resolved = session.resolve();
+    const agent = resolved.indexOf("Agent resolver text.");
+    const context = resolved.indexOf("They like jazz.");
+    const suffix = resolved.indexOf("Current phase: checkout.");
+    expect(agent).toBeGreaterThan(-1);
+    expect(context).toBeGreaterThan(agent);
+    expect(suffix).toBeGreaterThan(context);
+  });
+
+  test("is byte-stable across requests, and absent costs not one byte", () => {
+    const prompts = resolverFor();
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
+    expect(session.resolve()).toBe(prompts.base());
+    session.setContext("  Open reminder: call mom.  ");
+    const first = session.resolve();
+    expect(first).toBe(`${prompts.base()}\n\nOpen reminder: call mom.`);
+    expect(session.resolve()).toBe(first);
+    session.setContext("");
+    expect(session.resolve()).toBe(prompts.base());
+  });
+
+  test("is per SESSION — a second session does not see it", () => {
+    const prompts = resolverFor();
+    const one = prompts.forSession(TEST_SESSION_CONTEXT);
+    const two = prompts.forSession(TEST_SESSION_CONTEXT);
+    one.setContext("Only for one.");
+    expect(two.resolve()).not.toContain("Only for one.");
+  });
+});

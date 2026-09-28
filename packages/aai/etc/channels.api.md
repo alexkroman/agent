@@ -5,6 +5,9 @@
 ```ts
 
 // @public
+export function allowedSmsRecipient(claimed: string | undefined, env: SmsRecipientEnv): string | undefined;
+
+// @public
 export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
     readonly __surface?: "channel";
 };
@@ -78,6 +81,9 @@ export function explainChannelFailure(channel: Channel, detail: string): string;
 export function explainSlackChannelFailure(options: SlackChannelOptions, detail: string): string;
 
 // @public
+export function explainTextbeltChannelFailure(detail: string): string;
+
+// @public
 export function isSlackWebhookUrl(value: string): boolean;
 
 // @public
@@ -102,6 +108,9 @@ export function renderSlackChannelPayload(message: ChannelMessage, options: Slac
 export function renderSlackPlainText(message: ChannelMessage): string;
 
 // @public
+export function renderTextbeltText(message: ChannelMessage): string;
+
+// @public
 export function sendToChannel(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
@@ -123,6 +132,36 @@ export function slackChannel(options: SlackChannelOptions): SlackChannel;
 export interface SlackChannelOptions {
     readonly textParam?: string;
     readonly webhookUrl: string;
+}
+
+// @public
+export interface SmsRecipientEnv {
+    readonly SMS_ALLOWED_PHONES?: string | undefined;
+    readonly SMS_TO_PHONE?: string | undefined;
+}
+
+// @public
+export const TEXTBELT_CHANNEL_HANDLER: ChannelHandler<TextbeltChannelOptions>;
+
+// @public
+export const TEXTBELT_CHANNEL_KIND = "textbelt";
+
+// @public
+export const TEXTBELT_MAX_MESSAGE_CHARS = 1000;
+
+// @public
+export type TextbeltChannel = Channel & {
+    readonly kind: typeof TEXTBELT_CHANNEL_KIND;
+    readonly options: TextbeltChannelOptions & Record<string, unknown>;
+};
+
+// @public
+export function textbeltChannel(options: TextbeltChannelOptions): TextbeltChannel;
+
+// @public
+export interface TextbeltChannelOptions {
+    readonly key: string;
+    readonly to: string;
 }
 
 // (No @packageDocumentation comment for this package)

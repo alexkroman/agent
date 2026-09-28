@@ -3,7 +3,7 @@
   "capability": "step",
   "epoch": 3,
   "rule": 2,
-  "sha256": "18e9268376b7c328f8620e2bbf7e55b4e8c6714e6888ab55233356f554f20d2b",
+  "sha256": "3cce5c1b86346ef9bcff8941a8602199fc0dc8cb99bf8dc8ed07a2b603e7fb1a",
   "exports": [
     "MultipartBody",
     "MultipartPart",
@@ -49,7 +49,7 @@
     "wavHeader"
   ],
   "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -61,6 +61,12 @@
       "revision": 1,
       "rule": 2,
       "sha256": "18e9268376b7c328f8620e2bbf7e55b4e8c6714e6888ab55233356f554f20d2b",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "3cce5c1b86346ef9bcff8941a8602199fc0dc8cb99bf8dc8ed07a2b603e7fb1a",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

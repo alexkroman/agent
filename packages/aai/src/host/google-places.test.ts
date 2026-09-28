@@ -2,6 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { createGooglePlaces } from "./google-places.ts";
+import { setSessionLocation } from "./session-location.ts";
 
 const placesBody = {
   places: [
@@ -70,6 +71,8 @@ describe("google_places", () => {
     expect(headers["Content-Type"]).toBe("application/json");
     expect(headers["X-Goog-FieldMask"]).toContain("places.displayName");
     expect(headers["X-Goog-FieldMask"]).toContain("places.nationalPhoneNumber");
+    // No origin, so no routing: Google rejects routingSummaries without one.
+    expect(headers["X-Goog-FieldMask"]).not.toContain("routingSummaries");
   });
 
   test("max_results is clamped and openNow is omitted unless asked", async () => {
@@ -115,5 +118,76 @@ describe("google_places", () => {
       error:
         "Google Places rejected GOOGLE_PLACES_API_KEY (403 Forbidden) — check the key is valid and has the Places API (New) enabled",
     });
+  });
+
+  test("a session's reported location is resolved once and sent as bias and routing origin", async () => {
+    const located = { places: [{ location: { latitude: 45.56, longitude: -122.55 } }] };
+    const routed = {
+      ...placesBody,
+      routingSummaries: [{ legs: [{ duration: "597s", distanceMeters: 2607 }] }, {}],
+    };
+    const mockFetch = vi.fn((_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve(
+        Response.json(body.pageSize === 1 && !body.locationBias ? located : routed),
+      );
+    });
+    const tool = createGooglePlaces(fakeFetch(mockFetch));
+    const ctx = createMockToolContext({
+      sessionId: "places-located",
+      env: { GOOGLE_PLACES_API_KEY: "places-test-key" },
+    });
+    setSessionLocation("places-located", "123 Example St, Portland, OR 97201");
+
+    const result = await tool.execute({ query: "coffee" }, ctx);
+    await tool.execute({ query: "pharmacy" }, ctx);
+
+    // Drive time and distance ride on the place they belong to; a place with
+    // no leg gets none.
+    expect(result).toMatchObject([
+      { name: "Tony's Pizza", driveMinutes: 10, distanceMiles: 1.6, distanceKm: 2.6 },
+      { name: "Closed Slice" },
+    ]);
+    expect((result as Record<string, unknown>[])[1]).not.toHaveProperty("driveMinutes");
+
+    const bodies = mockFetch.mock.calls.map(([, init]) => JSON.parse(String(init.body)));
+    // One address lookup, asking only for the location field, then two searches.
+    expect(bodies).toHaveLength(3);
+    expect(bodies[0]).toEqual({ textQuery: "123 Example St, Portland, OR 97201", pageSize: 1 });
+    expect(new Headers(mockFetch.mock.calls[0]?.[1].headers).get("X-Goog-FieldMask")).toBe(
+      "places.location",
+    );
+    for (const body of bodies.slice(1)) {
+      expect(body.locationBias).toEqual({
+        circle: { center: { latitude: 45.56, longitude: -122.55 }, radius: 15_000 },
+      });
+      expect(body.routingParameters).toEqual({
+        origin: { latitude: 45.56, longitude: -122.55 },
+        travelMode: "DRIVE",
+      });
+    }
+    expect(new Headers(mockFetch.mock.calls[1]?.[1].headers).get("X-Goog-FieldMask")).toMatch(
+      /,routingSummaries$/,
+    );
+  });
+
+  test("a failed address lookup still runs the search, unbiased", async () => {
+    const mockFetch = vi.fn((_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve(
+        body.textQuery === "nowhere at all" ? Response.json({}) : Response.json(placesBody),
+      );
+    });
+    const ctx = createMockToolContext({
+      sessionId: "places-unlocatable",
+      env: { GOOGLE_PLACES_API_KEY: "places-test-key" },
+    });
+    setSessionLocation("places-unlocatable", "nowhere at all");
+    const result = await createGooglePlaces(fakeFetch(mockFetch)).execute({ query: "coffee" }, ctx);
+    expect(Array.isArray(result)).toBe(true);
+    const search = mockFetch.mock.calls[1]?.[1];
+    expect(JSON.parse(String(search?.body)).locationBias).toBeUndefined();
+    expect(JSON.parse(String(search?.body)).routingParameters).toBeUndefined();
+    expect(new Headers(search?.headers).get("X-Goog-FieldMask")).not.toContain("routingSummaries");
   });
 });

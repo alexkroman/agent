@@ -2,11 +2,12 @@
 /**
  * `@alexkroman1/aai/channels` — where a run's output GOES.
  *
- * One vendor today, one shape: a factory returns a serializable DESCRIPTOR
- * (`{ kind, options }`) and {@link sendToChannel} posts a {@link ChannelMessage}
- * to it. Nothing here opens a socket at import time, and nothing reads a
- * credential out of the environment — see {@link SlackChannelOptions} for why
- * a channel's credential is passed in where a provider's is not.
+ * Two vendors (Slack, and Textbelt for SMS), one shape: a factory returns a
+ * serializable DESCRIPTOR (`{ kind, options }`) and {@link sendToChannel} posts
+ * a {@link ChannelMessage} to it. Nothing here opens a socket at import time,
+ * and nothing reads a credential out of the environment — see
+ * {@link SlackChannelOptions} for why a channel's credential is passed in where
+ * a provider's is not.
  *
  * @example Post a run's result to Slack
  * ```ts
@@ -39,6 +40,8 @@
  * - {@link slackChannel} — declare a destination. {@link isSlackWebhookUrl} guards
  *   the value where a PERSON supplies it, which is a security boundary and not
  *   only a typo check.
+ * - {@link textbeltChannel} — an SMS to one number fixed at construction;
+ *   {@link allowedSmsRecipient} decides which number a "text me" may reach.
  * - {@link sendToChannel} — post, and throw a {@link ChannelDeliveryError}
  *   carrying the retry verdict. `sendToChannelOrFail`
  *   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
@@ -88,3 +91,14 @@ export {
   type SlackChannelOptions,
   slackChannel,
 } from "./channels/slack.ts";
+export {
+  explainTextbeltChannelFailure,
+  renderTextbeltText,
+  TEXTBELT_CHANNEL_HANDLER,
+  TEXTBELT_CHANNEL_KIND,
+  TEXTBELT_MAX_MESSAGE_CHARS,
+  type TextbeltChannel,
+  type TextbeltChannelOptions,
+  textbeltChannel,
+} from "./channels/textbelt.ts";
+export { allowedSmsRecipient, type SmsRecipientEnv } from "./sms-recipient.ts";

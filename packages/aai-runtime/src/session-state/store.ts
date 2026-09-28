@@ -71,6 +71,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { getOrCreate } from "../_get-or-create.ts";
 import type { StateSyncSession } from "../_state-sync.ts";
 import type { Logger } from "../runtime-config.ts";
+import type { ClientSessionLog } from "./clients.ts";
 
 /** One retained session event: its index in the session's log, and its JSON. */
 export type StoredSessionEvent = {
@@ -122,8 +123,12 @@ export type SessionStateBackend = {
   load(sessionId: string): Promise<Map<string, string>>;
   /** Store these slots' values. Called with only the ones that changed. */
   commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
-  /** Reclaim this session's slots, and its events where the backend may. */
+  /** Reclaim this session's slots, and its events unless it is bound to a client. */
   discard(sessionId: string): Promise<void>;
+  /** Bind a session to a client (`clients.ts`). Absent: no client log is kept. */
+  bindClient?: ClientSessionLog["bindClient"];
+  /** A client's sessions, newest first (`clients.ts`). Absent with `bindClient`. */
+  clientSessions?: ClientSessionLog["clientSessions"];
   /**
    * Append these events at the indices they already carry.
    *

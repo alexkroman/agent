@@ -16,7 +16,7 @@
 
 import { loadClientConfig } from "./client-config.ts";
 import { openReconnectingSocket } from "./session-core-reconnect.ts";
-import { buildBrokeredWsUrl, buildWsUrl } from "./session-core-url.ts";
+import { buildBrokeredWsUrl, buildWsUrl, type ClientReport } from "./session-core-url.ts";
 import {
   clearStoredSessionId,
   readStoredSessionId,
@@ -31,7 +31,21 @@ export type DialOptions = {
   WebSocket?: WebSocketConstructor | undefined;
   /** An id the caller manages itself — wins over what a previous load stored. */
   resumeSessionId?: string | undefined;
+  /** Where the client is — see `VoiceSessionOptions.location`. Read per attempt. */
+  location?: string | (() => string | undefined) | undefined;
+  /** The owner's number — see `VoiceSessionOptions.phone`. Read per attempt. */
+  phone?: string | (() => string | undefined) | undefined;
+  /** This client's device id — see `VoiceSessionOptions.client`. Read per attempt. */
+  client?: string | (() => string | undefined) | undefined;
 };
+
+/** A string-or-getter option resolved NOW, trimmed; an empty answer is none. */
+function resolveReported(
+  value: string | (() => string | undefined) | undefined,
+): string | undefined {
+  const trimmed = (typeof value === "function" ? value() : value)?.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
 
 export type Dialer = {
   /** A socket for this attempt. */
@@ -76,6 +90,20 @@ export function createDialer(options: DialOptions): Dialer {
   let serverIsBroker: boolean | undefined;
 
   /**
+   * This attempt's `?location=`, `?phone=` and `?client=`, resolved NOW: a
+   * getter is asked on every attempt so a UI that changes one (a settings
+   * field) is heard on the next reconnect without a remount. Trimmed; an empty
+   * answer is none.
+   */
+  function report(): ClientReport {
+    return {
+      location: resolveReported(options.location),
+      phone: resolveReported(options.phone),
+      client: resolveReported(options.client),
+    };
+  }
+
+  /**
    * The WebSocket URL for the *next* connection attempt. Evaluated per attempt
    * (partysocket takes it as an async URL provider):
    *
@@ -103,8 +131,8 @@ export function createDialer(options: DialOptions): Dialer {
     // agent does. Only an answered lookup may latch.
     if (cfg) serverIsBroker = cfg.sessionUrl !== undefined;
     const next = cfg?.sessionUrl
-      ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId)
-      : buildWsUrl(options.platformUrl, hasConnected, sessionId);
+      ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId, report())
+      : buildWsUrl(options.platformUrl, hasConnected, sessionId, report());
     // The snapshot's `apiUrl` deliberately stays the long-living platform
     // endpoint set at construction — never the brokered sandbox tunnel URL,
     // which is ephemeral (dies on idle eviction/redeploy) and useless to share.
@@ -115,7 +143,7 @@ export function createDialer(options: DialOptions): Dialer {
     open: () => {
       if (options.WebSocket) {
         return new options.WebSocket(
-          buildWsUrl(options.platformUrl, hasConnected, sessionId).toString(),
+          buildWsUrl(options.platformUrl, hasConnected, sessionId, report()).toString(),
         );
       }
       // partysocket's reconnecting WebSocket — same interface, plus

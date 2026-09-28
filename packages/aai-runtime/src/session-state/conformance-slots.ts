@@ -36,6 +36,13 @@ export type SessionStateArm = {
   backend: () => SessionStateBackend;
   /** A fresh, collision-proof session id per call — see the arm-independence rule. */
   uid: () => string;
+  /**
+   * The backend keeps a CLIENT log (`bindClient`/`clientSessions`), so the
+   * client cases run on it. Declared on the arm rather than probed off the
+   * backend because a scenario arm's backend does not exist until its
+   * `beforeAll` — and absent is the platform's honest answer (`clients.ts`).
+   */
+  clientLog?: boolean | undefined;
 };
 
 /**

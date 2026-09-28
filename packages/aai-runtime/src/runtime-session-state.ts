@@ -11,6 +11,7 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import type { Logger } from "./runtime-config.ts";
+import { type ClientHistoryDeps, publishClientTranscripts } from "./session-client-history.ts";
 import type { ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
@@ -41,6 +42,17 @@ export type RuntimeSessionState = {
    */
   stream: SessionEventStream;
   sweeps: StateSweeps;
+  /**
+   * The backend and stream a CLIENT's log is read through — bound, loaded into
+   * a new session, and read by `stepClientTranscript`. See
+   * `session-client-history.ts`.
+   */
+  history: ClientHistoryDeps;
+  /**
+   * Take down what this state published process-wide: `stepClientTranscript`'s
+   * reader, which reads through THIS backend. Only if it is still this one's.
+   */
+  unpublish: () => void;
   /**
    * What `createRuntime` puts in "Session mode resolved".
    *
@@ -99,10 +111,19 @@ export function createRuntimeSessionState(options: {
 }): RuntimeSessionState {
   const backend = selectBackend(options);
   const store = createSessionStateStore({ backend, logger: options.logger });
+  const stream = createSessionEventStream({ backend, logger: options.logger });
+  const history = { backend, stream, logger: options.logger };
   return {
     store,
-    stream: createSessionEventStream({ backend, logger: options.logger }),
+    stream,
     sweeps: createStateSweeps(store),
+    history,
+    // Published HERE, where the backend is chosen, because the reader has to
+    // read the very backend the sessions write — a second selection could pick
+    // another. Published even for a backend with no client log: the reader then
+    // answers "no sessions", which is true, where an unpublished slot would
+    // throw a `FatalError` naming a server that is in fact running.
+    unpublish: publishClientTranscripts(history),
     describe: { backend: backend.name, durable: backend.durable },
   };
 }

@@ -29,6 +29,24 @@ import type { SessionWebSocket } from "./ws-handler.ts";
 export type SessionStartOptions = {
   skipGreeting?: boolean;
   resumeFrom?: string;
+  /**
+   * Where the client says it is (`?location=` on the upgrade), kept per session
+   * for the location-aware builtins. An address: PII, never logged.
+   */
+  clientLocation?: string;
+  /**
+   * The device's id (`?client=` on the upgrade), kept per session so a tool can
+   * read it with `sessionClientId(ctx)` and hand it to a run — and the key of
+   * the device's durable conversation: the session is bound to it and seeded
+   * with its prior sessions. Not authenticated; on a server reachable from a
+   * network the id is the only credential for that history.
+   */
+  clientId?: string;
+  /**
+   * The number the client says is its owner's (`?phone=` on the upgrade, already
+   * E.164), kept per session for `sessionClientPhone(ctx)`. PII, never logged.
+   */
+  clientPhone?: string;
   logContext?: Record<string, string>;
   onOpen?: () => void;
   onClose?: () => void;

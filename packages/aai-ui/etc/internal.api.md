@@ -38,6 +38,8 @@ type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    sendText(text: string): void;
+    setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
     disconnect(): void;
@@ -99,6 +101,7 @@ export function SessionProvider(input: {
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
+    readonly micMuted: boolean;
     readonly apiUrl: string;
     readonly contentVersion: number;
     readonly messages: ChatMessage[];

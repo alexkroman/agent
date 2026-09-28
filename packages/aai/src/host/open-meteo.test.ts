@@ -2,6 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { createOpenMeteo } from "./open-meteo.ts";
+import { setSessionLocation } from "./session-location.ts";
 
 const portlandOregon = {
   name: "Portland",
@@ -195,5 +196,26 @@ describe("open_meteo", () => {
       error: "Geocoding request failed: socket hang up",
       location: "Paris",
     });
+  });
+
+  test("no location argument uses the town of the session's reported address", async () => {
+    const mockFetch = openMeteoFetch([portlandMaine, portlandOregon]);
+    setSessionLocation("meteo-located", "123 Example St, Portland, OR 97201");
+    const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
+      {},
+      createMockToolContext({ sessionId: "meteo-located" }),
+    );
+    expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get("name")).toBe("Portland");
+    expect(result).toMatchObject({ location: "Portland, Oregon, United States" });
+  });
+
+  test("no location argument and no reported location asks the model to ask", async () => {
+    const mockFetch = openMeteoFetch([paris]);
+    const result = await createOpenMeteo(fakeFetch(mockFetch)).execute(
+      {},
+      createMockToolContext({ sessionId: "meteo-unlocated" }),
+    );
+    expect(result).toEqual({ error: expect.stringContaining("ask where") });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

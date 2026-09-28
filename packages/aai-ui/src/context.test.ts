@@ -78,6 +78,8 @@ describe("useSessionActions", () => {
     // would still be a function per key and would break `memo()` children.
     expect(result.current.start).toBe(core.start);
     expect(result.current.cancel).toBe(core.cancel);
+    expect(result.current.sendText).toBe(core.sendText);
+    expect(result.current.setMicMuted).toBe(core.setMicMuted);
     expect(result.current.resetState).toBe(core.resetState);
     expect(result.current.reset).toBe(core.reset);
     expect(result.current.restart).toBe(core.restart);
@@ -135,6 +137,8 @@ describe("useSessionActions", () => {
       "reset",
       "resetState",
       "restart",
+      "sendText",
+      "setMicMuted",
       "start",
       "toggle",
     ]);

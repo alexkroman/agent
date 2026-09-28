@@ -67,11 +67,24 @@
  * arithmetic on them that must not go through the host's time zone.
  */
 export * from "./sdk/calendar.ts";
+
 // By NAME: that module also declares `MAX_DB_RESULT_ROWS`, a framework budget
 // on `@alexkroman1/aai/internal` — a cap the DRIVER enforces, which no
 // `agent.ts` names. Tool code reaches no database at all; the `Db` it bounds is
 // the runtime's own.
 
+/**
+ * The two `agent()` fields that bracket a SESSION rather than a turn —
+ * `sessionContext` before its first model call, `onSessionEnd` after it stops.
+ * Declared beside `types.ts` at its source-length cap; see
+ * `sdk/agent-session-lifecycle.ts`.
+ */
+export type {
+  AgentSessionLifecycle,
+  SessionContext,
+  SessionContextArgs,
+  SessionEndContext,
+} from "./sdk/agent-session-lifecycle.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**
@@ -294,6 +307,11 @@ export type {
   StandardSchemaV1,
   ToolInputSchema,
 } from "./sdk/schema.ts";
+/**
+ * Which device a session belongs to, read from `ctx.sessionId` — how a tool hands
+ * a run the id `stepNotifyClient` reaches that device by after the call.
+ */
+export { sessionClientId } from "./sdk/session-client.ts";
 export {
   type ClientEventMap,
   type ClientEventSender,
@@ -310,6 +328,11 @@ export type {
   SessionEventHandler,
   SessionEventHandlers,
 } from "./sdk/session-events.ts";
+/**
+ * The phone number a session's client reported (`?phone=`), E.164, read from
+ * `ctx.sessionId` — a CLAIM by the client, never verified; see its doc.
+ */
+export { sessionClientPhone } from "./sdk/session-phone.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.
 export * from "./sdk/session-slot.ts";

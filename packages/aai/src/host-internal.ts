@@ -46,6 +46,7 @@ export {
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
+export { getSessionLocation, setSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
@@ -67,6 +68,14 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  * function's source text into the model's instructions.
  */
 export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
+// The publisher half of the channel outbox: a host that wants texts and posts
+// captured rather than sent (`aai-runtime`, on `AAI_CHANNEL_OUTBOX`) publishes
+// where they go. Every send reaches it through `postToChannel`.
+export {
+  type ChannelOutbox,
+  type ChannelOutboxEntry,
+  publishChannelOutbox,
+} from "./sdk/channels/shared/outbox.ts";
 export { assertProviderTriple } from "./sdk/config-rules.ts";
 export {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
@@ -218,6 +227,11 @@ export {
 } from "./sdk/providers/tts/rime.ts";
 export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./sdk/s2s-constants.ts";
 export { isConvertibleSchema, toToolJsonSchema } from "./sdk/schema.ts";
+// The runtime's half of `sessionClientId` (authoring API on `/tools`): recorded
+// where the session id is decided, read back by a tool from `ctx.sessionId`.
+export { setSessionClient } from "./sdk/session-client.ts";
+// The runtime's half of `sessionClientPhone`, recorded the same way.
+export { setSessionPhone } from "./sdk/session-phone.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";
 // The formatter AND the two types beside it. The type was reachable from no
 // published subpath at all, so the runtime's eval readers — which validate a
@@ -237,6 +251,14 @@ export {
   type StandardSchemaV1,
 } from "./sdk/standard-schema.ts";
 export { publishStepInfoReader, type StepInfoReader } from "./sdk/step-attempt.ts";
+// The publisher half of `stepClientTranscript`: the runtime that holds the
+// session log publishes how a step reads one client's part of it.
+export {
+  CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE,
+  type ClientTranscriptReader,
+  publishClientTranscriptReader,
+  publishedClientTranscriptReader,
+} from "./sdk/step-client-transcript.ts";
 export { publishStepDelegate, type StepDelegateFn } from "./sdk/step-delegate.ts";
 export { publishStepEnv } from "./sdk/step-env.ts";
 export { publishStepFetch, type StepFetch } from "./sdk/step-fetch.ts";
@@ -246,6 +268,14 @@ export {
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";
+// The publisher half of `stepNotifyClient` (authoring API on `/step`): the
+// server that holds the `WS /inbox` sockets publishes how a notice reaches one.
+export {
+  CLIENT_ID_RE,
+  CLIENT_INBOX_UNAVAILABLE_MESSAGE,
+  type ClientNotifier,
+  publishClientNotifier,
+} from "./sdk/step-notify-client.ts";
 export { publishStepReporter, type StepReporter } from "./sdk/step-report.ts";
 export { publishSpeechSynthesizer, type SpeechSynthesizer } from "./sdk/step-speak.ts";
 export {

@@ -324,6 +324,10 @@ export const HOST_ONLY_AGENT_FIELDS = [
   // could have called them anyway.
   "inputGuardrails",
   "outputGuardrails",
+  // The two session-bracketing hooks are functions too, and are called only by
+  // the runtime holding the agent's own module — see `agent-session-lifecycle.ts`.
+  "sessionContext",
+  "onSessionEnd",
 ] as const;
 
 /** A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …). */

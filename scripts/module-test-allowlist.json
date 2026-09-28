@@ -1,5 +1,5 @@
 {
-  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 298 left. The value is always 1 — see scripts/check-module-tests.mjs.",
+  "_description": "Modules under packages/*/src with no co-located test. DEBT, goal zero: 297 left. The value is always 1 — see scripts/check-module-tests.mjs.",
   "modules-without-tests": {
     "packages/aai-cli/src/_deploy.ts": 1,
     "packages/aai-cli/src/_mock-api.ts": 1,
@@ -66,6 +66,7 @@
     "packages/aai-runtime/src/session-idle.ts": 1,
     "packages/aai-runtime/src/session-reply-done.ts": 1,
     "packages/aai-runtime/src/session-state/backends/memory.ts": 1,
+    "packages/aai-runtime/src/session-state/conformance-clients.ts": 1,
     "packages/aai-runtime/src/session-state/conformance-events.ts": 1,
     "packages/aai-runtime/src/session-state/conformance-slots.ts": 1,
     "packages/aai-runtime/src/session-state/sweeps.ts": 1,
@@ -215,11 +216,9 @@
     "packages/aai-ui/src/internal.ts": 1,
     "packages/aai-ui/src/session-core-audio-setup.ts": 1,
     "packages/aai-ui/src/session-core-close.ts": 1,
-    "packages/aai-ui/src/session-core-dial.ts": 1,
     "packages/aai-ui/src/session-core-handshake.ts": 1,
     "packages/aai-ui/src/session-core-messages.ts": 1,
     "packages/aai-ui/src/session-core-types.ts": 1,
-    "packages/aai-ui/src/session-core-url.ts": 1,
     "packages/aai-ui/src/worklets/_module-url.ts": 1,
     "packages/aai-ui/src/worklets/_playback-bench-harness.ts": 1,
     "packages/aai-ui/src/worklets/_playback-bench-host.ts": 1,

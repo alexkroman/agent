@@ -207,12 +207,75 @@ describe("a tool's own filler and the generic dead-air cover", () => {
     });
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
     expect(spoken).toEqual([]);
-    // And comes back the moment the tool stops covering: the suppression is a
-    // re-arm, not a cancellation, so the caller is not left uncovered for the
-    // rest of the turn.
+    // And comes back the moment the predicate clears: the handler's
+    // suppression is a re-arm, not a cancellation. (The predicate the turn
+    // wires in is `coveredThisTurn`, which stays true for the rest of a turn
+    // whose tool covered itself — see the turn-level specs below.)
     covering.value = false;
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
     expect(spoken.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
+  });
+
+  /**
+   * A turn where the model calls `lookup` at 2s, the tool returns at once, and
+   * the answer starts at ~4s — the shape of a home speaker's weather turn,
+   * where the generic cover's tool window (1.2s) fired AFTER the call had
+   * returned and played straight into the reply as its preamble.
+   */
+  async function coveredTurn(messages: ToolMessages | undefined) {
+    const controller = createToolSpeechController({ log: silentLogger, sid: "s", random: () => 0 });
+    const spoken: string[] = [];
+    const llm = createFakeLanguageModel({
+      delayMs: 2000,
+      steps: [
+        [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{}" }],
+        [{ type: "text", text: "It's 59 degrees." }],
+      ],
+    });
+    const schema =
+      messages === undefined ? { ...schemaWith({}), messages: undefined } : schemaWith(messages);
+    const turn = consumeLlmStream({
+      llm,
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "what's the weather" }],
+      tools: toVercelTools([schema], {
+        executeTool: async () => "{}",
+        sessionId: "s",
+        messages: () => [],
+        toolSpeech: controller,
+      }),
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 3,
+      deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+      toolSpeech: controller,
+      sendTtsText: (text) => spoken.push(text),
+      callbacks: { report: () => undefined },
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "s",
+      signal: new AbortController().signal,
+      onDelta: () => undefined,
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await turn;
+    return spoken;
+  }
+
+  test("a tool that covers itself keeps the generic phrase out of the whole turn", async () => {
+    // The call returned long before its 3s rung, so nothing covered the gap
+    // while the model phrased the answer — and nothing should: that gap is a
+    // beat, and filler there is heard as the answer's first words.
+    const spoken = await coveredTurn({ delayed: [{ afterMs: 3000, content: "Still checking." }] });
+    expect(spoken.join("")).toBe("It's 59 degrees.");
+  });
+
+  test("a tool with no cover of its own still gets the generic one", async () => {
+    // The control: the stand-down is keyed on the TOOL declaring cover, so an
+    // agent whose tools declare none keeps exactly the behaviour it had.
+    const spoken = await coveredTurn(undefined);
+    expect(spoken[0]).toBe(DEAD_AIR_OPENING_PHRASE);
   });
 
   test("the start line is filler and the verbatim answer is not", async () => {

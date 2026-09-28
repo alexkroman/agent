@@ -693,6 +693,10 @@ A failure another attempt might survive, with an optional "not before".
 
 - `Error`
 
+#### Extended by
+
+- [`ClientUnreachableError`](step.md#clientunreachableerror)
+
 #### Constructors
 
 ##### Constructor

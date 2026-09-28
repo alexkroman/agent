@@ -34,6 +34,7 @@
  */
 
 import { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
+import { CLIENT_INBOX_PATH } from "./client-inbox.ts";
 import { SESSION_EVENTS_PATH } from "./session-events-api.ts";
 import { TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 import { WORKFLOW_API_METHODS, WORKFLOW_API_PREFIX } from "./workflow/api.ts";
@@ -138,6 +139,8 @@ export const SERVER_ROUTES = {
   },
   session: { transport: "ws", path: SESSION_PATH, match: "prefix" },
   phone: { transport: "ws", path: TELEPHONY_PATH, match: "prefix" },
+  // A device's idle socket for `stepNotifyClient`, named by `?client=`.
+  inbox: { transport: "ws", path: CLIENT_INBOX_PATH, match: "exact" },
 } as const satisfies Record<string, ServerRoute>;
 
 /**

@@ -9,7 +9,7 @@
  * `session-tool-steps.ts` came out of the same file on the same principle.
  *
  * Every case here is a decision rather than a forward, which is why the switch
- * reads long for eight commands: two of them deliberately do LESS than the obvious
+ * reads long for nine commands: two of them deliberately do LESS than the obvious
  * thing (`audio_ready` is inert, `playback_progress` does not touch the idle
  * deadline) and one deliberately does less than its transport-reported namesake
  * (`cancel` aborts the reply's tools without swapping the reply object).
@@ -74,6 +74,25 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
     }
     return false;
   };
+  // Once per session too: a client with a text box sends it on every message.
+  let warnedNoText = false;
+  const userText = (text: string): void => {
+    if (transport.sendUserText !== undefined) {
+      // The transport reports the cancel (if any) and the committed turn
+      // itself, in that order — see `Transport.sendUserText`. The idle
+      // deadline is re-armed by that `user-transcript.committed`, the same
+      // report a spoken turn re-arms it with.
+      transport.sendUserText(text);
+      return;
+    }
+    if (!warnedNoText) {
+      warnedNoText = true;
+      log.warn(
+        "Client sent user_text, but this session's transport cannot take a typed turn — an S2S service owns its conversation and has no text input, so typed turns need a pipeline agent.",
+        { sid: sessionId },
+      );
+    }
+  };
   /** The three push-to-talk edges — see the verbs on `Transport`. */
   const userTurn = (type: "user_turn_start" | "user_turn_commit" | "user_turn_clear"): void => {
     if (!turnVerbsOrWarn(type)) return;
@@ -122,6 +141,9 @@ export function createCommandDispatcher(deps: CommandDeps): CommandDispatcher {
       case "user_turn_commit":
       case "user_turn_clear":
         userTurn(cmd.type);
+        return;
+      case "user_text":
+        userText(cmd.text);
         return;
       case "reset":
         deps.cancelReply();

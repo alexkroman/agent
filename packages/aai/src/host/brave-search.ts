@@ -19,6 +19,7 @@ import { Parser } from "htmlparser2";
 import { z } from "zod";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import { builtinCover } from "./_builtin-cover.ts";
 import { fetchKeyedJson } from "./_keyed-api.ts";
 import { builtinFetch } from "./ssrf.ts";
 
@@ -83,6 +84,7 @@ export function createBraveSearch(
       "questions. Returns a list of results with title, URL, description, and page age when " +
       "known. Use freshness to restrict to recent pages.",
     inputSchema: braveSearchParams,
+    messages: builtinCover("I'm searching the web."),
     async execute(args, ctx) {
       const count = Math.max(1, Math.min(args.max_results ?? 5, MAX_SEARCH_RESULTS));
       const params = new URLSearchParams({ q: args.query, count: String(count) });

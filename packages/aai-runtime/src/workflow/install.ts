@@ -37,6 +37,8 @@ import {
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { closeEgressFetch } from "../_egress-fetch.ts";
 import { openAppDb } from "../app-db.ts";
+import { installChannelOutbox } from "../channel-outbox.ts";
+import { type ClientInbox, installClientInbox } from "../client-inbox.ts";
 import { closePlatformSockets, ensurePlatformSocket } from "../platform-socket-registry.ts";
 import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";
@@ -84,6 +86,12 @@ type WorkflowSupport = {
    * cost.
    */
   directParts: boolean;
+  /**
+   * The `WS /inbox` sockets `stepNotifyClient` pushes to — a step slot like the
+   * others, and built here for their reason: one per server, published before
+   * the first run can resume. `server.ts` hands it the upgrades.
+   */
+  inbox: ClientInbox;
   /** Release what this call opened — its database lease and its fetch pool. Never rejects. */
   close(): Promise<void>;
 };
@@ -232,8 +240,17 @@ export function installWorkflowSupport(options: {
   publishStepDelegate(
     createStepDelegate({ ...omitUndefined({ env: options.env }), logger: options.logger }),
   );
+  // `stepNotifyClient`'s slot: the device sockets this server holds.
+  const inbox = installClientInbox(options.logger);
+  // The channel outbox, when `AAI_CHANNEL_OUTBOX` names a file: every text and
+  // post is captured there instead of sent. Here because this is the one call
+  // every `createRuntimeServer` makes, workflows or not — and it has to cover
+  // both senders: `text_me` runs in the host's copy of the SDK, a step's
+  // `sendToChannel` in the bundle's, and the slot is global to both.
+  installChannelOutbox(options.logger);
   return {
     uploads: store,
+    inbox,
     // The BROKER is still required — a self-hosted agent with its own bucket holds
     // the credential itself, and no platform route serves its windows — but it is no
     // longer sufficient: the store has to be the arm that reads that bucket.
@@ -246,6 +263,7 @@ export function installWorkflowSupport(options: {
       // they are here: `aai dev` builds a new server on every save, and a socket
       // the old one left connected holds one of the platform's Modal inputs.
       closePlatformSockets();
+      inbox.close();
       await Promise.allSettled([db?.close(), stepFetch.close(), closeEgressFetch()]);
     },
   };

@@ -67,6 +67,10 @@ export type SessionActions = {
   start(): void;
   /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
+  /** Send a typed user turn, answered as if spoken — see {@link BrowserSession.sendText}. */
+  sendText(text: string): void;
+  /** Mute or unmute the mic without dropping the session — see {@link BrowserSession.setMicMuted}. */
+  setMicMuted(muted: boolean): void;
   /** Clear messages, transcripts and error state, keeping the connection. */
   resetState(): void;
   /** Clear state and reopen the connection — the same session id. */
@@ -86,10 +90,10 @@ export type SessionActions = {
  * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
  * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
  * control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
- * `disconnect`, `cancel`, `end`).
+ * `disconnect`, `cancel`, `end`, `sendText`, `setMicMuted`).
  *
- * Note there is no text-send method — sessions are voice-only; the only
- * client→server inputs are audio and the control methods above.
+ * `sendText(text)` is the one input besides the microphone: a typed turn the
+ * agent answers aloud, as if it had been spoken.
  *
  * @public
  */
@@ -111,8 +115,9 @@ export function useSessionCore(): BrowserSession {
 }
 
 /**
- * The session's control methods — `start`, `cancel`, `resetState`, `reset`,
- * `restart`, `disconnect`, `toggle`, `end` — with **no snapshot subscription**.
+ * The session's control methods — `start`, `cancel`, `sendText`,
+ * `setMicMuted`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`,
+ * `end` — with **no snapshot subscription**.
  * Push-to-talk is not among them: that is `usePushToTalk`.
  *
  * This is the narrow half of {@link useSession}, and it is the half a custom
@@ -133,7 +138,7 @@ export function useSessionCore(): BrowserSession {
  * category as the providers and `buildAgentUrl` that live on
  * `@alexkroman1/aai-ui/internal`. A client that holds it can subscribe out of
  * band of React, dial a socket the mount did not, and dispose the session under
- * the tree that is rendering it. What comes back from here is the SAME eight
+ * the tree that is rendering it. What comes back from here is the SAME
  * methods `useSession()` already publishes on its result, built into a fresh
  * object rather than passed through, so the store is not reachable from it.
  * There is no new capability here — only the existing one without the
@@ -177,6 +182,8 @@ export function useSessionActions(): SessionActions {
     (): SessionActions => ({
       start: core.start,
       cancel: core.cancel,
+      sendText: core.sendText,
+      setMicMuted: core.setMicMuted,
       resetState: core.resetState,
       reset: core.reset,
       restart: core.restart,

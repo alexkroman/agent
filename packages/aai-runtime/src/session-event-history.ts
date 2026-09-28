@@ -216,3 +216,94 @@ export function historyFromEvents(events: readonly SessionEvent[]): {
   }
   return { messages, toolCalls: toolCalls.slice(-DEFAULT_MAX_HISTORY) };
 }
+
+/**
+ * How much of one prior tool RESULT a rebuilt model history repeats, in
+ * characters. A digest is a reminder that the call happened and roughly what it
+ * said — enough that the model does not re-call the tool to answer "what was
+ * the weather again" — not the payload itself, which `ctx.messages` still holds
+ * in full for a tool that reads it.
+ */
+export const TOOL_DIGEST_RESULT_CHARS = 240;
+
+/** The same cap for a digest's ARGUMENTS, which are usually far shorter. */
+export const TOOL_DIGEST_ARGS_CHARS = 160;
+
+/** `text` cut to `max` characters, saying so when it was. */
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}… (truncated)`;
+}
+
+/**
+ * One prior tool call as a line of text: `[tool weather({"city":"Portland"}) →
+ * {"temp":12}]`. The name is absent when the log's front no longer holds the
+ * `tool.called` — the result is still worth repeating.
+ *
+ * @internal
+ */
+export function toolDigest(call: {
+  name?: string | undefined;
+  args?: unknown;
+  result: string;
+}): string {
+  const args =
+    call.args === undefined ? "" : clip(JSON.stringify(call.args) ?? "", TOOL_DIGEST_ARGS_CHARS);
+  return `[tool ${call.name ?? "(unknown)"}(${args}) → ${clip(call.result, TOOL_DIGEST_RESULT_CHARS)}]`;
+}
+
+/**
+ * The MODEL's view of a rebuilt history: {@link historyFromEvents}' messages
+ * with every `role: "tool"` one folded into the assistant side as a
+ * {@link toolDigest}.
+ *
+ * ## Why a digest and not the tool message
+ *
+ * The pipeline's LLM view holds tool-call PAIRS — an assistant message carrying
+ * the call and a `tool` message answering it — and the event log records only
+ * the result half, so a `tool` message seeded alone is an orphan both providers
+ * reject (`transports/pipeline-history.ts` has the error strings). `seed` used
+ * to answer that by DROPPING them, which kept the request valid and silently
+ * lost every tool call from the model's memory of a resumed or reloaded
+ * conversation: an agent that had looked up an order asked for the order number
+ * again. Rendering the call as text on the ASSISTANT side keeps both properties
+ * — there is no pair to orphan, and the model reads what it did.
+ *
+ * The digest is PREPENDED to the assistant reply that followed the call (that
+ * is where the model produced it), and a call with no reply after it — a turn
+ * that ended mid-chain, or the log's last word — becomes an assistant message
+ * of its own. `ctx.messages` is untouched by this: it keeps the real `tool`
+ * messages, which is what a tool reads.
+ *
+ * @internal
+ */
+export function modelHistoryOf(
+  messages: readonly Message[],
+  toolCalls: readonly RestoredToolCall[],
+): Message[] {
+  const byId = new Map(toolCalls.map((call) => [call.callId, call]));
+  const out: Message[] = [];
+  let pending: string[] = [];
+  const flush = (): void => {
+    if (pending.length === 0) return;
+    out.push({ role: "assistant", content: pending.join("\n") });
+    pending = [];
+  };
+  for (const m of messages) {
+    if (m.role === "tool") {
+      const call = m.toolCallId === undefined ? undefined : byId.get(m.toolCallId);
+      pending.push(
+        toolDigest({ name: m.toolName ?? call?.name, args: call?.args, result: m.content }),
+      );
+      continue;
+    }
+    if (m.role === "assistant" && pending.length > 0) {
+      out.push({ role: "assistant", content: `${pending.join("\n")}\n${m.content}` });
+      pending = [];
+      continue;
+    }
+    flush();
+    out.push({ role: m.role, content: m.content });
+  }
+  flush();
+  return out;
+}

@@ -43,10 +43,13 @@ function stubTransport(): Transport {
 function makeState(): RuntimeSessionState {
   const backend = createMemoryStateBackend();
   const store = createSessionStateStore({ backend, logger: makeLogger() });
+  const stream = createSessionEventStream({ backend });
   return {
     store,
-    stream: createSessionEventStream({ backend }),
+    stream,
     sweeps: createStateSweeps(store),
+    history: { backend, stream },
+    unpublish: () => undefined,
     describe: { backend: backend.name, durable: backend.durable },
   };
 }

@@ -80,6 +80,9 @@ export type WorkflowAppOnlyField =
   // Session events, for the same reason `syncState` is here: there is no session
   // to observe. A workflow app's own narration is `stepReport()` from a step.
   | "events"
+  // And the two hooks that bracket a session, for the same reason.
+  | "sessionContext"
+  | "onSessionEnd"
   | "idleTimeoutMs"
   // A workflow app has no session for a carrier to talk to, so the phone
   // declaration is the same silent no-op the rest of this list is: `WS /phone`

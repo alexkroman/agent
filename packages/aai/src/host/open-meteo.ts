@@ -25,7 +25,9 @@ import { z } from "zod";
 import { MAX_JSON_BYTES } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import { builtinCover } from "./_builtin-cover.ts";
 import { fetchCappedJson } from "./_fetch-capped.ts";
+import { getSessionLocation, townOf } from "./session-location.ts";
 import { builtinFetch } from "./ssrf.ts";
 
 const openMeteoParams = z.object({
@@ -34,8 +36,10 @@ const openMeteoParams = z.object({
     .min(1)
     .describe(
       "The place to get weather for: a city, optionally qualified by region or country, " +
-        "e.g. 'Paris', 'Portland, Oregon', 'Springfield, IL, US'",
-    ),
+        "e.g. 'Paris', 'Portland, Oregon', 'Springfield, IL, US'. Omit it when the caller " +
+        "named no place, to use the caller's own location",
+    )
+    .optional(),
   days: z
     .number()
     .int()
@@ -328,17 +332,26 @@ export function createOpenMeteo(
   return {
     guidance:
       "Use open_meteo for current weather and forecasts. Pass the place the caller named, " +
-      "with its region or country when they gave one.",
+      "with its region or country when they gave one; when they named none, leave the " +
+      "location out and the caller's own is used.",
     description:
       "Get the current weather and a daily forecast for a place, from Open-Meteo. Returns " +
       "the resolved place name, current conditions (temperature, feels-like, humidity, wind, " +
       "precipitation) and per-day conditions, high, low and chance of precipitation, with the " +
       "units used. No API key required.",
     inputSchema: openMeteoParams,
-    async execute(args) {
+    messages: builtinCover("I'm pulling up the forecast."),
+    async execute(args, ctx) {
       const days = Math.max(1, Math.min(args.days ?? DEFAULT_FORECAST_DAYS, MAX_FORECAST_DAYS));
-      const geo = await geocode(fetchFn, args.location);
-      if (!geo.ok) return { error: geo.error, location: args.location };
+      // The geocoder matches place names, not street addresses, so a client's
+      // reported address is cut down to its town.
+      const reported = getSessionLocation(ctx);
+      const location = args.location ?? (reported && townOf(reported));
+      if (!location) {
+        return { error: "No location given and the caller's location is unknown: ask where." };
+      }
+      const geo = await geocode(fetchFn, location);
+      if (!geo.ok) return { error: geo.error, location };
       const { place } = geo;
       const units = unitsFor(place, args.units);
       const res = await fetchCappedJson(forecastUrl(place, units, days), {

@@ -11,7 +11,13 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
-import { LOG_PREVIEW_CHARS, SESSION_KEEPALIVE_INTERVAL_MS } from "@alexkroman1/aai/host-internal";
+import {
+  LOG_PREVIEW_CHARS,
+  SESSION_KEEPALIVE_INTERVAL_MS,
+  setSessionClient,
+  setSessionLocation,
+  setSessionPhone,
+} from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 
@@ -50,6 +56,15 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
    * short clock rather than waiting out the real interval.
    */
   keepaliveIntervalMs?: number;
+  /**
+   * Where the client says it is (`?location=`), recorded under the session's
+   * id for the location-aware builtins. An address: PII, never logged.
+   */
+  clientLocation?: string;
+  /** The device's id (`?client=`), recorded the same way for `sessionClientId`. */
+  clientId?: string;
+  /** The client's number (`?phone=`, E.164), for `sessionClientPhone`. PII, never logged. */
+  clientPhone?: string;
 };
 
 const WS_CLOSE_INTERNAL = 1011;
@@ -94,6 +109,10 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
     onClose,
     audioLeadMs,
     keepaliveIntervalMs,
+    clientLocation,
+    clientId,
+    clientPhone,
+    createSession,
     ...attachOptions
   } = options;
   const log = options.logger ?? consoleLogger;
@@ -142,6 +161,14 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
     stopPacingCurrent = stopPacing;
     attached = attachSession(client, {
       ...attachOptions,
+      // Recorded before the session exists, so its first tool call sees them. A
+      // resume without `?location=`, `?client=` or `?phone=` keeps what it reported before.
+      createSession: (sid, sessionClient) => {
+        if (clientLocation !== undefined) setSessionLocation(sid, clientLocation);
+        if (clientId !== undefined) setSessionClient(sid, clientId);
+        if (clientPhone !== undefined) setSessionPhone(sid, clientPhone);
+        return createSession(sid, sessionClient);
+      },
       logger: log,
       closeAfterFailure: () => ws.close?.(WS_CLOSE_INTERNAL, "session start failed"),
     });

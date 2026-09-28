@@ -224,6 +224,63 @@ export type VoiceSessionOptions = {
    */
   resumeSessionId?: string | undefined;
   /**
+   * Where the client is — e.g. a street address or `"Portland, Oregon"` — sent
+   * as `?location=` on every connection attempt (the first, a resume and each
+   * reconnect, brokered or not). Location-aware builtins read it: `open_meteo`
+   * falls back to it when the model names no place, and `google_places` biases
+   * its searches toward it.
+   *
+   * A string, or a getter asked on EVERY attempt — so a UI whose location can
+   * change (a settings field) passes `() => current` and the next reconnect
+   * carries the new value without a remount. An empty or `undefined` answer
+   * sends none. The server strips control characters and ignores a value
+   * longer than 200 characters.
+   *
+   * Treat it as personal data: like the session id it travels as a query
+   * parameter (browsers cannot set WebSocket headers), so it may appear in
+   * proxy and access logs.
+   */
+  location?: string | (() => string | undefined) | undefined;
+  /**
+   * The phone number of whoever owns this client — sent as `?phone=` on every
+   * connection attempt, with the same rules as {@link location}: a string or a
+   * getter asked per attempt, trimmed, an empty answer sends none. A tool reads
+   * it with `sessionClientPhone(ctx)`, e.g. to text the caller a link.
+   *
+   * Give it in E.164 form, with the `+` and country code (`"+1 503 555 0123"`):
+   * the server strips spaces, dashes, dots and parentheses and then needs a `+`
+   * and 8–15 digits. A bare `"5035550123"` is NOT assumed to be North American
+   * — it is dropped (the server logs that it was, never the value).
+   *
+   * The server takes it on the client's word. Personal data: it travels as a
+   * query parameter, so it may appear in proxy and access logs.
+   */
+  phone?: string | (() => string | undefined) | undefined;
+  /**
+   * The name of THIS client — a device id — sent as `?client=` on every
+   * connection attempt, with the same rules as {@link location}: a string or a
+   * getter asked per attempt, trimmed, an empty answer sends none.
+   *
+   * It is the id a tool reads with `sessionClientId(ctx)` and the one a client
+   * holds its `WS /inbox?client=` socket open under, so a tool can hand it to a
+   * workflow run and the run's `stepNotifyClient` reaches this client AFTER the
+   * voice session has ended (a reminder, a finished research job). Send the
+   * same id the inbox socket uses, or the run delivers to a client that is not
+   * listening.
+   *
+   * Letters, digits, `-` and `_`, at most 64 characters: the server checks it
+   * against the same pattern the inbox uses and ignores one that does not
+   * match — the session still opens, it just has no client id.
+   *
+   * It is also the key of this client's DURABLE conversation: every connection
+   * that sends it is seeded with that client's earlier sessions. The server
+   * takes it on the client's word and authenticates nothing, so on a server
+   * reachable from a network (a LAN-listening dev server, a self-hosted one)
+   * the id is the ONLY credential for that history — anyone who can reach the
+   * server and knows the id reads what was said. Use an unguessable id.
+   */
+  client?: string | (() => string | undefined) | undefined;
+  /**
    * WebSocket constructor override. Primarily useful for testing with a mock
    * WebSocket. When omitted, the session uses a reconnecting WebSocket
    * (partysocket) that retries with exponential backoff after an unexpected

@@ -34,6 +34,7 @@
  */
 
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { previewBody } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 import {
@@ -102,12 +103,20 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
   options: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
   const { schema, ...generate } = options;
+  const shape = replyJsonSchema(schema);
   // The caller's wording first, then the shape — the order an author would
   // write by hand, and the one `buildInstructions` uses for a subagent.
-  const system = [generate.system, shapeInstruction(schema)].filter(Boolean).join("\n\n");
+  const system = [generate.system, shape && shapeInstruction(shape)].filter(Boolean).join("\n\n");
   const reply = await stepGenerate(prompt, {
     ...generate,
     ...(system === "" ? {} : { system }),
+    // The request is CONSTRAINED as well as described, as `ctx.generate({ schema })`
+    // has always been. Described alone, a reasoning-off model obeys a system prompt
+    // that reads like a list ("each angle is one short noun phrase") over the
+    // appended schema, answers with bullets, and does so on every retry: the
+    // research template's planAngles failed its run that way, three attempts out of
+    // three. The prose stays for a model the gateway cannot constrain.
+    ...omitUndefined({ responseSchema: shape }),
   });
   const parsed = safeJsonParse(stripJsonFence(reply));
   // A record OR an array, spelled out — this is the one guard in the package
@@ -157,7 +166,7 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
  * A schema from a vendor exposing neither returns `undefined` and the call
  * behaves exactly as it did before — validated, not constrained.
  */
-function shapeInstruction(schema: StandardSchemaV1): string | undefined {
+function replyJsonSchema(schema: StandardSchemaV1): Record<string, unknown> | undefined {
   // Narrowed rather than cast, the way `sdk/schema.ts` probes the same two
   // methods: a record's properties are `unknown`, and `typeof === "function"`
   // is the whole check.
@@ -168,17 +177,31 @@ function shapeInstruction(schema: StandardSchemaV1): string | undefined {
   try {
     document = convert.call(schema);
   } catch {
-    // A schema the vendor itself cannot render (a transform with no JSON form)
-    // is not a reason to fail the call: the validation below still holds.
-    return undefined;
+    // A TRANSFORM has no output-side JSON form, and the lenient reply schemas the
+    // research template ships are exactly that (`z.array(z.unknown()).transform(…)
+    // .catch([])`, which tidies what the model sends). Giving up here sent those
+    // calls with no shape at all, prose or constraint, and a reasoning-off model
+    // answered them with a bulleted list on every retry. The INPUT side is what the
+    // model must produce anyway, and Zod renders it (`{ io: "input" }`; a vendor
+    // without the option ignores the argument or throws again).
+    try {
+      document = convert.call(schema, { io: "input" });
+    } catch {
+      // Neither side renders: validated, not constrained, as before.
+      return undefined;
+    }
   }
   if (!isRecord(document)) return undefined;
   // The dialect line is noise to a model and is what `sdk/schema.ts` strips for
   // providers, for the same reason.
   const { $schema: _dialect, ...rest } = document;
+  return rest;
+}
+
+function shapeInstruction(shape: Record<string, unknown>): string {
   return (
     "Reply with JSON only - no prose, no code fence - matching this JSON Schema:\n" +
-    JSON.stringify(rest)
+    JSON.stringify(shape)
   );
 }
 

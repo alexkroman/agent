@@ -1478,6 +1478,48 @@ const { ctx, model, desk } = scriptedToolContext({
 
 ***
 
+### stubClientInbox()
+
+```ts
+function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+```
+
+Publish an inbox whose device records every notice and answers it.
+
+#### Parameters
+
+##### options?
+
+[`StubClientInboxOptions`](#stubclientinboxoptions)
+
+#### Returns
+
+[`StubClientInbox`](#stubclientinbox)
+
+***
+
+### stubClientTranscript()
+
+```ts
+function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubClientTranscript;
+```
+
+Publish a reader that answers every `stepClientTranscript` with `answer` —
+a fixed transcript, or one computed per call (e.g. honouring the cursor).
+Omitted, every client has said nothing.
+
+#### Parameters
+
+##### answer?
+
+[`StubClientTranscriptAnswer`](#stubclienttranscriptanswer)
+
+#### Returns
+
+[`StubClientTranscript`](#stubclienttranscript)
+
+***
+
 ### stubDelegate()
 
 ```ts
@@ -2971,6 +3013,175 @@ What an unrecognised request means.
 
 ***
 
+### StubClientInbox
+
+```ts
+type StubClientInbox = {
+  calls: StubClientInboxCall[];
+  restore: void;
+};
+```
+
+What [stubClientInbox](#stubclientinbox-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the inbox. Call it in an `afterEach`, like `stubSpeech`'s.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubClientInboxCall[];
+```
+
+Every notice pushed, in order — including those the device did not take.
+
+***
+
+### StubClientInboxCall
+
+```ts
+type StubClientInboxCall = {
+  clientId: string;
+  notice: ClientNotice;
+};
+```
+
+One pushed notice, as [stubClientInbox](#stubclientinbox-1) records it.
+
+#### Properties
+
+##### clientId
+
+```ts
+clientId: string;
+```
+
+##### notice
+
+```ts
+notice: ClientNotice;
+```
+
+***
+
+### StubClientInboxOptions
+
+```ts
+type StubClientInboxOptions = {
+  answer?:   | "acked"
+     | ClientUnreachableReason
+     | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason);
+};
+```
+
+What [stubClientInbox](#stubclientinbox-1) may be told.
+
+#### Properties
+
+##### answer?
+
+```ts
+optional answer?: 
+  | "acked"
+  | ClientUnreachableReason
+  | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason);
+```
+
+How the device answers each notice: `"acked"` (the default), or a reason it
+did not take it — `"offline"`, `"busy"`, `"no-ack"`, `"disconnected"`. A
+function answers per call, e.g. busy once and then acked.
+
+***
+
+### StubClientTranscript
+
+```ts
+type StubClientTranscript = {
+  calls: StubClientTranscriptCall[];
+  restore: void;
+};
+```
+
+What [stubClientTranscript](#stubclienttranscript-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the reader. Call it in an `afterEach`, like `stubClientInbox`'s.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubClientTranscriptCall[];
+```
+
+Every read, in order.
+
+***
+
+### StubClientTranscriptAnswer
+
+```ts
+type StubClientTranscriptAnswer = 
+  | ClientTranscript
+  | ((call: StubClientTranscriptCall) => ClientTranscript);
+```
+
+What [stubClientTranscript](#stubclienttranscript-1) answers each read with.
+
+***
+
+### StubClientTranscriptCall
+
+```ts
+type StubClientTranscriptCall = {
+  clientId: string;
+  options: StepClientTranscriptOptions;
+};
+```
+
+One read, as [stubClientTranscript](#stubclienttranscript-1) records it.
+
+#### Properties
+
+##### clientId
+
+```ts
+clientId: string;
+```
+
+##### options
+
+```ts
+options: StepClientTranscriptOptions;
+```
+
+***
+
 ### StubDelegateReply
 
 ```ts
@@ -4184,6 +4395,8 @@ readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 
 ```ts
 type ToolContextOverrides = {
+  clientId?: string;
+  clientPhone?: string;
   deadlineAt?: ToolContext["deadlineAt"];
   delegate?:   | ToolContext["delegate"]
      | StubDelegateScript;
@@ -4235,6 +4448,27 @@ their own docs below.
 
 #### Properties
 
+##### clientId?
+
+```ts
+optional clientId?: string;
+```
+
+The device this session belongs to, as `sessionClientId(ctx)` will read it —
+recorded under the context's `sessionId` the way the runtime records a
+socket's `?client=`. Omitted, `sessionClientId` answers `undefined`, which is
+what a browser tab or a phone call gets.
+
+##### clientPhone?
+
+```ts
+optional clientPhone?: string;
+```
+
+The phone number this session's client reported, as `sessionClientPhone(ctx)`
+will read it — recorded as given (no E.164 check: that is the upgrade's job).
+Omitted, `sessionClientPhone` answers `undefined`.
+
 ##### deadlineAt?
 
 ```ts
@@ -4269,7 +4503,7 @@ The `stubDelegate` twin of `ToolContextOverrides.model`.
 optional env?: ToolContext["env"];
 ```
 
-See [ToolContext.env](index.md#env-2). Defaults to `{}`.
+See [ToolContext.env](index.md#env-4). Defaults to `{}`.
 
 ##### generate?
 
@@ -4334,7 +4568,7 @@ See [ToolContext.send](index.md#send-4). Defaults to the recorder behind `TestTo
 optional sessionId?: ToolContext["sessionId"];
 ```
 
-See [ToolContext.sessionId](index.md#sessionid-3). Defaults to a fresh id per call.
+See [ToolContext.sessionId](index.md#sessionid-5). Defaults to a fresh id per call.
 
 ##### signal?
 
@@ -4342,7 +4576,7 @@ See [ToolContext.sessionId](index.md#sessionid-3). Defaults to a fresh id per ca
 optional signal?: ToolContext["signal"];
 ```
 
-See [ToolContext.signal](index.md#signal-1). Defaults to a signal that never aborts.
+See [ToolContext.signal](index.md#signal-2). Defaults to a signal that never aborts.
 
 ##### slots?
 
@@ -4358,7 +4592,7 @@ See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot
 optional workflows?: ToolContext["workflows"];
 ```
 
-See [ToolContext.workflows](index.md#workflows-1). Defaults to a client whose every method rejects.
+See [ToolContext.workflows](index.md#workflows-2). Defaults to a client whose every method rejects.
 
 ***
 

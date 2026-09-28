@@ -2,11 +2,12 @@
 
 `@alexkroman1/aai/channels` — where a run's output GOES.
 
-One vendor today, one shape: a factory returns a serializable DESCRIPTOR
-(`{ kind, options }`) and [sendToChannel](#sendtochannel) posts a [ChannelMessage](#channelmessage)
-to it. Nothing here opens a socket at import time, and nothing reads a
-credential out of the environment — see [SlackChannelOptions](#slackchanneloptions) for why
-a channel's credential is passed in where a provider's is not.
+Two vendors (Slack, and Textbelt for SMS), one shape: a factory returns a
+serializable DESCRIPTOR (`{ kind, options }`) and [sendToChannel](#sendtochannel) posts
+a [ChannelMessage](#channelmessage) to it. Nothing here opens a socket at import time,
+and nothing reads a credential out of the environment — see
+[SlackChannelOptions](#slackchanneloptions) for why a channel's credential is passed in where
+a provider's is not.
 
 ## Example
 
@@ -42,6 +43,8 @@ so what was left to write is the render-and-classify half.
 - [slackChannel](#slackchannel-1) — declare a destination. [isSlackWebhookUrl](#isslackwebhookurl) guards
   the value where a PERSON supplies it, which is a security boundary and not
   only a typo check.
+- [textbeltChannel](#textbeltchannel-1) — an SMS to one number fixed at construction;
+  [allowedSmsRecipient](#allowedsmsrecipient) decides which number a "text me" may reach.
 - [sendToChannel](#sendtochannel) — post, and throw a [ChannelDeliveryError](#channeldeliveryerror)
   carrying the retry verdict. `sendToChannelOrFail`
   (`@alexkroman1/aai/step-errors`) is the same call with the fatal/retryable
@@ -54,6 +57,52 @@ what lets an `agent.ts` import [isSlackWebhookUrl](#isslackwebhookurl) for a sch
 refinement without pulling either into its graph.
 
 ## Functions
+
+### allowedSmsRecipient()
+
+```ts
+function allowedSmsRecipient(claimed: string | undefined, env: SmsRecipientEnv): string | undefined;
+```
+
+The number an SMS may go to: `claimed` (normally `sessionClientPhone(ctx)`)
+when its E.164 form equals `SMS_TO_PHONE` or one of the comma-separated
+`SMS_ALLOWED_PHONES`, each normalized the same way (spaces, dashes, dots and
+parentheses stripped; a `+` and 8–15 digits); otherwise `SMS_TO_PHONE` as
+configured; `undefined` when neither applies.
+
+An unlisted claim is not an error, it is IGNORED: the text goes to the owner
+instead, which is what a caller asking to be texted on a home device means.
+
+`SMS_ALLOWED_PHONES=*` turns the list off: any claim that is a valid E.164
+number is used as is. That is the trust model `sessionClientPhone` warns
+against, opted into by name — for trying a UI with several people's phones
+before there is a way to verify one.
+
+#### Parameters
+
+##### claimed
+
+`string` \| `undefined`
+
+##### env
+
+[`SmsRecipientEnv`](#smsrecipientenv)
+
+#### Returns
+
+`string` \| `undefined`
+
+#### Example
+
+```ts
+import { allowedSmsRecipient } from "@alexkroman1/aai/channels";
+
+const env = { SMS_TO_PHONE: "+15555550100", SMS_ALLOWED_PHONES: "+1 (555) 555-0123" };
+allowedSmsRecipient("+15555550123", env); // "+15555550123", listed
+allowedSmsRecipient("+15555550199", env); // "+15555550100", the owner
+```
+
+***
 
 ### escapeSlackMrkdwn()
 
@@ -126,6 +175,27 @@ so.
 ##### options
 
 [`SlackChannelOptions`](#slackchanneloptions)
+
+##### detail
+
+`string`
+
+#### Returns
+
+`string`
+
+***
+
+### explainTextbeltChannelFailure()
+
+```ts
+function explainTextbeltChannelFailure(detail: string): string;
+```
+
+The sentence a person can act on. Never names the number or the key: the
+first is personal data and the second a credential.
+
+#### Parameters
 
 ##### detail
 
@@ -213,7 +283,7 @@ function registerChannelHandler(handler: ChannelHandler): void;
 Register a channel kind, so `sendToChannel` can dispatch a descriptor
 carrying its tag.
 
-The SDK registers what it ships (Slack today). Call this for a destination
+The SDK registers what it ships (Slack and Textbelt). Call this for a destination
 it does not — an internal notifier, a platform with no adapter here — and
 the rest of the channel surface works unchanged: `slackChannel()` has no privileges
 a hand-written descriptor factory lacks.
@@ -369,6 +439,28 @@ line AND the only place the caller's own summary of the message survives.
 
 ***
 
+### renderTextbeltText()
+
+```ts
+function renderTextbeltText(message: ChannelMessage): string;
+```
+
+A message as one SMS body: `heading` (else `text`), `subtitle`, then each
+section's title, link, prose and bullets, cut at
+[TEXTBELT\_MAX\_MESSAGE\_CHARS](#textbelt_max_message_chars).
+
+#### Parameters
+
+##### message
+
+[`ChannelMessage`](#channelmessage)
+
+#### Returns
+
+`string`
+
+***
+
 ### sendToChannel()
 
 ```ts
@@ -407,7 +499,8 @@ whatever the platform answered with, or `"ok"` when it sent no body.
 
 #### Throws
 
-on any non-2xx.
+on any non-2xx, and on a 2xx the channel reads
+  as a refusal (Textbelt's `{"success": false}`), which is never retryable.
 
 #### Example
 
@@ -456,6 +549,44 @@ export async function postDigest(webhookUrl: string, summary: string): Promise<s
     heading: "Daily digest",
     sections: [{ body: summary }],
   });
+}
+```
+
+***
+
+### textbeltChannel()
+
+```ts
+function textbeltChannel(options: TextbeltChannelOptions): TextbeltChannel;
+```
+
+Declare an SMS destination: one number, texted through Textbelt.
+
+#### Parameters
+
+##### options
+
+[`TextbeltChannelOptions`](#textbeltchanneloptions)
+
+#### Returns
+
+[`TextbeltChannel`](#textbeltchannel)
+
+#### Example
+
+**Text the owner from a step**
+
+```ts
+import { textbeltChannel } from "@alexkroman1/aai/channels";
+import { requireStepEnv } from "@alexkroman1/aai/step";
+import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+
+export async function textOwner(summary: string): Promise<string> {
+  const channel = textbeltChannel({
+    key: requireStepEnv("TEXTBELT_KEY"),
+    to: requireStepEnv("SMS_TO_PHONE"),
+  });
+  return await sendToChannelOrFail(channel, { text: summary });
 }
 ```
 
@@ -876,6 +1007,63 @@ An incoming webhook (`hooks.slack.com/services/…`) or a workflow trigger
 (`hooks.slack.com/triggers/…`). Validate it with
 [isSlackWebhookUrl](#isslackwebhookurl) wherever it is accepted from a person.
 
+***
+
+### SmsRecipientEnv
+
+The env this rule reads. Both optional so a `ctx.env` or a `stepEnv()` record
+can be passed as is.
+
+#### Properties
+
+##### SMS\_ALLOWED\_PHONES?
+
+```ts
+readonly optional SMS_ALLOWED_PHONES?: string;
+```
+
+More numbers a client may claim, comma-separated — or `*` for ANY valid number,
+which makes the claim the whole check: for testing, never for a device on a
+network strangers can reach.
+
+##### SMS\_TO\_PHONE?
+
+```ts
+readonly optional SMS_TO_PHONE?: string;
+```
+
+The owner's own number: the default recipient, and implicitly allowed.
+
+***
+
+### TextbeltChannelOptions
+
+What [textbeltChannel](#textbeltchannel-1) takes.
+
+Like a Slack webhook URL, both are passed in rather than read from the env
+here. The key is a credential and a descriptor is JOURNALED when it is a
+step's argument, so build the channel inside the step from `stepEnv()` (or in
+a tool from `ctx.env`) rather than passing it through a run's input.
+
+#### Properties
+
+##### key
+
+```ts
+readonly key: string;
+```
+
+A Textbelt API key. Append `_test` to check a request without sending.
+
+##### to
+
+```ts
+readonly to: string;
+```
+
+The one number this channel texts: E.164 (`+15555550123`) anywhere, or a
+10-digit number in the US, as Textbelt accepts. Personal data.
+
 ## Type Aliases
 
 ### Channel
@@ -931,6 +1119,33 @@ readonly kind: typeof SLACK_CHANNEL_KIND;
 readonly options: SlackChannelOptions & Record<string, unknown>;
 ```
 
+***
+
+### TextbeltChannel
+
+```ts
+type TextbeltChannel = Channel & {
+  kind: typeof TEXTBELT_CHANNEL_KIND;
+  options: TextbeltChannelOptions & Record<string, unknown>;
+};
+```
+
+A Textbelt channel descriptor, as returned by [textbeltChannel](#textbeltchannel-1).
+
+#### Type Declaration
+
+##### kind
+
+```ts
+readonly kind: typeof TEXTBELT_CHANNEL_KIND;
+```
+
+##### options
+
+```ts
+readonly options: TextbeltChannelOptions & Record<string, unknown>;
+```
+
 ## Variables
 
 ### CHANNEL\_POST\_TIMEOUT\_MS
@@ -967,3 +1182,36 @@ const SLACK_CHANNEL_KIND: "slack" = "slack";
 ```
 
 The `kind` tag on a Slack channel descriptor.
+
+***
+
+### TEXTBELT\_CHANNEL\_HANDLER
+
+```ts
+const TEXTBELT_CHANNEL_HANDLER: ChannelHandler<TextbeltChannelOptions>;
+```
+
+Textbelt as a [ChannelHandler](#channelhandler), typed on its own options — registered
+WITH its options narrowing, so `render` and `advice` are handed a
+checked value.
+
+***
+
+### TEXTBELT\_CHANNEL\_KIND
+
+```ts
+const TEXTBELT_CHANNEL_KIND: "textbelt" = "textbelt";
+```
+
+The `kind` tag on a Textbelt channel descriptor.
+
+***
+
+### TEXTBELT\_MAX\_MESSAGE\_CHARS
+
+```ts
+const TEXTBELT_MAX_MESSAGE_CHARS: 1000 = 1000;
+```
+
+The longest text a Textbelt channel sends, in characters; a longer render is
+cut with an ellipsis. See the module doc for why a cap and not a split.

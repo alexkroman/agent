@@ -3,7 +3,7 @@
   "capability": "client",
   "epoch": 1,
   "rule": 2,
-  "sha256": "f41815782852c5e4de989d045ca1b495e8f6d2feb3adecceab820361888015b2",
+  "sha256": "00c8466c4467c03300b9df14967eb80045d8e4eb926bd9148288ec19cb81a97d",
   "exports": [
     "ClientConfig",
     "ClientConfigResponse",
@@ -11,5 +11,20 @@
     "ToolDisplayConfig",
     "mountClient"
   ],
-  "rollup": "6478d3f746fe4991120bc81539ecc2c05792693c472008c805180fe7ca6c1ad7"
+  "rollup": "6478d3f746fe4991120bc81539ecc2c05792693c472008c805180fe7ca6c1ad7",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "f41815782852c5e4de989d045ca1b495e8f6d2feb3adecceab820361888015b2",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "00c8466c4467c03300b9df14967eb80045d8e4eb926bd9148288ec19cb81a97d",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }
