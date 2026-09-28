@@ -36,7 +36,9 @@
     "createCodingTools"
   ],
   "@alexkroman1/aai/experimental": [
+    "LocalSttOptions",
     "OpenAICompatibleLlmOptions",
+    "localStt",
     "openAICompatibleLlm"
   ],
   "@alexkroman1/aai/ffmpeg": [
@@ -110,6 +112,7 @@
     "KNOWN_LLM_PROVIDERS",
     "KnownGatewayModel",
     "KnownLlmProvider",
+    "LOCAL_STT_KIND",
     "LOG_PREVIEW_CHARS",
     "MAX_CLIENT_WS_BUFFERED_BYTES",
     "MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES",
@@ -217,6 +220,7 @@
     "resolveCartesiaTtsSettings",
     "resolveDeepgramSttSettings",
     "resolveElevenLabsSttSettings",
+    "resolveLocalSttSettings",
     "resolveRimeTtsSettings",
     "resolveSonioxSttSettings",
     "runAgentGuardrails",

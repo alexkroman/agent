@@ -762,6 +762,17 @@ type LlmProviderName = "assemblyai" | "anthropic" | "cerebras" | "gateway" | "go
 // @public
 type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
+// @public
+export const LOCAL_STT_KIND: "local";
+
+// @public
+interface LocalSttOptions extends ProviderCredentialOptions {
+    language?: string;
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
+    url?: string;
+}
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
 
@@ -963,6 +974,14 @@ export function resolveDeepgramSttSettings(options: DeepgramSttOptions): {
 export function resolveElevenLabsSttSettings(options: ElevenLabsSttOptions): {
     model: string;
     languageCode?: string;
+};
+
+// @public
+export function resolveLocalSttSettings(options: LocalSttOptions): {
+    url: string;
+    minTurnSilenceMs: number;
+    maxTurnSilenceMs: number;
+    language?: string;
 };
 
 // @public

@@ -15,7 +15,10 @@ import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type WebSocket from "ws";
-import { connectOrThrow, waitForOpen } from "./_utils.ts";
+import { createAudioSendGate } from "../_audio-gate.ts";
+import { pcm16ToBytes } from "../_pcm.ts";
+import { closeOnAbort, connectOrThrow, type SessionShell, waitForOpen } from "./_utils.ts";
+import type { SttEvents } from "./openers.ts";
 
 /**
  * Deadline for the INITIAL provider socket open, applied by
@@ -136,4 +139,30 @@ export async function openGuardedWs(opts: OpenGuardedWsOptions): Promise<WebSock
     throw err;
   }
   return ws;
+}
+
+/**
+ * Wire an open STT socket that takes raw PCM16 binary frames into its session
+ * shell — socket `error`/`close` become stream errors and a hang-up closes the
+ * session — and return the audio sender. Shared by the openers whose wire is
+ * JSON control frames plus binary audio (Soniox, local), so the drop-while-
+ * stalled gate and the closed/open checks are written once.
+ */
+export function wireSttPcmSocket(
+  ws: WebSocket,
+  shell: SessionShell<SttEvents>,
+  signal: AbortSignal,
+  label: string,
+): (pcm: Int16Array) => void {
+  ws.on("error", (err: Error) => shell.onSocketError(err));
+  ws.on("close", (code: number) => shell.onSocketClose(code));
+  closeOnAbort(signal, shell.close);
+  // Drop audio frames while the provider link is stalled — mic audio is
+  // real-time paced and loss-tolerant; see _audio-gate.ts.
+  const audioGate = createAudioSendGate({ bufferedAmount: () => ws.bufferedAmount, label });
+  return (pcm) => {
+    if (shell.isClosed() || ws.readyState !== WS_OPEN) return;
+    if (audioGate.shouldDrop()) return;
+    ws.send(pcm16ToBytes(pcm), { binary: true });
+  };
 }

@@ -187,6 +187,10 @@ export {
   resolveElevenLabsSttSettings,
 } from "./sdk/providers/stt/elevenlabs.ts";
 export {
+  LOCAL_STT_KIND,
+  resolveLocalSttSettings,
+} from "./sdk/providers/stt/local.ts";
+export {
   resolveSonioxSttSettings,
   SONIOX_API_KEY_ENV,
   SONIOX_KIND,
