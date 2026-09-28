@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "feb6d477c6dfd878d84f5044155185b947b9ca8c6e2a68aabdb47e7dc2b857a6",
+  "sha256": "95ddf3cd8af4c00edde91c662147c7d4dcb70e02ce0ce4fdd0673d0f8b65ee85",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -43,5 +43,20 @@
     "mcpToolName",
     "workflowApp"
   ],
-  "rollup": "adc0531f206162784e680b1c87de80c146fbbb9834dd64776027dd5bd6230535"
+  "rollup": "adc0531f206162784e680b1c87de80c146fbbb9834dd64776027dd5bd6230535",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "feb6d477c6dfd878d84f5044155185b947b9ca8c6e2a68aabdb47e7dc2b857a6",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "95ddf3cd8af4c00edde91c662147c7d4dcb70e02ce0ce4fdd0673d0f8b65ee85",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

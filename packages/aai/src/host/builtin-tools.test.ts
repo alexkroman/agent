@@ -51,6 +51,16 @@ describe("resolveAllBuiltins schemas", () => {
     expect(schemas).toHaveLength(0);
   });
 
+  test("the opt-in API builtins resolve, with guidance", () => {
+    const { schemas, guidance } = resolveAllBuiltins([
+      "open_meteo",
+      "brave_search",
+      "google_places",
+    ]);
+    expect(schemas.map((s) => s.name)).toEqual(["open_meteo", "brave_search", "google_places"]);
+    expect(guidance).toHaveLength(3);
+  });
+
   test("unknown tool name returns empty", () => {
     const { schemas } = resolveAllBuiltins(["nonexistent_tool"]);
     expect(schemas).toHaveLength(0);
