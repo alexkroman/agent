@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { runRepeats, SuiteSpread } from "./_spread.ts";
+import { failureExcerpt, noteTranscript, runRepeats, SuiteSpread } from "./_spread.ts";
 
 /** A body that fails on the repeats named, and passes on the rest. */
 function failingOn(...attempts: readonly number[]): () => Promise<void> {
@@ -123,10 +123,80 @@ describe("SuiteSpread.report", () => {
     expect(text).toMatch(/flaky one \(1\/2\): attempt 2 failed/);
   });
 
+  test("an unstable case prints its whole message and the transcript of the failing try", async () => {
+    const lines = await reportedLines(async (spread) => {
+      const mod = await import("./_spread.ts");
+      let n = 0;
+      await runRepeats(
+        async () => {
+          n += 1;
+          await Promise.resolve();
+          if (n !== 2) return;
+          const error = new Error(
+            "expected 'One moment.' to match /booked/i\n\nExpected: /booked/i",
+          );
+          mod.noteTranscript(error, "User: book a table\nAgent: One moment.");
+          throw error;
+        },
+        "books it",
+        2,
+        spread,
+      );
+    });
+    const text = lines.join("\n");
+    expect(text).toMatch(/books it \(1\/2\): expected 'One moment\.' to match \/booked\/i/);
+    expect(text).toMatch(/ {6}Expected: \/booked\/i/);
+    expect(text).toMatch(
+      / {6}--- the failing try ---\n {6}User: book a table\n {6}Agent: One moment\./,
+    );
+  });
+
   test("a unanimously FAILED case is not reported as unstable — it is a finding", async () => {
     const lines = await reportedLines(async (spread) => {
       await runRepeats(failingOn(1, 2), "broken", 2, spread).catch(() => undefined);
     });
     expect(lines.join("\n")).toMatch(/every case unanimous\./);
+  });
+});
+
+describe("the UNSTABLE summary shows the whole failure", () => {
+  test("the header keeps the first line; the rest of the message follows, indented", () => {
+    const error = new Error("expected 'Sure.' to match /booked/i\n\n- Expected\n+ Received");
+    expect(failureExcerpt(error, undefined)).toEqual([
+      "      ",
+      "      - Expected",
+      "      + Received",
+    ]);
+  });
+
+  test("the failing try's transcript follows the message, under its own marker", () => {
+    const lines = failureExcerpt(new Error("expected false to be true"), "User: hi\nAgent: hello");
+    expect(lines).toEqual([
+      "      --- the failing try ---",
+      "      User: hi",
+      "      Agent: hello",
+    ]);
+  });
+
+  test("a runaway message is bounded, and says how much it cut", () => {
+    const long = Array.from({ length: 60 }, (_, i) => `line ${i}`).join("\n");
+    const lines = failureExcerpt(new Error(long), undefined);
+    expect(lines).toHaveLength(25);
+    expect(lines.at(-1)).toMatch(/35 more line\(s\) of the message omitted/);
+  });
+
+  test("record() keeps the transcript of the FIRST failure's try", () => {
+    const spread = new SuiteSpread("s");
+    const first = new Error("first");
+    const second = new Error("second");
+    noteTranscript(first, "User: the first try");
+    noteTranscript(second, "User: the second try");
+    spread.record("flaky", first);
+    expect(spread.record("flaky", second).firstTranscript).toBe("User: the first try");
+  });
+
+  test("a thrown primitive has no transcript to key on, and records without one", () => {
+    noteTranscript("boom", "User: never stored");
+    expect(new SuiteSpread("s").record("odd", "boom").firstTranscript).toBeUndefined();
   });
 });

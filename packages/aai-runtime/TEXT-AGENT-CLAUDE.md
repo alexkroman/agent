@@ -510,6 +510,16 @@ the pieces to make it for free.
   CI gates the scripted run where a repeat cannot disagree with itself, and the
   live tier reports without gating anyway.
 
+  **The summary prints the WHOLE failure** (`failureExcerpt` in `_spread.ts`):
+  the full assertion message, bounded, then the failing try's transcript —
+  each line said, each reply, each tool call with its args and result, and
+  what the network refused (`_transcript.ts`, bounded per field and to the
+  last 40 lines). It printed only the message's first line, and a case that
+  passed overall shows nothing else, so two downstream suites appended their
+  own transcript to every error. `runCase` notes the transcript in a side
+  table keyed by the error, so a unanimous failure still reaches vitest with
+  its message untouched.
+
   Two bugs the filter had on its first draft, both fixed and both worth not
   reintroducing: a filtered case was counted as a MODE skip, so the coverage
   line said "2 skipped as live-only" about cases carrying no marker; and a

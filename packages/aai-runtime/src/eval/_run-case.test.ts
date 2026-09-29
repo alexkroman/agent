@@ -1,0 +1,59 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `runCase` noting the failing try for the `AAI_EVAL_REPEAT` summary — the
+ * wiring between a case's session and `SuiteSpread`, which neither half's own
+ * spec can see: `_spread.test.ts` hands `noteTranscript` a string it made up,
+ * and `_transcript.test.ts` never throws.
+ */
+
+import { agent } from "@alexkroman1/aai";
+import { describe, expect, test } from "vitest";
+import { suiteNetwork } from "./_network-install.ts";
+import { runCase } from "./_run-case.ts";
+import { SuiteSpread } from "./_spread.ts";
+import { evalNetwork } from "./network.ts";
+
+describe("runCase", () => {
+  test("a failing body leaves its try's transcript for the summary, refusals included", async () => {
+    const net = suiteNetwork("stub", []);
+    net.install();
+    let thrown: unknown;
+    try {
+      await runCase({
+        agent: agent({ name: "Desk" }),
+        mode: "stub",
+        options: { network: evalNetwork() },
+        caseOptions: { stubReply: "One moment, please." },
+        net,
+        body: async ({ session }) => {
+          await session.say("Book a table for four.");
+          await fetch("https://api.twilio.com/Calls").catch(() => undefined);
+          throw new Error("expected 'One moment, please.' to match /booked/i");
+        },
+      });
+    } catch (err) {
+      thrown = err;
+    } finally {
+      net.restore();
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    const transcript = new SuiteSpread("s").record("books it", thrown).firstTranscript;
+    expect(transcript).toContain("User: Book a table for four.");
+    expect(transcript).toContain("Agent: One moment, please.");
+    expect(transcript).toContain("GET https://api.twilio.com/Calls (refused)");
+  });
+
+  test("`network` beside `fetch` is refused before anything is installed", async () => {
+    const net = suiteNetwork("stub", []);
+    await expect(
+      runCase({
+        agent: agent({ name: "Desk" }),
+        mode: "stub",
+        options: { network: evalNetwork(), fetch: globalThis.fetch },
+        caseOptions: undefined,
+        net,
+        body: async () => undefined,
+      }),
+    ).rejects.toThrow(/`network` replaces `fetch` and `workflowOptions.stepFetch`/);
+  });
+});

@@ -13,8 +13,10 @@
  * @module
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import { afterAll } from "vitest";
 import { announceEvalMode } from "./_announce.ts";
+import { clip } from "./_transcript.ts";
 
 /**
  * One case's outcome across its repeats: how many ran, how many threw.
@@ -23,7 +25,52 @@ import { announceEvalMode } from "./_announce.ts";
  * every repeat has one story and the earliest telling of it is the one whose
  * stack has not been walked over by a later teardown.
  */
-type CaseSpread = { readonly name: string; ran: number; failed: number; first?: unknown };
+type CaseSpread = {
+  readonly name: string;
+  ran: number;
+  failed: number;
+  first?: unknown;
+  /** The transcript of the try that threw `first`, when its runner noted one. */
+  firstTranscript?: string;
+};
+
+/**
+ * Transcripts by the error their try threw. A side table rather than a field
+ * written onto the error: the error is vitest's to print when a case fails
+ * unanimously, and a message grown by a transcript would push the assertion's
+ * own diff below it.
+ */
+const transcripts = new WeakMap<object, string>();
+
+/**
+ * Remember what the try that threw `error` looked like, for the summary. A
+ * primitive thrown value has no identity to key on and is skipped (so is a
+ * thrown array, which `isRecord` excludes and no assertion throws).
+ */
+export function noteTranscript(error: unknown, transcript: string): void {
+  if (isRecord(error)) transcripts.set(error, transcript);
+}
+
+/** Most lines, and most characters, of a failure MESSAGE the summary prints. */
+const MESSAGE_MAX_LINES = 25;
+const MESSAGE_MAX_CHARS = 3000;
+/** How far the summary's continuation lines are indented under their case. */
+const INDENT = "      ";
+
+/**
+ * The whole assertion message, bounded, then the failing try's transcript —
+ * the continuation lines of an UNSTABLE case, indented under its header.
+ */
+export function failureExcerpt(error: unknown, transcript: string | undefined): string[] {
+  const message = error instanceof Error ? error.message : String(error);
+  const lines = clip(message, MESSAGE_MAX_CHARS).split("\n");
+  const kept = lines.slice(1, MESSAGE_MAX_LINES);
+  if (lines.length > MESSAGE_MAX_LINES) {
+    kept.push(`(${lines.length - MESSAGE_MAX_LINES} more line(s) of the message omitted)`);
+  }
+  if (transcript !== undefined) kept.push("--- the failing try ---", ...transcript.split("\n"));
+  return kept.map((line) => `${INDENT}${line}`);
+}
 
 /**
  * What a suite learned about its own steadiness, and the line it prints.
@@ -68,7 +115,11 @@ export class SuiteSpread {
     at.ran += 1;
     if (error !== undefined) {
       at.failed += 1;
-      at.first ??= error;
+      if (at.first === undefined) {
+        at.first = error;
+        const transcript = isRecord(error) ? transcripts.get(error) : undefined;
+        if (transcript !== undefined) at.firstTranscript = transcript;
+      }
     }
     this.cases.set(name, at);
     return at;
@@ -93,15 +144,21 @@ export class SuiteSpread {
             ? "every case unanimous."
             : `${unstable.length} UNSTABLE (a pass rate, and the failure each one saw):`),
       );
-      // The MESSAGE, on its own line per case. A rate says a case is a coin
-      // toss and nothing about which way it lands, so the first draft of this
-      // report left a reader knowing there was something to fix and not what —
-      // and vitest prints nothing for a case that passed overall.
+      // The MESSAGE and the TRY. A rate says a case is a coin toss and nothing
+      // about which way it lands, so the first draft of this report left a
+      // reader knowing there was something to fix and not what — and vitest
+      // prints nothing for a case that passed overall. The second draft printed
+      // the message's first line, which for a live failure is "expected '…' to
+      // match /…/" with nothing about what the agent was doing; downstream
+      // suites appended their own transcripts to every error to get round it.
       for (const one of unstable) {
         const why = one.first instanceof Error ? one.first.message : String(one.first);
         announceEvalMode(
-          `eval: ${this.suite} —   ${one.name} (${one.ran - one.failed}/${one.ran}): ` +
-            `${why.split("\n")[0]}`,
+          [
+            `eval: ${this.suite} —   ${one.name} (${one.ran - one.failed}/${one.ran}): ` +
+              `${why.split("\n")[0]}`,
+            ...failureExcerpt(one.first, one.firstTranscript),
+          ].join("\n"),
         );
       }
     });
