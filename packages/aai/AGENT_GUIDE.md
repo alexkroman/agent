@@ -1394,14 +1394,16 @@ export default agent({
 
 Point the carrier at `wss://<your-agent-url>/phone?carrier=twilio` (or
 `telnyx`, the two this build decodes). An unknown `carrier` is declined with a
-`400`, one this agent did not declare with a `404`. The bridge transcodes 8 kHz mu-law both ways, so a phone call is
-a transport, not a mode: tools and slots behave as in the browser.
+`400`, one this agent did not declare with a `404`. The bridge transcodes
+8 kHz mu-law both ways, so a phone call is a transport, not a mode: tools and
+slots behave as in the browser.
 
 **An agent that declares nothing answers no carrier**, in `aai dev` and
 deployed. `createAgentServer({ telephony })` overrides one deployment; to embed
 the runtime, see `createTelephonyBridge` and `startTelephonySession`.
 
-**A call your app PLACES** (TwiML `<Connect><Stream url=".../phone?carrier=twilio"><Parameter name="call" value="c_1"/></Stream></Connect>`):
+**A call your app PLACES** (TwiML `<Connect><Stream>` to
+`/phone?carrier=twilio`, with `<Parameter name="call" value="c_1"/>`):
 the session starts once the carrier's `start` frame has arrived, so
 `sessionContext` and `onSessionEnd` get `call` — `{ carrier, callId?,
 parameters }` — and a tool reads it with `sessionCall(ctx)`. `/phone` is
