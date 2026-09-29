@@ -37,10 +37,10 @@ describe("client inbox holders", () => {
     const sent = inbox.notify("speaker", notice, { ackTimeoutMs: 5000 });
     expect(await speaker.next()).toMatchObject({ type: "notice", id: "run-1" });
     expect(await browser.next()).toMatchObject({ type: "notice", id: "run-1" });
-    // The FIRST ack settles it; the other holder's later ack is a no-op.
+    // Settled once EVERY holder has answered, not on the first ack.
     answer(browser.ws, "ack", "run-1");
-    await expect(sent).resolves.toBe("acked");
     answer(speaker.ws, "ack", "run-1");
+    await expect(sent).resolves.toBe("acked");
     expect(inbox.connected()).toEqual(["speaker"]);
   });
 
@@ -57,24 +57,44 @@ describe("client inbox holders", () => {
     const sent = inbox.notify("speaker", notice, { ackTimeoutMs: 5000 });
     expect(await fresh.next()).toMatchObject({ id: "run-1" });
     expect(await firmwareAgain.next()).toMatchObject({ id: "run-1" });
+    answer(fresh.ws, "ack", "run-1");
     answer(firmwareAgain.ws, "ack", "run-1");
     await expect(sent).resolves.toBe("acked");
   });
 
-  test("busy only when EVERY holder is busy; one silent holder makes it no-ack", async () => {
+  test("one busy holder makes it busy, so the step brings it back to that holder", async () => {
+    // Live case: a page linked to a speaker was mid-conversation when a call's result
+    // came in and answered busy; the idle speaker acked. Settled "acked" on that first
+    // ack, the page never heard it. Busy wins, the retry re-sends, and the holder that
+    // already played it acks the repeat (it drops a notice id it has seen).
     const { inbox, url } = await startInbox(cleanups);
     const speaker = await connect(url, inbox);
     const browser = await connect(url, inbox, "holder=b");
-    const allBusy = inbox.notify("speaker", { id: "b1", event: "e" }, { ackTimeoutMs: 5000 });
+    const first = inbox.notify("speaker", { id: "b1", event: "e" }, { ackTimeoutMs: 5000 });
     await Promise.all([speaker.next(), browser.next()]);
-    answer(speaker.ws, "busy", "b1");
+    answer(speaker.ws, "ack", "b1");
     answer(browser.ws, "busy", "b1");
-    await expect(allBusy).resolves.toBe("busy");
+    await expect(first).resolves.toBe("busy");
 
-    const oneSilent = inbox.notify("speaker", { id: "b2", event: "e" }, { ackTimeoutMs: 100 });
+    const again = inbox.notify("speaker", { id: "b1", event: "e" }, { ackTimeoutMs: 5000 });
     await Promise.all([speaker.next(), browser.next()]);
-    answer(speaker.ws, "busy", "b2");
-    await expect(oneSilent).resolves.toBe("no-ack");
+    answer(speaker.ws, "ack", "b1");
+    answer(browser.ws, "ack", "b1");
+    await expect(again).resolves.toBe("acked");
+  });
+
+  test("acked when one acks and another stays silent; no-ack when all stay silent", async () => {
+    const { inbox, url } = await startInbox(cleanups);
+    const speaker = await connect(url, inbox);
+    const browser = await connect(url, inbox, "holder=b");
+    const oneSilent = inbox.notify("speaker", { id: "s1", event: "e" }, { ackTimeoutMs: 100 });
+    await Promise.all([speaker.next(), browser.next()]);
+    answer(speaker.ws, "ack", "s1");
+    await expect(oneSilent).resolves.toBe("acked");
+
+    const allSilent = inbox.notify("speaker", { id: "s2", event: "e" }, { ackTimeoutMs: 100 });
+    await Promise.all([speaker.next(), browser.next()]);
+    await expect(allSilent).resolves.toBe("no-ack");
   });
 
   test("the per-client queue still holds across holders: one notice in flight", async () => {
@@ -88,7 +108,10 @@ describe("client inbox holders", () => {
     await sleep(50);
     expect([speaker.frames, browser.frames]).toEqual([[], []]);
     answer(speaker.ws, "ack", "one");
+    answer(browser.ws, "ack", "one");
+    expect(await speaker.next()).toMatchObject({ id: "two" });
     expect(await browser.next()).toMatchObject({ id: "two" });
+    answer(speaker.ws, "ack", "two");
     answer(browser.ws, "ack", "two");
     await expect(Promise.all([first, second])).resolves.toEqual(["acked", "acked"]);
   });

@@ -30,11 +30,16 @@
  * - no `?holder=` is the default holder, so a firmware that predates holders
  *   keeps its replace-on-reconnect behaviour exactly.
  *
- * A notice goes to EVERY open holder of the client, and settles as the step
- * would want it read: `"acked"` as soon as ANY holder acks (the others' sends
- * are withdrawn, and a late ack from one is ignored); `"busy"` only when EVERY
- * holder answered busy; otherwise `"no-ack"` if any holder stayed silent, and
- * `"disconnected"` if every socket closed first. The per-client send queue is
+ * A notice goes to EVERY open holder of the client, and settles once every
+ * holder has answered (or timed out, or closed), as the step would want it read:
+ * `"busy"` if ANY holder answered busy — so the step's retry brings it back, and
+ * the holders that already played it drop the repeat by its id and ack it, which
+ * is the protocol's redelivery rule — else `"acked"` if any holder acked; else
+ * `"no-ack"` if any stayed silent, and `"disconnected"` if every socket closed.
+ *
+ * Settling on the FIRST ack instead lost the notice for a holder that was busy:
+ * a page linked to a speaker, mid-conversation when a call's result came in,
+ * answered busy, the idle speaker acked, and the page was never offered it again. The per-client send queue is
  * unchanged — one notice in flight per CLIENT, across all its holders — so two
  * runs due at once still reach a device one after the other.
  *
@@ -121,9 +126,10 @@ export type ClientInbox = {
 /** The one map key a (client, holder) pair has. NUL cannot occur in either half. */
 const holderKey = (clientId: string, holderId: string): string => `${clientId}\u0000${holderId}`;
 
-/** How a notice every holder declined settles — see the module doc. */
-function declined(outcomes: readonly Outcome[]): Outcome {
-  if (outcomes.every((o) => o === "busy")) return "busy";
+/** How a notice settles once every holder has answered — see the module doc. */
+function settled(outcomes: readonly Outcome[]): Outcome {
+  if (outcomes.includes("busy")) return "busy";
+  if (outcomes.includes("acked")) return "acked";
   return outcomes.includes("no-ack") ? "no-ack" : "disconnected";
 }
 
@@ -258,19 +264,15 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
         if (done) return;
         done = true;
         signal?.removeEventListener("abort", onAbort);
-        // The holders that did not answer stop waiting: the notice is settled.
+        // Only an abort ends it with holders still unanswered: they stop waiting.
         for (const { withdraw } of offers) withdraw();
         settle();
       }
       signal?.addEventListener("abort", onAbort, { once: true });
       for (const { outcome } of offers) {
         void outcome.then((value) => {
-          if (value === "acked") {
-            finish(() => resolve("acked"));
-            return;
-          }
           outcomes.push(value);
-          if (outcomes.length === offers.length) finish(() => resolve(declined(outcomes)));
+          if (outcomes.length === offers.length) finish(() => resolve(settled(outcomes)));
         });
       }
     });
