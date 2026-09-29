@@ -3,11 +3,19 @@
   "capability": "step",
   "epoch": 3,
   "rule": 2,
-  "sha256": "3cce5c1b86346ef9bcff8941a8602199fc0dc8cb99bf8dc8ed07a2b603e7fb1a",
+  "sha256": "906dcc67f4fd07ac9e883861662319070839bbc17ba3b00b6daeb453ed0185e1",
   "exports": [
+    "CallStatusOptions",
+    "DEFAULT_CALL_RING_TIMEOUT_S",
+    "DEFAULT_CALL_TIME_LIMIT_S",
     "MultipartBody",
     "MultipartPart",
     "PcmFormat",
+    "PlaceCallCredentials",
+    "PlaceCallError",
+    "PlaceCallOptions",
+    "PlacedCall",
+    "PlacedCallStatus",
     "STEP_SPEAK_SAMPLE_RATE",
     "STEP_SPEAK_TIMEOUT_MS",
     "Settled",
@@ -19,6 +27,8 @@
     "StepGenerateOptions",
     "StepInfo",
     "StepTransportError",
+    "TWILIO_ACCOUNT_SID_ENV",
+    "TWILIO_AUTH_TOKEN_ENV",
     "UnsupportedRecordingError",
     "WAV_HEADER_BYTES",
     "WavFormat",
@@ -35,6 +45,7 @@
     "pcmDurationMs",
     "requireStepEnv",
     "retryAfter",
+    "stepCallStatus",
     "stepDelegate",
     "stepEmit",
     "stepEnv",
@@ -42,6 +53,7 @@
     "stepGenerate",
     "stepGenerateJson",
     "stepInfo",
+    "stepPlaceCall",
     "stepReport",
     "stepSpeak",
     "stepWebhookUrl",
@@ -49,7 +61,7 @@
     "wavHeader"
   ],
   "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -68,6 +80,12 @@
       "rule": 2,
       "sha256": "3cce5c1b86346ef9bcff8941a8602199fc0dc8cb99bf8dc8ed07a2b603e7fb1a",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "906dcc67f4fd07ac9e883861662319070839bbc17ba3b00b6daeb453ed0185e1",
+      "reason": "additive (checked): +CallStatusOptions, +DEFAULT_CALL_RING_TIMEOUT_S, +DEFAULT_CALL_TIME_LIMIT_S, +PlaceCallCredentials, +PlaceCallError, +PlaceCallOptions, +PlacedCall, +PlacedCallStatus, +TWILIO_ACCOUNT_SID_ENV, +TWILIO_AUTH_TOKEN_ENV, +stepCallStatus, +stepPlaceCall"
     }
   ]
 }

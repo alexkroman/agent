@@ -31,6 +31,7 @@
 import type { Db } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { type IssuedStatement, recordingDb } from "../../../_test-utils.ts";
+import { toRunRecord } from "../_postgres-rows.ts";
 import { isResumableJournal } from "../types.ts";
 import { createPostgresJournal } from "./postgres.ts";
 
@@ -118,6 +119,42 @@ describe("every jsonb binding casts through text", () => {
     const bindable = (value: unknown) =>
       value === null || typeof value === "string" || typeof value === "number";
     expect(issued[0]?.params.every(bindable)).toBe(true);
+  });
+});
+
+describe("a run's label", () => {
+  // The unit arm of what the postgres conformance suite (scenario tier) proves
+  // against a real database: the column is written by the insert and read by
+  // BOTH selects, and an unlabelled run binds SQL NULL — never `undefined`,
+  // which postgres.js refuses (see the block below).
+  test("is bound by createRun, NULL when absent, and selected by getRun and listRuns", async () => {
+    const run = { workflow: "digest", status: "pending" as const, createdAt: 1, input: {} };
+    const { db, issued } = recorder();
+    const journal = createPostgresJournal({ db });
+    await journal.createRun({ ...run, runId: "wrun_1", label: "call the plumber" });
+    await journal.createRun({ ...run, runId: "wrun_2" });
+    await journal.getRun("wrun_1");
+    await journal.listRuns("digest", 5);
+    expect(issued[0]?.sql).toMatch(/code_version, label\)/);
+    expect(issued[0]?.params).toContain("call the plumber");
+    expect(issued[1]?.params.at(-1)).toBeNull();
+    expect(issued[2]?.sql).toMatch(/code_version, label from/);
+    expect(issued[3]?.sql).toMatch(/code_version, label from/);
+  });
+
+  test("reads back as the row's text, and a NULL column as no label at all", () => {
+    const row = {
+      run_id: "wrun_1",
+      workflow: "digest",
+      status: "pending" as const,
+      created_at: 1,
+      input: null,
+      output: null,
+      error: null,
+      code_version: null,
+    };
+    expect(toRunRecord({ ...row, label: "call the plumber" }).label).toBe("call the plumber");
+    expect(toRunRecord({ ...row, label: null })).not.toHaveProperty("label");
   });
 });
 

@@ -474,6 +474,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public

@@ -312,6 +312,12 @@ interface Logger {
 export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 
 // @public
+export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
+
+// @public
+export function normalizeRunLabel(value: unknown): string | undefined;
+
+// @public
 export function parseBearer(header: string | null | undefined): string;
 
 // @internal
@@ -440,6 +446,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public

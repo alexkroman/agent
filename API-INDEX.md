@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 472 names
+- [Agent authoring](#agent-authoring) — 484 names
 - [Browser client](#browser-client) — 148 names
-- [Testing and evals](#testing-and-evals) — 225 names
+- [Testing and evals](#testing-and-evals) — 230 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 352 names
+- [Framework internals](#framework-internals) — 354 names
 
 ## Agent authoring
 
@@ -63,6 +63,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `CHANNEL_POST_TIMEOUT_MS` | const | `@alexkroman1/aai/channels` | `aai:channels` | A platform is not slow. |
 | `CODING_TOOL_DESCRIPTIONS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
 | `CallOptions` | type | `@alexkroman1/aai/tools` | `aai:builtins` |  |
+| `CallStatusOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepCallStatus` takes. |
 | `Channel` | type | `@alexkroman1/aai/channels` | `aai:channels` | Any channel descriptor — what `sendToChannel` takes. |
 | `ChannelDeliveryError` | class | `@alexkroman1/aai/channels` | `aai:channels` | A post the channel refused, carrying the verdict the caller needs. |
 | `ChannelDescriptor` | interface | `@alexkroman1/aai/channels` | `aai:channels` | Base shape for a channel descriptor: a `kind` tag plus an opaque `options` payload, so the dispatch table picks the renderer and passes the author's options … |
@@ -84,6 +85,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `CodingToolName` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | Every tool `createCodingTools` can build, by the name the model calls. |
 | `CodingToolsOptions` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | What `createCodingTools` takes. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/stt` | `aai:stt` | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
+| `DEFAULT_CALL_RING_TIMEOUT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.ringTimeoutS`: thirty seconds of ringing, then `no-answer` — about five rings, short of most voicemail pickups. |
+| `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
 | `DEFAULT_CLIENT_ACK_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:inbox` | Default `StepNotifyClientOptions.ackTimeoutMs`. |
 | `DEFAULT_CLIENT_RETRY_MS` | const | `@alexkroman1/aai/step` | `aai:inbox` | Default `StepNotifyClientOptions.retryAfterMs`. |
 | `DEFAULT_GUARDRAIL_MAX_REVISIONS` | const | `@alexkroman1/aai` | `aai:subagent` | How many times a `SubagentDef.guardrail` may send an answer back when the subagent names no `SubagentDef.maxRevisions` of its own. |
@@ -163,6 +166,11 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `Personas` | interface | `@alexkroman1/aai` | `aai:persona` | The roster the agent declares and every tool reaches for — what `personas` returns. |
 | `PipelineAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Pipeline-mode params: any subset of the provider triple (unset stages run on the default all-AssemblyAI pipeline), never `s2s`. |
 | `PipelineVoiceTuning` | interface | `@alexkroman1/aai` |  | Pipeline-mode voice-UX tuning, extended by `AgentDef`. |
+| `PlaceCallCredentials` | type | `@alexkroman1/aai/step` | `aai:step` | A Twilio account's credentials. |
+| `PlaceCallError` | class | `@alexkroman1/aai/step` | `aai:step` | The carrier refused, or never answered. |
+| `PlaceCallOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepPlaceCall` takes. |
+| `PlacedCall` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepPlaceCall` resolves: the carrier's id for the call (Twilio's `CA…` SID). |
+| `PlacedCallStatus` | type | `@alexkroman1/aai/step` | `aai:step` | Where a placed call is. |
 | `ProbeOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
 | `Procedure` | interface | `@alexkroman1/aai` | `aai:procedure` | A machine that can be run as a unit of work, created by `procedure`. |
 | `ProcedureNotFinishedError` | class | `@alexkroman1/aai` | `aai:procedure` | The error a run that did not finish rejects with. |
@@ -242,6 +250,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TRANSCRIBE_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Per-request deadline when a caller names none. |
 | `TRANSCRIBE_UPLOAD_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:transcribe` | Deadline for the upload leg. |
 | `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/step` | `aai:transcribe` | How much of a stored upload one outbound window carries. |
+| `TWILIO_ACCOUNT_SID_ENV` | const | `@alexkroman1/aai/step` | `aai:step` | The step env key `stepPlaceCall` reads the Twilio account SID from. |
+| `TWILIO_AUTH_TOKEN_ENV` | const | `@alexkroman1/aai/step` | `aai:step` | The step env key `stepPlaceCall` reads the Twilio auth token from. |
 | `TelephonyAccess` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about `WS /phone`. |
 | `TelephonyCarrier` | type | `@alexkroman1/aai` | `aai:agent` | A phone carrier that can open a media stream against an agent — `"twilio"` or `"telnyx"`, the two this release ships a codec for, or any other string. |
 | `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | A run in a status nothing will change again. |
@@ -423,6 +433,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `spokenMoney` | function | `@alexkroman1/aai` | `aai:spoken` | An amount as a voice reads it — `"240 dollars and 50 cents"`. |
 | `spokenOrdinal` | function | `@alexkroman1/aai` | `aai:spoken` | The position an utterance names, as an index, or `undefined` if it names none. |
 | `spokenTime` | function | `@alexkroman1/aai` | `aai:spoken` | A 24-hour `HH:MM` as a voice reads it — `"7 PM"`, `"6:30 PM"`. |
+| `stepCallStatus` | function | `@alexkroman1/aai/step` | `aai:step` | Where a placed call is now, as the carrier reports it, normalized to `PlacedCallStatus`. |
 | `stepClientTranscript`, `StepClientTranscriptOptions` | function | `@alexkroman1/aai/step` | `aai:inbox` | Read what `clientId`'s sessions said — the durable log behind `?client=`. |
 | `stepDelegate` | function | `@alexkroman1/aai/step` | `aai:step` | Hand a bounded task to a SUBAGENT from inside a step. |
 | `stepEmit` | function | `@alexkroman1/aai/step` | `aai:step` | Write one structured chunk into a NAMED stream of this run. |
@@ -435,6 +446,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `stepGenerateOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepGenerate`, with its failure classified — the whole of what the wrapper adds is `throwStepError`, and see this module's doc for why that is worth an export … |
 | `stepInfo` | function | `@alexkroman1/aai/step` | `aai:step` | Which step this code is running inside, or `undefined` when it is not in one. |
 | `stepNotifyClient`, `StepNotifyClientOptions` | function | `@alexkroman1/aai/step` | `aai:inbox` | Push `notice` to the client connected to this agent's `WS /inbox` as `clientId`, and resolve once it acks. |
+| `stepPlaceCall` | function | `@alexkroman1/aai/step` | `aai:step` | Dial `to` from `from` and, once answered, stream the call to the agent at `agentUrl`. |
 | `stepReadUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Read a window of an uploaded file. |
 | `stepReport` | function | `@alexkroman1/aai/step` | `aai:step` | Write one progress line for the run this step belongs to. |
 | `stepRequireCompleteUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | One upload's metadata, refused unless every byte is in. |
@@ -692,6 +704,9 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `StubGenerateRoute` | type | `@alexkroman1/aai/testing` | `aai:testing` | How a route answers: a fixed reply, or a function of the call. |
 | `StubGenerateScript` | type | `@alexkroman1/aai/testing` | `aai:testing` | Everything `stubGenerate` accepts: ONE route answering every call, or a table of routes keyed by system prompt — each under a key that says which. |
 | `StubLlm` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | A registered stub model, and what to hand a session. |
+| `StubPlaceCall`, `StubPlaceCallOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubPlaceCall` returns: the call log, and how to put the slot back. |
+| `StubPlaceCallRefusal` | type | `@alexkroman1/aai/testing` | `aai:testing` | A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message. |
+| `StubPlacedCall` | type | `@alexkroman1/aai/testing` | `aai:testing` | One call a step placed, as `stubPlaceCall` records it. |
 | `StubReporter` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubReporter` returns. |
 | `StubScript` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What a scripted model is given: one line, or a sequence of steps. |
 | `StubSpeech`, `StubSpeechOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubSpeech` returns: the call log, and how to put the slot back. |
@@ -801,6 +816,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `stubGateway` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake LLM gateway answering `replies` in order. |
 | `stubGatewayRoute` | function | `@alexkroman1/aai/testing` | `aai:testing` | A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot rather than the global `fetch`. |
 | `stubGenerate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.generate` from a script: one reply, or routes keyed by system prompt. |
+| `stubPlaceCall` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a Twilio whose Calls API records every dial and answers it. |
 | `stubReporter` | function | `@alexkroman1/aai/testing` | `aai:testing` | Capture what a step narrates and emits. |
 | `stubSpeech` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a synthesizer that records what it was asked to say and answers with silence. |
 | `stubStepDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | PUBLISH a fake runner, so an exported step that calls `stepDelegate` can be driven without a host. |
@@ -1167,6 +1183,7 @@ trace or a type error can be traced back to something.
 | `MAX_START_SPEAKING_FLOOR_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `MAX_TOOL_RESULT_CHARS` | const | `@alexkroman1/aai/internal` |  | Cap (characters) on a tool result's JSON serialization **as the CLIENT sees it** — the `tool.completed` frame, and the per-message `history` content — where a … |
 | `MAX_UPLOAD_BYTES_ENV` | const | `@alexkroman1/aai/host-internal` |  | Env key an agent raises or lowers `MAX_WORKFLOW_UPLOAD_BYTES` with. |
+| `MAX_WORKFLOW_RUN_LABEL_CHARS` | const | `@alexkroman1/aai-runtime/internal` |  | The longest `StartOptions.label` a run keeps, in code points; a longer one is cut. |
 | `MAX_WORKFLOW_UPLOAD_BYTES` | const | `@alexkroman1/aai/host-internal` |  | Largest file `POST /workflows/uploads` accepts, unless the agent says otherwise (`AAI_MAX_UPLOAD_BYTES` in its env). |
 | `MAX_WORKFLOW_WAIT_MS` | const | `@alexkroman1/aai/internal` |  | Longest a request may hold open waiting for a run to settle — the ceiling on the API's SYNCHRONOUS mode. |
 | `MAX_WS_PAYLOAD_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1344,6 +1361,7 @@ trace or a type error can be traced back to something.
 | `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
 | `normalizeClientLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
+| `normalizeRunLabel` | function | `@alexkroman1/aai-runtime/internal` |  | The label a run is stored with, or `undefined` for none — see the module doc for each rule. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
 | `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
 | `parseBearer` | function | `@alexkroman1/aai-runtime/internal` |  | Token from an `Authorization: Bearer <token>` header value. |

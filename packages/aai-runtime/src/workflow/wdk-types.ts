@@ -23,8 +23,14 @@
  * `.workflow-data/` directory to answer.
  */
 export type WdkAdapter = {
-  /** `start({ workflowId }, [input])` — resolves the new run's id. */
-  start(workflowId: string, args: unknown[]): Promise<string>;
+  /**
+   * `start({ workflowId }, [input])` — resolves the new run's id.
+   *
+   * `options.label` is already normalized (`workflow/run-label.ts`) and is
+   * written WITH the run, so an adapter that stores runs stores it in the same
+   * record; an adapter that ignores it only loses the line a list shows.
+   */
+  start(workflowId: string, args: unknown[], options?: WdkStartOptions): Promise<string>;
   /** `world.runs.get(runId)` — the raw record, or undefined when there is none. */
   getRun(runId: string): Promise<WdkRunRecord | undefined>;
   /**
@@ -87,6 +93,12 @@ export type WdkAdapter = {
   readOutput(runId: string): Promise<unknown>;
 };
 
+/** What {@link WdkAdapter.start} is told about the run beyond its input. */
+export type WdkStartOptions = {
+  /** `StartOptions.label`, normalized; absent for none. */
+  label?: string | undefined;
+};
+
 /** What {@link WdkAdapter.readStream} passes through to WDK. */
 export type WdkStreamOptions = {
   namespace?: string | undefined;
@@ -128,4 +140,6 @@ export type WdkRunRecord = {
    */
   output?: unknown;
   error?: { message: string } | undefined;
+  /** `RunRecord.label` — what the run is, absent when it was given none. */
+  label?: string | undefined;
 };

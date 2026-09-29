@@ -174,12 +174,13 @@ export async function createRun(
     createdAt: number;
     input?: string | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
   },
 ): Promise<void> {
   const rows = await sql(
     `insert into ${RUNS}
-       (slug, run_id, workflow, status, created_at, input, code_version)
-     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7)
+       (slug, run_id, workflow, status, created_at, input, code_version, label)
+     values ($1, $2, $3, $4, $5, $6::text::jsonb, $7, $8)
      on conflict (slug, run_id) do nothing
      returning run_id`,
     [
@@ -190,6 +191,7 @@ export async function createRun(
       run.createdAt,
       run.input ?? null,
       run.codeVersion ?? null,
+      run.label ?? null,
     ],
   );
   if (rows.length === 0) throw new PlatformWorkflowRunTakenError(run.runId);
@@ -203,7 +205,7 @@ export async function getRun(
 ): Promise<JournalRunRow | undefined> {
   const rows = await sql(
     `select run_id, workflow, status, created_at, input::text as input,
-            output::text as output, error, code_version
+            output::text as output, error, code_version, label
        from ${RUNS} where slug = $1 and run_id = $2`,
     [slug, runId],
   );
@@ -228,7 +230,7 @@ export async function listRuns(
 ): Promise<JournalRunRow[]> {
   const rows = await sql(
     `select run_id, workflow, status, created_at, input::text as input,
-            output::text as output, error, code_version
+            output::text as output, error, code_version, label
        from ${RUNS} where slug = $1 and workflow = $2
       order by created_at desc, run_id desc limit $3`,
     [slug, workflow, limit],

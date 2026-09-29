@@ -43,6 +43,8 @@ export type JournalRunRow = {
    * wire as.
    */
   codeVersion: string | undefined;
+  /** What the run is (`RunRecord.label`), absent when it was given none. */
+  label: string | undefined;
 };
 
 /** One settled step. */
@@ -82,6 +84,7 @@ export function toRun(row: Record<string, unknown>): JournalRunRow {
     // `String(undefined)` is `"undefined"`, which compares unequal to every
     // real bundle hash and would report a redeploy on a run that never had one.
     codeVersion: text(row.code_version),
+    label: text(row.label),
   };
 }
 

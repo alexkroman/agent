@@ -76,7 +76,8 @@ const CREATE_RUNS = (t: string) => `create table if not exists ${t} (
   input jsonb,
   output jsonb,
   error text,
-  code_version text
+  code_version text,
+  label text
 )`;
 
 /**
@@ -136,6 +137,17 @@ const ALTER_RUNS_CODE_VERSION = (t: string) =>
   `alter table ${t} add column if not exists code_version text`;
 
 /**
+ * `label` on a runs table that already exists — `RunRecord.label`.
+ *
+ * Same mechanism and residual as {@link ALTER_STEPS_STARTED_AT}. Nullable
+ * because a label is optional on every run, not only on the rows already there.
+ * No length check in the DDL: the client bounds it before `createRun`, and a
+ * self-hoster's own table is not an untrusted writer's (the platform's is, and
+ * its migration carries the check).
+ */
+const ALTER_RUNS_LABEL = (t: string) => `alter table ${t} add column if not exists label text`;
+
+/**
  * Every outstanding attempt for one step key: WHO holds a charge, and since when.
  *
  * `holders` is a map of holder to the instant it claimed, and the primary key
@@ -189,7 +201,7 @@ const CREATE_HOOKS = (t: string) => `create table if not exists ${t} (
 /**
  * The five tables, for whoever owns the database.
  *
- * Not purely `create table` statements any more: two `alter table … add column
+ * Not purely `create table` statements any more: three `alter table … add column
  * if not exists` follow their tables, because a column added to a `create
  * … if not exists` reaches only a database that does not exist yet. See
  * {@link ALTER_STEPS_STARTED_AT}, which carries the argument.
@@ -201,6 +213,7 @@ export function workflowJournalDdl(schema?: string): string[] {
   return [
     CREATE_RUNS(q(WORKFLOW_RUN_TABLE)),
     ALTER_RUNS_CODE_VERSION(q(WORKFLOW_RUN_TABLE)),
+    ALTER_RUNS_LABEL(q(WORKFLOW_RUN_TABLE)),
     CREATE_RUNS_INDEX(q(WORKFLOW_RUN_TABLE)),
     CREATE_STEPS(q(WORKFLOW_STEP_TABLE)),
     ALTER_STEPS_STARTED_AT(q(WORKFLOW_STEP_TABLE)),

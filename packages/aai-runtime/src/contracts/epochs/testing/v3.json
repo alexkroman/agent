@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 3,
   "rule": 2,
-  "sha256": "fa28b0d2233799d1bd00a556aa66a57b6bc0b88f5735ecee38a523e416b767a3",
+  "sha256": "23081617f24bd625db7103b82134f16eb861b682be202caea3d7ba3495167079",
   "exports": [
     "DEFAULT_MAX_DELIVERIES",
     "DeterminismKind",
@@ -30,5 +30,20 @@
     "runWorkflow",
     "scriptedTextModel"
   ],
-  "rollup": "6a56cde7f0af1ce123e7237c24ee327e5c2ea2e544fcab67d735ddc2f76e2f8f"
+  "rollup": "6a56cde7f0af1ce123e7237c24ee327e5c2ea2e544fcab67d735ddc2f76e2f8f",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "fa28b0d2233799d1bd00a556aa66a57b6bc0b88f5735ecee38a523e416b767a3",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "23081617f24bd625db7103b82134f16eb861b682be202caea3d7ba3495167079",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

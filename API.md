@@ -431,6 +431,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -642,6 +643,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -2123,6 +2125,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -2523,6 +2526,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -3870,6 +3874,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -4231,6 +4236,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -4616,6 +4622,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -4731,6 +4738,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -5721,6 +5729,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -6110,6 +6119,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -6785,6 +6795,14 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
+export type CallStatusOptions = {
+    carrier: "twilio";
+    callId: string;
+    credentials?: PlaceCallCredentials;
+    signal?: AbortSignal;
+};
+
+// @public
 interface ClientEventMap {
 }
 
@@ -6839,6 +6857,12 @@ export class ClientUnreachableError extends RetryableError {
 
 // @public
 export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+
+// @public
+export const DEFAULT_CALL_RING_TIMEOUT_S: number;
+
+// @public
+export const DEFAULT_CALL_TIME_LIMIT_S: number;
 
 // @public
 export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
@@ -6999,6 +7023,52 @@ export type PcmFormat = {
 };
 
 // @public
+export type PlaceCallCredentials = {
+    readonly accountSid: string;
+    readonly authToken: string;
+};
+
+// @public
+export class PlaceCallError extends Error {
+    constructor(message: string, init: {
+        readonly carrier: string;
+        readonly retryable: boolean;
+        readonly status?: number | undefined;
+        readonly code?: number | undefined;
+        readonly retryAfter?: Date | undefined;
+        readonly cause?: unknown;
+    });
+    readonly carrier: string;
+    readonly code: number | undefined;
+    // (undocumented)
+    readonly name = "PlaceCallError";
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export type PlaceCallOptions = {
+    carrier: "twilio";
+    to: string;
+    from: string;
+    agentUrl: string;
+    parameters?: Readonly<Record<string, string>>;
+    timeLimitS?: number;
+    ringTimeoutS?: number;
+    credentials?: PlaceCallCredentials;
+    signal?: AbortSignal;
+};
+
+// @public
+export type PlacedCall = {
+    callId: string;
+};
+
+// @public
+export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -7112,6 +7182,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -7120,6 +7191,9 @@ export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
 export const STEP_SPEAK_TIMEOUT_MS: number;
+
+// @public
+export function stepCallStatus(options: CallStatusOptions): Promise<PlacedCallStatus>;
 
 // @public
 export function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
@@ -7216,6 +7290,9 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
+
+// @public
+export function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
 
 // @public
 export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
@@ -7462,6 +7539,12 @@ export type Transcript = {
 };
 
 // @public
+export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
+
+// @public
+export const TWILIO_AUTH_TOKEN_ENV = "TWILIO_AUTH_TOKEN";
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -7594,6 +7677,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -8261,6 +8345,9 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
 
 // @public
+type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+
+// @public
 export type ProjectFiles = {
     readonly tools?: ToolModules;
     readonly systemPrompt?: string;
@@ -8400,6 +8487,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -8584,6 +8672,41 @@ export type StubGenerateScript = {
 } | {
     readonly routes: Readonly<Record<string, StubGenerateRoute>>;
     readonly reply?: never;
+};
+
+// @public
+export type StubPlaceCall = {
+    calls: StubPlacedCall[];
+    restore(): void;
+};
+
+// @public
+export function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
+
+// @public
+export type StubPlaceCallOptions = {
+    dial?: "accept" | StubPlaceCallRefusal | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+    status?: PlacedCallStatus | "initiated" | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+    otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
+};
+
+// @public
+export type StubPlaceCallRefusal = {
+    status: number;
+    code?: number;
+    message?: string;
+};
+
+// @public
+export type StubPlacedCall = {
+    callId: string | undefined;
+    to: string;
+    from: string;
+    streamUrl: string | undefined;
+    parameters: Record<string, string>;
+    timeLimitS: number;
+    ringTimeoutS: number;
+    polls: number;
 };
 
 // @public
@@ -8992,6 +9115,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -9243,6 +9367,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -9629,6 +9754,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -9987,6 +10113,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 export type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -10197,6 +10324,7 @@ export type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -11884,6 +12012,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -12587,6 +12716,12 @@ interface Logger {
 export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 
 // @public
+export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
+
+// @public
+export function normalizeRunLabel(value: unknown): string | undefined;
+
+// @public
 export function parseBearer(header: string | null | undefined): string;
 
 // @internal
@@ -12715,6 +12850,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -13262,6 +13398,7 @@ export type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public

@@ -108,8 +108,28 @@ const SECRET_QUERY_PARAM =
  * @internal
  */
 export function redactChannelCredentials(channel: Channel, text: string): string {
-  const secrets = [...CHANNEL_CREDENTIAL_FIELDS]
-    .map((field) => channel.options[field])
+  return redactCredentials(
+    [...CHANNEL_CREDENTIAL_FIELDS].map((field) => channel.options[field]),
+    text,
+  );
+}
+
+/**
+ * `text` with each of `values` (the strings among them) replaced by
+ * {@link REDACTED}, raw and URL-encoded, longest first — and every secret-named
+ * query parameter's value too.
+ *
+ * The mechanism under {@link redactChannelCredentials}, taking the VALUES rather
+ * than a descriptor, because a channel is not the only thing that holds a
+ * credential and gets an answer back from the far side: `stepPlaceCall`
+ * (`sdk/step-place-call.ts`) holds a Twilio auth token and turns Twilio's
+ * refusals into an error a run stores, logs and shows — the same leak, with
+ * the same fix, and two copies of it would be two lists to keep in step.
+ *
+ * @internal
+ */
+export function redactCredentials(values: readonly unknown[], text: string): string {
+  const secrets = values
     .filter((value): value is string => typeof value === "string" && value.trim() !== "")
     .flatMap((value) => [value, value.trim(), encodeURIComponent(value.trim())])
     .sort((a, b) => b.length - a.length);

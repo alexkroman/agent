@@ -35,6 +35,26 @@ export type StartOptions = {
    */
   key?: string;
   /**
+   * What this run IS, in a line a person reads — `"call the plumber, due 5 PM"`.
+   *
+   * A snapshot says which workflow a run belongs to, when it started, its key
+   * and where it is, and nothing about which of a dozen `remind` runs this one
+   * is: the input is not on a snapshot and a run's progress lines are not
+   * durable. So a page listing a household's running tasks had to keep a table
+   * of its own beside the runs, written by the tool that started each one and
+   * joined back on `runId` — a second store that a failed write left out of
+   * step with the first. This is that column, kept WITH the run: it is written
+   * by the same statement that creates the run, so it is on every snapshot
+   * (`get`, `find`, `recent`, `GET /workflows/runs`) whichever journal the
+   * deployment has, and it expires when the run does.
+   *
+   * Normalized, never refused — a label is a courtesy to a reader, and failing a
+   * `start` over one would lose the work: control characters become spaces, the
+   * text is trimmed and cut at `MAX_WORKFLOW_RUN_LABEL_CHARS` (200), and what is
+   * left empty means no label. Set once, at start; there is no way to change it.
+   */
+  label?: string;
+  /**
    * Have the agent SAY SOMETHING when this run finishes, without being asked.
    *
    * `true` takes the default instruction ("tell the caller the result, briefly,

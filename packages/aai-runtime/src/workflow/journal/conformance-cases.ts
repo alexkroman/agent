@@ -242,6 +242,26 @@ export function journalRunConformance(arm: JournalArm): void {
         expect((await journal.listRuns(workflow, 10))[0]?.codeVersion).toBe(codeVersion);
       });
 
+      test("a run's label round-trips through getRun AND listRuns", async () => {
+        // Both reads, for the reason the bundle-version case above gives: two SQL
+        // statements per backend, and a column forgotten in one of them reads as
+        // a run that simply has no label. Non-ASCII on purpose — a backend that
+        // stored bytes rather than text would mangle it.
+        const journal = arm.journal();
+        const { runId, workflow } = keysFor(arm);
+        const label = "call the plumber — due 5 PM";
+        await journal.createRun(runOf({ runId, workflow, label }));
+        expect((await journal.getRun(runId))?.label).toBe(label);
+        expect((await journal.listRuns(workflow, 10))[0]?.label).toBe(label);
+      });
+
+      test("a run started with NO label reads back ABSENT, not empty or null", async () => {
+        // A reader renders a present label and falls back when there is none; a
+        // backend answering `""` or `null` would render a blank line instead.
+        const { journal, runId } = await startRun(arm, { label: undefined });
+        expect((await journal.getRun(runId))?.label).toBeUndefined();
+      });
+
       test("a VOID workflow completes: an undefined output is not a driver error", async () => {
         // postgres.js refuses an undefined parameter outright, so a body that
         // returns nothing — ordinary, for one that exists to do side effects —

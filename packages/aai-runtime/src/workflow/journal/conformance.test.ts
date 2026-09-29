@@ -222,6 +222,7 @@ function runRow(run: RunRecord): Record<string, unknown> {
     output: text(run.output),
     error: run.error?.message,
     codeVersion: run.codeVersion,
+    label: run.label,
   };
 }
 
@@ -238,6 +239,7 @@ function serve(store: JournalStore, method: string, body: Body): Promise<unknown
           // platform never sees a decoded value and this fake must not either.
           input: optStr(body, "input"),
           codeVersion: optStr(body, "codeVersion"),
+          label: optStr(body, "label"),
         })
         .then(() => null);
     case "getRun":

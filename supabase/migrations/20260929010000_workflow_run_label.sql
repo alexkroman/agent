@@ -1,0 +1,34 @@
+-- `aai_platform.workflow_runs.label` — what a run IS, in a person's words.
+--
+-- A run's snapshot names its workflow, its start time, its correlation key and
+-- its status, and nothing that tells one `remind` run from the next: the input
+-- is not on a snapshot and progress lines are not durable. So an app listing a
+-- household's running tasks kept a table of its own beside the runs, written by
+-- the tool that started each one and joined back on the run id — a second
+-- store, written after the run existed, that a failed write left out of step.
+-- `ctx.workflows.start(def, input, { label })` puts that line on the run
+-- itself, written by the same `createRun` that creates it, so every read of the
+-- run (`get`, `find`, `recent`, `GET /workflows/runs`) carries it and it is
+-- reaped with the run.
+--
+-- ── Why NULLABLE ──
+--
+-- A label is optional on EVERY run, not only on the rows already here: a run
+-- started with none has none, and no value stands in for one.
+--
+-- ── Why no CHECK on the length ──
+--
+-- The bound (`MAX_WORKFLOW_RUN_LABEL_CHARS`) is enforced twice before this
+-- column sees a value — the client normalizes it, and the platform's guest
+-- handler (`guest-handlers/workflow-journal.ts`) cuts what an untrusted guest
+-- sends — and `journal-ddl-parity.test.ts` holds this column to the runtime's
+-- `label text` by its whole definition, so a constraint here alone would be a
+-- declared divergence for a rule already kept.
+--
+-- RLS and grants are per-TABLE and unchanged, as for `code_version`.
+--
+-- Everything else mirrors `aai-runtime`'s `workflow/journal/schema.ts`
+-- (`ALTER_RUNS_LABEL`), so the two stores stay one contract.
+
+alter table aai_platform.workflow_runs
+  add column if not exists label text;

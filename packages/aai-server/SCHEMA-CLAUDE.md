@@ -38,8 +38,10 @@ not zero, and it is what the two sweeps cost.
 **nothing else** — every step insert is a heap append plus one index entry.
 `20260902130000` added `started_at` and wrote "no index: nothing filters or
 orders on it"; `20260902140000` added `code_version` to `workflow_runs` on the
-same terms. The rule in `CLAUDE.md` is that precedent generalized, written down
-before the first listing feature makes it a judgement call each time.
+same terms, and `20260929010000` added `label` the same way (it is read with
+the row, never filtered or ordered on). The rule in `CLAUDE.md` is that
+precedent generalized, written down before the first listing feature makes it
+a judgement call each time.
 
 ## What the other three engines did
 

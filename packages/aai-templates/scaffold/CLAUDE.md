@@ -1377,72 +1377,87 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: "Support",
   greeting: "Support line — what's happened?",
-  // The carrier this agent's number is with. `true` admits every carrier this
-  // build decodes; omit the field and `/phone` is not served at all.
+  // `true` admits every carrier decoded; omitted, `/phone` is not served.
   telephony: ["twilio"],
 });
 ```
 
 Point the carrier at `wss://<your-agent-url>/phone?carrier=twilio` (or
-`telnyx`, the two this build decodes). An unknown `carrier` is declined with a
-`400`, one this agent did not declare with a `404`. The bridge transcodes
-8 kHz mu-law both ways, so a phone call is a transport, not a mode: tools and
-slots behave as in the browser.
+`telnyx`). An unknown `carrier` gets a `400`, an undeclared one a `404`. 8 kHz
+mu-law is transcoded both ways, so a call is a transport, not a mode.
 
-**An agent that declares nothing answers no carrier**, in `aai dev` and
-deployed. `createAgentServer({ telephony })` overrides one deployment; to embed
-the runtime, see `createTelephonyBridge` and `startTelephonySession`.
+**Declaring nothing answers no carrier**, in dev and deployed.
+`createAgentServer({ telephony })` overrides one deployment; embedding:
+`createTelephonyBridge`, `startTelephonySession`.
 
-**A call your app PLACES** (TwiML `<Connect><Stream>` to
-`/phone?carrier=twilio`, with `<Parameter name="call" value="c_1"/>`):
-the session starts once the carrier's `start` frame has arrived, so
-`sessionContext` and `onSessionEnd` get `call` — `{ carrier, callId?,
-parameters }` — and a tool reads it with `sessionCall(ctx)`. `/phone` is
-unauthenticated, so check a parameter you issued and answer `{ refuse: "why" }`
-otherwise: the call is hung up before the greeting or any model call (a
-WebSocket gets a 1008). A tool hangs up with `endSession(ctx)`, which lets the
-reply finish speaking first (`{ afterReply: false }` cuts it); a spec reads
+**A call your app places** (below): the session starts on the carrier's
+`start` frame, so `sessionContext`/`onSessionEnd` get `call`
+— `{ carrier, callId?, parameters }` — and a tool reads `sessionCall(ctx)`.
+`/phone` is unauthenticated: check a parameter you issued and answer
+`{ refuse: "why" }` otherwise (hung up before the greeting or any model call; a
+WebSocket gets 1008). A tool hangs up with `endSession(ctx)` once the reply has
+been spoken (`{ afterReply: false }` cuts it); a spec reads
 `endSessionCalls(ctx)` (`/testing`). Tunnel to the port `aai dev` prints.
 
-**Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
-assistant proactively take a turn after that much user silence (e.g.
-"Are you still there?"). Customize the injected instruction with
-`silencePrompt`. The nudge never appears as a user transcript, and the
-assistant stops nudging after 3 consecutive unanswered nudges until the
-user speaks again.
+**Silence nudge (pipeline only):** `silenceTimeoutMs` makes the assistant take
+a turn after that much user silence ("Are you still there?"); `silencePrompt`
+sets the instruction. It is never a user transcript, and stops after 3
+unanswered nudges until the user speaks.
 
 **Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
-`minBargeInWords` controls how many words of user speech interrupt the
-assistant mid-reply (default 2, so a one-word "yeah" doesn't cut it off);
-`interruptionMinDurationMs` adds a sustained-speech gate on top (default
-500 ms; `0` disables; interim transcripts only — committed turns always
-land). End-of-turn detection (how long a pause ends the user's turn)
-belongs to the STT provider: `assemblyAIStt({ minTurnSilenceMs })` (default
-1600 ms) / `deepgramStt({ endpointing })` (default 1500 ms), so mid-utterance
-pauses don't split a request.
-`deadAirCoverMs` is how long a turn may go silent before the transport speaks
-a short filler, so a long tool chain doesn't sound like a dropped call. It is
-measured silence, not a guess about the turn's shape, so a reply that arrives
-promptly pays nothing; `0` disables it. The wording is not yours to set — the
-filler must be purely declarative and never a request for patience, or the
-caller answers it and the answer barges in.
-`resumeFalseInterruption` (default `true`) resumes an interrupted reply when
-a barge-in turns out to be noise — no user turn ever commits. It fires once the
-transcript stream goes quiet with no final, so it never races a real turn.
-`userTurnLimit` (a `UserTurnLimit`; default: no cap) bounds ONE user turn —
-`{ maxWords }`, `{ maxDurationMs }`, or both. A caller who never pauses never
-ends a turn; past either cap the transcriber ends it as a pause would — what
-was heard commits,
-the rest opens the next turn. Each cut is a `user-turn.exceeded` event
-(`limit`, `words`, `durationMs`); `{}` is refused. Inert (logged once) on a
-transcriber that cannot end a turn on demand; the default `assemblyAIStt()` can.
+`minBargeInWords` is how many words interrupt a reply (default 2, so a lone
+"yeah" doesn't); `interruptionMinDurationMs` adds a sustained-speech gate
+(default 500 ms; `0` disables; interims only — committed turns always land).
+How long a pause ends a turn belongs to the STT provider:
+`assemblyAIStt({ minTurnSilenceMs })` (default 1600 ms) /
+`deepgramStt({ endpointing })` (default 1500 ms).
+`deadAirCoverMs` is how long a turn may go silent before a short filler is
+spoken, so a long tool chain doesn't sound like a dropped call; measured
+silence, so a prompt reply pays nothing; `0` disables. The wording is fixed:
+declarative, never a request for patience, or the caller's answer barges in.
+`resumeFalseInterruption` (default `true`) resumes a reply whose barge-in was
+noise (no user turn commits); it fires once transcripts go quiet with no final,
+so it never races a real turn.
+`userTurnLimit` (`UserTurnLimit`; default no cap) bounds ONE user turn —
+`{ maxWords }`, `{ maxDurationMs }`, or both: past a cap the transcriber ends
+the turn as a pause would (heard words commit, the rest opens the next turn),
+emitting `user-turn.exceeded` (`limit`, `words`, `durationMs`); `{}` is
+refused. Inert (logged once) on a transcriber that cannot end a turn on demand;
+the default `assemblyAIStt()` can.
 `turnDetection: "manual"` is PUSH-TO-TALK (`usePushToTalk()` in `aai-ui`):
 the mic is heard only while held, all of it is ONE turn answered on release,
 and pressing is the barge-in.
 `preemptiveGeneration` (default **`false`**) starts the reply from a confident
-interim and adopts it if the committed transcript matches. Off because it
-measured net **+8ms per turn**, 44% of requests thrown away; a speculation never
-speaks or calls a tool until adopted.
+interim, adopted if the commit matches (measured **+8ms per turn**, 44% of
+requests wasted); it never speaks or calls a tool until adopted.
+
+### Placing a call
+
+`stepPlaceCall` (`/step`) dials through Twilio from a step; the answered call
+streams to `<agentUrl>/phone?carrier=twilio` (an agent with `telephony`):
+
+```ts
+import { requireStepEnv, stepPlaceCall } from "@alexkroman1/aai/step";
+
+export async function dial(to: string, callRef: string): Promise<string> {
+  const { callId } = await stepPlaceCall({
+    carrier: "twilio",
+    to,
+    from: requireStepEnv("TWILIO_FROM_NUMBER"),
+    agentUrl: requireStepEnv("CALLER_AGENT_URL"), // its public base URL
+    parameters: { call: callRef }, // → `call.parameters`
+  });
+  return callId;
+}
+```
+
+Credentials: env `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`, or `credentials`.
+Poll `stepCallStatus({ carrier, callId })` between `ctx.sleep`s until
+`completed`/`busy`/`no-answer`/`failed`/`canceled`. Failures are
+`PlaceCallError` (`retryable` only on 429/5xx/no answer; advice for common
+Twilio codes; never the token). A lost answer can ring twice: keep the dial
+step's `maxAttempts` small. `timeLimitS` (default 600) caps the call. Specs:
+`stubPlaceCall()` (`/testing`). Twilio only.
 
 ## Providers
 
@@ -2497,18 +2512,16 @@ Common mistakes when working in agent projects:
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.
-- **Filter large API responses before returning them from tools.** Return
-  values are injected into LLM context. Truncate, summarize, or extract
-  only what the model needs.
+- **Filter large API responses before returning them from tools** — return
+  values go into LLM context; return only what the model needs.
 - **Declare only the pipeline stages you're changing.** Unset stages of
   `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
   default pipeline; `voice` picks its TTS voice). S2S needs an explicit
   `s2s: assemblyAIS2s()` and takes no pipeline fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
-- **Don't use `useEffect` + `toolCalls` to derive state.** Use
-  `useToolResult` — it deduplicates by callId. The useEffect pattern
-  re-fires on every render and produces duplicates.
+- **Derive state with `useToolResult`, not `useEffect` + `toolCalls`** — it
+  dedupes by callId; the effect re-fires every render and duplicates.
 - **Always import `"@alexkroman1/aai-ui/styles.css"` first** in
   `client.tsx`. Missing this = unstyled UI.
 - **Don't create `tailwind.config.js`.** Tailwind v4 is configured via
@@ -2538,5 +2551,3 @@ Common mistakes when working in agent projects:
   latency-sensitive agent. On reaching the cap the agent spends one more LLM
   step with tools switched off, so it answers with what it has instead of
   going silent mid-chain
-- Tool returns `undefined` if execute function has no return statement —
-  always return a value

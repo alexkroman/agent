@@ -1778,6 +1778,37 @@ const answerer = stubGenerate({ reply: "The documented answer." });
 
 ***
 
+### stubPlaceCall()
+
+```ts
+function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
+```
+
+Publish a Twilio whose Calls API records every dial and answers it.
+
+#### Parameters
+
+##### options?
+
+[`StubPlaceCallOptions`](#stubplacecalloptions)
+
+#### Returns
+
+[`StubPlaceCall`](#stubplacecall)
+
+#### Example
+
+```ts
+import { stubPlaceCall } from "@alexkroman1/aai/testing";
+
+const twilio = stubPlaceCall({ status: (call) => (call.polls < 2 ? "ringing" : "completed") });
+// … run the workflow, then read what it dialled, as the answering session sees it:
+console.log(twilio.calls[0]?.parameters.call);
+twilio.restore(); // in an `afterEach`
+```
+
+***
+
 ### stubReporter()
 
 ```ts
@@ -3558,6 +3589,223 @@ readonly routes: Readonly<Record<string, StubGenerateRoute>>;
 One route per model ROLE, keyed by the call's system prompt. A call
 whose system prompt names no route rejects, naming it; `""` is the
 route for a call that carries none.
+
+***
+
+### StubPlaceCall
+
+```ts
+type StubPlaceCall = {
+  calls: StubPlacedCall[];
+  restore: void;
+};
+```
+
+What [stubPlaceCall](#stubplacecall-1) returns: the call log, and how to put the slot back.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Unpublish the `stepFetch`. Call it in an `afterEach`.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubPlacedCall[];
+```
+
+Every dial, in order — including refused ones.
+
+***
+
+### StubPlaceCallOptions
+
+```ts
+type StubPlaceCallOptions = {
+  dial?:   | "accept"
+     | StubPlaceCallRefusal
+     | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+  otherwise?: (request: StubStepRequest) => 
+     | StubStepAnswer
+    | Promise<StubStepAnswer>;
+  status?:   | PlacedCallStatus
+     | "initiated"
+     | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+};
+```
+
+What [stubPlaceCall](#stubplacecall-1) may be told.
+
+#### Properties
+
+##### dial?
+
+```ts
+optional dial?: 
+  | "accept"
+  | StubPlaceCallRefusal
+  | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+```
+
+How Twilio answers each dial: `"accept"` (the default), or a refusal —
+`{ status: 400, code: 21219 }` is a trial account calling an unverified
+number. A function answers per call.
+
+##### otherwise?
+
+```ts
+optional otherwise?: (request: StubStepRequest) => 
+  | StubStepAnswer
+| Promise<StubStepAnswer>;
+```
+
+Every request that is not to Twilio's Calls API. Default: throw, naming it —
+a request nobody set up is a finding (see `routeStepFetch`).
+
+###### Parameters
+
+###### request
+
+[`StubStepRequest`](#stubsteprequest)
+
+###### Returns
+
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](#stubstepanswer)\>
+
+##### status?
+
+```ts
+optional status?: 
+  | PlacedCallStatus
+  | "initiated"
+  | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+```
+
+What each status read answers: a status, or a function of the call (its
+`polls` already counts this read). Default `"completed"`.
+
+***
+
+### StubPlaceCallRefusal
+
+```ts
+type StubPlaceCallRefusal = {
+  code?: number;
+  message?: string;
+  status: number;
+};
+```
+
+A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message.
+
+#### Properties
+
+##### code?
+
+```ts
+optional code?: number;
+```
+
+##### message?
+
+```ts
+optional message?: string;
+```
+
+##### status
+
+```ts
+status: number;
+```
+
+***
+
+### StubPlacedCall
+
+```ts
+type StubPlacedCall = {
+  callId: string | undefined;
+  from: string;
+  parameters: Record<string, string>;
+  polls: number;
+  ringTimeoutS: number;
+  streamUrl: string | undefined;
+  timeLimitS: number;
+  to: string;
+};
+```
+
+One call a step placed, as [stubPlaceCall](#stubplacecall-1) records it.
+
+#### Properties
+
+##### callId
+
+```ts
+callId: string | undefined;
+```
+
+The call id the stub answered with (`CA` + a counter), or `undefined` for a refused dial.
+
+##### from
+
+```ts
+from: string;
+```
+
+##### parameters
+
+```ts
+parameters: Record<string, string>;
+```
+
+The `<Parameter>`s, decoded — what the answering session reads as `call.parameters`.
+
+##### polls
+
+```ts
+polls: number;
+```
+
+How many times [StubPlaceCallOptions.status](#status-1) has been asked about this call.
+
+##### ringTimeoutS
+
+```ts
+ringTimeoutS: number;
+```
+
+##### streamUrl
+
+```ts
+streamUrl: string | undefined;
+```
+
+Where the answered call's audio would be streamed: `wss://…/phone?carrier=twilio`.
+
+##### timeLimitS
+
+```ts
+timeLimitS: number;
+```
+
+##### to
+
+```ts
+to: string;
+```
 
 ***
 

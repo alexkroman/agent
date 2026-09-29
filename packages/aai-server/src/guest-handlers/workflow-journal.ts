@@ -52,7 +52,7 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
+import { normalizeRunLabel, PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
 import {
   isOneOf,
@@ -319,6 +319,10 @@ function plan(method: Method, slug: string, body: Record<string, unknown>): Plat
         createdAt: requiredInt(body, "createdAt"),
         input: optionalString(body, "input"),
         codeVersion: optionalString(body, "codeVersion"),
+        // The guest is untrusted, so the bound its client applies is applied
+        // again here rather than believed: the same normalization, from the
+        // same module, so the two cannot disagree about what a label may be.
+        label: normalizeRunLabel(optionalString(body, "label")),
       };
       return async (sql) => {
         await journal.createRun(sql, slug, run);

@@ -55,6 +55,17 @@ export type RunRecord = {
    * the process environment rather than the agent's.
    */
   codeVersion?: string | undefined;
+  /**
+   * What the run IS, in a person's words — `StartOptions.label`, normalized by
+   * the client before it gets here (`workflow/run-label.ts`), or absent.
+   *
+   * On the run record rather than in a side table for the reason `codeVersion`
+   * is: it is a fact about the run fixed at `createRun`, so writing it in the
+   * same statement means no reader can see the run without it, and it goes when
+   * the run does. Every backend must round-trip it and none may invent one — a
+   * row that predates the column reads as absent (`conformance-cases.ts`).
+   */
+  label?: string | undefined;
 };
 
 /**

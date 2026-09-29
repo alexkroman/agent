@@ -40,7 +40,11 @@ it:
   [stepTranscribeUpload](#steptranscribeupload) / [stepTranscribeSubmit](#steptranscribesubmit) /
   [stepTranscribePoll](#steptranscribepoll) for the async job API or
   [stepTranscribeSync](#steptranscribesync) for the one-request one, back in.
-- **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-3),
+- **Phone calls, outbound** — [stepPlaceCall](#stepplacecall) dials through Twilio and
+  streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
+  the answering session reads as `call.parameters`; [stepCallStatus](#stepcallstatus)
+  follows it to one of the statuses that are over.
+- **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-4),
   for a body deciding whether a failure is worth another round, and
   [stepInfo](#stepinfo-1), which says which ATTEMPT this is and whether it is the
   last. That is what lets a step degrade rather than fail — a smaller model on
@@ -666,6 +670,32 @@ A `Response`, or its headers. Both spellings are accepted
 
 ***
 
+### stepCallStatus()
+
+```ts
+function stepCallStatus(options: CallStatusOptions): Promise<PlacedCallStatus>;
+```
+
+Where a placed call is now, as the carrier reports it, normalized to
+[PlacedCallStatus](#placedcallstatus).
+
+#### Parameters
+
+##### options
+
+[`CallStatusOptions`](#callstatusoptions)
+
+#### Returns
+
+`Promise`\<[`PlacedCallStatus`](#placedcallstatus)\>
+
+#### Throws
+
+On every failure, including a status this SDK does
+  not know (non-retryable, naming it).
+
+***
+
 ### stepClientTranscript()
 
 ```ts
@@ -900,7 +930,7 @@ minute apart:
 
 **The two lost requests matter more than the 2.7x.** On HTTP/2 a capacity
 limit arrives as a stream reset, and a stream error carries no HTTP status —
-so neither [isTransientStatus](#istransientstatus) nor [retryAfter](#retryafter-3) can see it, every
+so neither [isTransientStatus](#istransientstatus) nor [retryAfter](#retryafter-4) can see it, every
 sibling in a bounded fan-out retries in lockstep into the same reset, and the
 run dies on `TypeError: fetch failed` with its real cause two `cause` hops
 down. Over HTTP/1.1 the identical limit arrives as a `503` or `429` carrying
@@ -1139,6 +1169,64 @@ export async function remindFlow(
 #### Returns
 
 `Promise`\<`void`\>
+
+***
+
+### stepPlaceCall()
+
+```ts
+function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
+```
+
+Dial `to` from `from` and, once answered, stream the call to the agent at
+`agentUrl`. Resolves the carrier's call id as soon as the carrier ACCEPTS the
+request — the phone may not have rung yet; [stepCallStatus](#stepcallstatus) follows it.
+
+#### Parameters
+
+##### options
+
+[`PlaceCallOptions`](#placecalloptions)
+
+#### Returns
+
+`Promise`\<[`PlacedCall`](#placedcall)\>
+
+#### Example
+
+**Dial, then follow the call until it is over**
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { requireStepEnv, stepCallStatus, stepPlaceCall } from "@alexkroman1/aai/step";
+
+const OVER = ["completed", "busy", "no-answer", "failed", "canceled"];
+
+export async function callFlow(input: { to: string; callRef: string }, ctx: WorkflowContext) {
+  const { callId } = await ctx.step(
+    "dial",
+    () =>
+      stepPlaceCall({
+        carrier: "twilio",
+        to: input.to,
+        from: requireStepEnv("TWILIO_FROM_NUMBER"),
+        agentUrl: requireStepEnv("CALLER_AGENT_URL"),
+        parameters: { call: input.callRef },
+      }),
+    { maxAttempts: 2 },
+  );
+  let status = "queued";
+  for (let i = 0; i < 60 && !OVER.includes(status); i++) {
+    await ctx.sleep("poll", new Date((await ctx.now()) + 10_000));
+    status = await ctx.step("status", () => stepCallStatus({ carrier: "twilio", callId }));
+  }
+  return { callId, status };
+}
+```
+
+#### Throws
+
+On every failure — see the module doc.
 
 ***
 
@@ -1962,6 +2050,129 @@ moment the caller meant.
 
 ***
 
+### PlaceCallError
+
+The carrier refused, or never answered. `message` is a sentence a person can
+act on and never quotes a credential; branch on `retryable`, which
+`throwStepError` also reads.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new PlaceCallError(message: string, init: {
+  carrier: string;
+  cause?: unknown;
+  code?: number;
+  retryable: boolean;
+  retryAfter?: Date;
+  status?: number;
+}): PlaceCallError;
+```
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### init
+
+###### carrier
+
+`string`
+
+###### cause?
+
+`unknown`
+
+###### code?
+
+`number`
+
+###### retryable
+
+`boolean`
+
+###### retryAfter?
+
+`Date`
+
+###### status?
+
+`number`
+
+###### Returns
+
+[`PlaceCallError`](#placecallerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Properties
+
+##### carrier
+
+```ts
+readonly carrier: string;
+```
+
+The carrier asked.
+
+##### code
+
+```ts
+readonly code: number | undefined;
+```
+
+The carrier's own error code — Twilio's `21219`, and so on — when it gave one.
+
+##### name
+
+```ts
+readonly name: "PlaceCallError" = "PlaceCallError";
+```
+
+###### Overrides
+
+```ts
+Error.name
+```
+
+##### retryable
+
+```ts
+readonly retryable: boolean;
+```
+
+Whether another attempt could plausibly succeed: a `429`, a `5xx`, or no answer at all.
+
+##### retryAfter
+
+```ts
+readonly retryAfter: Date | undefined;
+```
+
+When the carrier named a `Retry-After`, the moment it asked for.
+
+##### status
+
+```ts
+readonly status: number | undefined;
+```
+
+The HTTP status, or `undefined` when no request was answered (or none was made).
+
+***
+
 ### StepGenerateError
 
 A model call that failed, with the one thing a step has to decide from.
@@ -2075,7 +2286,7 @@ A request that never got an answer.
 
 Its own class because the DISTINCTION is what a retry policy turns on: a
 response with a status can be classified ([isTransientStatus](#istransientstatus),
-[retryAfter](#retryafter-3)), and this cannot — so a caller's choice is between
+[retryAfter](#retryafter-4)), and this cannot — so a caller's choice is between
 retrying a connection failure and giving up on one, with nothing to read.
 Retrying is almost always right, which is why [StepTransportError](#steptransporterror) is
 what the SDK raises rather than making every step write the `catch`.
@@ -2321,6 +2532,53 @@ readonly stored: number;
 Bytes readable when the check ran — the PREFIX, never a total.
 
 ## Type Aliases
+
+### CallStatusOptions
+
+```ts
+type CallStatusOptions = {
+  callId: string;
+  carrier: "twilio";
+  credentials?: PlaceCallCredentials;
+  signal?: AbortSignal;
+};
+```
+
+What [stepCallStatus](#stepcallstatus) takes.
+
+#### Properties
+
+##### callId
+
+```ts
+callId: string;
+```
+
+[PlacedCall.callId](#callid-1).
+
+##### carrier
+
+```ts
+carrier: "twilio";
+```
+
+The carrier the call was placed through.
+
+##### credentials?
+
+```ts
+optional credentials?: PlaceCallCredentials;
+```
+
+Explicit credentials; the step env otherwise.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+***
 
 ### ClientNotice
 
@@ -2689,6 +2947,179 @@ sampleRate: number;
 ```
 
 Samples per second, e.g. `24_000`. Must be a positive integer.
+
+***
+
+### PlaceCallCredentials
+
+```ts
+type PlaceCallCredentials = {
+  accountSid: string;
+  authToken: string;
+};
+```
+
+A Twilio account's credentials. Pass them to name them yourself; omitted,
+they are read from the step env as [TWILIO\_ACCOUNT\_SID\_ENV](#twilio_account_sid_env) and
+[TWILIO\_AUTH\_TOKEN\_ENV](#twilio_auth_token_env). Never put them in a run's INPUT, which is
+journaled: read them inside the step.
+
+#### Properties
+
+##### accountSid
+
+```ts
+readonly accountSid: string;
+```
+
+The account SID, `AC…`.
+
+##### authToken
+
+```ts
+readonly authToken: string;
+```
+
+The auth token. A credential: it never appears in an error.
+
+***
+
+### PlaceCallOptions
+
+```ts
+type PlaceCallOptions = {
+  agentUrl: string;
+  carrier: "twilio";
+  credentials?: PlaceCallCredentials;
+  from: string;
+  parameters?: Readonly<Record<string, string>>;
+  ringTimeoutS?: number;
+  signal?: AbortSignal;
+  timeLimitS?: number;
+  to: string;
+};
+```
+
+What [stepPlaceCall](#stepplacecall) takes.
+
+#### Properties
+
+##### agentUrl
+
+```ts
+agentUrl: string;
+```
+
+The PUBLIC base URL of the agent that answers — `https://…` or `wss://…`,
+with any path prefix it is served under. The call's audio is streamed to
+`<agentUrl>/phone?carrier=twilio`, so that agent must declare
+`telephony` for Twilio.
+
+##### carrier
+
+```ts
+carrier: "twilio";
+```
+
+The carrier that dials. `"twilio"` only, for now — see the module doc.
+
+##### credentials?
+
+```ts
+optional credentials?: PlaceCallCredentials;
+```
+
+Explicit credentials; the step env otherwise.
+
+##### from
+
+```ts
+from: string;
+```
+
+The caller id: a number on the Twilio account, E.164.
+
+##### parameters?
+
+```ts
+optional parameters?: Readonly<Record<string, string>>;
+```
+
+Custom parameters for the answering session, each a TwiML `<Parameter>`,
+read there as `call.parameters`. At most 32, each name plus value under
+500 characters (Twilio's limit). Put an unguessable id here and check it
+in `sessionContext`.
+
+##### ringTimeoutS?
+
+```ts
+optional ringTimeoutS?: number;
+```
+
+How long it rings before `no-answer`, in seconds. Default [DEFAULT\_CALL\_RING\_TIMEOUT\_S](#default_call_ring_timeout_s).
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+##### timeLimitS?
+
+```ts
+optional timeLimitS?: number;
+```
+
+Hard cap on the connected call, in seconds. Default [DEFAULT\_CALL\_TIME\_LIMIT\_S](#default_call_time_limit_s).
+
+##### to
+
+```ts
+to: string;
+```
+
+The number to call, E.164 (`+15555550123`). Personal data.
+
+***
+
+### PlacedCall
+
+```ts
+type PlacedCall = {
+  callId: string;
+};
+```
+
+What [stepPlaceCall](#stepplacecall) resolves: the carrier's id for the call (Twilio's `CA…` SID).
+
+#### Properties
+
+##### callId
+
+```ts
+callId: string;
+```
+
+***
+
+### PlacedCallStatus
+
+```ts
+type PlacedCallStatus = 
+  | "queued"
+  | "ringing"
+  | "in-progress"
+  | "completed"
+  | "busy"
+  | "no-answer"
+  | "failed"
+  | "canceled";
+```
+
+Where a placed call is. The last five are OVER — nothing moves off them:
+`completed` (answered and hung up), `busy`, `no-answer`, `failed` (never
+connected: a bad number, a carrier refusal), `canceled` (hung up by the API
+before it was answered). Twilio's `initiated` reads as `queued`.
 
 ***
 
@@ -3745,7 +4176,7 @@ optional name?: string;
 Filename to store, e.g. `"summary.wav"`.
 
 Worth passing even though nothing reads it: it is what
-[UploadInfo.name](#name-3) answers, so it is the name a page puts on a
+[UploadInfo.name](#name-4) answers, so it is the name a page puts on a
 download link and the string a person sees instead of an opaque id.
 
 ##### type?
@@ -3761,6 +4192,29 @@ browser given an upload with none downloads a file it will not play
 inline. There is no sniffing anywhere in the store, by design.
 
 ## Variables
+
+### DEFAULT\_CALL\_RING\_TIMEOUT\_S
+
+```ts
+const DEFAULT_CALL_RING_TIMEOUT_S: number;
+```
+
+Default [PlaceCallOptions.ringTimeoutS](#ringtimeouts): thirty seconds of ringing, then
+`no-answer` — about five rings, short of most voicemail pickups.
+
+***
+
+### DEFAULT\_CALL\_TIME\_LIMIT\_S
+
+```ts
+const DEFAULT_CALL_TIME_LIMIT_S: number;
+```
+
+Default [PlaceCallOptions.timeLimitS](#timelimits): Twilio hangs up after ten
+minutes whatever the agent is doing, so a stuck conversation cannot run up
+hours of minutes (Twilio's own default is four hours).
+
+***
 
 ### DEFAULT\_CLIENT\_ACK\_TIMEOUT\_MS
 
@@ -3908,6 +4362,26 @@ const TRANSCRIBE_WINDOW_BYTES: number;
 How much of a stored upload one outbound window carries.
 
 The recording is never held whole — see [stepTranscribeUpload](#steptranscribeupload).
+
+***
+
+### TWILIO\_ACCOUNT\_SID\_ENV
+
+```ts
+const TWILIO_ACCOUNT_SID_ENV: "TWILIO_ACCOUNT_SID" = "TWILIO_ACCOUNT_SID";
+```
+
+The step env key [stepPlaceCall](#stepplacecall) reads the Twilio account SID from.
+
+***
+
+### TWILIO\_AUTH\_TOKEN\_ENV
+
+```ts
+const TWILIO_AUTH_TOKEN_ENV: "TWILIO_AUTH_TOKEN" = "TWILIO_AUTH_TOKEN";
+```
+
+The step env key [stepPlaceCall](#stepplacecall) reads the Twilio auth token from.
 
 ***
 

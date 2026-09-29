@@ -26,6 +26,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { MAX_WORKFLOW_FIND_LIMIT } from "@alexkroman1/aai-runtime";
+import { MAX_WORKFLOW_RUN_LABEL_CHARS, normalizeRunLabel } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   bearerFor,
@@ -466,6 +467,29 @@ describe("POST /:slug/workflow-journal", () => {
     );
     expect(res.status).toBe(501);
   });
+  describe("a run's label is bounded HERE, not trusted from the guest", () => {
+    test("createRun cuts and cleans what the guest sent, and binds NULL for none", async () => {
+      // The guest's client normalizes a label before sending it, but a guest is
+      // tenant code holding its own bearer: a 1 MB "label" posted straight to
+      // this route would otherwise land in a shared table verbatim.
+      const p = await platform();
+      const bearer = await bearerFor(p.store, MINE);
+      const run = { runId: "wrun_1", workflow: "remind", status: "pending", createdAt: 1 };
+      const sent = `a\nb${"x".repeat(5000)}`;
+      await callMethodRoute(p.fetch, MINE, "createRun", { ...run, label: sent }, bearer);
+      await callMethodRoute(p.fetch, MINE, "createRun", { ...run, runId: "wrun_2" }, bearer);
+      const inserts = p.seen.filter(
+        (s) => s.sql.includes("insert into") && s.sql.includes("label"),
+      );
+      expect(inserts).toHaveLength(2);
+      const stored = inserts[0]?.params.at(-1);
+      expect(stored).toBe(normalizeRunLabel(sent));
+      expect(String(stored)).toHaveLength(MAX_WORKFLOW_RUN_LABEL_CHARS);
+      expect(String(stored)).toMatch(/^a b/);
+      expect(inserts[1]?.params.at(-1)).toBeNull();
+    });
+  });
+
   describe("the method in the path", () => {
     // What the segment buys is the REQUEST LOG — fifteen methods on one path made
     // Modal's per-request line name the slug and never the operation. What it must
