@@ -10,6 +10,6 @@ A client named with `?client=` has one conversation across its sessions.
 - `agent({ sessionContext })`: an async hook run once per connect, before the first model call, bounded at 1.5 s. Its `instructions` are appended to the system prompt for the whole session as one stable block; its `historySince` narrows what prior history is loaded verbatim. A throw or timeout is logged and the session starts without it.
 - `agent({ onSessionEnd })`: called each time a session stops, after its events are written, with `workflows` to start a keyed run (`sessionId` + `lastEventIndex`).
 - `stepClientTranscript(clientId, { since?, afterEventIndex? })` on `@alexkroman1/aai/step` reads a client's sessions back as messages and tool calls; `stubClientTranscript` on `/testing` answers it in a spec.
-- A resumed or reloaded conversation no longer loses its tool calls from the model's view: each prior call is folded into the assistant side as a short `[tool name(args) → result]` digest.
+- A resumed or reloaded conversation no longer loses its tool calls from the model's view: each prior call is seeded as the tool call and its result.
 
 The client id is not authenticated. On a server reachable from a network, knowing a client's id is enough to read its history.

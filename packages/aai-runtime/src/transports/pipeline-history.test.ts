@@ -5,6 +5,8 @@ import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
+import { pairToolCalls } from "../tool-call-pairs.ts";
+import { estimateMessageTokens, trimToTokenBudget } from "./pipeline-context-budget.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 
 describe("createPipelineHistory", () => {
@@ -213,26 +215,100 @@ describe("createPipelineHistory", () => {
     ]);
   });
 
-  test("a model view seeds the LLM with the digest, the conversation with the real result", () => {
-    // What `restoreHistory` hands over now: the tool call rendered as text on
-    // the assistant side, so the model remembers it without an orphan result.
+  test("a model view seeds the LLM with the call/result PAIR, the conversation with the result", () => {
+    // What `restoreHistory` hands over now: each prior call as the pair a live
+    // turn leaves, so the model remembers it without an orphan result — and
+    // without text shaped like a call for it to imitate (`modelHistoryOf`).
     const h = createPipelineHistory();
     const conversation: Message[] = [
       { role: "user", content: "hi" },
       { role: "tool", content: "eta=tue", toolName: "lookup_order", toolCallId: "c1" },
       { role: "assistant", content: "Tuesday." },
     ];
+    const pair = [toolCallMsg("c1"), toolResultMsg("c1")];
     h.seed(conversation, [
       { role: "user", content: "hi" },
-      { role: "assistant", content: "[tool lookup_order() → eta=tue]\nTuesday." },
-      // Filtered the same way, so a stray result cannot slip through this door.
-      { role: "tool", content: "stray", toolCallId: "c9" },
+      ...pair,
+      { role: "assistant", content: "Tuesday." },
     ]);
     expect(h.conversation).toEqual(conversation);
     expect(h.llm).toEqual([
       { role: "user", content: "hi" },
-      { role: "assistant", content: "[tool lookup_order() → eta=tue]\nTuesday." },
+      ...pair,
+      { role: "assistant", content: "Tuesday." },
     ]);
+  });
+
+  test("a model view is re-PAIRED on the way in, so a stray half cannot slip through", () => {
+    // `modelHistoryOf` never builds a half-pair; this is the door's own guard,
+    // the same one every other write goes through.
+    const log = { warn: vi.fn() };
+    const h = createPipelineHistory(undefined, { log, sid: "s1" });
+    h.seed(
+      [{ role: "user", content: "hi" }],
+      [
+        { role: "user", content: "hi" },
+        toolResultMsg("c9"),
+        { role: "assistant", content: "Hello." },
+      ],
+    );
+    expect(h.llm).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Hello." },
+    ]);
+    expect(log.warn).toHaveBeenCalledWith("Orphaned tool result dropped", {
+      sid: "s1",
+      toolCallId: "c9",
+      toolName: "lookup",
+    });
+  });
+
+  test("a seed of pairs past the cap never leaves an orphan, wherever the cut lands", () => {
+    // A long resumed conversation is capped at `DEFAULT_MAX_HISTORY` on the way
+    // in, and a turn with one call is 4 messages. `shift` trailing replies move
+    // the cut through every offset within a turn — including the one between a
+    // call and its result.
+    const turns: ModelMessage[] = [];
+    for (let i = 0; i < 60; i++) {
+      turns.push({ role: "user", content: `q${i}` }, toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));
+      turns.push({ role: "assistant", content: `a${i}` });
+    }
+    const fronts = new Set<string>();
+    for (let shift = 0; shift < 4; shift++) {
+      const tail = Array.from({ length: shift }, (_, i) => ({
+        role: "assistant" as const,
+        content: `more ${i}`,
+      }));
+      const h = createPipelineHistory();
+      h.seed([{ role: "user", content: "q0" }], [...turns, ...tail]);
+      fronts.add(h.llm[0]?.role ?? "none");
+      expect(h.llm.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
+      expect(orphanToolResults(h.llm)).toEqual([]);
+      expect(pairToolCalls(h.llm).repairs).toEqual([]);
+    }
+    // The cut moved: a window can start on a user turn, a call, or — once a
+    // stranded result is healed away — a reply.
+    expect(fronts).toEqual(new Set(["user", "assistant"]));
+  });
+
+  test("the per-request token budget never splits a seeded pair, at any limit", () => {
+    // The second trim a seeded history meets: `trimToTokenBudget` cuts the
+    // front of each REQUEST to the model's window, independently of the cap.
+    const llm: ModelMessage[] = [];
+    for (let i = 0; i < 6; i++) {
+      llm.push({ role: "user", content: `q${i}` }, toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));
+      llm.push({ role: "assistant", content: `a${i}` });
+    }
+    const total = llm.reduce((n, m) => n + estimateMessageTokens(m), 0);
+    const leading = new Set<string>();
+    for (let limit = 0; limit <= total; limit++) {
+      const sent = trimToTokenBudget(llm, limit, 0);
+      leading.add(sent[0]?.role ?? "none");
+      expect(sent[0]?.role).not.toBe("tool");
+      expect(pairToolCalls(sent).repairs).toEqual([]);
+    }
+    // The cut moved through the turn, not only across turn boundaries.
+    expect(leading).toEqual(new Set(["user", "assistant"]));
   });
 
   test("a CONSTRUCTOR seed makes the same subtraction as `seed`", () => {

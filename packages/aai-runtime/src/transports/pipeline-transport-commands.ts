@@ -17,6 +17,7 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
+import type { ModelMessage } from "ai";
 import { bytesToPcm16 } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { HeardTracker } from "./pipeline-heard.ts";
@@ -186,10 +187,10 @@ export function createPipelineCommands(deps: PipelineCommandDeps): Transport {
       runChainedTurn(instruction, "Pipeline injected turn crashed", { synthetic: true });
     },
 
-    seedHistory(messages: readonly Message[], modelView?: readonly Message[]): void {
-      // Client-resent history on reconnect; restore both views so the resumed
-      // agent keeps memory of the prior conversation — the model's with its
-      // tool calls as digests, when the caller rendered them (see `seed`).
+    seedHistory(messages: readonly Message[], modelView?: readonly ModelMessage[]): void {
+      // Rebuilt history on reconnect; restore both views so the resumed agent
+      // keeps memory of the prior conversation — the model's with its tool
+      // calls as real pairs, when the caller built them (see `seed`).
       history.seed(messages, modelView);
     },
 

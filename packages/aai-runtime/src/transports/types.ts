@@ -39,6 +39,7 @@ import type {
   SessionSourcedEventType,
 } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
+import type { ModelMessage } from "ai";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
@@ -230,12 +231,13 @@ export interface Transport {
    * context service-side (via session.resume) and omit this.
    *
    * `modelView`, when given, is what the MODEL's own list is seeded with in
-   * place of `messages` — the same conversation with each prior tool call
-   * rendered as a text digest (`modelHistoryOf` in `session-event-history.ts`),
-   * because a lone `tool` result is an orphan the provider rejects. `messages`
-   * still seeds the tool-facing view whole.
+   * place of `messages` — the same conversation with each prior tool call as a
+   * real `tool-call`/`tool-result` pair (`modelHistoryOf` in
+   * `session-event-history.ts`), because a lone `tool` result is an orphan the
+   * provider rejects and a call rendered as TEXT is one the model imitates.
+   * `messages` still seeds the tool-facing view whole.
    */
-  seedHistory?(messages: readonly Message[], modelView?: readonly Message[]): void;
+  seedHistory?(messages: readonly Message[], modelView?: readonly ModelMessage[]): void;
   /**
    * Clear the transport's conversation state (client `reset`). Pipeline mode
    * clears its message list; S2S has no client-side history to drop.

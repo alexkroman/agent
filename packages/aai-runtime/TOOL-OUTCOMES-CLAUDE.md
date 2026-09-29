@@ -143,6 +143,16 @@ instead of a reply. `capLlm` heals the same shape when the front trim lands
 between a call and its result; the seed filter is the other half of that
 invariant.
 
+**What a resume DOES seed is the pair, built from both halves.**
+`modelHistoryOf` (`session-event-history.ts`) joins each `tool` message to the
+`RestoredToolCall` with its `callId` and emits the assistant `tool-call` part
+plus the `tool-result`, exactly as a live step leaves them; a call with only one
+half (front-trimmed, or pending) is dropped. It used to render each call as
+assistant TEXT, `[tool name({…}) → …]`, and the model imitated it: on the
+AssemblyAI gateway a later turn SPOKE `[tool think(…) … to=functions.prepare_call
+…` instead of calling, so nothing ran. Never put text shaped like a call in the
+model's own turns — not even a sentence about one.
+
 ## What a tool SAYS, and the two places the outcome string forks
 
 `ToolDef.messages` (`aai/sdk/tool-messages.ts`) lets a tool declare its own

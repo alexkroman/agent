@@ -61,10 +61,11 @@ describe("createSessionCore — history", () => {
     ]);
   });
 
-  test("the MODEL is seeded with each prior tool call as a digest, ctx.messages with the result", async () => {
+  test("the MODEL is seeded with each prior tool call as a real pair, ctx.messages with the result", async () => {
     // A lone `tool` result in the LLM view is an orphan the provider rejects,
-    // and dropping it lost the call from the model's memory. The transport
-    // gets both lists: the real one for tools, the digest one for the model.
+    // dropping it lost the call from the model's memory, and rendering it as
+    // text taught the model to SPEAK calls. The transport gets both lists: the
+    // real one for tools, the paired one for the model.
     const transport = { ...makeTransport(), seedHistory: vi.fn() };
     const { core } = makeCore({ transport });
     await core.start();
@@ -87,7 +88,24 @@ describe("createSessionCore — history", () => {
 
     expect(transport.seedHistory).toHaveBeenCalledWith(messages, [
       { role: "user", content: "where is my order" },
-      { role: "assistant", content: '[tool lookup({"id":"4471"}) → {"eta":"tue"}]\nTuesday.' },
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { id: "4471" } },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "lookup",
+            output: { type: "text", value: '{"eta":"tue"}' },
+          },
+        ],
+      },
+      { role: "assistant", content: "Tuesday." },
     ]);
   });
 

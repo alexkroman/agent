@@ -11,10 +11,16 @@
 // The second block pins the other candidate paths (an invalid call, a fatal
 // tool error, a barge-in mid-execution), which already leave a paired history:
 // if one of them regresses, it fails here rather than in a caller's session.
+//
+// The third is the RESUME door: a rebuilt history's prior calls must reach the
+// model as the same pairs, never as text (`modelHistoryOf`).
 
+import type { SessionEventBody } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
 import { makeLogger } from "../_test-utils.ts";
+import { historyFromEvents, modelHistoryOf } from "../session-event-history.ts";
+import { stampSessionEvent } from "../session-event-stream.ts";
 import { FatalToolError } from "../tool-error-policy.ts";
 import {
   llmCalls,
@@ -183,5 +189,49 @@ describe("the other candidate paths already leave a paired history", () => {
     expect(aborted).toBe(true);
     expect(unansweredCalls(second)).toEqual([]);
     expect(log.warn).not.toHaveBeenCalledWith("Orphaned tool call repaired", expect.anything());
+  });
+});
+
+describe("a RESUMED conversation's tool calls reach the model as pairs", () => {
+  test("the request after a seed carries the call, its result under the same id, then the reply", async () => {
+    // End to end through the transport: the session's event log, rebuilt
+    // (`historyFromEvents`), rendered for the model (`modelHistoryOf`), seeded
+    // (`seedHistory`), and read back off the provider request the next turn
+    // makes. The digest text this replaced was imitated live — the model spoke
+    // `[tool think(…) … to=functions.prepare_call …` instead of calling.
+    const log: SessionEventBody[] = [
+      { type: "user-transcript.committed", text: "where is my order" },
+      { type: "tool.called", toolCallId: "tc-1", toolName: "lookup", args: { id: "4471" } },
+      { type: "tool.completed", toolCallId: "tc-1", result: "eta=tue" },
+      { type: "agent-transcript.committed", text: "Tuesday." },
+    ];
+    const { messages, toolCalls } = historyFromEvents(log.map((body) => stampSessionEvent(body)));
+    const logger = makeLogger();
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({ steps: [NEXT_REPLY] }),
+      executeTool: vi.fn(async () => "result"),
+      toolSchemas: [noopToolSchema],
+      logger,
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.seedHistory?.(messages, modelHistoryOf(messages, toolCalls));
+    stt.last()?.fireFinal("are you sure");
+    await vi.waitFor(() => {
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
+    });
+    const prompt = promptOf(llmCalls(opts).calls[0]).filter((m) => m.role !== "system");
+    await t.stop();
+
+    expect(prompt.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant", "user"]);
+    expect(idsOf(prompt, "tool-call")).toEqual(["tc-1"]);
+    expect(idsOf(prompt, "tool-result")).toEqual(["tc-1"]);
+    expect(partsOf(prompt[1] as PromptMessage)).toEqual([
+      expect.objectContaining({ type: "tool-call", toolName: "lookup", input: { id: "4471" } }),
+    ]);
+    expect(resultFor(prompt, "tc-1")).toEqual({ type: "text", value: "eta=tue" });
+    expect(unansweredCalls(prompt)).toEqual([]);
+    expect(JSON.stringify(prompt)).not.toContain("[tool ");
+    expect(logger.warn).not.toHaveBeenCalledWith("Orphaned tool result dropped", expect.anything());
   });
 });

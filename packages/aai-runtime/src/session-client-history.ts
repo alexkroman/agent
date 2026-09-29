@@ -18,10 +18,10 @@
  *
  * {@link CLIENT_HISTORY_TOKEN_BUDGET} tokens, estimated at
  * {@link CHARS_PER_TOKEN} characters each, counted over what the model would
- * READ (transcript text, and each tool call's digest) rather than over events.
- * A tokenizer here would be a provider dependency for a number whose job is
- * "bounded", not "exact"; chars/4 is the usual English estimate and errs a
- * little high for speech. The budget is spent newest-first and the session it
+ * READ (transcript text, and each prior tool result as it is seeded again) rather
+ * than over events. A tokenizer here would be a provider dependency for a number
+ * whose job is "bounded", not "exact"; chars/4 is the usual English estimate
+ * and errs a little high for speech. The budget is spent newest-first and the session it
  * runs out in contributes its most recent events, so what is dropped is always
  * the oldest. The existing 200-message cap (`DEFAULT_MAX_HISTORY`, applied by
  * `historyFromEvents`) still bounds the result independently.
@@ -51,7 +51,7 @@ import type {
 } from "@alexkroman1/aai/step";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
-import { historyMessageOf, toolDigest } from "./session-event-history.ts";
+import { historyMessageOf, seededToolResult } from "./session-event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
 import type { ClientSessionRecord } from "./session-state/clients.ts";
 import type { SessionStateBackend } from "./session-state/store.ts";
@@ -117,7 +117,9 @@ async function readIndexed(deps: ClientHistoryDeps, sessionId: string): Promise<
 function costOf(event: SessionEvent): number {
   const message = historyMessageOf(event);
   if (message) return message.content.length;
-  if (event.type === "tool.completed") return toolDigest({ result: event.result }).length;
+  // What the model reads of a result again, which is capped — see `modelHistoryOf`.
+  // The call half (a name and capped arguments) is small and uncharged.
+  if (event.type === "tool.completed") return seededToolResult(event.result).length;
   return 0;
 }
 
