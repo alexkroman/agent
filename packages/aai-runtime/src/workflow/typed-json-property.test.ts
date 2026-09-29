@@ -418,7 +418,7 @@ describe("round-trip totality over a generated domain", () => {
   });
 
   /**
-   * Coverage floors — see AGENTS.md, "Property tests run on fast-check". Each sits
+   * Coverage floors — see .agents/testing.md, "Property tests run on fast-check". Each sits
    * UNDER the observed minimum across the recorded number of runs, not at a
    * fraction of the mean: what a generator reaches is correlated within a run, so
    * these distributions have long left tails.

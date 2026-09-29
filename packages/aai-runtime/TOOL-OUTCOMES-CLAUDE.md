@@ -14,7 +14,7 @@ guide, for the reason `JOURNAL-CLAUDE.md` is one: Claude Code auto-loads only
 `CLAUDE.md`, so a sibling is read on demand and is the right shape for
 REFERENCE. The two RULES an author or an editor of this package has to carry
 around — read a tool arm by ROLE, and a fifth producer of a `role: "tool"`
-message goes through `_tool-result-message.ts` — are in `CLAUDE.md`, under "A
+message goes through `_tool-result-message.ts` — are in `src/CLAUDE.md`, under "A
 settled tool call writes a `role: "tool"` message" and "A tool's throw is
 CLASSIFIED". Everything below is the argument behind them: the four producers,
 the two traps that are silent when you get them wrong, and the four guard rules
@@ -22,8 +22,8 @@ in `tool-error-policy.ts`.
 
 The AUTHOR-facing account of the `"tool"` arm — what it is, that it does not
 reach the model, and that filters by role were unaffected — is
-`packages/aai/CLAUDE.md`, "`ctx.messages` has a THIRD arm, and it used to be
-dead". This file is the runtime half and does not repeat it.
+`packages/aai/src/sdk/CLAUDE.md`, "`ctx.generate`, `ctx.messages`,
+`ctx.delegate`". This file is the runtime half and does not repeat it.
 
 ## One shape, four producers, and a CAP that makes them agree
 

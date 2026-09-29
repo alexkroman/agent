@@ -28,7 +28,7 @@
  * - **`sliceOf` is VALUE-LEVEL** — one body, one window, one round trip. It
  *   carries no coverage floor and none would mean anything: every draw exercises
  *   the same single claim, and the remedy for a gap is another claim rather than
- *   a counter (`AGENTS.md`, "Property tests run on fast-check").
+ *   a counter (`.agents/testing.md`, "Property tests run on fast-check").
  * - **`partsPlan` WALKS the branch structure** — decline, one-part resumable
  *   re-cut, ordinary fan-out — so it counts which of the three it reached and
  *   floors each. A generator that stopped producing multi-part plans would

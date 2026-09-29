@@ -61,7 +61,7 @@
  * `claimAttempt` is not called, and no `releaseAttempt` is owed. A charge is a
  * LEASE whose ceiling bounds ABANDONMENT — a worker that dies mid-body cannot
  * release, so the outstanding charge is the only evidence the attempt happened
- * (see "An attempt is a LEASE, not a tally" in `packages/aai-runtime/CLAUDE.md`).
+ * (see "An attempt is a LEASE, and it EXPIRES" in `packages/aai-runtime/JOURNAL-CLAUDE.md`).
  * These calls have no body to abandon: they read a global synchronously and
  * append once, so there is nothing a lease could be evidence of and nothing to
  * retry. Charging one would spend an author's `maxAttempts` budget — a budget

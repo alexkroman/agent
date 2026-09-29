@@ -2,18 +2,10 @@
 
 Guidance for coding agents (and humans) working in this repository.
 
-The root `CLAUDE.md` is a one-line import of this file (`@AGENTS.md`) and
-carries no content of its own — `AGENTS.md` is the name every other agent tool
-looks for, so keeping the guide here means one canonical copy rather than a
-per-tool set that drifts. Edit THIS file; never paste content into
-`CLAUDE.md` (`check-claude-md.mjs` and
-`packages/aai-gates/src/claude-md-limit.test.ts` both fail if you do — this
-line used to cite an `agents-md-shim.test.ts` that has never existed in the
-tree, which mattered because the parenthetical is the whole reason an author
-believes the rule is checked). Package guides stay
-named `CLAUDE.md`: Claude Code auto-loads a package's guide when you work in
-that directory, which is the behaviour those files exist for, and
-`konsistent.json` requires one per package.
+The root `CLAUDE.md` is one line, `@AGENTS.md`, so every agent tool reads one
+copy. Edit THIS file, never `CLAUDE.md` (`claude-md-limit.test.ts` fails).
+Package and directory guides are named `CLAUDE.md` so Claude Code auto-loads
+them; `konsistent.json` requires one per package.
 
 ## Overview
 
@@ -24,18 +16,9 @@ containing `agent.ts`. The CLI bundles and deploys them to the managed platform.
 
 ## Detailed references
 
-**This file holds what is needed on EVERY task. Everything below is read on
-demand.** The split is the one nitro uses, and it exists because a guide is
-loaded into an agent's context in full: this file was 118,862 characters — 99%
-of the 120,000-char cap — and every task paid for all of it before doing any
-work. What moved is REFERENCE: the argument behind a gate, a convention's
-history, the shape of a config. What stayed is what an agent has to know before
-it can act at all.
-
-Nothing was deleted. If a package guide cites a heading you cannot find here,
-it is in one of these. **`pnpm docs:list` prints every guide in the repo with
-one line on what it covers and one on when to read it** — cheaper than opening
-them to find out:
+**This file holds what is needed on EVERY task**; everything else is read on
+demand. `pnpm docs:list` prints every guide with one line on what it covers and
+one on when to read it. Repo-wide reference lives in `.agents/`:
 
 <!-- guide-index:references -->
 | Reference | Covers |
@@ -47,9 +30,9 @@ them to find out:
 | [`.agents/testing.md`](.agents/testing.md) | Vitest conventions, harness declaration, snapshots, teardown, virtual time, coverage, the per-package configs, test env vars, and the property-test rules. The TIER table stays in AGENTS.md — it is needed on every task; this is the detail behind it. |
 <!-- /guide-index:references -->
 
-Add to the reference that owns the surface, not to this file. The test for
-which one a section belongs in is the one above: would an agent need it before
-it could start work, or only once it is already in that area?
+Procedures live in skills under `.claude/skills/` and load when their
+description matches the task: `pr-workflow`, `changeset-release`,
+`api-contract-epoch-bump`, and `expose-guest-route`.
 
 ## Commands
 
@@ -65,13 +48,10 @@ pnpm check:affected      # Only check packages affected by changes since main
 pnpm docs:list           # Every agent guide: what it covers, when to read it
 ```
 
-**Never type `turbo run <task>` across the workspace directly** — the six
-fan-out scripts go through `node scripts/with-worker-budget.mjs turbo run …`,
-because turbo's concurrency and each task's vitest pool are ONE mechanism and
-only bound the machine when `TURBO_CONCURRENCY` is set. Unset, `pnpm test` ran
-~40 processes on 4 cores and timed out `aai-cli`'s bundler specs on contention
-alone. That script, `_turbo-concurrency.mjs` and `vitest.shared.ts` carry the rest;
-a longer timeout is never the fix.
+**Never type `turbo run <task>` across the workspace directly** — use the
+`pnpm` scripts, which set `TURBO_CONCURRENCY` via
+`scripts/with-worker-budget.mjs` so turbo and vitest's pool share one CPU
+budget. A longer timeout is never the fix for contention.
 
 ### Test tiers
 
@@ -88,59 +68,20 @@ the assertion.**
 | Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
 | Templates | `pnpm test:templates` | template agent example tests | 5s |
 
-**A LIVE eval REPORTS and does not gate** — a measurably noisy instrument must
-not block a merge. Runs repeat and the report carries a spread. What `pnpm check`
-and CI do run is the same files with `AAI_EVAL_STUB=1`: a SCRIPTED model, so the
-run is deterministic and free and what it gates is wiring, not behaviour (see
-"A keyless run gets a SCRIPTED model" in `packages/aai-runtime/CLAUDE.md`).
-`packages/aai-evals/CLAUDE.md` owns the live half.
-
-They used to be separated by TIMEOUT, a proxy for the rule above that stops being
-one as soon as two tests are slow for unrelated reasons. `pipeline-fuzz` (pure
-memory) and `platform-schema` (needs a database) shared one tier, timeout, retry
-policy and serial block, so neither was configured for its own failure mode — and
-`pnpm test:integration` took **721 seconds to evaluate twelve tests**, 50 of 63
-skipping for want of a database. It is 10 seconds now.
-
-**Real NETWORK is the unit tier's boundary and lands a test in SCENARIO**, which
-the table left implicit: the unit row forbade it and no other row claimed it.
-`aai-runtime/agent-server.scenario.test.ts` is the worked case — two specs that
-open a live voice session, so the runtime really dials the STT provider and is
-really refused, and they had sat in the unit tier failing on any machine with
-egress while passing wherever that connect fails fast. Note what the fix was NOT:
-their assertions resolve promptly, and what overran the 5s budget was TEARDOWN
-draining three provider connect attempts, so the tier is the answer and a longer
-deadline is not. A test in that tier for network reasons alone needs no gate —
-there is nothing to resolve and nothing to skip.
-
-**Membership is a NAMING CONVENTION** — `*.integration.test.ts`,
-`*.scenario.test.ts` and `*.eval.test.ts`, excluded by every unit config and
-selected one each by the scripts, so a new test needs no config edit (see
-"Integration- and scenario-tier membership" below for the deliberate exceptions).
-
-**No tier carries a `retry`** — a tier that retries has classified its own
-failures as noise; `vitest.slow.config.ts` carries the argument.
-
-**Fifteen scenario suites need a real Postgres, and without one they SKIP** — a
-silent skip being the worst outcome available, since that tier is the only thing
-in the repo that can see a driver-level bug. `pnpm test:pg` resolves a local
-database and runs the tier against it; a skip ANNOUNCES itself via
-`describeWithPg` / `describeWithStack`; and `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK`
-turn a skip into a hard failure, declared in the `check:scenario` task's `env` in
-`turbo.json` because strict env mode would otherwise strip them and the
-enforcement would silently do nothing. **`AAI_REQUIRE_STACK` is only exported
-when a stack really resolved, so `scripts/with-test-pg.mjs --require-stack` is
-what makes "no stack" a FAILURE** — without the flag every failure path (no
-CLI, stack down, unparsable `supabase status -o env`) printed two lines and
-exited 0, so `supabase start` succeeding while that output changes shape gave a
-green platform-stack job in which `realtime-rls.scenario.test.ts`, the only
-walrus/RLS leak test in the repository, never ran. CI passes the flag; `pnpm
-test:pg` deliberately does not, because a developer on a plain 5432 is entitled
-to the narrow arm with a printed reason. **`AAI_REQUIRE_REGISTRY` is the same shape
-one tier up**, in `check:e2e`'s `env` — see `packages/aai-cli/CLAUDE.md`. The
-whole gate, including the vitest collection trap that makes `pgUrl()` illegal at
-the top of a gated `describe` body, is in `packages/aai-server/CLAUDE.md`,
-"Gating a suite on a real Postgres".
+- **Membership is a NAMING CONVENTION** (`*.integration.test.ts`,
+  `*.scenario.test.ts`, `*.eval.test.ts`), so a new test needs no config edit;
+  exceptions are in `.agents/testing.md`.
+- **Real NETWORK puts a test in SCENARIO**, even when its assertions are fast.
+- **No tier carries a `retry`** — a tier that retries has classified its own
+  failures as noise (`vitest.slow.config.ts`).
+- **A LIVE eval REPORTS and does not gate**; `pnpm check` runs the same files
+  with `AAI_EVAL_STUB=1` (a scripted model), gating wiring, not behaviour.
+- **Postgres-backed scenario suites SKIP without a database, and say so**
+  (`describeWithPg` / `describeWithStack`). `AAI_REQUIRE_PG` /
+  `AAI_REQUIRE_STACK` (and e2e's `AAI_REQUIRE_REGISTRY`) turn a skip into a
+  failure and must be in the task's `env` in `turbo.json`, or strict env mode
+  strips them. Never call `pgUrl()` at the top of a gated `describe` body — see
+  "Gating a suite on a real Postgres" in `packages/aai-server/CLAUDE.md`.
 
 ### Single-package shortcuts
 
@@ -171,103 +112,102 @@ Thirteen workspace packages under `packages/`:
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
-| `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime: `createRuntime`/`createAgentServer`, the session core, transports, provider openers, the workflow API. What runs an `agent.ts`; an `agent.ts` imports none of it |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, console, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is PINNED to the registry in `cli.test.ts` — it named a removed `storage` for several releases |
-| `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs`. Holds `toolchain/`, which the guest image's Docker context needs beside that artifact |
-| `packages/aai-guest-core/` | `aai-guest-core` | The five modules both guest modes need (private): `rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` (the `run_code`/tool executor) and `limits`. It exists to make the split a DAG — see its guide |
-| `packages/aai-guest-studio/` | `aai-guest-studio` | The studio coding agent as it runs in a guest (private): 60 modules plus the generated `studio-prompts/` copies |
+| `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime (`createRuntime`/`createAgentServer`, session core, transports, providers, workflow API): what runs an `agent.ts`, which imports none of it |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, console, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is pinned to the registry in `cli.test.ts` |
+| `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): runs the agent inside each Modal Sandbox, built into one `dist/harness.mjs`; holds the guest image's `toolchain/` |
+| `packages/aai-guest-core/` | `aai-guest-core` | The modules both guest modes need (private): `rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` (the `run_code`/tool executor) and `limits` |
+| `packages/aai-guest-studio/` | `aai-guest-studio` | The studio coding agent as it runs in a guest (private), plus the generated `studio-prompts/` copies |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
-| `packages/aai-gates/` | `aai-gates` | The repo's meta-gate suite (private): the specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts. Imports no workspace package |
-| `packages/aai-evals/` | `aai-evals` | Behaviour eval LIBRARY (private): the recording runner, the spread report and the assertion vocabulary over the session event stream. Importable — five subpath exports; it holds no targets of its own beyond its level-1 behaviour eval |
+| `packages/aai-gates/` | `aai-gates` | Meta-gate suite (private): specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts |
+| `packages/aai-evals/` | `aai-evals` | Behaviour eval LIBRARY (private): recording runner, spread report, assertion vocabulary |
 
-**Dependency flow:** every other package depends on `@alexkroman1/aai` (via
-`workspace:*`), and `aai-runtime` sits one layer above it — the CLI, the guest,
-the server and the evals all take the host runtime from there, while
-`aai-runtime` imports only `aai`. `aai-server` depends on
-`aai-guest` only to resolve its built artifact (`aai-guest/harness` →
-`dist/harness.mjs`, baked into the guest snapshot image) — it never imports
-guest source, and the guest never imports server code; that hard boundary is
-the reason the guest is its own package.
+**Dependency flow:**
 
-**The guest is now THREE packages, and the shape is forced rather than
-chosen.** `aai-guest-core` → nothing in the trio, `aai-guest-studio` → core,
-`aai-guest` → both. Two could not express it: the entry dispatches studio mode
-while studio reaches back for `rpc`/`types`/`bundle`/`auth`/`http`, so
-whichever package holds the entry must depend on studio and studio then cannot
-depend on it. `aai-guest` keeps the entry, the `./harness` subpath and
-`dist/harness.mjs`, so `aai-server`'s image pin is untouched and tsdown still
-bundles all three into one artifact. `packages/aai-guest-core/CLAUDE.md`
-carries the argument. The one edge to the CLI is
-`aai-guest` → `aai-cli`, and only for its four public subpaths: the three
-build hooks (`/worker-bundler`, `/client-bundler`, `/typecheck`), because the
-studio builds workspaces through the CLI's own Vite pipeline and typechecks
-them with the CLI's own gate rather than carrying a second bundler, plus
-`/project-config`, because Publish materializes a project the CLI then parses
-and the writers for those two files belong to the CLI. Do not widen it —
-nothing else may import from the CLI, and the CLI must never import from the
-server or the guest.
+- Every package depends on `@alexkroman1/aai` (`workspace:*`). `aai-runtime`
+  sits one layer above it and imports only `aai`; the CLI, guest, server and
+  evals take the host runtime from `aai-runtime`.
+- `aai-server` depends on `aai-guest` only to resolve its built artifact
+  (`aai-guest/harness` → `dist/harness.mjs`, baked into the guest image). It
+  never imports guest source, and the guest never imports server code.
+- The guest is three packages: `aai-guest-core` → nothing in the trio,
+  `aai-guest-studio` → core, `aai-guest` → both; tsdown bundles them into one
+  artifact (`packages/aai-guest-core/CLAUDE.md`).
+- The one edge to the CLI is `aai-guest` → `aai-cli`, for four public subpaths
+  only: `/worker-bundler`, `/client-bundler`, `/typecheck` (the studio builds
+  with the CLI's own pipeline) and `/project-config`. Do not widen it — nothing
+  else may import the CLI, and the CLI must never import the server or guest.
+- `aai-studio-server` owns three more edges: → `aai-server` (subpath exports
+  only — a konsistent rule must end `/*` to match them), →
+  `aai-studio-client/starters`, and a DEV edge → `aai-evals`.
+- `aai-evals` may import only the SDK and `@alexkroman1/aai-runtime/eval`
+  (`evals-package-boundary`).
 
-Three edges sit outside that spine, and all three belong to
-`aai-studio-server`. `aai-studio-server` → `aai-server` is the repo's LARGEST:
-158 import sites across all 36 of that package's subpath exports, and not one
-bare `aai-server` specifier — which is why a boundary rule naming the bare name
-matched nothing for as long as it existed (konsistent's matcher is exact unless
-the pattern ends `/*`). Then `aai-studio-server` → `aai-studio-client/starters`,
-the starter list the studio itself ships, so the starter eval grades the same
-set the product offers rather than a copy that drifts. And
-`aai-studio-server` → `aai-evals`, which is a DEV edge onto a library: the eval
-tier's runner, recorder and spread report, imported through that package's
-subpath exports.
-
-**Both of the last two used to be `aai-evals`'s**, and moving them is what made
-that package a library rather than a tier with its own targets. Watch the
-direction: `aai-evals` may import the SDK and `@alexkroman1/aai-runtime/eval`
-and nothing else, so a studio target that lands back in it is reaching past the
-published surface — which is how an eval starts passing for the wrong reason,
-and what `evals-package-boundary` is a total deny for.
-
-**Publishable packages must use the `@alexkroman1/` scope.** The unscoped
-names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
-publishing under those names returns 404. The `scripts/check-publish-names.mjs`
-script enforces this at CI time.
+**Publishable packages must use the `@alexkroman1/` scope** — the unscoped
+`aai`, `aai-ui`, `aai-cli` belong to other npm publishers
+(`scripts/check-publish-names.mjs`).
 
 ### Package guides
 
-**This file holds only what is repo-wide.** Everything package-specific lives
-in that package's own `CLAUDE.md`, which Claude Code loads when you work in
-that directory — go there first, and put new package-specific rules there
-rather than here:
+**This file holds only what is repo-wide.** Package rules live in the
+package's `CLAUDE.md` and area rules in the governed directory's `CLAUDE.md`;
+Claude Code loads both when you work there:
 
 <!-- guide-index:packages -->
 | Guide | Covers |
 | --- | --- |
-| `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode, self-hosting (`npm start`) |
+| `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode, self-hosting (`npm start`) and `aai build --target` |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels, and what being a LIBRARY excludes. It is not the only package with `*.eval.test.ts` — `aai-templates` ships 25, `aai-guest` one and `aai-studio-server` the starter eval |
 | `packages/aai-gates/CLAUDE.md` | The meta-gate suite: what a gate spec may share, adding a `guard-invariants` rule, `check.yml`'s push list and concurrency group |
 | `packages/aai-guest-core/CLAUDE.md` | Why the shared guest core is its own package (the cycle two packages could not express), where `StudioSession` is declared and why, the un-underscored `test-utils.ts`, and how coverage attribution decides where a test lives |
-| `packages/aai-guest-studio/CLAUDE.md` | The studio package boundary: what came with it, the two paths that deliberately reach out (`toolchain/`, the scaffold drift gate), and where the session scratch directory now lands |
-| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
-| `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
+| `packages/aai-guest-studio/CLAUDE.md` | The studio coding agent in a guest: the package boundary, the agent as an ordinary `agent()`, workspace claims and reified package.json, `read_logs`, Publish, and its tests |
+| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / two modes (plus warm-up), user-shipped runtime, dev-prod parity, `run_code`, guest network access + SSRF, credential separation, and the snapshot image the harness runs from |
+| `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the `host-internal` seam, the published surface, and package-wide rules |
 | `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, security architecture, auth, telephony, durable-workflow routes, stores/locks |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
-| `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
+| `packages/aai-studio-server/CLAUDE.md` | Browser studio service and the deployment's composition root: package layout, the one-deployment/two-packages composition (bundling, the shared-core exports map, public origin, cross-service invalidation, retirement and shutdown), dev serving, and the studio's eval and fuzz suites |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
-| `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`mountPage()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
-| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.generate`, what persistence a tool gets, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
+| `packages/aai-ui/CLAUDE.md` | Browser client package: exports and subpaths, the public-vs-internal surface rule, key files, and pointers to the directory guides for the session core, hooks, workflow apps, components, worklets and contracts. |
+| `packages/aai/CLAUDE.md` | SDK package-wide rules: the `sdk/` vs `host/` boundary, the subpath exports and what decides membership, session modes, the canonical agent-config schema, data flow, and pointers to the runtime-side rules |
 <!-- /guide-index:packages -->
 
-One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
-`aai-docs` workspace — the narrative documentation SITE (Astro + Starlight
-under `docs/src/`), both TypeDoc renderings, the committed markdown reference,
-and the `typescript@6` pin — **and, because they answer three versions of one
-question, the API REPORTS and the capability EPOCHS as well.**
-See "The published surface is described by three committed artifacts".
+Directory guides govern one area of a package and load when you work in it:
 
-Some files sit outside the table for a different reason — SIBLINGS of their
-package's guide rather than second package guides:
+<!-- guide-index:directories -->
+| Guide | Covers |
+| --- | --- |
+| `packages/aai-guest/src/harness/CLAUDE.md` | The harness's agent mode: boot contract, the bundle fetch and hash check, the manage surface and its derived token, guest-owned idle/drain lifecycle, the log ring, the debug-logging forward, and `/phone`. |
+| `packages/aai-runtime/src/CLAUDE.md` | Rules for aai-runtime's flat `src/` modules: session lifecycle and vocabularies, `createAgentServer`, tools, subagents, the prompt suffix, dialogs/personas wiring, hook commits, the upload store, egress pools, reply metrics |
+| `packages/aai-runtime/src/contracts/CLAUDE.md` | aai-runtime's capabilities and epochs: how a signature change is classified, when a capability splits, and the frozen compatibility templates |
+| `packages/aai-runtime/src/integration/CLAUDE.md` | The integration-tier property tests: the S2S model-based fuzz, the pipeline fuzz, and the history-rollback oracle |
+| `packages/aai-runtime/src/telephony/CLAUDE.md` | Where the phone-call design lives, and the one telephony remainder in this package |
+| `packages/aai-runtime/src/transports/CLAUDE.md` | Pipeline and S2S transport behaviour: `speech_started`, per-turn prompt resolution, heard-history, the context budget, rollback at the cap, reset, push-to-talk |
+| `packages/aai-runtime/src/workflow/CLAUDE.md` | aai-runtime's durable-workflow half: journal selection, webhook URLs, the public vs platform base URL, and the typed-JSON codec's escape |
+| `packages/aai-runtime/src/workflow/api/CLAUDE.md` | The workflow HTTP API's error-to-status classification and its upload-id boundary |
+| `packages/aai-server/src/guest/CLAUDE.md` | The platform's view of a guest: the one platform→guest forward and its header policy, route exposure, the bearer gate, and exec-env/boot wiring. |
+| `packages/aai-server/src/platform/CLAUDE.md` | The platform's own Postgres coordination: the per-slug mutation lock, the connection budget and pool routing, the admin pool as a throughput bound, and the PlatformEvents change-signal rules. |
+| `packages/aai-server/src/sandbox/CLAUDE.md` | The backend-independent sandbox lifecycle: backend selection, the slot cache, the broker as the only routing point, one sandbox per slug fleet-wide, and the teardown-before-boot rule. |
+| `packages/aai-studio-server/src/CLAUDE.md` | The studio service's feature rules: workspaces, the CLI round-trip, projects, coding-agent sessions and the fleet-wide sandbox, previews and their event streams, project secrets, agent logs, Publish, LLM selection, auth, and rate limits. |
+| `packages/aai-studio-server/src/prompts/CLAUDE.md` | The studio coding agent's system prompt: the per-kind preambles, the scaffold reference they embed, the project kind that selects one, and what the prompt must say about the agent's capabilities. |
+| `packages/aai-templates/src/CLAUDE.md` | The template gate specs in `aai-templates/src/`: API coverage and its allowlist, the durability and layout gates, `templates.test.ts`'s scaffold pins, prompt discovery, and what this package's tsconfig type-checks |
+| `packages/aai-ui/src/CLAUDE.md` | The browser session core (statecharts, fatal latch, handshake guard, client-config lookup), the public hooks, the fuzz harnesses, and the workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads, reload recovery) over the workflow HTTP API. |
+| `packages/aai-ui/src/components/CLAUDE.md` | The React component kit: memoized-props and TypeDoc rules, the conversation view and chrome pieces, `AutoScroll`, forms and `<WorkflowFields>`, and the workflow-page components (progress, run panel, upload bar, audio result). |
+| `packages/aai-ui/src/contracts/CLAUDE.md` | This package's capability contracts: the ten capabilities, what each promises, qualified ids, and the `.tsx` compatibility fixtures. |
+| `packages/aai-ui/src/worklets/CLAUDE.md` | The capture and playback AudioWorklets: the jitter buffer, gap concealment, underrun stats, capture sample rate and constraints, the dead-mic probe, and the worklet stress/bench harnesses. |
+| `packages/aai/src/host/CLAUDE.md` | The SDK's Node-only modules: guest network access and `ssrf.ts`, the bounded builtin fetch, `/step-files`, `/coding-tools` |
+| `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice presets, persistence, workflow apps and the upload client |
+| `packages/aai/src/sdk/providers/CLAUDE.md` | STT/LLM/TTS/S2S provider descriptors: the shipped providers and their rules, the AssemblyAI gateway default model and its measurement, voices, adding a provider, the stage registries, and the "Session mode resolved" settings log |
+<!-- /guide-index:directories -->
+
+One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
+`aai-docs` workspace (the Astro + Starlight site, both TypeDoc renderings, the
+committed markdown reference, the `typescript@6` pin) and the API reports and
+capability epochs.
+
+Siblings are reference files beside a package guide, read on demand (Claude Code
+auto-loads only `CLAUDE.md`):
 
 <!-- guide-index:siblings -->
 | Sibling | Covers |
@@ -281,8 +221,10 @@ package's guide rather than second package guides:
 | `packages/aai-server/PLATFORM-SOCKET-CLAUDE.md` | The platform session socket |
 | `packages/aai-server/SCHEMA-CLAUDE.md` | The platform database schema |
 | `packages/aai-server/TRACING-CLAUDE.md` | Platform tracing |
+| `packages/aai-studio-server/GITHUB-SYNC-CLAUDE.md` | Sync to GitHub: the GitHub App connect flow, the unauthenticated callback's two guards, the one-commit Git Data API push, the empty-repository bootstrap, and ref-conflict retries |
 | `packages/aai-studio-server/SSE-CLAUDE.md` | The studio's two long-lived event streams: shutdown, timeouts and heartbeats for the only long-lived responses the combined deployment serves |
 | `packages/aai-studio-server/STARTER-EVAL-CLAUDE.md` | The studio starter eval: its five modules and why they are in that package rather than in `aai-evals`, the five tool-output regexes and what would retire them, the second in-process eval in `aai-guest`, and the opt-in template behaviour contract |
+| `packages/aai-templates/EXEMPLARS-CLAUDE.md` | Which template is the worked example of which SDK primitive, and the per-template accounts behind `research-handoff-agent`, `transcription-workflow`, `meeting-recap-agent` and the dialog templates |
 | `packages/aai-templates/FFMPEG-CLAUDE.md` | `call-audit-workflow` as the reference use of `@alexkroman1/aai/ffmpeg`, and what cutting a recording at human boundaries takes |
 | `packages/aai-templates/PORTS-CLAUDE.md` | Porting a framework's example to a voice agent |
 | `packages/aai-templates/STEP-IO-CLAUDE.md` | A template's step I/O |
@@ -292,79 +234,28 @@ package's guide rather than second package guides:
 | `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
 <!-- /guide-index:siblings -->
 
-**All three tables are GENERATED, from each guide's own frontmatter** — a
-`summary` (the row's text) and a `read_when`. Hand-kept, they drifted: four
-siblings were once missing, and this paragraph's lead-in said "Fifteen files"
-over a table of sixteen when the switch landed. A new guide opens with that
-block and `pnpm sync:guide-index` rewrites the rows between the markers;
-`check:guide-index` fails on a guide with no header or a stale table. That
-matters most for a sibling, which is where a section pushed out of a full guide
-LANDS — the file most likely to appear next and least likely to get written
-down.
-
-konsistent permits them (`workspace-package-layout` requires a `CLAUDE.md` and
-forbids nothing else), but Claude Code auto-loads only `CLAUDE.md`, so a sibling
-is read on demand and is only the right shape for REFERENCE — a build recipe —
-never for a rule someone needs resident. Prefer moving a section to the package
-that owns the surface; reach for a sibling when no other package owns it and the
-guide is at the cap.
-
-### A guide says what to do in code that EXISTS
-
-There used to be a `research/` directory for issue-backed plans — a design doc
-for a change that did not exist yet — kept out of the guides because a guide is
-loaded into an agent's context on every task and everything in it competes for
-that budget. It is gone, along with the rule 10 that checked its frontmatter,
-and the half of the split worth keeping is the one that survives it: a guide
-documents code that exists. A design for a change nobody has made yet belongs on
-the issue that owns it, not in a file an agent reads while working on something
-else — that habit is directly how the root guide reached 233,000 characters. When
-a plan ships, the rule it establishes lands in the owning package's guide as a
-few lines.
+**All three tables are GENERATED** from each guide's `summary` / `read_when`
+frontmatter by `pnpm sync:guide-index` (`check:guide-index` fails when stale).
 
 ## Conventions
 
 - **Runtime**: Node everywhere (host, platform server, and guest sandbox)
 - **Frameworks**: React (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
-  **Every package needs a `lint` script** (`biome check .`) or `turbo run
-  lint` — and so `pnpm check` — silently skips it; `aai-templates` had none.
-  Filename conventions are Biome's job too (`useFilenamingConvention`,
-  kebab-case), which replaced a never-invoked `ls-lint` whose config existed
-  but which no pipeline ran and which blocked for 30+ minutes at repo root.
-  A `tools/` file is exempted by an override: its name mirrors the
-  snake_case LLM tool name.
-
-  **`^2.5.12` is a FLOOR, and biome is the one dependency exempt from the
-  release-age quarantine** — argued at `minimumReleaseAgeExclude` in
-  `pnpm-workspace.yaml`. 2.5.9-2.5.11 report an already-awaited
-  `await pTimeout(…)` as floating, costing nine suppressions; 2.5.12 also
-  retires the one this cost at 2.5.8. Do not lower the floor.
-
-- **Exports**: every entry carries BOTH conditions — `@dev/source` naming
-  `./src/…` and `types`/`import` naming `./dist/…`. There is no pre-publish
-  rewrite: a consumer without `customConditions` resolves to `dist`.
+- **Linting**: Biome, auto-run on staged files by the pre-commit hook. **Every
+  package needs a `lint` script** (`biome check .`), or `turbo run lint` skips
+  it silently. Filenames are kebab-case (`useFilenamingConvention`); `tools/`
+  files are exempt because they mirror snake_case LLM tool names. Biome
+  `^2.5.12` is a FLOOR, exempt from the release-age quarantine
+  (`pnpm-workspace.yaml`) — do not lower it.
 
 ### Package layout
 
-**Every package is `src/` plus its configs.** Source — `.ts`, `.tsx`, tests,
-fixtures, snapshots, the capability contracts — lives in `packages/<pkg>/src/`;
-the manifests, tsconfigs, tool configs, guides, `etc/` (the API reports) and
-static assets (`index.html`, `public/`, `aai-ui`'s published `styles.css`,
-`aai`'s `skills/`) stay at the package root. `aai-templates` keeps `templates/`
-and `scaffold/` there too: that TypeScript is a shipped product authored FOR a
-user's project, checked under the SCAFFOLD's tsconfig by
-`check:template-types`, not source this package builds.
-
-`tsconfig.build.json` therefore sets `rootDir: "src"` and `include: ["src"]`,
-which keeps a repo artifact out of `dist/` by construction rather than by an
-`exclude` list somebody keeps current — `aai-ui` shipped the frozen contract
-examples that way. **The emitted layout is unchanged**: with every entry under
-`src/`, tsdown and tsc both take it as the common root, so `dist/index.js` and
-`dist/sdk/protocol.d.ts` are where they were and no published `exports` target
-moved — only `@dev/source` names `src/`. Enforced by `check:package-layout`,
-not konsistent: `paths` is a discovery glob, so a package that lost its `src/`
-would match nothing and pass.
+**Every package is `src/` plus its configs.** Code, tests, fixtures and
+contracts live in `packages/<pkg>/src/`; manifests, configs, guides, `etc/` and
+static assets stay at the root (plus `aai-templates`' `templates/` and
+`scaffold/`, shipped product checked by `check:template-types`).
+`tsconfig.build.json` sets `rootDir: "src"` so nothing else reaches `dist/`.
+Enforced by `check:package-layout`.
 
 ### File naming conventions
 
@@ -378,37 +269,20 @@ would match nothing and pass.
 
 ### `_test-utils.ts` per package (not interchangeable)
 
-Each package's helper module is its own, named for that package's domain, and a
-spec reaches for the one beside it rather than importing another package's. The
-paths and the roster each module owes are the **`test-helper-modules`**
-konsistent convention now — a hand-kept copy lived here and had gone stale in
-four places (`flush()` had moved packages, `sleep()` was never a test helper at
-all, and the largest module in the repo was missing from the list). The
-published pair, `@alexkroman1/aai/testing` and `/testing/vitest`, is
-**`published-testing-split`**: anything that INSTALLS or RESTORES is
-`/testing/vitest`, and `testing.ts` may not import `vitest` at all.
-`packages/aai/CLAUDE.md`'s subpath table carries the inventory and the argument.
+Each package's helper module is its own; a spec uses the one beside it, never
+another package's. The paths and roster are the **`test-helper-modules`**
+konsistent convention. In the published pair, anything that INSTALLS or
+RESTORES goes in `@alexkroman1/aai/testing/vitest`, and `testing.ts` may not
+import `vitest` (**`published-testing-split`**; inventory in
+`packages/aai/CLAUDE.md`).
 
 ### `@dev/source` custom export condition
 
-Package.json exports use a custom `@dev/source` condition so that
-TypeScript source (`.ts`) is resolved during development, while compiled
-`.js` dist paths are used in production:
-
-```jsonc
-// package.json
-"exports": {
-  ".": {
-    "@dev/source": "./index.ts",     // ← resolved in dev (via tsconfig)
-    "types": "./dist/index.d.ts",
-    "import": "./dist/index.js"      // ← resolved in production
-  }
-}
-```
-
-This is enabled by `customConditions: ["@dev/source"]` in the root
-`tsconfig.json`. During dev, imports like `import { X } from "@alexkroman1/aai"`
-resolve directly to `.ts` source — no build step needed.
+Every export names `"@dev/source": "./src/…"` FIRST, then `types`/`import`
+under `./dist/…`. The root `tsconfig.json`'s `customConditions:
+["@dev/source"]` resolves workspace imports to source with no build step; a
+consumer without it gets `dist`. Condition order matters (first match wins),
+which is why `.syncpackrc.json`'s `sortExports` names `@dev/source` first.
 
 ### Import rules
 
@@ -423,65 +297,26 @@ resolve directly to `.ts` source — no build step needed.
 
 ### Disambiguating cross-package names
 
-**Eight names are published by two packages at once.** Settle any claim here
-against `API-EXPORTS.json` — it records the SUBPATH each name comes from, which
-is the whole question. Seven are on `aai` and `aai-ui`, each a re-export of the
-single `aai` declaration — one concept with two reference pages, not a
-collision: `ClientConfigResponse` and `SessionErrorCode` (`/protocol`; the
-latter's union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
-`WorkflowOutputOf`, `WorkflowRunStatus` and `isTerminal` (`/workflow-api`).
-
-**No real COLLISION is left, and the last two are worth remembering.** The
-smaller was `StartOptions`: `/workflow-api`'s `{ key, notify }` for starting a
-run, and `aai-cli/start`'s project-server options — now `ProjectServerOptions`.
-The larger was `SessionCore` — one word for the two sides of one wire, neither
-reference page naming the other, and both halves declared in a file called
-`session-core-types.ts`:
-
-| Name | `aai-runtime` (root) | `aai-ui` (root) |
-| --- | --- | --- |
-| `SessionCore` (was) | the SERVER session, bridging a `Transport` to the client protocol — now `ServerSession` | the BROWSER session (socket + audio + state) — now `BrowserSession` |
-
-That is the shape to watch for rather than the outcome: two packages naming the
-same concept from opposite ends, so the word is right in each file and useless
-in an autocomplete list spanning both. Each name says which side of the wire it
-is now, and neither reader has to know which package they landed in.
-
-The table carried four rows before that; what the `/internal` split resolved,
-and why renaming the runtime halves was affordable at all, is in
-`packages/aai-runtime/CLAUDE.md`.
-
-The near-miss an AUTHOR meets is three workflow-client factories, none of them a
-collision; `packages/aai-ui/CLAUDE.md` tells them apart.
+A name published by both `aai` and `aai-ui` (e.g. `SessionErrorCode`,
+`WorkflowApi`) is a re-export of the one `aai` declaration; `API-EXPORTS.json`
+records each name's subpath. When two packages name one concept from opposite
+ends of the wire, name each by its side (`ServerSession` in `aai-runtime`,
+`BrowserSession` in `aai-ui`). The three workflow-client factories are told
+apart in `packages/aai-ui/CLAUDE.md`.
 
 ### Concurrency primitives (use these, don't hand-roll)
 
-The repo's recurring async-coordination patterns are reified as small
-primitives. **The catalogue — every primitive, its home module and the argument
-for it — is the `concurrency-primitives` konsistent convention**, which pins
-each one's location so the roster cannot go stale, plus
-`packages/aai/CLAUDE.md`, "Concurrency primitives". Go there before
-re-inventing one at a call site; `guard-invariants` rules 2, 3, 4, 19, 21, 22,
-23 and 31 are what catch a hand-rolled copy in a function body.
+The catalogue is the **`concurrency-primitives`** konsistent convention plus
+"Concurrency primitives" in `packages/aai/src/sdk/CLAUDE.md`; `guard-invariants`
+rules 2, 3, 4, 19, 21, 22, 23 and 31 catch hand-rolled copies. Two are
+repo-wide:
 
-Two are repo-wide rather than this SDK's, and stay here:
-
-- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
-  and aai-server) — never a hand-rolled `Promise.race` with a timer; the
-  losing branch's late rejection and timer cleanup are exactly what gets
-  re-derived wrong. The guest harness is no exception: tsdown bundles its
-  npm dependencies (p-timeout included) into `dist/harness.mjs` — only the
-  vite/rolldown build toolchain stays external to the bundle.
-- **Combining abort signals**: use native `AbortSignal.any([...])` (sources
-  held weakly — no unlink bookkeeping); the pipeline transport combines the
-  session signal with each turn's controller this way.
+- **Timeouts**: use `p-timeout`, never a hand-rolled `Promise.race` with a
+  timer (the losing branch's late rejection and timer cleanup are what get
+  re-derived wrong). tsdown bundles it into the guest harness too.
+- **Combining abort signals**: use native `AbortSignal.any([...])`.
 
 ### The published surface is described by three committed artifacts
-
-Three generated, committed descriptions of what the four publishable packages
-expose, each with its own gate, and **all three are documented together in
-[`docs/CLAUDE.md`](docs/CLAUDE.md)** — they answer three different questions
-about one surface and used to be argued in three places:
 
 | Artifact | Gate | Question it answers |
 | --- | --- | --- |
@@ -489,277 +324,97 @@ about one surface and used to be argued in three places:
 | `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` + `.../contracts/compatibility/**` | `pnpm check:api-contracts` | is that move BREAKING, and for whom |
 | `docs/api/**`, `docs/dist/**` | `pnpm check:docs-md`, the turbo `docs` task | what does it MEAN (the doc comments) |
 
-Four things a change to a published package owes, without reading further:
-
-- **Regenerate rather than hand-edit** — `pnpm api-report`, `pnpm docs:md`. All
-  three trees are derived, and all three gates fail on a stale one.
-- **A capability whose hash moved has to be RECORDED before it can land**:
-  `node scripts/api-contracts.mjs --update` when the check says the change is
-  provably compatible (a revision of the same epoch — no example owed), else
-  `--bump <pkg>:<capability> --drop "<reason>"` (or `--retain`, epoch N still
-  compiles, with a frozen example). Run `pnpm typecheck` FIRST — the frozen
-  examples it reddens are the older epochs to drop. Names are qualified per
-  package (`aai-ui:workflow`), and ambiguity is REFUSED, never resolved by
-  precedence.
-- **A new subpath export defaults INTO all three** — each is a deny-list, so it
-  fails until somebody writes down why it should be out.
-- **A `--bump` is the moment to ask what should come OUT.** Read
-  `template-api-allowlist.json` at one: it records the exports no shipped
-  example exercises, and a bump only ever asks about the names that MOVED.
-
-**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**, including what a new
-CONTRACT package owes. This section used to be two, "Published type signatures
-are a committed report" and "The authoring surface is versioned in epochs" —
-the titles three package guides still cite as living in the root; both are
-there under those same headings, with the `@internal`-surface ratchet, the
-load-bearing properties of an epoch (revisions, one epoch per branch, one owner
-per hashed type), why capabilities rather than entry points,
-and the two mechanical notes.
+All three are derived: regenerate, never hand-edit. **A moved capability hash
+must be RECORDED before it can land**, and a new subpath export defaults INTO
+all three and fails until covered or excused in writing. The procedure is the
+`api-contract-epoch-bump` skill; the mechanism is in
+[`docs/CLAUDE.md`](docs/CLAUDE.md).
 
 ### The authoring guide ships inside the SDK
 
-`scaffold/CLAUDE.md` is the one source of truth for how to write an aai agent,
-and `scripts/sync-agent-guide.mjs` materializes it as
-`packages/aai/AGENT_GUIDE.md` so it ships in the `aai` tarball and cannot
-describe a different release than the SDK beside it. It is a REPO-LEVEL script
-rather than a build step in `aai`, because `aai` may import no sibling package
-and a build step reading from `aai-templates` would invert that;
-`check:agent-guide` keeps the copy honest. **The SDK copy is the only one a
-scaffolded project has**: `layerScaffold` filters `scaffold/CLAUDE.md` out of
-the copy and writes a ~30-line pointer at
-`node_modules/@alexkroman1/aai/AGENT_GUIDE.md` instead, so a project carries no
-120KB snapshot to go stale on its next `pnpm update`. See "The authoring guide
-ships inside the SDK" in `packages/aai-templates/CLAUDE.md` for the drift it
-prevents and why the shipped SKILL carries no API guidance of its own.
+`scaffold/CLAUDE.md` is the one source of truth for writing an aai agent;
+`pnpm sync:agent-guide` copies it to `packages/aai/AGENT_GUIDE.md`
+(`check:agent-guide`). See the same heading in `packages/aai-templates/CLAUDE.md`.
 
 ### API reference docs
 
-The third artifact of the three above: two renderings of the published type
-surface, both from TypeDoc over the built `dist/*.d.ts` of `aai`, `aai-ui` and
-four of `aai-runtime`'s subpaths. `pnpm docs:api` builds the whole GitHub Pages
-site into `docs/dist/**` in ONE Astro build — the handwritten guide, plus the
-reference at `/reference/`, which `starlight-typedoc` renders as Starlight pages
-rather than TypeDoc's own HTML; `pnpm docs:md` renders `docs/api/**` as
-**committed** markdown, so an agent can `cat` the API reference instead of a
-rendered site, and `pnpm check:docs-md` fails when it is stale.
+`pnpm docs:api` builds the GitHub Pages site; `pnpm docs:md` writes the
+committed markdown reference an agent can `cat` (`docs/api/**`). See
+[`docs/CLAUDE.md`](docs/CLAUDE.md).
 
-**The GUIDE is the site's other half, and it is gated like code.** Its pages
-live in `docs/src/content/docs/`; every ` ```ts ` fence on them compiles under
-`check:doc-examples` exactly as a JSDoc example does, and a broken internal
-link fails the build. `turbo run docs` — which CI already runs on every PR —
-builds both halves, so neither can rot silently. `docs/CLAUDE.md` carries the
-rest.
+### Updating agent guides
 
-**All of it is in [`docs/CLAUDE.md`](docs/CLAUDE.md)** — the two commands and
-what gates each, the `@module`/entry-point rule a new subpath export owes, the
-five load-bearing options in `typedoc.markdown.json`, why the markdown
-rendering is committed and floored, why `aai-cli` and `aai-runtime` are
-deliberately absent, why `docs/` pins its own `typescript@6`, and why knip has
-to be told about the second config. `pnpm check:doc-examples` — every
-```` ```ts ```` fence in published-package doc comments, READMEs, the scaffold
-guide and the studio prompts compiles under the scaffold tsconfig — is
-documented there too.
+**Put a rule where an agent will be when it needs it:**
 
-### Git hooks (lefthook)
+| Where | What belongs there |
+| --- | --- |
+| `AGENTS.md` | what every task needs before acting: tiers, package map, naming and import conventions, workflow pointers |
+| `.agents/*.md` | repo-wide reference read once you are in an area (a gate's detail, a config's shape) |
+| `packages/<pkg>/CLAUDE.md` | rules for the whole package |
+| `<dir>/CLAUDE.md` | rules for the files in that directory — the deepest directory that still covers them all |
+| `<PKG>/<NAME>-CLAUDE.md` sibling | on-demand reference when no directory owns it |
+| `.claude/skills/<name>/SKILL.md` | a step-by-step procedure; the guide keeps a one-line pointer |
+| a guard (`guard-invariants`, konsistent, a gate spec) | anything mechanically checkable — prose is the fallback |
 
-- **pre-commit**: runs `biome check --write` on staged files (via
-  `scripts/pre-commit-format.mjs`) and `syncpack lint` when package.json
-  changes.
+**Write each rule as: the rule, one sentence of why when it is not obvious, and
+a link** to what enforces it; if a guard enforces it, say so in one line.
+History — what broke, measurements, what the rule replaced — belongs in commit
+messages and PR bodies. Never drop a rule, gotcha or security constraint to
+save space; compress it.
 
-  **A PARTIALLY-staged file is skipped, and that is the whole reason the script
-  exists** (from vercel/eve's `pre-commit-fmt.mjs`). The hook was
-  `biome check --write {staged_files} && git add {staged_files}`. Biome rewrites
-  the WORKING TREE file, so on a file with some hunks staged and the rest not,
-  that `git add` staged the whole thing and the author's unstaged work went into
-  a commit they never chose — reproduced on a scratch repo, one staged and one
-  unstaged line, and the unstaged line was in the index afterwards. It is
-  silent, and `git add -p` / `git commit -p` are exactly the workflows that
-  produce it. Skipping is the conservative half: an unformatted file fails CI
-  loudly, where the alternative rewrites a commit nobody can see. The skip is
-  ANNOUNCED — a silent one reads as "biome found nothing".
-- **pre-push**: blocks pushes to main/master, **blocks pushes when branch
-  is behind origin/main** (must rebase first), checks for merge conflicts
-  with main, **verifies changeset exists for changed packages**, and runs
-  `pnpm check`.
-
-### Worktree gotchas
-
-- Run `unset GIT_DIR` before `pnpm changeset status` in worktrees
-  (lefthook sets GIT_DIR which confuses changeset's repo detection).
-- Always use `pnpm install --frozen-lockfile` in worktrees to avoid
-  modifying the lockfile. Fall back to `pnpm install` only if frozen
-  fails (new deps added on the branch).
-- Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
-
-### Updating AGENTS.md
-
-When you make changes that affect architecture, security model, conventions,
-or gotchas, update the guide that OWNS the surface — the package's own
-`CLAUDE.md` (see "Package guides" above) for anything package-specific, this
-file only for repo-wide rules. Adding to the root instead of the package guide
-is how this file grew to 233k characters and had to be split.
-
-**There are now three places a repo-wide rule can go, and the question is when
-it is needed rather than what it is about.** This file is loaded into every
-task's context before any work starts, so what belongs here is what an agent
-must know to act at all: the tier table, the package map, the naming and import
-conventions, the workflow. What belongs in `.agents/` (see "Detailed
-references") is everything read once you are already in an area — the argument
-behind a gate, a config's shape, a convention's history. And a rule that can be
-MECHANICAL belongs in neither.
-
-The split is not cosmetic. This file was 118,862 characters against a
-120,000-char cap, so every task in the repo paid ~30k tokens of context before
-reading a line of code, and the next well-justified paragraph had nowhere to
-go. It is 38k now. When a reference file approaches the cap in turn, split it
-the same way rather than moving anything back.
-
-**`check:claude-md` prints WHERE a nearly-full guide's characters went** — its
-five biggest `##` sections, largest first — because the remedy is always a
-decision about which section and a bare total leaves that to be measured by
-hand. It is the same move `check-file-length.mjs` makes one level down. Read
-that report before shaving prose: `aai-ui/CLAUDE.md` turned out to hold 49% of
-itself in one section, which no amount of tightening elsewhere would have found.
-
-**The root guide is `AGENTS.md`, and `CLAUDE.md` is one line: `@AGENTS.md`** —
-the two-name split and why it exists are in this file's opening paragraph.
-Every guide must stay under 120,000 characters (`check:claude-md`, and
-`claude-md-limit.test.ts`; see `.agents/ratchets.md`), the scaffold's
-included — and that cap covers `.agents/` too —
-that one is exempt from the "repo docs" rule, being a product artifact shipped
-to users, but not from the cap.
-
-**And a rule that belongs in a GUARD does not belong here.** Most of what
-follows in this file is a rule with a story attached, and a story is only
-enforcement when a reviewer remembers it. `scripts/guard-invariants.mjs` is
-where the mechanically-checkable half lives — see `.agents/ratchets.md`.
-Before
-adding a paragraph that says "always X" or "never Y", check whether it can be
-a numbered rule there instead; prose is the fallback, not the default.
+A guide documents code that EXISTS; designs belong on their issue.
+Auto-loaded guides (this file, package and directory `CLAUDE.md`,
+`docs/CLAUDE.md`) are capped at 40,000 characters, with a shrink-only baseline
+for files still over it; reference files (`.agents/`, siblings, the scaffold
+guide) at 120,000. Both are enforced by `check:claude-md`, which also prints a
+nearly-full guide's largest sections.
 
 ## PR workflow
 
-**Default:** When finishing a development branch, always push and create a
-Pull Request (don't ask — just do it).
-
-**Before pushing**, rebase on the latest `main` to avoid merge conflicts:
-
-```sh
-git fetch origin main
-git rebase origin/main
-```
-
-The pre-push hook will automatically check for conflicts with `main` and
-block the push if any are found. This prevents PRs from being opened with
-merge conflicts.
-
-Run `pnpm check:local` **before your first commit** on a PR branch. This
-catches the most common issues that historically required follow-up commits:
-
-1. **Syncpack version drift**: When bumping a dependency, also update
-   `packages/aai-templates/scaffold/package.json` if it has the same dep.
-   Note syncpack does NOT check the scaffold (it is excluded in
-   `.syncpackrc.json`) — run `pnpm sync:scaffold` to sync it. `check:scaffold`
-   now fails when it is stale, so this is a fix rather than something to
-   remember; the same bump usually also owes `pnpm sync:guest-toolchain`, which
-   `check:guest-toolchain` holds the same way.
-2. **Test assertion mismatches**: After changing output formats or error
-   messages, run `pnpm test` and update affected assertions.
-3. **Lint in related files**: Pre-commit only lints staged files. Run
-   `pnpm lint` to catch lint issues in files affected by your change.
-4. **Type-level tests**: After changing public API types (`toAgentConfig`,
-   `AgentConfig`, etc.), run `pnpm vitest run --project aai-types`
-   to verify type contracts haven't regressed. Update `.test-d.ts` files
-   if the change is intentional.
-5. **Dependencies orphaned by a deletion**: removing the last consumer of a
-   package leaves the `devDependencies` entry and its lockfile tree behind.
-   `pnpm check:knip` catches this and is in the local subset for that
-   reason — it's the one failure you won't notice while working, because
-   deleting code puts your attention on what goes away, not on what the
-   removal strands. When a PR deletes a directory, expect a dependency to
-   come out with it.
-
-   **It also reports unused EXPORTS, and the setting that makes that useful
-   is `includeEntryExports` — set on the private packages only.** With it on,
-   knip reports a file's exports even when the file is an entry point; that is
-   right where every importer lives in this repo, and wrong for `aai`,
-   `aai-ui`, and `aai-cli`, whose entry exports are the published API and
-   whose consumers (templates, user projects) knip cannot see. Reporting those
-   is what produced the 174-finding run that kept the whole check switched off
-   for so long. The published packages still get the check for everything
-   *not* reachable from a subpath export — an internal helper whose last
-   caller went away, which is the case worth catching. `types` stays excluded
-   pending an `@internal` tagging pass.
+When a branch is done, push it and open a PR without asking. Run
+`pnpm check:local` before the first commit and rebase on `origin/main` before
+pushing. The pre-push hook blocks pushes to `main`, a branch behind or
+conflicting with `origin/main`, a missing changeset and a failing `pnpm check`.
+In a worktree, `unset GIT_DIR` before `pnpm changeset status` and install with
+`--frozen-lockfile`; never edit `pnpm-lock.yaml` directly. Full procedure: the
+`pr-workflow` skill; changesets: the `changeset-release` skill.
 
 ## A new guest route must declare how the PLATFORM exposes it
 
-`aai dev` serves the guest's own routes directly, so a feature is developed
-against a server where the guest's dispatch table is the whole API; deployed,
-almost nothing works that way, and it has landed twice. The two declarations
-that close it are pinned by the **`guest-route-exposure`** konsistent
-convention, whose description carries the argument. **See "A new guest route
-must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`**
-for the four exposure kinds, which half is a test and which is
-`guard-invariants` rule 12, and why exposure is decided by who CALLS a route.
+`aai dev` serves every guest route directly, but the deployed platform does
+not, so each new route must declare its exposure (the **`guest-route-exposure`**
+konsistent convention; `guard-invariants` rule 12). The procedure is the
+`expose-guest-route` skill; the four exposure kinds are in "A new guest route
+must declare how the PLATFORM exposes it" in `packages/aai-server/CLAUDE.md`.
 
 ## Security architecture
 
-The security model is documented where the boundaries live:
-
-- **Sandbox isolation, credential separation, auth, `run_code`, the platform's
-  own threat model** — `packages/aai-server/CLAUDE.md`.
-- **What a guest may do, what the harness contract exposes, guest network
-  access + SSRF (`aai/host/ssrf.ts` is the implementation), and credential
-  separation** — `packages/aai-guest/CLAUDE.md`.
-- **The `sdk/` vs `host/` dependency boundary** — `packages/aai/CLAUDE.md`.
-- **Where the CLI is allowed to send a user's API key** —
-  `packages/aai-cli/CLAUDE.md`.
-
-Two rules general enough to state here: **the Modal container is the security
-boundary** (no in-process capability stripping is relied on anywhere), and
-**every AssemblyAI key on the platform is user-provided** — there is no
-platform-owned provider credential, and no credential resolution path may fall
-back to the host's `process.env`.
+- **The Modal container is the security boundary**; no in-process capability
+  stripping is relied on anywhere.
+- **Every AssemblyAI key on the platform is user-provided**: there is no
+  platform-owned provider credential, and no credential resolution may fall
+  back to the host's `process.env`.
+- The rest lives with the boundary: sandboxing, auth, `run_code` and the threat
+  model in `packages/aai-server/CLAUDE.md`; guest capabilities, network access
+  and SSRF (`aai/host/ssrf.ts`) in `packages/aai-guest/CLAUDE.md`; the `sdk/` vs
+  `host/` boundary in `packages/aai/CLAUDE.md`; where the CLI may send a user's
+  API key in `packages/aai-cli/CLAUDE.md`.
 
 ### Known limitations
 
-- **Biome's promise rules cannot see a `node:` builtin**, so the type-aware half
-  runs on oxlint instead: `pnpm lint:promises` (tsgolint, on tsgo — no JS
-  compiler API needed) holds `no-floating-promises` and `no-misused-promises`,
-  and retired `guard-invariants` rule 23. A file is linted against its NEAREST
-  `tsconfig.json`, which is why `scripts/tsconfig.json` exists. The measurements
-  are in `packages/aai-gates/CLAUDE.md`.
-- **Type-level tests**: eleven `.test-d.ts` files — eight in `aai`
-  (`sdk/define.test-d.ts`, `sdk/define-agent-groups.test-d.ts`,
-  `sdk/_session-slot-caps.test-d.ts`, `sdk/env-types.test-d.ts`,
-  `sdk/dialog.test-d.ts`, `sdk/testing.test-d.ts`,
-  `sdk/workflow-types.test-d.ts`, `sdk/providers/llm/llm.test-d.ts`), one in
-  `aai-ui` (`hooks.test-d.ts` — the four generic hooks a custom client is
-  written against, and the `BrowserSession` seal) and two in `aai-runtime`
-  (`providers/providers.test-d.ts`, `runtime.test-d.ts` — the `Runtime` seal).
-  Each package's are the `aai-types` / `aai-ui-types` / `aai-runtime-types`
-  vitest projects. Most subpath exports are still uncovered, and
-  **`dialog.test-d.ts` and `workflow-types.test-d.ts` each have a blind spot a
-  template hit on day 1**: each pins only the shape its own fixtures use — see
-  "A `sendFrom` goes BELOW `execute`" and "A body that names `WorkflowInputOf`
-  obliges the DEF to carry a type" in `packages/aai-templates/CLAUDE.md`.
-  (Their RUNTIME export lists are pinned — see `sdk/exports.test.ts` — which is
-  a different guarantee.) `hooks.test-d.ts` pins the deliberate `any`s
-  (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes, because
-  tightening one to `unknown` is a breaking change for every untyped
-  client and should fail here rather than in a user's build.
+- **Biome's promise rules cannot see a `node:` builtin**, so
+  `pnpm lint:promises` (oxlint/tsgolint) holds `no-floating-promises` and
+  `no-misused-promises`. A file is linted against its NEAREST `tsconfig.json`,
+  which is why `scripts/tsconfig.json` exists (`packages/aai-gates/CLAUDE.md`).
+- **Type-level tests cover little of the surface**: most subpath exports have
+  no `.test-d.ts`, and each existing one pins only the shapes its fixtures use
+  (two blind spots are in `packages/aai-templates/CLAUDE.md`).
+  `hooks.test-d.ts` pins the deliberate `any`s (`DefaultToolResult`,
+  `ToolCallInfo.args`): tightening one to `unknown` breaks untyped clients.
 
 ### Open testability work
 
-The `aai-server` logger seam once named here is DONE — every line in that
-package goes through `logger.ts`, silenced in specs by `captureLogs()` rather
-than `spyOn(console, …)` (see "Every line goes through `logger.ts`" in
-`packages/aai-server/CLAUDE.md`). What remains is the same job elsewhere:
-`aai-studio-server` and `aai-cli` still write to `console.*` in places, and the
-SDK publishes a `Logger` either could take.
-
-**The other half is COUNTED now: `guard-invariants` rule 34** baselines every
-`vi.mock`/`vi.doMock` per test file (134 across 74 files when it landed, the
-heaviest in `aai-cli`'s dev-server suites). Each one marks a unit with no seam
-to hand a fake through; the list is the to-do list, and `pnpm debt:report`
-prints it beside the other ledgers.
+`aai-studio-server` and `aai-cli` still write to `console.*`; route them
+through a `Logger` as `aai-server` does (`logger.ts`, `captureLogs()`).
+`guard-invariants` rule 34 baselines every `vi.mock`/`vi.doMock` — each marks a
+unit with no seam for a fake; `pnpm debt:report` lists them.

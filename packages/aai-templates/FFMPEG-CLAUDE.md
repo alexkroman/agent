@@ -8,8 +8,8 @@ read_when: >-
 
 # packages/aai-templates — ffmpeg in the templates
 
-A SIBLING of `packages/aai-templates/CLAUDE.md`, read on demand: that guide is
-at its 120,000-character cap, and this section is REFERENCE for someone already
+A SIBLING of `packages/aai-templates/CLAUDE.md`, read on demand: this section
+is REFERENCE for someone already
 working in this area.
 
 ## ffmpeg is what lets a desk cut a recording where a HUMAN would

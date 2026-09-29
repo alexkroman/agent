@@ -6,7 +6,7 @@
  * ## The number that had no breakdown
  *
  * The busiest guest→platform call is the journal RPC, measured at ~840 ms of
- * server time (`packages/aai-runtime/CLAUDE.md`, "A journal read is a round
+ * server time (`packages/aai-runtime/JOURNAL-CLAUDE.md`, "A journal read is a round
  * trip"), and until now that was a total. `withReserved` in `aai-server` splits
  * the SERVER's half of it — how long the admin reservation waited, how long the
  * statement ran — which answers "was it our pool" and leaves the rest of the

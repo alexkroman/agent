@@ -60,6 +60,7 @@
     "check:test-assertions": "node scripts/check-test-assertions.mjs",
     "check:untyped-imports": "node scripts/check-untyped-imports.mjs",
     "check:workflows": "node scripts/check-workflows.mjs",
+    "claude-md:update": "node scripts/check-claude-md.mjs --update",
     "debt:report": "node scripts/debt-report.mjs",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "docs:api": "pnpm --filter aai-docs docs",
