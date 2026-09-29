@@ -9,12 +9,15 @@
  * below is read from what the SESSION did, never from the tool's name.
  */
 
-import { agent, endSession, tool } from "@alexkroman1/aai";
+import { type AgentDef, agent, endSession, tool } from "@alexkroman1/aai";
+import { sleep } from "@alexkroman1/aai/internal";
 import { withTools } from "@alexkroman1/aai/manifest";
+import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
 import { registerLlmKind } from "../providers/resolve.ts";
+import { watchSessionEndHook } from "./_session-end.ts";
 import { openEvalSession } from "./session.ts";
 import { END_CALL_TOOL, simulateCall } from "./simulate.ts";
 import { installStubLlm } from "./stub-llm.ts";
@@ -175,5 +178,83 @@ describe("endSession(ctx) in an eval session", () => {
       callerLlm.release();
       agentLlm.release();
     }
+  });
+});
+
+/** What the runtime hands `onSessionEnd`, for calling a watched hook directly. */
+const HOOK_ARGS: Parameters<NonNullable<AgentDef["onSessionEnd"]>>[0] = {
+  sessionId: "s",
+  env: {},
+  lastEventIndex: 0,
+  workflows: createStubWorkflows(),
+};
+
+describe("the ending turn waits for onSessionEnd", () => {
+  /** A hook whose write lands a tick AFTER it was called, as a network write does. */
+  function slowWrite(rows: string[], ms: number) {
+    return async () => {
+      await sleep(ms);
+      rows.push("ended");
+    };
+  }
+
+  test("the turn that hung up returns with the hook's write already landed", async () => {
+    const { llm, providerEnv, release } = scripted({ steps: GOODBYE });
+    const rows: string[] = [];
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Caller", onSessionEnd: slowWrite(rows, 50) }), {
+        end_call: hangUp(true),
+      }),
+      llm,
+      providerEnv,
+    });
+    try {
+      const turn = await session.say("That's everything, bye!");
+      expect(turn.endedSession).toBe(true);
+      // No `vi.waitFor`: the fire-and-forget hook has settled by now.
+      expect(rows).toEqual(["ended"]);
+    } finally {
+      await session.close();
+      release();
+    }
+  });
+
+  test("close() waits for the hook its own stop fires", async () => {
+    const { llm, providerEnv, release } = scripted({
+      steps: [[{ type: "text", text: "Sure." }]],
+    });
+    const rows: string[] = [];
+    const session = await openEvalSession({
+      agent: agent({ name: "Caller", onSessionEnd: slowWrite(rows, 50) }),
+      llm,
+      providerEnv,
+    });
+    await session.say("Hi.");
+    await session.close();
+    release();
+    expect(rows).toEqual(["ended"]);
+  });
+
+  test("a hook that never settles is waited for only so long", async () => {
+    const watched = watchSessionEndHook(
+      agent({ name: "Caller", onSessionEnd: () => new Promise<void>(() => undefined) }),
+      20,
+    );
+    // Not called yet: nothing to wait for.
+    await watched.settled();
+    // Called and left pending, as the runtime leaves it.
+    void watched.agent.onSessionEnd?.(HOOK_ARGS);
+    const started = Date.now();
+    await watched.settled();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test("a hook that rejects is settled, and its rejection still reaches the runtime", async () => {
+    const watched = watchSessionEndHook(
+      agent({ name: "Caller", onSessionEnd: () => Promise.reject(new Error("db down")) }),
+    );
+    const result = watched.agent.onSessionEnd?.(HOOK_ARGS);
+    await expect(result).rejects.toThrow("db down");
+    await expect(watched.settled()).resolves.toBeUndefined();
   });
 });

@@ -78,9 +78,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    });
    ```
 
-   Everything is real except the microphone and the speaker: your tools run,
-   your prompt runs, the session's own event stream is what you assert over.
-   Two things to know before reading a green run:
+   Everything is real except the microphone and the speaker: your tools, your
+   prompt, the session's own event stream. Before trusting a green run:
 
    - **With a provider key it uses a LIVE model** — it spends tokens, and it is
      a noisy instrument. One failure is a question, not a verdict; re-run before
@@ -94,8 +93,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    **Who is calling** is a suite or case option (a case's `null` clears it):
    `clientId`, `phone` and `call` are what `sessionClientId`,
    `sessionClientPhone`, `sessionCall` and your `sessionContext` see; a call it
-   refuses reads as `session.refused`. A tool's
-   `endSession(ctx)` really hangs up: `turn.endedSession`, `session.ended`.
+   refuses reads as `session.refused`. A tool's `endSession(ctx)` really hangs
+   up (`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
    `network: evalNetwork({ routes })` answers every `fetch` your tools, builtins
    and steps make, and refuses the rest; read it back as `ctx.network`. A
    failing case prints the conversation under its assertion.

@@ -66,7 +66,7 @@ import { createRuntimeWithSeams } from "../runtime.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { SessionRefusedError } from "../session-attach-end.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
-import { type EvalSessionEnd, watchSessionEnd } from "./_session-end.ts";
+import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
 import { assertTurnMeasurable, measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
 import { saidIn, TURN_ENDS } from "./events.ts";
@@ -210,13 +210,16 @@ async function openWithFakes(
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
   // The agent's own hook, watched rather than replaced — see `_session-identity.ts`.
   const observed = observeSessionContext(options.agent);
+  // And its `onSessionEnd`, so the turn that hung up can wait for what it
+  // wrote — see `_session-end.ts`.
+  const endHook = watchSessionEndHook(observed.agent);
   // The seams variant, for `generate` — a host-only option (`HostRuntimeOptions`).
   const runtime = createRuntimeWithSeams({
     // `omitUndefined`, not `...omitUndefined({ llm })`: the conditional spread
     // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
     // out, and the truthiness spelling is the one its regex cannot see.
     agent: {
-      ...observed.agent,
+      ...endHook.agent,
       stt: fake.stt,
       tts: fake.tts,
       ...omitUndefined({ llm: options.llm }),
@@ -375,8 +378,10 @@ async function openWithFakes(
       from,
     );
     // An end this turn asked for has finished stopping before the turn is read,
-    // so `onSessionEnd` has fired and nothing more lands in the turn's events.
+    // so nothing more lands in the turn's events — and the `onSessionEnd` that
+    // stop called has SETTLED (bounded), so what it wrote is there to assert on.
     await ending.settled();
+    if (ending.requested()) await endHook.settled();
     const what = `the reply to ${JSON.stringify(text.slice(0, 60))}`;
     return {
       ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
@@ -413,6 +418,9 @@ async function openWithFakes(
       await ending.settled();
       ending.release();
       await stopSession();
+      // The hook this stop (or an earlier hang-up) called, before the runtime
+      // it may still be using goes away.
+      await endHook.settled();
       await runtime.shutdown();
       fake.release();
     },

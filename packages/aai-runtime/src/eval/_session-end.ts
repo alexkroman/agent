@@ -27,12 +27,76 @@
  * and `onSessionEnd` fires — so a hook that finishes the call's record runs
  * when the agent hung up, not when the case closed the session.
  *
+ * ## And the ending turn waits for the hook
+ *
+ * The runtime calls `onSessionEnd` and does not await it — right for a real
+ * connection, where nothing is waiting on the hook's writes. A case is: "the
+ * hang-up marked the call ended" is a claim about what the hook WROTE, and a
+ * turn that returned before the write landed made a downstream suite poll for
+ * it with `vi.waitFor`. {@link watchSessionEndHook} watches the one call the
+ * runtime makes (the way `observeSessionContext` watches `sessionContext`)
+ * and hands the ending turn, and `close()`, its settlement to await — bounded
+ * by {@link SESSION_END_HOOK_WAIT_MS}, so a hook that hangs costs a case that
+ * long and no longer.
+ *
  * @module
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
 import { claimSessionEnder } from "@alexkroman1/aai/host-internal";
+import pTimeout from "p-timeout";
 import { TURN_ENDS } from "./events.ts";
+
+/**
+ * How long an ending turn, or `close()`, waits for the agent's `onSessionEnd`
+ * to settle before returning anyway.
+ *
+ * Ten seconds: a hook that finishes a call's record or starts a summarizer run
+ * is a request or two, and one past this is itself the finding — the turn
+ * returns, and a claim about what the hook wrote then fails on the missing
+ * write rather than hanging the case.
+ */
+export const SESSION_END_HOOK_WAIT_MS = 10_000;
+
+/** An agent whose `onSessionEnd` is watched, and a way to wait for it. */
+export type WatchedSessionEndHook = {
+  readonly agent: AgentDef;
+  /**
+   * Settles once the hook the runtime called has settled — resolved, rejected
+   * or thrown — or after `waitMs`, whichever is first. At once when the hook
+   * was never called (no hook, a refused session, no stop yet). Never rejects:
+   * a failing hook is the runtime's to log, as it is for a real connection.
+   */
+  settled(): Promise<void>;
+};
+
+/**
+ * `agent` with its `onSessionEnd` WATCHED: called exactly as the runtime calls
+ * it, its result handed back untouched (so the runtime still logs a
+ * rejection), and its settlement recorded for {@link WatchedSessionEndHook.settled}.
+ */
+export function watchSessionEndHook(
+  agent: AgentDef,
+  waitMs: number = SESSION_END_HOOK_WAIT_MS,
+): WatchedSessionEndHook {
+  const hook = agent.onSessionEnd;
+  if (hook === undefined) return { agent, settled: () => Promise.resolve() };
+  let running: Promise<unknown> | undefined;
+  return {
+    agent: {
+      ...agent,
+      onSessionEnd: (args) => {
+        const result = hook(args);
+        running = Promise.resolve(result).catch(() => undefined);
+        return result;
+      },
+    },
+    async settled() {
+      if (running === undefined) return;
+      await pTimeout(running, { milliseconds: waitMs }).catch(() => undefined);
+    },
+  };
+}
 
 /** One session's end, as a tool's `endSession(ctx)` asked for it. */
 export type EvalSessionEnd = {

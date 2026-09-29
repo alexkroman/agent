@@ -313,8 +313,9 @@ workflow step (or `sendToChannel`) reads. A request no route answers is
 REFUSED and logged; only the live model's own provider hosts pass through,
 worked out from the agent's `llm` (in a scripted run, not even those).
 The global is swapped for the whole SUITE rather than per case, so an
-`onSessionEnd` that fires after a case closed is refused into that case's
-log rather than reaching the real network.
+`onSessionEnd` still running after a case closed (the session waits 10
+seconds for it, then stops waiting) is refused into that case's log
+rather than reaching the real network.
 
 Prefer the factory when a route keeps STATE (rows a fake database holds):
 an instance's log is reset per case, but the handlers' own state is theirs,

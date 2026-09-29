@@ -105,7 +105,10 @@ export type EvalSession = {
    *
    * The end is the session's ordinary stop, exactly as a real connection's
    * close produces it: the log is flushed and `onSessionEnd` fires when the
-   * agent hangs up, not when the case closes the session. From then on
+   * agent hangs up, not when the case closes the session. The turn that hung
+   * up returns only once that hook has SETTLED (or 10 seconds have passed), so
+   * a case asserts what the hook wrote with no polling; `close()` waits the
+   * same way for a hook its own stop fires. From then on
    * {@link EvalSession.say} REJECTS — nobody is on the line — and
    * {@link EvalSession.sayAll} stops after the turn that ended it.
    */

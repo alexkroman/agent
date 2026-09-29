@@ -8,9 +8,9 @@
  *
  * A case's world is opened before its body and closed after it, and that is
  * the wrong lifetime for a global `fetch`. `onSessionEnd` is fire-and-forget
- * by contract, so a hook that writes the call's outcome can run after the case
- * closed its session — and a `fetch` restored by then goes to the REAL
- * network. A downstream suite hit exactly that and stubbed the global for the
+ * by contract, and the eval session waits for it only so long (10 seconds), so
+ * a hook that writes the call's outcome can still run after the case closed
+ * its session — and a `fetch` restored by then goes to the REAL network. A downstream suite hit exactly that and stubbed the global for the
  * whole file instead. So the dispatcher is installed in the suite's
  * `beforeAll` and restored in its `afterAll`; between cases (and after the
  * last one) there is no current network and a request is REFUSED — logged to

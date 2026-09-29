@@ -398,11 +398,17 @@ claims one where `session-attach.ts` does and ends the session the way the paced
 sink does, minus playback: `afterReply` (default) at the reply's own terminator,
 so the goodbye is captured whole; `afterReply: false` at once. Either way it is
 the session's ordinary stop, so `onSessionEnd` fires when the agent hangs up.
-The turn says so (`endedSession`, optional on `EvalTurn` because a
-`SimulationTarget` builds its own turns), `session.ended` reads it live, `say()`
-then rejects, and `sayAll` stops after the ending turn. The eval session stops
-ONCE through one `stopSession`: the core's `stop()` is idempotent, the runtime's
-wrappers around it are not, and a second call fired `onSessionEnd` twice.
+**The ending turn, and `close()`, AWAIT that hook** (`watchSessionEndHook`,
+bounded at 10 s): the runtime calls it without awaiting, so its writes landed
+after the turn returned and a downstream suite polled for them with
+`vi.waitFor`. It watches the one call the runtime makes, as
+`observeSessionContext` does, and hands the result back untouched so the
+runtime still logs a rejection. The turn says so (`endedSession`, optional on
+`EvalTurn` because a `SimulationTarget` builds its own turns), `session.ended`
+reads it live, `say()` then rejects, and `sayAll` stops after the ending turn.
+The eval session stops ONCE through one `stopSession`: the core's `stop()` is
+idempotent, the runtime's wrappers around it are not, and a second call fired
+`onSessionEnd` twice.
 
 **`network` fails CLOSED, and the SUITE owns the global.** `evalNetwork`
 (`eval/network.ts`, its own `eval-network` capability) answers a request by a
