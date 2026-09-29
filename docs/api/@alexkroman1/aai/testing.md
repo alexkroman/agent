@@ -28,9 +28,13 @@ Every builtin the system prompt COMMANDS by name, in first-mention order.
 The prompt is scanned for snake_case tokens and each is asked of the SDK's own
 builtin schema — so `run_code` and `fetch_json` are found, and the
 `vs_currencies`, `per_person` and `annual_rate` a finance prompt names in its
-endpoints and formulas are not. Reading the CONFIG's prompt rather than a
-file: that is what a deploy carries, and it is where `system-prompt.md` lands
-only if the build applied it.
+endpoints and formulas are not. A builtin whose name is one English word
+(`think`, `calculate`, `remember`, `recall`) is found only where the prose
+NAMES it — in backticks, as "the calculate tool", or as the object of
+use/call/invoke — so "think before you answer" commands nothing; the rule and
+its reasons are on `SINGLE_WORD_POSITIONS` in this module. Reading the
+CONFIG's prompt rather than a file: that is what a deploy carries, and it is
+where `system-prompt.md` lands only if the build applied it.
 
 Takes only the field it reads, so an `AgentConfig` passes and so does a
 `{ systemPrompt }` a spec assembled itself — a resolver's own text, say.
@@ -818,6 +822,7 @@ refused.error.includes("start_plan"); // true — the instruction the model reco
 function expectPromptBuiltinsDeclared(def: {
   builtinTools?: readonly BuiltinTool[];
   systemPrompt?: AgentSystemPrompt;
+  tools?: Readonly<Record<string, unknown>>;
 }): BuiltinTool[];
 ```
 
@@ -843,6 +848,15 @@ naming them does not want this helper; it asserts on `builtinTools` directly.
 The converse is deliberately NOT asserted: declaring a builtin the prompt never
 mentions is an ordinary edit, and the model learns about it from its own tool
 schema rather than from the prose.
+
+**A custom tool of the same NAME declares it too.** An agent may replace a
+builtin with its own `tools/text_me.ts` — a different channel, a different
+recipient rule — and the prompt's "text it with `text_me`" is then addressed
+to that tool, which the model sees under exactly that name. The claim is "the
+model has a tool called this", and `def.tools` answers it as well as
+`builtinTools` does. That is why `tools` is read, and why a def lowered with
+`deployedAgent` (or imported from `virtual:aai/agent`) is the one to pass: the
+authored `./agent.ts` carries no `tools`.
 
 **A RESOLVER is CALLED, and refused when it cannot be.** `systemPrompt` may be
 a function, and `toAgentConfig` drops one rather than putting it on the wire —
@@ -877,8 +891,8 @@ console.log(commanded); // ["run_code"]
 
 ##### def
 
-The agent under test — only its `systemPrompt` and
-  `builtinTools` are read, so an `agent()` def passes as it is. Whether the
+The agent under test — only its `systemPrompt`, `builtinTools`
+  and the KEYS of `tools` are read, so an `agent()` def passes as it is. Whether the
   WHOLE def converts is [expectDeployable](#expectdeployable)'s claim, not this one's.
 
 ###### builtinTools?
@@ -888,6 +902,10 @@ readonly [`BuiltinTool`](index.md#builtintool)[]
 ###### systemPrompt?
 
 [`AgentSystemPrompt`](index.md#agentsystemprompt)
+
+###### tools?
+
+`Readonly`\<`Record`\<`string`, `unknown`\>\>
 
 #### Returns
 

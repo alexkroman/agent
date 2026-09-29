@@ -205,6 +205,7 @@ export function expectDialogRefused(result: unknown, state?: string): ToolFailur
 export function expectPromptBuiltinsDeclared(def: {
     readonly systemPrompt?: AgentSystemPrompt | undefined;
     readonly builtinTools?: readonly BuiltinTool[] | undefined;
+    readonly tools?: Readonly<Record<string, unknown>> | undefined;
 }): BuiltinTool[];
 
 // @public

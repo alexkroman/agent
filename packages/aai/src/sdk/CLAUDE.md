@@ -102,6 +102,11 @@ Each helper's doc carries the detail; the rules:
   may be async.
 - **`stubTranscribe`** stages a refusal as an HTTP STATUS so the SDK's own
   classifier runs. `stubUploads` answers `{ restore, writes, read }`.
+- **`commandedBuiltins`/`expectPromptBuiltinsDeclared`**
+  (`testing-prompt-builtins.ts`) — a single-word builtin (`think`,
+  `calculate`) counts only where the prose NAMES it: backticks, "the X tool",
+  or the object of use/call/invoke. A custom tool of a builtin's name declares
+  it. The rule and its misses are on `SINGLE_WORD_POSITIONS`.
 - **`runGuardrail(def, text, answer?)`** THROWS on a def with none or a promise
   verdict.
 - `createStubWorkflows()` is a flat override map over `rejectingWorkflows`.
