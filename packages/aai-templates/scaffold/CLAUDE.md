@@ -183,8 +183,8 @@ One thing to know: it binds **loopback by default**, because this server has
 no request authentication of its own; set `HOST=0.0.0.0` only behind your own
 proxy or auth.
 
-`run_code` is the one feature that does not follow — it needs the platform's
-sandbox and refuses outside one.
+`run_code` is the one feature that does not follow — it needs a sandbox
+(the platform's, or `AAI_RUN_CODE=deno`) and refuses outside one.
 
 ## Tracing (OpenTelemetry)
 
@@ -2520,10 +2520,10 @@ Common mistakes when working in agent projects:
 - **Don't create `tailwind.config.js`.** Tailwind v4 is configured via
   CSS; the config file is ignored.
 - **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
-- **`run_code` only executes on the deployed platform.** It runs inside the
-  platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
-  sandbox, so there `run_code` refuses with an error result. Deploy to test
-  it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
+- **`run_code` refuses under `aai dev`/`aai start`** unless the shell sets
+  `AAI_RUN_CODE=deno`: each call then runs in its own Deno 2 with no
+  network, file or env access. Deployed, it runs in the platform's sandbox. Or
+  use the `calculate` builtin for simple arithmetic.
 - **There is no `ctx.db`.** A tool that persists brings its own client — see
   "Persisting data". A secret is read when the sandbox is BUILT, so a newly set
   `DATABASE_URL` arrives on the next deploy rather than immediately, and the

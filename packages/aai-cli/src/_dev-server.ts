@@ -45,6 +45,7 @@ import { createRestartSupervisor } from "./_dev-restart.ts";
 import { createDevTypecheck } from "./_dev-typecheck.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { type DevWatcher, type DevWatchFn, watchDirectory } from "./_dev-watch.ts";
+import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
@@ -259,6 +260,12 @@ export async function startDevServer(
 
   const devLogger: Logger = createDevLogger(outputSilenced());
 
+  // `AAI_RUN_CODE=deno`: `run_code` in a zero-permission Deno process, or
+  // `undefined` and the builtin refuses as before. Resolved ONCE, before the
+  // first build, so the boot line (or the warning) is said once and not on
+  // every save; the executor holds no state a rebuild would need to reset.
+  const runCode = resolveDenoRunCode(devLogger);
+
   /**
    * Whether the session-state tables have been ensured this process.
    *
@@ -332,6 +339,7 @@ export async function startDevServer(
       // the case that actually needs one: a tunnel, when a real third party has
       // to reach a webhook on this machine.
       publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
+      ...omitUndefined({ runCode }),
     };
 
     return serve(runtimeOptions, (runtime) => ({

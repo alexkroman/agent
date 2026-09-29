@@ -11422,6 +11422,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     page?: AgentDef["page"] | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    runCode?: RunCodeExecutor | undefined;
     telephony?: boolean | readonly CarrierName[] | undefined;
     uploadBroker?: string | undefined;
 }

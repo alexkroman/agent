@@ -77,14 +77,15 @@ export type UnforwardedRuntimeOption =
   | "tts"
   /**
    * The SANDBOX seams. Each replaces a piece of the engine wholesale — the
-   * `run_code` sandbox, the egress `fetch`, the `ctx.workflows` client — and a
-   * caller filling one is embedding the runtime rather than serving an agent,
-   * which is `createRuntime` + `createRuntimeServer`. (The testing and relay
+   * egress `fetch`, the `ctx.workflows` client — and a caller filling one is
+   * embedding the runtime rather than serving an agent, which is
+   * `createRuntime` + `createRuntimeServer`. `runCode` sat here too until a
+   * self-hosted server had an executor worth passing (`AAI_RUN_CODE=deno`),
+   * and is forwarded now. (The testing and relay
    * seams that used to sit here — the tool executor and its schemas, the two
    * S2S socket factories, the tool-result hook, the prompt guidance — are not
    * `RuntimeOptions` members any more: they are `HostRuntimeOptions`.)
    */
-  | "runCode"
   | "fetch"
   | "workflows"
   /**

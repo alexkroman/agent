@@ -49,7 +49,7 @@
 
 import type http from "node:http";
 import type { AgentDef } from "@alexkroman1/aai";
-import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -185,6 +185,17 @@ export interface AgentServerOptions extends SharedServerOptions {
    */
   telephony?: boolean | readonly CarrierName[] | undefined;
   /**
+   * The `run_code` executor — see `RuntimeOptions.runCode`. Absent, the builtin
+   * refuses, as it always has off-platform.
+   *
+   * Forwarded, where the other sandbox seams are not, because a self-hosted
+   * server now has one worth passing: `aai start` hands the zero-permission
+   * Deno executor through here when `AAI_RUN_CODE=deno` (see `aai-cli`'s
+   * `_run-code-deno.ts`). An executor that evaluates in THIS process would
+   * defeat the reason the builtin refuses; pass one that isolates.
+   */
+  runCode?: RunCodeExecutor | undefined;
+  /**
    * Base URL of a PLATFORM that serves this agent's upload bytes for it — see
    * `RuntimeServerOptions.uploadBroker`. Absent, this process talks to a bucket
    * itself.
@@ -233,12 +244,13 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     page,
     telephony,
     uploadBroker,
+    runCode,
     ...hooks
   } = options;
   const runtime = createRuntime({
     agent,
     env,
-    ...omitUndefined({ providerEnv, db, journal, publicUrl, logger: hooks.logger }),
+    ...omitUndefined({ providerEnv, db, journal, publicUrl, runCode, logger: hooks.logger }),
   });
 
   /**

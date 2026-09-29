@@ -1668,10 +1668,10 @@ exist in production. Each entry point documents its own default.
 optional runCode?: RunCodeExecutor;
 ```
 
-In-sandbox executor for the `run_code` builtin. Without one the builtin is
-registered and permanently refuses, exactly as it does off-platform — the
-Modal container is the security boundary and nothing here pretends
-otherwise.
+Isolated executor for the `run_code` builtin: the guest's in-sandbox one on
+the platform, or the zero-permission Deno one `aai dev`/`aai start` pass
+under `AAI_RUN_CODE=deno`. Without one the builtin is registered and
+permanently refuses — nothing here evaluates code in the host process.
 
 ###### Inherited from
 
@@ -1872,10 +1872,10 @@ exist in production. Each entry point documents its own default.
 optional runCode?: RunCodeExecutor;
 ```
 
-In-sandbox executor for the `run_code` builtin. Without one the builtin is
-registered and permanently refuses, exactly as it does off-platform — the
-Modal container is the security boundary and nothing here pretends
-otherwise.
+Isolated executor for the `run_code` builtin: the guest's in-sandbox one on
+the platform, or the zero-permission Deno one `aai dev`/`aai start` pass
+under `AAI_RUN_CODE=deno`. Without one the builtin is registered and
+permanently refuses — nothing here evaluates code in the host process.
 
 ###### Inherited from
 
@@ -2032,10 +2032,10 @@ exist in production. Each entry point documents its own default.
 optional runCode?: RunCodeExecutor;
 ```
 
-In-sandbox executor for the `run_code` builtin. Without one the builtin is
-registered and permanently refuses, exactly as it does off-platform — the
-Modal container is the security boundary and nothing here pretends
-otherwise.
+Isolated executor for the `run_code` builtin: the guest's in-sandbox one on
+the platform, or the zero-permission Deno one `aai dev`/`aai start` pass
+under `AAI_RUN_CODE=deno`. Without one the builtin is registered and
+permanently refuses — nothing here evaluates code in the host process.
 
 ##### toolTimeoutMs?
 
@@ -3833,7 +3833,7 @@ type RunCodeExecutor = (code: string) => Promise<
 }>;
 ```
 
-In-sandbox executor backing the run_code builtin (see createRunCode).
+Isolated executor backing the run_code builtin (see the module doc).
 
 #### Parameters
 

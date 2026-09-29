@@ -179,7 +179,8 @@ export default agent({
 
 Omitting `builtinTools` enables none of them. The network-facing builtins take
 model-controlled URLs, so they are SSRF-screened outside a container and cap
-what comes back; `run_code` needs the platform sandbox and refuses outside one.
+what comes back; `run_code` needs a sandbox — the platform's, or a
+zero-permission Deno under `AAI_RUN_CODE=deno` — and refuses outside one.
 
 ## Typed session state
 

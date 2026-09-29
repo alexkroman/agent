@@ -44,7 +44,7 @@ import {
 } from "../textbelt.ts";
 import type { Channel, ChannelHandler, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
-import { channelOutboxEntry, publishedChannelOutbox } from "./outbox.ts";
+import { channelOutboxEntry, publishedChannelOutbox, redactChannelCredentials } from "./outbox.ts";
 
 /**
  * A platform is not slow. A post that has not answered in 30s is not going to,
@@ -244,18 +244,31 @@ export async function postToChannel(
     await outbox(channelOutboxEntry(channel, payload));
     return "ok";
   }
+  // Every string below that the PLATFORM wrote — a 2xx refusal, a non-2xx
+  // body or its preview, even a fetch failure's message — goes through
+  // `redactChannelCredentials` before it reaches advice or an error, and the
+  // finished message goes through it again in case a handler's advice quotes
+  // its options. Textbelt has answered with our key in a link, and the message
+  // is stored with the run, logged and shown (see `redactChannelCredentials`).
+  const redact = (text: string) => redactChannelCredentials(channel, text);
   const response = await fetchFn(payload.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...payload.headers },
     body: JSON.stringify(payload.body),
     signal: AbortSignal.timeout(CHANNEL_POST_TIMEOUT_MS),
+  }).catch((err: unknown) => {
+    // A fetch that never got an answer can name the URL it was dialling, and
+    // a Slack webhook URL is the credential. Rethrown as is when it does not,
+    // so a timeout keeps its type for whoever classifies it.
+    if (!(err instanceof Error) || redact(err.message) === err.message) throw err;
+    throw new Error(redact(err.message));
   });
   if (response.ok) {
     const body = await response.text();
     const refused = CHANNEL_REFUSALS.get(channel.kind)?.(body);
     if (refused === undefined) return body || "ok";
     throw new ChannelDeliveryError(
-      `${handler.advice(channel.options, refused)} (HTTP ${response.status})`,
+      redact(`${handler.advice(channel.options, redact(refused))} (HTTP ${response.status})`),
       { channelKind: channel.kind, status: response.status, retryable: false },
     );
   }
@@ -264,12 +277,14 @@ export async function postToChannel(
   // hand-rolled truncation: it prefers a JSON `error` field when the body has
   // one — which Slack's does — and falls back to the status with a bounded
   // preview. That body is what decides which advice a person is given.
-  const detail = await responseErrorMessage(response, `${channel.kind} channel post`);
+  const detail = redact(await responseErrorMessage(response, `${channel.kind} channel post`));
   const retryable = isTransientStatus(response.status);
   throw new ChannelDeliveryError(
-    retryable
-      ? `${channel.kind} channel post failed: HTTP ${response.status}. ${detail}`
-      : `${handler.advice(channel.options, detail)} (HTTP ${response.status})`,
+    redact(
+      retryable
+        ? `${channel.kind} channel post failed: HTTP ${response.status}. ${detail}`
+        : `${handler.advice(channel.options, detail)} (HTTP ${response.status})`,
+    ),
     {
       channelKind: channel.kind,
       status: response.status,

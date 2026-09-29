@@ -282,7 +282,8 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
-    // real run_code executor; without one the builtin refuses (aai dev).
+    // real run_code executor, and `aai dev`/`aai start` pass a zero-permission
+    // Deno one under AAI_RUN_CODE=deno; without one the builtin refuses.
     ...omitUndefined({ runCode: options.runCode }),
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});

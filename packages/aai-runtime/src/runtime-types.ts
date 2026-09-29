@@ -197,7 +197,8 @@ export type AgentRuntime = {
  * Configures the agent, environment, database, logging and provider triple;
  * the fields every way of running an agent shares are {@link HostAgentOptions}.
  * `providerEnv` defaults to {@link RuntimeOptions.env}, `logger` to the
- * console, and `runCode` is supplied only by the platform's guest harness.
+ * console, and `runCode` by the platform's guest harness or, under
+ * `AAI_RUN_CODE=deno`, by `aai dev`/`aai start`.
  *
  * The testing and relay SEAMS — a WebSocket factory per S2S transport, a relay
  * `executeTool`/`toolSchemas` pair with its `onToolResult`, the sandbox's

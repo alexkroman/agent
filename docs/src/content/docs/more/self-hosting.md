@@ -101,7 +101,10 @@ someone else's server.
 
 ## What doesn't come with you
 
-`run_code` needs the platform's sandbox and refuses outside one.
+`run_code` needs a sandbox and refuses outside one — unless the server's own
+environment sets `AAI_RUN_CODE=deno`, which runs each call in its own `deno`
+process with no network, file or env access (Deno 2 on `PATH`, or
+`AAI_DENO_PATH`).
 
 Everything else — tools, state, workflows, telephony, your own UI — runs the
 same code, against infrastructure you supply. The section above is the whole

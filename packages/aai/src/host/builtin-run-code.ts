@@ -2,20 +2,28 @@
 /**
  * The `run_code` builtin.
  *
- * run_code executes untrusted JavaScript and is ONLY ever run inside the
- * guest sandbox: the platform's guest harness passes its in-sandbox executor
- * as `RuntimeOptions.runCode`, and the Modal container is the security
- * boundary. The executor runs code with the same authority as the rest of
- * the sandboxed agent (open egress, filesystem, env) — nothing more; an
- * escape lands in a container that is already confined. Without an executor
- * — the self-hosted path (`aai dev`), which has no sandbox — this refuses
- * rather than evaluating attacker-influenceable code in the host process.
+ * run_code executes untrusted JavaScript, so it only ever runs behind an
+ * isolation boundary that some HOST supplies as `RuntimeOptions.runCode`, and
+ * never in the host process itself. There are two:
+ *
+ * - **The platform.** The guest harness passes its in-sandbox executor, and
+ *   the Modal container is the boundary. Code runs with the same authority as
+ *   the rest of the sandboxed agent (open egress, filesystem, env) — nothing
+ *   more; an escape lands in a container that is already confined.
+ * - **Self-hosted, opt-in.** `aai dev` and `aai start` pass a zero-permission
+ *   Deno executor when the process env says `AAI_RUN_CODE=deno`: each snippet
+ *   is its own `deno` process with no `--allow-*` flag, so no network, file,
+ *   env, subprocess, FFI or sys access (`aai-cli`'s `_run-code-deno.ts`).
+ *
+ * Without an executor — a self-hosted server that did not opt in, or has no
+ * `deno` — this refuses ({@link RUN_CODE_REFUSAL}) rather than evaluating
+ * attacker-influenceable code in the host process.
  */
 
 import { z } from "zod";
 import type { ToolDef } from "../sdk/types.ts";
 
-/** In-sandbox executor backing the run_code builtin (see createRunCode). */
+/** Isolated executor backing the run_code builtin (see the module doc). */
 export type RunCodeExecutor = (code: string) => Promise<string | { error: string }>;
 
 /**

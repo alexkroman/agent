@@ -363,7 +363,8 @@ state is reachable only via HTTP routes gated by the per-sandbox bearer and
 scoped by the caller's slug SERVER-side (`workflow-run-owner.ts`, the session
 state primary key, `guestSlug`). No shared mutable state between sandboxes.
 
-**`run_code`** executes only inside the guest ("The `run_code` executor",
+**`run_code`** executes only inside the guest on the platform (self-hosted, `AAI_RUN_CODE=deno` runs it in a
+zero-permission Deno; `packages/aai-cli/CLAUDE.md`) ("The `run_code` executor",
 `packages/aai-guest/CLAUDE.md`). **SSRF**: `aai/host/ssrf.ts`; policy and
 traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
 

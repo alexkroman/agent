@@ -142,7 +142,9 @@ behind whatever routing and auth your app already has. `AgentServerOptions` and
 
 Whichever shape you pick, what you give up versus `aai publish` is the
 platform's sandbox isolation (the `run_code` builtin refuses to execute outside
-one), autoscaling, session brokering and managed secrets. You own hardening.
+one, unless you pass an isolating `runCode` — `aai start` has one behind
+`AAI_RUN_CODE=deno`), autoscaling, session brokering and managed secrets. You
+own hardening.
 
 [ex-self]: https://github.com/alexkroman/agent/tree/main/examples/self-hosted-server
 [ex-host]: https://github.com/alexkroman/agent/tree/main/examples/host-server

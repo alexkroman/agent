@@ -152,7 +152,7 @@ hand. So:
   `createRuntimeServer` directly.
 - Reasons for each unforwarded member (sandbox seams, `stt`/`llm`/`tts`, two
   tuning numbers) are at the deny-list entry. Forward one when somebody needs
-  it.
+  it — `runCode` was, for `AAI_RUN_CODE=deno` (`packages/aai-cli/CLAUDE.md`).
 
 ## The system prompt: a keyed suffix over a cached base
 

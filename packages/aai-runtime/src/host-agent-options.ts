@@ -46,10 +46,10 @@ export interface HostAgentOptions {
    */
   providerEnv?: ProviderEnv;
   /**
-   * In-sandbox executor for the `run_code` builtin. Without one the builtin is
-   * registered and permanently refuses, exactly as it does off-platform — the
-   * Modal container is the security boundary and nothing here pretends
-   * otherwise.
+   * Isolated executor for the `run_code` builtin: the guest's in-sandbox one on
+   * the platform, or the zero-permission Deno one `aai dev`/`aai start` pass
+   * under `AAI_RUN_CODE=deno`. Without one the builtin is registered and
+   * permanently refuses — nothing here evaluates code in the host process.
    */
   runCode?: RunCodeExecutor;
   /**
