@@ -66,6 +66,7 @@ import { createRuntimeWithSeams } from "../runtime.ts";
 import { silentLogger } from "../runtime-config.ts";
 import { SessionRefusedError } from "../session-attach-end.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
+import { type EvalSessionEnd, watchSessionEnd } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
 import { assertTurnMeasurable, measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
 import { saidIn, TURN_ENDS } from "./events.ts";
@@ -190,10 +191,14 @@ async function openWithFakes(
   fake: StubSpeechProviders,
 ): Promise<EvalSession> {
   const events: SessionEvent[] = [];
+  // Late-bound: the end watch needs the session's `stop`, and the session needs
+  // this sink. Nothing can end a session before it exists.
+  let end: EvalSessionEnd | undefined;
   const sink: ClientSink = {
     open: true,
     event(e) {
       events.push(e);
+      end?.observe(e);
     },
     playAudioChunk() {
       // A text-driven eval discards agent audio: the fakes synthesize silence,
@@ -283,11 +288,23 @@ async function openWithFakes(
     agent: options.agent.name,
     client: sink,
   });
+  // ONE stop, whoever asks for it first — a refusal, a tool's end, a failed
+  // start or `close()`. The core's `stop()` is idempotent, but the wrappers the
+  // runtime puts around it are not: a second call fires `onSessionEnd` again.
+  let stopped: Promise<void> | undefined;
+  const stopSession = (): Promise<void> => {
+    stopped ??= session.stop();
+    return stopped;
+  };
+  // Claimed right after the session is built, where `session-attach.ts` claims
+  // a real connection's — see `_session-end.ts`.
+  const ending = watchSessionEnd(sessionId, stopSession);
+  end = ending;
 
   let refused: string | undefined;
   try {
     session.configure(runtime.readyConfig);
-    refused = await startOrRefusal(session);
+    refused = await startOrRefusal(session, stopSession);
     // The greeting is a real turn and belongs in the session's history, so it is
     // driven and awaited rather than skipped: an agent whose opening line asks a
     // question is answered by the case's first `say()`, exactly as a caller
@@ -312,7 +329,8 @@ async function openWithFakes(
     // greeting that times out is the realistic case, and a runner starts the
     // next repeat immediately afterwards. Best-effort on both, because the
     // ORIGINAL failure is the one worth reporting.
-    await session.stop().catch(() => undefined);
+    ending.release();
+    await stopSession().catch(() => undefined);
     await runtime.shutdown().catch(() => undefined);
     throw err;
   }
@@ -329,6 +347,13 @@ async function openWithFakes(
           "started. Assert on `session.refused` for a case about the refusal.",
       );
     }
+    if (ending.requested()) {
+      throw new Error(
+        `eval session: cannot say ${JSON.stringify(text.slice(0, 60))} — the agent ENDED ` +
+          "this session (a tool called `endSession(ctx)`) on an earlier turn, so nobody is " +
+          "on the line. `turn.endedSession` says which turn it was.",
+      );
+    }
     const stt = fake.sttSession();
     // The handle this closure belongs to is only returned after
     // `session.start()` resolved, which is what opens the STT stage, and the
@@ -342,14 +367,29 @@ async function openWithFakes(
     if (manual) session.command({ type: "user_turn_start" });
     stt.commit(text);
     if (manual) session.command({ type: "user_turn_commit" });
-    await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
+    // Or the session stopped: an `endSession(ctx, { afterReply: false })`
+    // cuts the reply off, and no terminator is coming.
+    await waitFor(
+      `a reply to ${JSON.stringify(text.slice(0, 60))}`,
+      (since) => repliedTo(since) || ending.stopping(),
+      from,
+    );
+    // An end this turn asked for has finished stopping before the turn is read,
+    // so `onSessionEnd` has fired and nothing more lands in the turn's events.
+    await ending.settled();
     const what = `the reply to ${JSON.stringify(text.slice(0, 60))}`;
-    return measuredTurn(what, events.slice(from), toolNames, "voice", options.agent);
+    return {
+      ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
+      endedSession: ending.requested(),
+    };
   };
 
   return {
     id: sessionId,
     refused,
+    get ended() {
+      return ending.requested();
+    },
     events: () => events,
     said: () => saidIn(events),
     toolCalls: () => measuredToolCalls(events, options.agent),
@@ -360,11 +400,19 @@ async function openWithFakes(
       // ends, so awaiting each in turn is what keeps the next line out of the
       // previous turn. A `Promise.all` here would commit every utterance at
       // once and record an order belonging to the harness.
-      for (const line of lines) turns.push(await say(line));
+      for (const line of lines) {
+        const turn = await say(line);
+        turns.push(turn);
+        // The agent hung up: a caller does not talk to a dead line, and
+        // `say()` would refuse the next one.
+        if (turn.endedSession === true) break;
+      }
       return turns;
     },
     async close() {
-      await session.stop();
+      await ending.settled();
+      ending.release();
+      await stopSession();
       await runtime.shutdown();
       fake.release();
     },
@@ -380,16 +428,16 @@ async function openWithFakes(
  * session as `session-attach.ts` does for a refused connection. Any other
  * failure to start is still a throw.
  */
-async function startOrRefusal(session: {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-}): Promise<string | undefined> {
+async function startOrRefusal(
+  session: { start(): Promise<void> },
+  stop: () => Promise<void>,
+): Promise<string | undefined> {
   try {
     await session.start();
     return undefined;
   } catch (err) {
     if (!(err instanceof SessionRefusedError)) throw err;
-    await session.stop().catch(() => undefined);
+    await stop().catch(() => undefined);
     return err.reason;
   }
 }

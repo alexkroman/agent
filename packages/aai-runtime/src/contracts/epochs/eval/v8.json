@@ -3,7 +3,7 @@
   "capability": "eval",
   "epoch": 8,
   "rule": 2,
-  "sha256": "c1138959278b42bf4475578675c1695180eeb5af5636f5419b05a8cd587fdc3c",
+  "sha256": "08573f45cb0d8b47c49fa87c99130adfcc30f38260763ecb6900f40fb128265d",
   "exports": [
     "DEFAULT_RUN_TIMEOUT_MS",
     "DescribeEvalOptions",
@@ -91,7 +91,7 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "c1138959278b42bf4475578675c1695180eeb5af5636f5419b05a8cd587fdc3c",
+      "sha256": "08573f45cb0d8b47c49fa87c99130adfcc30f38260763ecb6900f40fb128265d",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

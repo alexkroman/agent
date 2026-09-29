@@ -50,6 +50,23 @@ export type EvalTurn = {
    * `session.events()` is the unfiltered list.
    */
   readonly errors: readonly SessionEvent<"error.reported">[];
+  /**
+   * A tool ended the session during this turn — the agent HUNG UP
+   * (`endSession(ctx)`, a phone agent's `end_call`). `false` for a turn that
+   * left the line open.
+   *
+   * The reply is still here: by default `endSession` lets the reply finish, so
+   * the goodbye is this turn's `text` and `completed` is `true`; with
+   * `{ afterReply: false }` the turn is what was said before the line went
+   * dead. It is the harness's report of the END, which is the claim a hang-up
+   * case makes — "it called `end_call`" is a claim about a tool's name, and a
+   * tool of that name that forgot to call `endSession` passes it.
+   *
+   * Optional because a caller implementing `SimulationTarget` builds turns of
+   * its own; {@link openEvalSession}'s `say()` always sets it, and the text
+   * agent (which has no line to hang up) never does. Read it as `=== true`.
+   */
+  readonly endedSession?: boolean;
 };
 
 /**
@@ -83,12 +100,26 @@ export type EvalSession = {
    */
   readonly refused: string | undefined;
   /**
+   * The agent ENDED this session: a tool called `endSession(ctx)`. Read live —
+   * `false` until then.
+   *
+   * The end is the session's ordinary stop, exactly as a real connection's
+   * close produces it: the log is flushed and `onSessionEnd` fires when the
+   * agent hangs up, not when the case closes the session. From then on
+   * {@link EvalSession.say} REJECTS — nobody is on the line — and
+   * {@link EvalSession.sayAll} stops after the turn that ended it.
+   */
+  readonly ended: boolean;
+  /**
    * Commit a user turn, wait for the reply to end, and hand back that turn.
    *
    * Waits for a reply TERMINATOR rather than for a timer, which is what makes a
    * case deterministic despite a live model: the next `say()` cannot begin
    * inside the previous turn, so a recorded tool order is the agent's and not
    * the harness's.
+   *
+   * @throws When the session was {@link EvalSession.refused | refused}, or has
+   *   {@link EvalSession.ended | ended} — each naming which.
    */
   say(text: string): Promise<EvalTurn>;
   /**
@@ -111,7 +142,10 @@ export type EvalSession = {
    *
    * Strictly sequential, like the caller it stands for: each line is committed
    * only once the reply to the previous one has ended, so a recorded tool order
-   * is the agent's and not the harness's.
+   * is the agent's and not the harness's. And it stops after a turn that ENDED
+   * the session ({@link EvalTurn.endedSession}), so it hands back fewer turns
+   * than lines when the agent hangs up early — a caller does not talk to a dead
+   * line. Assert on {@link EvalSession.ended} when WHEN it hung up matters.
    */
   sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
   /** Every event this session has emitted, in stream order. */

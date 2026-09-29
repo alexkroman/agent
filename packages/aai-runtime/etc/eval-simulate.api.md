@@ -76,6 +76,7 @@ type EvalTurn = {
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
 };
 
 // @public
@@ -108,7 +109,7 @@ export type SimulatedCall = {
     readonly caller: SimulatedCaller;
     readonly greeting: readonly string[];
     readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "max-turns";
+    readonly endedBy: "caller" | "agent" | "max-turns";
     readonly endReason: string | undefined;
     readonly metrics: SimulationMetrics;
     transcript(): string;

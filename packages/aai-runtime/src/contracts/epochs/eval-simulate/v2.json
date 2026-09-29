@@ -1,0 +1,27 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "eval-simulate",
+  "epoch": 2,
+  "rule": 2,
+  "sha256": "e4acf6744c3411b2956dbf91143b8dfe708018e6e8c517f1243d065f53eb719b",
+  "exports": [
+    "CallVerdict",
+    "CriterionVerdict",
+    "DEFAULT_MAX_TURNS",
+    "END_CALL_TOOL",
+    "EvalSimulationContext",
+    "EvalSimulationOptions",
+    "JudgeCallOptions",
+    "JudgeInput",
+    "SimulateCallOptions",
+    "SimulatedCall",
+    "SimulatedCaller",
+    "SimulatedTurn",
+    "SimulationMetrics",
+    "SimulationTarget",
+    "evalSimulation",
+    "judgeCall",
+    "simulateCall"
+  ],
+  "rollup": "f91e3b4a6e79bb3c913fdc003b36ec4a2c8f6113d6b04d384786c70223f88d25"
+}

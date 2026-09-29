@@ -21,7 +21,9 @@
  * terms — goal met, or given up on — with a reason the result carries. A call
  * that hits `maxTurns` instead is reported as such ({@link SimulatedCall.endedBy}),
  * because "the caller never got what they came for" is the finding a
- * simulation most often exists to surface.
+ * simulation most often exists to surface. The AGENT can end it too — a tool
+ * calling `endSession(ctx)` — and the loop stops on that turn, reported as
+ * `endedBy: "agent"`.
  *
  * Text only. The two speech stages are faked exactly as for `say()`, so what a
  * simulated call measures is the conversation ABOVE the audio boundary —
@@ -139,12 +141,15 @@ export type SimulatedCall = {
   readonly greeting: readonly string[];
   readonly turns: readonly SimulatedTurn[];
   /**
-   * `"caller"` — it called `end_call`. `"max-turns"` — the harness hung up
-   * after {@link SimulateCallOptions.maxTurns}, which usually means the goal
-   * was never met.
+   * `"caller"` — it called `end_call`. `"agent"` — the AGENT hung up: a tool
+   * called `endSession(ctx)` during the last turn ({@link EvalTurn.endedSession}),
+   * and the simulation stopped there, since nobody is left on the line to
+   * answer. `"max-turns"` — the harness hung up after
+   * {@link SimulateCallOptions.maxTurns}, which usually means the goal was
+   * never met.
    */
-  readonly endedBy: "caller" | "max-turns";
-  /** The reason the caller gave to `end_call`, when it gave one. */
+  readonly endedBy: "caller" | "agent" | "max-turns";
+  /** The reason the caller gave to `end_call`, when it gave one — never set when the agent hung up. */
   readonly endReason: string | undefined;
   readonly metrics: SimulationMetrics;
   /** The call as `Agent:`/`Caller:` lines — what a judge or a failure message reads. */
@@ -331,6 +336,12 @@ export async function simulateCall(
     }
     const turn = await say(move.say);
     turns.push({ caller: move.say, turn, latencyMs: latencyOf(turn.events) });
+    // The agent hung up. Before the history push: there is no next move to
+    // ask the caller model for, and a `say()` into the dead line would reject.
+    if (turn.endedSession === true) {
+      endedBy = "agent";
+      break;
+    }
     history.push({ role: "assistant", content: move.say });
     history.push({ role: "user", content: turn.text === "" ? "(silence)" : turn.text });
   }

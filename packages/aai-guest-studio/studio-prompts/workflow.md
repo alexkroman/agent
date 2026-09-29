@@ -668,7 +668,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
    **Who is calling** is a suite or case option: `clientId`, `phone` and `call`
    are what `sessionClientId`, `sessionClientPhone`, `sessionCall` and your
-   `sessionContext` see; a call it refuses reads as `session.refused`.
+   `sessionContext` see; a call it refuses reads as `session.refused`. A tool's
+   `endSession(ctx)` really hangs up: `turn.endedSession`, `session.ended`.
 
    No eval can see anything below the audio boundary — when the agent decides
    you stopped talking, barge-in, two sentences merging into one turn. Those

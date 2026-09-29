@@ -568,7 +568,7 @@ machine's environment, the same trust decision `openEvalSession` makes.
 ```ts
 type SimulatedCall = {
   caller: SimulatedCaller;
-  endedBy: "caller" | "max-turns";
+  endedBy: "caller" | "agent" | "max-turns";
   endReason: string | undefined;
   greeting: readonly string[];
   metrics: SimulationMetrics;
@@ -604,12 +604,15 @@ readonly caller: SimulatedCaller;
 ##### endedBy
 
 ```ts
-readonly endedBy: "caller" | "max-turns";
+readonly endedBy: "caller" | "agent" | "max-turns";
 ```
 
-`"caller"` — it called `end_call`. `"max-turns"` — the harness hung up
-after [SimulateCallOptions.maxTurns](#maxturns), which usually means the goal
-was never met.
+`"caller"` — it called `end_call`. `"agent"` — the AGENT hung up: a tool
+called `endSession(ctx)` during the last turn ([EvalTurn.endedSession](../eval.md#endedsession)),
+and the simulation stopped there, since nobody is left on the line to
+answer. `"max-turns"` — the harness hung up after
+[SimulateCallOptions.maxTurns](#maxturns), which usually means the goal was
+never met.
 
 ##### endReason
 
@@ -617,7 +620,7 @@ was never met.
 readonly endReason: string | undefined;
 ```
 
-The reason the caller gave to `end_call`, when it gave one.
+The reason the caller gave to `end_call`, when it gave one — never set when the agent hung up.
 
 ##### greeting
 

@@ -2734,6 +2734,7 @@ Overrides [DEFAULT\_RUN\_TIMEOUT\_MS](#default_run_timeout_ms) for this run.
 
 ```ts
 type EvalSession = {
+  ended: boolean;
   id: string;
   refused: string | undefined;
   close: Promise<void>;
@@ -2811,6 +2812,11 @@ the harness's.
 
 `Promise`\<[`EvalTurn`](#evalturn)\>
 
+###### Throws
+
+When the session was [refused](#refused), or has
+  [ended](#ended) — each naming which.
+
 ##### sayAll()
 
 ```ts
@@ -2836,7 +2842,10 @@ the same subpath) are what read the result without pinning an index.
 
 Strictly sequential, like the caller it stands for: each line is committed
 only once the reply to the previous one has ended, so a recorded tool order
-is the agent's and not the harness's.
+is the agent's and not the harness's. And it stops after a turn that ENDED
+the session ([EvalTurn.endedSession](#endedsession)), so it hands back fewer turns
+than lines when the agent hangs up early — a caller does not talk to a dead
+line. Assert on [EvalSession.ended](#ended) when WHEN it hung up matters.
 
 ###### Parameters
 
@@ -2861,6 +2870,21 @@ The tool calls so far, in call order, each with its result.
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
 #### Properties
+
+##### ended
+
+```ts
+readonly ended: boolean;
+```
+
+The agent ENDED this session: a tool called `endSession(ctx)`. Read live —
+`false` until then.
+
+The end is the session's ordinary stop, exactly as a real connection's
+close produces it: the log is flushed and `onSessionEnd` fires when the
+agent hangs up, not when the case closes the session. From then on
+[EvalSession.say](#say) REJECTS — nobody is on the line — and
+[EvalSession.sayAll](#sayall) stops after the turn that ended it.
 
 ##### id
 
@@ -3140,6 +3164,7 @@ readonly toolCallId: string;
 ```ts
 type EvalTurn = {
   completed: boolean;
+  endedSession?: boolean;
   errors: readonly SessionEvent<"error.reported">[];
   events: readonly SessionEvent[];
   text: string;
@@ -3166,6 +3191,27 @@ readonly completed: boolean;
 
 The reply ended on its own terms (`reply.completed`) rather than being
 cancelled. A cancelled reply is a finding, not a failure of the harness.
+
+##### endedSession?
+
+```ts
+readonly optional endedSession?: boolean;
+```
+
+A tool ended the session during this turn — the agent HUNG UP
+(`endSession(ctx)`, a phone agent's `end_call`). `false` for a turn that
+left the line open.
+
+The reply is still here: by default `endSession` lets the reply finish, so
+the goodbye is this turn's `text` and `completed` is `true`; with
+`{ afterReply: false }` the turn is what was said before the line went
+dead. It is the harness's report of the END, which is the claim a hang-up
+case makes — "it called `end_call`" is a claim about a tool's name, and a
+tool of that name that forgot to call `endSession` passes it.
+
+Optional because a caller implementing `SimulationTarget` builds turns of
+its own; [openEvalSession](#openevalsession)'s `say()` always sets it, and the text
+agent (which has no line to hang up) never does. Read it as `=== true`.
 
 ##### errors
 

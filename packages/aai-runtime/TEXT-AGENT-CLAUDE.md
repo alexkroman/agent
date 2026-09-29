@@ -386,6 +386,19 @@ The greeting wait reads `sessionContext`'s answered greeting by WATCHING the
 one call the runtime makes (`observeSessionContext`), never by calling the hook
 again: a calling agent's hook claims the call row.
 
+**`endSession(ctx)` takes effect.** The session is built with
+`runtime.createSession` directly, so no ender was registered and a tool's
+`end_call` answered `false` while the session kept answering. `_session-end.ts`
+claims one where `session-attach.ts` does and ends the session the way the paced
+sink does, minus playback: `afterReply` (default) at the reply's own terminator,
+so the goodbye is captured whole; `afterReply: false` at once. Either way it is
+the session's ordinary stop, so `onSessionEnd` fires when the agent hangs up.
+The turn says so (`endedSession`, optional on `EvalTurn` because a
+`SimulationTarget` builds its own turns), `session.ended` reads it live, `say()`
+then rejects, and `sayAll` stops after the ending turn. The eval session stops
+ONCE through one `stopSession`: the core's `stop()` is idempotent, the runtime's
+wrappers around it are not, and a second call fired `onSessionEnd` twice.
+
 **`ctx.generate` answers from the script too**, and that was a hole rather than
 a limit: `generateText` calls the fake model's `doGenerate`, which used to
 throw, so every tool that reasons with a model — a grader, a planner, a
@@ -423,7 +436,9 @@ undoing:
   has no `execute`, so `generateText` stops on it. A call that hits `maxTurns`
   reports `endedBy: "max-turns"` rather than passing quietly, because "the
   caller never got what they came for" is the finding a simulation most often
-  exists to surface. It is not an agent hang-up — the SDK still has none.
+  exists to surface. The AGENT hanging up (`endSession(ctx)`) is the third
+  ending, `endedBy: "agent"`: the loop stops on the turn whose
+  `endedSession` is true, since `say()` into a dead line rejects.
 - **The judge is never asked "did it pass".** It returns a ruling per
   criterion, matched by NUMBER, and `pass` is `every` over them; a criterion it
   skipped fails with that said. An empty criteria list throws.

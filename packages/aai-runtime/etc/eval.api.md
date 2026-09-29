@@ -86,6 +86,7 @@ export type EvalRunOptions = StartOptions & {
 export type EvalSession = {
     readonly id: string;
     readonly refused: string | undefined;
+    readonly ended: boolean;
     say(text: string): Promise<EvalTurn>;
     sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
@@ -147,6 +148,7 @@ export type EvalTurn = {
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
 };
 
 // @public
