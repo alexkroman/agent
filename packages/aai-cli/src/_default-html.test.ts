@@ -104,6 +104,20 @@ describe("fallbackHtmlPlugin", () => {
     });
   });
 
+  test("serves the page for / with a query, as an OAuth return opens it", async () => {
+    await withTempDir(async (dir) => {
+      const { use } = await runPlugin(dir);
+      const middleware = getMiddleware(use);
+      for (const url of ["/?status=success&connected_account_id=ca_1", "/index.html?resume=1"]) {
+        const res = makeRes();
+        const next = vi.fn();
+        middleware({ url }, res, next);
+        await vi.waitFor(() => expect(res.end).toHaveBeenCalledWith("<html>transformed</html>"));
+        expect(next).not.toHaveBeenCalled();
+      }
+    });
+  });
+
   test("passes other URLs through to the next middleware", async () => {
     await withTempDir(async (dir) => {
       const { use } = await runPlugin(dir);

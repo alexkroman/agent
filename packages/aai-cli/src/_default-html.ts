@@ -8,6 +8,7 @@
 
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { requestPath } from "@alexkroman1/aai/internal";
 import type { Plugin, ViteDevServer } from "vite";
 import { errorMessage } from "./_utils.ts";
 
@@ -53,7 +54,10 @@ export function fallbackHtmlPlugin(root: string) {
     configureServer(server: FallbackHtmlServer) {
       if (htmlExists) return;
       server.middlewares.use((req, res, next) => {
-        if (req.url === "/" || req.url === "/index.html") {
+        // By PATH: the query is the page's (`?resume=1`, an OAuth return's
+        // `?status=success`), and matching the raw url 404'd every page opened with one.
+        const pathname = requestPath(req.url);
+        if (pathname === "/" || pathname === "/index.html") {
           // .catch (not a two-arg .then) so a throw in the fulfillment
           // callback is also routed to next() instead of going unhandled.
           server
