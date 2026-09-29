@@ -7439,6 +7439,18 @@ The `?client=` the request named, when it is a well-formed client id — the
 same id a device's voice socket and its `WS /inbox` are held under. A CLAIM:
 nothing authenticates it (see this module's security note).
 
+##### headers
+
+```ts
+headers: Record<string, string>;
+```
+
+The request headers, names lower-cased: `headers["webhook-signature"]`. A
+header sent more than once arrives as one value, joined with `", "`. Plain
+data, like the rest of the request.
+
+May carry cookies and `Authorization` — see this module's security note.
+
 ##### method
 
 ```ts
@@ -7470,6 +7482,20 @@ query: Record<string, string>;
 ```
 
 The query string, first value per key. `?client=` is in it too.
+
+##### rawBody?
+
+```ts
+optional rawBody?: string;
+```
+
+The request body exactly as received, as UTF-8 text — present whenever
+`body` is, under the same cap and the same JSON-only rule.
+
+These are the bytes a signature was computed over: verify a signed webhook
+(an HMAC over `${id}.${timestamp}.${rawBody}`, say) against THIS, never
+against a re-serialization of `body` — `JSON.stringify` does not reproduce
+the sender's whitespace, key order or number spelling.
 
 ***
 

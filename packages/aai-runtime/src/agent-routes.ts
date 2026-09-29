@@ -9,9 +9,9 @@
  * TWO copies of this package" in this package's guide): `createRuntimeServer`
  * is the harness's, while the runtime — and the handlers, and the
  * `routeResponse` they return — are the agent bundle's. So what crosses is
- * data: a request of strings and a parsed body in, `{ status, body }` out, and
- * a `routeResponse` is recognized by its `Symbol.for` brand
- * (`readRouteResponse`), never by `instanceof`. `aai dev` has the same seam
+ * data: a request of strings (headers and the raw body text included) and a
+ * parsed body in, `{ status, body }` out, and a `routeResponse` is recognized
+ * by its `Symbol.for` brand (`readRouteResponse`), never by `instanceof`. `aai dev` has the same seam
  * with one copy of this package and two of the SDK, which is why the brand is
  * the SDK's to read.
  *
@@ -212,8 +212,9 @@ export function compileAgentRoutes(deps: {
       path: call.path,
       params: hit.params,
       query: { ...call.query },
+      headers: { ...call.headers },
       body: call.body,
-      ...omitUndefined({ clientId: call.clientId }),
+      ...omitUndefined({ rawBody: call.rawBody, clientId: call.clientId }),
     };
     const context: RouteContext = { env, workflows, clientTranscript, signal: call.signal };
     try {

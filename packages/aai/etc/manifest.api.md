@@ -546,10 +546,12 @@ type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 interface RouteRequest {
     body: unknown;
     clientId?: string;
+    headers: Record<string, string>;
     method: string;
     params: Record<string, string>;
     path: string;
     query: Record<string, string>;
+    rawBody?: string;
 }
 
 // @public

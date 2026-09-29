@@ -52,7 +52,9 @@ export type AgentRuntime = {
         method: string;
         path: string;
         query: Readonly<Record<string, string>>;
+        headers?: Readonly<Record<string, string>> | undefined;
         body: unknown;
+        rawBody?: string | undefined;
         clientId?: string | undefined;
         signal: AbortSignal;
     }) => Promise<{

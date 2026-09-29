@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "eb6e97f35ef0ac9d8a92817ea4e25ac8804add1c7020f3f1e46131004919b832",
+  "sha256": "0f5fd2c6b1104651d9105d80c90f8f7ea94b0e7b384b774f6763c6ef371ba4a8",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -59,7 +59,7 @@
     "workflowApp"
   ],
   "rollup": "adc0531f206162784e680b1c87de80c146fbbb9834dd64776027dd5bd6230535",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -70,13 +70,19 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "5822c26054ae90b927d1d78ed31e85d47166ec993a78746b9327c96ea3b2367b",
-      "reason": "additive (checked): +AgentSessionLifecycle, +SessionContext, +SessionContextArgs, +SessionEndContext"
+      "sha256": "95ddf3cd8af4c00edde91c662147c7d4dcb70e02ce0ce4fdd0673d0f8b65ee85",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
     },
     {
       "revision": 2,
       "rule": 2,
-      "sha256": "eb6e97f35ef0ac9d8a92817ea4e25ac8804add1c7020f3f1e46131004919b832",
+      "sha256": "abdda294cd81003cdac60023149a1bd1640d7dcac57ba681ac9e955bd869ec1a",
+      "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionContext, +SessionContextArgs, +SessionEndContext, +routeResponse, +sessionClientLocation"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "0f5fd2c6b1104651d9105d80c90f8f7ea94b0e7b384b774f6763c6ef371ba4a8",
       "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +EndSessionOptions, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionCall, +SessionContext, +SessionContextArgs, +SessionEndContext, +endSession, +routeResponse, +sessionCall, +sessionClientLocation"
     }
   ]
