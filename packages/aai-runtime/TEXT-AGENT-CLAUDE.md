@@ -471,6 +471,12 @@ undoing:
 - **The judge is never asked "did it pass".** It returns a ruling per
   criterion, matched by NUMBER, and `pass` is `every` over them; a criterion it
   skipped fails with that said. An empty criteria list throws.
+- **The judge reads BOTH sides.** Handed turns it rendered tool calls and
+  replies only, so "only 9 PM was offered" had no evidence and failed by the
+  judge's own rule; each turn now opens with its `user-transcript.committed`
+  line. It also takes a session (`Pick<EvalSession, "events">`) and reads the
+  whole conversation, uncut (`conversationOf` in `transcript.ts`), which is
+  what retired a downstream suite's own transcript function for the judge.
 - **Keyless, both are SCRIPTED**, like the agent's own model: `stubCaller` is
   the caller's lines (ending on `{ tool: "end_call" }`), `stubJudge` the
   rulings — both `evalSimulation` options, driven by the case's own `mode` —

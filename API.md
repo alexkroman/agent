@@ -11206,6 +11206,19 @@ export const END_CALL_TOOL = "end_call";
 // @public
 type EvalMode = "live" | "stub";
 
+// @public @sealed
+type EvalSession = {
+    readonly id: string;
+    readonly refused: string | undefined;
+    readonly ended: boolean;
+    say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
 // @public
 export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
 
@@ -11263,7 +11276,7 @@ export type JudgeCallOptions = {
 };
 
 // @public
-export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
 
 // @public
 export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;

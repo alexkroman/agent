@@ -52,8 +52,9 @@ export type EvalSimulationContext = {
     options?: { readonly maxTurns?: number },
   ): Promise<SimulatedCall>;
   /**
-   * Have a model rule on `criteria` over a simulated call, a list of turns, or
-   * a transcript. See `judgeCall`.
+   * Have a model rule on `criteria` over a simulated call, a list of turns,
+   * the case's `session` itself, or a transcript — every form but the last
+   * with the user's lines as well as the agent's. See `judgeCall`.
    */
   judge(
     input: JudgeInput,

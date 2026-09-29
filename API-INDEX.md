@@ -661,7 +661,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `HostGenerateFn` | type | `@alexkroman1/aai-runtime/eval` |  | The host-side `ctx.generate` implementation — takes `GenerateOptions` and resolves a `GenerateResult`, with an extra per-call options bag: the tool executor … |
 | `JournalConflictError` | class | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A journal call the store REFUSED on the run's own merits. |
 | `JournalStore` | type | `@alexkroman1/aai-runtime/testing` |  | The durable store, as the engine needs it. |
-| `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, or a transcript. |
+| `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, a SESSION (anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or a … |
 | `ProjectFiles` | type | `@alexkroman1/aai/testing` | `aai:testing` | What the BUILD lowers onto an `agent.ts` default export — the files beside it that a deployed agent runs with and a spec has to apply itself. |
 | `RecordedSleep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One wait the body asked for — and did NOT take. |
 | `RecordedStep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One step the body reached, as the recorder saw it. |

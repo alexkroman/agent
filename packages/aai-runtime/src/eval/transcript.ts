@@ -38,15 +38,40 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}… (${text.length} chars)`;
 }
 
+/** How much of each line and each tool field is kept. */
+type Limits = { readonly line: number; readonly field: number };
+
 /** One transcript line for `e`, or `undefined` for an event a reader does not need. */
-function lineFor(e: SessionEvent, results: ReadonlyMap<string, string>): string | undefined {
-  if (e.type === "user-transcript.committed") return `User: ${clip(e.text, LINE_MAX)}`;
-  if (e.type === "agent-transcript.committed") return `Agent: ${clip(e.text, LINE_MAX)}`;
+function lineFor(
+  e: SessionEvent,
+  results: ReadonlyMap<string, string>,
+  limits: Limits,
+): string | undefined {
+  if (e.type === "user-transcript.committed") return `User: ${clip(e.text, limits.line)}`;
+  if (e.type === "agent-transcript.committed") return `Agent: ${clip(e.text, limits.line)}`;
   if (e.type !== "tool.called") return undefined;
   const result = results.get(e.toolCallId);
   const answered =
-    result === undefined ? " (never completed)" : ` -> ${clip(result, TOOL_FIELD_MAX)}`;
-  return `  [${e.toolName}(${clip(JSON.stringify(e.args), TOOL_FIELD_MAX)})${answered}]`;
+    result === undefined ? " (never completed)" : ` -> ${clip(result, limits.field)}`;
+  return `  [${e.toolName}(${clip(JSON.stringify(e.args), limits.field)})${answered}]`;
+}
+
+/** Every line of `events`, each cut to `limits`. */
+function linesOf(events: readonly SessionEvent[], limits: Limits): string[] {
+  const results = new Map<string, string>();
+  for (const e of events) if (e.type === "tool.completed") results.set(e.toolCallId, e.result);
+  return events.flatMap((e) => lineFor(e, results, limits) ?? []);
+}
+
+/**
+ * The WHOLE conversation in {@link transcriptOf}'s format, nothing cut — what
+ * a judge reads. A failure message is bounded so one runaway case cannot bury
+ * the rest; a judge ruling on "only 9 PM was offered" needs every line.
+ */
+export function conversationOf(events: readonly SessionEvent[]): string {
+  return linesOf(events, { line: Number.POSITIVE_INFINITY, field: Number.POSITIVE_INFINITY }).join(
+    "\n",
+  );
 }
 
 /**
@@ -88,10 +113,7 @@ function refusedLines(network: EvalNetwork | undefined): string[] {
  *   after the lines — a retried request once, with its count.
  */
 export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string {
-  const events = session.events();
-  const results = new Map<string, string>();
-  for (const e of events) if (e.type === "tool.completed") results.set(e.toolCallId, e.result);
-  const lines = events.flatMap((e) => lineFor(e, results) ?? []);
+  const lines = linesOf(session.events(), { line: LINE_MAX, field: TOOL_FIELD_MAX });
   const kept =
     lines.length <= MAX_LINES
       ? lines

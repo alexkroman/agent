@@ -31,8 +31,9 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { createGenerateFn } from "../generate.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
-import type { EvalTurn } from "./session.ts";
+import type { EvalSession, EvalTurn } from "./session.ts";
 import type { SimulatedCall } from "./simulate.ts";
+import { conversationOf } from "./transcript.ts";
 
 /** One criterion's ruling. */
 export type CriterionVerdict = {
@@ -72,8 +73,18 @@ export type JudgeCallOptions = {
   readonly context?: string;
 };
 
-/** What a judge may be handed: a simulated call, a list of turns, or a transcript. */
-export type JudgeInput = SimulatedCall | readonly EvalTurn[] | string;
+/**
+ * What a judge may be handed: a simulated call, a list of turns, a SESSION
+ * (anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or
+ * a transcript of your own.
+ *
+ * Every form but the last reaches the judge with BOTH sides: each line the
+ * user said (`User:`), each tool call with its arguments and result, and each
+ * reply (`Agent:`). A session is the whole conversation, the greeting
+ * included; a list of turns is those turns, each opening with what the user
+ * said on it.
+ */
+export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
 
 const VERDICT_SCHEMA = {
   type: "object",
@@ -97,16 +108,38 @@ const VERDICT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-function transcriptOf(input: JudgeInput): string {
+/**
+ * What the judge reads for `input`. Exported for its spec; not on a barrel.
+ *
+ * A list of turns used to render the agent's side alone — tool calls and
+ * replies — so a criterion about what the USER said ("only 9 PM was offered")
+ * had no evidence, and the judge is told to fail exactly that. Each turn's
+ * utterance is its own `user-transcript.committed` event (the anchor `say()`
+ * waits from), so it is read from there.
+ */
+export function judgeTranscript(input: JudgeInput): string {
   if (typeof input === "string") return input;
+  if (isTurnList(input)) return turnsTranscript(input);
   if ("transcript" in input) return input.transcript();
-  return input
+  return conversationOf(input.events());
+}
+
+/** `Array.isArray` as a guard TypeScript honours for a READONLY array. */
+function isTurnList(input: Exclude<JudgeInput, string>): input is readonly EvalTurn[] {
+  return Array.isArray(input);
+}
+
+function turnsTranscript(turns: readonly EvalTurn[]): string {
+  return turns
     .map((turn, i) => {
+      const said = turn.events.flatMap((e) =>
+        e.type === "user-transcript.committed" ? [`User: ${e.text}`] : [],
+      );
       const tools = turn.toolCalls.map(
         (call) =>
           `  [tool ${call.name}(${JSON.stringify(call.args)}) → ${call.result ?? "(none)"}]`,
       );
-      return [`Turn ${i + 1}:`, ...tools, `Agent: ${turn.text}`].join("\n");
+      return [`Turn ${i + 1}:`, ...said, ...tools, `Agent: ${turn.text}`].join("\n");
     })
     .join("\n");
 }
@@ -115,7 +148,8 @@ function judgePrompt(transcript: string, options: JudgeCallOptions): string {
   const numbered = options.criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
   return [
     ...(options.context === undefined ? [] : ["Context:", options.context, ""]),
-    "Transcript (bracketed lines are tool calls the agent made, with their results):",
+    "Transcript (User lines are what the caller said; bracketed lines are tool calls the agent",
+    "made, with their results):",
     transcript,
     "",
     "Criteria:",
@@ -217,7 +251,7 @@ export async function runJudge(
   });
   const { object } = await generate({
     system: JUDGE_SYSTEM,
-    prompt: judgePrompt(transcriptOf(input), options),
+    prompt: judgePrompt(judgeTranscript(input), options),
     schema: VERDICT_SCHEMA,
     // No `temperature`: the judge runs on whatever descriptor it is handed, and
     // the gateway's GPT-5 family — the default — answers one with a 400.
