@@ -253,7 +253,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sttSampleRate,
     ttsSampleRate,
     sttPrompt: opts.sttPrompt,
-    greeting: sessionConfig.greeting,
     signal: sessionAbort.signal,
     handlers: {
       ...withSttMarks(metrics, sttEvents),

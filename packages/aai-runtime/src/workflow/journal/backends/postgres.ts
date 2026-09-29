@@ -106,7 +106,7 @@ import { isTerminalStatus, JournalConflictError } from "../types.ts";
 const SELECT_STEP = `select key, name, status, output::text as output, error, attempts, started_at, finished_at from ${WORKFLOW_STEP_TABLE}`;
 
 /** The same, for a {@link RunRecord} and the two reads that rebuild one. */
-const SELECT_RUN = `select run_id, workflow, status, created_at, input::text as input, output::text as output, error, code_version from ${WORKFLOW_RUN_TABLE}`;
+const SELECT_RUN = `select run_id, workflow, status, created_at, input::text as input, output::text as output, error, code_version, label from ${WORKFLOW_RUN_TABLE}`;
 
 /**
  * Build a journal over `db`.
@@ -122,8 +122,8 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
       // starts racing on one id cannot both win.
       await db.query(
         `insert into ${WORKFLOW_RUN_TABLE}
-           (run_id, workflow, status, created_at, input, code_version)
-         values ($1, $2, $3, $4, $5::text::jsonb, $6)`,
+           (run_id, workflow, status, created_at, input, code_version, label)
+         values ($1, $2, $3, $4, $5::text::jsonb, $6, $7)`,
         [
           record.runId,
           record.workflow,
@@ -134,6 +134,7 @@ export function createPostgresJournal(options: { db: Db }): JournalStore {
           // parameter outright — see `encodedOrNull`'s doc for the run this
           // stalled the first time.
           record.codeVersion ?? null,
+          record.label ?? null,
         ],
       );
     },

@@ -213,6 +213,13 @@ export function viteDevConfig(
         // from the voice URL's host, so it arrives on THIS port too: unlisted, Vite
         // held the upgrade open unanswered and a reminder never reached the device.
         "/inbox": { target, ws: true },
+        // A carrier's media stream (`WS /phone`, `agent({ telephony })`). No page
+        // opens it: a TUNNEL does, and a tunnel points at the port `aai dev` prints
+        // — this one, whenever there is a `client.tsx`. The backend sits on a free
+        // port picked at start, so pointing a tunnel past Vite is not an option,
+        // and unlisted Vite answered the carrier's upgrade itself and the call
+        // connected to nothing.
+        "/phone": { target, ws: true },
         // `agent({ routes })` — the app's own JSON endpoints, which a page on THIS
         // port fetches same-origin. The same `bypass` as the workflow API below, for
         // its reason: `api/` is as plausible a source directory as `workflows/`, and

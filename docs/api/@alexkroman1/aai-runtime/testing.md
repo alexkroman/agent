@@ -538,10 +538,10 @@ exist in production. Each entry point documents its own default.
 optional runCode?: RunCodeExecutor;
 ```
 
-In-sandbox executor for the `run_code` builtin. Without one the builtin is
-registered and permanently refuses, exactly as it does off-platform — the
-Modal container is the security boundary and nothing here pretends
-otherwise.
+Isolated executor for the `run_code` builtin: the guest's in-sandbox one on
+the platform, or the zero-permission Deno one `aai dev`/`aai start` pass
+under `AAI_RUN_CODE=deno`. Without one the builtin is registered and
+permanently refuses — nothing here evaluates code in the host process.
 
 ###### Inherited from
 
@@ -1497,6 +1497,7 @@ type RunRecord = {
      message: string;
   };
   input: unknown;
+  label?: string;
   output?: unknown;
   runId: string;
   status: RunStatus;
@@ -1561,6 +1562,21 @@ input: unknown;
 ```
 
 The validated input the run was started with.
+
+##### label?
+
+```ts
+optional label?: string;
+```
+
+What the run IS, in a person's words — `StartOptions.label`, normalized by
+the client before it gets here (`workflow/run-label.ts`), or absent.
+
+On the run record rather than in a side table for the reason `codeVersion`
+is: it is a fact about the run fixed at `createRun`, so writing it in the
+same statement means no reader can see the run without it, and it goes when
+the run does. Every backend must round-trip it and none may invent one — a
+row that predates the column reads as absent (`conformance-cases.ts`).
 
 ##### output?
 

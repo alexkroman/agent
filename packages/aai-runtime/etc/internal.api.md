@@ -23,6 +23,7 @@ import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -61,6 +62,10 @@ export type AttachSessionOptions = {
     sessionStartTimeoutMs?: number;
     resumeFrom?: string;
     closeAfterFailure?: () => void;
+    closeAfterRefusal?: (reason: string) => void;
+    closeOnEndSession?: (options: {
+        afterReply: boolean;
+    }) => void;
 };
 
 // @public
@@ -307,6 +312,12 @@ interface Logger {
 export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 
 // @public
+export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
+
+// @public
+export function normalizeRunLabel(value: unknown): string | undefined;
+
+// @public
 export function parseBearer(header: string | null | undefined): string;
 
 // @internal
@@ -435,6 +446,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -801,6 +813,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
 };
 
 // (No @packageDocumentation comment for this package)

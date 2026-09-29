@@ -21,6 +21,7 @@ import { consoleLogger } from "../runtime-config.ts";
 import { createOpenaiRealtimeLifecycle } from "./openai-realtime-lifecycle.ts";
 import { createEmitError } from "./pipeline-error.ts";
 import {
+  resolveGreeting,
   resolveSystemPrompt,
   type SkipGreetingOption,
   shouldSkipGreeting,
@@ -104,7 +105,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function sendGreeting(): void {
     // Resolved at the moment it matters, like the pipeline's `onAudioReady`.
     if (shouldSkipGreeting(opts.skipGreeting)) return;
-    const greeting = opts.sessionConfig.greeting;
+    const greeting = resolveGreeting(opts.sessionConfig.greeting);
     if (!greeting) return;
     // OpenAI Realtime has no native greeting field — trigger it as a one-shot
     // response with custom instructions that override the system prompt for

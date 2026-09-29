@@ -243,9 +243,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     providerEnv,
   });
 
-  // Transport construction (pipeline vs OpenAI Realtime vs AssemblyAI S2S)
-  // lives in runtime-transport.ts; the factory closes over the resolved
-  // runtime state above.
+  // Transport construction (pipeline, OpenAI Realtime, AssemblyAI S2S) is
+  // runtime-transport.ts's, closing over the resolved runtime state above.
   const buildTransport = createTransportFactory({
     agent,
     agentConfig,
@@ -308,8 +307,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
     const isRelay = Boolean(options.onToolResult);
-    // Late-bound reference: callbacks are constructed before ServerSession exists,
-    // so we capture a reference and fill it in below.
+    // Late-bound: callbacks are built before the ServerSession, filled in below.
     let core: ServerSession | null = null;
     function bindCore(): ServerSession {
       // An invariant rather than a validation: `core` is this closure's own
@@ -327,11 +325,14 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // the greeting — it must exist BEFORE the transport; `session-resume-found.ts`
     // carries why, and owns the decision `skipGreeting` becomes.
     const findings = createResumeFindings();
-    const { skipGreeting, resumed } = sessionOpts;
+    const { id, skipGreeting, resumed } = sessionOpts;
+    // Before the transport, which reads the greeting `sessionContext` answered.
+    const memory = openSessionMemory({ ...recall, sessionId: id, prompt: dialogs.prompt });
     const transport = buildTransport({
       sessionOpts: {
         ...sessionOpts,
         skipGreeting: resolveSkipGreeting(skipGreeting, resumed, findings),
+        sessionGreeting: () => memory.greeting,
       },
       // The THUNK, not its value: a transport that can resolve per turn does,
       // and one that cannot resolves it once (see `runtime-transport.ts`).
@@ -354,9 +355,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       ...omitUndefined({ onToolResult: options.onToolResult }),
     });
 
-    // Hydration on the way in, reclamation on the way out — see
-    // `attachSessionState`, which owns both orderings and why they are here
-    // rather than in `ws-handler`.
+    // Hydration in, reclamation out — `attachSessionState` owns both orderings
+    // and why they are here rather than in `ws-handler`.
     attachSessionState(core, {
       state: sessionState,
       sessionId: sessionOpts.id,
@@ -384,7 +384,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       sessionId: sessionOpts.id,
       resumed: sessionOpts.resumed === true,
       findings,
-      memory: openSessionMemory({ ...recall, sessionId: sessionOpts.id, prompt: dialogs.prompt }),
+      memory,
     });
 
     return core;
@@ -393,7 +393,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // ── AgentRuntime methods ──────────────────────────────────────────────
 
   function startSession(ws: SessionWebSocket, startOpts?: SessionStartOptions): void {
-    const { resumeFrom, clientLocation, clientId, clientPhone } = startOpts ?? {};
+    const { resumeFrom, clientLocation, clientId, clientPhone, call } = startOpts ?? {};
     const userOnSessionEnd = startOpts?.onSessionEnd;
     wireSessionSocket(ws, {
       sessions,
@@ -421,7 +421,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         userOnSessionEnd?.(sid, sink);
       },
       ...omitUndefined({ sessionStartTimeoutMs, resumeFrom }),
-      ...omitUndefined({ clientLocation, clientId, clientPhone }),
+      ...omitUndefined({ clientLocation, clientId, clientPhone, call }),
     });
   }
 

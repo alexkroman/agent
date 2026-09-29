@@ -21,6 +21,7 @@ import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -79,6 +80,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     page?: AgentDef["page"] | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    runCode?: RunCodeExecutor | undefined;
     telephony?: boolean | readonly CarrierName[] | undefined;
     uploadBroker?: string | undefined;
 }
@@ -102,12 +104,19 @@ export type CarrierCodec = {
 
 // @public
 export type CarrierInbound =
-/** The call's media stream has begun; `streamId` must be echoed on outbound frames. */
+/**
+* The call's media stream has begun; `streamId` must be echoed on outbound
+* frames. `callId` and `parameters` are the call's identity, bounded by the
+* shipped codecs (see `MAX_CALL_PARAMETERS`). OPTIONAL so a codec written
+* before they existed still type-checks; absent reads as "none".
+*/
     {
     kind: "start";
     streamId: string;
     encoding: string | null;
     sampleRate: number | null;
+    callId?: string | null;
+    parameters?: Readonly<Record<string, string>>;
 }
 /** One 20 ms chunk of caller audio, base64 μ-law. */
 | {
@@ -465,6 +474,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -575,6 +585,7 @@ export type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -631,6 +642,7 @@ type SleepRecord = {
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
     carrier: CarrierCodec;
     logger?: Logger;
+    startTimeoutMs?: number;
 }): void;
 
 // @public
@@ -702,6 +714,9 @@ export const TELEPHONY_SAMPLE_RATE = 8000;
 export type TelephonyBridgeOptions = {
     carrier: CarrierCodec;
     logger?: Logger;
+    onStart?: (start: Extract<CarrierInbound, {
+        kind: "start";
+    }>) => void;
 };
 
 // @public

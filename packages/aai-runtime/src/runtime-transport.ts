@@ -86,7 +86,26 @@ export type TransportSessionOpts = {
    * `runtime.createSession()` caller gets a fresh session.
    */
   resumed?: boolean;
+  /**
+   * The greeting `sessionContext` answered for this session — `""` for none,
+   * `undefined` for the agent's. A thunk because the transport is built before
+   * the hook is asked (`runtime-session-memory.ts`); every branch below reads
+   * it only once the session has started, through {@link greetingFor}.
+   */
+  sessionGreeting?: () => string | undefined;
 };
+
+/**
+ * The session's greeting, resolved LATE: its own when `sessionContext` gave
+ * one, else the agent's. `??` rather than `||` because `""` is an answer —
+ * "no greeting this session" — and must not fall back to the agent's line.
+ */
+function greetingFor(
+  sessionOpts: TransportSessionOpts,
+  agentGreeting: string | undefined,
+): () => string | undefined {
+  return () => sessionOpts.sessionGreeting?.() ?? agentGreeting;
+}
 
 /** Arguments to one `buildTransport` call (one per session). */
 export type BuildTransportArgs = {
@@ -219,7 +238,7 @@ export function createTransportFactory(
       callbacks,
       sessionConfig: {
         systemPrompt,
-        greeting: agentConfig.greeting,
+        greeting: greetingFor(sessionOpts, agentConfig.greeting),
       },
       toolSchemas,
       executeTool,
@@ -309,7 +328,7 @@ export function createTransportFactory(
       options: (agent.s2s?.options ?? {}) as OpenAIS2sOptions,
       sessionConfig: {
         systemPrompt,
-        ...omitUndefined({ greeting: agentConfig.greeting }),
+        greeting: greetingFor(sessionOpts, agentConfig.greeting),
       },
       toolSchemas,
       toolChoice: agentConfig.toolChoice ?? DEFAULT_TOOL_CHOICE,
@@ -325,21 +344,25 @@ export function createTransportFactory(
 
   function buildAssemblyS2sTransport(args: BuildTransportArgs): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
+    // THE resolution point for this transport, and the only one it gets.
+    // `S2sSessionConfig.systemPrompt` is the SDK's own wire type and takes a
+    // string, which is honest here: the service holds the conversation and
+    // dispatches replies from the config it was handed, so there is no
+    // per-turn callback into this process to re-resolve from. A `dialog()`
+    // phase therefore reaches an S2S agent through tool results alone —
+    // the limitation this seam removes for the other two transports, stated
+    // where a reader wiring a third one will hit it.
+    const prompt = resolveSystemPrompt(systemPrompt);
+    const greeting = greetingFor(sessionOpts, agentConfig.greeting);
     return createS2sTransport({
       apiKey: s2sApiKey(),
       s2sConfig,
-      sessionConfig: {
-        // THE resolution point for this transport, and the only one it gets.
-        // `S2sSessionConfig.systemPrompt` is the SDK's own wire type and takes a
-        // string, which is honest here: the service holds the conversation and
-        // dispatches replies from the config it was handed, so there is no
-        // per-turn callback into this process to re-resolve from. A `dialog()`
-        // phase therefore reaches an S2S agent through tool results alone —
-        // the limitation this seam removes for the other two transports, stated
-        // where a reader wiring a third one will hit it.
-        systemPrompt: resolveSystemPrompt(systemPrompt),
+      // A THUNK, built when `start()` sends it, only so the greeting is the one
+      // `sessionContext` answered. The prompt is still resolved here, once.
+      sessionConfig: () => ({
+        systemPrompt: prompt,
         tools: toolSchemas,
-        ...omitUndefined({ greeting: agentConfig.greeting }),
+        ...omitUndefined({ greeting: greeting() }),
         // Forwarded on its own presence, like the pipeline branch above. Omitting
         // it here is what made `sttPrompt` a silent no-op for every S2S agent.
         ...omitUndefined({ sttPrompt: agentConfig.sttPrompt }),
@@ -348,7 +371,7 @@ export function createTransportFactory(
         // top-level config fields. Same dropped-field class as `sttPrompt` —
         // the descriptor took no options at all until these were added.
         ...readAssemblyS2sOptions(agentConfig.s2s?.options),
-      },
+      }),
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,

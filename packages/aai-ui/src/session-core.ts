@@ -15,6 +15,7 @@
 
 import { createEpoch, RESUME_ID_RE, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
+import { createSessionIdentity } from "./client-identity.ts";
 import { createAudioEffects } from "./session-core-audio-effects.ts";
 import { loadAudioModules } from "./session-core-audio-setup.ts";
 import { createAudioPath } from "./session-core-audio-state.ts";
@@ -151,20 +152,18 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   };
   let connectionController: AbortController | null = null;
 
-  // The resume identity and the address of the next attempt — see
-  // `session-core-dial.ts`, which owns the session id, the storage that carries
-  // it across a page RELOAD, the handshake flag, and the broker latch.
-  const dialer = createDialer(options);
+  // The resume identity and the next attempt's address (`session-core-dial.ts`:
+  // session id, its storage across a RELOAD, handshake flag, broker latch). Who
+  // the client IS (`client: "auto"`, the tab's inbox holder) is
+  // `client-identity.ts`; the dialer sends the id the identity reports.
+  const identity = createSessionIdentity(options, () => dialer.sessionId());
+  const dialer = createDialer({ ...options, client: identity.clientId }, notify);
 
   function resetState(): void {
     updateState(CLEARED_SESSION_STATE);
   }
 
-  /**
-   * The socket, when there is one and it can carry a frame — the socket rather
-   * than a boolean because every caller needs it next, and a predicate does not
-   * narrow `conn.ws` across the call. One spelling of the readiness test.
-   */
+  /** The socket if it can carry a frame — a socket, not a boolean, so it narrows `conn.ws`. */
   function openSocket(): ConnState["ws"] {
     return conn.ws?.readyState === WS_OPEN ? conn.ws : null;
   }
@@ -482,6 +481,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     connect,
     cancel,
     userTurn: Object.freeze(userTurn),
+    identity,
     sendText,
     setMicMuted: mic.setMicMuted,
     resetState,

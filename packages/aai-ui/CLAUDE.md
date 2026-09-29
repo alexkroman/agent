@@ -24,7 +24,7 @@ rules are in the root `AGENTS.md`.
 - [`src/worklets/CLAUDE.md`](src/worklets/CLAUDE.md) — capture and playback
   processors: jitter buffer, concealment, capture rate and constraints, dead-mic
   probe.
-- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the ten `aai-ui:`
+- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the eleven `aai-ui:`
   capabilities and the `.tsx` compatibility fixtures.
 - [`PLAYBACK-CLAUDE.md`](PLAYBACK-CLAUDE.md) (reference, read on demand) —
   playback tuning measurements against a real TTS reply.
@@ -80,6 +80,9 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
 - `hooks.ts` — `useAgentState`, `useToolResult`, `useToolCallStart`, `useEvent`.
 - `audio.ts` — PCM encode/decode, AudioWorklet management.
 - `client-config.ts` — the `GET /client-config` lookups.
+- `client-identity.ts` — `client: "auto"`, the per-tab inbox holder,
+  `session.identity`; `inbox*.ts` + `notice-player.ts` + `use-inbox.ts` — the
+  browser half of `WS /inbox`.
 - `define-client.tsx` — `mountClient()`, plus `resolveContainer` and
   `mountRoot`, which `mountPage()` (`page.tsx`) shares.
 - `default-client.tsx` / `build-default-client.ts` — the default UI for agents

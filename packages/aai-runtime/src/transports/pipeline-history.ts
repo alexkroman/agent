@@ -18,9 +18,8 @@
  * LLM view a `tool` message is one half of a PAIR — the assistant message
  * carrying the `tool-call` part is the other — and both providers reject a
  * result with no call to answer (that is the whole of {@link capLlm}). The
- * conversation view has no pairs, so {@link PipelineHistory.seed} drops the
- * `tool` messages a resume brings when it maps them across; they are already
- * inside the step messages the turn itself pushed.
+ * conversation view has no pairs, so {@link PipelineHistory.seed} never maps a
+ * resume's `tool` messages across; it takes pairs built from both halves.
  *
  * **The LLM view is re-PAIRED on every write** (`../tool-call-pairs.ts`), so
  * `history` itself — not just one request built from it — stays valid.
@@ -122,11 +121,10 @@ export interface PipelineHistory {
   /**
    * Seed both views from resent history (e.g. reconnect/resume).
    *
-   * `tool` messages reach the conversation view and NOT the LLM one — see the
-   * module doc: a replayed result has no assistant `tool-call` message to
-   * answer, and both providers reject that outright. `llmMsgs` (filtered alike)
-   * seeds the LLM view instead: `modelHistoryOf`'s tool digests. */
-  seed(msgs: readonly Message[], llmMsgs?: readonly Message[]): void;
+   * `msgs` seeds the conversation view whole; the LLM view takes `llmMsgs`
+   * (`modelHistoryOf`'s real call/result pairs), re-PAIRED like any write, or
+   * else `msgs` without its `tool` messages — see the module doc. */
+  seed(msgs: readonly Message[], llmMsgs?: readonly ModelMessage[]): void;
   /** Clear both views. */
   reset(): void;
   /**
@@ -475,11 +473,13 @@ export function createPipelineHistory(
       llmUndo = null;
       revision.bump();
     },
-    seed(msgs: readonly Message[], llmMsgs?: readonly Message[]): void {
+    seed(msgs: readonly Message[], llmMsgs?: readonly ModelMessage[]): void {
       if (msgs.length === 0 && !llmMsgs?.length) return;
       conversation.push(...msgs);
       cap(conversation);
-      llm.push(...(llmMsgs ?? msgs).filter(isLlmSeedable).map(toModelMessage));
+      llm.push(...(llmMsgs ?? msgs.filter(isLlmSeedable).map(toModelMessage)));
+      // Paired before the cap, as `pushLlm` does: `capLlm` heals its own cut.
+      pairLlm();
       capLlm(llm);
       // A reconnect seed is never rolled back — nothing pushes a synthetic
       // prompt through this door — and its eviction is therefore not owed back

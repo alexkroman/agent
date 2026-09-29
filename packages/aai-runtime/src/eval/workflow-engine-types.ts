@@ -57,6 +57,11 @@ export type EvalRunRecord = {
   readonly workflowName: string;
   status: WorkflowRunStatus;
   readonly createdAt: number;
+  /**
+   * What the run is — `StartOptions.label`, normalized as every store keeps it
+   * — so a case can assert the line a tool wrote for the run list.
+   */
+  readonly label?: string;
   output?: unknown;
   error?: { message: string };
   /** Lines this run's steps wrote with `stepReport()`, oldest first. */

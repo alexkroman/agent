@@ -342,8 +342,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       pushMessages(...messages);
       // Forward to the transport so pipeline mode's LLM sees the restored
       // context on resume (S2S restores context service-side via resume). The
-      // model's view carries each prior tool call as a text digest rather than
-      // losing it — see `modelHistoryOf`.
+      // model's view carries each prior tool call as a real call/result pair
+      // rather than losing it, or showing it as text the model then imitates —
+      // see `modelHistoryOf`.
       opts.transport.seedHistory?.(messages, modelHistoryOf(messages, toolCalls));
       // And to the CLIENT, which is the half that was missing: everything above
       // restores the conversation for the MODEL, and a reconnecting browser

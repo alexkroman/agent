@@ -87,6 +87,19 @@ describe("text_me", () => {
     expect(JSON.stringify(result)).not.toContain(OWNER);
   });
 
+  test("a refusal quoting the key back reaches the model with the key redacted", async () => {
+    const error =
+      "Sorry, ability to send URLs via text is limited to verified accounts. Please go to " +
+      "https://textbelt.com/whitelist?key=textbelt-test-key or email support@textbelt.com.";
+    const result = await createTextMe(fakeFetch(textbelt({ success: false, error }))).execute(
+      { message: "hi", url: "https://maps.example.com/route" },
+      createMockToolContext({ env }),
+    );
+    expect(result).toEqual({ error: expect.stringContaining("verified accounts") });
+    expect(JSON.stringify(result)).not.toContain("textbelt-test-key");
+    expect(JSON.stringify(result)).toContain("whitelist?key=[redacted]");
+  });
+
   test("a request that never answers is a result too", async () => {
     const failing = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
     const result = await createTextMe(fakeFetch(failing)).execute(

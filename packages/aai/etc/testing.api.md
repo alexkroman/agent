@@ -176,6 +176,11 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+    afterReply: boolean;
+}[];
+
+// @public
 export function eventsOf<E extends {
     type: string;
 }, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
@@ -294,6 +299,9 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
 
 // @public
+type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+
+// @public
 export type ProjectFiles = {
     readonly tools?: ToolModules;
     readonly systemPrompt?: string;
@@ -380,6 +388,13 @@ export interface SentEvent {
 }
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -426,6 +441,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -610,6 +626,41 @@ export type StubGenerateScript = {
 } | {
     readonly routes: Readonly<Record<string, StubGenerateRoute>>;
     readonly reply?: never;
+};
+
+// @public
+export type StubPlaceCall = {
+    calls: StubPlacedCall[];
+    restore(): void;
+};
+
+// @public
+export function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
+
+// @public
+export type StubPlaceCallOptions = {
+    dial?: "accept" | StubPlaceCallRefusal | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+    status?: PlacedCallStatus | "initiated" | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+    otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
+};
+
+// @public
+export type StubPlaceCallRefusal = {
+    status: number;
+    code?: number;
+    message?: string;
+};
+
+// @public
+export type StubPlacedCall = {
+    callId: string | undefined;
+    to: string;
+    from: string;
+    streamUrl: string | undefined;
+    parameters: Record<string, string>;
+    timeLimitS: number;
+    ringTimeoutS: number;
+    polls: number;
 };
 
 // @public
@@ -844,6 +895,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public
@@ -1017,6 +1069,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public

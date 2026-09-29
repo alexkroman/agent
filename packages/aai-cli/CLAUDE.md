@@ -571,6 +571,27 @@ connections, to test session resume. Choose correctly:
   asserts **1006**.
 - **It is a proxy** so no fault injector lives in production code.
 
+## `run_code` under `aai dev` / `aai start` is OPT-IN: `AAI_RUN_CODE=deno`
+
+Off the platform there is no container, so `run_code` refuses
+(`RUN_CODE_REFUSAL`) rather than evaluating model-written code in this process.
+`AAI_RUN_CODE=deno` in the PROCESS env (never the agent's `.env`, for
+`AAI_CHANNEL_OUTBOX`'s reason) makes `_run-code-deno.ts` hand the runtime an
+executor that runs each snippet as its own `deno` with no `--allow-*` flag:
+`--no-prompt` turns every file/net/env/run/ffi/sys request into a `NotCapable`,
+the code goes on stdin only, the child env is three fixed entries
+(`DENO_DIR`, `DENO_NO_UPDATE_CHECK`, `NO_COLOR`), and the process group is
+killed at 5s. The binary is `AAI_DENO_PATH`, else the first `deno` on `PATH`,
+probed for 2.x once at boot; enabled but missing, it warns once and keeps
+refusing. `aai start` passes it through `AgentServerOptions.runCode`.
+
+**Deno loads a LOCAL module without read permission** — `import s from
+"/x.json" with { type: "json" }` printed the file under `--deny-read` — so the
+argv carries an import map sending every `file:` URL to a host `--no-remote`
+refuses. The module doc lists every flag and why;
+`_run-code-deno.scenario.test.ts` proves each denial against a real `deno`
+(skipping, announced, without one; `AAI_REQUIRE_DENO` makes that a failure).
+
 ## The e2e suite is pnpm-only in CI
 
 `e2e.test.ts` installs an `aai init` project from a mock verdaccio registry.

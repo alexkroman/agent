@@ -64,6 +64,19 @@ export const ACTED_ON_EVENTS =
 
 const AUDIO_READY_FRAME = JSON.stringify({ type: "audio_ready" });
 
+/**
+ * Most caller frames held while the session's rates are still unknown: 50 of
+ * Twilio's 20 ms frames, one second.
+ *
+ * The window exists since the session waits for the carrier's `start` (see
+ * `startTelephonySession`): the carrier's first media frames can land in the
+ * same read as its `start`, before the runtime has sent `session.configured`,
+ * and on a call the app PLACED those frames are the callee's "Hello?". Dropped,
+ * the agent never hears it. Bounded, because a session that never configures
+ * must not grow this for the life of the call.
+ */
+const MAX_PRE_CONFIG_FRAMES = 50;
+
 /** Close code sent when the carrier ends the stream (the caller hung up). */
 const WS_CLOSE_NORMAL = 1000;
 
@@ -73,7 +86,17 @@ export type TelephonyBridgeOptions = {
   carrier: CarrierCodec;
   /** Structured logger. Defaults to the console logger. */
   logger?: Logger;
+  /**
+   * Called once, with the carrier's `start` frame, when the stream begins —
+   * BEFORE its `audio_ready` is released to the session. It is how
+   * `startTelephonySession` learns the call's identity before it starts a
+   * session to hand it to (see that function for the ordering).
+   */
+  onStart?: (start: Extract<CarrierInbound, { kind: "start" }>) => void;
 };
+
+/** A decoded carrier `start` frame — the stream id, its format and the call's identity. */
+export type CarrierStart = Extract<CarrierInbound, { kind: "start" }>;
 
 type MessageListener = (event: { data: unknown }) => void;
 type CloseListener = (event: { code?: number; reason?: string }) => void;
@@ -127,6 +150,8 @@ export function createTelephonyBridge(
   let toSession: Resampler | null = null;
   /** The session's TTS rate → 8 kHz. Built from the same frame. */
   let toCarrier: Resampler | null = null;
+  /** Caller payloads that arrived before {@link configure}; see {@link MAX_PRE_CONFIG_FRAMES}. */
+  let preConfigAudio: string[] | null = [];
 
   const messageListeners: MessageListener[] = [];
   /**
@@ -167,6 +192,11 @@ export function createTelephonyBridge(
     if (toSession !== null) return;
     toSession = createResampler(TELEPHONY_SAMPLE_RATE, sampleRate);
     toCarrier = createResampler(ttsSampleRate, TELEPHONY_SAMPLE_RATE);
+    // In arrival order, through the same resampler, so its filter state runs on
+    // from the held audio into the live audio without a click.
+    const held = preConfigAudio ?? [];
+    preConfigAudio = null;
+    for (const payload of held) forwardCallerAudio(payload);
     log.debug("telephony: session rates negotiated", {
       carrier: carrier.name,
       sampleRate,
@@ -268,8 +298,15 @@ export function createTelephonyBridge(
     sendToCarrier(carrier.media(uint8ToBase64(pcm16ToMulaw(eightKhz)), streamId));
   }
 
+  /** Whether the carrier's `start` has been seen; a repeat is ignored. */
+  let started = false;
+
   /** The carrier's stream has begun: pin the id and release the greeting. */
-  function handleCarrierStart(frame: CarrierInbound & { kind: "start" }): void {
+  function handleCarrierStart(frame: CarrierStart): void {
+    // Once per stream. A second `start` would re-pin the id mid-call and emit a
+    // second `audio_ready`, i.e. a second greeting.
+    if (started) return;
+    started = true;
     streamId = frame.streamId === "" ? null : frame.streamId;
     if (!isMulawFormat(frame.encoding)) {
       // Informational, never fatal: the field is a declaration and the bytes
@@ -282,6 +319,7 @@ export function createTelephonyBridge(
       });
     }
     log.info("telephony: call connected", { carrier: carrier.name, streamId });
+    options.onStart?.(frame);
     // What the browser client sends once its audio graph is live. It is what
     // releases the agent's greeting, so the call opens on the agent's own
     // opening line rather than on silence.
@@ -322,10 +360,22 @@ export function createTelephonyBridge(
       handleCarrierStop();
       return;
     }
-    if (frame.kind !== "media" || toSession === null) return;
+    if (frame.kind !== "media") return;
+    if (toSession === null) {
+      if (preConfigAudio !== null && preConfigAudio.length < MAX_PRE_CONFIG_FRAMES) {
+        preConfigAudio.push(frame.payload);
+      }
+      return;
+    }
+    forwardCallerAudio(frame.payload);
+  }
+
+  /** One caller payload, decoded and resampled to the session's input rate. */
+  function forwardCallerAudio(payload: string): void {
+    if (toSession === null) return;
     // A payload the CARRIER chose, so a drop is the one worth seeing most —
     // through this call's own logger rather than `_base64.ts`'s default.
-    const pcm = toSession.process(mulawToPcm16(base64ToUint8(frame.payload, log)));
+    const pcm = toSession.process(mulawToPcm16(base64ToUint8(payload, log)));
     if (pcm.length === 0) return;
     emit(pcm16ToBytes(pcm));
   }

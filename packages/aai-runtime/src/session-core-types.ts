@@ -144,9 +144,10 @@ export type ServerSession = {
    * Put a resumed session's conversation back — into the model's context, and
    * onto the WIRE for the client.
    *
-   * `toolCalls` is the client's half only: the LLM history in the event log is
-   * transcripts (see `session-event-history.ts`), so nothing here reaches the
-   * model. Defaulted, because a caller that has only messages is a legitimate
+   * `toolCalls` goes to the client for its tool rows AND, joined with the
+   * `tool` messages in `messages`, to the model as real call/result pairs
+   * (`modelHistoryOf`, `session-event-history.ts`) — a call needs both halves
+   * to be seeded, so one without its result reaches the client only. Defaulted, because a caller that has only messages is a legitimate
    * one — the platform's own `attachSessionStream` passes both.
    */
   restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;

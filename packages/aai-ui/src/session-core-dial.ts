@@ -15,6 +15,7 @@
  */
 
 import { loadClientConfig } from "./client-config.ts";
+import { resolveReported } from "./client-identity.ts";
 import { openReconnectingSocket } from "./session-core-reconnect.ts";
 import { buildBrokeredWsUrl, buildWsUrl, type ClientReport } from "./session-core-url.ts";
 import {
@@ -39,14 +40,6 @@ export type DialOptions = {
   client?: string | (() => string | undefined) | undefined;
 };
 
-/** A string-or-getter option resolved NOW, trimmed; an empty answer is none. */
-function resolveReported(
-  value: string | (() => string | undefined) | undefined,
-): string | undefined {
-  const trimmed = (typeof value === "function" ? value() : value)?.trim();
-  return trimmed === "" ? undefined : trimmed;
-}
-
 export type Dialer = {
   /** A socket for this attempt. */
   open(): InstanceType<WebSocketConstructor>;
@@ -58,6 +51,13 @@ export type Dialer = {
   /** Drop the resume identity, so the next connect is a NEW session. */
   forget(): void;
   /**
+   * The session id a `config` frame CONFIRMED — `session.identity.sessionId()`.
+   * Not the resume identity above: that one is seeded from storage and from
+   * `resume(id)` before any server has said the session exists, and a page
+   * keying its history off an id no server confirmed files it under a guess.
+   */
+  sessionId(): string | undefined;
+  /**
    * Make `sid` the resume identity — presented as `?sessionId=` by the next
    * attempt and stored as a `config` frame's would be — so the next connect
    * resumes THAT session. The caller has validated it.
@@ -65,8 +65,13 @@ export type Dialer = {
   adopt(sid: string): void;
 };
 
-/** @internal */
-export function createDialer(options: DialOptions): Dialer {
+/**
+ * @param onSessionId - Told whenever the CONFIRMED id changes (a `config` frame
+ *   with a new id, `forget()`), so the session can notify `useSessionId()`
+ *   even when no snapshot field moved with it.
+ * @internal
+ */
+export function createDialer(options: DialOptions, onSessionId?: () => void): Dialer {
   /**
    * The session ID to resume: seeded from `options.resumeSessionId`, else from
    * what a previous LOAD of this page stored, then kept current from every
@@ -94,6 +99,15 @@ export function createDialer(options: DialOptions): Dialer {
    * first fetch settles.
    */
   let serverIsBroker: boolean | undefined;
+
+  /** What the last `config` frame said — see `Dialer.sessionId`. */
+  let confirmed: string | undefined;
+
+  function confirm(sid: string | undefined): void {
+    if (sid === confirmed) return;
+    confirmed = sid;
+    onSessionId?.();
+  }
 
   /**
    * This attempt's `?location=`, `?phone=` and `?client=`, resolved NOW: a
@@ -164,6 +178,7 @@ export function createDialer(options: DialOptions): Dialer {
         writeStoredSessionId(options.platformUrl, sid);
       }
       hasConnected = true;
+      confirm(sid);
     },
     adopt: (sid) => {
       sessionId = sid;
@@ -178,6 +193,8 @@ export function createDialer(options: DialOptions): Dialer {
       // conversation this call just discarded, greeting suppressed.
       clearStoredSessionId(options.platformUrl);
       hasConnected = false;
+      confirm(undefined);
     },
+    sessionId: () => confirmed,
   };
 }

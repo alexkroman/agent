@@ -26,7 +26,13 @@ export const _internals = { connectS2s };
 export type S2sTransportOptions = {
   apiKey: string;
   s2sConfig: S2sConfig;
-  sessionConfig: S2sSessionConfig;
+  /**
+   * The `session.update` payload, or a thunk built when `start()` sends it —
+   * which is after the runtime's `sessionContext` has answered, so a session's
+   * own `greeting` reaches the service (see `GreetingOption` in `types.ts`).
+   * A reconnect's `session.resume` does not read it.
+   */
+  sessionConfig: S2sSessionConfig | (() => S2sSessionConfig);
   callbacks: TransportCallbacks;
   sid: string;
   agent: string;
@@ -326,7 +332,8 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   function start(): Promise<void> {
-    return connect((h) => h.updateSession(opts.sessionConfig));
+    const config = opts.sessionConfig;
+    return connect((h) => h.updateSession(typeof config === "function" ? config() : config));
   }
 
   async function stop(): Promise<void> {

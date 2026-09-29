@@ -29,6 +29,8 @@ import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { UserActivity } from "./pipeline-user-speech.ts";
 import {
   type EmitError,
+  type GreetingOption,
+  resolveGreeting,
   type SendTtsText,
   type SkipGreetingOption,
   shouldSkipGreeting,
@@ -74,7 +76,8 @@ export interface PipelineLifecycleDeps {
   emitError: EmitError;
   /** Session-lifetime abort — combined into every turn's own signal. */
   sessionAbort: AbortController;
-  greeting: string | undefined;
+  /** Resolved in `greet()`, so a session's own greeting is read when it fires. */
+  greeting: GreetingOption | undefined;
   skipGreeting: SkipGreetingOption | undefined;
 
   gate: TurnGate;
@@ -193,7 +196,7 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
 
   function greet(): void {
     if (!audioReady || isTerminated()) return;
-    const greeting = deps.greeting;
+    const greeting = resolveGreeting(deps.greeting);
     if (!greeting) return;
     turnChain.chain(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
   }

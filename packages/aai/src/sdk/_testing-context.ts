@@ -16,7 +16,9 @@ import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
+import { type SessionCall, setSessionCall } from "./session-call.ts";
 import { setSessionClient } from "./session-client.ts";
+import { claimSessionEnder } from "./session-end.ts";
 import { setSessionLocation } from "./session-location.ts";
 import { setSessionPhone } from "./session-phone.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
@@ -66,6 +68,48 @@ export type TestToolContext = ToolContext & {
    */
   readonly desk: StubDelegate;
 };
+
+/**
+ * What {@link createToolContext} recorded per session id for `endSession`.
+ * Test-only and module-local: the context that registered the ender and the
+ * spec that reads it back are this one copy of the testing module.
+ */
+const endSessionRecords = new Map<string, { afterReply: boolean }[]>();
+
+/**
+ * Every `endSession(ctx, …)` a tool made on a {@link createToolContext}
+ * context's session, in call order, with its options resolved (`afterReply`
+ * defaults to `true`). Empty when the tool never ended the session.
+ *
+ * A function of the context rather than a field on `TestToolContext`, for the
+ * reason `endSession` is one: it reads the session, which `ctx.sessionId` names.
+ *
+ * ```ts
+ * import { endSession, tool } from "@alexkroman1/aai";
+ * import { createToolContext, endSessionCalls } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { z } from "zod";
+ *
+ * const endCall = tool({
+ *   description: "Hang up.",
+ *   inputSchema: z.object({}),
+ *   execute: (_args, ctx) => ({ ended: endSession(ctx) }),
+ * });
+ *
+ * test("end_call hangs up after the goodbye", async () => {
+ *   const ctx = createToolContext();
+ *   await endCall.execute({}, ctx);
+ *   expect(endSessionCalls(ctx)).toEqual([{ afterReply: true }]);
+ * });
+ * ```
+ *
+ * @public
+ */
+export function endSessionCalls(
+  ctx: Pick<ToolContext, "sessionId">,
+): readonly { afterReply: boolean }[] {
+  return endSessionRecords.get(ctx.sessionId) ?? [];
+}
 
 /**
  * What {@link createToolContext} accepts: a field per {@link ToolContext} field,
@@ -170,6 +214,13 @@ export type ToolContextOverrides = {
    * `undefined`.
    */
   clientLocation?: string | undefined;
+  /**
+   * The phone call this session is, as `sessionCall(ctx)` will read it —
+   * recorded under the context's `sessionId` the way the runtime records a
+   * `WS /phone` stream's `start` frame. Omitted, `sessionCall` answers
+   * `undefined`, which is what a browser tab gets.
+   */
+  call?: SessionCall | undefined;
 };
 
 /**
@@ -349,7 +400,7 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   // a SCRIPT rather than as a function and a script must never land on the
   // context — see their docs on `ToolContextOverrides`. Everything else still
   // spreads last, so an override still wins.
-  const { generate, delegate, model, desk, clientId, clientPhone, clientLocation, ...rest } =
+  const { generate, delegate, model, desk, clientId, clientPhone, clientLocation, call, ...rest } =
     overrides;
   // Built either way, so `ctx.model`/`ctx.desk` need no null check at an
   // assertion. An empty route table is what an unwired fake is: it records
@@ -430,5 +481,18 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   if (clientId !== undefined) setSessionClient(ctx.sessionId, clientId);
   if (clientPhone !== undefined) setSessionPhone(ctx.sessionId, clientPhone);
   if (clientLocation !== undefined) setSessionLocation(ctx.sessionId, clientLocation);
+  if (call !== undefined) setSessionCall(ctx.sessionId, call);
+  // Registered for EVERY context, so `endSession(ctx)` answers `true` here the
+  // way it does on a live session and the spec reads what was asked with
+  // `endSessionCalls(ctx)`. Never released: the context outlives nothing, and a
+  // later context with the same `sessionId` claims the id over it — and starts
+  // its own record, so a reused id does not inherit an earlier spec's calls.
+  const sessionId = ctx.sessionId;
+  endSessionRecords.delete(sessionId);
+  claimSessionEnder(sessionId, (options) => {
+    const record = endSessionRecords.get(sessionId) ?? [];
+    record.push(options);
+    endSessionRecords.set(sessionId, record);
+  });
   return ctx;
 }

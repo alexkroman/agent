@@ -218,6 +218,8 @@ function toRun(value: unknown): RunRecord | undefined {
     // compare unequal to every real bundle hash and make the divergence message
     // report a redeploy on a run that never had one.
     ...(typeof value.codeVersion === "string" ? { codeVersion: value.codeVersion } : {}),
+    // Same rule: `String(undefined)` would label every unlabelled run "undefined".
+    ...(typeof value.label === "string" ? { label: value.label } : {}),
   };
 }
 
@@ -324,6 +326,7 @@ export function createPlatformJournal(options: PlatformEndpoint): JournalStore {
         createdAt: record.createdAt,
         input: encode(record.input),
         codeVersion: record.codeVersion,
+        label: record.label,
       });
     },
 

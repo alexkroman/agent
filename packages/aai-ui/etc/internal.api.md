@@ -38,6 +38,7 @@ type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
     sendText(text: string): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
@@ -90,6 +91,14 @@ type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
+};
+
+// @public @sealed
+type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
 };
 
 // @internal

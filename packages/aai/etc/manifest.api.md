@@ -558,14 +558,24 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    greeting?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -574,6 +584,7 @@ interface SessionContextArgs {
 
 // @public @sealed
 interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
@@ -881,6 +892,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -1270,6 +1282,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public

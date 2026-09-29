@@ -3,7 +3,7 @@
   "capability": "runtime",
   "epoch": 6,
   "rule": 2,
-  "sha256": "6ee0fa75e1ecd32395e05a6399a575bd9bd95f19cf7360aad37f0854fb06b642",
+  "sha256": "23bac92c93c25938c28f5c1d6aac843309d2c00d9ad8278e032768dcd809d744",
   "exports": [
     "AgentRuntime",
     "ExecuteTool",
@@ -23,7 +23,7 @@
     "runtimeBrand"
   ],
   "rollup": "74db1be26bc9fd10c1e617aece26253a72e24afc3dfb48072f53a0dace4db9da",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -34,7 +34,13 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "6ee0fa75e1ecd32395e05a6399a575bd9bd95f19cf7360aad37f0854fb06b642",
+      "sha256": "b0cab6922476b65fa6af317c80ab74a61c12c70fd2aae3dc3b1391bea59b7b55",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "23bac92c93c25938c28f5c1d6aac843309d2c00d9ad8278e032768dcd809d744",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

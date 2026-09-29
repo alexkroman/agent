@@ -233,6 +233,8 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     const ended = vi.fn<(lastEventIndex: number) => void>();
     const memory: SessionMemory = {
       open: async () => (await readAllEvents(other, backendSid)).slice(),
+      refused: undefined,
+      greeting: undefined,
       ended,
     };
     return { memory, ended };

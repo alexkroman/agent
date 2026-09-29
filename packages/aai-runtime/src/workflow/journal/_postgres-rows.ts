@@ -30,6 +30,8 @@ export type RunRow = {
   error: string | null;
   /** NULL off the platform, and for a row written before the column existed. */
   code_version: string | null;
+  /** NULL for an unlabelled run, and for a row written before the column existed. */
+  label: string | null;
 };
 
 /** A step row. */
@@ -104,6 +106,7 @@ export function toRunRecord(row: RunRow): RunRecord {
     ...(row.output === null ? {} : { output: decodeStorageJson(row.output) }),
     ...(row.error === null ? {} : { error: { message: row.error } }),
     ...(row.code_version === null ? {} : { codeVersion: row.code_version }),
+    ...(row.label === null ? {} : { label: row.label }),
   };
 }
 

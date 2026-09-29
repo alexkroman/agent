@@ -7,6 +7,7 @@
 
 import { act } from "react";
 import { vi } from "vitest";
+import type { SessionIdentity } from "./client-identity.ts";
 import { CLEARED_SESSION_STATE } from "./session-core-messages.ts";
 import type { BrowserSession, browserSessionBrand, SessionSnapshot } from "./session-core-types.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -24,6 +25,7 @@ import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
  */
 export function createMockSessionCore(
   overrides?: Partial<SessionSnapshot>,
+  identity?: Partial<SessionIdentity>,
 ): BrowserSession & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
     state: "disconnected",
@@ -62,6 +64,15 @@ export function createMockSessionCore(
     },
     cancel() {
       /* noop */
+    },
+    // No client unless a spec names one: the mock dials nowhere, and a spec
+    // about the inbox says which client and holder it expects.
+    identity: {
+      platformUrl: "http://test.local/",
+      clientId: () => undefined,
+      holderId: () => "holder-test",
+      sessionId: () => undefined,
+      ...identity,
     },
     userTurn: {
       start() {

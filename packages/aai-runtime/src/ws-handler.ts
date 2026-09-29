@@ -11,9 +11,11 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
+import type { SessionCall } from "@alexkroman1/aai";
 import {
   LOG_PREVIEW_CHARS,
   SESSION_KEEPALIVE_INTERVAL_MS,
+  setSessionCall,
   setSessionClient,
   setSessionLocation,
   setSessionPhone,
@@ -65,9 +67,27 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
   clientId?: string;
   /** The client's number (`?phone=`, E.164), for `sessionClientPhone`. PII, never logged. */
   clientPhone?: string;
+  /** The phone call (`WS /phone`'s `start` frame), for `sessionCall` and the lifecycle hooks. */
+  call?: SessionCall;
 };
 
 const WS_CLOSE_INTERNAL = 1011;
+/** A normal close — what a tool's `endSession(ctx)` ends a socket with. */
+const WS_CLOSE_NORMAL = 1000;
+/** Policy violation — what a session `sessionContext` refused is closed with. */
+const WS_CLOSE_POLICY_VIOLATION = 1008;
+/**
+ * The longest close reason a WebSocket frame carries: 125 payload bytes, two of
+ * them the code. An over-long reason makes `ws` THROW rather than truncate.
+ */
+const MAX_CLOSE_REASON_BYTES = 123;
+
+/** `reason` cut to fit a close frame, on a character boundary. */
+function closeReason(reason: string): string {
+  let out = reason;
+  while (Buffer.byteLength(out) > MAX_CLOSE_REASON_BYTES) out = out.slice(0, -1);
+  return out;
+}
 
 /** Route one socket frame into the attached session: binary is audio, text is a command. */
 function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger, sid: string): void {
@@ -112,6 +132,7 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
     clientLocation,
     clientId,
     clientPhone,
+    call,
     createSession,
     ...attachOptions
   } = options;
@@ -152,7 +173,7 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
 
   function onOpen(): void {
     announceOpen?.();
-    const { client, stopPacing } = createClientSink(
+    const { client, stopPacing, endAfterReply } = createClientSink(
       ws,
       log,
       options.readyConfig.ttsSampleRate,
@@ -167,10 +188,25 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
         if (clientLocation !== undefined) setSessionLocation(sid, clientLocation);
         if (clientId !== undefined) setSessionClient(sid, clientId);
         if (clientPhone !== undefined) setSessionPhone(sid, clientPhone);
+        if (call !== undefined) setSessionCall(sid, call);
         return createSession(sid, sessionClient);
       },
       logger: log,
       closeAfterFailure: () => ws.close?.(WS_CLOSE_INTERNAL, "session start failed"),
+      // For `WS /phone` the socket is the telephony bridge, whose close closes
+      // the carrier's stream — i.e. hangs the call up (`telephony-bridge.ts`).
+      closeAfterRefusal: (reason) => ws.close?.(WS_CLOSE_POLICY_VIOLATION, closeReason(reason)),
+      closeOnEndSession: (request) =>
+        endAfterReply(request, () => {
+          // Off a timer once the goodbye has played, with no caller to catch
+          // for it — a socket that is already gone must not become an
+          // uncaughtException.
+          try {
+            ws.close?.(WS_CLOSE_NORMAL, "session ended by the agent");
+          } catch (err) {
+            log.debug("ws: close on endSession failed", { error: errorMessage(err) });
+          }
+        }),
     });
     startKeepalive(attached.id.slice(0, 8));
   }

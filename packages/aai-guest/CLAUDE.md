@@ -81,7 +81,7 @@ Known remaining asymmetries:
 | Divergence | Direction | Why it stands |
 | --- | --- | --- |
 | Memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools uncapped in the host process. |
-| `run_code` | fails in dev, works in prod | The host-side guard refuses; fail-closed. |
+| `run_code` | fails in dev, works in prod | The host-side guard refuses; fail-closed. `AAI_RUN_CODE=deno` runs it self-hosted in a zero-permission Deno. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate: a shell-exported key works for `aai dev`. The dev server warns when a required key came only from the shell (`agentEnvWarnings`), and `aai deploy` preflights required credentials (`aai-cli/_preflight.ts`) — warns, since it cannot see stored secrets. |
 | Durable-run backing | different backend | Dev uses the DevKit postgres world at the developer's `DATABASE_URL`; a deployed guest reaches run storage, queue, session state and uploads over HTTP and opens no tenant DB connection. |
 | Modal credentials | prod stricter | Production spawns Modal sandboxes (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`); local dev uses an isolation-free child process ("Modal sandbox notes", `packages/aai-server/MODAL-CLAUDE.md`). |
@@ -119,8 +119,9 @@ Lives in `aai-guest-core`; the harness wires it as `RuntimeOptions.runCode`
 
 - **Executes only inside the guest sandbox.** The host-side `execute`
   (`builtin-run-code.ts`) refuses under `aai dev` rather than evaluating
-  attacker-influenceable code in the host. `node:vm` is not a boundary; the
-  container is.
+  attacker-influenceable code in the host, unless the process opted into
+  `AAI_RUN_CODE=deno` (a zero-permission `deno` per call;
+  `packages/aai-cli/CLAUDE.md`). `node:vm` is not a boundary; the container is.
 - A `new Function` async wrapper **in a worker thread**, with the same authority
   as the rest of the sandboxed agent (egress, fs, env, child processes) and no
   in-process capability stripping. The tool description promises only

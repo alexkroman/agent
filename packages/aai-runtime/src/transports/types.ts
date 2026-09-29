@@ -39,6 +39,7 @@ import type {
   SessionSourcedEventType,
 } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
+import type { ModelMessage } from "ai";
 
 /**
  * What a transport may report: everything in the session event vocabulary except
@@ -202,9 +203,39 @@ export type TransportSessionConfig = {
    * never directly.
    */
   systemPrompt: SystemPromptOption;
-  greeting?: string;
+  /**
+   * The opening line, or a thunk read when it fires — see {@link GreetingOption}.
+   * Read it through {@link resolveGreeting}, never directly.
+   */
+  greeting?: GreetingOption | undefined;
   history?: Message[];
 };
+
+/**
+ * A session's greeting: the text, or a THUNK that knows it later.
+ *
+ * The thunk exists for the reason {@link SkipGreetingOption}'s does: the
+ * runtime builds a transport before `session.start()`, and `sessionContext` —
+ * whose `greeting` replaces the agent's for one session — answers INSIDE that
+ * window. Every transport reads its greeting after `start()` (pipeline in
+ * `greet()`, OpenAI Realtime in `sendGreeting`, AssemblyAI S2S in its
+ * `session.update`), so a thunk resolved there sees the answer. An empty or
+ * absent result means no greeting.
+ *
+ * @internal
+ */
+export type GreetingOption = string | (() => string | undefined);
+
+/**
+ * Resolve a {@link GreetingOption} at the moment the greeting is spoken or sent.
+ * One spelling, for the reason {@link resolveSystemPrompt} is one: a site that
+ * forgot the call would speak a function's source text.
+ *
+ * @internal
+ */
+export function resolveGreeting(greeting: GreetingOption | undefined): string | undefined {
+  return typeof greeting === "function" ? greeting() : greeting;
+}
 
 /**
  * Transport abstraction — one implementation per provider strategy
@@ -230,12 +261,13 @@ export interface Transport {
    * context service-side (via session.resume) and omit this.
    *
    * `modelView`, when given, is what the MODEL's own list is seeded with in
-   * place of `messages` — the same conversation with each prior tool call
-   * rendered as a text digest (`modelHistoryOf` in `session-event-history.ts`),
-   * because a lone `tool` result is an orphan the provider rejects. `messages`
-   * still seeds the tool-facing view whole.
+   * place of `messages` — the same conversation with each prior tool call as a
+   * real `tool-call`/`tool-result` pair (`modelHistoryOf` in
+   * `session-event-history.ts`), because a lone `tool` result is an orphan the
+   * provider rejects and a call rendered as TEXT is one the model imitates.
+   * `messages` still seeds the tool-facing view whole.
    */
-  seedHistory?(messages: readonly Message[], modelView?: readonly Message[]): void;
+  seedHistory?(messages: readonly Message[], modelView?: readonly ModelMessage[]): void;
   /**
    * Clear the transport's conversation state (client `reset`). Pipeline mode
    * clears its message list; S2S has no client-side history to drop.

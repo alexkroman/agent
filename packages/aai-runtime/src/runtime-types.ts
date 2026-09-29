@@ -6,6 +6,7 @@
  * `createRuntime` implementation. All imports here are type-only.
  */
 
+import type { SessionCall } from "@alexkroman1/aai";
 import type { AgentEnv } from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
@@ -47,6 +48,12 @@ export type SessionStartOptions = {
    * E.164), kept per session for `sessionClientPhone(ctx)`. PII, never logged.
    */
   clientPhone?: string;
+  /**
+   * The phone call this session is (`WS /phone`: the carrier's `start` frame),
+   * kept per session for `sessionCall(ctx)` and handed to `sessionContext` and
+   * `onSessionEnd` as `call`. What the far end claimed; the app checks it.
+   */
+  call?: SessionCall;
   logContext?: Record<string, string>;
   onOpen?: () => void;
   onClose?: () => void;
@@ -197,7 +204,8 @@ export type AgentRuntime = {
  * Configures the agent, environment, database, logging and provider triple;
  * the fields every way of running an agent shares are {@link HostAgentOptions}.
  * `providerEnv` defaults to {@link RuntimeOptions.env}, `logger` to the
- * console, and `runCode` is supplied only by the platform's guest harness.
+ * console, and `runCode` by the platform's guest harness or, under
+ * `AAI_RUN_CODE=deno`, by `aai dev`/`aai start`.
  *
  * The testing and relay SEAMS — a WebSocket factory per S2S transport, a relay
  * `executeTool`/`toolSchemas` pair with its `onToolResult`, the sandbox's

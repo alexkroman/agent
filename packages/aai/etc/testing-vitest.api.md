@@ -203,6 +203,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -589,6 +590,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public

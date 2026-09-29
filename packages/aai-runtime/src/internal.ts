@@ -335,6 +335,9 @@ export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow/p
 // (a busy tick 516 ms -> 20 ms) and why the column is not GENERATED from the
 // grammar in the DDL instead.
 export { queueNameKind, WORKFLOW_QUEUE_PATH } from "./workflow/queue-dispatch.ts";
+// A run label's one normalization, which the platform's guest journal handler
+// applies again to what an untrusted guest sends (`workflow/run-label.ts`).
+export { MAX_WORKFLOW_RUN_LABEL_CHARS, normalizeRunLabel } from "./workflow/run-label.ts";
 // The workflow surface itself and the flow prefix — one spelling, so the
 // platform's proxy and this server cannot name different paths.
 //

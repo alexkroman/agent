@@ -40,6 +40,10 @@
  *   {@link stepTranscribeUpload} / {@link stepTranscribeSubmit} /
  *   {@link stepTranscribePoll} for the async job API or
  *   {@link stepTranscribeSync} for the one-request one, back in.
+ * - **Phone calls, outbound** — {@link stepPlaceCall} dials through Twilio and
+ *   streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
+ *   the answering session reads as `call.parameters`; {@link stepCallStatus}
+ *   follows it to one of the statuses that are over.
  * - **Retry classification** — {@link isTransientStatus} / {@link retryAfter},
  *   for a body deciding whether a failure is worth another round, and
  *   {@link stepInfo}, which says which ATTEMPT this is and whether it is the
@@ -114,6 +118,21 @@ export {
   type StepNotifyClientOptions,
   stepNotifyClient,
 } from "./step-notify-client.ts";
+// The outbound half of telephony: dial through Twilio, and follow the call.
+export {
+  type CallStatusOptions,
+  DEFAULT_CALL_RING_TIMEOUT_S,
+  DEFAULT_CALL_TIME_LIMIT_S,
+  type PlaceCallCredentials,
+  PlaceCallError,
+  type PlaceCallOptions,
+  type PlacedCall,
+  type PlacedCallStatus,
+  stepCallStatus,
+  stepPlaceCall,
+  TWILIO_ACCOUNT_SID_ENV,
+  TWILIO_AUTH_TOKEN_ENV,
+} from "./step-place-call.ts";
 export { stepEmit, stepReport } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {

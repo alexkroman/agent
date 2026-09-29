@@ -25,3 +25,12 @@ route is `packages/aai-server/CLAUDE.md`, "Telephony".
 runtime facade implements with `startSession` only (a `connect` must return a
 connection synchronously, before the runtime exists). Porting the bridge onto
 `connectSession` means giving that facade a buffered `connect` first.
+
+**A session starts on the carrier's `start` frame, not on the upgrade**
+(`TELEPHONY_START_TIMEOUT_MS`): the frame carries the call id and `<Parameter>`s,
+and `sessionContext` runs inside `session.start()`, so starting on the upgrade
+asked the app about a call before the carrier had named it. The bridge buffers
+the `audio_ready` until the runtime attaches. The two app-initiated closes —
+`refuse` (1008, no `error.reported`) and `endSession(ctx)` (the paced sink's
+`endAfterReply`, which waits out the playout clock) — are
+`session-attach-end.ts`.

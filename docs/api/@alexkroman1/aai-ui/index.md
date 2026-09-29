@@ -25,6 +25,8 @@ exists so a component re-renders on its own slice rather than on every frame:
 | Reading | Hooks |
 | --- | --- |
 | the call itself | [useSession](#usesession) (everything), [useSessionStatus](#usesessionstatus), [useSessionError](#usesessionerror), [useSessionActions](#usesessionactions), [useSessionSelector](#usesessionselector) |
+| who the client is | [useSessionId](#usesessionid), [useClientId](#useclientid), [browserClientId](#browserclientid) |
+| a run reaching the page later | [useInbox](#useinbox) (a reminder, a finished job — played when it lands) |
 | what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript) |
 | what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
@@ -231,6 +233,47 @@ function Transcript() {
   );
 }
 ```
+
+***
+
+### browserClientId()
+
+```ts
+function browserClientId(platformUrl?: string): string;
+```
+
+This browser's stable client id for the agent at `platformUrl` —
+`browser-<32 hex>`, minted once and kept in `localStorage`. The id
+`mountClient({ client: "auto" })` sends; call it yourself to compose it, e.g.
+a page joined to a speaker that sends the speaker's id instead:
+
+#### Parameters
+
+##### platformUrl?
+
+`string`
+
+The agent's base URL; the id is per agent. Defaults to
+  the page's own, which is `mountClient()`'s default too.
+
+#### Returns
+
+`string`
+
+The id — the same one on every call for the same agent.
+
+#### Example
+
+```ts
+import { browserClientId, mountClient } from "@alexkroman1/aai-ui";
+
+declare function linkedSpeaker(): string | undefined;
+
+mountClient({ client: () => linkedSpeaker() ?? browserClientId() });
+```
+
+A stored value that is not a valid client id (letters, digits, `-`, `_`, at
+most 64) is replaced. Where storage is unavailable the id lasts for this tab.
 
 ***
 
@@ -610,6 +653,56 @@ const session = createBrowserSession({ platformUrl: "https://host/my-agent/" });
 session.subscribe(() => render(session.getSnapshot()));
 session.start();
 ```
+
+***
+
+### createInbox()
+
+```ts
+function createInbox(options: CreateInboxOptions): Inbox;
+```
+
+Hold `WS /inbox?client=&holder=` open, reconnecting with backoff, and answer
+every notice the way the protocol requires — `ack` once it has arrived whole,
+`busy` when `busy()` says so, a repeat acked without being delivered twice.
+
+Most clients call `useInbox()`, which fills in the client, holder and base URL
+from the session and plays each notice. This is the same thing for a page
+with no React, or for an inbox held under a different client than the
+session's.
+
+#### Parameters
+
+##### options
+
+[`CreateInboxOptions`](#createinboxoptions)
+
+Where to connect, as whom, and what to do with a notice.
+
+#### Returns
+
+[`Inbox`](#inbox)
+
+The [Inbox](#inbox) handle.
+
+#### Example
+
+```ts
+import { createInbox } from "@alexkroman1/aai-ui";
+
+const inbox = createInbox({
+  platformUrl: "https://speaker.example/",
+  client: "kitchen-speaker",
+  holder: "kitchen-speaker-tab1",
+  onNotice: (notice) => console.log(notice.event, notice.data),
+});
+// later
+inbox.close();
+```
+
+#### Throws
+
+RangeError when `holder` is not a valid holder id.
 
 ***
 
@@ -2103,6 +2196,29 @@ Returned while the agent has pushed nothing. Not memoized
 
 ***
 
+### useClientId()
+
+```ts
+function useClientId(): string | undefined;
+```
+
+The client id this session sends as `?client=` — the id a tool reads with
+`sessionClientId(ctx)` and the inbox socket is held under. With
+`mountClient({ client: "auto" })` it is this browser's `browserClientId()`;
+`undefined` when the session sends none.
+
+A `client` GETTER is read when the session notifies (each snapshot change),
+so a page that changes what its getter answers sees the new id on the next
+render the session causes.
+
+#### Returns
+
+`string` \| `undefined`
+
+The client id, or `undefined`.
+
+***
+
 ### useConversation()
 
 ```ts
@@ -2360,6 +2476,50 @@ function SaveNote({ onSave }: { onSave: () => Promise<void> }) {
 
 ***
 
+### useInbox()
+
+```ts
+function useInbox(options?: UseInboxOptions): UseInboxResult;
+```
+
+Hold this session's `WS /inbox` socket open for the life of the component,
+and play what arrives — see the module doc.
+
+The session needs a client id: `mountClient({ client: "auto" })`, or a
+`client` of your own. With none, no socket is opened (`connected` stays
+`false`) until the session's `client` getter answers one.
+
+#### Parameters
+
+##### options?
+
+[`UseInboxOptions`](#useinboxoptions)
+
+What to do with a notice or a live event; see [UseInboxOptions](#useinboxoptions).
+
+#### Returns
+
+[`UseInboxResult`](#useinboxresult)
+
+Whether the socket is open, and a way to stop playback.
+
+#### Example
+
+```tsx
+import { mountClient, useInbox } from "@alexkroman1/aai-ui";
+
+function App() {
+  const { connected } = useInbox({
+    onNotice: (notice) => console.log(notice.event, notice.data),
+  });
+  return <p>{connected ? "Reminders on" : "Reminders offline"}</p>;
+}
+
+mountClient({ client: "auto", component: App });
+```
+
+***
+
 ### usePushToTalk()
 
 ```ts
@@ -2606,6 +2766,38 @@ for this.
 [`SessionError`](#sessionerror) \| `null`
 
 The current error, or `null`.
+
+***
+
+### useSessionId()
+
+```ts
+function useSessionId(): string | undefined;
+```
+
+The server's id for the current session: `undefined` before the session's
+first `config` frame and after `end()`; a resume or a new session updates it
+from its own `config` frame. Key a page's history by it.
+
+Treat it as sensitive — whoever holds it can resume the session and read its
+history (`VoiceSessionOptions.onSessionId` explains why).
+
+#### Returns
+
+`string` \| `undefined`
+
+The current session id, or `undefined`.
+
+#### Example
+
+```tsx
+import { useSessionId } from "@alexkroman1/aai-ui";
+
+function SessionTag() {
+  const id = useSessionId();
+  return <small>{id ?? "no session yet"}</small>;
+}
+```
 
 ***
 
@@ -4144,6 +4336,7 @@ The player's `aria-label`: what this audio IS — `"Summary read aloud"`.
 ```ts
 type BrowserSession = {
   [browserSessionBrand]: true;
+  identity: SessionIdentity;
   userTurn: UserTurnControls;
   [dispose]: void;
   cancel: void;
@@ -4496,6 +4689,17 @@ readonly [browserSessionBrand]: true;
 ```
 
 The seal — see [browserSessionBrand](#browsersessionbrand-1).
+
+##### identity
+
+```ts
+readonly identity: SessionIdentity;
+```
+
+Who this session is to its agent — the base URL it dials, the client id it
+sends, this tab's inbox holder id, and the server's session id. What
+`useInbox()`, `useClientId()` and `useSessionId()` read; see
+[SessionIdentity](#sessionidentity).
 
 ##### userTurn
 
@@ -5253,6 +5457,120 @@ the bottom of its conversation column, outside the scroll.
 
 ***
 
+### CreateInboxOptions
+
+```ts
+type CreateInboxOptions = {
+  busy?: () => boolean;
+  client: string | (() => string | undefined);
+  events?: boolean;
+  holder: string;
+  onEvent?: (event: InboxEvent) => void;
+  onNotice?: (notice: InboxNotice) => void;
+  platformUrl: string;
+  WebSocket?: WebSocketConstructor;
+};
+```
+
+Options for [createInbox](#createinbox).
+
+#### Properties
+
+##### busy?
+
+```ts
+optional busy?: () => boolean;
+```
+
+Asked when a new notice arrives: `true` answers `busy` and the step sends it
+again later. Default: never busy. Not asked for a repeat, which is acked.
+
+###### Returns
+
+`boolean`
+
+##### client
+
+```ts
+client: string | (() => string | undefined);
+```
+
+This client's id, as the session sends it: a string, or a getter asked on
+every connection attempt. An answer that is not a valid client id (letters,
+digits, `-`, `_`, at most 64) opens no socket that attempt.
+
+##### events?
+
+```ts
+optional events?: boolean;
+```
+
+Ask for the client's live conversation (`?events=1`). Default: whether an
+`onEvent` was given.
+
+##### holder
+
+```ts
+holder: string;
+```
+
+This page's holder id among the client's holders — per TAB (see
+`session.identity.holderId()`). Same rule as a client id.
+
+##### onEvent?
+
+```ts
+optional onEvent?: (event: InboxEvent) => void;
+```
+
+A frame of the client's live conversation — only with `events`.
+
+###### Parameters
+
+###### event
+
+[`InboxEvent`](#inboxevent)
+
+###### Returns
+
+`void`
+
+##### onNotice?
+
+```ts
+optional onNotice?: (notice: InboxNotice) => void;
+```
+
+A notice arrived whole — once per delivery id; a repeat is acked, not delivered.
+
+###### Parameters
+
+###### notice
+
+[`InboxNotice`](#inboxnotice)
+
+###### Returns
+
+`void`
+
+##### platformUrl
+
+```ts
+platformUrl: string;
+```
+
+The agent's base URL — the socket is `<platformUrl>/inbox`.
+
+##### WebSocket?
+
+```ts
+optional WebSocket?: WebSocketConstructor;
+```
+
+WebSocket constructor override, for tests. Default: the page's `WebSocket`.
+
+***
+
 ### FactsProps
 
 ```ts
@@ -5505,6 +5823,197 @@ One submitted form, as a plain object keyed by field name.
 
 `unknown` values rather than `string`: see the module doc — a number field
 yields a number and a file field yields a [FileValue](#filevalue).
+
+***
+
+### Inbox
+
+```ts
+type Inbox = {
+  close: void;
+  connected: boolean;
+  subscribe: () => void;
+};
+```
+
+**`Sealed`**
+
+A held inbox socket — see [createInbox](#createinbox).
+
+ Only `createInbox` produces one.
+
+#### Methods
+
+##### close()
+
+```ts
+close(): void;
+```
+
+Close the socket for good and stop reconnecting.
+
+###### Returns
+
+`void`
+
+##### connected()
+
+```ts
+connected(): boolean;
+```
+
+Whether the socket is open now.
+
+###### Returns
+
+`boolean`
+
+##### subscribe()
+
+```ts
+subscribe(callback: () => void): () => void;
+```
+
+Called whenever `connected()` changes. Returns the unsubscribe.
+
+###### Parameters
+
+###### callback
+
+() => `void`
+
+###### Returns
+
+() => `void`
+
+***
+
+### InboxEvent
+
+```ts
+type InboxEvent = 
+  | {
+  event: {
+     type: string;
+  } & Readonly<Record<string, unknown>>;
+  sessionId: string;
+  type: "session_event";
+}
+  | {
+  sessionId: string;
+  type: "session_ended";
+};
+```
+
+One frame of the client's live conversation, sent to a holder that asked
+for events: every session bound to the client, this tab's own included —
+filter on `sessionId` (`useSessionId()`) to show only the OTHER ones.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  event: {
+     type: string;
+  } & Readonly<Record<string, unknown>>;
+  sessionId: string;
+  type: "session_event";
+}
+```
+
+###### event
+
+```ts
+readonly event: {
+  type: string;
+} & Readonly<Record<string, unknown>>;
+```
+
+The session event as the session socket would carry it (`type`, then its fields).
+
+###### Type Declaration
+
+###### type
+
+```ts
+readonly type: string;
+```
+
+###### sessionId
+
+```ts
+readonly sessionId: string;
+```
+
+###### type
+
+```ts
+readonly type: "session_event";
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  sessionId: string;
+  type: "session_ended";
+}
+```
+
+***
+
+### InboxNotice
+
+```ts
+type InboxNotice = {
+  data?: Readonly<Record<string, unknown>>;
+  event: string;
+  id: string;
+  pcm: Uint8Array;
+};
+```
+
+One notice from the agent — what a workflow step sent with
+`stepNotifyClient`, e.g. a reminder coming due.
+
+#### Properties
+
+##### data?
+
+```ts
+readonly optional data?: Readonly<Record<string, unknown>>;
+```
+
+The step's `data`, when it sent an object.
+
+##### event
+
+```ts
+readonly event: string;
+```
+
+What the notice is, as the step named it — `"reminder"`, say.
+
+##### id
+
+```ts
+readonly id: string;
+```
+
+Identifies the DELIVERY (usually the run id); a repeat carries the same one.
+
+##### pcm
+
+```ts
+readonly pcm: Uint8Array;
+```
+
+The notice's audio as sent: `stepSpeak`'s PCM16LE mono, which `useInbox`'s
+built-in playback plays at 16 kHz. Empty for a notice with no audio.
 
 ***
 
@@ -6177,6 +6686,81 @@ the message and keep the session interactive. It is REQUIRED: a fatal frame
 is not a banner — `aai-ui` answers one by releasing the microphone and ending
 the call — so every emitter states which it means rather than inheriting a
 default that takes the whole session down.
+
+***
+
+### SessionIdentity
+
+```ts
+type SessionIdentity = {
+  platformUrl: string;
+  clientId: string | undefined;
+  holderId: string;
+  sessionId: string | undefined;
+};
+```
+
+**`Sealed`**
+
+Who a session is to its agent — `session.identity`. Everything here is read
+NOW (a getter `client` can change between attempts), and nothing is a
+subscription: `useClientId()` and `useSessionId()` are the reactive reads.
+
+ Only `createBrowserSession` produces one.
+
+#### Methods
+
+##### clientId()
+
+```ts
+clientId(): string | undefined;
+```
+
+The client id the next connection attempt sends as `?client=`, trimmed, or
+`undefined` when it sends none. With `client: "auto"` it is
+[browserClientId](#browserclientid); with a getter it is the getter's answer now.
+
+###### Returns
+
+`string` \| `undefined`
+
+##### holderId()
+
+```ts
+holderId(): string;
+```
+
+This tab's `?holder=` for the client's `WS /inbox` socket — per TAB, so two
+tabs of one browser coexist instead of replacing each other's socket.
+
+###### Returns
+
+`string`
+
+##### sessionId()
+
+```ts
+sessionId(): string | undefined;
+```
+
+The server's id for the current session: `undefined` until the first
+`config` frame of a session, and again after `end()`. A resume or a new
+session sets it from its own `config` frame. Sensitive — see
+`VoiceSessionOptions.onSessionId`.
+
+###### Returns
+
+`string` \| `undefined`
+
+#### Properties
+
+##### platformUrl
+
+```ts
+readonly platformUrl: string;
+```
+
+The agent's base URL the session dials — `VoiceSessionOptions.platformUrl`.
 
 ***
 
@@ -6919,6 +7503,130 @@ readonly value: T | null;
 ```
 
 What is being shown right now, or `null` between flashes.
+
+***
+
+### UseInboxOptions
+
+```ts
+type UseInboxOptions = {
+  busy?: () => boolean;
+  events?: boolean;
+  onEvent?: (event: InboxEvent) => void;
+  onNotice?: (notice: InboxNotice) => void;
+  play?: boolean;
+};
+```
+
+Options for [useInbox](#useinbox).
+
+#### Properties
+
+##### busy?
+
+```ts
+optional busy?: () => boolean;
+```
+
+Whether to refuse a notice for now (`busy`; it comes back later). Default:
+the session is running — connecting, listening, thinking or speaking.
+
+###### Returns
+
+`boolean`
+
+##### events?
+
+```ts
+optional events?: boolean;
+```
+
+Ask for the client's live conversation (`?events=1`). Default: whether `onEvent` is set.
+
+##### onEvent?
+
+```ts
+optional onEvent?: (event: InboxEvent) => void;
+```
+
+A frame of the client's live conversation — every session of this client,
+this page's own included (compare `sessionId` with `useSessionId()` to skip
+it). Giving one asks for the feed, unless `events` says otherwise.
+
+###### Parameters
+
+###### event
+
+[`InboxEvent`](#inboxevent)
+
+###### Returns
+
+`void`
+
+##### onNotice?
+
+```ts
+optional onNotice?: (notice: InboxNotice) => void;
+```
+
+A notice arrived whole — once per delivery, after playback has started
+(when `play` is on). Log it, show it, or play it yourself with `play: false`.
+
+###### Parameters
+
+###### notice
+
+[`InboxNotice`](#inboxnotice)
+
+###### Returns
+
+`void`
+
+##### play?
+
+```ts
+optional play?: boolean;
+```
+
+Play each notice's audio (PCM16LE mono, 16 kHz) through built-in playback.
+Default `true`.
+
+***
+
+### UseInboxResult
+
+```ts
+type UseInboxResult = {
+  connected: boolean;
+  stopPlayback: void;
+};
+```
+
+What [useInbox](#useinbox) returns.
+
+#### Methods
+
+##### stopPlayback()
+
+```ts
+stopPlayback(): void;
+```
+
+Silence a notice that is playing — e.g. when the user starts talking.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### connected
+
+```ts
+readonly connected: boolean;
+```
+
+Whether the inbox socket is open now.
 
 ***
 
@@ -7736,6 +8444,14 @@ optional client?: string | (() => string | undefined);
 The name of THIS client — a device id — sent as `?client=` on every
 connection attempt, with the same rules as [location](#location): a string or a
 getter asked per attempt, trimmed, an empty answer sends none.
+
+**`"auto"`** has the SDK mint and keep one: this browser's
+`browserClientId()` — `browser-<32 hex>`, stored in `localStorage` per
+agent URL (for this tab only where storage is unavailable). It is the id
+`useInbox()` holds the inbox under too, with a holder id per TAB so two tabs
+of one browser do not replace each other's inbox socket. Read it back with
+`useClientId()` or `session.identity.clientId()`. (So `"auto"` itself can
+never be a client id.)
 
 It is the id a tool reads with `sessionClientId(ctx)` and the one a client
 holds its `WS /inbox?client=` socket open under, so a tool can hand it to a

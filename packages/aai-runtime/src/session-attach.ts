@@ -25,6 +25,7 @@
  */
 
 import {
+  claimSessionEnder,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_WS_PAYLOAD_BYTES,
@@ -41,6 +42,7 @@ import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import { closeRefused, endOnRequest, SessionRefusedError } from "./session-attach-end.ts";
 import type { ServerSession } from "./session-core.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createWsSessionLifecycle } from "./ws-session-lifecycle.ts";
@@ -77,6 +79,20 @@ export type AttachSessionOptions = {
    * normal-closure code.
    */
   closeAfterFailure?: () => void;
+  /**
+   * How the far end is closed when `sessionContext` REFUSED the session, with
+   * the app's reason. Defaults to `client.close(reason)`. The WebSocket adapter
+   * passes its own so the close carries 1008 (policy violation) — a refusal is
+   * not a server failure, and a client reading 1011 would retry it.
+   */
+  closeAfterRefusal?: (reason: string) => void;
+  /**
+   * How the far end is closed when a tool calls `endSession(ctx)`. Defaults to
+   * `client.close(…)` at once. Both adapters pass their paced sink's
+   * `endAfterReply`, which lets the current reply finish PLAYING first — the
+   * one thing this module cannot know, the playout clock being the pacer's.
+   */
+  closeOnEndSession?: (options: { afterReply: boolean }) => void;
 };
 
 /** What the far end observed when it went away — for the log line only. */
@@ -185,6 +201,11 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
   /** Commands currently held in `buffer`. */
   let bufferedCommandCount = 0;
 
+  /** The app's reason, once `start()` rejected with {@link SessionRefusedError}. */
+  let refusal: string | undefined;
+  /** Release for this connection's claim on the session's `endSession` ender. */
+  let releaseEnder: (() => boolean) | null = null;
+
   let resolveEnded: () => void = () => undefined;
   const ended = new Promise<void>((resolve) => {
     resolveEnded = resolve;
@@ -243,6 +264,8 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
         // this key while the old one drains — a key delete here would evict
         // the resumed session's entry and leak it past runtime.shutdown().
         releaseSessionEntry?.();
+        // By claim for the same reason: a resumed connection's ender is live.
+        releaseEnder?.();
         options.onSessionEnd?.(sessionId, client);
       })
       .catch(() => {
@@ -287,6 +310,15 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
         milliseconds: timeoutMs,
         message: `session.start() timed out after ${timeoutMs}ms`,
       }).catch((err: unknown) => {
+        if (err instanceof SessionRefusedError) {
+          // The app's decision, not a failure: one line, at warn, naming the
+          // session and the app's own reason and nothing about who connected —
+          // no client id, no call id, no parameters. Re-thrown so the machine
+          // tears down exactly as it does for a failed start.
+          refusal = err.reason;
+          log.warn("Session refused by sessionContext", { ...ctx, sid, reason: err.reason });
+          throw err;
+        }
         // Logged HERE rather than on the machine's `onError`, because a start
         // that fails after the client hung up has already left `starting` — so
         // the transition never fires, and this line is the only evidence a
@@ -321,6 +353,10 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
       else resolveEnded();
     },
     failClient: () => {
+      if (refusal !== undefined) {
+        closeRefused(refusal, { client, options, log });
+        return;
+      }
       // The client received `config` and believes the session is live; tell it
       // the start failed and close, or it streams audio into a dead session
       // forever with no retry signal.
@@ -357,6 +393,7 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
     // late teardown cannot touch the entries registered below.
     const superseded = sessions.get(sessionId);
     releaseSessionEntry = sessions.claim(sessionId, session);
+    releaseEnder = claimSessionEnder(sessionId, endOnRequest({ client, options, log, ctx, sid }));
     sinkBySession.set(session, client);
     options.onSinkCreated?.(sessionId, client);
     if (superseded && superseded !== session) {

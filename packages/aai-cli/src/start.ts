@@ -46,16 +46,18 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type AgentServer,
   createAgentServer,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
 } from "@alexkroman1/aai-runtime";
-import { withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
+import { consoleLogger, withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
+import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { log } from "./_ui.ts";
@@ -189,6 +191,9 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
     // call throws rather than minting a `http://localhost:3000` URL a payment
     // provider will try, days later, and fail.
     ...(process.env.PUBLIC_URL?.trim() ? { publicUrl: process.env.PUBLIC_URL.trim() } : {}),
+    // `AAI_RUN_CODE=deno` gives `run_code` a zero-permission Deno process to run
+    // in (`_run-code-deno.ts`); unset, it refuses as it does under `aai dev`.
+    ...omitUndefined({ runCode: resolveDenoRunCode(consoleLogger) }),
   });
 }
 

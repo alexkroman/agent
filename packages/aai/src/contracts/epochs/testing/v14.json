@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
+  "sha256": "2211abf6912e17dd4490a03ea6128048c33b65093b76511df60bce0fbe3ead7d",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -38,6 +38,10 @@
     "StubGenerateReply",
     "StubGenerateRoute",
     "StubGenerateScript",
+    "StubPlaceCall",
+    "StubPlaceCallOptions",
+    "StubPlaceCallRefusal",
+    "StubPlacedCall",
     "StubReporter",
     "StubSpeech",
     "StubSpeechCall",
@@ -72,6 +76,7 @@
     "deployedAgent",
     "dialogRefusalPattern",
     "dialogResultSchema",
+    "endSessionCalls",
     "eventsOf",
     "expectDeployable",
     "expectDialogOk",
@@ -100,6 +105,7 @@
     "stubGateway",
     "stubGatewayRoute",
     "stubGenerate",
+    "stubPlaceCall",
     "stubReporter",
     "stubSpeech",
     "stubStepDelegate",
@@ -112,7 +118,7 @@
     "toolRunner"
   ],
   "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -125,6 +131,12 @@
       "rule": 2,
       "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
       "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +stubClientInbox, +stubClientTranscript"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "2211abf6912e17dd4490a03ea6128048c33b65093b76511df60bce0fbe3ead7d",
+      "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +endSessionCalls, +stubClientInbox, +stubClientTranscript, +stubPlaceCall"
     }
   ]
 }

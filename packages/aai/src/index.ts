@@ -320,10 +320,17 @@ export type {
   ToolInputSchema,
 } from "./sdk/schema.ts";
 /**
+ * Which phone call a `WS /phone` session is — the carrier, its call id and the
+ * stream's custom parameters — read from `ctx.sessionId`. A CLAIM by the far end.
+ */
+export { type SessionCall, sessionCall } from "./sdk/session-call.ts";
+/**
  * Which device a session belongs to, read from `ctx.sessionId` — how a tool hands
  * a run the id `stepNotifyClient` reaches that device by after the call.
  */
 export { sessionClientId } from "./sdk/session-client.ts";
+/** End this session from a tool, after the current reply is spoken — `end_call`. */
+export { type EndSessionOptions, endSession } from "./sdk/session-end.ts";
 export {
   type ClientEventMap,
   type ClientEventSender,

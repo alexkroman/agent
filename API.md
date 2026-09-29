@@ -431,6 +431,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -642,6 +643,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -1372,6 +1374,9 @@ export type ChannelOutboxEntry = {
 };
 
 // @internal
+export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean;
+
+// @internal
 export const CLIENT_ID_RE: RegExp;
 
 // @internal
@@ -2013,7 +2018,22 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
 export const SESSION_RESUME_GRACE_MS = 120000;
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export type SessionEnder = (options: {
+    afterReply: boolean;
+}) => void;
+
+// @public
 type SessionMode = "s2s" | "pipeline" | "text";
+
+// @internal
+export function setSessionCall(sessionId: string, call: SessionCall): void;
 
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
@@ -2105,6 +2125,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -2505,6 +2526,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -2954,6 +2976,14 @@ export interface DialogVoiceConfig {
 
 // @public
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
+
+// @public
+export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
+
+// @public
+export type EndSessionOptions = {
+    afterReply?: boolean | undefined;
+};
 
 // @public
 export function errorDetail(err: unknown): string;
@@ -3415,6 +3445,16 @@ export function safeJsonParse(text: string): unknown;
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
+export type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined;
+
+// @public
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
@@ -3428,10 +3468,13 @@ export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    greeting?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 export interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -3440,6 +3483,7 @@ export interface SessionContextArgs {
 
 // @public @sealed
 export interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
@@ -3830,6 +3874,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -4191,6 +4236,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -4251,6 +4297,9 @@ export function clampWorkflowWait(requested: number | undefined): number;
 
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1500;
+
+// @internal
+export const CLIENT_ID_RE: RegExp;
 
 // @internal
 export type ClientEventDecision = {
@@ -4573,6 +4622,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -4688,6 +4738,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -5344,14 +5395,24 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    greeting?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -5360,6 +5421,7 @@ interface SessionContextArgs {
 
 // @public @sealed
 interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
@@ -5667,6 +5729,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -6056,6 +6119,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -6731,6 +6795,14 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
+export type CallStatusOptions = {
+    carrier: "twilio";
+    callId: string;
+    credentials?: PlaceCallCredentials;
+    signal?: AbortSignal;
+};
+
+// @public
 interface ClientEventMap {
 }
 
@@ -6785,6 +6857,12 @@ export class ClientUnreachableError extends RetryableError {
 
 // @public
 export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+
+// @public
+export const DEFAULT_CALL_RING_TIMEOUT_S: number;
+
+// @public
+export const DEFAULT_CALL_TIME_LIMIT_S: number;
 
 // @public
 export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
@@ -6945,6 +7023,52 @@ export type PcmFormat = {
 };
 
 // @public
+export type PlaceCallCredentials = {
+    readonly accountSid: string;
+    readonly authToken: string;
+};
+
+// @public
+export class PlaceCallError extends Error {
+    constructor(message: string, init: {
+        readonly carrier: string;
+        readonly retryable: boolean;
+        readonly status?: number | undefined;
+        readonly code?: number | undefined;
+        readonly retryAfter?: Date | undefined;
+        readonly cause?: unknown;
+    });
+    readonly carrier: string;
+    readonly code: number | undefined;
+    // (undocumented)
+    readonly name = "PlaceCallError";
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export type PlaceCallOptions = {
+    carrier: "twilio";
+    to: string;
+    from: string;
+    agentUrl: string;
+    parameters?: Readonly<Record<string, string>>;
+    timeLimitS?: number;
+    ringTimeoutS?: number;
+    credentials?: PlaceCallCredentials;
+    signal?: AbortSignal;
+};
+
+// @public
+export type PlacedCall = {
+    callId: string;
+};
+
+// @public
+export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -7058,6 +7182,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -7066,6 +7191,9 @@ export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
 export const STEP_SPEAK_TIMEOUT_MS: number;
+
+// @public
+export function stepCallStatus(options: CallStatusOptions): Promise<PlacedCallStatus>;
 
 // @public
 export function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
@@ -7162,6 +7290,9 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
+
+// @public
+export function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
 
 // @public
 export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
@@ -7408,6 +7539,12 @@ export type Transcript = {
 };
 
 // @public
+export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
+
+// @public
+export const TWILIO_AUTH_TOKEN_ENV = "TWILIO_AUTH_TOKEN";
+
+// @public
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
@@ -7540,6 +7677,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -8084,6 +8222,11 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+    afterReply: boolean;
+}[];
+
+// @public
 export function eventsOf<E extends {
     type: string;
 }, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
@@ -8202,6 +8345,9 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
 
 // @public
+type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+
+// @public
 export type ProjectFiles = {
     readonly tools?: ToolModules;
     readonly systemPrompt?: string;
@@ -8288,6 +8434,13 @@ export interface SentEvent {
 }
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -8334,6 +8487,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -8518,6 +8672,41 @@ export type StubGenerateScript = {
 } | {
     readonly routes: Readonly<Record<string, StubGenerateRoute>>;
     readonly reply?: never;
+};
+
+// @public
+export type StubPlaceCall = {
+    calls: StubPlacedCall[];
+    restore(): void;
+};
+
+// @public
+export function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
+
+// @public
+export type StubPlaceCallOptions = {
+    dial?: "accept" | StubPlaceCallRefusal | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
+    status?: PlacedCallStatus | "initiated" | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
+    otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
+};
+
+// @public
+export type StubPlaceCallRefusal = {
+    status: number;
+    code?: number;
+    message?: string;
+};
+
+// @public
+export type StubPlacedCall = {
+    callId: string | undefined;
+    to: string;
+    from: string;
+    streamUrl: string | undefined;
+    parameters: Record<string, string>;
+    timeLimitS: number;
+    ringTimeoutS: number;
+    polls: number;
 };
 
 // @public
@@ -8752,6 +8941,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public
@@ -8925,6 +9115,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -9176,6 +9367,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -9562,6 +9754,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -9920,6 +10113,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 export type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -10130,6 +10324,7 @@ export type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public
@@ -11364,6 +11559,7 @@ import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -11422,6 +11618,7 @@ export interface AgentServerOptions extends SharedServerOptions {
     page?: AgentDef["page"] | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    runCode?: RunCodeExecutor | undefined;
     telephony?: boolean | readonly CarrierName[] | undefined;
     uploadBroker?: string | undefined;
 }
@@ -11445,12 +11642,19 @@ export type CarrierCodec = {
 
 // @public
 export type CarrierInbound =
-/** The call's media stream has begun; `streamId` must be echoed on outbound frames. */
+/**
+* The call's media stream has begun; `streamId` must be echoed on outbound
+* frames. `callId` and `parameters` are the call's identity, bounded by the
+* shipped codecs (see `MAX_CALL_PARAMETERS`). OPTIONAL so a codec written
+* before they existed still type-checks; absent reads as "none".
+*/
     {
     kind: "start";
     streamId: string;
     encoding: string | null;
     sampleRate: number | null;
+    callId?: string | null;
+    parameters?: Readonly<Record<string, string>>;
 }
 /** One 20 ms chunk of caller audio, base64 μ-law. */
 | {
@@ -11808,6 +12012,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -11918,6 +12123,7 @@ export type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -11974,6 +12180,7 @@ type SleepRecord = {
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
     carrier: CarrierCodec;
     logger?: Logger;
+    startTimeoutMs?: number;
 }): void;
 
 // @public
@@ -12045,6 +12252,9 @@ export const TELEPHONY_SAMPLE_RATE = 8000;
 export type TelephonyBridgeOptions = {
     carrier: CarrierCodec;
     logger?: Logger;
+    onStart?: (start: Extract<CarrierInbound, {
+        kind: "start";
+    }>) => void;
 };
 
 // @public
@@ -12217,6 +12427,7 @@ import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -12255,6 +12466,10 @@ export type AttachSessionOptions = {
     sessionStartTimeoutMs?: number;
     resumeFrom?: string;
     closeAfterFailure?: () => void;
+    closeAfterRefusal?: (reason: string) => void;
+    closeOnEndSession?: (options: {
+        afterReply: boolean;
+    }) => void;
 };
 
 // @public
@@ -12501,6 +12716,12 @@ interface Logger {
 export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 
 // @public
+export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
+
+// @public
+export function normalizeRunLabel(value: unknown): string | undefined;
+
+// @public
 export function parseBearer(header: string | null | undefined): string;
 
 // @internal
@@ -12629,6 +12850,7 @@ type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -12995,6 +13217,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
 };
 ```
 
@@ -13175,6 +13398,7 @@ export type RunRecord = {
         message: string;
     } | undefined;
     codeVersion?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -13440,6 +13664,9 @@ export function AutoScroll(input: {
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
 
+// @public
+export function browserClientId(platformUrl?: string): string;
+
 // @public @sealed
 export type BrowserSession = {
     readonly [browserSessionBrand]: true;
@@ -13450,6 +13677,7 @@ export type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
     sendText(text: string): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
@@ -13597,6 +13825,21 @@ export type ConversationViewProps = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
+export function createInbox(options: CreateInboxOptions): Inbox;
+
+// @public
+export type CreateInboxOptions = {
+    platformUrl: string;
+    client: string | (() => string | undefined);
+    holder: string;
+    busy?: (() => boolean) | undefined;
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    events?: boolean | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 
 // @public
@@ -13666,6 +13909,33 @@ export type FormProps = {
 
 // @public
 export type FormValues = Record<string, unknown>;
+
+// @public @sealed
+export type Inbox = {
+    connected(): boolean;
+    subscribe(callback: () => void): () => void;
+    close(): void;
+};
+
+// @public
+export type InboxEvent = {
+    readonly type: "session_event";
+    readonly sessionId: string;
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+} | {
+    readonly type: "session_ended";
+    readonly sessionId: string;
+};
+
+// @public
+export type InboxNotice = {
+    readonly id: string;
+    readonly event: string;
+    readonly data?: Readonly<Record<string, unknown>>;
+    readonly pcm: Uint8Array;
+};
 
 export { isTerminal }
 
@@ -13785,6 +14055,14 @@ export type SessionErrorBannerProps = {
 };
 
 export { SessionErrorCode }
+
+// @public @sealed
+export type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
+};
 
 // @public
 export type SessionSnapshot = {
@@ -13915,6 +14193,9 @@ export function useAgentState<V>(projection: StateProjection<V>): V;
 export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 
 // @public
+export function useClientId(): string | undefined;
+
+// @public
 export function useConversation(): UseConversationResult;
 
 // @public
@@ -13960,6 +14241,24 @@ export function useFlash<T>(ms?: number): UseFlashResult<T>;
 export type UseFlashResult<T> = {
     readonly value: T | null;
     readonly flash: (value: T) => void;
+};
+
+// @public
+export function useInbox(options?: UseInboxOptions): UseInboxResult;
+
+// @public
+export type UseInboxOptions = {
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    busy?: (() => boolean) | undefined;
+    play?: boolean | undefined;
+    events?: boolean | undefined;
+};
+
+// @public
+export type UseInboxResult = {
+    readonly connected: boolean;
+    stopPlayback(): void;
 };
 
 // @public
@@ -14034,6 +14333,9 @@ export type UseSessionControlsResult = {
 
 // @public
 export function useSessionError(): SessionError | null;
+
+// @public
+export function useSessionId(): string | undefined;
 
 // @public
 export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T, isEqual?: (a: T, b: T) => boolean): T;
@@ -14304,6 +14606,7 @@ type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
     sendText(text: string): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
@@ -14356,6 +14659,14 @@ type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
+};
+
+// @public @sealed
+type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
 };
 
 // @internal

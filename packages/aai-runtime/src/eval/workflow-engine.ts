@@ -99,7 +99,7 @@ import {
   publishStepInfoReader,
   publishStepReporter,
 } from "@alexkroman1/aai/host-internal";
-import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   StepOptions,
   WaitForOptions,
@@ -108,6 +108,7 @@ import type {
   WorkflowDef,
 } from "@alexkroman1/aai/workflow-api";
 import { checkedStepOutput } from "../workflow/replay/schema.ts";
+import { toWdkRunRecord } from "../workflow/wdk-record.ts";
 import type { WdkAdapter, WdkRunRecord } from "../workflow/wdk-types.ts";
 
 import type {
@@ -202,20 +203,9 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
 
   let sequence = 0;
 
-  function toWdkRecord(record: EvalRunRecord): WdkRunRecord {
-    return {
-      runId: record.runId,
-      workflowName: record.workflowName,
-      status: record.status,
-      createdAt: record.createdAt,
-      // Both payload fields ride the record, mirroring the production engine's
-      // `toWdkRecord`: a snapshot reads `output` from here rather than paying a
-      // second `readOutput`, so an engine that dropped it would report every
-      // completed run as having returned nothing.
-      ...(record.status === "completed" ? { output: record.output } : {}),
-      ...(record.status === "failed" && record.error ? { error: record.error } : {}),
-    };
-  }
+  // The same mapping the production engine uses (`workflow/wdk-record.ts`), so
+  // a field one engine carries cannot go missing from the other's snapshots.
+  const toWdkRecord = (record: EvalRunRecord): WdkRunRecord => toWdkRunRecord(record);
 
   /**
    * The `ctx` a body is handed here — and the one method on it does NOT journal.
@@ -360,7 +350,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   }
 
   const adapter: WdkAdapter = {
-    start(workflowName, args) {
+    start(workflowName, args, options) {
       const entry = byName.get(workflowName);
       if (!entry) {
         return Promise.reject(
@@ -377,6 +367,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
         workflowName,
         status: "running",
         createdAt: Date.now(),
+        ...omitUndefined({ label: options?.label }),
         reported: [],
         emitted: [],
         slept: [],

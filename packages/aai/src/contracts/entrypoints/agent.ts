@@ -101,7 +101,9 @@
  * group, here for the field-group reason above: `sessionContext` and
  * `onSessionEnd` are written in the same `agent({ … })` literal as `name`.
  * `sessionClientLocation` rides with them: it reads back the `location` a
- * `SessionContext` answers.
+ * `SessionContext` answers. So do `sessionCall` and `SessionCall` — the `call`
+ * both lifecycle contexts carry, read back by a tool — and `endSession` with
+ * its options, the tool-side way a session reaches the `onSessionEnd` above.
  *
  * `AgentRoutes` is the seventh, with its request/context/handler types and
  * `routeResponse`, for the same reason: `routes` is a field of the literal, and
@@ -135,6 +137,8 @@ export {
   agent,
   assemblyAIPipeline,
   type BuiltinTool,
+  type EndSessionOptions,
+  endSession,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
@@ -151,12 +155,14 @@ export {
   type RouteResponse,
   routeResponse,
   type S2sAgentParams,
+  type SessionCall,
   type SessionContext,
   type SessionContextArgs,
   type SessionEndContext,
   type SessionEventContext,
   type SharedAgentParams,
   type StaticAgentParams,
+  sessionCall,
   sessionClientLocation,
   type TelephonyAccess,
   type TelephonyCarrier,

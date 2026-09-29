@@ -5,10 +5,12 @@ import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import {
   historyFromEvents,
+  MAX_SEEDED_TOOL_CALL_ID_CHARS,
   messagesFromEvents,
   modelHistoryOf,
-  TOOL_DIGEST_RESULT_CHARS,
-  toolDigest,
+  SEEDED_TOOL_ARG_VALUE_CHARS,
+  SEEDED_TOOL_ARGS_CHARS,
+  SEEDED_TOOL_RESULT_CHARS,
 } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 
@@ -230,13 +232,17 @@ describe("historyFromEvents", () => {
   });
 });
 
-describe("modelHistoryOf — prior tool calls as digests on the ASSISTANT side", () => {
+describe("modelHistoryOf — prior tool calls as REAL call/result pairs", () => {
   const events = (bodies: SessionEventBody[]): SessionEvent[] =>
     bodies.map((b) => stampSessionEvent(b));
+  const modelView = (bodies: SessionEventBody[]) => {
+    const { messages, toolCalls } = historyFromEvents(events(bodies));
+    return modelHistoryOf(messages, toolCalls);
+  };
 
-  test("a call is folded into the reply that followed it, and no `tool` message survives", () => {
-    const { messages, toolCalls } = historyFromEvents(
-      events([
+  test("a call is seeded as a tool-call part and a result under the same id, then the reply", () => {
+    expect(
+      modelView([
         { type: "user-transcript.committed", text: "weather in Portland?" },
         {
           type: "tool.called",
@@ -247,38 +253,150 @@ describe("modelHistoryOf — prior tool calls as digests on the ASSISTANT side",
         { type: "tool.completed", toolCallId: "c1", result: '{"temp":12}' },
         { type: "agent-transcript.committed", text: "Twelve degrees." },
       ]),
-    );
-
-    expect(modelHistoryOf(messages, toolCalls)).toEqual([
+    ).toEqual([
       { role: "user", content: "weather in Portland?" },
       {
         role: "assistant",
-        content: '[tool weather({"city":"Portland"}) → {"temp":12}]\nTwelve degrees.',
+        content: [
+          { type: "tool-call", toolCallId: "c1", toolName: "weather", input: { city: "Portland" } },
+        ],
       },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "weather",
+            output: { type: "text", value: '{"temp":12}' },
+          },
+        ],
+      },
+      { role: "assistant", content: "Twelve degrees." },
     ]);
   });
 
-  test("a call with no reply after it is an assistant message of its own", () => {
-    const { messages, toolCalls } = historyFromEvents(
-      events([
+  test("no seeded message is TEXT shaped like a tool call", () => {
+    // The live incident: the digest line `[tool think({…}) → …]` in the
+    // assistant's own turns was imitated, and the model later SPOKE its
+    // tool-call channel markup instead of calling. The content check is over
+    // every part, so a call smuggled into any text field fails here.
+    const seeded = modelView([
+      { type: "user-transcript.committed", text: "call the dentist" },
+      { type: "tool.called", toolCallId: "c1", toolName: "think", args: { thought: "who" } },
+      { type: "tool.completed", toolCallId: "c1", result: "ok" },
+      {
+        type: "tool.called",
+        toolCallId: "c2",
+        toolName: "prepare_call",
+        args: { callee: "Dr. Ada" },
+      },
+      { type: "tool.completed", toolCallId: "c2", result: '{"ready":true}' },
+      { type: "agent-transcript.committed", text: "Calling now." },
+    ]);
+    const texts = seeded.flatMap((m) =>
+      typeof m.content === "string"
+        ? [m.content]
+        : m.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+    );
+    expect(texts).toEqual(["call the dentist", "Calling now."]);
+    for (const text of texts) {
+      expect(text).not.toContain("[tool ");
+      expect(text).not.toContain("to=functions");
+    }
+    expect(seeded.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+  });
+
+  test("a call with no reply after it is a pair on its own, before the next user turn", () => {
+    expect(
+      modelView([
         { type: "user-transcript.committed", text: "set a timer" },
         { type: "tool.called", toolCallId: "c1", toolName: "timer", args: { minutes: 5 } },
         { type: "tool.completed", toolCallId: "c1", result: "ok" },
         { type: "user-transcript.committed", text: "hello?" },
-      ]),
-    );
-
-    expect(modelHistoryOf(messages, toolCalls).map((m) => m.role)).toEqual([
-      "user",
-      "assistant",
-      "user",
-    ]);
+      ]).map((m) => m.role),
+    ).toEqual(["user", "assistant", "tool", "user"]);
   });
 
-  test("a long result is capped and says so; a call whose `tool.called` is gone keeps its result", () => {
-    const digest = toolDigest({ result: "x".repeat(TOOL_DIGEST_RESULT_CHARS + 50) });
-    expect(digest.startsWith("[tool (unknown)() → ")).toBe(true);
-    expect(digest).toContain("… (truncated)");
-    expect(digest.length).toBeLessThan(TOOL_DIGEST_RESULT_CHARS + 50);
+  test("a result whose `tool.called` is gone is DROPPED, not rendered as text", () => {
+    // The log's front was trimmed past the call: no name, no arguments, so no
+    // pair can be built — and a text mention is exactly what was imitated.
+    const seeded = modelView([
+      { type: "tool.completed", toolCallId: "gone", result: "eta=tue" },
+      { type: "agent-transcript.committed", text: "Tuesday." },
+    ]);
+    expect(seeded).toEqual([{ role: "assistant", content: "Tuesday." }]);
+    expect(JSON.stringify(seeded)).not.toContain("eta=tue");
+  });
+
+  test("a PENDING call (no result) contributes nothing either", () => {
+    const seeded = modelView([
+      { type: "user-transcript.committed", text: "book it" },
+      { type: "tool.called", toolCallId: "c1", toolName: "book", args: { day: "tue" } },
+    ]);
+    expect(seeded).toEqual([{ role: "user", content: "book it" }]);
+  });
+
+  test("a long result and long arguments are capped; a call id no provider takes is replaced", () => {
+    const seeded = modelView([
+      { type: "user-transcript.committed", text: "go" },
+      {
+        type: "tool.called",
+        toolCallId: "tc:1/with.odd-chars",
+        toolName: "think",
+        args: { thought: "y".repeat(SEEDED_TOOL_ARGS_CHARS + 50), step: 2 },
+      },
+      {
+        type: "tool.completed",
+        toolCallId: "tc:1/with.odd-chars",
+        result: "x".repeat(SEEDED_TOOL_RESULT_CHARS + 50),
+      },
+    ]);
+    const call = seeded[1];
+    const result = seeded[2];
+    if (call?.role !== "assistant" || typeof call.content === "string") {
+      throw new Error("expected a tool-call message");
+    }
+    if (result?.role !== "tool") throw new Error("expected a tool message");
+    const callPart = call.content[0];
+    const resultPart = result.content[0];
+    if (callPart?.type !== "tool-call" || resultPart?.type !== "tool-result") {
+      throw new Error("expected a call/result pair");
+    }
+    expect(callPart.toolCallId).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(callPart.toolCallId.length).toBeLessThanOrEqual(MAX_SEEDED_TOOL_CALL_ID_CHARS);
+    expect(resultPart.toolCallId).toBe(callPart.toolCallId);
+    expect(callPart.input).toEqual({
+      thought: `${"y".repeat(SEEDED_TOOL_ARG_VALUE_CHARS)}… (truncated)`,
+      step: 2,
+    });
+    expect(resultPart.output).toEqual({
+      type: "text",
+      value: `${"x".repeat(SEEDED_TOOL_RESULT_CHARS)}… (truncated)`,
+    });
+  });
+
+  test("two calls that reuse one id (two sessions of a client) get distinct seeded ids", () => {
+    const seeded = modelView([
+      { type: "tool.called", toolCallId: "call_1", toolName: "a", args: {} },
+      { type: "tool.completed", toolCallId: "call_1", result: "first" },
+      { type: "user-transcript.committed", text: "again" },
+      { type: "tool.called", toolCallId: "call_1", toolName: "a", args: {} },
+      { type: "tool.completed", toolCallId: "call_1", result: "second" },
+    ]);
+    const ids = seeded.flatMap((m) =>
+      m.role === "tool"
+        ? m.content.flatMap((p) => (p.type === "tool-result" ? [p.toolCallId] : []))
+        : [],
+    );
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
   });
 });

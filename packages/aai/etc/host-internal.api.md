@@ -520,6 +520,9 @@ export type ChannelOutboxEntry = {
 };
 
 // @internal
+export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean;
+
+// @internal
 export const CLIENT_ID_RE: RegExp;
 
 // @internal
@@ -1161,7 +1164,22 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
 export const SESSION_RESUME_GRACE_MS = 120000;
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export type SessionEnder = (options: {
+    afterReply: boolean;
+}) => void;
+
+// @public
 type SessionMode = "s2s" | "pipeline" | "text";
+
+// @internal
+export function setSessionCall(sessionId: string, call: SessionCall): void;
 
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
@@ -1253,6 +1271,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    label?: string;
     notify?: boolean | string;
 };
 
@@ -1653,6 +1672,7 @@ type WorkflowRunBase = {
     workflow: string;
     createdAt: number;
     key?: string;
+    label?: string;
 };
 
 // @public

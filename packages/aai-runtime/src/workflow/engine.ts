@@ -44,7 +44,8 @@ import { settleRunOutcome } from "./output.ts";
 import { type ReplayOptions, type ReplayOutcome, replayRun } from "./replay.ts";
 import { createStepGate, resolveStepConcurrency, type StepGate } from "./step-gate.ts";
 import { type StreamStore, streamNamespace } from "./streams.ts";
-import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./wdk-types.ts";
+import { toWdkRunRecord } from "./wdk-record.ts";
+import type { WdkAdapter, WdkRunRecord, WdkStartOptions, WdkStreamOptions } from "./wdk-types.ts";
 
 /** What one engine needs. */
 export type WorkflowEngineOptions = {
@@ -104,22 +105,10 @@ export type WorkflowEngine = WdkAdapter & {
   execute(runId: string, signal?: AbortSignal): Promise<RunRecord["status"] | undefined>;
 };
 
-/** A journal record as the run API reads it. */
+/** A journal record as the run API reads it; the mapping is `workflow/wdk-record.ts`'s. */
 function toWdkRecord(record: RunRecord): WdkRunRecord {
-  return {
-    runId: record.runId,
-    // The DECLARED key. Under the DevKit this field carried a compiler-minted
-    // id and every reader translated; there is one identity now, and the field
-    // keeps its name only because `WdkRunRecord` is the run API's shape.
-    workflowName: record.workflow,
-    status: record.status,
-    createdAt: record.createdAt,
-    // Both payload fields ride the record, and both are gated on the status
-    // that gives them meaning: a snapshot reads them from here rather than
-    // paying a second journal read for a value this one already carries.
-    ...(record.status === "completed" ? { output: record.output } : {}),
-    ...(record.status === "failed" && record.error ? { error: record.error } : {}),
-  };
+  // The DECLARED key; the field keeps the DevKit's name because `WdkRunRecord` is the run API's shape.
+  return toWdkRunRecord({ ...record, workflowName: record.workflow });
 }
 
 /**
@@ -285,7 +274,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
   }
 
   return {
-    async start(workflow: string, args: unknown[]): Promise<string> {
+    async start(workflow: string, args: unknown[], options?: WdkStartOptions): Promise<string> {
       // `args` is the adapter's shape — the DevKit's `start` was variadic. A
       // body takes exactly one input, so the first element IS the input and a
       // second would be silently dropped; this refuses instead, because the one
@@ -304,10 +293,10 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         createdAt: Date.now(),
         input: args[0],
         // Which CODE this run is starting against, so a walk after a redeploy can
-        // say so rather than making the divergence message guess. Read from THIS
-        // process's environment — `workflow/code-version.ts` carries why a
-        // forgeable version is worse than none.
-        ...omitUndefined({ codeVersion: guestCodeVersion() }),
+        // say so rather than making the divergence message guess — read from THIS
+        // process's env (`workflow/code-version.ts` says why). The label rides the
+        // same insert, so no reader sees the run without it.
+        ...omitUndefined({ codeVersion: guestCodeVersion(), label: options?.label }),
       });
       // After the record exists, never before: a dispatcher that delivered first
       // would race a worker against `createRun` and report "no such run" for a

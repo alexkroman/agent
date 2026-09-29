@@ -3,7 +3,7 @@
   "capability": "workflow-api",
   "epoch": 3,
   "rule": 2,
-  "sha256": "96e2781fa872deda6ef1112128ad49249dc6fd1e3a56114ceef3ab6dc36024aa",
+  "sha256": "dc139499ab2fb993bb591db8345e58482918a6429f0387f2ace9cc91ea7ef72b",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
@@ -43,5 +43,20 @@
     "isTerminal",
     "readEventStream"
   ],
-  "rollup": "245028ca7865b5d27bc7bdb955c160acaf1a31e3262b46a8a71feb613324c06b"
+  "rollup": "245028ca7865b5d27bc7bdb955c160acaf1a31e3262b46a8a71feb613324c06b",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "96e2781fa872deda6ef1112128ad49249dc6fd1e3a56114ceef3ab6dc36024aa",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "dc139499ab2fb993bb591db8345e58482918a6429f0387f2ace9cc91ea7ef72b",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

@@ -1,6 +1,6 @@
 ---
 summary: >-
-  This package's capability contracts: the ten capabilities, what each
+  This package's capability contracts: the eleven capabilities, what each
   promises, qualified ids, and the `.tsx` compatibility fixtures.
 read_when: >-
   adding, removing or re-signing a public export of `.` or `/client-dir`, or
@@ -20,8 +20,9 @@ versioned in epochs". Only what is local to this package is here.
 | --- | --- |
 | `client` | the voice mount — `mountClient()`, its flat `ClientConfig`, the handle |
 | `page` | the workflow-app mount — `mountPage()` (no session), plus `fetchClientConfig()`, the lookup a page must do for itself |
-| `session` | `BrowserSession` (sealed), the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
+| `session` | `BrowserSession` (sealed), the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors, `session.identity` + `browserClientId` + `useSessionId`/`useClientId` |
 | `push-to-talk` | `usePushToTalk` and `session.userTurn` (`UserTurnControls`) — separate so one agent mode's feature is not an epoch of every session |
+| `inbox` | `createInbox`, `useInbox` and the notice/event types — the browser half of `WS /inbox`, separate for the `push-to-talk` reason (`aai:inbox` is the server half) |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system, `ConsoleShell` included, plus `useFlash`/`useCopy` (they render nothing and read nothing off the agent) |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>`, `fieldKindFor` (it names a FIELD) |

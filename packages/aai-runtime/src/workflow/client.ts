@@ -57,6 +57,7 @@ import type {
 import type { Logger } from "../runtime-config.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
+import { normalizeRunLabel } from "./run-label.ts";
 import { workflowWebhookUrl } from "./serve.ts";
 import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./wdk-types.ts";
 
@@ -237,7 +238,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // `parseWorkflowName` takes.
       workflow: record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
-      ...omitUndefined({ key }),
+      ...omitUndefined({ key, label: record.label }),
     };
     switch (record.status) {
       case "completed":
@@ -272,7 +273,13 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<string> {
       const { name, def } = resolve(workflow);
       const validated = await validate(name, def, input);
-      const runId = await wdk.start(name, [validated]);
+      // Normalized here, the one writer, so every store keeps the same string;
+      // an unlabelled start calls the adapter exactly as it always did.
+      const label = normalizeRunLabel(options?.label);
+      const args = [validated];
+      const runId = await (label === undefined
+        ? wdk.start(name, args)
+        : wdk.start(name, args, { label }));
       if (options?.key !== undefined) {
         // A failed key write must not fail the `start`: the run is already
         // created and running, so throwing here would tell the caller nothing

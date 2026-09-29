@@ -38,6 +38,7 @@
  * groups use. Re-exported from `types.ts`, so it is on the root.
  */
 
+import type { SessionCall } from "./session-call.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
@@ -55,6 +56,14 @@ export interface SessionContextArgs {
    * tab or a phone call that sent none.
    */
   clientId?: string;
+  /**
+   * The phone call, for a session that arrived on `WS /phone`: the carrier, its
+   * call id and the stream's custom parameters (`<Parameter>`), from the
+   * carrier's `start` frame — which the runtime waits for before it asks you.
+   * What the far end CLAIMED; check a parameter your app issued, and `refuse`
+   * when it is not one. The same object `sessionCall(ctx)` reads.
+   */
+  call?: SessionCall;
   /** The agent's environment — the same view a tool reads as `ctx.env`. */
   env: Readonly<Partial<Record<string, string>>>;
   /**
@@ -97,6 +106,71 @@ export type SessionContext = {
    * 200 characters is ignored. Personal data — the runtime never logs it.
    */
   location?: string | undefined;
+  /**
+   * The greeting for THIS session, spoken instead of `agent({ greeting })` —
+   * for an opening only known per connect, like an outbound call that names
+   * who it is calling for:
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * agent({
+   *   name: "Reminder calls",
+   *   greeting: "Hi, this is an AI assistant.",
+   *   telephony: ["twilio"],
+   *   sessionContext: ({ call }) => ({
+   *     greeting: `Hi, this is an AI assistant calling on behalf of ${call?.parameters.for ?? "a customer"}. Do you have a moment?`,
+   *   }),
+   * });
+   * ```
+   *
+   * It replaces the TEXT, never the decision: a session that would not greet —
+   * a resume, `?resume=1` — still does not, and one that would speaks this
+   * exactly as it speaks the agent's (synthesized as written, no model call,
+   * recorded in history as the agent's opening line, spoken again after a
+   * client `reset`). An empty string means no greeting this session. Control
+   * characters become spaces, and the text is trimmed and cut at
+   * `MAX_SESSION_GREETING_CHARS` (500). Absent — or a throw, or an answer past
+   * the `SESSION_CONTEXT_TIMEOUT_MS` deadline — keeps the agent's greeting.
+   *
+   * Every transport honours it: the pipeline and OpenAI Realtime read it when
+   * the greeting fires, AssemblyAI S2S when it sends its session config — both
+   * after this hook has answered.
+   */
+  greeting?: string | undefined;
+  /**
+   * Refuse the session: the reason, for your logs. The runtime closes it before
+   * the greeting and before any model call — a WebSocket client with a 1008
+   * (policy violation) close carrying this reason, a phone call by closing the
+   * carrier's stream, which hangs up. Logged once, with the session id and this
+   * reason and nothing else; never sent to the model. `onSessionEnd` does not
+   * fire for a refused session.
+   *
+   * For a server reachable from outside — a phone agent behind a tunnel — this
+   * is what keeps a stranger who found the URL from spending your model:
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * agent({
+   *   name: "Reminder calls",
+   *   telephony: ["twilio"],
+   *   async sessionContext({ call, env, signal }) {
+   *     const id = call?.parameters.call;
+   *     if (!id) return { refuse: "not a placed call" };
+   *     const res = await fetch(`${env.CALLS_URL}/calls/${id}`, { signal });
+   *     if (!res.ok) return { refuse: "unknown call" };
+   *     return { instructions: `This call is about: ${(await res.json()).topic}` };
+   *   },
+   * });
+   * ```
+   *
+   * A throw or a timeout is NOT a refusal — the session starts without context,
+   * as it always has — so an app that must refuse on doubt catches its own
+   * failures and returns `refuse`. Trimmed and capped at 200 characters; an
+   * empty string is ignored.
+   */
+  refuse?: string | undefined;
 };
 
 /**
@@ -110,6 +184,8 @@ export interface SessionEndContext {
   sessionId: string;
   /** The client it belonged to (`?client=`), when it named one. */
   clientId?: string;
+  /** The phone call it was, for a `WS /phone` session — see {@link SessionContextArgs.call}. */
+  call?: SessionCall;
   /** The agent's environment — the same view a tool reads as `ctx.env`. */
   env: Readonly<Partial<Record<string, string>>>;
   /**

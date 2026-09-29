@@ -11,7 +11,10 @@
  * - **Ask `sessionContext`** (`session-context.ts`) once, bounded, and install
  *   its `instructions` as the prompt's stable context block and its `location`
  *   as the session's (over the socket's `?location=`). Concurrently with
- *   the bind: neither needs the other, and both are on the start path.
+ *   the bind: neither needs the other, and both are on the start path. A
+ *   `refuse` installs nothing and is left on {@link SessionMemory.refused} for
+ *   the stream to act on; a `greeting` is left on {@link SessionMemory.greeting}
+ *   for the transport, which reads it when the greeting fires.
  * - **Load the client's prior sessions** (`session-client-history.ts`), narrowed
  *   by the context's `historySince`, and hand them to
  *   `runtime-session-stream.ts`, which restores them together with a resume's
@@ -28,7 +31,13 @@
  * memory, and `sessionContext` without a `clientId` — which is the honest answer.
  */
 
-import { type AgentDef, type SessionEvent, sessionClientId } from "@alexkroman1/aai";
+import {
+  type AgentDef,
+  type SessionCall,
+  type SessionEvent,
+  sessionCall,
+  sessionClientId,
+} from "@alexkroman1/aai";
 import { setSessionLocation } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
@@ -50,7 +59,29 @@ export type SessionMemory = {
    * empty for a session that named no client). Never rejects.
    */
   open(): Promise<readonly SessionEvent[]>;
-  /** The session stopped and its log is flushed through `lastEventIndex`. Never throws. */
+  /**
+   * The reason `sessionContext` answered with `refuse`, once `open()` has
+   * settled — `undefined` for a session it let through. Acting on it is the
+   * stream's (`runtime-session-stream.ts`), which is what wraps `start()`.
+   */
+  readonly refused: string | undefined;
+  /**
+   * The greeting `sessionContext` answered, once `open()` has settled — `""`
+   * for "none this session", `undefined` for "the agent's" (no answer, no
+   * field, a timeout, or a refusal).
+   *
+   * A getter the transport reads LATE rather than a value handed to it: the
+   * transport is built before `open()` runs, and every transport speaks (or
+   * sends) its greeting only after `start()`, which `open()` precedes — see
+   * `runtime-session-stream.ts`. So the answer is in time without the session
+   * waiting any longer than it already waits for the hook.
+   */
+  readonly greeting: string | undefined;
+  /**
+   * The session stopped and its log is flushed through `lastEventIndex`. Never
+   * throws. A no-op for a REFUSED session: it never began, and a summarizer
+   * started for it would digest a conversation a stranger was denied.
+   */
   ended(lastEventIndex: number): void;
 };
 
@@ -72,18 +103,37 @@ export function openSessionMemory(deps: {
   const { agent, env, sessionId, logger } = deps;
   const sid = sessionId.slice(0, 8);
   const clientOf = (): string | undefined => sessionClientId({ sessionId });
+  // Read where the socket recorded it, like the client id: `ws-handler.ts` sets
+  // it before the session is built, from the carrier's `start` frame.
+  const callOf = (): SessionCall | undefined => sessionCall({ sessionId });
+  let refused: string | undefined;
+  let greeting: string | undefined;
   return {
+    get refused() {
+      return refused;
+    },
+    get greeting() {
+      return greeting;
+    },
     async open() {
       const clientId = clientOf();
+      const call = callOf();
       const [context] = await Promise.all([
         resolveSessionContext({
           hook: agent.sessionContext,
-          args: { sessionId, env, ...omitUndefined({ clientId }) },
+          args: { sessionId, env, ...omitUndefined({ clientId, call }) },
           logger,
         }),
         clientId === undefined ? undefined : bindClientSession(deps.history, sessionId, clientId),
       ]);
+      if (context?.refuse !== undefined) {
+        // Nothing else is installed: the session is about to be closed, and a
+        // refused stranger's connect must not load the client's history either.
+        refused = context.refuse;
+        return [];
+      }
       if (context?.instructions) deps.prompt.setContext(context.instructions);
+      greeting = context?.greeting;
       // AFTER the socket's `?location=` (recorded before the session was built),
       // so the app's answer is the one the builtins and `sessionClientLocation` read.
       if (context?.location) setSessionLocation(sessionId, context.location);
@@ -99,7 +149,7 @@ export function openSessionMemory(deps: {
       // a page reacting to it (reading the transcript back) relies on.
       feedClientSessionEnd(sessionId);
       const hook = agent.onSessionEnd;
-      if (!hook) return;
+      if (!hook || refused !== undefined) return;
       const report = (err: unknown): void => {
         logger.warn("onSessionEnd failed", { sid, error: errorMessage(err) });
       };
@@ -111,7 +161,7 @@ export function openSessionMemory(deps: {
           // The surface a tool's `ctx.workflows` is, minus `notify`: there is no
           // session left to announce a result to.
           workflows: deps.workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
-          ...omitUndefined({ clientId: clientOf() }),
+          ...omitUndefined({ clientId: clientOf(), call: callOf() }),
         });
         // Not awaited by anything the caller waits on — but a rejection is
         // still this hook's failure, and an unhandled one would take the process.

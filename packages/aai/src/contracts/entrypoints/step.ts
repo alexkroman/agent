@@ -39,6 +39,12 @@
  * `ctx.workflows.publicWebhookUrl` mints for a tool. A signature change here
  * breaks a body that had no other way to be woken — see `sdk/step-webhook.ts`.
  *
+ * `stepPlaceCall`/`stepCallStatus` and what they take, answer and throw are the
+ * OUTBOUND half of telephony (the inbound half is `WS /phone` and
+ * `SessionCall`): a signature change here breaks a body that dials, and the
+ * `PlaceCallError.retryable` verdict is what such a body branches on to say a
+ * refusal instead of retrying it — see `sdk/step-place-call.ts`.
+ *
  * Re-exported from `@alexkroman1/aai/step`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report for
  * this capability alone, hash it, and hold it to a committed epoch. See
@@ -48,6 +54,9 @@
 export {
   blockAlign,
   bytesPerSecond,
+  type CallStatusOptions,
+  DEFAULT_CALL_RING_TIMEOUT_S,
+  DEFAULT_CALL_TIME_LIMIT_S,
   encodeWav,
   isTransientStatus,
   type MultipartBody,
@@ -57,6 +66,11 @@ export {
   multipartBody,
   offsetToMs,
   type PcmFormat,
+  type PlaceCallCredentials,
+  PlaceCallError,
+  type PlaceCallOptions,
+  type PlacedCall,
+  type PlacedCallStatus,
   parseWav,
   partitionSettled,
   pcmDurationMs,
@@ -73,6 +87,7 @@ export {
   type StepGenerateOptions,
   type StepInfo,
   StepTransportError,
+  stepCallStatus,
   stepDelegate,
   stepEmit,
   stepEnv,
@@ -80,10 +95,13 @@ export {
   stepGenerate,
   stepGenerateJson,
   stepInfo,
+  stepPlaceCall,
   stepReport,
   stepSpeak,
   stepWebhookUrl,
   stripJsonFence,
+  TWILIO_ACCOUNT_SID_ENV,
+  TWILIO_AUTH_TOKEN_ENV,
   UnsupportedRecordingError,
   WAV_HEADER_BYTES,
   type WavFormat,

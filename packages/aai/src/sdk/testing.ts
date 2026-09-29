@@ -48,6 +48,7 @@ export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
   createStubWorkflows,
   createToolContext,
+  endSessionCalls,
   type SentEvent,
   type TestToolContext,
   type ToolContextOverrides,
@@ -138,6 +139,14 @@ export {
   stubGenerate,
 } from "./testing-generate.ts";
 export { runGuardrail } from "./testing-guardrail.ts";
+// Twilio's Calls API answering `stepPlaceCall` / `stepCallStatus`, in memory.
+export {
+  type StubPlaceCall,
+  type StubPlaceCallOptions,
+  type StubPlaceCallRefusal,
+  type StubPlacedCall,
+  stubPlaceCall,
+} from "./testing-place-call.ts";
 // Both model seams scripted in one call, for a tool that reasons.
 export {
   type ScriptedToolContext,

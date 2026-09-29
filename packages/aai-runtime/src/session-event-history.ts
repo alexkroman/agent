@@ -64,6 +64,7 @@
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
+import type { ModelMessage } from "ai";
 import { toolResultMessage } from "./_tool-result-message.ts";
 
 /**
@@ -219,15 +220,35 @@ export function historyFromEvents(events: readonly SessionEvent[]): {
 
 /**
  * How much of one prior tool RESULT a rebuilt model history repeats, in
- * characters. A digest is a reminder that the call happened and roughly what it
- * said — enough that the model does not re-call the tool to answer "what was
- * the weather again" — not the payload itself, which `ctx.messages` still holds
- * in full for a tool that reads it.
+ * characters. A seeded result is a reminder of what the call answered — enough
+ * that the model does not re-call the tool to answer "what was the weather
+ * again" — not the payload itself, which `ctx.messages` still holds in full
+ * (capped only by `MAX_TOOL_RESULT_CHARS`) for a tool that reads it.
  */
-export const TOOL_DIGEST_RESULT_CHARS = 240;
+export const SEEDED_TOOL_RESULT_CHARS = 240;
 
-/** The same cap for a digest's ARGUMENTS, which are usually far shorter. */
-export const TOOL_DIGEST_ARGS_CHARS = 160;
+/**
+ * The same cap for a seeded call's ARGUMENTS, measured as their JSON. Over it,
+ * each string argument is cut to {@link SEEDED_TOOL_ARG_VALUE_CHARS}; still over
+ * (a deeply nested or many-keyed call), the input is sent as `{}`.
+ *
+ * Arguments are STRUCTURED here, not text, so they cannot be clipped mid-JSON
+ * the way the old digest line was: the tool-call part's `input` goes to the
+ * provider as the call's argument object, and a string that is not the JSON of
+ * one would be a malformed call in the model's own history.
+ */
+export const SEEDED_TOOL_ARGS_CHARS = 160;
+
+/** Each string argument's length once a call's arguments are over {@link SEEDED_TOOL_ARGS_CHARS}. */
+export const SEEDED_TOOL_ARG_VALUE_CHARS = 40;
+
+/**
+ * The longest tool-call id a seeded pair carries. OpenAI refuses a
+ * `tool_calls[].id` over 40 characters, and it is the tightest of the providers
+ * a rebuilt history may be sent to — the log's id was minted by whichever
+ * provider ran the ORIGINAL turn, which is not necessarily this session's.
+ */
+export const MAX_SEEDED_TOOL_CALL_ID_CHARS = 40;
 
 /** `text` cut to `max` characters, saying so when it was. */
 function clip(text: string, max: number): string {
@@ -235,75 +256,154 @@ function clip(text: string, max: number): string {
 }
 
 /**
- * One prior tool call as a line of text: `[tool weather({"city":"Portland"}) →
- * {"temp":12}]`. The name is absent when the log's front no longer holds the
- * `tool.called` — the result is still worth repeating.
+ * A prior result as the model is handed it again — {@link SEEDED_TOOL_RESULT_CHARS}.
+ * Exported for the client-history budget, which charges a completion what the
+ * model will actually read of it.
  *
  * @internal
  */
-export function toolDigest(call: {
-  name?: string | undefined;
-  args?: unknown;
-  result: string;
-}): string {
-  const args =
-    call.args === undefined ? "" : clip(JSON.stringify(call.args) ?? "", TOOL_DIGEST_ARGS_CHARS);
-  return `[tool ${call.name ?? "(unknown)"}(${args}) → ${clip(call.result, TOOL_DIGEST_RESULT_CHARS)}]`;
+export function seededToolResult(result: string): string {
+  return clip(result, SEEDED_TOOL_RESULT_CHARS);
+}
+
+/** A prior call's arguments, capped — see {@link SEEDED_TOOL_ARGS_CHARS}. */
+function seededToolInput(args: Record<string, unknown>): Record<string, unknown> {
+  const fits = (value: Record<string, unknown>): boolean =>
+    (JSON.stringify(value)?.length ?? 0) <= SEEDED_TOOL_ARGS_CHARS;
+  if (fits(args)) return args;
+  const clipped = Object.fromEntries(
+    Object.entries(args).map(([key, value]) => [
+      key,
+      typeof value === "string" ? clip(value, SEEDED_TOOL_ARG_VALUE_CHARS) : value,
+    ]),
+  );
+  return fits(clipped) ? clipped : {};
 }
 
 /**
- * The MODEL's view of a rebuilt history: {@link historyFromEvents}' messages
- * with every `role: "tool"` one folded into the assistant side as a
- * {@link toolDigest}.
+ * The id a seeded pair's two halves share: the log's own `callId` when every
+ * provider accepts it, else one derived from it.
  *
- * ## Why a digest and not the tool message
+ * Anthropic requires `^[a-zA-Z0-9_-]+$` and OpenAI at most
+ * {@link MAX_SEEDED_TOOL_CALL_ID_CHARS} characters, and neither is a promise the
+ * log makes — ids come from whatever minted them (a provider, a test's fake, an
+ * S2S service). The derivation is deterministic (same log, same ids) and
+ * `ordinal` makes it unique within one history, which matters because a
+ * client's history spans several sessions and two of them may reuse an id.
+ */
+function seededCallId(callId: string, ordinal: number, taken: Set<string>): string {
+  const safe = callId.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, MAX_SEEDED_TOOL_CALL_ID_CHARS);
+  const id =
+    safe === callId && safe.length > 0 && !taken.has(safe)
+      ? safe
+      : `seed_${ordinal}_${safe}`.slice(0, MAX_SEEDED_TOOL_CALL_ID_CHARS);
+  taken.add(id);
+  return id;
+}
+
+/**
+ * The MODEL's view of a rebuilt history: {@link historyFromEvents}' messages as
+ * AI SDK {@link ModelMessage}s, with every prior tool call seeded as the REAL
+ * pair a live turn leaves — an assistant message carrying the `tool-call` part,
+ * then a `tool` message carrying its `tool-result` under the same id — followed
+ * by the reply the assistant spoke after it.
  *
- * The pipeline's LLM view holds tool-call PAIRS — an assistant message carrying
- * the call and a `tool` message answering it — and the event log records only
- * the result half, so a `tool` message seeded alone is an orphan both providers
- * reject (`transports/pipeline-history.ts` has the error strings). `seed` used
- * to answer that by DROPPING them, which kept the request valid and silently
- * lost every tool call from the model's memory of a resumed or reloaded
- * conversation: an agent that had looked up an order asked for the order number
- * again. Rendering the call as text on the ASSISTANT side keeps both properties
- * — there is no pair to orphan, and the model reads what it did.
+ * ```text
+ * user       "weather in Portland?"
+ * assistant  [tool-call c1 weather {"city":"Portland"}]
+ * tool       [tool-result c1 weather text '{"temp":12}']
+ * assistant  "Twelve degrees."
+ * ```
  *
- * The digest is PREPENDED to the assistant reply that followed the call (that
- * is where the model produced it), and a call with no reply after it — a turn
- * that ended mid-chain, or the log's last word — becomes an assistant message
- * of its own. `ctx.messages` is untouched by this: it keeps the real `tool`
- * messages, which is what a tool reads.
+ * That is the shape `streamText`'s own step messages have
+ * (`transports/pipeline-history.ts`, `pushLlm`), so a resumed or reloaded
+ * conversation reads to the model exactly as it would have had the session
+ * never dropped. `ctx.messages` is untouched by this: it keeps the
+ * `role: "tool"` messages, which is what a tool reads.
+ *
+ * ## Why pairs, and not the text digest this used to render
+ *
+ * This used to fold each call into the ASSISTANT's text as a line,
+ * `[tool think({"thought":"…"}) → …]`, because the event log holds a call's two
+ * halves in two events and a `tool` message seeded alone is an orphan both
+ * providers reject. It kept the request valid and the call in memory, and it
+ * taught the model a FORMAT: text in its own turns that looked like a tool
+ * call. Seen live on the AssemblyAI gateway (gpt-5.6-luna, reasoning off), a
+ * later turn spoke `[tool think({"thought":"…"}) … to=functions.prepare_call …
+ * {"callee":…}` as its REPLY — its own tool-call channel markup leaking into
+ * the text it had been shown was its own — with no `tool.called` behind it, so
+ * the call never ran and the caller heard gibberish and saw nothing happen. A
+ * model imitates its own history; the history must therefore contain only
+ * things it would really have produced.
+ *
+ * The orphan problem is solved the direct way instead: a pair is built only
+ * from BOTH halves — the `tool` message (its result) and the
+ * {@link RestoredToolCall} with the same `callId` (its name and arguments).
+ *
+ * ## A call with only one half is DROPPED, not described
+ *
+ * The log's front is trimmed, so a long conversation can hold a completion
+ * whose `tool.called` is gone (no name, no arguments), and a pending call has no
+ * result. Neither is rendered at all — no text mention, however phrased, since
+ * any sentence about a call is one more thing in the assistant's turns shaped
+ * like one. What is lost is a call at the very edge of the window, which the
+ * front trim was already discarding.
+ *
+ * Results and arguments are capped ({@link SEEDED_TOOL_RESULT_CHARS},
+ * {@link SEEDED_TOOL_ARGS_CHARS}) and ids made provider-safe
+ * ({@link seededCallId}). A later trim — the 200-message cap or the per-request
+ * token budget — can only cut this list at the FRONT, and both heal the one
+ * shape that makes (a leading `tool` message); `PipelineHistory.seed` re-pairs
+ * the whole list on the way in besides.
  *
  * @internal
  */
 export function modelHistoryOf(
   messages: readonly Message[],
   toolCalls: readonly RestoredToolCall[],
-): Message[] {
+): ModelMessage[] {
   const byId = new Map(toolCalls.map((call) => [call.callId, call]));
-  const out: Message[] = [];
-  let pending: string[] = [];
-  const flush = (): void => {
-    if (pending.length === 0) return;
-    out.push({ role: "assistant", content: pending.join("\n") });
-    pending = [];
-  };
+  const taken = new Set<string>();
+  const out: ModelMessage[] = [];
   for (const m of messages) {
-    if (m.role === "tool") {
-      const call = m.toolCallId === undefined ? undefined : byId.get(m.toolCallId);
-      pending.push(
-        toolDigest({ name: m.toolName ?? call?.name, args: call?.args, result: m.content }),
+    if (m.role !== "tool") {
+      out.push(
+        m.role === "user"
+          ? { role: "user", content: m.content }
+          : { role: "assistant", content: m.content },
       );
       continue;
     }
-    if (m.role === "assistant" && pending.length > 0) {
-      out.push({ role: "assistant", content: `${pending.join("\n")}\n${m.content}` });
-      pending = [];
-      continue;
-    }
-    flush();
-    out.push({ role: m.role, content: m.content });
+    const call = m.toolCallId === undefined ? undefined : byId.get(m.toolCallId);
+    // One half only — see "A call with only one half is DROPPED".
+    if (call === undefined) continue;
+    const toolCallId = seededCallId(call.callId, out.length, taken);
+    out.push(
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId,
+            toolName: call.name,
+            input: seededToolInput(call.args),
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId,
+            toolName: call.name,
+            // What `streamText` records for a tool whose `execute` returned a
+            // string, which every tool here does (`to-vercel-tools.ts`).
+            output: { type: "text", value: seededToolResult(m.content) },
+          },
+        ],
+      },
+    );
   }
-  flush();
   return out;
 }

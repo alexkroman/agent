@@ -31,8 +31,20 @@ type ShippedCarrier = (typeof TELEPHONY_CARRIERS)[number];
 
 /** One inbound carrier frame, reduced to what a session needs. */
 export type CarrierInbound =
-  /** The call's media stream has begun; `streamId` must be echoed on outbound frames. */
-  | { kind: "start"; streamId: string; encoding: string | null; sampleRate: number | null }
+  /**
+   * The call's media stream has begun; `streamId` must be echoed on outbound
+   * frames. `callId` and `parameters` are the call's identity, bounded by the
+   * shipped codecs (see `MAX_CALL_PARAMETERS`). OPTIONAL so a codec written
+   * before they existed still type-checks; absent reads as "none".
+   */
+  | {
+      kind: "start";
+      streamId: string;
+      encoding: string | null;
+      sampleRate: number | null;
+      callId?: string | null;
+      parameters?: Readonly<Record<string, string>>;
+    }
   /** One 20 ms chunk of caller audio, base64 μ-law. */
   | { kind: "media"; payload: string }
   /** The carrier is ending the stream (the caller hung up). */
@@ -90,16 +102,83 @@ function isCallerTrack(media: Record<string, unknown> | null): boolean {
 }
 
 /**
- * Shared decoding, parameterized by the two field names carriers disagree on.
+ * Most custom parameters kept from one `start` frame. Twilio documents no count
+ * limit, so this is ours: a placed call carries a handful, and the object is
+ * held per session for the life of the process's session map.
+ */
+export const MAX_CALL_PARAMETERS = 32;
+
+/**
+ * Longest parameter kept, name and value together — Twilio's own documented
+ * limit ("the combined length of each `<Parameter>` name and value must be under
+ * 500 characters"), so nothing a real Twilio call carries is dropped.
+ */
+export const MAX_CALL_PARAMETER_CHARS = 500;
+
+/** Longest call id kept. A Twilio `CallSid` is 34; a Telnyx `call_control_id` is ~70. */
+export const MAX_CALL_ID_CHARS = 128;
+
+/**
+ * A `start` frame's custom parameters, bounded.
+ *
+ * They cross from the far end of an unauthenticated socket into an app's
+ * `sessionContext`, so they are held to a shape the app can read without
+ * checking: a string value, a non-empty name, at most
+ * {@link MAX_CALL_PARAMETERS} of them, each under
+ * {@link MAX_CALL_PARAMETER_CHARS}. Anything else is dropped rather than
+ * refused — a malformed parameter is not a reason to hang up a call whose audio
+ * is fine, and an app that needs one it did not get refuses the session itself.
+ * A null-prototype object, so a parameter named `__proto__` is a parameter.
+ */
+function decodeCallParameters(...sources: unknown[]): Record<string, string> {
+  const out: Record<string, string> = Object.create(null);
+  let kept = 0;
+  for (const source of sources) {
+    const record = asRecord(source);
+    if (record === null) continue;
+    for (const [name, value] of Object.entries(record)) {
+      if (kept >= MAX_CALL_PARAMETERS) return out;
+      if (typeof value !== "string" || name === "" || name in out) continue;
+      if (name.length + value.length >= MAX_CALL_PARAMETER_CHARS) continue;
+      out[name] = value;
+      kept++;
+    }
+  }
+  return out;
+}
+
+/** The call id, or null when absent, empty or over {@link MAX_CALL_ID_CHARS}. */
+function callIdAt(record: Record<string, unknown> | null, key: string): string | null {
+  const id = stringAt(record, key);
+  return id === null || id === "" || id.length > MAX_CALL_ID_CHARS ? null : id;
+}
+
+/** The field names a carrier's `start` frame uses — see {@link decodeWith}. */
+type StartKeys = {
+  streamId: string;
+  mediaFormat: string;
+  encoding: string;
+  sampleRate: string;
+  /** The call's id inside `start`. */
+  callId: string;
+  /** The custom-parameter object inside `start`. */
+  parameters: string;
+  /**
+   * A single string inside `start` surfaced AS a parameter of the same name —
+   * Telnyx's `client_state`, which is where Call Control puts what an app
+   * attached to the call. A real custom parameter of that name wins.
+   */
+  stateParameter?: string;
+};
+
+/**
+ * Shared decoding, parameterized by the field names carriers disagree on.
  *
  * Both vendors use the same `event` discriminator and the same nested `media`
  * object, so writing this twice would mean two places to get the track guard
  * wrong.
  */
-function decodeWith(
-  frame: unknown,
-  keys: { streamId: string; mediaFormat: string; encoding: string; sampleRate: string },
-): CarrierInbound {
+function decodeWith(frame: unknown, keys: StartKeys): CarrierInbound {
   const record = asRecord(frame);
   const event = stringAt(record, "event");
   if (event === "media") {
@@ -111,6 +190,7 @@ function decodeWith(
   if (event === "start") {
     const start = asRecord(record?.start);
     const format = asRecord(start?.[keys.mediaFormat]);
+    const state = keys.stateParameter === undefined ? null : stringAt(start, keys.stateParameter);
     return {
       kind: "start",
       // Twilio repeats the id at the top level of every frame; Telnyx does
@@ -120,6 +200,11 @@ function decodeWith(
       streamId: stringAt(record, keys.streamId) ?? stringAt(start, keys.streamId) ?? "",
       encoding: stringAt(format, keys.encoding),
       sampleRate: numberAt(format, keys.sampleRate),
+      callId: callIdAt(start, keys.callId),
+      parameters: decodeCallParameters(
+        start?.[keys.parameters],
+        state === null ? null : { [keys.stateParameter as string]: state },
+      ),
     };
   }
   if (event === "stop") return { kind: "stop" };
@@ -140,6 +225,8 @@ export const twilioCodec: CarrierCodec = {
       mediaFormat: "mediaFormat",
       encoding: "encoding",
       sampleRate: "sampleRate",
+      callId: "callSid",
+      parameters: "customParameters",
     }),
   // `omitUndefined` rather than a conditional spread of an object literal, which
   // is what `guard-invariants` rule 2 asks for wherever the guard IS the value:
@@ -156,7 +243,9 @@ export const twilioCodec: CarrierCodec = {
 /**
  * Telnyx media streaming.
  *
- * Snake-cased where Twilio is camel-cased, and its documented outbound frames
+ * Snake-cased where Twilio is camel-cased — the call id is `call_control_id`,
+ * and `client_state` (base64, as Telnyx sends it) is surfaced as a parameter —
+ * and its documented outbound frames
  * carry no stream id at all — the socket is the stream. Written to Telnyx's
  * documented shape; the inbound half also accepts Twilio's spelling of the
  * id, which costs nothing and covers a carrier that echoes it.
@@ -169,6 +258,14 @@ export const telnyxCodec: CarrierCodec = {
       mediaFormat: "media_format",
       encoding: "encoding",
       sampleRate: "sample_rate",
+      callId: "call_control_id",
+      // TeXML's `<Parameter>` elements. Telnyx documents that they ride on the
+      // `start` message without naming the key in its reference; this is the
+      // snake-cased spelling of Twilio's, which is the convention every other
+      // Telnyx field follows. Call Control's `client_state` is the documented
+      // half, and is surfaced as a parameter of that name.
+      parameters: "custom_parameters",
+      stateParameter: "client_state",
     }),
   media: (payload) => ({ event: "media", media: { payload } }),
   clear: () => ({ event: "clear" }),

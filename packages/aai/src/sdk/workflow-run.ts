@@ -61,6 +61,11 @@ export type WorkflowRunBase = {
   createdAt: number;
   /** The correlation key {@link WorkflowClient.start} was given, when it was given one. */
   key?: string;
+  /**
+   * What the run is, as {@link WorkflowClient.start} was told in
+   * `StartOptions.label` — normalized, and absent when it was given none.
+   */
+  label?: string;
 };
 
 /**
