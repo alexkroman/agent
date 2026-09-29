@@ -60,7 +60,7 @@ describe("compileAgentRoutes", () => {
     expect(await serve?.(call({ path: "/none" }))).toEqual({ status: 200, body: null });
   });
 
-  test("the request arrives parsed: params decoded, query, body and clientId", async () => {
+  test("the request arrives parsed: params decoded, query, headers, body, rawBody and clientId", async () => {
     const handler = vi.fn<RouteHandler>(() => "ok");
     const { serve } = compile({ "POST /memories/:id": handler }, { MEMORY_URL: "http://memory" });
     await serve?.(
@@ -68,7 +68,9 @@ describe("compileAgentRoutes", () => {
         method: "POST",
         path: "/memories/a%20b",
         query: { client: "kitchen", page: "2" },
+        headers: { "webhook-id": "msg_1" },
         body: { text: "milk" },
+        rawBody: '{ "text": "milk" }',
         clientId: "kitchen",
       }),
     );
@@ -78,11 +80,21 @@ describe("compileAgentRoutes", () => {
         path: "/memories/a%20b",
         params: { id: "a b" },
         query: { client: "kitchen", page: "2" },
+        headers: { "webhook-id": "msg_1" },
         body: { text: "milk" },
+        rawBody: '{ "text": "milk" }',
         clientId: "kitchen",
       },
       expect.objectContaining({ env: { MEMORY_URL: "http://memory" } }),
     );
+  });
+
+  test("a call with no headers (a harness predating them) hands the handler an empty record", async () => {
+    const handler = vi.fn<RouteHandler>(() => "ok");
+    const { serve } = compile({ "GET /x": handler });
+    await serve?.(call({ path: "/x" }));
+    expect(handler.mock.calls[0]?.[0]).toMatchObject({ headers: {} });
+    expect(handler.mock.calls[0]?.[0]).not.toHaveProperty("rawBody");
   });
 
   test("a literal segment beats a parameter, whatever order they were declared in", async () => {

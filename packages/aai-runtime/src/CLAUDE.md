@@ -267,8 +267,9 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - **`agent({ routes })` is served at `/api/*` and crosses the bundle as DATA.**
   `agent-routes.ts` compiles the table at `createRuntime` (a bad key fails the
   boot) and is `runtime.serveRoute`; `agent-routes-http.ts` is the server's
-  half (the prefix, `MAX_ROUTE_BODY_BYTES`, JSON, `?client=`). A
-  `routeResponse` is read by brand. No auth: as open as the server. On the
+  half (the prefix, `MAX_ROUTE_BODY_BYTES`, JSON plus its exact `rawBody` for
+  webhook signatures, headers as strings, `?client=`). A `routeResponse` is
+  read by brand. No auth: as open as the server. On the
   platform it is `direct-dial`, so self-hosted only for now
   (`aai-server/src/guest/routes.ts` says why).
 - **`/inbox` keeps one socket per (client, `?holder=`)**: the same pair

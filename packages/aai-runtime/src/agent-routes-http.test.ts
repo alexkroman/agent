@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `/api/*` as `createRuntimeServer` serves it: the prefix, the body cap, JSON
- * both ways, `?client=`, and an agent with no routes leaving the prefix alone —
+ * both ways, the headers and the raw body, `?client=`, and an agent with no routes leaving the prefix alone —
  * then once through a real `createRuntime`, to pin that `agent({ routes })` is
  * all it takes.
  */
@@ -71,6 +71,49 @@ describe("/api on createRuntimeServer", () => {
     expect(bad.status).toBe(400);
     expect(await bad.json()).toEqual({ error: "Request body is not JSON" });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  test("headers arrive lower-cased as plain strings, and rawBody is the exact bytes sent", async () => {
+    const handler = vi.fn<RouteHandler>(() => routeResponse(204));
+    const base = await serve({ "POST /webhooks/composio": handler });
+    // Whitespace, key order and a number spelling JSON.stringify(body) would not reproduce.
+    const sent = '{ "b":1,\n\t"a" : [ 1.50 , "é" ] }\n';
+    const res = await fetch(`${base}/api/webhooks/composio`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Webhook-Id": "msg_1",
+        "WEBHOOK-TIMESTAMP": "1700000000",
+        "webhook-signature": "v1,abc=",
+      },
+      body: sent,
+    });
+    expect(res.status).toBe(204);
+    const [req] = handler.mock.calls[0] ?? [];
+    expect(req?.rawBody).toBe(sent);
+    expect(req?.rawBody).not.toBe(JSON.stringify(req?.body));
+    expect(req?.body).toEqual({ b: 1, a: [1.5, "é"] });
+    expect(req?.headers).toMatchObject({
+      "content-type": "application/json",
+      "webhook-id": "msg_1",
+      "webhook-timestamp": "1700000000",
+      "webhook-signature": "v1,abc=",
+    });
+    for (const [name, value] of Object.entries(req?.headers ?? {})) {
+      expect(name).toBe(name.toLowerCase());
+      expect(typeof value).toBe("string");
+    }
+  });
+
+  test("a GET, or a body-less POST, has headers but no rawBody", async () => {
+    const handler = vi.fn<RouteHandler>((req) => ({
+      raw: "rawBody" in req,
+      host: typeof req.headers.host,
+    }));
+    const base = await serve({ "GET /x": handler, "POST /x": handler });
+    expect(await (await fetch(`${base}/api/x`)).json()).toEqual({ raw: false, host: "string" });
+    const post = await fetch(`${base}/api/x`, { method: "POST" });
+    expect(await post.json()).toEqual({ raw: false, host: "string" });
   });
 
   test("a body past the cap is a 413", async () => {

@@ -3403,10 +3403,12 @@ export type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 export interface RouteRequest {
     body: unknown;
     clientId?: string;
+    headers: Record<string, string>;
     method: string;
     params: Record<string, string>;
     path: string;
     query: Record<string, string>;
+    rawBody?: string;
 }
 
 // @public @sealed
@@ -5383,10 +5385,12 @@ type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 interface RouteRequest {
     body: unknown;
     clientId?: string;
+    headers: Record<string, string>;
     method: string;
     params: Record<string, string>;
     path: string;
     query: Record<string, string>;
+    rawBody?: string;
 }
 
 // @public
@@ -11590,7 +11594,9 @@ export type AgentRuntime = {
         method: string;
         path: string;
         query: Readonly<Record<string, string>>;
+        headers?: Readonly<Record<string, string>> | undefined;
         body: unknown;
+        rawBody?: string | undefined;
         clientId?: string | undefined;
         signal: AbortSignal;
     }) => Promise<{
