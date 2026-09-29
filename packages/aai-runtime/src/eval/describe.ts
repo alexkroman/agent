@@ -27,7 +27,7 @@
  * @module
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, SessionCall } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, test } from "vitest";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
@@ -97,6 +97,24 @@ export type EvalCaseOptions = {
    * try). Without this marker each cost a red live run and got weakened.
    */
   readonly scripted?: boolean;
+  /**
+   * WHO this case's session is, over the suite's own
+   * ({@link DescribeEvalOptions}) — the client id `sessionClientId(ctx)`
+   * answers. See `EvalSessionOptions.clientId`.
+   *
+   * Per case because a suite's cases are rarely all the same caller: a
+   * speaker agent's "a device with no client id is refused" case sits beside
+   * twenty that run as the kitchen speaker.
+   */
+  readonly clientId?: string;
+  /** This case's reported phone number, over the suite's. See `EvalSessionOptions.phone`. */
+  readonly phone?: string;
+  /**
+   * This case's placed phone call, over the suite's — what `sessionContext`
+   * receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
+   * lands on `session.refused`.
+   */
+  readonly call?: SessionCall;
 };
 
 // `EvalMode` is DECLARED in `_announce.ts`, beside the three functions that
@@ -339,6 +357,11 @@ async function runCase(run: CaseRun): Promise<void> {
     ...options,
     agent,
     ...omitUndefined({
+      // The case's identity over the suite's, field by field: a case naming
+      // only a `call` still runs as the suite's client.
+      clientId: caseOptions?.clientId,
+      phone: caseOptions?.phone,
+      call: caseOptions?.call,
       workflows: workflows?.client,
       // The scripted `ctx.generate`, which the runtime would otherwise build
       // from the agent's own descriptor — a second instance of the TURN's

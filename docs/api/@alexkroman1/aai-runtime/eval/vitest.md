@@ -315,7 +315,10 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ```ts
 type EvalCaseOptions = {
+  call?: SessionCall;
+  clientId?: string;
   live?: boolean;
+  phone?: string;
   scripted?: boolean;
   stubGenerate?: StubScript;
   stubReply?: StubScript;
@@ -326,6 +329,30 @@ What a case gets to say about how it should be run.
 
 #### Properties
 
+##### call?
+
+```ts
+readonly optional call?: SessionCall;
+```
+
+This case's placed phone call, over the suite's — what `sessionContext`
+receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
+lands on `session.refused`.
+
+##### clientId?
+
+```ts
+readonly optional clientId?: string;
+```
+
+WHO this case's session is, over the suite's own
+([DescribeEvalOptions](#describeevaloptions)) — the client id `sessionClientId(ctx)`
+answers. See `EvalSessionOptions.clientId`.
+
+Per case because a suite's cases are rarely all the same caller: a
+speaker agent's "a device with no client id is refused" case sits beside
+twenty that run as the kitchen speaker.
+
 ##### live?
 
 ```ts
@@ -335,6 +362,14 @@ readonly optional live?: boolean;
 This case only means something against a live model — it is SKIPPED in stub
 mode. Use it for a claim no script can honestly satisfy: a tool the model
 has to choose for itself, a refusal, a judgement.
+
+##### phone?
+
+```ts
+readonly optional phone?: string;
+```
+
+This case's reported phone number, over the suite's. See `EvalSessionOptions.phone`.
 
 ##### scripted?
 

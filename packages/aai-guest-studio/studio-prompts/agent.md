@@ -548,10 +548,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 1. **Iterate in `pnpm dev`** — browser UI, and it rebuilds and restarts on
    every save when you are at a terminal. Speak to the agent to verify behavior
-   end-to-end. This is the primary feedback loop. Watching is on for a PERSON
-   and off for everything else: a restart ends in-flight voice sessions, which
-   is right while you are editing and wrong while something drives the agent
-   for twenty minutes, and a harness or supervisor has no TTY. `AAI_DEV_WATCH=0`
+   end-to-end. This is the primary feedback loop. Watching is on at a terminal
+   and off otherwise, since a restart ends in-flight sessions: `AAI_DEV_WATCH=0`
    turns it off at a terminal, `AAI_DEV_WATCH=1` on for a process supervisor.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `custom-pipeline-agent` template for a reference).
@@ -620,6 +618,10 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
      a case `{ live: true }` instead when no script could honestly stand in
      (a tool the model has to choose for itself, a refusal, a judgement).
 
+   **Who is calling** is a suite or case option: `clientId`, `phone` and `call`
+   are what `sessionClientId`, `sessionClientPhone`, `sessionCall` and your
+   `sessionContext` see; a call it refuses reads as `session.refused`.
+
    No eval can see anything below the audio boundary — when the agent decides
    you stopped talking, barge-in, two sentences merging into one turn. Those
    need `pnpm dev` and your own voice.
@@ -634,17 +636,14 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
    `tabletop-rpg-agent`, `pizza-ordering-agent`, `retail-orders-agent` (the most
-   complex — 15 tools over a relational store with a `syncState` UI). Four are
-   LangChain/LangGraph ports, and each says in its own source what had to change:
-   `travel-concierge-agent` (their customer-support bot — specialist desks, every
-   booking staged for a spoken confirmation before it applies),
-   `technical-support-agent` (self-RAG/CRAG — retrieve, grade what came back,
-   rewrite the question, and refuse to speak an answer it cannot ground),
-   `research-planner-agent` (plan then work the plan — one step per tool call, so
-   the caller can redirect between them), and `document-redline-workflow` (the
-   reflection agent — write, critique, revise; too slow for a phone, so a PAGE
-   over a durable run rather than a voice agent). When reading SDK
-   types under
+   complex: 15 tools, a relational store, a `syncState` UI). Four are
+   LangChain/LangGraph ports, each saying in its source what had to change:
+   `travel-concierge-agent` (specialist desks, every booking confirmed aloud
+   first), `technical-support-agent` (self-RAG: retrieve, grade, rewrite, never
+   speak an ungrounded answer), `research-planner-agent` (plan, then one step
+   per tool call so the caller can redirect) and `document-redline-workflow`
+   (write, critique, revise: a PAGE over a durable run, too slow for a phone).
+   When reading SDK types under
    `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
    re-export with source specifiers (`"./sdk/constants.ts"`,
    `"./components/button.tsx"`) — rewrite `.ts`/`.tsx` to `.d.ts` to find
@@ -3051,8 +3050,6 @@ Common mistakes when working in agent projects:
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.
-- **Filter large API responses before returning them from tools** — return
-  values go into LLM context; return only what the model needs.
 - **Declare only the pipeline stages you're changing.** Unset stages of
   `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
   default pipeline; `voice` picks its TTS voice). S2S needs an explicit
@@ -3086,7 +3083,6 @@ Common mistakes when working in agent projects:
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds
-- `maxSteps` limits tool calls per turn (default 10) — lower it for a
-  latency-sensitive agent. On reaching the cap the agent spends one more LLM
-  step with tools switched off, so it answers with what it has instead of
-  going silent mid-chain
+- `maxSteps` caps tool calls per turn (default 10) — lower it for latency. At
+  the cap one more step runs with tools off, so the agent answers with what it
+  has instead of going silent mid-chain

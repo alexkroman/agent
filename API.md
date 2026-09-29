@@ -1760,6 +1760,9 @@ interface ModelTuning {
 // @internal
 export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
 
+// @internal
+export function normalizeE164(raw: string): string | undefined;
+
 // @public
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
@@ -10655,6 +10658,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
@@ -10727,6 +10731,7 @@ export type EvalRunOptions = StartOptions & {
 // @public @sealed
 export type EvalSession = {
     readonly id: string;
+    readonly refused: string | undefined;
     say(text: string): Promise<EvalTurn>;
     sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
@@ -10737,8 +10742,11 @@ export type EvalSession = {
 
 // @public
 export interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
+    readonly phone?: string;
     // (undocumented)
     readonly turnTimeoutMs?: number;
 }
@@ -11290,6 +11298,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -11323,6 +11332,9 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
+    readonly clientId?: string;
+    readonly phone?: string;
+    readonly call?: SessionCall;
 };
 
 // @public
@@ -11342,6 +11354,7 @@ type EvalRunOptions = StartOptions & {
 // @public @sealed
 type EvalSession = {
     readonly id: string;
+    readonly refused: string | undefined;
     say(text: string): Promise<EvalTurn>;
     sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
@@ -11352,8 +11365,11 @@ type EvalSession = {
 
 // @public
 interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
+    readonly phone?: string;
     // (undocumented)
     readonly turnTimeoutMs?: number;
 }

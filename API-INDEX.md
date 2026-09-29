@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 148 names
 - [Testing and evals](#testing-and-evals) — 230 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 354 names
+- [Framework internals](#framework-internals) — 355 names
 
 ## Agent authoring
 
@@ -1360,6 +1360,7 @@ trace or a type error can be traced back to something.
 | `mapStream` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
 | `normalizeClientLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `normalizeE164` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
 | `normalizeRunLabel` | function | `@alexkroman1/aai-runtime/internal` |  | The label a run is stored with, or `undefined` for none — see the module doc for each rule. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |

@@ -1553,6 +1553,43 @@ The agent to run — an ordinary `agent()` definition.
 
 [`HostAgentOptions`](#hostagentoptions).[`agent`](#agent-2)
 
+##### call?
+
+```ts
+readonly optional call?: SessionCall;
+```
+
+The placed phone call this session IS — what `sessionContext` and
+`onSessionEnd` receive as `call`, and `sessionCall(ctx)` answers.
+
+The same record a carrier's `start` frame produces on `WS /phone`
+(Twilio's `callSid` as `callId`, its `<Parameter>`s as `parameters`), put
+through the same seam: recorded under the session id before the session is
+built, and read by the runtime's own `sessionContext` step. So the hook's
+`refuse`, `instructions` and `greeting` take effect exactly as they do for
+a real call — a refusal lands on [EvalSession.refused](#refused), an answered
+greeting is the one the session opens with. A call is all the runtime
+derives from the phone path above the audio boundary; the μ-law codec and
+the carrier socket are below it, and an eval drives neither.
+
+##### clientId?
+
+```ts
+readonly optional clientId?: string;
+```
+
+The client id this session's device connected with — what
+`sessionClientId(ctx)` answers, and what `sessionContext` and
+`onSessionEnd` receive as `clientId`.
+
+Recorded where a device's `?client=` is recorded, under the session id
+before the session is built, so the runtime derives from it exactly what it
+derives for a device: the session is BOUND to the client, and its prior
+sessions (none, in a fresh eval runtime) are what the history restore
+reads. Without it a speaker agent whose tools key reminders and calls by
+client id refuses every one of them, and a case had to reach for the
+runtime's own recorder on a non-authoring subpath to get past that.
+
 ##### env?
 
 ```ts
@@ -1643,6 +1680,21 @@ Structured logger. Each entry point documents its own default.
 ###### Inherited from
 
 [`HostAgentOptions`](#hostagentoptions).[`logger`](#logger-2)
+
+##### phone?
+
+```ts
+readonly optional phone?: string;
+```
+
+The phone number the client reported — what `sessionClientPhone(ctx)`
+answers, and what the `text_me` builtin's `allowedSmsRecipient` check sees.
+
+Written the way a person writes it (`"+1 503 555 0100"`) and normalized to
+E.164 by the same rule the socket's `?phone=` goes through. Where the socket
+DROPS a number that is not E.164, this THROWS: a device's typo is a
+stranger's input, and an eval's is the author's own, which a silent drop
+would turn into a case measuring an agent with no number at all.
 
 ##### providerEnv?
 
@@ -2683,6 +2735,7 @@ Overrides [DEFAULT\_RUN\_TIMEOUT\_MS](#default_run_timeout_ms) for this run.
 ```ts
 type EvalSession = {
   id: string;
+  refused: string | undefined;
   close: Promise<void>;
   events: readonly SessionEvent[];
   said: readonly string[];
@@ -2819,6 +2872,27 @@ This session's id — what its tools read as `ctx.sessionId`.
 
 Exposed because it is what a tool CORRELATES a durable run with, so a case
 asserting "the run it started is this conversation's" needs both halves.
+
+##### refused
+
+```ts
+readonly refused: string | undefined;
+```
+
+The reason the agent's `sessionContext` REFUSED this session, or
+`undefined` for a session it let through.
+
+A value rather than a throw from [openEvalSession](#openevalsession), because a
+refusal is often the CLAIM a case exists to make: a calling agent's
+`sessionContext` refuses a stream whose `call` parameter names no call it
+placed, and a case pinning that needs a session to read the answer off —
+a throw would land before `describeEval` hands the case its session, and
+the case could only ever fail. It is decided exactly where production
+decides it (the runtime's own `sessionContext` step, before the
+transport starts), so a refused session never reached the model and never
+spoke: `said()` is empty and [EvalSession.say](#say) REJECTS, naming the
+reason. A case that did not expect a refusal therefore still fails at its
+first `say()`, with the app's own words in the message.
 
 ***
 

@@ -221,6 +221,7 @@
     "mapStream",
     "matchesToolConditions",
     "normalizeClientLocation",
+    "normalizeE164",
     "normalizeLlm",
     "outputWithKillNote",
     "pinnedFetch",

@@ -364,6 +364,28 @@ measured at 22-30s against ~10x gateway variance times out at 30s and the case
 then measures the deadline instead of the agent. `workflows` supplies
 `ctx.workflows`, without which a tool that starts a run cannot execute at all.
 
+**Who is calling is recorded where a connection records it.** `clientId`,
+`phone` and `call` (on `EvalSessionOptions`, so per suite, and on
+`EvalCaseOptions` per case) go through `setSessionClient`/`setSessionPhone`/
+`setSessionCall` under the session id before the session is built — the point
+`ws-handler.ts` and `telephony-server.ts` record them — so `sessionClientId`,
+`sessionCall`, `sessionContext`'s args, `onSessionEnd` and the client binding
+all read the same values (`eval/_session-identity.ts`). A downstream suite had
+wrapped `sessionContext` to hand it a fake `call`, which reached the hook and
+nothing else. Two decisions:
+
+- **A refusal is `session.refused`, not a throw.** The refusal is often the
+  claim (a calling agent refusing a stream that names no call it placed), and a
+  throw lands before `describeEval` hands the case a session. `say()` on a
+  refused session rejects naming the reason, so an unexpected refusal still
+  fails at the first line.
+- **A non-E.164 `phone` THROWS**, where the socket drops it: a device's typo is
+  a stranger's input, an eval's is the author's.
+
+The greeting wait reads `sessionContext`'s answered greeting by WATCHING the
+one call the runtime makes (`observeSessionContext`), never by calling the hook
+again: a calling agent's hook claims the call row.
+
 **`ctx.generate` answers from the script too**, and that was a hole rather than
 a limit: `generateText` calls the fake model's `doGenerate`, which used to
 throw, so every tool that reasons with a model — a grader, a planner, a

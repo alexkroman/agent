@@ -10,6 +10,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -43,6 +44,9 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
+    readonly clientId?: string;
+    readonly phone?: string;
+    readonly call?: SessionCall;
 };
 
 // @public
@@ -62,6 +66,7 @@ type EvalRunOptions = StartOptions & {
 // @public @sealed
 type EvalSession = {
     readonly id: string;
+    readonly refused: string | undefined;
     say(text: string): Promise<EvalTurn>;
     sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
@@ -72,8 +77,11 @@ type EvalSession = {
 
 // @public
 interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
+    readonly phone?: string;
     // (undocumented)
     readonly turnTimeoutMs?: number;
 }

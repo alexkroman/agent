@@ -239,8 +239,10 @@ export { claimSessionEnder, type SessionEnder } from "./sdk/session-end.ts";
 // The runtime's half of `sessionClientLocation`: the socket's `?location=` and
 // `sessionContext`'s `location` are recorded here, cleaned by one rule.
 export { normalizeClientLocation, setSessionLocation } from "./sdk/session-location.ts";
-// The runtime's half of `sessionClientPhone`, recorded the same way.
-export { setSessionPhone } from "./sdk/session-phone.ts";
+// The runtime's half of `sessionClientPhone`, recorded the same way — plus the
+// E.164 rule the socket's `?phone=` goes through, which the eval harness's
+// `phone` option applies too so both paths record the same number.
+export { normalizeE164, setSessionPhone } from "./sdk/session-phone.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";
 // The formatter AND the two types beside it. The type was reachable from no
 // published subpath at all, so the runtime's eval readers — which validate a
