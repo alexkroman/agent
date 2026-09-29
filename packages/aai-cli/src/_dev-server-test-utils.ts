@@ -266,6 +266,10 @@ export function aaiRuntimeInternalModule(): Record<string, unknown> {
     // directory is declared under.
     createMemoryJournal: mockCreateMemoryJournal,
     WORKFLOW_DATA_DIR_ENV: WORKFLOW_DATA_DIR_ENV_LITERAL,
+    // `viteDevConfig` keys the `/api` proxy (`agent({ routes })`) off the route
+    // table, read when the config is BUILT — unlike `isPathInside`, which only a
+    // proxied request reaches.
+    SERVER_ROUTES: { api: { path: "/api" } },
   };
 }
 

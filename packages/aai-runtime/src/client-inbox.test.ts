@@ -4,70 +4,25 @@
  * not taking a notice settles the step's send with.
  */
 
-import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { sleep } from "@alexkroman1/aai/internal";
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { WebSocket, WebSocketServer } from "ws";
-import { silentLogger } from "./_test-utils.ts";
-import { type ClientInbox, createClientInbox, INBOX_FRAME_BYTES } from "./client-inbox.ts";
+import { WebSocket } from "ws";
+import {
+  answerNotice as answer,
+  connectDevice,
+  type InboxCleanups,
+  startInbox as startOn,
+} from "./_client-inbox-test-utils.ts";
+import { type ClientInbox, INBOX_FRAME_BYTES } from "./client-inbox.ts";
 
-type Device = {
-  ws: WebSocket;
-  /** Every text frame parsed, and binary frames as byte counts. */
-  frames: (Record<string, unknown> | number)[];
-  next(): Promise<Record<string, unknown> | number>;
-};
-
-const cleanups: (() => void | Promise<void>)[] = [];
+const cleanups: InboxCleanups = [];
 afterEach(async () => {
   for (const clean of cleanups.splice(0).reverse()) await clean();
 });
 
-async function startInbox(pingMs?: number): Promise<{ inbox: ClientInbox; url: string }> {
-  const inbox = createClientInbox({ logger: silentLogger, ...omitUndefined({ pingMs }) });
-  const wss = new WebSocketServer({ noServer: true });
-  const server = http.createServer();
-  server.on("upgrade", (req, socket, head) => {
-    wss.handleUpgrade(req, socket, head, (ws) => inbox.attach(ws, req.url));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  cleanups.push(
-    () => new Promise<void>((resolve) => server.close(() => resolve())),
-    () => wss.close(),
-    () => inbox.close(),
-  );
-  return { inbox, url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/inbox` };
-}
-
-async function connect(url: string, inbox: ClientInbox, clientId = "speaker"): Promise<Device> {
-  const ws = new WebSocket(`${url}?client=${clientId}`);
-  const frames: Device["frames"] = [];
-  const waiters: ((f: Device["frames"][number]) => void)[] = [];
-  ws.on("message", (data, isBinary) => {
-    const frame = isBinary ? (data as Buffer).length : JSON.parse(data.toString());
-    const waiter = waiters.shift();
-    if (waiter) waiter(frame);
-    else frames.push(frame);
-  });
-  await new Promise((resolve) => ws.once("open", resolve));
-  // Adopted a tick after `open`; waited for without an assertion, since this is a helper.
-  await vi.waitFor(() => {
-    if (!inbox.connected().includes(clientId)) throw new Error(`${clientId} not adopted yet`);
-  });
-  cleanups.push(() => ws.terminate());
-  return {
-    ws,
-    frames,
-    next: () => {
-      const queued = frames.shift();
-      return queued !== undefined ? Promise.resolve(queued) : new Promise((r) => waiters.push(r));
-    },
-  };
-}
-
-const answer = (ws: WebSocket, type: string, id: string) => ws.send(JSON.stringify({ type, id }));
+const startInbox = (pingMs?: number) => startOn(cleanups, pingMs);
+const connect = (url: string, inbox: ClientInbox, clientId = "speaker") =>
+  connectDevice(cleanups, url, inbox, clientId);
 
 describe("client inbox", () => {
   test("a notice is a header then its bytes in bounded frames, and the ack settles it", async () => {

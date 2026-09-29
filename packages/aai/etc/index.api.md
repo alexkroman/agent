@@ -17,7 +17,7 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle {
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -71,6 +71,11 @@ export interface AgentObservation {
 
 // @public
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParamsCore;
+
+// @public
+export interface AgentRoutes {
+    routes?: Record<string, RouteHandler> | undefined;
+}
 
 // @public @sealed
 export interface AgentSessionContext {
@@ -167,6 +172,35 @@ export interface ClientEventMap {
 
 // @public
 export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
 
 // @public
 export function clockTime(what?: string): z.ZodString;
@@ -747,6 +781,36 @@ export interface ResolveOneOptions<T> {
 // @public
 export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
+// @public @sealed
+export interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+export type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+export interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+}
+
+// @public @sealed
+export interface RouteResponse {
+    readonly body: unknown;
+    readonly status: number;
+}
+
+// @public
+export function routeResponse(status: number, body?: unknown): RouteResponse;
+
 // @public
 export type S2sAgentParams = SharedAgentParams & {
     s2s: S2sProvider;
@@ -777,12 +841,16 @@ export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "sessi
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
+export function sessionClientLocation(ctx: Pick<ToolContext, "sessionId">): string | undefined;
+
+// @public
 export function sessionClientPhone(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
 export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
+    location?: string | undefined;
 };
 
 // @public @sealed
@@ -1210,6 +1278,15 @@ type StaticAgentParamsCore = Omit<SharedAgentParams, WorkflowAppOnlyField | Fron
 
 // @public
 type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @public
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {

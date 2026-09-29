@@ -74,6 +74,18 @@ export * from "./sdk/calendar.ts";
 // the runtime's own.
 
 /**
+ * `agent({ routes })` — the app's own JSON endpoints under `/api`, as open as the
+ * server serving them. See `sdk/agent-routes.ts`.
+ */
+export {
+  type AgentRoutes,
+  type RouteContext,
+  type RouteHandler,
+  type RouteRequest,
+  type RouteResponse,
+  routeResponse,
+} from "./sdk/agent-routes.ts";
+/**
  * The two `agent()` fields that bracket a SESSION rather than a turn —
  * `sessionContext` before its first model call, `onSessionEnd` after it stops.
  * Declared beside `types.ts` at its source-length cap; see
@@ -328,6 +340,12 @@ export type {
   SessionEventHandler,
   SessionEventHandlers,
 } from "./sdk/session-events.ts";
+/**
+ * Where a session's client is — `sessionContext`'s `location`, else the socket's
+ * `?location=` — read from `ctx.sessionId`; the place `google_places` and
+ * `open_meteo` default to. A CLAIM, never verified; personal data.
+ */
+export { sessionClientLocation } from "./sdk/session-location.ts";
 /**
  * The phone number a session's client reported (`?phone=`), E.164, read from
  * `ctx.sessionId` — a CLAIM by the client, never verified; see its doc.

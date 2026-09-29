@@ -352,6 +352,14 @@ export function lazyRuntime(
     get deliverWorkflow() {
       return ensureRuntime(state).deliverWorkflow as SessionRuntime["deliverWorkflow"];
     },
+    /**
+     * `agent({ routes })`, for the `/api` surface — a GETTER for the lazy-runtime
+     * reason `workflows` gives. A bundle whose SDK predates routes has none, and
+     * `undefined` leaves `/api` to static serving, which is the honest answer.
+     */
+    get serveRoute() {
+      return ensureRuntime(state).serveRoute as SessionRuntime["serveRoute"];
+    },
     shutdown: async () => {
       await state.runtime?.shutdown();
     },

@@ -49,6 +49,11 @@ export const GUEST_ROUTES = {
    * can reach it after its voice session closed. Same posture as `session`.
    */
   inbox: SERVER_ROUTES.inbox.path,
+  /**
+   * PUBLIC `agent({ routes })` — the app's own JSON endpoints under `/api`,
+   * unauthenticated by design (as open as the server; see `sdk/agent-routes.ts`).
+   */
+  api: SERVER_ROUTES.api.path,
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
   /**
@@ -223,6 +228,24 @@ export const GUEST_ROUTE_EXPOSURE = {
   phone: { via: "direct-dial" },
   // Dialled by the device itself, like `session`: it is handed the sandbox URL.
   inbox: { via: "direct-dial" },
+  // DIRECT-DIAL, which on the platform means SELF-HOSTED ONLY FOR NOW, and the
+  // choice is stated because `proxied` is what a page would want.
+  //
+  // The guest serves `/api` on its sandbox URL, and a caller holding that origin
+  // (a custom client reading `sessionUrl` off `/client-config`) can reach it while
+  // the sandbox lives. But the platform registers no `/:slug/api`, so a page
+  // served at `/:slug/` — whose relative `fetch("api/…")` lands on the platform —
+  // gets a 404, and so does any call to a guest that has self-exited on idle.
+  //
+  // Not proxied yet because the feature it exists for is not deployable yet: the
+  // routes' first reader is the per-client memory (`aai_client_sessions`), which
+  // the platform backend does not keep (`aai-runtime/session-state/clients.ts`),
+  // so a proxied route would boot a sandbox to answer "no sessions". And a
+  // proxy would put an UNAUTHENTICATED, tenant-authored, body-carrying surface on
+  // the platform's own origin, which wants a rate limit and a body cap of its own
+  // (`workflow-handler.ts` is the model). Promoting it is one registration plus
+  // the five methods here, once both of those are true.
+  api: { via: "direct-dial" },
   // Both studio surfaces are dialled by the BROWSER, straight at the sandbox
   // tunnel, holding the chat token the session install minted — which is why
   // `studio-static.ts` has to put the sandbox origin in the page's

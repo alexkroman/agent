@@ -900,6 +900,9 @@ interface ModelTuning {
     temperature?: number;
 }
 
+// @internal
+export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
+
 // @public
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 
@@ -1007,6 +1010,9 @@ type RandomSource = () => number;
 // @internal
 export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
+// @internal
+export function readRouteResponse(value: unknown): RouteResponse | undefined;
+
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
@@ -1104,6 +1110,12 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @public @sealed
+interface RouteResponse {
+    readonly body: unknown;
+    readonly status: number;
+}
+
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
 
@@ -1154,7 +1166,7 @@ type SessionMode = "s2s" | "pipeline" | "text";
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
 
-// @public
+// @internal
 export function setSessionLocation(sessionId: string, location: string): void;
 
 // @internal

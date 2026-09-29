@@ -3,7 +3,7 @@
   "capability": "runtime",
   "epoch": 6,
   "rule": 2,
-  "sha256": "b0cab6922476b65fa6af317c80ab74a61c12c70fd2aae3dc3b1391bea59b7b55",
+  "sha256": "6ee0fa75e1ecd32395e05a6399a575bd9bd95f19cf7360aad37f0854fb06b642",
   "exports": [
     "AgentRuntime",
     "ExecuteTool",
@@ -34,7 +34,7 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "b0cab6922476b65fa6af317c80ab74a61c12c70fd2aae3dc3b1391bea59b7b55",
+      "sha256": "6ee0fa75e1ecd32395e05a6399a575bd9bd95f19cf7360aad37f0854fb06b642",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
     }
   ]

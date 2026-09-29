@@ -34,6 +34,8 @@
  */
 
 import { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
+import { ROUTE_METHODS } from "./agent-routes.ts";
+import { AGENT_ROUTES_PREFIX } from "./agent-routes-http.ts";
 import { CLIENT_INBOX_PATH } from "./client-inbox.ts";
 import { SESSION_EVENTS_PATH } from "./session-events-api.ts";
 import { TELEPHONY_PATH } from "./telephony/telephony-server.ts";
@@ -141,6 +143,9 @@ export const SERVER_ROUTES = {
   phone: { transport: "ws", path: TELEPHONY_PATH, match: "prefix" },
   // A device's idle socket for `stepNotifyClient`, named by `?client=`.
   inbox: { transport: "ws", path: CLIENT_INBOX_PATH, match: "exact" },
+  // `agent({ routes })`, the app's own JSON endpoints. The methods are the five
+  // a route key may name; which of them a path answers is the agent's table.
+  api: { transport: "http", path: AGENT_ROUTES_PREFIX, match: "prefix", methods: ROUTE_METHODS },
 } as const satisfies Record<string, ServerRoute>;
 
 /**

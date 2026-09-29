@@ -19,13 +19,15 @@
  *   failed to start".
  * - **The answer is checked.** It crosses from author code, so a non-string
  *   `instructions` or a non-finite `historySince` is dropped with a warning
- *   rather than concatenated into a prompt or compared against a timestamp.
+ *   rather than concatenated into a prompt or compared against a timestamp,
+ *   and a `location` is held to the rule the socket's `?location=` is.
  *
  * Its own module rather than a closure in `runtime-session-memory.ts` so the
  * three rules are testable without a session around them.
  */
 
 import type { AgentDef, SessionContext, SessionContextArgs } from "@alexkroman1/aai";
+import { normalizeClientLocation } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
 
@@ -59,6 +61,15 @@ function checked(value: unknown, log: Logger, sid: string): SessionContext | und
     out.historySince = historySince;
   } else if (historySince !== undefined) {
     log.warn("sessionContext `historySince` is not a finite number; ignored", { sid });
+  }
+  // The socket's rule, so the app cannot put into the slot what `?location=`
+  // would have refused. The warning names the field and never the value: it is
+  // an address.
+  const { location } = value;
+  const place = typeof location === "string" ? normalizeClientLocation(location) : undefined;
+  if (place !== undefined) out.location = place;
+  else if (location !== undefined) {
+    log.warn("sessionContext `location` is not a usable string; ignored", { sid });
   }
   return out;
 }

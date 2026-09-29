@@ -53,6 +53,12 @@ describe("session location", () => {
     // A five-digit house number is not a postcode to strip before the street goes.
     expect(townOf("12345 Example Ave, Springfield, IL 62701")).toBe("Springfield, IL");
     expect(townOf("1 Main St, Springfield, IL 62701-1234, US")).toBe("Springfield, IL, US");
+    // Google's formatting leads with the PLACE, house number after: every leading part
+    // with a digit in it is street, and the first plain name is the town.
+    expect(townOf("Infinite Loop 1, 1 Infinite Loop, Cupertino, CA 95014, USA")).toBe(
+      "Cupertino, CA, USA",
+    );
+    expect(townOf("Portland, OR 97201")).toBe("Portland, OR");
     expect(townOf("Paris, France")).toBe("Paris, France");
     expect(townOf("Denver")).toBe("Denver");
   });

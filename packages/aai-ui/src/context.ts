@@ -77,6 +77,8 @@ export type SessionActions = {
   reset(): void;
   /** End the call and begin a fresh one — see {@link BrowserSession.restart}. */
   restart(): void;
+  /** Continue an earlier session by its id — see {@link BrowserSession.resume}. */
+  resume(sessionId: string): void;
   /** Close the WebSocket and release all audio resources. */
   disconnect(): void;
   /** Toggle between connected and disconnected (after `start()`). */
@@ -89,7 +91,7 @@ export type SessionActions = {
  * What {@link useSession} returns: the live {@link SessionSnapshot} fields
  * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
  * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
- * control methods (`start`, `toggle`, `reset`, `restart`, `resetState`,
+ * control methods (`start`, `toggle`, `reset`, `restart`, `resume`, `resetState`,
  * `disconnect`, `cancel`, `end`, `sendText`, `setMicMuted`).
  *
  * `sendText(text)` is the one input besides the microphone: a typed turn the
@@ -116,8 +118,8 @@ export function useSessionCore(): BrowserSession {
 
 /**
  * The session's control methods — `start`, `cancel`, `sendText`,
- * `setMicMuted`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`,
- * `end` — with **no snapshot subscription**.
+ * `setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`,
+ * `toggle`, `end` — with **no snapshot subscription**.
  * Push-to-talk is not among them: that is `usePushToTalk`.
  *
  * This is the narrow half of {@link useSession}, and it is the half a custom
@@ -187,6 +189,7 @@ export function useSessionActions(): SessionActions {
       resetState: core.resetState,
       reset: core.reset,
       restart: core.restart,
+      resume: core.resume,
       disconnect: core.disconnect,
       toggle: core.toggle,
       end: core.end,

@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "9d15b484be1fc07c907bd01b3ede262dc6cefd4154656aed959c7f9947ba11ba",
+  "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -123,7 +123,7 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "9d15b484be1fc07c907bd01b3ede262dc6cefd4154656aed959c7f9947ba11ba",
+      "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
       "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +stubClientInbox, +stubClientTranscript"
     }
   ]

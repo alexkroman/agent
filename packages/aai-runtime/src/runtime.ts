@@ -13,6 +13,7 @@ import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { compileAgentRoutes } from "./agent-routes.ts";
 import { openAppDb } from "./app-db.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { registerConnector } from "./runtime-connect.ts";
@@ -181,13 +182,11 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // dispatched by a per-RUNTIME executor and spend on a per-SESSION budget, so
   // the tool path resolves this by id exactly as it resolves the emitter above.
   const meters = createOwnedMap<string, UsageMeter>();
-  // The Voice Agent API accepts exactly one sample rate and honours no
-  // declaration to the contrary, so its rates are pinned rather than
-  // negotiated. Pinned BEFORE the ready config is built, because that frame is
-  // what tells the client what to capture and play: the two numbers disagreeing
-  // is the whole bug. A host-mode client that asked for something else was
-  // already refused at the handshake (`assertHostRatesSupported`), so nothing
-  // reaching here can be surprised by the override.
+  // The Voice Agent API accepts exactly one sample rate and honours no declaration
+  // to the contrary, so its rates are pinned, not negotiated — BEFORE the ready
+  // config is built, because that frame tells the client what to capture and play
+  // and the two numbers disagreeing is the whole bug. A host-mode client that asked
+  // otherwise was refused at the handshake (`assertHostRatesSupported`).
   const s2sConfig = usesAssemblyS2s(agent)
     ? pinAssemblyS2sRates(requestedS2sConfig, logger)
     : requestedS2sConfig;
@@ -472,10 +471,9 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     startSession,
     shutdown,
     readyConfig,
-    // The event log, exposed for the same reason `workflows` below is: a surface
-    // outside the runtime serves reads of it (`GET /session-events/:id`), and one
-    // stream per runtime is what makes an index mean the same thing to every
-    // reader.
+    // The event log, exposed for the reason `workflows` below is: a surface outside
+    // the runtime serves reads of it (`GET /session-events/:id`), and one stream per
+    // runtime is what makes an index mean the same thing to every reader.
     sessionEvents: sessionState.stream,
     // Exposed rather than kept private because tool code is not the only caller:
     // `createRuntimeServer` serves the workflow HTTP API from exactly this client, so a
@@ -488,6 +486,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // engine, so there is nothing here to re-walk a run with, and answering a
     // delivery from someone else's client would be a guess.
     deliverWorkflow: builtWorkflows?.execute,
+    // `agent({ routes })`, compiled once — a bad key fails HERE. See `agent-routes.ts`.
+    serveRoute: compileAgentRoutes({ ...recall, routes: agent.routes }),
   } satisfies Omit<HostRuntime, typeof runtimeBrand> as HostRuntime;
   registerConnector(runtime, {
     sessions,

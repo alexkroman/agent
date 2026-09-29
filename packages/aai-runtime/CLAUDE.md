@@ -1706,6 +1706,23 @@ keep. `Transport.injectTurn` is the primitive (pipeline only; S2S has no such
 verb, so there it is a logged no-op). **See `workflow/notify.ts`'s module doc**
 for the rest.
 
+## A client's surfaces: `/api`, several inbox holders, a live feed
+
+**`agent({ routes })` is served at `/api/*` and crosses the bundle as DATA.**
+`agent-routes.ts` compiles the table at `createRuntime` (a bad key fails the
+boot) and is `runtime.serveRoute`; `agent-routes-http.ts` is the server's half
+(the prefix, `MAX_ROUTE_BODY_BYTES`, JSON, `?client=`). A `routeResponse` is
+read by brand. No auth: as open as the server. Platform: `direct-dial`, so
+self-hosted only for now (`aai-server/guest/routes.ts` says why).
+
+**`/inbox` keeps one socket per (client, `?holder=`)**: the same pair replaces,
+different holders coexist, none is the default holder. A notice goes to every
+holder: `acked` on the first ack, `busy` only if all were busy.
+**`?events=1`** also gets `client-event-feed.ts`'s frames — committed
+transcripts, `tool.called`, reply boundaries, `session_ended`; never results or
+audio — fire-and-forget, dropped past `INBOX_EVENT_BUFFER_LIMIT_BYTES`. The feed
+is a `Symbol.for` slot, for the two-copies reason above.
+
 ## An envelope is only the codec's if the codec WROTE it
 
 `workflow/typed-json.ts` tags binary as `{ __type: "Uint8Array", data }` and a

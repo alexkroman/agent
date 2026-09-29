@@ -97,6 +97,28 @@ describe("resolveSessionContext", () => {
     expect(notObject).toBeUndefined();
   });
 
+  test("a location is held to the socket's rule, and a warning never names it", async () => {
+    const clean = await resolveSessionContext({
+      hook: () => ({ location: " 123 Example St,\n Portland " }),
+      args: ARGS,
+      logger: makeLogger(),
+    });
+    expect(clean).toEqual({ location: "123 Example St, Portland" });
+
+    const logger = makeLogger();
+    const unusable = await resolveSessionContext({
+      hook: () => ({ location: "9 Long Rd ".repeat(40), instructions: "kept" }),
+      args: ARGS,
+      logger,
+    });
+    expect(unusable).toEqual({ instructions: "kept" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "sessionContext `location` is not a usable string; ignored",
+      { sid: "session-" },
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("Long Rd");
+  });
+
   test("a non-finite historySince is not a timestamp", async () => {
     const answer = await resolveSessionContext({
       hook: () => ({ historySince: Number.NaN }),

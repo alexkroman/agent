@@ -9,7 +9,8 @@
  * - **Bind** the session to its client (`session-state/clients.ts`), so its
  *   events outlive the grace sweep and its client's next session can read them.
  * - **Ask `sessionContext`** (`session-context.ts`) once, bounded, and install
- *   its `instructions` as the prompt's stable context block. Concurrently with
+ *   its `instructions` as the prompt's stable context block and its `location`
+ *   as the session's (over the socket's `?location=`). Concurrently with
  *   the bind: neither needs the other, and both are on the start path.
  * - **Load the client's prior sessions** (`session-client-history.ts`), narrowed
  *   by the context's `historySince`, and hand them to
@@ -28,9 +29,11 @@
  */
 
 import { type AgentDef, type SessionEvent, sessionClientId } from "@alexkroman1/aai";
+import { setSessionLocation } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import { feedClientSessionEnd } from "./client-event-feed.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionSystemPrompt } from "./runtime-system-prompt.ts";
 import {
@@ -81,6 +84,9 @@ export function openSessionMemory(deps: {
         clientId === undefined ? undefined : bindClientSession(deps.history, sessionId, clientId),
       ]);
       if (context?.instructions) deps.prompt.setContext(context.instructions);
+      // AFTER the socket's `?location=` (recorded before the session was built),
+      // so the app's answer is the one the builtins and `sessionClientLocation` read.
+      if (context?.location) setSessionLocation(sessionId, context.location);
       if (clientId === undefined) return [];
       return await loadClientHistory(deps.history, {
         clientId,
@@ -89,6 +95,9 @@ export function openSessionMemory(deps: {
       });
     },
     ended(lastEventIndex) {
+      // The client's live feed hears it first: its log is flushed, which is what
+      // a page reacting to it (reading the transcript back) relies on.
+      feedClientSessionEnd(sessionId);
       const hook = agent.onSessionEnd;
       if (!hook) return;
       const report = (err: unknown): void => {

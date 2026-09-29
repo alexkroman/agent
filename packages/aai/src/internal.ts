@@ -249,4 +249,4 @@ export {
   rejectingWorkflows,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "./sdk/workflow-unavailable.ts";
-export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";
+export { parseWsUpgradeParams, RESUME_ID_RE } from "./sdk/ws-upgrade.ts";

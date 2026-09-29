@@ -33,6 +33,7 @@ export type BrowserSession = {
     toggle(): void;
     end(): void;
     restart(): void;
+    resume(sessionId: string): void;
     [Symbol.dispose](): void;
 };
 
@@ -70,6 +71,7 @@ export type SessionActions = {
     resetState(): void;
     reset(): void;
     restart(): void;
+    resume(sessionId: string): void;
     disconnect(): void;
     toggle(): void;
     end(): void;

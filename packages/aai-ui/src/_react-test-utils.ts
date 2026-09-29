@@ -108,6 +108,11 @@ export function createMockSessionCore(
       core.end();
       core.start();
     },
+    // The same composition, for the same reason: `end()`, then `start()`.
+    resume() {
+      core.end();
+      core.start();
+    },
     update(partial: Partial<SessionSnapshot>) {
       // Mirror the real core: content changes bump contentVersion. An explicit
       // contentVersion in `partial` wins, so tests can pin it for updates the

@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 461 names
+- [Agent authoring](#agent-authoring) — 468 names
 - [Browser client](#browser-client) — 137 names
 - [Testing and evals](#testing-and-evals) — 224 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 346 names
+- [Framework internals](#framework-internals) — 349 names
 
 ## Agent authoring
 
@@ -43,6 +43,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `AgentModelTuning` | interface | `@alexkroman1/aai` | `aai:agent` | `ModelTuning` plus the two knobs only the agent's OWN loop has: a per-step tool-choice policy and a session token budget. |
 | `AgentObservation` | interface | `@alexkroman1/aai` | `aai:agent` | The observe-only half of an agent declaration — see this module's header. |
 | `AgentParams` | type | `@alexkroman1/aai` | `aai:agent` | The author-facing parameter shape of `agent`: every `AgentDef` field, with the defaulted ones optional. |
+| `AgentRoutes` | interface | `@alexkroman1/aai` | `aai:agent` | The `routes` field of an agent declaration — see this module's header. |
 | `AgentSessionContext` | interface | `@alexkroman1/aai` | `aai:agent` | The session a per-session author function is running for. |
 | `AgentSessionLifecycle` | interface | `@alexkroman1/aai` | `aai:agent` | The session-bracketing half of an agent declaration — see this module's header. |
 | `AgentSystemPrompt` | type | `@alexkroman1/aai` | `aai:agent` | What `agent({ systemPrompt })` accepts: the text, or a function that answers it per request. |
@@ -173,6 +174,10 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `RandomSource` | type | `@alexkroman1/aai` | `aai:random` | A source of uniform floats in `[0, 1)` — `Math.random`'s contract, and the one a caller substitutes. |
 | `ReadUploadOptions` | type | `@alexkroman1/aai/step` | `aai:uploads` | Options for `stepReadUpload`. |
 | `RetryableError`, `RetryableErrorOptions` | class | `@alexkroman1/aai/step-errors` | `aai:step-errors` | A failure another attempt might survive, with an optional "not before". |
+| `RouteContext` | interface | `@alexkroman1/aai` | `aai:agent` | What an `agent({ routes })` handler is called with beside its request. |
+| `RouteHandler` | type | `@alexkroman1/aai` | `aai:agent` | One `agent({ routes })` handler. |
+| `RouteRequest` | interface | `@alexkroman1/aai` | `aai:agent` | One request to an `agent({ routes })` handler, already parsed. |
+| `RouteResponse` | interface | `@alexkroman1/aai` | `aai:agent` | A route's answer with a status of its own — what `routeResponse` makes. |
 | `S2sAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | S2S-mode params: an `s2s` descriptor, no pipeline providers, and the pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting one fails with a … |
 | `S2sProvider` | type | `@alexkroman1/aai/s2s` (also `@alexkroman1/aai`) | `aai:s2s` | Descriptor for an S2S provider. |
 | `SESSION_SOURCED_EVENT_TYPES` | const | `@alexkroman1/aai` | `aai:events` | The events only the SESSION itself can be the source of — never a transport. |
@@ -396,11 +401,13 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `retryAfter` | function | `@alexkroman1/aai/step` | `aai:step` | When the far side asked to be called back, as a `Date`. |
 | `rimeTts`, `RimeTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Rime TTS descriptor for pipeline mode. |
 | `roundMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | An amount snapped to whole cents — `roundMoney(0.1 + 0.2)` is `0.3`. |
+| `routeResponse` | function | `@alexkroman1/aai` | `aai:agent` | Answer a route with `status` and `body` instead of a plain 200: `return routeResponse(404, { error: "No such memory" })`, `return routeResponse(201, created)`. |
 | `runFfmpeg` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Run ffmpeg with `args`, exactly as given. |
 | `safeJsonParse` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Parse JSON, returning `undefined` on malformed input. |
 | `sendToChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Post one message, and classify the failure honestly. |
 | `sendToChannelOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified — see `stepGenerateOrFail` for the family, and this module's doc for why the wrapper … |
 | `sessionClientId` | function | `@alexkroman1/aai` | `aai:inbox` | The client id this session's device connected with (`?client=` on `WS /websocket`), or `undefined` for a client that sent none — a browser tab, a phone call. |
+| `sessionClientLocation` | function | `@alexkroman1/aai` | `aai:agent` | Where this session's client is — the location `sessionContext` answered for it, else the one its socket reported (`?location=` on `WS /websocket`, the … |
 | `sessionClientPhone` | function | `@alexkroman1/aai` | `aai:channels` | The phone number this session's client reported (`?phone=` on `WS /websocket`, the `phone` option of `createBrowserSession` and `mountClient`), in E.164 form — … |
 | `sessionSlot` | function | `@alexkroman1/aai` | `aai:state` | Declare a named slot of per-session state. |
 | `shuffled` | function | `@alexkroman1/aai` | `aai:random` | A NEW array holding the same items in a random order. |
@@ -568,7 +575,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `usePushToTalk`, `UsePushToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Hold-to-speak over the session's push-to-talk methods, with the four ways a turn gets stuck open handled — see this module's doc. |
 | `useRunKey` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A lookup key for `useWorkflowSubmit({ key })`, stable across reloads. |
 | `useSession` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Return the live `Session`: the current snapshot fields plus the control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`, `cancel`, `end`). |
-| `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `sendText`, `setMicMuted`, `resetState`, `reset`, `restart`, `disconnect`, `toggle`, `end` — with **no … |
+| `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `sendText`, `setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`, `toggle`, `end` — with … |
 | `useSessionControls` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The state and the actions a Start / Pause–Resume / New conversation / End row renders from, on two one-field subscriptions. |
 | `useSessionError` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's current `SessionError`, or `null` when there is none, on its own narrow subscription. |
 | `useSessionSelector` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to a narrow slice of the session snapshot. |
@@ -1181,6 +1188,7 @@ trace or a type error can be traced back to something.
 | `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ProviderEnvVarsQuery` | type | `@alexkroman1/aai-runtime/internal` |  | What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor slots and its front door. |
 | `RESERVED_SLUGS` | const | `@alexkroman1/aai/internal` |  | Slugs that collide with top-level platform routes and can never be claimed by an agent. |
+| `RESUME_ID_RE` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `RETRYABLE_STATUS` | const | `@alexkroman1/aai/host-internal` |  | Statuses that mean "come back", as opposed to "no". |
 | `RIME_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Rime API key. |
 | `RIME_DEFAULT_LANGUAGE` | const | `@alexkroman1/aai/host-internal` |  | Synthesis language used when the descriptor names none. |
@@ -1305,7 +1313,7 @@ trace or a type error can be traced back to something.
 | `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `gatewayModelIds` | function | `@alexkroman1/aai/host-internal` |  | Ids usable for a streaming, tool-calling agent — the only shape this SDK runs — and that actually answer. |
-| `getSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | The location the session's client reported, if any. |
+| `getSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | The session's effective location, if any — see `sessionClientLocation`. |
 | `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
@@ -1319,6 +1327,7 @@ trace or a type error can be traced back to something.
 | `loadSessionStateConformance` | function | `@alexkroman1/aai-runtime/internal` |  |  |
 | `mapStream` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
+| `normalizeClientLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
 | `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
@@ -1346,6 +1355,7 @@ trace or a type error can be traced back to something.
 | `publishedClientTranscriptReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `queueNameKind` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `readRouteResponse` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1367,7 +1377,7 @@ trace or a type error can be traced back to something.
 | `serializeToolFailure` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sessionStateDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `setSessionClient` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
-| `setSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | Record the location a client reported for `sessionId`. |
+| `setSessionLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ssrfSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

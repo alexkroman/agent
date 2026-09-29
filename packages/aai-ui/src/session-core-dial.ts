@@ -57,6 +57,12 @@ export type Dialer = {
   configured(sid: string | undefined): void;
   /** Drop the resume identity, so the next connect is a NEW session. */
   forget(): void;
+  /**
+   * Make `sid` the resume identity — presented as `?sessionId=` by the next
+   * attempt and stored as a `config` frame's would be — so the next connect
+   * resumes THAT session. The caller has validated it.
+   */
+  adopt(sid: string): void;
 };
 
 /** @internal */
@@ -158,6 +164,13 @@ export function createDialer(options: DialOptions): Dialer {
         writeStoredSessionId(options.platformUrl, sid);
       }
       hasConnected = true;
+    },
+    adopt: (sid) => {
+      sessionId = sid;
+      writeStoredSessionId(options.platformUrl, sid);
+      // Not "connected": this session has not handshaken on THIS core yet, and
+      // the id alone is what makes the attempt a resume.
+      hasConnected = false;
     },
     forget: () => {
       sessionId = undefined;

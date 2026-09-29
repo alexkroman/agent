@@ -3,7 +3,7 @@
   "capability": "session",
   "epoch": 4,
   "rule": 2,
-  "sha256": "ddecd5f55f9943d7a8c071a6f86c487378c4f4b12d1fcde561d639bbab4ae1ab",
+  "sha256": "82c085ad372acba9c2437335ea4ffabc8f92bc8109240f2f38f78c97d91bc1f3",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",
@@ -32,5 +32,5 @@
     "useSessionStatus",
     "useUserTranscript"
   ],
-  "rollup": "f9338721c59f5483c03f12e3b84ffddfe7cf9e6b57c20299d14e6046232cc356"
+  "rollup": "b2673909e5aa8b37733b5f2faf0d6058a8f48482de9b7aa017ed21167f691ef3"
 }

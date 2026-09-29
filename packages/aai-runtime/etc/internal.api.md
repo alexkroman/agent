@@ -489,6 +489,12 @@ export const SERVER_ROUTES: {
         readonly path: "/inbox";
         readonly match: "exact";
     };
+    readonly api: {
+        readonly transport: "http";
+        readonly path: "/api";
+        readonly match: "prefix";
+        readonly methods: readonly ["GET", "POST", "PUT", "PATCH", "DELETE"];
+    };
 };
 
 // @internal

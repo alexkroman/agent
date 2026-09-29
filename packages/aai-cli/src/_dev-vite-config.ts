@@ -12,14 +12,15 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { requestPath } from "@alexkroman1/aai/internal";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
-import { isPathInside } from "@alexkroman1/aai-runtime/internal";
+import { isPathInside, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost } from "./_dev-env.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
 
 /**
- * The request under {@link WORKFLOW_API_PREFIX} that VITE must answer, not the
- * proxy — or `undefined` for every request the workflow API owns.
+ * The request under {@link WORKFLOW_API_PREFIX} (or `/api`, the agent's own
+ * routes, which has the same collision) that VITE must answer, not the proxy —
+ * or `undefined` for every request the API owns.
  *
  * `/workflows` is a proxy prefix key AND the directory the SDK tells authors to
  * put workflow bodies in, so the two claim the same URL space. A string key
@@ -70,7 +71,7 @@ import { DEDUPED_PEERS } from "./_vite-env.ts";
  * send `..` where a browser would normalize it — and a malformed percent-escape
  * is left to the API, which is where a path we cannot resolve belongs.
  */
-function workflowPathServedByVite(base: string, rawUrl: string | undefined): string | undefined {
+function fileServedByVite(base: string, rawUrl: string | undefined): string | undefined {
   if (rawUrl === undefined) return undefined;
   let decoded: string;
   try {
@@ -212,13 +213,21 @@ export function viteDevConfig(
         // from the voice URL's host, so it arrives on THIS port too: unlisted, Vite
         // held the upgrade open unanswered and a reminder never reached the device.
         "/inbox": { target, ws: true },
+        // `agent({ routes })` — the app's own JSON endpoints, which a page on THIS
+        // port fetches same-origin. The same `bypass` as the workflow API below, for
+        // its reason: `api/` is as plausible a source directory as `workflows/`, and
+        // a file Vite can serve there must not be swallowed by the prefix.
+        [SERVER_ROUTES.api.path]: {
+          target,
+          bypass: (req) => fileServedByVite(viteRoot, req.url),
+        },
         // The workflow HTTP API. See the doc comment above: this is the entire
         // front door of a `page: "static"` app, not an extra. `bypass` is what
         // keeps the project's own `workflows/` SOURCE out of the prefix's
-        // reach — see `workflowPathServedByVite`.
+        // reach — see `fileServedByVite`.
         [WORKFLOW_API_PREFIX]: {
           target,
-          bypass: (req) => workflowPathServedByVite(viteRoot, req.url),
+          bypass: (req) => fileServedByVite(viteRoot, req.url),
         },
       },
     },

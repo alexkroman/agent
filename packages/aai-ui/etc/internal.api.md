@@ -47,6 +47,7 @@ type BrowserSession = {
     toggle(): void;
     end(): void;
     restart(): void;
+    resume(sessionId: string): void;
     [Symbol.dispose](): void;
 };
 

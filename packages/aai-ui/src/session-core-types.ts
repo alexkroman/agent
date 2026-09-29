@@ -330,6 +330,31 @@ export type BrowserSession = {
    * ```
    */
   restart(): void;
+  /**
+   * Continue an EARLIER session — one of this client's past conversations, say,
+   * picked from a list — without reloading the page: hang up the current call
+   * if there is one, clear the transcript on screen, and connect presenting
+   * `sessionId` as `?sessionId=`, so the server resumes THAT session.
+   *
+   * The server restores it the way a reload does: the session's own turns come
+   * back in `history.restored` (a session bound to a `client` keeps its events
+   * after it ends), together with the client's other prior sessions as seed —
+   * never counting this one twice. The greeting is skipped, as on any resume.
+   * The id is stored like a `config` frame's, so a reload continues it too.
+   *
+   * Throws a `RangeError` for an id the server would not honor (1-128 letters,
+   * digits, `-` or `_`) BEFORE touching the current call. An id that names no
+   * session the server has starts a fresh conversation under it, greeting
+   * skipped — the same answer a stale bookmark gets.
+   *
+   * @example
+   * ```ts
+   * declare const session: import("@alexkroman1/aai-ui").Session;
+   * declare const picked: { sessionId: string };
+   * session.resume(picked.sessionId);
+   * ```
+   */
+  resume(sessionId: string): void;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };

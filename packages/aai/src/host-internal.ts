@@ -46,7 +46,7 @@ export {
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
-export { getSessionLocation, setSessionLocation } from "./host/session-location.ts";
+export { getSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
@@ -68,6 +68,9 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  * function's source text into the model's instructions.
  */
 export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
+// The runtime's half of `routeResponse`: a route's answer crosses from the agent
+// bundle's copy of the SDK, so its status is read by brand, not `instanceof`.
+export { readRouteResponse } from "./sdk/agent-routes.ts";
 // The publisher half of the channel outbox: a host that wants texts and posts
 // captured rather than sent (`aai-runtime`, on `AAI_CHANNEL_OUTBOX`) publishes
 // where they go. Every send reaches it through `postToChannel`.
@@ -230,6 +233,9 @@ export { isConvertibleSchema, toToolJsonSchema } from "./sdk/schema.ts";
 // The runtime's half of `sessionClientId` (authoring API on `/tools`): recorded
 // where the session id is decided, read back by a tool from `ctx.sessionId`.
 export { setSessionClient } from "./sdk/session-client.ts";
+// The runtime's half of `sessionClientLocation`: the socket's `?location=` and
+// `sessionContext`'s `location` are recorded here, cleaned by one rule.
+export { normalizeClientLocation, setSessionLocation } from "./sdk/session-location.ts";
 // The runtime's half of `sessionClientPhone`, recorded the same way.
 export { setSessionPhone } from "./sdk/session-phone.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";
