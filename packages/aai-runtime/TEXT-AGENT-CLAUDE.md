@@ -425,9 +425,24 @@ was invisible. The rules, each argued in `eval/_network-install.ts`:
   the agent's descriptors (`eval/_model-hosts.ts`): a hard-coded
   `assemblyai.com` is wrong the day an agent names another provider. Scripted,
   a provider host is a tool's request like any other.
-- **Per case AND per repeat**: a factory is called afresh, an instance's log is
-  reset. A downstream fake carried rows across `AAI_EVAL_REPEAT` repeats, so
-  the second measured the first. `network` beside `fetch` or
+- **Per case AND per repeat**: a factory is called afresh, an instance's log
+  and `state` are reset. A downstream fake carried rows across
+  `AAI_EVAL_REPEAT` repeats, so the second measured the first.
+- **Routes share state through `state`**, not a module `let`:
+  `evalNetwork({ state: () => ({ calls: new Map() }), routes })` hands it to
+  each route as the third argument and exposes it as `network.state`, typed
+  (`EvalNetwork<State>`), rebuilt by `reset()`. Both downstream suites kept
+  their fake calls table in a `let` their network factory reassigned.
+- **`ctx.network` is typed by what was passed.** `describeEval<Network>` and
+  `EvalTest<Network>` read the suite's `network` (default `never` = none,
+  tuple-wrapped so it does not distribute), and a case body's context is
+  `EvalTestContext & { network: Network }` — no `undefined`, `state` typed. A
+  case's own `network` must be of the suite's type so that stays true. The
+  context itself stays non-generic and `@sealed`: a type parameter on it
+  changed its arity, which the contract probe cannot mask, and the default
+  `EvalTest` is then byte-for-byte the old one. The rejected alternative, a
+  throwing accessor, throws on the destructure and the spread every case body
+  does. `describe.test-d.ts` pins it. `network` beside `fetch` or
   `workflowOptions.stepFetch` throws: which one won would be spread order.
 - The passthrough reads the AMBIENT fetch through one accessor
   (`evalPassthroughFetch`), not the pooled egress fetch `guard-invariants`

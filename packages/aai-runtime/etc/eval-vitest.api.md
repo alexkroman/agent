@@ -22,7 +22,9 @@ import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
-export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, options?: DescribeEvalOptions): void;
+export function describeEval<Network extends EvalNetwork = never>(agent: AgentDef, define: (test: EvalTest<Network>) => void, options?: Omit<DescribeEvalOptions, "network"> & {
+    readonly network?: Network | (() => Network);
+}): void;
 
 // @public
 export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
@@ -61,8 +63,9 @@ type EvalEmitted = {
 export type EvalMode = "live" | "stub";
 
 // @public @sealed
-type EvalNetwork = {
+type EvalNetwork<State = unknown> = {
     readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
     requests(filter?: EvalRequestFilter): readonly EvalRequest[];
     calls(host: string | RegExp): readonly EvalRequest[];
     refused(): readonly EvalRequest[];
@@ -123,7 +126,11 @@ type EvalSleep = {
 };
 
 // @public
-export type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+export type EvalTest<Network extends EvalNetwork = never> = (name: string, body: (ctx: [Network] extends [never] ? EvalTestContext : EvalTestContext & {
+    readonly network: Network;
+}) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
+    readonly network?: Network | (() => Network);
+}) => void;
 
 // @public @sealed
 export type EvalTestContext = {

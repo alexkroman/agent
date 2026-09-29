@@ -78,8 +78,9 @@ export type EvalEmitted = {
 };
 
 // @public @sealed
-export type EvalNetwork = {
+export type EvalNetwork<State = unknown> = {
     readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
     requests(filter?: EvalRequestFilter): readonly EvalRequest[];
     calls(host: string | RegExp): readonly EvalRequest[];
     refused(): readonly EvalRequest[];
@@ -89,11 +90,12 @@ export type EvalNetwork = {
 };
 
 // @public
-export function evalNetwork(options?: EvalNetworkOptions): EvalNetwork;
+export function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
 
 // @public
-export type EvalNetworkOptions = {
-    readonly routes?: Readonly<Record<string, EvalRoute>>;
+export type EvalNetworkOptions<State = undefined> = {
+    readonly state?: () => State;
+    readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
     readonly passthrough?: readonly string[];
     readonly refuse?: "throw" | "403";
 };
@@ -115,7 +117,7 @@ export type EvalRequest = {
 export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
 
 // @public
-export type EvalRoute = (request: Request, info: EvalRequest) => unknown;
+export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
 
 // @public
 export type EvalRunOptions = StartOptions & {

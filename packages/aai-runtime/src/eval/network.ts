@@ -84,18 +84,53 @@ export type EvalRequest = {
 };
 
 /**
- * A route handler: the request (a fresh `Request`, so its body is readable)
- * and the record the log holds for it, with the body already parsed.
+ * A route handler: the request (a fresh `Request`, so its body is readable),
+ * the record the log holds for it with the body already parsed, and the
+ * network's {@link EvalNetworkOptions.state} — `undefined` when it has none.
  *
  * It returns a `Response`, used as is; `undefined`, answered `204 No Content`;
  * or any other value, answered as `200` JSON — so a fixture route is one line.
  * A handler that THROWS answers `500` with the message, and the case sees what
  * its tool made of a failing service.
  */
-export type EvalRoute = (request: Request, info: EvalRequest) => unknown;
+export type EvalRoute<State = undefined> = (
+  request: Request,
+  info: EvalRequest,
+  state: State,
+) => unknown;
 
 /** What {@link evalNetwork} takes. */
-export type EvalNetworkOptions = {
+export type EvalNetworkOptions<State = undefined> = {
+  /**
+   * The fake services' STATE — the rows a fake database holds — built by
+   * this factory now and again on every {@link EvalNetwork.reset}, handed to
+   * every route as its third argument, and readable as
+   * {@link EvalNetwork.state}, typed.
+   *
+   * The supported way for a route and a case to share state. Without it a
+   * suite kept its fake table in a module-level `let` that its network
+   * factory reassigned, which a case read by name and a second suite could
+   * not have without a second `let`. And because `reset()` rebuilds it,
+   * `describeEval` gives every case and every `AAI_EVAL_REPEAT` repeat fresh
+   * state from an INSTANCE too, not only from a factory.
+   *
+   * ```ts
+   * import { evalNetwork } from "@alexkroman1/aai-runtime/eval";
+   *
+   * const crm = evalNetwork({
+   *   state: () => ({ notes: [] as string[] }),
+   *   routes: {
+   *     "https://crm.example/notes": (_request, { method, text }, state) => {
+   *       if (method === "POST") state.notes.push(text);
+   *       return { count: state.notes.length };
+   *     },
+   *   },
+   * });
+   * await crm.fetch("https://crm.example/notes", { method: "POST", body: "call back" });
+   * console.log(crm.state.notes); // ["call back"]
+   * ```
+   */
+  readonly state?: () => State;
   /**
    * Handlers by where they answer. A key is one of:
    *
@@ -108,7 +143,7 @@ export type EvalNetworkOptions = {
    * The most specific key answers: the longest matching URL prefix, then an
    * exact host, then the longest matching wildcard.
    */
-  readonly routes?: Readonly<Record<string, EvalRoute>>;
+  readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
   /**
    * Keys (same forms as `routes`) that reach the REAL network. Leave the live
    * model's own hosts out — `describeEval` adds those — and list anything else
@@ -132,9 +167,15 @@ export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boo
  *
  * @sealed
  */
-export type EvalNetwork = {
+export type EvalNetwork<State = unknown> = {
   /** The network as a `fetch`: routed, passed through, or refused. */
   readonly fetch: typeof globalThis.fetch;
+  /**
+   * The routes' shared state, as {@link EvalNetworkOptions.state} built it —
+   * the CURRENT one, rebuilt by every {@link EvalNetwork.reset}. `undefined`
+   * for a network given no `state`.
+   */
+  readonly state: State;
   /**
    * Every request so far, in order, whatever its outcome — narrowed by a
    * `filter` when one is given: a string is matched the way a route key is, a
@@ -158,9 +199,10 @@ export type EvalNetwork = {
   /** Throw, listing them, when anything was refused. */
   expectNothingRefused(): void;
   /**
-   * Forget the log. `describeEval` calls it before every case and every
-   * `AAI_EVAL_REPEAT` repeat; a route's OWN state is the handler's to reset —
-   * pass `describeEval` a factory instead of an instance to get a fresh one.
+   * Forget the log and rebuild {@link EvalNetwork.state}. `describeEval` calls
+   * it before every case and every `AAI_EVAL_REPEAT` repeat. State a handler
+   * keeps in its own closure is not reset — put it in `state`, or pass
+   * `describeEval` a factory rather than an instance.
    */
   reset(): void;
 };
@@ -269,11 +311,18 @@ function parsed(text: string): unknown {
  * Build a fake network: every request is answered by a route, passed through
  * to a host named in `passthrough`, or refused and recorded.
  */
-export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
+export function evalNetwork<State = undefined>(
+  options: EvalNetworkOptions<State> = {},
+): EvalNetwork<State> {
   const routes = options.routes ?? {};
   const routeKeys = Object.keys(routes);
   const passthrough = options.passthrough ?? [];
   let log: EvalRequest[] = [];
+  // No factory means no state: `State` then defaults to `undefined`, which is
+  // what this reads as. A route that annotated a state type without a factory
+  // is the one way to reach it mistyped.
+  const initial = (): State => options.state?.() as State;
+  let state = initial();
 
   const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
@@ -293,7 +342,7 @@ export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
       const info: EvalRequest = { ...base, outcome: "routed", route };
       let response: Response;
       try {
-        response = asResponse(await handler(request, info));
+        response = asResponse(await handler(request, info, state));
       } catch (err) {
         response = new Response(
           `eval network: the route for ${route} threw — ${errorMessage(err)}`,
@@ -331,6 +380,9 @@ export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
 
   return {
     fetch: fetchFn as typeof globalThis.fetch,
+    get state() {
+      return state;
+    },
     requests,
     calls: (host) =>
       log.filter(
@@ -361,6 +413,7 @@ export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
     },
     reset() {
       log = [];
+      state = initial();
     },
   };
 }

@@ -3,7 +3,7 @@
   "capability": "eval-network",
   "epoch": 1,
   "rule": 2,
-  "sha256": "76a416f63efc978251ebc7c68d077e0ed45170c121f63a6dfe7fb31fb4e11374",
+  "sha256": "df37e6e9969df17dc23dbbaf0ab29a3604d53bf4b8694f21c2b928b11a487dc6",
   "exports": [
     "EvalNetwork",
     "EvalNetworkOptions",
@@ -12,5 +12,5 @@
     "EvalRoute",
     "evalNetwork"
   ],
-  "rollup": "68d60b3bfda7a1991bf255381cfd98d57649f0d2ba4b8704886bedefc72f654e"
+  "rollup": "d8185538ccf33692357505890bc22c80661fc9c5f1841e13bc9a61e90b91219f"
 }

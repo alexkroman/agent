@@ -206,11 +206,19 @@ export type EvalTestContext = {
    */
   readonly workflows: EvalWorkflows | undefined;
   /**
-   * The fake network every `fetch` of this case went through — `undefined`
-   * when neither the suite nor the case passed one. Its log holds THIS case's
-   * requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case asserts on
-   * `network.calls("textbelt.com")` or `network.expectNoOutbound(/twilio/)`
-   * without filtering out another run's traffic.
+   * The fake network every `fetch` of this case went through. Its log holds
+   * THIS case's requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case
+   * asserts on `network.calls("textbelt.com")` or
+   * `network.expectNoOutbound(/twilio/)` without filtering out another run's
+   * traffic, and reads its routes' `network.state`.
+   *
+   * TYPED BY WHAT WAS PASSED, in the body a case hands {@link EvalTest}: in
+   * a suite given `network` it is exactly that network's type —
+   * `EvalNetwork<{ calls: Map<…> }>` for one built with `state` — so there is
+   * no `undefined` to guard and no cast to reach the state. A case's own
+   * `network` must be of the suite's type, so the type holds for it too. In a
+   * suite given none it is `EvalNetwork | undefined` (this declaration) —
+   * `undefined` at runtime unless the case passed one.
    */
   readonly network: EvalNetwork | undefined;
 };
@@ -245,10 +253,13 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
    * seconds for it, then stops waiting) is refused into that case's log
    * rather than reaching the real network.
    *
-   * Prefer the factory when a route keeps STATE (rows a fake database holds):
-   * an instance's log is reset per case, but the handlers' own state is theirs,
-   * and state carried from one repeat into the next makes the second repeat
-   * measure the first. Mutually exclusive with `fetch`, which it replaces.
+   * Keep a route's STATE (rows a fake database holds) in the network's own
+   * `state` (`evalNetwork({ state, routes })`): an instance's log AND state are
+   * rebuilt per case and per repeat, and the case reads it, typed, as
+   * `ctx.network.state`. State a handler keeps in its closure is not reset —
+   * use a factory for that — and state carried from one repeat into the next
+   * makes the second repeat measure the first. Mutually exclusive with
+   * `fetch`, which it replaces.
    */
   readonly network?: EvalNetwork | (() => EvalNetwork);
 };
@@ -269,14 +280,36 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
  *   => …` is not — and it is vitest's own fixture shape, which is what a reader
  *   already expects.
  */
-export type EvalTest = (
+export type EvalTest<Network extends EvalNetwork = never> = (
   name: string,
-  body: (ctx: EvalTestContext) => Promise<void>,
-  options?: EvalCaseOptions,
+  // An intersection rather than a type parameter on `EvalTestContext`, which
+  // stays one sealed shape for every suite: the network is the one field
+  // whose type depends on the suite's options. `never` (the default, nobody
+  // writes it) is a suite given no network — tuple-wrapped so it does not
+  // distribute to `never`.
+  body: (
+    ctx: [Network] extends [never]
+      ? EvalTestContext
+      : EvalTestContext & { readonly network: Network },
+  ) => Promise<void>,
+  options?: [Network] extends [never]
+    ? EvalCaseOptions
+    : Omit<EvalCaseOptions, "network"> & {
+        /**
+         * This case's own network, over the suite's — of the SUITE's network
+         * type, so `ctx.network` stays true to its type (a different `state`
+         * shape belongs in a suite of its own).
+         */
+        readonly network?: Network | (() => Network);
+      },
 ) => void;
 
 /**
  * Declare an eval suite for `agent`.
+ *
+ * Generic over the suite's `network` only so a case's `ctx.network` is typed
+ * by it (see {@link EvalTestContext.network}); nobody writes the type
+ * argument, it is read off `options`.
  *
  * ```ts no-check
  * describeEval(agentDef, (test) => {
@@ -291,10 +324,12 @@ export type EvalTest = (
  * });
  * ```
  */
-export function describeEval(
+export function describeEval<Network extends EvalNetwork = never>(
   agent: AgentDef,
-  define: (test: EvalTest) => void,
-  options?: DescribeEvalOptions,
+  define: (test: EvalTest<Network>) => void,
+  options?: Omit<DescribeEvalOptions, "network"> & {
+    readonly network?: Network | (() => Network);
+  },
 ): void {
   const { mode, reason } = resolveEvalMode(
     agent,
@@ -327,7 +362,14 @@ export function describeEval(
     // bug: `AAI_EVAL_ONLY=nonexistent` announced "2 skipped as live-only" about
     // two cases that carried no marker at all.
     const filteredOut: string[] = [];
-    const evalTest: EvalTest = (name, body, caseOptions) => {
+    // Typed loosely INSIDE: the context's network type is a promise about
+    // what the caller passed, and `runCase` keeps it — the network it hands
+    // the body is the one `options` (or the case) named.
+    const evalTest = ((
+      name: string,
+      body: (ctx: EvalTestContext) => Promise<void>,
+      caseOptions?: EvalCaseOptions,
+    ): void => {
       checkStubReplyTools(agent, name, caseOptions?.stubReply);
       caseOptionsSeen.push(caseOptions);
       declared += 1;
@@ -346,7 +388,7 @@ export function describeEval(
           spread,
         ),
       );
-    };
+    }) as EvalTest<Network>;
     define(evalTest);
     if (wantsNetwork(options?.network, caseOptionsSeen)) {
       beforeAll(() => net.install());

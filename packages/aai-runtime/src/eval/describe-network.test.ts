@@ -32,7 +32,7 @@ afterAll(() => {
   // A throw rather than an `expect`: a hook is not a test, and Biome's
   // `noMisplacedAssertion` holds that line.
   const counts = [...passes.values()];
-  if (counts.length !== 5 || counts.some((n) => n !== 2)) {
+  if (counts.length !== 6 || counts.some((n) => n !== 2)) {
     throw new Error(
       `every case must pass BOTH repeats; passes: ${JSON.stringify(Object.fromEntries(passes))}`,
     );
@@ -99,6 +99,17 @@ const shared = evalNetwork({
     "api.open-meteo.com": () => ({ temperature: 54.4 }),
     "rates.example": () => ({ usd: 1 }),
     "sms.example": () => undefined,
+  },
+});
+
+/** One INSTANCE whose routes keep their rows in `state`, which each repeat's reset rebuilds. */
+const notes = evalNetwork({
+  state: () => ({ rows: [] as unknown[] }),
+  routes: {
+    "https://crm.example/rest/v1/notes": (request, _info, state) => {
+      if (request.method === "POST") state.rows.push({});
+      return request.method === "POST" ? undefined : { count: state.rows.length };
+    },
   },
 });
 
@@ -184,4 +195,22 @@ describeEval(
     );
   },
   { network: shared },
+);
+
+describeEval(
+  def,
+  (test) => {
+    test(
+      "a suite INSTANCE with state starts every repeat with fresh state, read off ctx.network",
+      async ({ session, network }) => {
+        const turn = await session.say("save a note");
+        expect(toolResultIn(turn.toolCalls, "add_row")).toEqual({ count: 1 });
+        // Typed: no cast, no module-level `let` holding the rows.
+        expect(network.state.rows).toEqual([{}]);
+        passed("state");
+      },
+      { stubReply: [{ tool: "add_row", args: {} }, "Saved."] },
+    );
+  },
+  { network: notes },
 );

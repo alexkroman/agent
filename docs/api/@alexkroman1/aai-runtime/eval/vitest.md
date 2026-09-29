@@ -15,14 +15,20 @@ be used from any harness.
 ### describeEval()
 
 ```ts
-function describeEval(
+function describeEval<Network extends EvalNetwork = never>(
    agent: AgentDef, 
-   define: (test: EvalTest) => void, 
-   options?: DescribeEvalOptions
+   define: (test: EvalTest<Network>) => void, 
+   options?: Omit<DescribeEvalOptions, "network"> & {
+  network?: Network | (() => Network);
+}
 ): void;
 ```
 
 Declare an eval suite for `agent`.
+
+Generic over the suite's `network` only so a case's `ctx.network` is typed
+by it (see [EvalTestContext.network](#network-2)); nobody writes the type
+argument, it is read off `options`.
 
 ```ts no-check
 describeEval(agentDef, (test) => {
@@ -37,6 +43,12 @@ describeEval(agentDef, (test) => {
 });
 ```
 
+#### Type Parameters
+
+##### Network
+
+`Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
+
 #### Parameters
 
 ##### agent
@@ -45,11 +57,13 @@ describeEval(agentDef, (test) => {
 
 ##### define
 
-(`test`: [`EvalTest`](#evaltest)) => `void`
+(`test`: [`EvalTest`](#evaltest)\<`Network`\>) => `void`
 
 ##### options?
 
-[`DescribeEvalOptions`](#describeevaloptions)
+`Omit`\<[`DescribeEvalOptions`](#describeevaloptions), `"network"`\> & \{
+  `network?`: `Network` \| (() => `Network`);
+\}
 
 #### Returns
 
@@ -317,10 +331,13 @@ The global is swapped for the whole SUITE rather than per case, so an
 seconds for it, then stops waiting) is refused into that case's log
 rather than reaching the real network.
 
-Prefer the factory when a route keeps STATE (rows a fake database holds):
-an instance's log is reset per case, but the handlers' own state is theirs,
-and state carried from one repeat into the next makes the second repeat
-measure the first. Mutually exclusive with `fetch`, which it replaces.
+Keep a route's STATE (rows a fake database holds) in the network's own
+`state` (`evalNetwork({ state, routes })`): an instance's log AND state are
+rebuilt per case and per repeat, and the case reads it, typed, as
+`ctx.network.state`. State a handler keeps in its closure is not reset —
+use a factory for that — and state carried from one repeat into the next
+makes the second repeat measure the first. Mutually exclusive with
+`fetch`, which it replaces.
 
 ##### workflowOptions?
 
@@ -494,7 +511,11 @@ How the suite is running, and why.
 ### EvalTest
 
 ```ts
-type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+type EvalTest<Network extends EvalNetwork = never> = (name: string, body: (ctx: [Network] extends [never] ? EvalTestContext : EvalTestContext & {
+  network: Network;
+}) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
+  network?: Network | (() => Network);
+}) => void;
 ```
 
 Declare one eval case. The session is opened for it and closed after it.
@@ -512,6 +533,12 @@ project lights up red on a file the SDK told them to write:
   => …` is not — and it is vitest's own fixture shape, which is what a reader
   already expects.
 
+#### Type Parameters
+
+##### Network
+
+`Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
+
 #### Parameters
 
 ##### name
@@ -520,11 +547,15 @@ project lights up red on a file the SDK told them to write:
 
 ##### body
 
-(`ctx`: [`EvalTestContext`](#evaltestcontext)) => `Promise`\<`void`\>
+(`ctx`: \[`Network`\] *extends* \[`never`\] ? [`EvalTestContext`](#evaltestcontext) : [`EvalTestContext`](#evaltestcontext) & \{
+  `network`: `Network`;
+\}) => `Promise`\<`void`\>
 
 ##### options?
 
-[`EvalCaseOptions`](#evalcaseoptions)
+\[`Network`\] *extends* \[`never`\] ? [`EvalCaseOptions`](#evalcaseoptions) : `Omit`\<[`EvalCaseOptions`](#evalcaseoptions), `"network"`\> & \{
+  `network?`: `Network` \| (() => `Network`);
+\}
 
 #### Returns
 
@@ -605,11 +636,19 @@ which skips it live rather than weakening it — see
 readonly network: EvalNetwork | undefined;
 ```
 
-The fake network every `fetch` of this case went through — `undefined`
-when neither the suite nor the case passed one. Its log holds THIS case's
-requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case asserts on
-`network.calls("textbelt.com")` or `network.expectNoOutbound(/twilio/)`
-without filtering out another run's traffic.
+The fake network every `fetch` of this case went through. Its log holds
+THIS case's requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case
+asserts on `network.calls("textbelt.com")` or
+`network.expectNoOutbound(/twilio/)` without filtering out another run's
+traffic, and reads its routes' `network.state`.
+
+TYPED BY WHAT WAS PASSED, in the body a case hands [EvalTest](#evaltest): in
+a suite given `network` it is exactly that network's type —
+`EvalNetwork<{ calls: Map<…> }>` for one built with `state` — so there is
+no `undefined` to guard and no cast to reach the state. A case's own
+`network` must be of the suite's type, so the type holds for it too. In a
+suite given none it is `EvalNetwork | undefined` (this declaration) —
+`undefined` at runtime unless the case passed one.
 
 ##### session
 

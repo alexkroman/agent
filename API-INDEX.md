@@ -639,7 +639,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `EvalNetwork`, `EvalNetworkOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A fake network and its request log. |
 | `EvalRequest` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | One request the network saw, whatever became of it. |
 | `EvalRequestFilter` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | Which requests a query selects: a key (as a route key), a URL pattern, or a predicate. |
-| `EvalRoute` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A route handler: the request (a fresh `Request`, so its body is readable) and the record the log holds for it, with the body already parsed. |
+| `EvalRoute` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A route handler: the request (a fresh `Request`, so its body is readable), the record the log holds for it with the body already parsed, and the network's … |
 | `EvalRunOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Per-run knobs. |
 | `EvalSession`, `EvalSessionOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One live eval session. |
 | `EvalSimulationContext` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a case gets for running a simulated caller and grading the result. |

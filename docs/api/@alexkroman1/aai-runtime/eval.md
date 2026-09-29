@@ -479,21 +479,27 @@ change — a gate whose meaning moves under it is not a gate.
 ### evalNetwork()
 
 ```ts
-function evalNetwork(options?: EvalNetworkOptions): EvalNetwork;
+function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
 ```
 
 Build a fake network: every request is answered by a route, passed through
 to a host named in `passthrough`, or refused and recorded.
 
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
+
 #### Parameters
 
 ##### options?
 
-[`EvalNetworkOptions`](#evalnetworkoptions)
+[`EvalNetworkOptions`](#evalnetworkoptions)\<`State`\>
 
 #### Returns
 
-[`EvalNetwork`](#evalnetwork)
+[`EvalNetwork`](#evalnetwork)\<`State`\>
 
 ***
 
@@ -2778,8 +2784,9 @@ The stream the step named.
 ### EvalNetwork
 
 ```ts
-type EvalNetwork = {
+type EvalNetwork<State = unknown> = {
   fetch: typeof globalThis.fetch;
+  state: State;
   calls: readonly EvalRequest[];
   expectNoOutbound: void;
   expectNothingRefused: void;
@@ -2792,6 +2799,12 @@ type EvalNetwork = {
 **`Sealed`**
 
 A fake network and its request log.
+
+#### Type Parameters
+
+##### State
+
+`State` = `unknown`
 
 #### Methods
 
@@ -2885,9 +2898,10 @@ readonly [`EvalRequest`](#evalrequest)[]
 reset(): void;
 ```
 
-Forget the log. `describeEval` calls it before every case and every
-`AAI_EVAL_REPEAT` repeat; a route's OWN state is the handler's to reset —
-pass `describeEval` a factory instead of an instance to get a fresh one.
+Forget the log and rebuild [EvalNetwork.state](#state-1). `describeEval` calls
+it before every case and every `AAI_EVAL_REPEAT` repeat. State a handler
+keeps in its own closure is not reset — put it in `state`, or pass
+`describeEval` a factory rather than an instance.
 
 ###### Returns
 
@@ -2903,19 +2917,36 @@ readonly fetch: typeof globalThis.fetch;
 
 The network as a `fetch`: routed, passed through, or refused.
 
+##### state
+
+```ts
+readonly state: State;
+```
+
+The routes' shared state, as [EvalNetworkOptions.state](#state-3) built it —
+the CURRENT one, rebuilt by every [EvalNetwork.reset](#reset). `undefined`
+for a network given no `state`.
+
 ***
 
 ### EvalNetworkOptions
 
 ```ts
-type EvalNetworkOptions = {
+type EvalNetworkOptions<State = undefined> = {
   passthrough?: readonly string[];
   refuse?: "throw" | "403";
-  routes?: Readonly<Record<string, EvalRoute>>;
+  routes?: Readonly<Record<string, EvalRoute<State>>>;
+  state?: () => State;
 };
 ```
 
 What [evalNetwork](#evalnetwork-1) takes.
+
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
 
 #### Properties
 
@@ -2943,7 +2974,7 @@ swallows network errors but reports statuses. Either way it is recorded.
 ##### routes?
 
 ```ts
-readonly optional routes?: Readonly<Record<string, EvalRoute>>;
+readonly optional routes?: Readonly<Record<string, EvalRoute<State>>>;
 ```
 
 Handlers by where they answer. A key is one of:
@@ -2956,6 +2987,44 @@ Handlers by where they answer. A key is one of:
 
 The most specific key answers: the longest matching URL prefix, then an
 exact host, then the longest matching wildcard.
+
+##### state?
+
+```ts
+readonly optional state?: () => State;
+```
+
+The fake services' STATE — the rows a fake database holds — built by
+this factory now and again on every [EvalNetwork.reset](#reset), handed to
+every route as its third argument, and readable as
+[EvalNetwork.state](#state-1), typed.
+
+The supported way for a route and a case to share state. Without it a
+suite kept its fake table in a module-level `let` that its network
+factory reassigned, which a case read by name and a second suite could
+not have without a second `let`. And because `reset()` rebuilds it,
+`describeEval` gives every case and every `AAI_EVAL_REPEAT` repeat fresh
+state from an INSTANCE too, not only from a factory.
+
+```ts
+import { evalNetwork } from "@alexkroman1/aai-runtime/eval";
+
+const crm = evalNetwork({
+  state: () => ({ notes: [] as string[] }),
+  routes: {
+    "https://crm.example/notes": (_request, { method, text }, state) => {
+      if (method === "POST") state.notes.push(text);
+      return { count: state.notes.length };
+    },
+  },
+});
+await crm.fetch("https://crm.example/notes", { method: "POST", body: "call back" });
+console.log(crm.state.notes); // ["call back"]
+```
+
+###### Returns
+
+`State`
 
 ***
 
@@ -3071,16 +3140,23 @@ Which requests a query selects: a key (as a route key), a URL pattern, or a pred
 ### EvalRoute
 
 ```ts
-type EvalRoute = (request: Request, info: EvalRequest) => unknown;
+type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
 ```
 
-A route handler: the request (a fresh `Request`, so its body is readable)
-and the record the log holds for it, with the body already parsed.
+A route handler: the request (a fresh `Request`, so its body is readable),
+the record the log holds for it with the body already parsed, and the
+network's [EvalNetworkOptions.state](#state-3) — `undefined` when it has none.
 
 It returns a `Response`, used as is; `undefined`, answered `204 No Content`;
 or any other value, answered as `200` JSON — so a fixture route is one line.
 A handler that THROWS answers `500` with the message, and the case sees what
 its tool made of a failing service.
+
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
 
 #### Parameters
 
@@ -3091,6 +3167,10 @@ its tool made of a failing service.
 ##### info
 
 [`EvalRequest`](#evalrequest)
+
+##### state
+
+`State`
 
 #### Returns
 

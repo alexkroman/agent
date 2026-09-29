@@ -162,6 +162,38 @@ describe("evalNetwork — the log", () => {
     );
   });
 
+  test("state is built by its factory, handed to every route, and readable, typed", async () => {
+    const net = evalNetwork({
+      state: () => ({ notes: [] as string[] }),
+      routes: {
+        "https://crm.example/notes": (_request, { method, text }, state) => {
+          if (method === "POST") state.notes.push(text);
+          return { count: state.notes.length };
+        },
+      },
+    });
+    await net.fetch("https://crm.example/notes", { method: "POST", body: "call back" });
+    const count = await (await net.fetch("https://crm.example/notes")).json();
+    expect(count).toEqual({ count: 1 });
+    expect(net.state.notes).toEqual(["call back"]);
+  });
+
+  test("reset() rebuilds the state, so an instance starts every case fresh", async () => {
+    const net = evalNetwork({
+      state: () => ({ rows: 0 }),
+      routes: { "crm.example": (_request, _info, state) => ({ rows: ++state.rows }) },
+    });
+    await net.fetch("https://crm.example/");
+    const before = net.state;
+    net.reset();
+    expect(net.state).not.toBe(before);
+    expect(net.state.rows).toBe(0);
+  });
+
+  test("a network given no state has none", () => {
+    expect(evalNetwork().state).toBeUndefined();
+  });
+
   test("reset() forgets the log", async () => {
     const net = evalNetwork({ routes: { "ok.example": () => ({}) } });
     await net.fetch("https://ok.example/");
