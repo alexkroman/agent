@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Type-level contract for `describeEval`'s case context: `ctx.network` is
- * typed by the `network` the suite (or the case) passed, state included.
+ * typed by the `network` the suite (or the case) passed, state included, and
+ * `ctx.workflowClient` by its `workflows`.
  *
  * The runtime half — that the network a case is handed IS the one passed —
  * is `describe-network.test.ts`'s. What only the checker can see is the
@@ -11,6 +12,8 @@
  */
 
 import { agent } from "@alexkroman1/aai";
+import { createStubWorkflows } from "@alexkroman1/aai/testing";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
 import { describeEval } from "./describe.ts";
 import { type EvalNetwork, evalNetwork } from "./network.ts";
@@ -97,5 +100,25 @@ test("a route cannot read state the network was not given", () => {
         expectTypeOf(state).toEqualTypeOf<undefined>();
       },
     },
+  });
+});
+
+test("a suite's workflows FACTORY types ctx.workflowClient, its attachments included", () => {
+  const recording = () => Object.assign(createStubWorkflows(), { started: [] as string[] });
+  describeEval(
+    def,
+    (it) => {
+      it("reads the log", async ({ workflowClient, network }) => {
+        expectTypeOf(workflowClient.started).toEqualTypeOf<string[]>();
+        // The network is untouched by it: none was passed.
+        expectTypeOf(network).toEqualTypeOf<EvalNetwork | undefined>();
+      });
+    },
+    { workflows: recording },
+  );
+  describeEval(def, (it) => {
+    it("has the engine's, or none", async ({ workflowClient }) => {
+      expectTypeOf(workflowClient).toEqualTypeOf<WorkflowClient | undefined>();
+    });
   });
 });

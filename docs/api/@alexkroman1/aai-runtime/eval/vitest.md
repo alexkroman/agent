@@ -15,20 +15,22 @@ be used from any harness.
 ### describeEval()
 
 ```ts
-function describeEval<Network extends EvalNetwork = never>(
+function describeEval<Network extends EvalNetwork = never, Client extends WorkflowClient = never>(
    agent: AgentDef, 
-   define: (test: EvalTest<Network>) => void, 
-   options?: Omit<DescribeEvalOptions, "network"> & {
+   define: (test: EvalTest<Network, Client>) => void, 
+   options?: Omit<DescribeEvalOptions, "workflows" | "network"> & {
   network?: Network | (() => Network);
+  workflows?: Client | (() => Client);
 }
 ): void;
 ```
 
 Declare an eval suite for `agent`.
 
-Generic over the suite's `network` only so a case's `ctx.network` is typed
-by it (see [EvalTestContext.network](#network-2)); nobody writes the type
-argument, it is read off `options`.
+Generic over the suite's `network` and `workflows` only so a case's
+`ctx.network` and `ctx.workflowClient` are typed by them (see
+[EvalTestContext.network](#network-2)); nobody writes the type arguments, they
+are read off `options`.
 
 ```ts no-check
 describeEval(agentDef, (test) => {
@@ -49,6 +51,10 @@ describeEval(agentDef, (test) => {
 
 `Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
 
+##### Client
+
+`Client` *extends* [`WorkflowClient`](../../aai/index.md#workflowclient) = `never`
+
 #### Parameters
 
 ##### agent
@@ -57,12 +63,13 @@ describeEval(agentDef, (test) => {
 
 ##### define
 
-(`test`: [`EvalTest`](#evaltest)\<`Network`\>) => `void`
+(`test`: [`EvalTest`](#evaltest)\<`Network`, `Client`\>) => `void`
 
 ##### options?
 
-`Omit`\<[`DescribeEvalOptions`](#describeevaloptions), `"network"`\> & \{
+`Omit`\<[`DescribeEvalOptions`](#describeevaloptions), `"workflows"` \| `"network"`\> & \{
   `network?`: `Network` \| (() => `Network`);
+  `workflows?`: `Client` \| (() => `Client`);
 \}
 
 #### Returns
@@ -511,8 +518,10 @@ How the suite is running, and why.
 ### EvalTest
 
 ```ts
-type EvalTest<Network extends EvalNetwork = never> = (name: string, body: (ctx: [Network] extends [never] ? EvalTestContext : EvalTestContext & {
+type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & [Network] extends [never] ? unknown : {
   network: Network;
+} & [Client] extends [never] ? unknown : {
+  workflowClient: Client;
 }) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
   network?: Network | (() => Network);
 }) => void;
@@ -539,6 +548,10 @@ project lights up red on a file the SDK told them to write:
 
 `Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
 
+##### Client
+
+`Client` *extends* [`WorkflowClient`](../../aai/index.md#workflowclient) = `never`
+
 #### Parameters
 
 ##### name
@@ -547,8 +560,10 @@ project lights up red on a file the SDK told them to write:
 
 ##### body
 
-(`ctx`: \[`Network`\] *extends* \[`never`\] ? [`EvalTestContext`](#evaltestcontext) : [`EvalTestContext`](#evaltestcontext) & \{
+(`ctx`: [`EvalTestContext`](#evaltestcontext) & \[`Network`\] *extends* \[`never`\] ? `unknown` : \{
   `network`: `Network`;
+\} & \[`Client`\] *extends* \[`never`\] ? `unknown` : \{
+  `workflowClient`: `Client`;
 \}) => `Promise`\<`void`\>
 
 ##### options?
@@ -570,6 +585,7 @@ type EvalTestContext = {
   mode: EvalMode;
   network: EvalNetwork | undefined;
   session: EvalSession;
+  workflowClient: WorkflowClient | undefined;
   workflows: EvalWorkflows | undefined;
 };
 ```
@@ -657,6 +673,22 @@ readonly session: EvalSession;
 ```
 
 Open for this case, closed after it.
+
+##### workflowClient
+
+```ts
+readonly workflowClient: WorkflowClient | undefined;
+```
+
+The client this session's `ctx.workflows` IS: the suite's own
+(`describeEval`'s `workflows` — the one its factory built for THIS case
+and repeat), else the engine's `workflows.client`, else
+`undefined` for an agent that declares no workflows and was given none.
+
+Typed by what the suite passed, in the body a case hands
+[EvalTest](#evaltest): a suite whose factory returns a recording client with
+its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
+reads `workflowClient.started`, typed, with no module-level log to reset.
 
 ##### workflows
 

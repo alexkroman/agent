@@ -449,6 +449,18 @@ was invisible. The rules, each argued in `eval/_network-install.ts`:
   rule 29 asks for — it carries the model's traffic, whose client uses the
   global in production (the `_request-body-extras.ts` argument).
 
+**`workflows` takes a FACTORY too, and the case gets the live client.**
+`describeEval`'s `workflows` is a `WorkflowClient` or `() => WorkflowClient`,
+called per case AND per repeat like `network`'s (the named
+`DescribeEvalOptions.workflows` stays an instance: widening a published option
+to a union breaks code that reads it, and the probe says so), and
+`ctx.workflowClient` is
+the client the session's `ctx.workflows` is — the suite's, else the engine's
+`workflows.client` — typed by the suite's (`EvalTest<Network, Client>`, the
+same intersection). A downstream suite's recording `createStubWorkflows` was
+one module object whose log every case reset by hand. `ctx.workflows` stays
+the ENGINE (`EvalWorkflows`), which a suite-supplied client replaces.
+
 **`ctx.generate` answers from the script too**, and that was a hole rather than
 a limit: `generateText` calls the fake model's `doGenerate`, which used to
 throw, so every tool that reasons with a model — a grader, a planner, a

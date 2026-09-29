@@ -14,7 +14,9 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+import type { StepFetch } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
 import type { EvalMode } from "./_announce.ts";
 import { hasWorkflows } from "./_declared-tools.ts";
@@ -25,7 +27,7 @@ import type { DescribeEvalOptions, EvalCaseOptions, EvalTestContext } from "./de
 import { openEvalSessionWithSeams } from "./session.ts";
 import { installStubLlm } from "./stub-llm.ts";
 import { transcriptOf } from "./transcript.ts";
-import { openEvalWorkflows } from "./workflows.ts";
+import { type EvalWorkflows, openEvalWorkflows } from "./workflows.ts";
 
 /** What a stub-mode model says when a case scripts nothing. */
 const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
@@ -34,7 +36,12 @@ const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
 export type CaseRun = {
   readonly agent: AgentDef;
   readonly mode: EvalMode;
-  readonly options: DescribeEvalOptions | undefined;
+  /** The suite's options, `workflows` as `describeEval` takes it: a client or a factory. */
+  readonly options:
+    | (Omit<DescribeEvalOptions, "workflows"> & {
+        readonly workflows?: WorkflowClient | (() => WorkflowClient) | undefined;
+      })
+    | undefined;
   readonly caseOptions: EvalCaseOptions | undefined;
   readonly body: (ctx: EvalTestContext) => Promise<void>;
   readonly net: SuiteNetwork;
@@ -62,27 +69,12 @@ export async function runCase(run: CaseRun): Promise<void> {
     mode === "stub" && caseOptions?.stubGenerate !== undefined
       ? installStubLlm(caseOptions.stubGenerate)
       : undefined;
-  // Opened BEFORE the session, because the session is handed its client. Only
-  // for an agent that declares workflows, and only when the suite did not supply
-  // a client of its own — a caller who passed one owns it.
-  const workflows =
-    options?.workflows === undefined && hasWorkflows(agent)
-      ? openEvalWorkflows({
-          agent,
-          // The same env `describeWorkflowEval` gives a workflow app: in stub
-          // mode a declared key nobody has is a placeholder, so a step's
-          // `requireStepEnv` reaches the scripted provider instead of throwing
-          // over a credential the case was never going to use.
-          env: options?.env ?? stubbedEnv(agent, mode),
-          ...(options?.workflowOptions ?? {}),
-          // The engine publishes this and unpublishes the slot on close; handed
-          // the network's, a step's HTTP is routed or refused like a tool's.
-          ...omitUndefined({ stepFetch: net?.stepFetch }),
-        })
-      : undefined;
+  // Opened BEFORE the session, because the session is handed its client.
+  const { engine: workflows, client: workflowClient } = caseWorkflows(run, net?.stepFetch);
   // The suite's identity comes OUT of the spread, so a case's `null` can
   // clear it: spreading it in and then overriding could only ever replace.
-  const { clientId, phone, call, ...suite } = options ?? {};
+  // `workflows` too: a factory is not a client, and `caseWorkflows` built it.
+  const { clientId, phone, call, workflows: _suiteWorkflows, ...suite } = options ?? {};
   const session = await openEvalSessionWithSeams({
     ...suite,
     agent,
@@ -92,7 +84,7 @@ export async function runCase(run: CaseRun): Promise<void> {
       clientId: caseOrSuite(caseOptions?.clientId, clientId),
       phone: caseOrSuite(caseOptions?.phone, phone),
       call: caseOrSuite(caseOptions?.call, call),
-      workflows: workflows?.client,
+      workflows: workflowClient,
       // What the builtins take — the network, when there is one.
       fetch: net?.fetch,
       // The scripted `ctx.generate`, which the runtime would otherwise build
@@ -108,7 +100,7 @@ export async function runCase(run: CaseRun): Promise<void> {
       : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
   });
   try {
-    await body({ session, mode, workflows, network: net?.network });
+    await body({ session, mode, workflows, workflowClient, network: net?.network });
   } catch (err) {
     // Taken NOW, before the close below adds its own events: this is the try
     // the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE case.
@@ -123,6 +115,38 @@ export async function runCase(run: CaseRun): Promise<void> {
     // and is refused into this case's log rather than let out.
     if (net !== undefined) run.net.end();
   }
+}
+
+/**
+ * The case's workflow client, and the eval engine behind it when there is one.
+ *
+ * The suite's own client wins — built fresh per case and per repeat when it is
+ * a factory, so a recording client's starts never carry into the next run —
+ * and a caller who passed one owns it. Otherwise an agent that declares
+ * workflows gets an engine opened for the case, and its `client`.
+ */
+function caseWorkflows(
+  run: CaseRun,
+  stepFetch: StepFetch | undefined,
+): { engine: EvalWorkflows | undefined; client: WorkflowClient | undefined } {
+  const { agent, mode, options } = run;
+  const source = options?.workflows;
+  const supplied = typeof source === "function" ? source() : source;
+  if (supplied !== undefined || !hasWorkflows(agent))
+    return { engine: undefined, client: supplied };
+  const engine = openEvalWorkflows({
+    agent,
+    // The same env `describeWorkflowEval` gives a workflow app: in stub mode a
+    // declared key nobody has is a placeholder, so a step's `requireStepEnv`
+    // reaches the scripted provider instead of throwing over a credential the
+    // case was never going to use.
+    env: options?.env ?? stubbedEnv(agent, mode),
+    ...(options?.workflowOptions ?? {}),
+    // The engine publishes this and unpublishes the slot on close; handed the
+    // network's, a step's HTTP is routed or refused like a tool's.
+    ...omitUndefined({ stepFetch }),
+  });
+  return { engine, client: engine.client };
 }
 
 /**

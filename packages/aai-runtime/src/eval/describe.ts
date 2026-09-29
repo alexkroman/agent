@@ -29,6 +29,7 @@
 
 import type { AgentDef, SessionCall } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
 import { announceToollessAgent, checkStubReplyTools } from "./_declared-tools.ts";
@@ -206,6 +207,18 @@ export type EvalTestContext = {
    */
   readonly workflows: EvalWorkflows | undefined;
   /**
+   * The client this session's `ctx.workflows` IS: the suite's own
+   * (`describeEval`'s `workflows` — the one its factory built for THIS case
+   * and repeat), else the engine's `workflows.client`, else
+   * `undefined` for an agent that declares no workflows and was given none.
+   *
+   * Typed by what the suite passed, in the body a case hands
+   * {@link EvalTest}: a suite whose factory returns a recording client with
+   * its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
+   * reads `workflowClient.started`, typed, with no module-level log to reset.
+   */
+  readonly workflowClient: WorkflowClient | undefined;
+  /**
    * The fake network every `fetch` of this case went through. Its log holds
    * THIS case's requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case
    * asserts on `network.calls("textbelt.com")` or
@@ -280,17 +293,17 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
  *   => …` is not — and it is vitest's own fixture shape, which is what a reader
  *   already expects.
  */
-export type EvalTest<Network extends EvalNetwork = never> = (
+export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (
   name: string,
-  // An intersection rather than a type parameter on `EvalTestContext`, which
-  // stays one sealed shape for every suite: the network is the one field
-  // whose type depends on the suite's options. `never` (the default, nobody
-  // writes it) is a suite given no network — tuple-wrapped so it does not
-  // distribute to `never`.
+  // Intersections rather than type parameters on `EvalTestContext`, which
+  // stays one sealed shape for every suite: the network and the workflow
+  // client are the fields whose types depend on the suite's options. `never`
+  // (the default, nobody writes it) is a suite given none — tuple-wrapped so
+  // it does not distribute to `never` — and `& unknown` is no change at all.
   body: (
-    ctx: [Network] extends [never]
-      ? EvalTestContext
-      : EvalTestContext & { readonly network: Network },
+    ctx: EvalTestContext &
+      ([Network] extends [never] ? unknown : { readonly network: Network }) &
+      ([Client] extends [never] ? unknown : { readonly workflowClient: Client }),
   ) => Promise<void>,
   options?: [Network] extends [never]
     ? EvalCaseOptions
@@ -307,9 +320,10 @@ export type EvalTest<Network extends EvalNetwork = never> = (
 /**
  * Declare an eval suite for `agent`.
  *
- * Generic over the suite's `network` only so a case's `ctx.network` is typed
- * by it (see {@link EvalTestContext.network}); nobody writes the type
- * argument, it is read off `options`.
+ * Generic over the suite's `network` and `workflows` only so a case's
+ * `ctx.network` and `ctx.workflowClient` are typed by them (see
+ * {@link EvalTestContext.network}); nobody writes the type arguments, they
+ * are read off `options`.
  *
  * ```ts no-check
  * describeEval(agentDef, (test) => {
@@ -324,11 +338,30 @@ export type EvalTest<Network extends EvalNetwork = never> = (
  * });
  * ```
  */
-export function describeEval<Network extends EvalNetwork = never>(
+export function describeEval<
+  Network extends EvalNetwork = never,
+  Client extends WorkflowClient = never,
+>(
   agent: AgentDef,
-  define: (test: EvalTest<Network>) => void,
-  options?: Omit<DescribeEvalOptions, "network"> & {
+  define: (test: EvalTest<Network, Client>) => void,
+  options?: Omit<DescribeEvalOptions, "network" | "workflows"> & {
     readonly network?: Network | (() => Network);
+    /**
+     * The `ctx.workflows` every case's session gets, in place of the eval
+     * engine `describeEval` otherwise opens for an agent that declares
+     * workflows — a `WorkflowClient`, or a FACTORY returning one, called afresh
+     * for every case and every `AAI_EVAL_REPEAT` repeat, exactly as `network`'s
+     * is. The case reads the live one as `ctx.workflowClient`.
+     *
+     * Prefer the factory for a client that RECORDS (a `createStubWorkflows`
+     * whose `start` logs what it was asked): an instance's log is its own, and
+     * one carried into the next repeat makes the second measure the first — the
+     * log a downstream suite reset by hand at the top of every case.
+     *
+     * Wider here than on {@link DescribeEvalOptions} (an instance), because
+     * widening a published option type to a union breaks code that READS it.
+     */
+    readonly workflows?: Client | (() => Client) | undefined;
   },
 ): void {
   const { mode, reason } = resolveEvalMode(
@@ -388,7 +421,7 @@ export function describeEval<Network extends EvalNetwork = never>(
           spread,
         ),
       );
-    }) as EvalTest<Network>;
+    }) as EvalTest<Network, Client>;
     define(evalTest);
     if (wantsNetwork(options?.network, caseOptionsSeen)) {
       beforeAll(() => net.install());

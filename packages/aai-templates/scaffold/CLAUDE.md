@@ -80,12 +80,13 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
    **Who is calling** is a suite or case option (a case's `null` clears it):
    `clientId`, `phone` and `call` are what `sessionClientId`,
-   `sessionClientPhone`, `sessionCall` and your `sessionContext` see; a call it
-   refuses reads as `session.refused`. A tool's `endSession(ctx)` really hangs
-   up (`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
-   `network: evalNetwork({ state, routes })` answers every `fetch` your tools,
-   builtins and steps make, and refuses the rest; read it back (and its
-   `state`) as `ctx.network`. A failing case prints the conversation.
+   `sessionClientPhone`, `sessionCall` and `sessionContext` see; a refused call
+   reads as `session.refused`. A tool's `endSession(ctx)` really hangs up
+   (`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
+   `network: evalNetwork({ state, routes })` answers every tool, builtin and
+   step `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client
+   or per-case factory: `ctx.workflowClient`. A failure prints the
+   conversation.
 
    No eval can see anything below the audio boundary — when the agent decides
    you stopped talking, barge-in, two sentences merging into one turn. Those
