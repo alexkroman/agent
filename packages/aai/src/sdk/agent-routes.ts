@@ -35,7 +35,9 @@
  * ## What a handler gets, and why no more
  *
  * Plain data in and plain data out: the request is already parsed (the path's
- * `:params`, the query, a JSON body), and the return value is the response.
+ * `:params`, the query, the headers, a JSON body — and that body's exact text,
+ * for a handler that verifies a signed webhook), and the return value is the
+ * response.
  * No `req`/`res` pair, for the reason `sessionContext` has none: the handler
  * runs in the agent bundle's copy of the SDK and the HTTP server is the host's,
  * so everything that crosses between them is data — including the
@@ -56,6 +58,13 @@
  * socket. A route that reads or changes what a household said is a route every
  * device on that network can call. Keep the server on a network you trust, and
  * put real authentication in front of it before exposing it further.
+ *
+ * A handler sees the request's HEADERS, which may carry a browser's cookies or
+ * an `Authorization` header meant for something else on the same origin. Treat
+ * them as secrets: never log them, echo them back, or forward them. A route
+ * that authenticates its caller itself — a webhook checking an HMAC over
+ * `rawBody` — does so against those headers, and should compare in constant
+ * time (`crypto.timingSafeEqual`).
  *
  * ## Where it is served
  *
@@ -90,11 +99,29 @@ export interface RouteRequest {
   /** The query string, first value per key. `?client=` is in it too. */
   query: Record<string, string>;
   /**
+   * The request headers, names lower-cased: `headers["webhook-signature"]`. A
+   * header sent more than once arrives as one value, joined with `", "`. Plain
+   * data, like the rest of the request.
+   *
+   * May carry cookies and `Authorization` — see this module's security note.
+   */
+  headers: Record<string, string>;
+  /**
    * The request body parsed as JSON — for `POST`, `PUT`, `PATCH` and `DELETE`;
    * `undefined` for a `GET`, or for any request that sent no body. A body that
    * is not JSON is refused with a 400 before the handler runs.
    */
   body: unknown;
+  /**
+   * The request body exactly as received, as UTF-8 text — present whenever
+   * `body` is, under the same cap and the same JSON-only rule.
+   *
+   * These are the bytes a signature was computed over: verify a signed webhook
+   * (an HMAC over `${id}.${timestamp}.${rawBody}`, say) against THIS, never
+   * against a re-serialization of `body` — `JSON.stringify` does not reproduce
+   * the sender's whitespace, key order or number spelling.
+   */
+  rawBody?: string;
   /**
    * The `?client=` the request named, when it is a well-formed client id — the
    * same id a device's voice socket and its `WS /inbox` are held under. A CLAIM:

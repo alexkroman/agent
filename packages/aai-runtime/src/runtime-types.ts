@@ -187,7 +187,11 @@ export type AgentRuntime = {
         method: string;
         path: string;
         query: Readonly<Record<string, string>>;
+        /** Lower-cased names. Optional: a harness predating it sends none. */
+        headers?: Readonly<Record<string, string>> | undefined;
         body: unknown;
+        /** `body`'s exact text, present whenever `body` is. */
+        rawBody?: string | undefined;
         clientId?: string | undefined;
         signal: AbortSignal;
       }) => Promise<{

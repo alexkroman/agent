@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `/api/*` — `agent({ routes })`, the HTTP half: the prefix, the body cap, JSON
- * both ways, and `?client=`.
+ * both ways (the request body's exact text handed on beside the parse, for a
+ * webhook's signature), the headers as plain strings, and `?client=`.
  *
  * Mounted by `createRuntimeServer` beside the workflow API and the session
  * event stream, on the same lazy getter and for the same reason: every front
@@ -22,6 +23,9 @@
  * to the author. On a loopback `aai dev` that is the developer; on a server
  * reachable from a LAN it is anyone on it. `?client=` is VALIDATED here (the
  * id rule the voice socket and `/inbox` use) and then trusted, exactly as there.
+ * The request headers are handed to the handler whole — cookies and
+ * `Authorization` included — so a handler that checks a signature can; the SDK
+ * module's security note tells the author to treat them as secrets.
  *
  * @internal
  */
@@ -66,10 +70,31 @@ function firstValues(params: URLSearchParams): Record<string, string> {
   return query;
 }
 
-/** The body as JSON, `undefined` when there is none; throws `SyntaxError` on anything else. */
-async function readJson(req: http.IncomingMessage): Promise<unknown> {
+/**
+ * `RouteRequest.headers`' shape: Node already lower-cases the names; a header
+ * Node keeps as a list (`set-cookie`, an unknown repeated one) is joined with
+ * `", "`, so what crosses to the bundle is strings only.
+ */
+function headerValues(headers: http.IncomingHttpHeaders): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    out[name] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  return out;
+}
+
+/**
+ * The body as JSON beside its exact text (what a webhook signature is computed
+ * over), both `undefined` when there is none; throws `SyntaxError` on anything
+ * that is not JSON.
+ */
+async function readJson(
+  req: http.IncomingMessage,
+): Promise<{ body: unknown; rawBody: string | undefined }> {
   const raw = (await readBody(req, MAX_ROUTE_BODY_BYTES)).toString("utf8");
-  return raw.trim() === "" ? undefined : JSON.parse(raw);
+  if (raw.trim() === "") return { body: undefined, rawBody: undefined };
+  return { body: JSON.parse(raw), rawBody: raw };
 }
 
 /**
@@ -106,7 +131,9 @@ export function createAgentRoutesApi(
         sendJson(res, 400, { error: "?client= must be 1-64 letters, digits, - or _" });
         return;
       }
-      const body = BODY_METHODS.has(method) ? await readJson(req) : undefined;
+      const { body, rawBody } = BODY_METHODS.has(method)
+        ? await readJson(req)
+        : { body: undefined, rawBody: undefined };
       // Aborted when the caller hangs up before the answer is written, so a
       // handler's own fetch stops too. `close` after `finish` is the normal end.
       const controller = new AbortController();
@@ -117,9 +144,10 @@ export function createAgentRoutesApi(
         method,
         path: url.slice(AGENT_ROUTES_PREFIX.length) || "/",
         query: firstValues(params),
+        headers: headerValues(req.headers),
         body,
         signal: controller.signal,
-        ...omitUndefined({ clientId: client ?? undefined }),
+        ...omitUndefined({ rawBody, clientId: client ?? undefined }),
       });
       if (reply.body === undefined) {
         res.writeHead(reply.status, { ...reply.headers });
