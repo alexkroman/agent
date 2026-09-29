@@ -19,7 +19,7 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 472 names
-- [Browser client](#browser-client) — 137 names
+- [Browser client](#browser-client) — 148 names
 - [Testing and evals](#testing-and-evals) — 225 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
 - [Framework internals](#framework-internals) — 352 names
@@ -507,6 +507,9 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `FileValue` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | What a `FileField` contributes to `FormValues`. |
 | `Form`, `FormProps` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A form that hands its values to `onSubmit` as one object. |
 | `FormValues` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | One submitted form, as a plain object keyed by field name. |
+| `Inbox` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | A held inbox socket — see `createInbox`. |
+| `InboxEvent` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | One frame of the client's live conversation, sent to a holder that asked for events: every session bound to the client, this tab's own included — filter on … |
+| `InboxNotice` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | One notice from the agent — what a workflow step sent with `stepNotifyClient`, e.g. a reminder coming due. |
 | `Markdown`, `MarkdownProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Agent prose, rendered as Markdown. |
 | `MarkdownVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Type scale for `Markdown`: `"default"` is the deployed agent UI's scale, `"compact"` a notch smaller for denser surfaces (the studio's chat transcript). |
 | `MessageList`, `MessageListProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Scrollable list of all chat messages, tool-call blocks, live transcript, streaming agent utterance, and a thinking indicator. |
@@ -540,6 +543,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
 | `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useDownloadUrl` reports. |
 | `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
+| `UseInboxResult` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | What `useInbox` returns. |
 | `UsePushToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | What `usePushToTalk` returns. |
 | `UseSessionControlsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSessionControls` returns. |
 | `UseUserTranscriptResult` | interface | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useUserTranscript` returns. |
@@ -561,8 +565,10 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `WorkflowRunPanel`, `WorkflowRunPanelProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The bordered panel a workflow page shows one run in: a status line, a Clear button, the run's own narration, the live slot while it works, the completed body … |
 | `WorkflowStreamSubmission` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowStream` returns: a `WorkflowSubmission`, exactly. |
 | `WorkflowSubmission` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowSubmit` returns. |
+| `browserClientId` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | This browser's stable client id for the agent at `platformUrl` — `browser-<32 hex>`, minted once and kept in `localStorage`. |
 | `browserSessionBrand` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The seal on a `BrowserSession`. |
 | `createBrowserSession` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | Create a framework-agnostic voice session core that connects to an AAI server via WebSocket. |
+| `createInbox`, `CreateInboxOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold `WS /inbox?client=&holder=` open, reconnecting with backoff, and answer every notice the way the protocol requires — `ack` once it has arrived whole, … |
 | `createWorkflowApi` | function | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Create a client for the agent serving this page. |
 | `defaultClientDir` | function | `@alexkroman1/aai-ui/client-dir` | `aai-ui:client-dir` | Absolute path to the prebuilt browser client's static files — pass it to `createRuntimeServer`/`createAgentServer` as `clientDir`. |
 | `fetchClientConfig` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
@@ -570,17 +576,20 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `mountClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client` | Define and mount a client UI for a voice agent. |
 | `mountPage` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Mount a page for an agent whose work happens in workflows. |
 | `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
+| `useClientId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The client id this session sends as `?client=` — the id a tool reads with `sessionClientId(ctx)` and the inbox socket is held under. |
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
 | `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read an upload's bytes and hand back a URL a DOM element can use. |
 | `useEvent` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Subscribe to custom events emitted by agent tools via `ctx.send(event, data)`; the callback receives each event's `data`. |
 | `useFlash` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | A transient value: set it, and it clears itself after `ms`. |
+| `useInbox`, `UseInboxOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold this session's `WS /inbox` socket open for the life of the component, and play what arrives — see the module doc. |
 | `usePushToTalk`, `UsePushToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Hold-to-speak over the session's push-to-talk methods, with the four ways a turn gets stuck open handled — see this module's doc. |
 | `useRunKey` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A lookup key for `useWorkflowSubmit({ key })`, stable across reloads. |
 | `useSession` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Return the live `Session`: the current snapshot fields plus the control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`, `cancel`, `end`). |
 | `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `sendText`, `setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`, `toggle`, `end` — with … |
 | `useSessionControls` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The state and the actions a Start / Pause–Resume / New conversation / End row renders from, on two one-field subscriptions. |
 | `useSessionError` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's current `SessionError`, or `null` when there is none, on its own narrow subscription. |
+| `useSessionId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The server's id for the current session: `undefined` before the session's first `config` frame and after `end()`; a resume or a new session updates it from its … |
 | `useSessionSelector` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to a narrow slice of the session snapshot. |
 | `useSessionStatus` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The agent's live `AgentState` — `disconnected`, `connecting`, `ready`, `listening`, `thinking`, `speaking`, `error` — on its own narrow subscription. |
 | `useTheme` | hook | `@alexkroman1/aai-ui` | `aai-ui:theme` | Read the resolved theme (every `ClientTheme` field filled with its default) from the nearest theme context. |
@@ -923,7 +932,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SessionEventMetaSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `SessionEventMeta`. |
 | `SessionEventPage` | type | `@alexkroman1/aai-runtime` |  | One page of a stream read. |
 | `SessionEventStream` | type | `@alexkroman1/aai-runtime` |  | The runtime's view of every session's event stream. |
-| `SessionIdentity` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who a verified ticket says the caller is. |
+| `SessionIdentity` | type | `@alexkroman1/aai-runtime/auth` (also `@alexkroman1/aai-ui`) | `aai-runtime:auth` | Who a verified ticket says the caller is. |
 | `SessionMode` | type | `@alexkroman1/aai/manifest` |  | Session mode derived from which provider fields are set. |
 | `SessionRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The session-facing slice of a runtime — all `createRuntimeServer` needs. |
 | `SessionStartOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options passed to `AgentRuntime.startSession`. |
@@ -1071,7 +1080,7 @@ trace or a type error can be traced back to something.
 | `CARTESIA_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Cartesia API key. |
 | `CARTESIA_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `CLIENT_AUDIO_LEAD_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
-| `CLIENT_ID_RE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `CLIENT_ID_RE` | const · `@internal` | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
 | `CLIENT_INBOX_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `CONTAINED_ENV` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Env flag a SPAWNER sets when the runtime is wrapped in a real container. |

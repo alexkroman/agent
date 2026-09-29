@@ -24,6 +24,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "inbox": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "page": {
     "current": 2,
     "supported": [1, 2],

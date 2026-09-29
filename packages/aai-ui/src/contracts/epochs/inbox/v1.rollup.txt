@@ -1,0 +1,65 @@
+// @public
+export function createInbox(options: CreateInboxOptions): Inbox;
+
+// @public
+export type CreateInboxOptions = {
+    platformUrl: string;
+    client: string | (() => string | undefined);
+    holder: string;
+    busy?: (() => boolean) | undefined;
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    events?: boolean | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public @sealed
+export type Inbox = {
+    connected(): boolean;
+    subscribe(callback: () => void): () => void;
+    close(): void;
+};
+
+// @public
+export type InboxEvent = {
+    readonly type: "session_event";
+    readonly sessionId: string;
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+} | {
+    readonly type: "session_ended";
+    readonly sessionId: string;
+};
+
+// @public
+export type InboxNotice = {
+    readonly id: string;
+    readonly event: string;
+    readonly data?: Readonly<Record<string, unknown>>;
+    readonly pcm: Uint8Array;
+};
+
+// @public
+export function useInbox(options?: UseInboxOptions): UseInboxResult;
+
+// @public
+export type UseInboxOptions = {
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    busy?: (() => boolean) | undefined;
+    play?: boolean | undefined;
+    events?: boolean | undefined;
+};
+
+// @public
+export type UseInboxResult = {
+    readonly connected: boolean;
+    stopPlayback(): void;
+};
+
+// @public
+type WebSocketConstructor = {
+    new (url: string | URL, protocols?: string | string[]): WebSocket;
+    readonly OPEN: number;
+};

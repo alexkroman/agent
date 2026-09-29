@@ -1067,6 +1067,9 @@ retryable error until the device acks. Test: `stubClientInbox`.
 `?client=` also makes a device one conversation across connects (self-hosted):
 `sessionContext`, `onSessionEnd`, `stepClientTranscript`; its id is the only
 key.
+A page is a device too: `mountClient({ client: "auto" })` keeps a per-browser
+id; `useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices.
+`useClientId()`/`useSessionId()` read the ids.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
@@ -2251,12 +2254,9 @@ mountClient({ component: MyApp });
 | `theme` | `ClientTheme` | — | `{ bg, primary, text, surface, border }` |
 | `target` | `string \| HTMLElement` | `"#app"` | Mount target |
 | `tools` | `ToolDisplayConfig` | — | Icon/label overrides per tool name |
+| `client` | `string \| () => string` | — | `?client=`; `"auto"` = per-browser id |
 
-**The two tiers are mostly exclusive.** `sidebar`, `sidebarWidth`, and
-`tools` configure the default shell, so passing any of them alongside
-`component` is a type error. `name` is the exception — it is allowed with a
-custom component and becomes the page title, since there is no shell header
-to put it in.
+Beside a `component`, `sidebar` still renders; `name` becomes the page title.
 
 ### `useSession()` return type
 

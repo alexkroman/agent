@@ -29,6 +29,9 @@ export function clampWorkflowWait(requested: number | undefined): number;
 export const CLIENT_AUDIO_LEAD_MS = 1500;
 
 // @internal
+export const CLIENT_ID_RE: RegExp;
+
+// @internal
 export type ClientEventDecision = {
     json: string;
 } | {

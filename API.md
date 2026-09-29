@@ -4293,6 +4293,9 @@ export function clampWorkflowWait(requested: number | undefined): number;
 export const CLIENT_AUDIO_LEAD_MS = 1500;
 
 // @internal
+export const CLIENT_ID_RE: RegExp;
+
+// @internal
 export type ClientEventDecision = {
     json: string;
 } | {
@@ -13524,6 +13527,9 @@ export function AutoScroll(input: {
     resize?: "instant" | "smooth" | undefined;
 }): ReactNode;
 
+// @public
+export function browserClientId(platformUrl?: string): string;
+
 // @public @sealed
 export type BrowserSession = {
     readonly [browserSessionBrand]: true;
@@ -13534,6 +13540,7 @@ export type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
     sendText(text: string): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
@@ -13681,6 +13688,21 @@ export type ConversationViewProps = {
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
 // @public
+export function createInbox(options: CreateInboxOptions): Inbox;
+
+// @public
+export type CreateInboxOptions = {
+    platformUrl: string;
+    client: string | (() => string | undefined);
+    holder: string;
+    busy?: (() => boolean) | undefined;
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    events?: boolean | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 
 // @public
@@ -13750,6 +13772,33 @@ export type FormProps = {
 
 // @public
 export type FormValues = Record<string, unknown>;
+
+// @public @sealed
+export type Inbox = {
+    connected(): boolean;
+    subscribe(callback: () => void): () => void;
+    close(): void;
+};
+
+// @public
+export type InboxEvent = {
+    readonly type: "session_event";
+    readonly sessionId: string;
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+} | {
+    readonly type: "session_ended";
+    readonly sessionId: string;
+};
+
+// @public
+export type InboxNotice = {
+    readonly id: string;
+    readonly event: string;
+    readonly data?: Readonly<Record<string, unknown>>;
+    readonly pcm: Uint8Array;
+};
 
 export { isTerminal }
 
@@ -13869,6 +13918,14 @@ export type SessionErrorBannerProps = {
 };
 
 export { SessionErrorCode }
+
+// @public @sealed
+export type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
+};
 
 // @public
 export type SessionSnapshot = {
@@ -13999,6 +14056,9 @@ export function useAgentState<V>(projection: StateProjection<V>): V;
 export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 
 // @public
+export function useClientId(): string | undefined;
+
+// @public
 export function useConversation(): UseConversationResult;
 
 // @public
@@ -14044,6 +14104,24 @@ export function useFlash<T>(ms?: number): UseFlashResult<T>;
 export type UseFlashResult<T> = {
     readonly value: T | null;
     readonly flash: (value: T) => void;
+};
+
+// @public
+export function useInbox(options?: UseInboxOptions): UseInboxResult;
+
+// @public
+export type UseInboxOptions = {
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    busy?: (() => boolean) | undefined;
+    play?: boolean | undefined;
+    events?: boolean | undefined;
+};
+
+// @public
+export type UseInboxResult = {
+    readonly connected: boolean;
+    stopPlayback(): void;
 };
 
 // @public
@@ -14118,6 +14196,9 @@ export type UseSessionControlsResult = {
 
 // @public
 export function useSessionError(): SessionError | null;
+
+// @public
+export function useSessionId(): string | undefined;
 
 // @public
 export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T, isEqual?: (a: T, b: T) => boolean): T;
@@ -14388,6 +14469,7 @@ type BrowserSession = {
     }): void;
     cancel(): void;
     readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
     sendText(text: string): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
@@ -14440,6 +14522,14 @@ type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
+};
+
+// @public @sealed
+type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
 };
 
 // @internal

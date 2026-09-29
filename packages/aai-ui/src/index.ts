@@ -25,6 +25,8 @@
  * | Reading | Hooks |
  * | --- | --- |
  * | the call itself | {@link useSession} (everything), {@link useSessionStatus}, {@link useSessionError}, {@link useSessionActions}, {@link useSessionSelector} |
+ * | who the client is | {@link useSessionId}, {@link useClientId}, {@link browserClientId} |
+ * | a run reaching the page later | {@link useInbox} (a reminder, a finished job — played when it lands) |
  * | what was said | {@link useConversation}, {@link useUserTranscript} |
  * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
@@ -72,6 +74,10 @@ export {
   type ClientConfigResponse,
   fetchClientConfig,
 } from "./client-config.ts";
+// Who this browser is to an agent: the id `client: "auto"` mints and keeps,
+// and the `session.identity` handle. Published because a page shows the id and
+// a link-code flow must name THIS browser even while it sends another id.
+export { browserClientId, type SessionIdentity } from "./client-identity.ts";
 // Components
 // The player for a file a RUN produced — heading, pending line, announced
 // error, `<audio>` with an optional one-cue caption track, download link — over
@@ -215,6 +221,11 @@ export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { mountClient } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+// The client's `WS /inbox` socket — what a run's `stepNotifyClient` reaches
+// after the session has closed. `createInbox` is the core; `useInbox` below
+// fills it from the session and plays what arrives.
+export { type CreateInboxOptions, createInbox, type Inbox } from "./inbox.ts";
+export type { InboxEvent, InboxNotice } from "./inbox-protocol.ts";
 // Workflow apps — the `workflowApp()` half of this package. `mountPage()`
 // is the mount (no session, no audio, no socket), and its `component` is
 // OPTIONAL: with none it renders a form per declared workflow, the run's
@@ -272,6 +283,9 @@ export {
 // none after unmount. The primitive under `useCopy`, public in its own right
 // for the "Saved" note a chrome writes beside an editor.
 export { type UseFlashResult, useFlash } from "./use-flash.ts";
+// A notice from a run, played when it lands — busy while a call is on, so it
+// never talks over a reply. Every browser app that wanted reminders wrote it.
+export { type UseInboxOptions, type UseInboxResult, useInbox } from "./use-inbox.ts";
 // A hold-to-speak button for a `turnDetection: "manual"` agent — pointer
 // capture, key repeat, a lost keyup and an unmount mid-hold, all of which
 // otherwise leave the microphone open on a turn nothing will answer.
@@ -288,6 +302,8 @@ export { useRunKey } from "./use-run-key.ts";
 // subscriptions — what `SessionControls` is built on, for the chrome whose
 // buttons are too unusual even for its render slot.
 export { type UseSessionControlsResult, useSessionControls } from "./use-session-controls.ts";
+// The two ids a page keys things by, current without `onSessionId` wiring.
+export { useClientId, useSessionId } from "./use-session-id.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";

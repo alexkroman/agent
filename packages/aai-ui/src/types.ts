@@ -261,6 +261,14 @@ export type VoiceSessionOptions = {
    * connection attempt, with the same rules as {@link location}: a string or a
    * getter asked per attempt, trimmed, an empty answer sends none.
    *
+   * **`"auto"`** has the SDK mint and keep one: this browser's
+   * `browserClientId()` — `browser-<32 hex>`, stored in `localStorage` per
+   * agent URL (for this tab only where storage is unavailable). It is the id
+   * `useInbox()` holds the inbox under too, with a holder id per TAB so two tabs
+   * of one browser do not replace each other's inbox socket. Read it back with
+   * `useClientId()` or `session.identity.clientId()`. (So `"auto"` itself can
+   * never be a client id.)
+   *
    * It is the id a tool reads with `sessionClientId(ctx)` and the one a client
    * holds its `WS /inbox?client=` socket open under, so a tool can hand it to a
    * workflow run and the run's `stepNotifyClient` reaches this client AFTER the

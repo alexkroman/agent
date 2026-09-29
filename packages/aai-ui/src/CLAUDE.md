@@ -1,12 +1,13 @@
 ---
 summary: >-
   The browser session core (statecharts, fatal latch, handshake guard,
-  client-config lookup), the public hooks, the fuzz harnesses, and the
+  client-config lookup), client identity and the inbox, the public hooks, the fuzz harnesses, and the
   workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads,
   reload recovery) over the workflow HTTP API.
 read_when: >-
-  editing `session-core*.ts`, `client-config.ts`, `context.ts`, a `use-*.ts`
-  hook, a workflow/upload module, or a `fuzz-*.test.ts` harness.
+  editing `session-core*.ts`, `client-config.ts`, `client-identity.ts`, the
+  inbox (`inbox*.ts`, `notice-player.ts`), `context.ts`, a `use-*.ts` hook, a
+  workflow/upload module, or a `fuzz-*.test.ts` harness.
 ---
 
 # `src/` — session core, hooks and workflow apps
@@ -147,6 +148,34 @@ arms per `open`, disarms on `config` or close, re-dials on expiry, and after
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
   `turnDetection: "manual"` agent; its module doc lists the ways a hand-written
   button leaves a turn open.
+
+## Client identity and the inbox
+
+A run reaches the page after the call through `WS /inbox?client=` (server half:
+`aai-runtime/src/client-inbox.ts`; wire: `stepNotifyClient`'s module doc).
+
+- **`client: "auto"` is resolved in `client-identity.ts`**, never in a caller:
+  `browserClientId(platformUrl)` is `browser-<32 hex>` in `localStorage` keyed
+  by the agent URL (the id is a history credential, so one agent's server must
+  not learn another's), minted with `getRandomValues` (`randomUUID` needs a
+  secure context; `aai dev` on a LAN is `http:`), per-tab in memory without
+  storage. The dialer and `session.identity` read the SAME resolved option.
+- **The inbox holder is per TAB** (`inboxHolderId`: browser id + a per-load
+  suffix). The inbox REPLACES a socket presenting the same (client, holder), so
+  a browser-wide holder had two tabs knock each other off once a second. Pinned
+  by `client-identity.test.ts` (two module realms over one storage).
+- **`session.identity.sessionId()` is the CONFIRMED id** (the dialer's, set by a
+  `config` frame, cleared by `forget()`), not the resume identity — and the
+  dialer calls `notify` when it moves, since no snapshot field may move with it.
+  `useSessionId`/`useClientId` are `useSyncExternalStore` over that.
+- **`createInbox` keeps ONE assembler across reconnects** (`inbox-protocol.ts`):
+  the redelivery after a lost ack comes on the next socket, so a per-socket
+  repeat memory replays it; only the half-received notice is dropped with the
+  socket. A repeat is acked even while busy; a header mid-notice goes unacked.
+- **`useInbox` plays through its own `AudioContext`** (`notice-player.ts`, 16
+  kHz), unlocked by the first `pointerdown`/`keydown` — the session's context
+  exists only mid-call, and a notice arrives when none is. Default `busy` is
+  `snapshot.running`.
 
 ## Fuzz harnesses
 

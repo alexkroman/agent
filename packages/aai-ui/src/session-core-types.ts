@@ -7,6 +7,7 @@
  */
 
 import type { Epoch } from "@alexkroman1/aai/internal";
+import type { SessionIdentity } from "./client-identity.ts";
 import type { AudioPath } from "./session-core-audio-state.ts";
 import type {
   AgentState,
@@ -232,6 +233,13 @@ export type BrowserSession = {
   cancel(): void;
   /** Push-to-talk's three edges — see {@link UserTurnControls}. */
   readonly userTurn: UserTurnControls;
+  /**
+   * Who this session is to its agent — the base URL it dials, the client id it
+   * sends, this tab's inbox holder id, and the server's session id. What
+   * `useInbox()`, `useClientId()` and `useSessionId()` read; see
+   * {@link SessionIdentity}.
+   */
+  readonly identity: SessionIdentity;
   /**
    * Send a TYPED user turn: the agent answers `text` exactly as if the caller
    * had said it — aloud, with tools, under any `turnDetection`.

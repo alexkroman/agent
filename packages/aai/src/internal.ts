@@ -240,6 +240,11 @@ export {
 // channel the body has no reference to and recognised by identity within one
 // `replayRun` call. See `aai-runtime/workflow-replay-suspend.ts`.
 
+// The client-id rule, for the BROWSER half of `WS /inbox` (`aai-ui`'s
+// `createInbox` and the id `mountClient({ client: "auto" })` mints). The server
+// half reads it from `./host-internal`; one declaration, so an id the browser
+// mints can never be one the inbox or `?client=` refuses.
+export { CLIENT_ID_RE } from "./sdk/step-notify-client.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also

@@ -4,7 +4,8 @@
  *
  * The live call as a client sees it: the framework-agnostic core, the snapshot
  * a component renders from, the context hooks that read it, the caller's
- * in-progress turn, and the errors that come with holding a microphone open.
+ * in-progress turn, the errors that come with holding a microphone open, and
+ * who the client is (`session.identity`, `browserClientId`, the two id hooks).
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -17,6 +18,7 @@ export {
   type AgentCustomEvent,
   type AgentState,
   type BrowserSession,
+  browserClientId,
   type browserSessionBrand,
   type ChatMessage,
   type ConversationItem,
@@ -25,15 +27,18 @@ export {
   type SessionActions,
   type SessionError,
   type SessionErrorCode,
+  type SessionIdentity,
   type SessionSnapshot,
   type UseConversationResult,
   type UseSessionControlsResult,
   type UseUserTranscriptResult,
+  useClientId,
   useConversation,
   useSession,
   useSessionActions,
   useSessionControls,
   useSessionError,
+  useSessionId,
   useSessionSelector,
   useSessionStatus,
   useUserTranscript,
