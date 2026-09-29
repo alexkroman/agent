@@ -107,18 +107,25 @@ describe("runCapped", () => {
    * Node's `timeout:` option sent ONE SIGTERM to the direct child. A command
    * that traps it ran to completion past its deadline and came back
    * `code 0, signal null` — reported to the model as a success.
+   *
+   * The deadline has to outlast bash's own startup: a SIGTERM that lands before
+   * `trap '' TERM` has run kills bash the default way, and the case reads
+   * SIGTERM. At 200ms that happened under a loaded `pnpm check`.
    */
   test("a child that ignores SIGTERM is SIGKILLed after the grace period", async () => {
+    const timeoutMs = 1500;
     const started = performance.now();
     const result = await runCapped("bash", ["-c", "trap '' TERM; sleep 30"], {
       cwd: dir,
-      timeoutMs: 200,
+      timeoutMs,
       cap: 1000,
     });
-    expect(performance.now() - started).toBeLessThan(200 + KILL_GRACE_MS + 3000);
+    expect(performance.now() - started).toBeLessThan(timeoutMs + KILL_GRACE_MS + 3000);
     expect(result.timedOut).toBe(true);
     expect(result.signal).toBe("SIGKILL");
-    expect(outputWithKillNote(result, 200)).toContain("[killed by SIGKILL after 200ms]");
+    expect(outputWithKillNote(result, timeoutMs)).toContain(
+      `[killed by SIGKILL after ${timeoutMs}ms]`,
+    );
   });
 
   /**
