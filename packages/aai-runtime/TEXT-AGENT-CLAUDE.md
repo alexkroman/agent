@@ -364,6 +364,103 @@ measured at 22-30s against ~10x gateway variance times out at 30s and the case
 then measures the deadline instead of the agent. `workflows` supplies
 `ctx.workflows`, without which a tool that starts a run cannot execute at all.
 
+**Who is calling is recorded where a connection records it.** `clientId`,
+`phone` and `call` (on `EvalSessionOptions`, so per suite, and on
+`EvalCaseOptions` per case) go through `setSessionClient`/`setSessionPhone`/
+`setSessionCall` under the session id before the session is built — the point
+`ws-handler.ts` and `telephony-server.ts` record them — so `sessionClientId`,
+`sessionCall`, `sessionContext`'s args, `onSessionEnd` and the client binding
+all read the same values (`eval/_session-identity.ts`). A downstream suite had
+wrapped `sessionContext` to hand it a fake `call`, which reached the hook and
+nothing else. Two decisions:
+
+- **A refusal is `session.refused`, not a throw.** The refusal is often the
+  claim (a calling agent refusing a stream that names no call it placed), and a
+  throw lands before `describeEval` hands the case a session. `say()` on a
+  refused session rejects naming the reason, so an unexpected refusal still
+  fails at the first line.
+- **A non-E.164 `phone` THROWS**, where the socket drops it: a device's typo is
+  a stranger's input, an eval's is the author's.
+- **A case's `null` CLEARS the suite's field** (`clientId: null`,
+  `call: null`), absent keeps it. `runCase` takes the three out of the suite's
+  spread before applying the case's, because spreading them in and overriding
+  could only replace, and a calling agent's "not a placed call" refusal sits in
+  a suite whose other cases are all the one call.
+
+The greeting wait reads `sessionContext`'s answered greeting by WATCHING the
+one call the runtime makes (`observeSessionContext`), never by calling the hook
+again: a calling agent's hook claims the call row.
+
+**`endSession(ctx)` takes effect.** The session is built with
+`runtime.createSession` directly, so no ender was registered and a tool's
+`end_call` answered `false` while the session kept answering. `_session-end.ts`
+claims one where `session-attach.ts` does and ends the session the way the paced
+sink does, minus playback: `afterReply` (default) at the reply's own terminator,
+so the goodbye is captured whole; `afterReply: false` at once. Either way it is
+the session's ordinary stop, so `onSessionEnd` fires when the agent hangs up.
+**The ending turn, and `close()`, AWAIT that hook** (`watchSessionEndHook`,
+bounded at 10 s): the runtime calls it without awaiting, so its writes landed
+after the turn returned and a downstream suite polled for them with
+`vi.waitFor`. It watches the one call the runtime makes, as
+`observeSessionContext` does, and hands the result back untouched so the
+runtime still logs a rejection. The turn says so (`endedSession`, optional on
+`EvalTurn` because a `SimulationTarget` builds its own turns), `session.ended`
+reads it live, `say()` then rejects, and `sayAll` stops after the ending turn.
+The eval session stops ONCE through one `stopSession`: the core's `stop()` is
+idempotent, the runtime's wrappers around it are not, and a second call fired
+`onSessionEnd` twice.
+
+**`network` fails CLOSED, and the SUITE owns the global.** `evalNetwork`
+(`eval/network.ts`, its own `eval-network` capability) answers a request by a
+route, passes it to a `passthrough` host, or REFUSES it (a throw, or a 403) and
+logs it. Every downstream fake it replaced failed OPEN — forwarding whatever it
+did not recognize, because the live model's requests share the global — and
+stubbed the three fetches (global, builtin, step) separately, so a hole in one
+was invisible. The rules, each argued in `eval/_network-install.ts`:
+
+- **One dispatcher per SUITE**, swapped in at `beforeAll`: `onSessionEnd` is
+  fire-and-forget, so a per-case restore let a late write reach the real
+  network. Between cases a request is refused into the last case's log.
+- **The live model's hosts pass through unlogged, in LIVE mode only**, read off
+  the agent's descriptors (`eval/_model-hosts.ts`): a hard-coded
+  `assemblyai.com` is wrong the day an agent names another provider. Scripted,
+  a provider host is a tool's request like any other.
+- **Per case AND per repeat**: a factory is called afresh, an instance's log
+  and `state` are reset. A downstream fake carried rows across
+  `AAI_EVAL_REPEAT` repeats, so the second measured the first.
+- **Routes share state through `state`**, not a module `let`:
+  `evalNetwork({ state: () => ({ calls: new Map() }), routes })` hands it to
+  each route as the third argument and exposes it as `network.state`, typed
+  (`EvalNetwork<State>`), rebuilt by `reset()`. Both downstream suites kept
+  their fake calls table in a `let` their network factory reassigned.
+- **`ctx.network` is typed by what was passed.** `describeEval<Network>` and
+  `EvalTest<Network>` read the suite's `network` (default `never` = none,
+  tuple-wrapped so it does not distribute), and a case body's context is
+  `EvalTestContext & { network: Network }` — no `undefined`, `state` typed. A
+  case's own `network` must be of the suite's type so that stays true. The
+  context itself stays non-generic and `@sealed`: a type parameter on it
+  changed its arity, which the contract probe cannot mask, and the default
+  `EvalTest` is then byte-for-byte the old one. The rejected alternative, a
+  throwing accessor, throws on the destructure and the spread every case body
+  does. `describe.test-d.ts` pins it. `network` beside `fetch` or
+  `workflowOptions.stepFetch` throws: which one won would be spread order.
+- The passthrough reads the AMBIENT fetch through one accessor
+  (`evalPassthroughFetch`), not the pooled egress fetch `guard-invariants`
+  rule 29 asks for — it carries the model's traffic, whose client uses the
+  global in production (the `_request-body-extras.ts` argument).
+
+**`workflows` takes a FACTORY too, and the case gets the live client.**
+`describeEval`'s `workflows` is a `WorkflowClient` or `() => WorkflowClient`,
+called per case AND per repeat like `network`'s (the named
+`DescribeEvalOptions.workflows` stays an instance: widening a published option
+to a union breaks code that reads it, and the probe says so), and
+`ctx.workflowClient` is
+the client the session's `ctx.workflows` is — the suite's, else the engine's
+`workflows.client` — typed by the suite's (`EvalTest<Network, Client>`, the
+same intersection). A downstream suite's recording `createStubWorkflows` was
+one module object whose log every case reset by hand. `ctx.workflows` stays
+the ENGINE (`EvalWorkflows`), which a suite-supplied client replaces.
+
 **`ctx.generate` answers from the script too**, and that was a hole rather than
 a limit: `generateText` calls the fake model's `doGenerate`, which used to
 throw, so every tool that reasons with a model — a grader, a planner, a
@@ -401,10 +498,18 @@ undoing:
   has no `execute`, so `generateText` stops on it. A call that hits `maxTurns`
   reports `endedBy: "max-turns"` rather than passing quietly, because "the
   caller never got what they came for" is the finding a simulation most often
-  exists to surface. It is not an agent hang-up — the SDK still has none.
+  exists to surface. The AGENT hanging up (`endSession(ctx)`) is the third
+  ending, `endedBy: "agent"`: the loop stops on the turn whose
+  `endedSession` is true, since `say()` into a dead line rejects.
 - **The judge is never asked "did it pass".** It returns a ruling per
   criterion, matched by NUMBER, and `pass` is `every` over them; a criterion it
   skipped fails with that said. An empty criteria list throws.
+- **The judge reads BOTH sides.** Handed turns it rendered tool calls and
+  replies only, so "only 9 PM was offered" had no evidence and failed by the
+  judge's own rule; each turn now opens with its `user-transcript.committed`
+  line. It also takes a session (`Pick<EvalSession, "events">`) and reads the
+  whole conversation, uncut (`conversationOf` in `transcript.ts`), which is
+  what retired a downstream suite's own transcript function for the judge.
 - **Keyless, both are SCRIPTED**, like the agent's own model: `stubCaller` is
   the caller's lines (ending on `{ tool: "end_call" }`), `stubJudge` the
   rulings — both `evalSimulation` options, driven by the case's own `mode` —
@@ -448,6 +553,22 @@ the pieces to make it for free.
   `describe.ts` argues why that is safe rather than a loophole — it is opt-in,
   CI gates the scripted run where a repeat cannot disagree with itself, and the
   live tier reports without gating anyway.
+
+  **The summary prints the WHOLE failure** (`failureExcerpt` in `_spread.ts`):
+  the full assertion message, bounded, then the failing try's transcript —
+  each line said, each reply, each tool call with its args and result, and
+  what the network refused, a retried request once with its count
+  (`transcript.ts`, bounded per field and to the last 40 lines). It printed
+  only the message's first line, and a case that passed overall shows nothing
+  else, so two downstream suites appended their own transcript to every error.
+
+  **Every failure vitest reports carries it too.** `runCase` notes the
+  transcript in a side table keyed by the error; `runRepeats` appends it to
+  the message of the failure it RETHROWS (`withTranscript`), original message
+  first — a single run, or a case failing every repeat, used to reach vitest
+  with the bare assertion. Mutated rather than wrapped, so the class, the
+  stack and an assertion's `expected`/`actual` (the diff) survive. The same
+  view is public as `transcriptOf(session, network?)` on `/eval`.
 
   Two bugs the filter had on its first draft, both fixed and both worth not
   reintroducing: a filtered case was counted as a MODE skip, so the coverage

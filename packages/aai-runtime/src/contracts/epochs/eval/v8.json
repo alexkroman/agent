@@ -3,7 +3,7 @@
   "capability": "eval",
   "epoch": 8,
   "rule": 2,
-  "sha256": "5aaa56d0aeceb0a3b548b894da61184fb02300ef309cb76cd6abeb6130de8e62",
+  "sha256": "86f13f139af1e9a1ec4642bdb36089fe523f1eb944f3a7110467afbd614b5a24",
   "exports": [
     "DEFAULT_RUN_TIMEOUT_MS",
     "DescribeEvalOptions",
@@ -77,7 +77,23 @@
     "toolNames",
     "toolResultIn",
     "toolResultsIn",
+    "transcriptOf",
     "turnCalling"
   ],
-  "rollup": "56f3836c317f6ea1e7707d4d90ea4ed4252a678d21b7205b0742bd44eb8b5d3e"
+  "rollup": "56f3836c317f6ea1e7707d4d90ea4ed4252a678d21b7205b0742bd44eb8b5d3e",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "5aaa56d0aeceb0a3b548b894da61184fb02300ef309cb76cd6abeb6130de8e62",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "86f13f139af1e9a1ec4642bdb36089fe523f1eb944f3a7110467afbd614b5a24",
+      "reason": "additive (checked): +transcriptOf"
+    }
+  ]
 }

@@ -24,9 +24,14 @@
     "supported": [1],
     "dropped": {}
   },
-  "eval-simulate": {
+  "eval-network": {
     "current": 1,
     "supported": [1],
+    "dropped": {}
+  },
+  "eval-simulate": {
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "keys": {

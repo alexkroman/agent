@@ -90,6 +90,11 @@
     "DEFAULT_RUN_TIMEOUT_MS",
     "EvalCredentials",
     "EvalEmitted",
+    "EvalNetwork",
+    "EvalNetworkOptions",
+    "EvalRequest",
+    "EvalRequestFilter",
+    "EvalRoute",
     "EvalRunOptions",
     "EvalSessionOptions",
     "EvalSleep",
@@ -132,6 +137,7 @@
     "createStubSttOpener",
     "createStubTtsOpener",
     "evalCredentials",
+    "evalNetwork",
     "evalTextCredentials",
     "evalWorkflowCredentials",
     "installStubLlm",
@@ -140,7 +146,8 @@
     "openEvalTextAgent",
     "openEvalWorkflows",
     "saidIn",
-    "toolCallsInEvents"
+    "toolCallsInEvents",
+    "transcriptOf"
   ],
   "@alexkroman1/aai-runtime/eval/simulate": [
     "CallVerdict",

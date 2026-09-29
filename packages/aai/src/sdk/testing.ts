@@ -109,11 +109,9 @@ export {
 // The starter-spec invariants and the prompt↔builtin scan — six shipped specs
 // each wrote the same three tests, and three the same 32-line scan.
 export {
-  commandedBuiltins,
   type DeployedConfig,
   type DeployedStage,
   expectDeployable,
-  expectPromptBuiltinsDeclared,
 } from "./testing-deployable.ts";
 export {
   deployedAgent,
@@ -147,6 +145,10 @@ export {
   type StubPlacedCall,
   stubPlaceCall,
 } from "./testing-place-call.ts";
+export {
+  commandedBuiltins,
+  expectPromptBuiltinsDeclared,
+} from "./testing-prompt-builtins.ts";
 // Both model seams scripted in one call, for a tool that reasons.
 export {
   type ScriptedToolContext,

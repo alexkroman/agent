@@ -286,8 +286,9 @@ judge(
 ): Promise<CallVerdict>;
 ```
 
-Have a model rule on `criteria` over a simulated call, a list of turns, or
-a transcript. See `judgeCall`.
+Have a model rule on `criteria` over a simulated call, a list of turns,
+the case's `session` itself, or a transcript — every form but the last
+with the user's lines as well as the agent's. See `judgeCall`.
 
 ###### Parameters
 
@@ -503,10 +504,19 @@ Where the judge's credential is resolved from. Defaults to this machine's.
 type JudgeInput = 
   | SimulatedCall
   | readonly EvalTurn[]
+  | Pick<EvalSession, "events">
   | string;
 ```
 
-What a judge may be handed: a simulated call, a list of turns, or a transcript.
+What a judge may be handed: a simulated call, a list of turns, a SESSION
+(anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or
+a transcript of your own.
+
+Every form but the last reaches the judge with BOTH sides: each line the
+user said (`User:`), each tool call with its arguments and result, and each
+reply (`Agent:`). A session is the whole conversation, the greeting
+included; a list of turns is those turns, each opening with what the user
+said on it.
 
 ***
 
@@ -568,7 +578,7 @@ machine's environment, the same trust decision `openEvalSession` makes.
 ```ts
 type SimulatedCall = {
   caller: SimulatedCaller;
-  endedBy: "caller" | "max-turns";
+  endedBy: "caller" | "agent" | "max-turns";
   endReason: string | undefined;
   greeting: readonly string[];
   metrics: SimulationMetrics;
@@ -604,12 +614,15 @@ readonly caller: SimulatedCaller;
 ##### endedBy
 
 ```ts
-readonly endedBy: "caller" | "max-turns";
+readonly endedBy: "caller" | "agent" | "max-turns";
 ```
 
-`"caller"` — it called `end_call`. `"max-turns"` — the harness hung up
-after [SimulateCallOptions.maxTurns](#maxturns), which usually means the goal
-was never met.
+`"caller"` — it called `end_call`. `"agent"` — the AGENT hung up: a tool
+called `endSession(ctx)` during the last turn ([EvalTurn.endedSession](../eval.md#endedsession)),
+and the simulation stopped there, since nobody is left on the line to
+answer. `"max-turns"` — the harness hung up after
+[SimulateCallOptions.maxTurns](#maxturns), which usually means the goal was
+never met.
 
 ##### endReason
 
@@ -617,7 +630,7 @@ was never met.
 readonly endReason: string | undefined;
 ```
 
-The reason the caller gave to `end_call`, when it gave one.
+The reason the caller gave to `end_call`, when it gave one — never set when the agent hung up.
 
 ##### greeting
 

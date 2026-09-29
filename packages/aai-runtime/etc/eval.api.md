@@ -12,6 +12,7 @@ import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
 import { StandardSchemaV1 } from '@alexkroman1/aai/host-internal';
@@ -76,6 +77,48 @@ export type EvalEmitted = {
     readonly chunk: unknown;
 };
 
+// @public @sealed
+export type EvalNetwork<State = unknown> = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public
+export function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
+
+// @public
+export type EvalNetworkOptions<State = undefined> = {
+    readonly state?: () => State;
+    readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
+    readonly passthrough?: readonly string[];
+    readonly refuse?: "throw" | "403";
+};
+
+// @public @sealed
+export type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
+
+// @public
+export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
+
 // @public
 export type EvalRunOptions = StartOptions & {
     readonly timeoutMs?: number | undefined;
@@ -84,6 +127,8 @@ export type EvalRunOptions = StartOptions & {
 // @public @sealed
 export type EvalSession = {
     readonly id: string;
+    readonly refused: string | undefined;
+    readonly ended: boolean;
     say(text: string): Promise<EvalTurn>;
     sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
     events(): readonly SessionEvent[];
@@ -94,8 +139,11 @@ export type EvalSession = {
 
 // @public
 export interface EvalSessionOptions extends HostAgentOptions {
+    readonly call?: SessionCall;
+    readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
+    readonly phone?: string;
     // (undocumented)
     readonly turnTimeoutMs?: number;
 }
@@ -142,6 +190,7 @@ export type EvalTurn = {
     readonly toolCalls: readonly EvalToolCall[];
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
 };
 
 // @public
@@ -413,6 +462,9 @@ export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: 
 
 // @public
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
 
 // @public
 export interface TtsError extends Error {

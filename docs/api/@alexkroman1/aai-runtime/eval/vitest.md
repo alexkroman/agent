@@ -15,14 +15,22 @@ be used from any harness.
 ### describeEval()
 
 ```ts
-function describeEval(
+function describeEval<Network extends EvalNetwork = never, Client extends WorkflowClient = never>(
    agent: AgentDef, 
-   define: (test: EvalTest) => void, 
-   options?: DescribeEvalOptions
+   define: (test: EvalTest<Network, Client>) => void, 
+   options?: Omit<DescribeEvalOptions, "workflows" | "network"> & {
+  network?: Network | (() => Network);
+  workflows?: Client | (() => Client);
+}
 ): void;
 ```
 
 Declare an eval suite for `agent`.
+
+Generic over the suite's `network` and `workflows` only so a case's
+`ctx.network` and `ctx.workflowClient` are typed by them (see
+[EvalTestContext.network](#network-2)); nobody writes the type arguments, they
+are read off `options`.
 
 ```ts no-check
 describeEval(agentDef, (test) => {
@@ -37,6 +45,16 @@ describeEval(agentDef, (test) => {
 });
 ```
 
+#### Type Parameters
+
+##### Network
+
+`Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
+
+##### Client
+
+`Client` *extends* [`WorkflowClient`](../../aai/index.md#workflowclient) = `never`
+
 #### Parameters
 
 ##### agent
@@ -45,11 +63,14 @@ describeEval(agentDef, (test) => {
 
 ##### define
 
-(`test`: [`EvalTest`](#evaltest)) => `void`
+(`test`: [`EvalTest`](#evaltest)\<`Network`, `Client`\>) => `void`
 
 ##### options?
 
-[`DescribeEvalOptions`](#describeevaloptions)
+`Omit`\<[`DescribeEvalOptions`](#describeevaloptions), `"workflows"` \| `"network"`\> & \{
+  `network?`: `Network` \| (() => `Network`);
+  `workflows?`: `Client` \| (() => `Client`);
+\}
 
 #### Returns
 
@@ -275,6 +296,8 @@ reason: string;
 
 ```ts
 type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+  network?:   | EvalNetwork
+     | (() => EvalNetwork);
   workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 ```
@@ -292,6 +315,36 @@ hand off to a run had to install that inside the case body, which worked only
 because the engine publishes nothing when nobody passed one.
 
 #### Type Declaration
+
+##### network?
+
+```ts
+readonly optional network?: 
+  | EvalNetwork
+  | (() => EvalNetwork);
+```
+
+A fake network for every case — an `evalNetwork(...)`, or a FACTORY
+returning one, called afresh for every case and every `AAI_EVAL_REPEAT`
+repeat.
+
+It becomes all three fetches a case's code can reach: the global `fetch`
+a custom tool calls, the `fetch` the builtins take, and the step fetch a
+workflow step (or `sendToChannel`) reads. A request no route answers is
+REFUSED and logged; only the live model's own provider hosts pass through,
+worked out from the agent's `llm` (in a scripted run, not even those).
+The global is swapped for the whole SUITE rather than per case, so an
+`onSessionEnd` still running after a case closed (the session waits 10
+seconds for it, then stops waiting) is refused into that case's log
+rather than reaching the real network.
+
+Keep a route's STATE (rows a fake database holds) in the network's own
+`state` (`evalNetwork({ state, routes })`): an instance's log AND state are
+rebuilt per case and per repeat, and the case reads it, typed, as
+`ctx.network.state`. State a handler keeps in its closure is not reset —
+use a factory for that — and state carried from one repeat into the next
+makes the second repeat measure the first. Mutually exclusive with
+`fetch`, which it replaces.
 
 ##### workflowOptions?
 
@@ -315,7 +368,12 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ```ts
 type EvalCaseOptions = {
+  call?: SessionCall | null;
+  clientId?: string | null;
   live?: boolean;
+  network?:   | EvalNetwork
+     | (() => EvalNetwork);
+  phone?: string | null;
   scripted?: boolean;
   stubGenerate?: StubScript;
   stubReply?: StubScript;
@@ -326,6 +384,34 @@ What a case gets to say about how it should be run.
 
 #### Properties
 
+##### call?
+
+```ts
+readonly optional call?: SessionCall | null;
+```
+
+This case's placed phone call, over the suite's — what `sessionContext`
+receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
+lands on `session.refused`. `null` is "not a placed call": a calling
+agent's refusal of a session no carrier started, inside a suite whose
+other cases are all the one call.
+
+##### clientId?
+
+```ts
+readonly optional clientId?: string | null;
+```
+
+WHO this case's session is, over the suite's own
+([DescribeEvalOptions](#describeevaloptions)) — the client id `sessionClientId(ctx)`
+answers. See `EvalSessionOptions.clientId`. `null` is "no client id for
+this case", whatever the suite set; absent is "the suite's".
+
+Per case because a suite's cases are rarely all the same caller: a
+speaker agent's "a device with no client id is refused" case sits beside
+twenty that run as the kitchen speaker, and it is written
+`{ clientId: null }`.
+
 ##### live?
 
 ```ts
@@ -335,6 +421,27 @@ readonly optional live?: boolean;
 This case only means something against a live model — it is SKIPPED in stub
 mode. Use it for a claim no script can honestly satisfy: a tool the model
 has to choose for itself, a refusal, a judgement.
+
+##### network?
+
+```ts
+readonly optional network?: 
+  | EvalNetwork
+  | (() => EvalNetwork);
+```
+
+This case's fake network, over the suite's — see
+`DescribeEvalOptions.network`. A case needing routes of its own (a
+service that answers differently in this one scenario) passes them here.
+
+##### phone?
+
+```ts
+readonly optional phone?: string | null;
+```
+
+This case's reported phone number, over the suite's. See
+`EvalSessionOptions.phone`. `null` is "no number for this case".
 
 ##### scripted?
 
@@ -411,7 +518,13 @@ How the suite is running, and why.
 ### EvalTest
 
 ```ts
-type EvalTest = (name: string, body: (ctx: EvalTestContext) => Promise<void>, options?: EvalCaseOptions) => void;
+type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & [Network] extends [never] ? unknown : {
+  network: Network;
+} & [Client] extends [never] ? unknown : {
+  workflowClient: Client;
+}) => Promise<void>, options?: [Network] extends [never] ? EvalCaseOptions : Omit<EvalCaseOptions, "network"> & {
+  network?: Network | (() => Network);
+}) => void;
 ```
 
 Declare one eval case. The session is opened for it and closed after it.
@@ -429,6 +542,16 @@ project lights up red on a file the SDK told them to write:
   => …` is not — and it is vitest's own fixture shape, which is what a reader
   already expects.
 
+#### Type Parameters
+
+##### Network
+
+`Network` *extends* [`EvalNetwork`](../eval.md#evalnetwork) = `never`
+
+##### Client
+
+`Client` *extends* [`WorkflowClient`](../../aai/index.md#workflowclient) = `never`
+
 #### Parameters
 
 ##### name
@@ -437,11 +560,17 @@ project lights up red on a file the SDK told them to write:
 
 ##### body
 
-(`ctx`: [`EvalTestContext`](#evaltestcontext)) => `Promise`\<`void`\>
+(`ctx`: [`EvalTestContext`](#evaltestcontext) & \[`Network`\] *extends* \[`never`\] ? `unknown` : \{
+  `network`: `Network`;
+\} & \[`Client`\] *extends* \[`never`\] ? `unknown` : \{
+  `workflowClient`: `Client`;
+\}) => `Promise`\<`void`\>
 
 ##### options?
 
-[`EvalCaseOptions`](#evalcaseoptions)
+\[`Network`\] *extends* \[`never`\] ? [`EvalCaseOptions`](#evalcaseoptions) : `Omit`\<[`EvalCaseOptions`](#evalcaseoptions), `"network"`\> & \{
+  `network?`: `Network` \| (() => `Network`);
+\}
 
 #### Returns
 
@@ -454,7 +583,9 @@ project lights up red on a file the SDK told them to write:
 ```ts
 type EvalTestContext = {
   mode: EvalMode;
+  network: EvalNetwork | undefined;
   session: EvalSession;
+  workflowClient: WorkflowClient | undefined;
   workflows: EvalWorkflows | undefined;
 };
 ```
@@ -515,6 +646,26 @@ A case that cannot be written that way wants `{ scripted: true }` instead,
 which skips it live rather than weakening it — see
 [EvalCaseOptions.scripted](#scripted).
 
+##### network
+
+```ts
+readonly network: EvalNetwork | undefined;
+```
+
+The fake network every `fetch` of this case went through. Its log holds
+THIS case's requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case
+asserts on `network.calls("textbelt.com")` or
+`network.expectNoOutbound(/twilio/)` without filtering out another run's
+traffic, and reads its routes' `network.state`.
+
+TYPED BY WHAT WAS PASSED, in the body a case hands [EvalTest](#evaltest): in
+a suite given `network` it is exactly that network's type —
+`EvalNetwork<{ calls: Map<…> }>` for one built with `state` — so there is
+no `undefined` to guard and no cast to reach the state. A case's own
+`network` must be of the suite's type, so the type holds for it too. In a
+suite given none it is `EvalNetwork | undefined` (this declaration) —
+`undefined` at runtime unless the case passed one.
+
 ##### session
 
 ```ts
@@ -522,6 +673,22 @@ readonly session: EvalSession;
 ```
 
 Open for this case, closed after it.
+
+##### workflowClient
+
+```ts
+readonly workflowClient: WorkflowClient | undefined;
+```
+
+The client this session's `ctx.workflows` IS: the suite's own
+(`describeEval`'s `workflows` — the one its factory built for THIS case
+and repeat), else the engine's `workflows.client`, else
+`undefined` for an agent that declares no workflows and was given none.
+
+Typed by what the suite passed, in the body a case hands
+[EvalTest](#evaltest): a suite whose factory returns a recording client with
+its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
+reads `workflowClient.started`, typed, with no module-level log to reset.
 
 ##### workflows
 

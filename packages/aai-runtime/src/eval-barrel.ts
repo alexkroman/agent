@@ -118,6 +118,20 @@ export {
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
+// A fake network that FAILS CLOSED: routes answer, the live model's hosts pass,
+// everything else is refused and logged. Public because every downstream suite
+// that evaluated a tool-calling agent hand-rolled one, open by default, and
+// stubbed the three fetches a case can reach separately. Its own capability
+// (`eval-network`): a young surface, which should move without taking the
+// harness's epoch with it.
+export {
+  type EvalNetwork,
+  type EvalNetworkOptions,
+  type EvalRequest,
+  type EvalRequestFilter,
+  type EvalRoute,
+  evalNetwork,
+} from "./eval/network.ts";
 // The `run_code` builtin's two halves, read off a call list. Public because
 // four template evals had each declared the same schema and the same reader, and
 // each then guarded against the builtin's REFUSAL with a hand-typed regex over a
@@ -172,6 +186,11 @@ export {
   evalTextCredentials,
   openEvalTextAgent,
 } from "./eval/text-agent.ts";
+// The failing try as text: every line said, every reply, every tool call with
+// its args and result, and what the network refused — bounded. `describeEval`
+// appends it to every failure it reports; public because two downstream suites
+// had each written their own for the same message and for a judge.
+export { transcriptOf } from "./eval/transcript.ts";
 // Reading a CALL rather than one reply. Public because the claim they make is
 // the one a multi-turn case has to make and could not spell: the turn a
 // MECHANISM fired in, never turn number two — how many turns an agent takes to

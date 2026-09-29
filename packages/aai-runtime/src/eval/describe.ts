@@ -27,19 +27,21 @@
  * @module
  */
 
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, SessionCall } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, test } from "vitest";
-import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
-import { announceToollessAgent, checkStubReplyTools, hasWorkflows } from "./_declared-tools.ts";
+import { announceToollessAgent, checkStubReplyTools } from "./_declared-tools.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
+import { suiteNetwork, wantsNetwork } from "./_network-install.ts";
+import { runCase } from "./_run-case.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
-import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveEvalMode } from "./eval-mode.ts";
-import { type EvalSession, type EvalSessionOptions, openEvalSessionWithSeams } from "./session.ts";
-import { installStubLlm, type StubScript } from "./stub-llm.ts";
-import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
+import type { EvalNetwork } from "./network.ts";
+import type { EvalSession, EvalSessionOptions } from "./session.ts";
+import type { StubScript } from "./stub-llm.ts";
+import type { EvalWorkflows, EvalWorkflowsOptions } from "./workflows.ts";
 
 /** What a case gets to say about how it should be run. */
 export type EvalCaseOptions = {
@@ -97,6 +99,37 @@ export type EvalCaseOptions = {
    * try). Without this marker each cost a red live run and got weakened.
    */
   readonly scripted?: boolean;
+  /**
+   * WHO this case's session is, over the suite's own
+   * ({@link DescribeEvalOptions}) — the client id `sessionClientId(ctx)`
+   * answers. See `EvalSessionOptions.clientId`. `null` is "no client id for
+   * this case", whatever the suite set; absent is "the suite's".
+   *
+   * Per case because a suite's cases are rarely all the same caller: a
+   * speaker agent's "a device with no client id is refused" case sits beside
+   * twenty that run as the kitchen speaker, and it is written
+   * `{ clientId: null }`.
+   */
+  readonly clientId?: string | null;
+  /**
+   * This case's reported phone number, over the suite's. See
+   * `EvalSessionOptions.phone`. `null` is "no number for this case".
+   */
+  readonly phone?: string | null;
+  /**
+   * This case's placed phone call, over the suite's — what `sessionContext`
+   * receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
+   * lands on `session.refused`. `null` is "not a placed call": a calling
+   * agent's refusal of a session no carrier started, inside a suite whose
+   * other cases are all the one call.
+   */
+  readonly call?: SessionCall | null;
+  /**
+   * This case's fake network, over the suite's — see
+   * `DescribeEvalOptions.network`. A case needing routes of its own (a
+   * service that answers differently in this one scenario) passes them here.
+   */
+  readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
 // `EvalMode` is DECLARED in `_announce.ts`, beside the three functions that
@@ -173,6 +206,34 @@ export type EvalTestContext = {
    * writing a claim about a run.
    */
   readonly workflows: EvalWorkflows | undefined;
+  /**
+   * The client this session's `ctx.workflows` IS: the suite's own
+   * (`describeEval`'s `workflows` — the one its factory built for THIS case
+   * and repeat), else the engine's `workflows.client`, else
+   * `undefined` for an agent that declares no workflows and was given none.
+   *
+   * Typed by what the suite passed, in the body a case hands
+   * {@link EvalTest}: a suite whose factory returns a recording client with
+   * its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
+   * reads `workflowClient.started`, typed, with no module-level log to reset.
+   */
+  readonly workflowClient: WorkflowClient | undefined;
+  /**
+   * The fake network every `fetch` of this case went through. Its log holds
+   * THIS case's requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case
+   * asserts on `network.calls("textbelt.com")` or
+   * `network.expectNoOutbound(/twilio/)` without filtering out another run's
+   * traffic, and reads its routes' `network.state`.
+   *
+   * TYPED BY WHAT WAS PASSED, in the body a case hands {@link EvalTest}: in
+   * a suite given `network` it is exactly that network's type —
+   * `EvalNetwork<{ calls: Map<…> }>` for one built with `state` — so there is
+   * no `undefined` to guard and no cast to reach the state. A case's own
+   * `network` must be of the suite's type, so the type holds for it too. In a
+   * suite given none it is `EvalNetwork | undefined` (this declaration) —
+   * `undefined` at runtime unless the case passed one.
+   */
+  readonly network: EvalNetwork | undefined;
 };
 
 /**
@@ -190,6 +251,30 @@ export type EvalTestContext = {
  */
 export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
   readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+  /**
+   * A fake network for every case — an `evalNetwork(...)`, or a FACTORY
+   * returning one, called afresh for every case and every `AAI_EVAL_REPEAT`
+   * repeat.
+   *
+   * It becomes all three fetches a case's code can reach: the global `fetch`
+   * a custom tool calls, the `fetch` the builtins take, and the step fetch a
+   * workflow step (or `sendToChannel`) reads. A request no route answers is
+   * REFUSED and logged; only the live model's own provider hosts pass through,
+   * worked out from the agent's `llm` (in a scripted run, not even those).
+   * The global is swapped for the whole SUITE rather than per case, so an
+   * `onSessionEnd` still running after a case closed (the session waits 10
+   * seconds for it, then stops waiting) is refused into that case's log
+   * rather than reaching the real network.
+   *
+   * Keep a route's STATE (rows a fake database holds) in the network's own
+   * `state` (`evalNetwork({ state, routes })`): an instance's log AND state are
+   * rebuilt per case and per repeat, and the case reads it, typed, as
+   * `ctx.network.state`. State a handler keeps in its closure is not reset —
+   * use a factory for that — and state carried from one repeat into the next
+   * makes the second repeat measure the first. Mutually exclusive with
+   * `fetch`, which it replaces.
+   */
+  readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
 /**
@@ -208,17 +293,37 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
  *   => …` is not — and it is vitest's own fixture shape, which is what a reader
  *   already expects.
  */
-export type EvalTest = (
+export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (
   name: string,
-  body: (ctx: EvalTestContext) => Promise<void>,
-  options?: EvalCaseOptions,
+  // Intersections rather than type parameters on `EvalTestContext`, which
+  // stays one sealed shape for every suite: the network and the workflow
+  // client are the fields whose types depend on the suite's options. `never`
+  // (the default, nobody writes it) is a suite given none — tuple-wrapped so
+  // it does not distribute to `never` — and `& unknown` is no change at all.
+  body: (
+    ctx: EvalTestContext &
+      ([Network] extends [never] ? unknown : { readonly network: Network }) &
+      ([Client] extends [never] ? unknown : { readonly workflowClient: Client }),
+  ) => Promise<void>,
+  options?: [Network] extends [never]
+    ? EvalCaseOptions
+    : Omit<EvalCaseOptions, "network"> & {
+        /**
+         * This case's own network, over the suite's — of the SUITE's network
+         * type, so `ctx.network` stays true to its type (a different `state`
+         * shape belongs in a suite of its own).
+         */
+        readonly network?: Network | (() => Network);
+      },
 ) => void;
-
-/** What a stub-mode model says when a case scripts nothing. */
-const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
 
 /**
  * Declare an eval suite for `agent`.
+ *
+ * Generic over the suite's `network` and `workflows` only so a case's
+ * `ctx.network` and `ctx.workflowClient` are typed by them (see
+ * {@link EvalTestContext.network}); nobody writes the type arguments, they
+ * are read off `options`.
  *
  * ```ts no-check
  * describeEval(agentDef, (test) => {
@@ -233,10 +338,31 @@ const DEFAULT_STUB_REPLY = "This is a scripted reply from the eval stub model.";
  * });
  * ```
  */
-export function describeEval(
+export function describeEval<
+  Network extends EvalNetwork = never,
+  Client extends WorkflowClient = never,
+>(
   agent: AgentDef,
-  define: (test: EvalTest) => void,
-  options?: DescribeEvalOptions,
+  define: (test: EvalTest<Network, Client>) => void,
+  options?: Omit<DescribeEvalOptions, "network" | "workflows"> & {
+    readonly network?: Network | (() => Network);
+    /**
+     * The `ctx.workflows` every case's session gets, in place of the eval
+     * engine `describeEval` otherwise opens for an agent that declares
+     * workflows — a `WorkflowClient`, or a FACTORY returning one, called afresh
+     * for every case and every `AAI_EVAL_REPEAT` repeat, exactly as `network`'s
+     * is. The case reads the live one as `ctx.workflowClient`.
+     *
+     * Prefer the factory for a client that RECORDS (a `createStubWorkflows`
+     * whose `start` logs what it was asked): an instance's log is its own, and
+     * one carried into the next repeat makes the second measure the first — the
+     * log a downstream suite reset by hand at the top of every case.
+     *
+     * Wider here than on {@link DescribeEvalOptions} (an instance), because
+     * widening a published option type to a union breaks code that READS it.
+     */
+    readonly workflows?: Client | (() => Client) | undefined;
+  },
 ): void {
   const { mode, reason } = resolveEvalMode(
     agent,
@@ -255,6 +381,10 @@ export function describeEval(
   // ignored until it was.
   const repeat = evalRepeat();
   const spread = new SuiteSpread(agent.name);
+  // Built up front, installed only if the suite or a case asks for one — see
+  // `_network-install.ts` for why the SUITE owns the global.
+  const net = suiteNetwork(mode, [agent.llm, options?.llm]);
+  const caseOptionsSeen: (EvalCaseOptions | undefined)[] = [];
 
   describe(agent.name, () => {
     let declared = 0;
@@ -265,8 +395,16 @@ export function describeEval(
     // bug: `AAI_EVAL_ONLY=nonexistent` announced "2 skipped as live-only" about
     // two cases that carried no marker at all.
     const filteredOut: string[] = [];
-    const evalTest: EvalTest = (name, body, caseOptions) => {
+    // Typed loosely INSIDE: the context's network type is a promise about
+    // what the caller passed, and `runCase` keeps it — the network it hands
+    // the body is the one `options` (or the case) named.
+    const evalTest = ((
+      name: string,
+      body: (ctx: EvalTestContext) => Promise<void>,
+      caseOptions?: EvalCaseOptions,
+    ): void => {
       checkStubReplyTools(agent, name, caseOptions?.stubReply);
+      caseOptionsSeen.push(caseOptions);
       declared += 1;
       const wrongMode =
         (mode === "stub" && caseOptions?.live === true) ||
@@ -277,125 +415,21 @@ export function describeEval(
       const run = wrongMode || filtered ? test.skip : test;
       run(name, () =>
         runRepeats(
-          () => runCase({ agent, mode, options, caseOptions, body }),
+          () => runCase({ agent, mode, options, caseOptions, body, net }),
           name,
           repeat,
           spread,
         ),
       );
-    };
+    }) as EvalTest<Network, Client>;
     define(evalTest);
+    if (wantsNetwork(options?.network, caseOptionsSeen)) {
+      beforeAll(() => net.install());
+      afterAll(() => net.restore());
+    }
     // Coverage line, then the empty-suite failure or the filtered-to-nothing
     // warning — see `closeEvalSuite` for why a filtered run only warns.
     closeEvalSuite(agent.name, mode, declared, skippedCases, filteredOut);
     spread.report();
   });
-}
-
-/** What one case needs to stand itself up. */
-type CaseRun = {
-  readonly agent: AgentDef;
-  readonly mode: EvalMode;
-  readonly options: DescribeEvalOptions | undefined;
-  readonly caseOptions: EvalCaseOptions | undefined;
-  readonly body: (ctx: EvalTestContext) => Promise<void>;
-};
-
-/**
- * Open everything one case needs, run its body, and close in reverse.
- *
- * Its own function rather than an arrow inside `describeEval`, because the four
- * things a case may need — a scripted turn model, a scripted `ctx.generate`, a
- * workflow engine, the session over all three — put that arrow past Biome's
- * complexity ceiling. The teardown is the reason it is worth reading as one
- * unit: every one of those four owns a PROCESS-GLOBAL registration or a live
- * runtime, and the `finally` is the only thing that gives them back.
- */
-async function runCase(run: CaseRun): Promise<void> {
-  const { agent, mode, options, caseOptions, body } = run;
-  const stub =
-    mode === "stub" ? installStubLlm(caseOptions?.stubReply ?? DEFAULT_STUB_REPLY) : undefined;
-  // Its own kind, so its own cursor: see `EvalCaseOptions.stubGenerate`.
-  const generateStub =
-    mode === "stub" && caseOptions?.stubGenerate !== undefined
-      ? installStubLlm(caseOptions.stubGenerate)
-      : undefined;
-  // Opened BEFORE the session, because the session is handed its client. Only
-  // for an agent that declares workflows, and only when the suite did not supply
-  // a client of its own — a caller who passed one owns it.
-  const workflows =
-    options?.workflows === undefined && hasWorkflows(agent)
-      ? openEvalWorkflows({
-          agent,
-          // The same env `describeWorkflowEval` gives a workflow app: in stub
-          // mode a declared key nobody has is a placeholder, so a step's
-          // `requireStepEnv` reaches the scripted provider instead of throwing
-          // over a credential the case was never going to use.
-          env: options?.env ?? stubbedEnv(agent, mode),
-          ...(options?.workflowOptions ?? {}),
-        })
-      : undefined;
-  const session = await openEvalSessionWithSeams({
-    ...options,
-    agent,
-    ...omitUndefined({
-      workflows: workflows?.client,
-      // The scripted `ctx.generate`, which the runtime would otherwise build
-      // from the agent's own descriptor — a second instance of the TURN's
-      // model, walking that script from the start.
-      generate:
-        generateStub === undefined
-          ? undefined
-          : checkedGenerate(createGenerateFn({ llm: generateStub.llm, env: generateStub.env })),
-    }),
-    ...(stub === undefined
-      ? {}
-      : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
-  });
-  try {
-    await body({ session, mode, workflows });
-  } finally {
-    await session.close();
-    await workflows?.close();
-    stub?.release();
-    generateStub?.release();
-  }
-}
-
-/**
- * Re-attribute a schema rejection from THE MODEL to THE SCRIPT.
- *
- * `ctx.generate({ schema })` used to hand back whatever parsed, typed as
- * whatever the schema said — a script of `{"issues":"not-an-array"}` against
- * `z.object({ issues: z.array(z.string()) })` resolved, and a case asserting on
- * `issues.length` read `13`. This wrapper caught that, and its own doc said the
- * real fix belonged in `ctx.generate`. It now lives there
- * ({@link GenerateSchemaMismatchError}), so the checking half of this is gone.
- *
- * What is left is the half only the harness can do. `createGenerateFn`'s message
- * blames "the model", which is right in production and wrong here: an eval's
- * model is a script the case author wrote, against a schema the tool declares
- * one file away, so the actionable sentence names the script rather than the
- * agent. A live model's invalid output is a finding about the model; a SCRIPT's
- * is a finding about the script — which is why this is only ever put on
- * `stubGenerate`.
- *
- * It no longer quotes the script back: the throw now happens inside `generate`,
- * so there is no answer to read `text` off. The issues themselves ride along in
- * the cause's message, which is the part that says what to change.
- */
-function checkedGenerate(generate: HostGenerateFn): HostGenerateFn {
-  return async (options, callOptions) => {
-    try {
-      return await generate(options, callOptions);
-    } catch (cause) {
-      if (!(cause instanceof GenerateSchemaMismatchError)) throw cause;
-      throw new Error(
-        `stubGenerate answered something the call's own schema rejects. ${cause.message} — ` +
-          "write the script as the JSON the model would have returned, matching the schema " +
-          "the tool declares, or the case is measuring the script rather than the agent.",
-        { cause },
-      );
-    }
-  };
 }

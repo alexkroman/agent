@@ -476,6 +476,33 @@ change — a gate whose meaning moves under it is not a gate.
 
 ***
 
+### evalNetwork()
+
+```ts
+function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
+```
+
+Build a fake network: every request is answered by a route, passed through
+to a host named in `passthrough`, or refused and recorded.
+
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
+
+#### Parameters
+
+##### options?
+
+[`EvalNetworkOptions`](#evalnetworkoptions)\<`State`\>
+
+#### Returns
+
+[`EvalNetwork`](#evalnetwork)\<`State`\>
+
+***
+
 ### evalTextCredentials()
 
 ```ts
@@ -1428,6 +1455,52 @@ readonly `T`[]
 
 ***
 
+### transcriptOf()
+
+```ts
+function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+```
+
+The session as `User:`/`Agent:` lines with each tool call beneath the turn
+that made it, as `[tool(args) -> result]`, then any request the network
+REFUSED — the last 40 lines when there are more, each spoken line cut at 300
+characters and each tool field at 200.
+
+It is what a failing `describeEval` case carries under its assertion, and
+what the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE one. Public for
+a suite that wants the same view itself — in an assertion's message, or a
+log of its own.
+
+```ts
+import { type EvalSession, transcriptOf } from "@alexkroman1/aai-runtime/eval";
+
+export function explain(session: EvalSession): string {
+  return `the call so far:\n${transcriptOf(session)}`;
+}
+```
+
+#### Parameters
+
+##### session
+
+`Pick`\<[`EvalSession`](#evalsession), `"events"`\>
+
+Anything with the session's event stream: an
+  `EvalSession`, an `EvalTextAgent`.
+
+##### network?
+
+[`EvalNetwork`](#evalnetwork)
+
+The case's fake network, whose refused requests are listed
+  after the lines — a retried request once, with its count.
+
+#### Returns
+
+`string`
+
+***
+
 ### turnCalling()
 
 ```ts
@@ -1553,6 +1626,43 @@ The agent to run — an ordinary `agent()` definition.
 
 [`HostAgentOptions`](#hostagentoptions).[`agent`](#agent-2)
 
+##### call?
+
+```ts
+readonly optional call?: SessionCall;
+```
+
+The placed phone call this session IS — what `sessionContext` and
+`onSessionEnd` receive as `call`, and `sessionCall(ctx)` answers.
+
+The same record a carrier's `start` frame produces on `WS /phone`
+(Twilio's `callSid` as `callId`, its `<Parameter>`s as `parameters`), put
+through the same seam: recorded under the session id before the session is
+built, and read by the runtime's own `sessionContext` step. So the hook's
+`refuse`, `instructions` and `greeting` take effect exactly as they do for
+a real call — a refusal lands on [EvalSession.refused](#refused-1), an answered
+greeting is the one the session opens with. A call is all the runtime
+derives from the phone path above the audio boundary; the μ-law codec and
+the carrier socket are below it, and an eval drives neither.
+
+##### clientId?
+
+```ts
+readonly optional clientId?: string;
+```
+
+The client id this session's device connected with — what
+`sessionClientId(ctx)` answers, and what `sessionContext` and
+`onSessionEnd` receive as `clientId`.
+
+Recorded where a device's `?client=` is recorded, under the session id
+before the session is built, so the runtime derives from it exactly what it
+derives for a device: the session is BOUND to the client, and its prior
+sessions (none, in a fresh eval runtime) are what the history restore
+reads. Without it a speaker agent whose tools key reminders and calls by
+client id refuses every one of them, and a case had to reach for the
+runtime's own recorder on a non-authoring subpath to get past that.
+
 ##### env?
 
 ```ts
@@ -1567,8 +1677,8 @@ implicitly.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -1579,7 +1689,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1588,7 +1698,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -1601,7 +1711,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1610,7 +1720,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -1643,6 +1753,21 @@ Structured logger. Each entry point documents its own default.
 ###### Inherited from
 
 [`HostAgentOptions`](#hostagentoptions).[`logger`](#logger-2)
+
+##### phone?
+
+```ts
+readonly optional phone?: string;
+```
+
+The phone number the client reported — what `sessionClientPhone(ctx)`
+answers, and what the `text_me` builtin's `allowedSmsRecipient` check sees.
+
+Written the way a person writes it (`"+1 503 555 0100"`) and normalized to
+E.164 by the same rule the socket's `?phone=` goes through. Where the socket
+DROPS a number that is not E.164, this THROWS: a device's typo is a
+stranger's input, and an eval's is the author's own, which a silent drop
+would turn into a case measuring an agent with no number at all.
 
 ##### providerEnv?
 
@@ -1766,8 +1891,8 @@ implicitly.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -1778,7 +1903,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1787,7 +1912,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -1800,7 +1925,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1809,7 +1934,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -1951,8 +2076,8 @@ The agent to run — an ordinary `agent()` definition.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -1963,7 +2088,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1972,7 +2097,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -1985,7 +2110,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1994,7 +2119,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -2656,6 +2781,403 @@ The stream the step named.
 
 ***
 
+### EvalNetwork
+
+```ts
+type EvalNetwork<State = unknown> = {
+  fetch: typeof globalThis.fetch;
+  state: State;
+  calls: readonly EvalRequest[];
+  expectNoOutbound: void;
+  expectNothingRefused: void;
+  refused: readonly EvalRequest[];
+  requests: readonly EvalRequest[];
+  reset: void;
+};
+```
+
+**`Sealed`**
+
+A fake network and its request log.
+
+#### Type Parameters
+
+##### State
+
+`State` = `unknown`
+
+#### Methods
+
+##### calls()
+
+```ts
+calls(host: string | RegExp): readonly EvalRequest[];
+```
+
+The requests a HOST really received — routed or passed through, never
+refused. A string matches the way a route key does (`"*.example"` works);
+a `RegExp` is tested against the hostname.
+
+###### Parameters
+
+###### host
+
+`string` \| `RegExp`
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### expectNoOutbound()
+
+```ts
+expectNoOutbound(filter: EvalRequestFilter): void;
+```
+
+Throw, listing them, when any request matching `filter` was even
+ATTEMPTED — refused ones included. "It never tried to reach the carrier"
+is the claim, and a refusal is a try.
+
+###### Parameters
+
+###### filter
+
+[`EvalRequestFilter`](#evalrequestfilter)
+
+###### Returns
+
+`void`
+
+##### expectNothingRefused()
+
+```ts
+expectNothingRefused(): void;
+```
+
+Throw, listing them, when anything was refused.
+
+###### Returns
+
+`void`
+
+##### refused()
+
+```ts
+refused(): readonly EvalRequest[];
+```
+
+Every refused request, in order.
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### requests()
+
+```ts
+requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+```
+
+Every request so far, in order, whatever its outcome — narrowed by a
+`filter` when one is given: a string is matched the way a route key is, a
+`RegExp` is tested against the full URL.
+
+###### Parameters
+
+###### filter?
+
+[`EvalRequestFilter`](#evalrequestfilter)
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### reset()
+
+```ts
+reset(): void;
+```
+
+Forget the log and rebuild [EvalNetwork.state](#state-1). `describeEval` calls
+it before every case and every `AAI_EVAL_REPEAT` repeat. State a handler
+keeps in its own closure is not reset — put it in `state`, or pass
+`describeEval` a factory rather than an instance.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### fetch
+
+```ts
+readonly fetch: typeof globalThis.fetch;
+```
+
+The network as a `fetch`: routed, passed through, or refused.
+
+##### state
+
+```ts
+readonly state: State;
+```
+
+The routes' shared state, as [EvalNetworkOptions.state](#state-3) built it —
+the CURRENT one, rebuilt by every [EvalNetwork.reset](#reset). `undefined`
+for a network given no `state`.
+
+***
+
+### EvalNetworkOptions
+
+```ts
+type EvalNetworkOptions<State = undefined> = {
+  passthrough?: readonly string[];
+  refuse?: "throw" | "403";
+  routes?: Readonly<Record<string, EvalRoute<State>>>;
+  state?: () => State;
+};
+```
+
+What [evalNetwork](#evalnetwork-1) takes.
+
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
+
+#### Properties
+
+##### passthrough?
+
+```ts
+readonly optional passthrough?: readonly string[];
+```
+
+Keys (same forms as `routes`) that reach the REAL network. Leave the live
+model's own hosts out — `describeEval` adds those — and list anything else
+only when a case genuinely means to leave the machine.
+
+##### refuse?
+
+```ts
+readonly optional refuse?: "throw" | "403";
+```
+
+How an unrouted request is refused. `"throw"` (the default) rejects the
+`fetch` the way an unreachable host does, which is the failure a tool most
+reliably surfaces; `"403"` answers `403 Forbidden`, for an agent whose tool
+swallows network errors but reports statuses. Either way it is recorded.
+
+##### routes?
+
+```ts
+readonly optional routes?: Readonly<Record<string, EvalRoute<State>>>;
+```
+
+Handlers by where they answer. A key is one of:
+
+- a HOST — `"api.mem0.ai"` — matching that hostname exactly;
+- a WILDCARD host — `"*.example"` — matching any subdomain of it (and not
+  the bare domain);
+- a URL PREFIX — `"https://crm.example/rest/v1/calls"` — matching any URL
+  that starts with it.
+
+The most specific key answers: the longest matching URL prefix, then an
+exact host, then the longest matching wildcard.
+
+##### state?
+
+```ts
+readonly optional state?: () => State;
+```
+
+The fake services' STATE — the rows a fake database holds — built by
+this factory now and again on every [EvalNetwork.reset](#reset), handed to
+every route as its third argument, and readable as
+[EvalNetwork.state](#state-1), typed.
+
+The supported way for a route and a case to share state. Without it a
+suite kept its fake table in a module-level `let` that its network
+factory reassigned, which a case read by name and a second suite could
+not have without a second `let`. And because `reset()` rebuilds it,
+`describeEval` gives every case and every `AAI_EVAL_REPEAT` repeat fresh
+state from an INSTANCE too, not only from a factory.
+
+```ts
+import { evalNetwork } from "@alexkroman1/aai-runtime/eval";
+
+const crm = evalNetwork({
+  state: () => ({ notes: [] as string[] }),
+  routes: {
+    "https://crm.example/notes": (_request, { method, text }, state) => {
+      if (method === "POST") state.notes.push(text);
+      return { count: state.notes.length };
+    },
+  },
+});
+await crm.fetch("https://crm.example/notes", { method: "POST", body: "call back" });
+console.log(crm.state.notes); // ["call back"]
+```
+
+###### Returns
+
+`State`
+
+***
+
+### EvalRequest
+
+```ts
+type EvalRequest = {
+  body: unknown;
+  headers: Readonly<Record<string, string>>;
+  host: string;
+  method: string;
+  outcome: "routed" | "passthrough" | "refused";
+  route?: string;
+  status?: number;
+  text: string;
+  url: URL;
+};
+```
+
+**`Sealed`**
+
+One request the network saw, whatever became of it.
+
+#### Properties
+
+##### body
+
+```ts
+readonly body: unknown;
+```
+
+The body parsed as JSON when it parses, else [EvalRequest.text](#text-1);
+`undefined` for a request with no body.
+
+##### headers
+
+```ts
+readonly headers: Readonly<Record<string, string>>;
+```
+
+The request's headers, names lower-cased.
+
+##### host
+
+```ts
+readonly host: string;
+```
+
+`url.hostname`, the key most assertions filter on.
+
+##### method
+
+```ts
+readonly method: string;
+```
+
+Upper-case, `"GET"` when the caller named none.
+
+##### outcome
+
+```ts
+readonly outcome: "routed" | "passthrough" | "refused";
+```
+
+What became of it: answered by a `route`, sent on to the real network
+(`passthrough`), or `refused`.
+
+##### route?
+
+```ts
+readonly optional route?: string;
+```
+
+The route key that answered it, for `outcome: "routed"`.
+
+##### status?
+
+```ts
+readonly optional status?: number;
+```
+
+The response's status, for a request that got one.
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The body as text — `""` for none.
+
+##### url
+
+```ts
+readonly url: URL;
+```
+
+***
+
+### EvalRequestFilter
+
+```ts
+type EvalRequestFilter = 
+  | string
+  | RegExp
+  | ((request: EvalRequest) => boolean);
+```
+
+Which requests a query selects: a key (as a route key), a URL pattern, or a predicate.
+
+***
+
+### EvalRoute
+
+```ts
+type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
+```
+
+A route handler: the request (a fresh `Request`, so its body is readable),
+the record the log holds for it with the body already parsed, and the
+network's [EvalNetworkOptions.state](#state-3) — `undefined` when it has none.
+
+It returns a `Response`, used as is; `undefined`, answered `204 No Content`;
+or any other value, answered as `200` JSON — so a fixture route is one line.
+A handler that THROWS answers `500` with the message, and the case sees what
+its tool made of a failing service.
+
+#### Type Parameters
+
+##### State
+
+`State` = `undefined`
+
+#### Parameters
+
+##### request
+
+`Request`
+
+##### info
+
+[`EvalRequest`](#evalrequest)
+
+##### state
+
+`State`
+
+#### Returns
+
+`unknown`
+
+***
+
 ### EvalRunOptions
 
 ```ts
@@ -2682,7 +3204,9 @@ Overrides [DEFAULT\_RUN\_TIMEOUT\_MS](#default_run_timeout_ms) for this run.
 
 ```ts
 type EvalSession = {
+  ended: boolean;
   id: string;
+  refused: string | undefined;
   close: Promise<void>;
   events: readonly SessionEvent[];
   said: readonly string[];
@@ -2758,6 +3282,11 @@ the harness's.
 
 `Promise`\<[`EvalTurn`](#evalturn)\>
 
+###### Throws
+
+When the session was [refused](#refused-1), or has
+  [ended](#ended) — each naming which.
+
 ##### sayAll()
 
 ```ts
@@ -2783,7 +3312,10 @@ the same subpath) are what read the result without pinning an index.
 
 Strictly sequential, like the caller it stands for: each line is committed
 only once the reply to the previous one has ended, so a recorded tool order
-is the agent's and not the harness's.
+is the agent's and not the harness's. And it stops after a turn that ENDED
+the session ([EvalTurn.endedSession](#endedsession)), so it hands back fewer turns
+than lines when the agent hangs up early — a caller does not talk to a dead
+line. Assert on [EvalSession.ended](#ended) when WHEN it hung up matters.
 
 ###### Parameters
 
@@ -2809,6 +3341,24 @@ readonly [`EvalToolCall`](#evaltoolcall)[]
 
 #### Properties
 
+##### ended
+
+```ts
+readonly ended: boolean;
+```
+
+The agent ENDED this session: a tool called `endSession(ctx)`. Read live —
+`false` until then.
+
+The end is the session's ordinary stop, exactly as a real connection's
+close produces it: the log is flushed and `onSessionEnd` fires when the
+agent hangs up, not when the case closes the session. The turn that hung
+up returns only once that hook has SETTLED (or 10 seconds have passed), so
+a case asserts what the hook wrote with no polling; `close()` waits the
+same way for a hook its own stop fires. From then on
+[EvalSession.say](#say) REJECTS — nobody is on the line — and
+[EvalSession.sayAll](#sayall) stops after the turn that ended it.
+
 ##### id
 
 ```ts
@@ -2819,6 +3369,27 @@ This session's id — what its tools read as `ctx.sessionId`.
 
 Exposed because it is what a tool CORRELATES a durable run with, so a case
 asserting "the run it started is this conversation's" needs both halves.
+
+##### refused
+
+```ts
+readonly refused: string | undefined;
+```
+
+The reason the agent's `sessionContext` REFUSED this session, or
+`undefined` for a session it let through.
+
+A value rather than a throw from [openEvalSession](#openevalsession), because a
+refusal is often the CLAIM a case exists to make: a calling agent's
+`sessionContext` refuses a stream whose `call` parameter names no call it
+placed, and a case pinning that needs a session to read the answer off —
+a throw would land before `describeEval` hands the case its session, and
+the case could only ever fail. It is decided exactly where production
+decides it (the runtime's own `sessionContext` step, before the
+transport starts), so a refused session never reached the model and never
+spoke: `said()` is empty and [EvalSession.say](#say) REJECTS, naming the
+reason. A case that did not expect a refusal therefore still fails at its
+first `say()`, with the app's own words in the message.
 
 ***
 
@@ -3066,6 +3637,7 @@ readonly toolCallId: string;
 ```ts
 type EvalTurn = {
   completed: boolean;
+  endedSession?: boolean;
   errors: readonly SessionEvent<"error.reported">[];
   events: readonly SessionEvent[];
   text: string;
@@ -3092,6 +3664,27 @@ readonly completed: boolean;
 
 The reply ended on its own terms (`reply.completed`) rather than being
 cancelled. A cancelled reply is a finding, not a failure of the harness.
+
+##### endedSession?
+
+```ts
+readonly optional endedSession?: boolean;
+```
+
+A tool ended the session during this turn — the agent HUNG UP
+(`endSession(ctx)`, a phone agent's `end_call`). `false` for a turn that
+left the line open.
+
+The reply is still here: by default `endSession` lets the reply finish, so
+the goodbye is this turn's `text` and `completed` is `true`; with
+`{ afterReply: false }` the turn is what was said before the line went
+dead. It is the harness's report of the END, which is the claim a hang-up
+case makes — "it called `end_call`" is a claim about a tool's name, and a
+tool of that name that forgot to call `endSession` passes it.
+
+Optional because a caller implementing `SimulationTarget` builds turns of
+its own; [openEvalSession](#openevalsession)'s `say()` always sets it, and the text
+agent (which has no line to hang up) never does. Read it as `=== true`.
 
 ##### errors
 

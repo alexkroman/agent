@@ -34,7 +34,7 @@
 import type { AgentDef, SessionContext, SessionContextArgs } from "@alexkroman1/aai";
 import { normalizeClientLocation } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
-import type { Logger } from "./runtime-config.ts";
+import { type Logger, silentLogger } from "./runtime-config.ts";
 
 /**
  * How long a session waits for its `sessionContext` before starting without it.
@@ -80,6 +80,21 @@ function greetingOf(value: unknown, log: Logger, sid: string): string | undefine
     .trim()
     .slice(0, MAX_SESSION_GREETING_CHARS)
     .trimEnd();
+}
+
+/**
+ * The greeting a `sessionContext` ANSWER carries, by the rule the session
+ * applies to it ({@link greetingOf}) and without its warnings: `""` for "none
+ * this session", `undefined` for "the agent's".
+ *
+ * For a reader that must know what the session will open with without asking
+ * the hook a second time — the eval harness, whose greeting wait would
+ * otherwise sit out its whole deadline for a line the app said not to speak.
+ *
+ * @internal
+ */
+export function answeredGreeting(value: unknown): string | undefined {
+  return isRecord(value) ? greetingOf(value.greeting, silentLogger, "") : undefined;
 }
 
 /** A usable `refuse` reason, or undefined for none. */

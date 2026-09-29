@@ -906,6 +906,9 @@ interface ModelTuning {
 // @internal
 export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
 
+// @internal
+export function normalizeE164(raw: string): string | undefined;
+
 // @public
 export function normalizeLlm(value: LlmProvider | string | undefined): LlmProvider | undefined;
 

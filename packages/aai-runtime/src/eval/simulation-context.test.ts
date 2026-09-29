@@ -48,6 +48,15 @@ describe("evalSimulation", () => {
     expect(verdict.criteria.map((c) => c.pass)).toEqual([false, true]);
   });
 
+  test("judge takes the case's session itself, as it takes a call or turns", async () => {
+    const { target } = fakeTarget("Hi.");
+    const ctx = evalSimulation({ agent: def, mode: "stub", target });
+    const session = { events: () => [] };
+    const verdict = await ctx.judge(session, ["Only 9 PM was offered."]);
+    expect(verdict.scripted).toBe(true);
+    expect(verdict.pass).toBe(true);
+  });
+
   test("live mode: callerLlm and judgeLlm are the models used, not the agent's", async () => {
     const callerStub = installStubLlm(["Hello!", { tool: "end_call", args: { reason: "bye" } }]);
     const judgeStub = installStubLlm(

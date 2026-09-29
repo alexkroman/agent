@@ -401,8 +401,8 @@ Tenant-owned env: what tool code reads as `ctx.env`, and — unless
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -413,7 +413,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -422,7 +422,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -435,7 +435,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -444,7 +444,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 

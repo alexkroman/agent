@@ -20,9 +20,9 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 484 names
 - [Browser client](#browser-client) — 148 names
-- [Testing and evals](#testing-and-evals) — 230 names
+- [Testing and evals](#testing-and-evals) — 237 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 354 names
+- [Framework internals](#framework-internals) — 355 names
 
 ## Agent authoring
 
@@ -636,6 +636,10 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `EvalCredentials` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What `evalCredentials` found on this machine. |
 | `EvalEmitted` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One chunk `stepEmit()` wrote during a run, and the stream it named. |
 | `EvalMode` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | How the suite is running, and why. |
+| `EvalNetwork`, `EvalNetworkOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A fake network and its request log. |
+| `EvalRequest` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | One request the network saw, whatever became of it. |
+| `EvalRequestFilter` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | Which requests a query selects: a key (as a route key), a URL pattern, or a predicate. |
+| `EvalRoute` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A route handler: the request (a fresh `Request`, so its body is readable), the record the log holds for it with the body already parsed, and the network's … |
 | `EvalRunOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Per-run knobs. |
 | `EvalSession`, `EvalSessionOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One live eval session. |
 | `EvalSimulationContext` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a case gets for running a simulated caller and grading the result. |
@@ -657,7 +661,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `HostGenerateFn` | type | `@alexkroman1/aai-runtime/eval` |  | The host-side `ctx.generate` implementation — takes `GenerateOptions` and resolves a `GenerateResult`, with an extra per-call options bag: the tool executor … |
 | `JournalConflictError` | class | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A journal call the store REFUSED on the run's own merits. |
 | `JournalStore` | type | `@alexkroman1/aai-runtime/testing` |  | The durable store, as the engine needs it. |
-| `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, or a transcript. |
+| `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, a SESSION (anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or a … |
 | `ProjectFiles` | type | `@alexkroman1/aai/testing` | `aai:testing` | What the BUILD lowers onto an `agent.ts` default export — the files beside it that a deployed agent runs with and a spec has to apply itself. |
 | `RecordedSleep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One wait the body asked for — and did NOT take. |
 | `RecordedStep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One step the body reached, as the recorder saw it. |
@@ -765,6 +769,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `endSessionCalls` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every `endSession(ctx, …)` a tool made on a `createToolContext` context's session, in call order, with its options resolved (`afterReply` defaults to `true`). |
 | `errorsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every `error.reported` in `events`, in order — what the RUNTIME reported, as opposed to what the agent said or called. |
 | `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run evals against `agent`? |
+| `evalNetwork` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | Build a fake network: every request is answered by a route, passed through to a host named in `passthrough`, or refused and recorded. |
 | `evalSimulation`, `EvalSimulationOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Build the `simulate`/`judge` pair for one case. |
 | `evalTextCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run a TEXT agent's eval live, and if not, which key is missing? |
 | `evalWorkflowCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run workflow evals against `agent`? |
@@ -833,6 +838,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolResultIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The result of the ONE call to `name` in `calls`, parsed. |
 | `toolResultsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every call to `name` in `calls`, with its RESULT parsed — what each answered, in call order. |
 | `toolRunner` | function | `@alexkroman1/aai/testing` | `aai:testing` | `runTool` bound to one agent — the `run(...)` a spec actually calls. |
+| `transcriptOf` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The session as `User:`/`Agent:` lines with each tool call beneath the turn that made it, as `[tool(args) -> result]`, then any request the network REFUSED — … |
 | `turnCalling` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The turn `name` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
 
 ## Hosting and tooling
@@ -1360,6 +1366,7 @@ trace or a type error can be traced back to something.
 | `mapStream` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `matchesToolConditions` | function | `@alexkroman1/aai/host-internal` |  | Every condition must hold; a message with none always matches. |
 | `normalizeClientLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `normalizeE164` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
 | `normalizeRunLabel` | function | `@alexkroman1/aai-runtime/internal` |  | The label a run is stored with, or `undefined` for none — see the module doc for each rule. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |

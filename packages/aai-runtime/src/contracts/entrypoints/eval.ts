@@ -96,6 +96,7 @@ export {
   toolNames,
   toolResultIn,
   toolResultsIn,
+  transcriptOf,
   turnCalling,
   type VmRunCodeOptions,
 } from "../../eval-barrel.ts";

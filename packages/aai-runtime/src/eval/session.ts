@@ -58,19 +58,34 @@
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { HostGenerateFn } from "../generate.ts";
-import type { HostAgentOptions } from "../host-agent-options.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime.ts";
 import { silentLogger } from "../runtime-config.ts";
+import { SessionRefusedError } from "../session-attach-end.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
+import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
+import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
 import { assertTurnMeasurable, measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
-import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";
+import { saidIn, TURN_ENDS } from "./events.ts";
+import type {
+  EvalSession,
+  EvalSessionOptions,
+  EvalTurn,
+  HostEvalSessionOptions,
+} from "./session-types.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
+
+// Declared beside each other in `session-types.ts`, re-exported here so the
+// barrels and every relative importer keep naming this module.
+export type {
+  EvalSession,
+  EvalSessionOptions,
+  EvalTurn,
+  HostEvalSessionOptions,
+} from "./session-types.ts";
 
 /** How long one turn may take before the harness gives up on it. */
 const DEFAULT_TURN_TIMEOUT_MS = 90_000;
@@ -121,158 +136,6 @@ export function evalCredentials(
 }
 
 /**
- * One turn: what the agent did between an utterance and the end of its reply.
- *
- * `say()` hands one back because "on that turn" is most of the meaning of almost
- * every claim an eval makes. `calledTool("get_weather")` over a whole call is a
- * much weaker statement than the same thing about the reply to one question, and
- * a whole-run reader cannot express the stronger one without hand-slicing the
- * event list — which is how an eval comes to assert against the GREETING, a real
- * turn that lands in `said()` before the case has said anything at all.
- */
-export type EvalTurn = {
-  /** The agent's committed reply, joined — what the caller was told. */
-  readonly text: string;
-  /** This turn's events, from the committed utterance to the terminator. */
-  readonly events: readonly SessionEvent[];
-  /**
-   * This turn's tool calls, in call order, each with its result — minus the
-   * `think` builtin's scratchpad calls (an authored `think` stays). `events`
-   * still carries every call.
-   */
-  readonly toolCalls: readonly EvalToolCall[];
-  /**
-   * The reply ended on its own terms (`reply.completed`) rather than being
-   * cancelled. A cancelled reply is a finding, not a failure of the harness.
-   */
-  readonly completed: boolean;
-  /**
-   * The `error.reported` events this turn carried — what the RUNTIME said went
-   * wrong. Only `code: "tool"` can appear here, since a turn the pipeline failed
-   * is refused before a case sees it (`_turn-faults.ts`); `errorsIn` over
-   * `session.events()` is the unfiltered list.
-   */
-  readonly errors: readonly SessionEvent<"error.reported">[];
-};
-
-/**
- * One live eval session.
- *
- * @sealed
- */
-export type EvalSession = {
-  /**
-   * This session's id — what its tools read as `ctx.sessionId`.
-   *
-   * Exposed because it is what a tool CORRELATES a durable run with, so a case
-   * asserting "the run it started is this conversation's" needs both halves.
-   */
-  readonly id: string;
-  /**
-   * Commit a user turn, wait for the reply to end, and hand back that turn.
-   *
-   * Waits for a reply TERMINATOR rather than for a timer, which is what makes a
-   * case deterministic despite a live model: the next `say()` cannot begin
-   * inside the previous turn, so a recorded tool order is the agent's and not
-   * the harness's.
-   */
-  say(text: string): Promise<EvalTurn>;
-  /**
-   * Say every line in order, waiting out each reply, and hand back every turn.
-   *
-   * Byte-identical in three shipped templates before it was published
-   * (`emergency-dispatch-agent`, `retail-orders-agent`, `travel-concierge-agent`), each under a doc reaching
-   * the same conclusion independently — which is the tell that it is the
-   * harness's concept rather than any template's. The conclusion is the reason
-   * to reach for this rather than a list of `say()` calls: a case over several
-   * turns must assert about the turn a MECHANISM fired in, never about turn
-   * number two, because how many turns an agent takes to get somewhere is the
-   * model's business and it measurably varies — `retail-orders-agent`'s desk reads the order
-   * back before it stages, so its staging call has landed in turn two, three
-   * and four across live runs. A case pinned to a turn index is a flake with a
-   * misleading name.
-   *
-   * `turnCalling`, `toolCallsInTurns` and `describeTurn` (`eval/turns.ts`, published on
-   * the same subpath) are what read the result without pinning an index.
-   *
-   * Strictly sequential, like the caller it stands for: each line is committed
-   * only once the reply to the previous one has ended, so a recorded tool order
-   * is the agent's and not the harness's.
-   */
-  sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
-  /** Every event this session has emitted, in stream order. */
-  events(): readonly SessionEvent[];
-  /**
-   * Every committed reply so far, INCLUDING the greeting — the agent's opening
-   * line is a real turn and is in the session's history, so it is in this list
-   * too. Prefer the {@link EvalTurn} `say()` returns for a claim about one
-   * reply.
-   */
-  said(): readonly string[];
-  /** The tool calls so far, in call order, each with its result. */
-  toolCalls(): readonly EvalToolCall[];
-  close(): Promise<void>;
-};
-
-/**
- * What {@link openEvalSession} takes.
- *
- * The fields every way of running an agent shares are {@link HostAgentOptions};
- * what they mean HERE:
- *
- * - `providerEnv` defaults to {@link EvalSessionOptions.env} with any credential
- *   it does not carry filled in from this machine's own environment — the trust
- *   decision `aai dev` makes, and right here for the same reason: an eval runs
- *   on the developer's box against their own key. A value in `env` always wins.
- * - `runCode` backs the `run_code` builtin. Without one it permanently refuses,
- *   as it does off-platform. What that COSTS was measured on the three tutor
- *   templates: their headline feature was unevaluable, because the agent calls
- *   `run_code`, reads "only available in the sandboxed runtime", and then does
- *   the arithmetic in its head — so a case could assert the CALL and never the
- *   answer. An eval on a developer's own machine may supply an executor; a
- *   deployed agent still cannot.
- * - `fetch` keeps a case off the network — a scripted `visit_webpage` really
- *   visits.
- * - `toolTimeoutMs` defaults to the session's own 30s; a tool that outruns it
- *   otherwise measures the deadline instead of the agent.
- * - `workflows`: without one, a workflow-declaring agent gets the client the
- *   runtime builds over the real engine, and every `start()` through it throws —
- *   a body imported through a test runner was never through the compiler's
- *   transform. Build one with `openEvalWorkflows({ agent })` and pass its
- *   `client`; `describeEval` does that for you. The engine under it is not
- *   durable — no journal, no replay, no retry. See `eval/workflow-engine.ts`
- *   before writing a claim about a run.
- * - `logger` defaults to silent. Pass `consoleLogger` when diagnosing a case.
- */
-export interface EvalSessionOptions extends HostAgentOptions {
-  /**
-   * The agent's own env, i.e. what its tools read as `ctx.env`. Defaults to
-   * empty: a tool that needs a value gets it here, and nothing is inherited
-   * implicitly.
-   */
-  readonly env?: Record<string, string>;
-  /** Override the LLM the case runs on. Defaults to the agent's own. */
-  readonly llm?: LlmProvider;
-  readonly turnTimeoutMs?: number;
-}
-
-/**
- * {@link EvalSessionOptions} plus the host-only `generate` seam.
- *
- * `generate` was a public field — what tool code calls as `ctx.generate` —
- * whose one caller is `describeEval`'s `stubGenerate`, in this package; the
- * reason it must be separate from the turn's script is in
- * `HostRuntimeOptions.generate`. Reached through
- * {@link openEvalSessionWithSeams} by a relative import, never re-exported.
- *
- * @internal
- */
-export type HostEvalSessionOptions = EvalSessionOptions & {
-  /** What tool code calls as `ctx.generate`. Absent, it is the agent's own LLM. */
-  readonly generate?: HostGenerateFn;
-};
-
-/**
  * Open an eval session against a real runtime.
  *
  * The agent definition is used AS GIVEN apart from its two speech stages, which
@@ -312,9 +175,11 @@ export async function openEvalSessionWithSeams(
   // worker's life with nobody holding a release, so five repeats against a
   // failing agent orphaned five of them. A runner that catches the throw and
   // runs the next repeat is exactly what makes the leak compound.
+  // Before the install, so a typo'd phone number throws with nothing to release.
+  const identity = checkedIdentity(options);
   const fake = installStubSpeechProviders();
   try {
-    return await openWithFakes(options, fake);
+    return await openWithFakes({ ...options, ...identity }, fake);
   } catch (err) {
     fake.release();
     throw err;
@@ -326,10 +191,14 @@ async function openWithFakes(
   fake: StubSpeechProviders,
 ): Promise<EvalSession> {
   const events: SessionEvent[] = [];
+  // Late-bound: the end watch needs the session's `stop`, and the session needs
+  // this sink. Nothing can end a session before it exists.
+  let end: EvalSessionEnd | undefined;
   const sink: ClientSink = {
     open: true,
     event(e) {
       events.push(e);
+      end?.observe(e);
     },
     playAudioChunk() {
       // A text-driven eval discards agent audio: the fakes synthesize silence,
@@ -339,13 +208,18 @@ async function openWithFakes(
 
   const turnTimeoutMs = options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
+  // The agent's own hook, watched rather than replaced — see `_session-identity.ts`.
+  const observed = observeSessionContext(options.agent);
+  // And its `onSessionEnd`, so the turn that hung up can wait for what it
+  // wrote — see `_session-end.ts`.
+  const endHook = watchSessionEndHook(observed.agent);
   // The seams variant, for `generate` — a host-only option (`HostRuntimeOptions`).
   const runtime = createRuntimeWithSeams({
     // `omitUndefined`, not `...omitUndefined({ llm })`: the conditional spread
     // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
     // out, and the truthiness spelling is the one its regex cannot see.
     agent: {
-      ...options.agent,
+      ...endHook.agent,
       stt: fake.stt,
       tts: fake.tts,
       ...omitUndefined({ llm: options.llm }),
@@ -409,23 +283,39 @@ async function openWithFakes(
   };
 
   const sessionId = `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  // Where a socket records `?client=`/`?phone=` and a carrier stream its call:
+  // after the id is decided, before the session is built.
+  recordIdentity(sessionId, options);
   const session = runtime.createSession({
     id: sessionId,
     agent: options.agent.name,
     client: sink,
   });
+  // ONE stop, whoever asks for it first — a refusal, a tool's end, a failed
+  // start or `close()`. The core's `stop()` is idempotent, but the wrappers the
+  // runtime puts around it are not: a second call fires `onSessionEnd` again.
+  let stopped: Promise<void> | undefined;
+  const stopSession = (): Promise<void> => {
+    stopped ??= session.stop();
+    return stopped;
+  };
+  // Claimed right after the session is built, where `session-attach.ts` claims
+  // a real connection's — see `_session-end.ts`.
+  const ending = watchSessionEnd(sessionId, stopSession);
+  end = ending;
 
+  let refused: string | undefined;
   try {
     session.configure(runtime.readyConfig);
-    await session.start();
-
+    refused = await startOrRefusal(session, stopSession);
     // The greeting is a real turn and belongs in the session's history, so it is
     // driven and awaited rather than skipped: an agent whose opening line asks a
     // question is answered by the case's first `say()`, exactly as a caller
-    // would.
+    // would. Whose greeting is `sessionContext`'s to say, so it is read AFTER
+    // `start()`, which is where the hook answered.
     const greetingFrom = events.length;
-    session.command({ type: "audio_ready" });
-    if (options.agent.greeting !== undefined && options.agent.greeting !== "") {
+    if (refused === undefined) session.command({ type: "audio_ready" });
+    if (refused === undefined && observed.greeting() !== "") {
       await waitFor(
         "the greeting",
         (since) => since.some((e) => TURN_ENDS.has(e.type)),
@@ -442,7 +332,8 @@ async function openWithFakes(
     // greeting that times out is the realistic case, and a runner starts the
     // next repeat immediately afterwards. Best-effort on both, because the
     // ORIGINAL failure is the one worth reporting.
-    await session.stop().catch(() => undefined);
+    ending.release();
+    await stopSession().catch(() => undefined);
     await runtime.shutdown().catch(() => undefined);
     throw err;
   }
@@ -452,6 +343,20 @@ async function openWithFakes(
   // (`async ({ session }) => …`) is exactly the shape that makes a `this`-bound
   // method fail somewhere the type checker cannot see.
   const say = async (text: string): Promise<EvalTurn> => {
+    if (refused !== undefined) {
+      throw new Error(
+        `eval session: cannot say ${JSON.stringify(text.slice(0, 60))} — the agent's ` +
+          `sessionContext REFUSED this session (${JSON.stringify(refused)}), so it never ` +
+          "started. Assert on `session.refused` for a case about the refusal.",
+      );
+    }
+    if (ending.requested()) {
+      throw new Error(
+        `eval session: cannot say ${JSON.stringify(text.slice(0, 60))} — the agent ENDED ` +
+          "this session (a tool called `endSession(ctx)`) on an earlier turn, so nobody is " +
+          "on the line. `turn.endedSession` says which turn it was.",
+      );
+    }
     const stt = fake.sttSession();
     // The handle this closure belongs to is only returned after
     // `session.start()` resolved, which is what opens the STT stage, and the
@@ -465,13 +370,31 @@ async function openWithFakes(
     if (manual) session.command({ type: "user_turn_start" });
     stt.commit(text);
     if (manual) session.command({ type: "user_turn_commit" });
-    await waitFor(`a reply to ${JSON.stringify(text.slice(0, 60))}`, repliedTo, from);
+    // Or the session stopped: an `endSession(ctx, { afterReply: false })`
+    // cuts the reply off, and no terminator is coming.
+    await waitFor(
+      `a reply to ${JSON.stringify(text.slice(0, 60))}`,
+      (since) => repliedTo(since) || ending.stopping(),
+      from,
+    );
+    // An end this turn asked for has finished stopping before the turn is read,
+    // so nothing more lands in the turn's events — and the `onSessionEnd` that
+    // stop called has SETTLED (bounded), so what it wrote is there to assert on.
+    await ending.settled();
+    if (ending.requested()) await endHook.settled();
     const what = `the reply to ${JSON.stringify(text.slice(0, 60))}`;
-    return measuredTurn(what, events.slice(from), toolNames, "voice", options.agent);
+    return {
+      ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
+      endedSession: ending.requested(),
+    };
   };
 
   return {
     id: sessionId,
+    refused,
+    get ended() {
+      return ending.requested();
+    },
     events: () => events,
     said: () => saidIn(events),
     toolCalls: () => measuredToolCalls(events, options.agent),
@@ -482,13 +405,47 @@ async function openWithFakes(
       // ends, so awaiting each in turn is what keeps the next line out of the
       // previous turn. A `Promise.all` here would commit every utterance at
       // once and record an order belonging to the harness.
-      for (const line of lines) turns.push(await say(line));
+      for (const line of lines) {
+        const turn = await say(line);
+        turns.push(turn);
+        // The agent hung up: a caller does not talk to a dead line, and
+        // `say()` would refuse the next one.
+        if (turn.endedSession === true) break;
+      }
       return turns;
     },
     async close() {
-      await session.stop();
+      await ending.settled();
+      ending.release();
+      await stopSession();
+      // The hook this stop (or an earlier hang-up) called, before the runtime
+      // it may still be using goes away.
+      await endHook.settled();
       await runtime.shutdown();
       fake.release();
     },
   };
+}
+
+/**
+ * Start `session`, answering the app's refusal reason when its `sessionContext`
+ * refused — `undefined` when it started.
+ *
+ * The refusal is the runtime's own (`runtime-session-stream.ts` throws it
+ * before the transport starts); this only turns it into a value, and stops the
+ * session as `session-attach.ts` does for a refused connection. Any other
+ * failure to start is still a throw.
+ */
+async function startOrRefusal(
+  session: { start(): Promise<void> },
+  stop: () => Promise<void>,
+): Promise<string | undefined> {
+  try {
+    await session.start();
+    return undefined;
+  } catch (err) {
+    if (!(err instanceof SessionRefusedError)) throw err;
+    await stop().catch(() => undefined);
+    return err.reason;
+  }
 }
