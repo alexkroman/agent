@@ -96,7 +96,8 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `sessionContext` see; a call it refuses reads as `session.refused`. A tool's
    `endSession(ctx)` really hangs up: `turn.endedSession`, `session.ended`.
    `network: evalNetwork({ routes })` answers every `fetch` your tools, builtins
-   and steps make, and refuses the rest; read it back as `ctx.network`.
+   and steps make, and refuses the rest; read it back as `ctx.network`. A
+   failing case prints the conversation under its assertion.
 
    No eval can see anything below the audio boundary — when the agent decides
    you stopped talking, barge-in, two sentences merging into one turn. Those

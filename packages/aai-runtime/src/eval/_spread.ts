@@ -16,7 +16,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { afterAll } from "vitest";
 import { announceEvalMode } from "./_announce.ts";
-import { clip } from "./_transcript.ts";
+import { clip } from "./transcript.ts";
 
 /**
  * One case's outcome across its repeats: how many ran, how many threw.
@@ -36,9 +36,11 @@ type CaseSpread = {
 
 /**
  * Transcripts by the error their try threw. A side table rather than a field
- * written onto the error: the error is vitest's to print when a case fails
- * unanimously, and a message grown by a transcript would push the assertion's
- * own diff below it.
+ * written onto the error AS IT IS THROWN: a case that fails some repeats and
+ * passes others is reported by the summary alone, which prints the message
+ * and the transcript separately. Only the failure {@link runRepeats} rethrows
+ * has the transcript appended to its message ({@link withTranscript}), once,
+ * as it leaves for vitest.
  */
 const transcripts = new WeakMap<object, string>();
 
@@ -50,6 +52,9 @@ const transcripts = new WeakMap<object, string>();
 export function noteTranscript(error: unknown, transcript: string): void {
   if (isRecord(error)) transcripts.set(error, transcript);
 }
+
+/** What separates an assertion's own message from the transcript under it. */
+export const TRANSCRIPT_MARKER = "--- the failing try ---";
 
 /** Most lines, and most characters, of a failure MESSAGE the summary prints. */
 const MESSAGE_MAX_LINES = 25;
@@ -68,7 +73,7 @@ export function failureExcerpt(error: unknown, transcript: string | undefined): 
   if (lines.length > MESSAGE_MAX_LINES) {
     kept.push(`(${lines.length - MESSAGE_MAX_LINES} more line(s) of the message omitted)`);
   }
-  if (transcript !== undefined) kept.push("--- the failing try ---", ...transcript.split("\n"));
+  if (transcript !== undefined) kept.push(TRANSCRIPT_MARKER, ...transcript.split("\n"));
   return kept.map((line) => `${INDENT}${line}`);
 }
 
@@ -193,6 +198,30 @@ export async function runRepeats(
   }
   // Unanimously failed, so it is a finding and not a coin toss. Rethrow the
   // FIRST failure: it is the one whose message describes the run that produced
-  // it, and vitest prints it exactly as a single-run failure.
-  if (tally !== undefined && tally.failed === tally.ran) throw tally.first;
+  // it — with that try's transcript under it, because vitest prints nothing
+  // else about what the agent was doing.
+  if (tally !== undefined && tally.failed === tally.ran) {
+    throw withTranscript(tally.first, tally.firstTranscript);
+  }
+}
+
+/**
+ * `error` with its try's transcript appended to its MESSAGE, the original
+ * message first — the failure a single run, or a case that failed every
+ * repeat, reaches vitest with.
+ *
+ * Only a case that passed overall is reported by the summary; every other
+ * failure is reported by vitest, and vitest prints the message and the stack.
+ * An assertion's message is "expected 'Sure — one moment.' to match /booked/i",
+ * which says nothing about what the agent was doing, so two downstream suites
+ * wrapped every case to append a transcript of their own. The message is
+ * mutated rather than replaced so the error keeps its class, its stack and an
+ * assertion's `expected`/`actual` (vitest's diff reads those, not the message).
+ * A thrown non-`Error` has no message to grow and is returned as it came.
+ */
+export function withTranscript(error: unknown, transcript: string | undefined): unknown {
+  if (transcript === undefined || !(error instanceof Error)) return error;
+  if (error.message.includes(TRANSCRIPT_MARKER)) return error;
+  error.message = `${error.message}\n\n${TRANSCRIPT_MARKER}\n${transcript}`;
+  return error;
 }

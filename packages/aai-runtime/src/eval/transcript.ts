@@ -21,7 +21,8 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
-import { describeRequest, type EvalNetwork } from "./network.ts";
+import { describeRequests, type EvalNetwork } from "./network.ts";
+import type { EvalSession } from "./session-types.ts";
 
 /** Longest spoken line kept, per line. */
 const LINE_MAX = 300;
@@ -37,11 +38,6 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}… (${text.length} chars)`;
 }
 
-/** What a transcript reads: the session's event stream. */
-export type TranscriptSource = {
-  events(): readonly SessionEvent[];
-};
-
 /** One transcript line for `e`, or `undefined` for an event a reader does not need. */
 function lineFor(e: SessionEvent, results: ReadonlyMap<string, string>): string | undefined {
   if (e.type === "user-transcript.committed") return `User: ${clip(e.text, LINE_MAX)}`;
@@ -53,22 +49,45 @@ function lineFor(e: SessionEvent, results: ReadonlyMap<string, string>): string 
   return `  [${e.toolName}(${clip(JSON.stringify(e.args), TOOL_FIELD_MAX)})${answered}]`;
 }
 
-/** The network's refused requests, the first {@link MAX_REFUSED} named. */
+/**
+ * The network's refused requests, the first {@link MAX_REFUSED} DISTINCT ones
+ * named — a retried request once, with its count.
+ */
 function refusedLines(network: EvalNetwork | undefined): string[] {
   const refused = network?.refused() ?? [];
   if (refused.length === 0) return [];
+  const distinct = describeRequests(refused);
   const lines = [`refused by the eval network (${refused.length}):`];
-  for (const request of refused.slice(0, MAX_REFUSED)) lines.push(`  ${describeRequest(request)}`);
-  if (refused.length > MAX_REFUSED) lines.push(`  …and ${refused.length - MAX_REFUSED} more`);
+  for (const line of distinct.slice(0, MAX_REFUSED)) lines.push(`  ${line}`);
+  if (distinct.length > MAX_REFUSED) lines.push(`  …and ${distinct.length - MAX_REFUSED} more`);
   return lines;
 }
 
 /**
  * The session as `User:`/`Agent:` lines with each tool call beneath the turn
- * that made it, then any request the network REFUSED — the last
- * {@link MAX_LINES} lines when there are more.
+ * that made it, as `[tool(args) -> result]`, then any request the network
+ * REFUSED — the last 40 lines when there are more, each spoken line cut at 300
+ * characters and each tool field at 200.
+ *
+ * It is what a failing `describeEval` case carries under its assertion, and
+ * what the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE one. Public for
+ * a suite that wants the same view itself — in an assertion's message, or a
+ * log of its own.
+ *
+ * ```ts
+ * import { type EvalSession, transcriptOf } from "@alexkroman1/aai-runtime/eval";
+ *
+ * export function explain(session: EvalSession): string {
+ *   return `the call so far:\n${transcriptOf(session)}`;
+ * }
+ * ```
+ *
+ * @param session - Anything with the session's event stream: an
+ *   `EvalSession`, an `EvalTextAgent`.
+ * @param network - The case's fake network, whose refused requests are listed
+ *   after the lines — a retried request once, with its count.
  */
-export function transcriptOf(session: TranscriptSource, network?: EvalNetwork): string {
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string {
   const events = session.events();
   const results = new Map<string, string>();
   for (const e of events) if (e.type === "tool.completed") results.set(e.toolCallId, e.result);

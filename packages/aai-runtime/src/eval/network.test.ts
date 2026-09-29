@@ -149,6 +149,19 @@ describe("evalNetwork — the log", () => {
     );
   });
 
+  test("a request retried after its refusal is listed once, with its count", async () => {
+    const net = evalNetwork();
+    for (let i = 0; i < 2; i += 1) {
+      await net.fetch("https://api.twilio.com/Calls", { method: "POST" }).catch(() => undefined);
+    }
+    await net.fetch("https://api.composio.dev/x").catch(() => undefined);
+    expect(() => net.expectNothingRefused()).toThrow(
+      "eval network: 3 request(s) were refused — each is a host the agent reached for that no " +
+        "route answers:\n  POST https://api.twilio.com/Calls (refused) ×2\n" +
+        "  GET https://api.composio.dev/x (refused)",
+    );
+  });
+
   test("reset() forgets the log", async () => {
     const net = evalNetwork({ routes: { "ok.example": () => ({}) } });
     await net.fetch("https://ok.example/");

@@ -1449,6 +1449,52 @@ readonly `T`[]
 
 ***
 
+### transcriptOf()
+
+```ts
+function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+```
+
+The session as `User:`/`Agent:` lines with each tool call beneath the turn
+that made it, as `[tool(args) -> result]`, then any request the network
+REFUSED — the last 40 lines when there are more, each spoken line cut at 300
+characters and each tool field at 200.
+
+It is what a failing `describeEval` case carries under its assertion, and
+what the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE one. Public for
+a suite that wants the same view itself — in an assertion's message, or a
+log of its own.
+
+```ts
+import { type EvalSession, transcriptOf } from "@alexkroman1/aai-runtime/eval";
+
+export function explain(session: EvalSession): string {
+  return `the call so far:\n${transcriptOf(session)}`;
+}
+```
+
+#### Parameters
+
+##### session
+
+`Pick`\<[`EvalSession`](#evalsession), `"events"`\>
+
+Anything with the session's event stream: an
+  `EvalSession`, an `EvalTextAgent`.
+
+##### network?
+
+[`EvalNetwork`](#evalnetwork)
+
+The case's fake network, whose refused requests are listed
+  after the lines — a retried request once, with its count.
+
+#### Returns
+
+`string`
+
+***
+
 ### turnCalling()
 
 ```ts

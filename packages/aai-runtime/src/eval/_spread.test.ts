@@ -12,7 +12,14 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { failureExcerpt, noteTranscript, runRepeats, SuiteSpread } from "./_spread.ts";
+import {
+  failureExcerpt,
+  noteTranscript,
+  runRepeats,
+  SuiteSpread,
+  TRANSCRIPT_MARKER,
+  withTranscript,
+} from "./_spread.ts";
 
 /** A body that fails on the repeats named, and passes on the rest. */
 function failingOn(...attempts: readonly number[]): () => Promise<void> {
@@ -156,6 +163,52 @@ describe("SuiteSpread.report", () => {
       await runRepeats(failingOn(1, 2), "broken", 2, spread).catch(() => undefined);
     });
     expect(lines.join("\n")).toMatch(/every case unanimous\./);
+  });
+});
+
+describe("a failure vitest reports carries its try's transcript", () => {
+  test("a single run's failure: the assertion first, then the transcript", async () => {
+    const error = new Error("expected 'One moment.' to match /booked/i");
+    await expect(
+      runRepeats(
+        async () => {
+          await Promise.resolve();
+          noteTranscript(error, "User: book a table\nAgent: One moment.");
+          throw error;
+        },
+        "books it",
+        1,
+        new SuiteSpread("s"),
+      ),
+    ).rejects.toBe(error);
+    expect(error.message).toBe(
+      "expected 'One moment.' to match /booked/i\n\n" +
+        `${TRANSCRIPT_MARKER}\nUser: book a table\nAgent: One moment.`,
+    );
+  });
+
+  test("a case failing EVERY repeat carries the FIRST try's transcript, once", async () => {
+    let n = 0;
+    const thrown = await runRepeats(
+      async () => {
+        n += 1;
+        await Promise.resolve();
+        const error = new Error(`attempt ${n} failed`);
+        noteTranscript(error, `User: try ${n}`);
+        throw error;
+      },
+      "broken",
+      3,
+      new SuiteSpread("s"),
+    ).catch((err: unknown) => err);
+    expect((thrown as Error).message).toBe(`attempt 1 failed\n\n${TRANSCRIPT_MARKER}\nUser: try 1`);
+  });
+
+  test("withTranscript leaves a thrown primitive, and an error with no transcript, alone", () => {
+    const error = new Error("plain");
+    expect(withTranscript(error, undefined)).toBe(error);
+    expect(error.message).toBe("plain");
+    expect(withTranscript("boom", "User: hi")).toBe("boom");
   });
 });
 

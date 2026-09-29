@@ -11108,6 +11108,9 @@ export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: 
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+
+// @public
 export interface TtsError extends Error {
     // (undocumented)
     readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";

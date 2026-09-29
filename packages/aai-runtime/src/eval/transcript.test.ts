@@ -10,8 +10,8 @@
 
 import type { SessionEvent } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { clip, transcriptOf } from "./_transcript.ts";
 import { evalNetwork } from "./network.ts";
+import { clip, transcriptOf } from "./transcript.ts";
 
 const meta = { id: "e1", at: 0 };
 
@@ -87,6 +87,18 @@ describe("transcriptOf", () => {
     const text = transcriptOf(sessionOf([]), network);
     expect(text).toBe(
       "refused by the eval network (1):\n  POST https://api.twilio.com/Calls (refused)",
+    );
+  });
+
+  test("a request a builtin retried is one refusal with a count, not two lines", async () => {
+    const network = evalNetwork();
+    for (let i = 0; i < 2; i += 1) {
+      await network
+        .fetch("https://api.twilio.com/Calls", { method: "POST" })
+        .catch(() => undefined);
+    }
+    expect(transcriptOf(sessionOf([]), network)).toBe(
+      "refused by the eval network (2):\n  POST https://api.twilio.com/Calls (refused) ×2",
     );
   });
 

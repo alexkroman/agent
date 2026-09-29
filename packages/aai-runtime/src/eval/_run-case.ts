@@ -21,10 +21,10 @@ import { hasWorkflows } from "./_declared-tools.ts";
 import { type SuiteNetwork, stepFetchOver } from "./_network-install.ts";
 import { noteTranscript } from "./_spread.ts";
 import { stubbedEnv } from "./_stubbed-env.ts";
-import { transcriptOf } from "./_transcript.ts";
 import type { DescribeEvalOptions, EvalCaseOptions, EvalTestContext } from "./describe.ts";
 import { openEvalSessionWithSeams } from "./session.ts";
 import { installStubLlm } from "./stub-llm.ts";
+import { transcriptOf } from "./transcript.ts";
 import { openEvalWorkflows } from "./workflows.ts";
 
 /** What a stub-mode model says when a case scripts nothing. */

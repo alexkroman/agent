@@ -20,7 +20,7 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 484 names
 - [Browser client](#browser-client) — 148 names
-- [Testing and evals](#testing-and-evals) — 236 names
+- [Testing and evals](#testing-and-evals) — 237 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
 - [Framework internals](#framework-internals) — 355 names
 
@@ -838,6 +838,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolResultIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The result of the ONE call to `name` in `calls`, parsed. |
 | `toolResultsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every call to `name` in `calls`, with its RESULT parsed — what each answered, in call order. |
 | `toolRunner` | function | `@alexkroman1/aai/testing` | `aai:testing` | `runTool` bound to one agent — the `run(...)` a spec actually calls. |
+| `transcriptOf` | function | `@alexkroman1/aai-runtime/eval` |  | The session as `User:`/`Agent:` lines with each tool call beneath the turn that made it, as `[tool(args) -> result]`, then any request the network REFUSED — … |
 | `turnCalling` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The turn `name` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
 
 ## Hosting and tooling

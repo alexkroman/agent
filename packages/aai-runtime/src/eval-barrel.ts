@@ -186,6 +186,11 @@ export {
   evalTextCredentials,
   openEvalTextAgent,
 } from "./eval/text-agent.ts";
+// The failing try as text: every line said, every reply, every tool call with
+// its args and result, and what the network refused — bounded. `describeEval`
+// appends it to every failure it reports; public because two downstream suites
+// had each written their own for the same message and for a judge.
+export { transcriptOf } from "./eval/transcript.ts";
 // Reading a CALL rather than one reply. Public because the claim they make is
 // the one a multi-turn case has to make and could not spell: the turn a
 // MECHANISM fired in, never turn number two — how many turns an agent takes to

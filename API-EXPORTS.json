@@ -1162,6 +1162,7 @@
     "toolNames",
     "toolResultIn",
     "toolResultsIn",
+    "transcriptOf",
     "turnCalling"
   ],
   "@alexkroman1/aai-runtime/eval/simulate": [

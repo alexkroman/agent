@@ -234,6 +234,20 @@ export function describeRequest(request: EvalRequest): string {
   return `${request.method} ${request.url.href} (${request.outcome}${status})`;
 }
 
+/**
+ * One line per DISTINCT request, in first-seen order, a repeat counted rather
+ * than listed again (`… (refused) ×2`). A builtin that retries a refused
+ * request is one thing the agent reached for, and listing it twice read as two.
+ */
+export function describeRequests(requests: readonly EvalRequest[]): string[] {
+  const counts = new Map<string, number>();
+  for (const request of requests) {
+    const line = describeRequest(request);
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return [...counts].map(([line, n]) => (n === 1 ? line : `${line} ×${n}`));
+}
+
 /** The value a route returned, as a Response. */
 function asResponse(value: unknown): Response {
   if (value instanceof Response) return value;
@@ -330,7 +344,9 @@ export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
       if (tried.length === 0) return;
       throw new Error(
         `eval network: expected no request to ${String(filter)}, and ${tried.length} were ` +
-          `attempted:\n${tried.map((r) => `  ${describeRequest(r)}`).join("\n")}`,
+          `attempted:\n${describeRequests(tried)
+            .map((line) => `  ${line}`)
+            .join("\n")}`,
       );
     },
     expectNothingRefused() {
@@ -338,7 +354,9 @@ export function evalNetwork(options: EvalNetworkOptions = {}): EvalNetwork {
       if (refused.length === 0) return;
       throw new Error(
         `eval network: ${refused.length} request(s) were refused — each is a host the agent ` +
-          `reached for that no route answers:\n${refused.map((r) => `  ${describeRequest(r)}`).join("\n")}`,
+          `reached for that no route answers:\n${describeRequests(refused)
+            .map((line) => `  ${line}`)
+            .join("\n")}`,
       );
     },
     reset() {

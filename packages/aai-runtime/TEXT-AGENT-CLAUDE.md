@@ -513,12 +513,18 @@ the pieces to make it for free.
   **The summary prints the WHOLE failure** (`failureExcerpt` in `_spread.ts`):
   the full assertion message, bounded, then the failing try's transcript —
   each line said, each reply, each tool call with its args and result, and
-  what the network refused (`_transcript.ts`, bounded per field and to the
-  last 40 lines). It printed only the message's first line, and a case that
-  passed overall shows nothing else, so two downstream suites appended their
-  own transcript to every error. `runCase` notes the transcript in a side
-  table keyed by the error, so a unanimous failure still reaches vitest with
-  its message untouched.
+  what the network refused, a retried request once with its count
+  (`transcript.ts`, bounded per field and to the last 40 lines). It printed
+  only the message's first line, and a case that passed overall shows nothing
+  else, so two downstream suites appended their own transcript to every error.
+
+  **Every failure vitest reports carries it too.** `runCase` notes the
+  transcript in a side table keyed by the error; `runRepeats` appends it to
+  the message of the failure it RETHROWS (`withTranscript`), original message
+  first — a single run, or a case failing every repeat, used to reach vitest
+  with the bare assertion. Mutated rather than wrapped, so the class, the
+  stack and an assertion's `expected`/`actual` (the diff) survive. The same
+  view is public as `transcriptOf(session, network?)` on `/eval`.
 
   Two bugs the filter had on its first draft, both fixed and both worth not
   reintroducing: a filtered case was counted as a MODE skip, so the coverage
