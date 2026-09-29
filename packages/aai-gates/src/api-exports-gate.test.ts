@@ -154,6 +154,7 @@ describe("API-EXPORTS.json", () => {
       "deployedAgent",
       "dialogRefusalPattern",
       "dialogResultSchema",
+      "endSessionCalls",
       "eventsOf",
       "expectDeployable",
       "expectDialogOk",

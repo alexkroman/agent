@@ -1967,32 +1967,24 @@ export default agent({
 });
 ```
 
-Point the carrier at the deployed agent with a `carrier` query parameter naming
-who is dialling:
+Point the carrier at `wss://<your-agent-url>/phone?carrier=twilio` (or
+`telnyx`, the two this build decodes). An unknown `carrier` is declined with a
+`400`, one this agent did not declare with a `404`. The bridge transcodes 8 kHz mu-law both ways, so a phone call is
+a transport, not a mode: tools and slots behave as in the browser.
 
-```text
-wss://<your-agent-url>/phone?carrier=twilio
-wss://<your-agent-url>/phone?carrier=telnyx
-```
+**An agent that declares nothing answers no carrier**, in `aai dev` and
+deployed. `createAgentServer({ telephony })` overrides one deployment; to embed
+the runtime, see `createTelephonyBridge` and `startTelephonySession`.
 
-Twilio and Telnyx are the two carriers this build decodes (`CARRIER_CODECS`);
-an unknown `carrier` is declined at the upgrade with a `400`, and a real one
-this agent did not declare with a `404`. Both speak 8 kHz mu-law, which the
-bridge transcodes in both directions, so the agent, its tools and its slots
-behave exactly as they do in the browser — a phone call is a transport, not a
-mode. Nothing else about `agent.ts` changes to support one.
-
-**An agent that declares nothing answers no carrier.** `/phone` is the one
-door dialled from OUTSIDE your deployment, by a carrier following a number, so
-it is opened by a sentence in `agent.ts` rather than inherited. `aai dev` and a
-deployed sandbox honour the same declaration, so a call refused after a deploy
-is refused on your laptop too.
-
-`telephony: false` is the same refusal stated out loud, and an operator can pass
-`telephony` to `createAgentServer` to override one deployment of an agent that
-does declare a carrier. If you are embedding the runtime yourself rather than
-deploying, the pieces are `createTelephonyBridge`, `startTelephonySession` and
-`carrierByName`, all on `@alexkroman1/aai-runtime`.
+**A call your app PLACES** (TwiML `<Connect><Stream url=".../phone?carrier=twilio"><Parameter name="call" value="c_1"/></Stream></Connect>`):
+the session starts once the carrier's `start` frame has arrived, so
+`sessionContext` and `onSessionEnd` get `call` — `{ carrier, callId?,
+parameters }` — and a tool reads it with `sessionCall(ctx)`. `/phone` is
+unauthenticated, so check a parameter you issued and answer `{ refuse: "why" }`
+otherwise: the call is hung up before the greeting or any model call (a
+WebSocket gets a 1008). A tool hangs up with `endSession(ctx)`, which lets the
+reply finish speaking first (`{ afterReply: false }` cuts it); a spec reads
+`endSessionCalls(ctx)` (`/testing`). Tunnel to the port `aai dev` prints.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.

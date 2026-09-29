@@ -220,13 +220,26 @@ describe("createTelephonyBridge", () => {
     expect(fixture.socket.readyState).toBe(MockWebSocket.OPEN);
   });
 
-  test("drops caller audio that arrives before the config frame", () => {
-    // Unreachable against a real runtime (config is the first thing it
-    // sends), but the rates are unknown until then and guessing would put
-    // wrong-speed audio into STT rather than failing.
+  test("holds caller audio that arrives before the config frame, and forwards it once configured", () => {
+    // The rates are unknown until `session.configured`, and guessing would put
+    // wrong-speed audio into STT. Since the session waits for the carrier's
+    // `start`, the first media frames can beat that frame — and on a placed call
+    // they are the callee's "Hello?", so they are held rather than dropped.
     const fixture = setup();
     fixture.socket.msg(JSON.stringify({ event: "media", media: { payload: mulawPayload(160) } }));
     expect(fixture.inbound).toEqual([]);
+    fixture.bridge.send(configFrame());
+    expect(fixture.inbound).toHaveLength(1);
+    expect((fixture.inbound[0] as Uint8Array).byteLength).toBe(640);
+  });
+
+  test("holds at most a second of pre-config audio", () => {
+    const fixture = setup();
+    for (let i = 0; i < 80; i++) {
+      fixture.socket.msg(JSON.stringify({ event: "media", media: { payload: mulawPayload(160) } }));
+    }
+    fixture.bridge.send(configFrame());
+    expect(fixture.inbound).toHaveLength(50);
   });
 
   test("warns rather than throwing when agent audio precedes the config frame", () => {
@@ -330,18 +343,83 @@ describe("createTelephonyBridge", () => {
 });
 
 describe("startTelephonySession", () => {
-  test("starts the session on the runtime, tagged as a phone call", () => {
-    const socket = new MockWebSocket("ws://carrier.test/phone");
-    socket.open();
+  function runtimeSpy() {
     const startSession = vi.fn();
     const runtime: SessionRuntime = { startSession, shutdown: () => Promise.resolve() };
+    return { startSession, runtime };
+  }
+
+  test("waits for the carrier's start, then starts the session tagged as a phone call, with the call", async () => {
+    // The start frame is where the call's identity is, and the app's
+    // `sessionContext` runs inside the session's start — so starting on the
+    // upgrade asked the app about a call before the carrier had said which.
+    const socket = new MockWebSocket("ws://carrier.test/phone");
+    socket.open();
+    const { startSession, runtime } = runtimeSpy();
 
     startTelephonySession(socket, runtime, { carrier: twilioCodec, logger: makeLogger() });
+    await Promise.resolve();
+    expect(startSession).not.toHaveBeenCalled();
 
-    expect(startSession).toHaveBeenCalledTimes(1);
+    socket.msg(
+      JSON.stringify({
+        event: "start",
+        streamSid: "MZ0",
+        start: { callSid: "CA1", customParameters: { call: "c_1" } },
+      }),
+    );
+    await vi.waitFor(() => expect(startSession).toHaveBeenCalledTimes(1));
     expect(startSession.mock.calls[0]?.[1]).toEqual({
       logContext: { transport: "phone", carrier: "twilio" },
+      call: { carrier: "twilio", callId: "CA1", parameters: { call: "c_1" } },
     });
+  });
+
+  test("the greeting still opens the call: the buffered audio_ready reaches the session", async () => {
+    const socket = new MockWebSocket("ws://carrier.test/phone");
+    socket.open();
+    const inbound: unknown[] = [];
+    const runtime: SessionRuntime = {
+      startSession: (bridge) => {
+        bridge.addEventListener("message", (event: { data: unknown }) => inbound.push(event.data));
+      },
+      shutdown: () => Promise.resolve(),
+    };
+    startTelephonySession(socket, runtime, { carrier: twilioCodec, logger: makeLogger() });
+    socket.msg(JSON.stringify({ event: "start", streamSid: "MZ0", start: {} }));
+    await vi.waitFor(() => expect(inbound).toEqual([JSON.stringify({ type: "audio_ready" })]));
+  });
+
+  test("a stream that never sends start is closed, and no session is started", async () => {
+    const socket = new MockWebSocket("ws://carrier.test/phone");
+    socket.open();
+    const { startSession, runtime } = runtimeSpy();
+    const logger = makeLogger();
+
+    startTelephonySession(socket, runtime, { carrier: twilioCodec, logger, startTimeoutMs: 10 });
+    await vi.waitFor(() => expect(socket.readyState).toBe(MockWebSocket.CLOSED));
+    expect(startSession).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("no start frame"),
+      expect.objectContaining({ carrier: "twilio" }),
+    );
+  });
+
+  test("a hang-up before start starts nothing", async () => {
+    const socket = new MockWebSocket("ws://carrier.test/phone");
+    socket.open();
+    const { startSession, runtime } = runtimeSpy();
+    const logger = makeLogger();
+
+    startTelephonySession(socket, runtime, { carrier: twilioCodec, logger });
+    socket.disconnect(1000);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("before it started"),
+        expect.anything(),
+      ),
+    );
+    expect(startSession).not.toHaveBeenCalled();
   });
 });
 

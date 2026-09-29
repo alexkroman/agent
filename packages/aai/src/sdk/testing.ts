@@ -48,6 +48,7 @@ export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
   createStubWorkflows,
   createToolContext,
+  endSessionCalls,
   type SentEvent,
   type TestToolContext,
   type ToolContextOverrides,

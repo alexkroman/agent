@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "abdda294cd81003cdac60023149a1bd1640d7dcac57ba681ac9e955bd869ec1a",
+  "sha256": "91e024920df0a50d48958db74054cd66caaf0cfdb45bcc2ed939ec464b6ad812",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -19,6 +19,7 @@
     "AgentVoicePresets",
     "AssemblyAIPipelineOptions",
     "BuiltinTool",
+    "EndSessionOptions",
     "MCP_SERVER_KEY_RE",
     "MCP_TOOL_NAME_MAX",
     "MCP_TOOL_PREFIX",
@@ -33,6 +34,7 @@
     "RouteRequest",
     "RouteResponse",
     "S2sAgentParams",
+    "SessionCall",
     "SessionContext",
     "SessionContextArgs",
     "SessionEndContext",
@@ -49,8 +51,10 @@
     "VoicePresetName",
     "agent",
     "assemblyAIPipeline",
+    "endSession",
     "mcpToolName",
     "routeResponse",
+    "sessionCall",
     "sessionClientLocation",
     "workflowApp"
   ],
@@ -66,14 +70,14 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "95ddf3cd8af4c00edde91c662147c7d4dcb70e02ce0ce4fdd0673d0f8b65ee85",
-      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+      "sha256": "5822c26054ae90b927d1d78ed31e85d47166ec993a78746b9327c96ea3b2367b",
+      "reason": "additive (checked): +AgentSessionLifecycle, +SessionContext, +SessionContextArgs, +SessionEndContext"
     },
     {
       "revision": 2,
       "rule": 2,
-      "sha256": "abdda294cd81003cdac60023149a1bd1640d7dcac57ba681ac9e955bd869ec1a",
-      "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionContext, +SessionContextArgs, +SessionEndContext, +routeResponse, +sessionClientLocation"
+      "sha256": "91e024920df0a50d48958db74054cd66caaf0cfdb45bcc2ed939ec464b6ad812",
+      "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +EndSessionOptions, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionCall, +SessionContext, +SessionContextArgs, +SessionEndContext, +endSession, +routeResponse, +sessionCall, +sessionClientLocation"
     }
   ]
 }

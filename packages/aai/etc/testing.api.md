@@ -176,6 +176,11 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+    afterReply: boolean;
+}[];
+
+// @public
 export function eventsOf<E extends {
     type: string;
 }, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
@@ -378,6 +383,13 @@ export interface SentEvent {
     // (undocumented)
     event: string;
 }
+
+// @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
 
 // @public
 type SleepOptions = {
@@ -844,6 +856,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public

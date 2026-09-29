@@ -84,6 +84,13 @@ export type PacedAudioSink = {
   clear(): void;
   /** Drop everything held and refuse further sends (socket closing). */
   stop(): void;
+  /**
+   * How long, from now, until the audio already SENT has finished playing at
+   * the far end — the playout clock's lead. Read after a frame queued with
+   * {@link PacedAudioSink.pushAfterAudio} runs, it is how long the reply before
+   * that frame is still audible (`endSession`'s wait).
+   */
+  playoutRemainingMs(): number;
 };
 
 type QueueItem =
@@ -187,6 +194,10 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     stop() {
       stopped = true;
       reset();
+    },
+
+    playoutRemainingMs() {
+      return leadAt(Date.now());
     },
   };
 }

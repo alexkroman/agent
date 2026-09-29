@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
+  "sha256": "16eb244bd6a795afd25623bd9f57cae61749be459f068ba88b0d3434877ee5b1",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -72,6 +72,7 @@
     "deployedAgent",
     "dialogRefusalPattern",
     "dialogResultSchema",
+    "endSessionCalls",
     "eventsOf",
     "expectDeployable",
     "expectDialogOk",
@@ -112,7 +113,7 @@
     "toolRunner"
   ],
   "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -123,8 +124,14 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "ab705f25b700cfa972dddbbabf756bd719e9e8cedfb159d884ba279f5dafd660",
+      "sha256": "9d15b484be1fc07c907bd01b3ede262dc6cefd4154656aed959c7f9947ba11ba",
       "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +stubClientInbox, +stubClientTranscript"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "16eb244bd6a795afd25623bd9f57cae61749be459f068ba88b0d3434877ee5b1",
+      "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +endSessionCalls, +stubClientInbox, +stubClientTranscript"
     }
   ]
 }

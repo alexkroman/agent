@@ -3,7 +3,11 @@
 import type { SessionContextArgs } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
-import { resolveSessionContext, SESSION_CONTEXT_TIMEOUT_MS } from "./session-context.ts";
+import {
+  MAX_REFUSE_REASON_CHARS,
+  resolveSessionContext,
+  SESSION_CONTEXT_TIMEOUT_MS,
+} from "./session-context.ts";
 
 const ARGS = { sessionId: "session-1234", clientId: "kitchen", env: { A: "1" } };
 
@@ -126,5 +130,34 @@ describe("resolveSessionContext", () => {
       logger: makeLogger(),
     });
     expect(answer).toEqual({});
+  });
+});
+
+describe("resolveSessionContext — refuse", () => {
+  // Spelled as a PARSE rather than a cast: an answer crosses from author code,
+  // and a `refuse` that is not a string is exactly what the check is for.
+  const ask = (refuse: unknown, logger = makeLogger()) =>
+    resolveSessionContext({
+      hook: () => JSON.parse(JSON.stringify({ refuse })),
+      args: ARGS,
+      logger,
+    });
+
+  test("a reason is kept, trimmed, one line and capped", async () => {
+    expect(await ask("  not a placed call ")).toEqual({ refuse: "not a placed call" });
+    // A reason is one log line: a newline in it would forge a second one.
+    expect(await ask("bad\nforged: line")).toEqual({ refuse: "bad forged: line" });
+    const long = await ask("x".repeat(MAX_REFUSE_REASON_CHARS + 50));
+    expect(long?.refuse).toHaveLength(MAX_REFUSE_REASON_CHARS);
+  });
+
+  test("an empty reason is no refusal, and a non-string is warned about and ignored", async () => {
+    expect(await ask("   ")).toEqual({});
+    const logger = makeLogger();
+    expect(await ask(true, logger)).toEqual({});
+    expect(logger.warn).toHaveBeenCalledWith(
+      "sessionContext `refuse` is not a string; ignored",
+      expect.anything(),
+    );
   });
 });

@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 468 names
+- [Agent authoring](#agent-authoring) — 472 names
 - [Browser client](#browser-client) — 137 names
-- [Testing and evals](#testing-and-evals) — 224 names
+- [Testing and evals](#testing-and-evals) — 225 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 349 names
+- [Framework internals](#framework-internals) — 352 names
 
 ## Agent authoring
 
@@ -187,6 +187,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `STEP_FILE_WINDOW_BYTES` | const | `@alexkroman1/aai/step-files` | `aai:step-files` | Bytes moved per store round trip, in either direction. |
 | `STEP_SPEAK_SAMPLE_RATE` | const | `@alexkroman1/aai/step` | `aai:step` | Sample rate `stepSpeak` asks for when a caller names none. |
 | `STEP_SPEAK_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:step` | How long one `stepSpeak` call may take before it is abandoned. |
+| `SessionCall` | type | `@alexkroman1/aai` | `aai:agent` | A phone session's call identity, as the carrier's `start` frame reported it. |
 | `SessionContext` | type | `@alexkroman1/aai` | `aai:agent` | What `AgentSessionLifecycle.sessionContext` may answer. |
 | `SessionContextArgs` | interface | `@alexkroman1/aai` | `aai:agent` | What `AgentSessionLifecycle.sessionContext` is called with. |
 | `SessionEndContext` | interface | `@alexkroman1/aai` | `aai:agent` | What `AgentSessionLifecycle.onSessionEnd` is called with. |
@@ -338,6 +339,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `dialog` | function | `@alexkroman1/aai` | `aai:dialog` | Declare a dialog statechart for an agent's conversation. |
 | `elevenLabsStt`, `ElevenLabsSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build an ElevenLabs Scribe STT descriptor. |
 | `encodeWav` | function | `@alexkroman1/aai/step` | `aai:step` | Wrap raw linear-PCM samples in a WAV container. |
+| `endSession`, `EndSessionOptions` | function | `@alexkroman1/aai` | `aai:agent` | End this session — a phone agent's `end_call`. |
 | `errorDetail` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract a detailed error string (message + stack) for diagnostic logging. |
 | `errorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract an error message from an unknown thrown value. |
 | `escapeSlackMrkdwn` | function | `@alexkroman1/aai/channels` | `aai:channels` | The three characters Slack's mrkdwn reserves. |
@@ -406,6 +408,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `safeJsonParse` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Parse JSON, returning `undefined` on malformed input. |
 | `sendToChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Post one message, and classify the failure honestly. |
 | `sendToChannelOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified — see `stepGenerateOrFail` for the family, and this module's doc for why the wrapper … |
+| `sessionCall` | function | `@alexkroman1/aai` | `aai:agent` | The phone call this session is — the carrier, its call id and the stream's custom parameters — or `undefined` for a session that did not arrive on `WS /phone` … |
 | `sessionClientId` | function | `@alexkroman1/aai` | `aai:inbox` | The client id this session's device connected with (`?client=` on `WS /websocket`), or `undefined` for a client that sent none — a browser tab, a phone call. |
 | `sessionClientLocation` | function | `@alexkroman1/aai` | `aai:agent` | Where this session's client is — the location `sessionContext` answered for it, else the one its socket reported (`?location=` on `WS /websocket`, the … |
 | `sessionClientPhone` | function | `@alexkroman1/aai` | `aai:channels` | The phone number this session's client reported (`?phone=` on `WS /websocket`, the `phone` option of `createBrowserSession` and `mountClient`), in E.164 form — … |
@@ -735,6 +738,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `describeWorkflowEval` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for a workflow app. |
 | `dialogRefusalPattern` | function | `@alexkroman1/aai/testing` | `aai:testing` | A pattern matching the sentence a `dialog()` gate refuses with — optionally pinned to the state it names. |
 | `dialogResultSchema` | function | `@alexkroman1/aai/testing` | `aai:testing` | The envelope a gated tool answers with, as a schema around the tool's own. |
+| `endSessionCalls` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every `endSession(ctx, …)` a tool made on a `createToolContext` context's session, in call order, with its options resolved (`afterReply` defaults to `true`). |
 | `errorsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every `error.reported` in `events`, in order — what the RUNTIME reported, as opposed to what the agent said or called. |
 | `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run evals against `agent`? |
 | `evalSimulation`, `EvalSimulationOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Build the `simulate`/`judge` pair for one case. |
@@ -1017,7 +1021,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `salvageJson` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Best-effort repair of *nearly* valid JSON, without an LLM round trip. |
 | `sessionAuthBrand` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The seal on a `SessionAuth`. |
 | `snapshotWorkspaceFiles` | function | `@alexkroman1/aai/workspace-files` |  | Read `dir` into a workspace file map, skipping (and NAMING) what cannot be carried: too many files, an oversized one, or bytes that aren't UTF-8. |
-| `startTelephonySession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Start a session over a carrier's media-stream socket. |
+| `startTelephonySession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Start a session over a carrier's media-stream socket, once the carrier has said which call it is. |
 | `startTracing` | function | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | Start span export if this environment names a collector; otherwise nothing. |
 | `startTracingDetached` | function | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | Start span export ALONGSIDE the boot rather than in front of it. |
 | `telnyxCodec` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Telnyx media streaming. |
@@ -1220,6 +1224,7 @@ trace or a type error can be traced back to something.
 | `ServerRoute` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerRouteMatch` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ServerSession` | type | `@alexkroman1/aai-runtime/internal` |  | One live server-side session: the runtime's bridge between a transport (S2S, pipeline, or OpenAI Realtime) and the connected client. |
+| `SessionEnder` | type | `@alexkroman1/aai/host-internal` |  | What the runtime registers for a session — see `claimSessionEnder`. |
 | `SessionProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `SessionStateBackend` | type | `@alexkroman1/aai-runtime/internal` |  | Where a session's durable things are kept between processes — its slot values AND its event log. |
 | `SessionStateConformanceSuite` | type | `@alexkroman1/aai-runtime/internal` |  | The `SessionStateBackend` CONFORMANCE suite, loaded on demand. |
@@ -1286,6 +1291,7 @@ trace or a type error can be traced back to something.
 | `buildAgentUrl` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `buildSystemPrompt` | function | `@alexkroman1/aai/host-internal` |  | Build the system prompt sent to the LLM from the agent configuration. |
 | `capToolResult` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `claimSessionEnder` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `clampWorkflowWait` | function | `@alexkroman1/aai/internal` |  | Clamp a requested wait to what the API will actually hold a socket open for. |
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1376,6 +1382,7 @@ trace or a type error can be traced back to something.
 | `selectToolMessage` | function | `@alexkroman1/aai/host-internal` |  | One of the eligible messages, drawn — the VARIANT rule. |
 | `serializeToolFailure` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sessionStateDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `setSessionCall` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionClient` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

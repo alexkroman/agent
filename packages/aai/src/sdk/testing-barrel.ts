@@ -28,6 +28,7 @@ export {
   deployedAgent,
   dialogRefusalPattern,
   dialogResultSchema,
+  endSessionCalls,
   eventsOf,
   expectDeployable,
   expectDialogOk,

@@ -595,6 +595,56 @@ switch — see `machineFromSpec`.
 
 ***
 
+### endSession()
+
+```ts
+function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
+```
+
+End this session — a phone agent's `end_call`.
+
+By default the current reply finishes speaking first, so return what the
+agent should say last and the caller hears it:
+
+```ts
+import { endSession, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Hang up. Call it once the caller has said goodbye.",
+  inputSchema: z.object({}),
+  execute(_args, ctx) {
+    endSession(ctx);
+    return { ended: true, say: "Say a short goodbye." };
+  },
+});
+```
+
+The end is a normal stop: `onSessionEnd` fires and the session's events are
+flushed. A phone session's carrier stream is closed, which with
+`<Connect><Stream>` hangs the call up; a browser or device socket is closed
+with a normal (1000) close. A second call is a no-op.
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+##### options?
+
+[`EndSessionOptions`](#endsessionoptions)
+
+#### Returns
+
+`boolean`
+
+`true` when the session was live and will end; `false` when there is
+nothing to end (it already ended, or this context belongs to no connected
+session).
+
+***
+
 ### errorDetail()
 
 ```ts
@@ -1680,6 +1730,49 @@ Parse JSON, returning `undefined` on malformed input. JSON cannot encode
 #### Returns
 
 `unknown`
+
+***
+
+### sessionCall()
+
+```ts
+function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined;
+```
+
+The phone call this session is — the carrier, its call id and the stream's
+custom parameters — or `undefined` for a session that did not arrive on
+`WS /phone` (a browser tab, a device).
+
+The same object `sessionContext` and `onSessionEnd` receive as `call`:
+
+```ts
+import { sessionCall, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Record how the call went.",
+  inputSchema: z.object({ outcome: z.string() }),
+  async execute({ outcome }, ctx) {
+    const callId = sessionCall(ctx)?.parameters.call;
+    if (!callId) return { error: "This is not one of our calls." };
+    await fetch(`${ctx.env.CALLS_URL}/calls/${callId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ outcome }),
+    });
+    return { recorded: true };
+  },
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+[`SessionCall`](#sessioncall) \| `undefined`
 
 ***
 
@@ -7414,6 +7507,18 @@ What [AgentSessionLifecycle.sessionContext](#sessioncontext) is called with.
 
 #### Properties
 
+##### call?
+
+```ts
+optional call?: SessionCall;
+```
+
+The phone call, for a session that arrived on `WS /phone`: the carrier, its
+call id and the stream's custom parameters (`<Parameter>`), from the
+carrier's `start` frame — which the runtime waits for before it asks you.
+What the far end CLAIMED; check a parameter your app issued, and `refuse`
+when it is not one. The same object `sessionCall(ctx)` reads.
+
 ##### clientId?
 
 ```ts
@@ -7459,6 +7564,14 @@ it fired is dropped.
 What [AgentSessionLifecycle.onSessionEnd](#onsessionend) is called with.
 
 #### Properties
+
+##### call?
+
+```ts
+optional call?: SessionCall;
+```
+
+The phone call it was, for a `WS /phone` session — see [SessionContextArgs.call](#call).
 
 ##### clientId?
 
@@ -11280,6 +11393,33 @@ by listing the dialog in [AgentDef.dialogs](#dialogs).
 
 ***
 
+### EndSessionOptions
+
+```ts
+type EndSessionOptions = {
+  afterReply?: boolean;
+};
+```
+
+Options for [endSession](#endsession).
+
+#### Properties
+
+##### afterReply?
+
+```ts
+optional afterReply?: boolean;
+```
+
+Let the current reply finish SPEAKING before the session ends. Default
+`true`: the reply the calling tool belongs to is the one with the goodbye in
+it, and ending before it is heard hangs up mid-sentence. `false` ends it now.
+
+Bounded either way — a reply that never finishes does not hold the
+connection open (`aai-runtime`'s `END_SESSION_REPLY_TIMEOUT_MS`).
+
+***
+
 ### EventMapOf
 
 ```ts
@@ -12165,6 +12305,51 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SessionCall
+
+```ts
+type SessionCall = {
+  callId?: string;
+  carrier: string;
+  parameters: Readonly<Record<string, string>>;
+};
+```
+
+A phone session's call identity, as the carrier's `start` frame reported it.
+
+#### Properties
+
+##### callId?
+
+```ts
+readonly optional callId?: string;
+```
+
+The carrier's id for the call: Twilio's `CallSid` (`CA…`), Telnyx's
+`call_control_id`. Absent when the frame carried none.
+
+##### carrier
+
+```ts
+readonly carrier: string;
+```
+
+The carrier that opened the stream — the `?carrier=` value (`"twilio"`, `"telnyx"`).
+
+##### parameters
+
+```ts
+readonly parameters: Readonly<Record<string, string>>;
+```
+
+The stream's custom parameters — Twilio's (and TeXML's) `<Parameter>`
+elements, by name. Telnyx Call Control's `client_state`, when set, is here
+as `client_state`, still base64 as Telnyx sends it. Empty when there were
+none. Bounded by the bridge: at most 32 entries, each name plus value
+under 500 characters (Twilio's own limit), non-string values dropped.
+
+***
+
 ### SessionContext
 
 ```ts
@@ -12172,6 +12357,7 @@ type SessionContext = {
   historySince?: number;
   instructions?: string;
   location?: string;
+  refuse?: string;
 };
 ```
 
@@ -12216,6 +12402,43 @@ typed into the app's settings beats whatever a device was flashed with.
 
 Held to the socket's rule: control characters are stripped, and one over
 200 characters is ignored. Personal data — the runtime never logs it.
+
+##### refuse?
+
+```ts
+optional refuse?: string;
+```
+
+Refuse the session: the reason, for your logs. The runtime closes it before
+the greeting and before any model call — a WebSocket client with a 1008
+(policy violation) close carrying this reason, a phone call by closing the
+carrier's stream, which hangs up. Logged once, with the session id and this
+reason and nothing else; never sent to the model. `onSessionEnd` does not
+fire for a refused session.
+
+For a server reachable from outside — a phone agent behind a tunnel — this
+is what keeps a stranger who found the URL from spending your model:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Reminder calls",
+  telephony: ["twilio"],
+  async sessionContext({ call, env, signal }) {
+    const id = call?.parameters.call;
+    if (!id) return { refuse: "not a placed call" };
+    const res = await fetch(`${env.CALLS_URL}/calls/${id}`, { signal });
+    if (!res.ok) return { refuse: "unknown call" };
+    return { instructions: `This call is about: ${(await res.json()).topic}` };
+  },
+});
+```
+
+A throw or a timeout is NOT a refusal — the session starts without context,
+as it always has — so an app that must refuse on doubt catches its own
+failures and returns `refuse`. Trimmed and capped at 200 characters; an
+empty string is ignored.
 
 ***
 

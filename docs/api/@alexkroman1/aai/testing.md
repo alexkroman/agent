@@ -515,6 +515,54 @@ stay.result.options; // "garden view"
 
 ***
 
+### endSessionCalls()
+
+```ts
+function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+  afterReply: boolean;
+}[];
+```
+
+Every `endSession(ctx, …)` a tool made on a [createToolContext](#createtoolcontext)
+context's session, in call order, with its options resolved (`afterReply`
+defaults to `true`). Empty when the tool never ended the session.
+
+A function of the context rather than a field on `TestToolContext`, for the
+reason `endSession` is one: it reads the session, which `ctx.sessionId` names.
+
+```ts
+import { endSession, tool } from "@alexkroman1/aai";
+import { createToolContext, endSessionCalls } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { z } from "zod";
+
+const endCall = tool({
+  description: "Hang up.",
+  inputSchema: z.object({}),
+  execute: (_args, ctx) => ({ ended: endSession(ctx) }),
+});
+
+test("end_call hangs up after the goodbye", async () => {
+  const ctx = createToolContext();
+  await endCall.execute({}, ctx);
+  expect(endSessionCalls(ctx)).toEqual([{ afterReply: true }]);
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](index.md#toolcontext), `"sessionId"`\>
+
+#### Returns
+
+readonly \{
+  `afterReply`: `boolean`;
+\}[]
+
+***
+
 ### eventsOf()
 
 ```ts
@@ -4395,6 +4443,7 @@ readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 
 ```ts
 type ToolContextOverrides = {
+  call?: SessionCall;
   clientId?: string;
   clientLocation?: string;
   clientPhone?: string;
@@ -4448,6 +4497,17 @@ The two MODEL seams also accept the SCRIPT their fake is built from — see
 their own docs below.
 
 #### Properties
+
+##### call?
+
+```ts
+optional call?: SessionCall;
+```
+
+The phone call this session is, as `sessionCall(ctx)` will read it —
+recorded under the context's `sessionId` the way the runtime records a
+`WS /phone` stream's `start` frame. Omitted, `sessionCall` answers
+`undefined`, which is what a browser tab gets.
 
 ##### clientId?
 

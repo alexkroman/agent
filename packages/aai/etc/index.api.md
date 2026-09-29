@@ -379,6 +379,14 @@ export interface DialogVoiceConfig {
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
+export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
+
+// @public
+export type EndSessionOptions = {
+    afterReply?: boolean | undefined;
+};
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -838,6 +846,16 @@ export function safeJsonParse(text: string): unknown;
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
+export type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined;
+
+// @public
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
@@ -851,10 +869,12 @@ export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 export interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -863,6 +883,7 @@ export interface SessionContextArgs {
 
 // @public @sealed
 export interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;

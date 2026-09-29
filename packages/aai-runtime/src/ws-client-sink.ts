@@ -8,7 +8,7 @@ import { MAX_CLIENT_WS_BUFFERED_BYTES } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { createPacedClientSink } from "./paced-client-sink.ts";
+import { createPacedClientSink, type PacedClientSink } from "./paced-client-sink.ts";
 import type { Logger } from "./runtime-config.ts";
 import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
@@ -42,7 +42,7 @@ export function createClientSink(
   log: Logger,
   ttsSampleRate: number,
   audioLeadMs?: number,
-): { client: ClientSink; stopPacing: () => void } {
+): PacedClientSink {
   let closedForBackpressure = false;
   // The socket itself, unpaced: frames and audio go out the moment they are
   // handed over. Pacing and its ordering rules are `paced-client-sink.ts`'s,
@@ -96,5 +96,5 @@ export function createClientSink(
     },
     close: raw.close,
   };
-  return { client, stopPacing: paced.stopPacing };
+  return { client, stopPacing: paced.stopPacing, endAfterReply: paced.endAfterReply };
 }

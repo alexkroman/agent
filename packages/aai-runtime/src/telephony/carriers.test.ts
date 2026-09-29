@@ -4,6 +4,9 @@ import {
   CARRIER_CODECS,
   carrierByName,
   isMulawFormat,
+  MAX_CALL_ID_CHARS,
+  MAX_CALL_PARAMETER_CHARS,
+  MAX_CALL_PARAMETERS,
   telnyxCodec,
   twilioCodec,
 } from "./carriers.ts";
@@ -17,6 +20,7 @@ const TWILIO_START = {
     accountSid: "AC0123456789abcdef",
     callSid: "CA0123456789abcdef",
     tracks: ["inbound"],
+    customParameters: { call: "c_81f2" },
     mediaFormat: { encoding: "audio/x-mulaw", sampleRate: 8000, channels: 1 },
   },
 };
@@ -27,6 +31,7 @@ const TELNYX_START = {
   stream_id: "48c8a2a1-1f2e-4a1f-9b9c-000000000000",
   start: {
     call_control_id: "v3:abc",
+    client_state: "aGVsbG8=",
     media_format: { encoding: "PCMU", sample_rate: 8000, channels: 1 },
   },
 };
@@ -38,7 +43,51 @@ describe("twilioCodec", () => {
       streamId: "MZ0123456789abcdef",
       encoding: "audio/x-mulaw",
       sampleRate: 8000,
+      // The call's identity — what an app that PLACED the call matches it by.
+      callId: "CA0123456789abcdef",
+      parameters: { call: "c_81f2" },
     });
+  });
+
+  test("bounds the custom parameters: strings only, capped in count and length", () => {
+    // They arrive from the far end of an unauthenticated socket and land in the
+    // app's `sessionContext`, so the app is handed a shape it need not check.
+    const many = Object.fromEntries(
+      Array.from({ length: MAX_CALL_PARAMETERS + 8 }, (_, i) => [`p${i}`, "v"]),
+    );
+    const decode = (customParameters: unknown) =>
+      twilioCodec.decode({ event: "start", streamSid: "MZ0", start: { customParameters } });
+    const kept = decode(many);
+    expect(kept.kind === "start" && Object.keys(kept.parameters ?? {})).toHaveLength(
+      MAX_CALL_PARAMETERS,
+    );
+
+    const mixed = decode({
+      ok: "yes",
+      number: 7,
+      nested: { a: "b" },
+      long: "x".repeat(MAX_CALL_PARAMETER_CHARS),
+    });
+    expect(mixed).toMatchObject({ parameters: { ok: "yes" } });
+    expect(mixed.kind === "start" && Object.keys(mixed.parameters ?? {})).toEqual(["ok"]);
+    // Not an object at all is no parameters, not a refused call.
+    expect(decode("call=c_1")).toMatchObject({ kind: "start", parameters: {} });
+  });
+
+  test("a parameter named __proto__ is a parameter, not a prototype", () => {
+    const decoded = twilioCodec.decode(
+      JSON.parse('{"event":"start","start":{"customParameters":{"__proto__":"x"}}}'),
+    );
+    expect(decoded.kind === "start" && Object.keys(decoded.parameters ?? {})).toEqual([
+      "__proto__",
+    ]);
+  });
+
+  test("an over-long or empty call id is dropped", () => {
+    const decode = (callSid: string) =>
+      twilioCodec.decode({ event: "start", streamSid: "MZ0", start: { callSid } });
+    expect(decode("C".repeat(MAX_CALL_ID_CHARS + 1))).toMatchObject({ callId: null });
+    expect(decode("")).toMatchObject({ callId: null });
   });
 
   test("decodes a media frame to its base64 payload", () => {
@@ -96,6 +145,8 @@ describe("twilioCodec", () => {
       streamId: "MZ0",
       encoding: null,
       sampleRate: null,
+      callId: null,
+      parameters: {},
     });
   });
 
@@ -123,7 +174,21 @@ describe("telnyxCodec", () => {
       streamId: "48c8a2a1-1f2e-4a1f-9b9c-000000000000",
       encoding: "PCMU",
       sampleRate: 8000,
+      callId: "v3:abc",
+      // Call Control's `client_state`, surfaced as a parameter, still base64.
+      parameters: { client_state: "aGVsbG8=" },
     });
+  });
+
+  test("TeXML custom parameters ride beside client_state, and a real one of that name wins", () => {
+    const decoded = telnyxCodec.decode({
+      ...TELNYX_START,
+      start: {
+        ...TELNYX_START.start,
+        custom_parameters: { call: "c_9", client_state: "from-texml" },
+      },
+    });
+    expect(decoded).toMatchObject({ parameters: { call: "c_9", client_state: "from-texml" } });
   });
 
   test("decodes a media frame", () => {

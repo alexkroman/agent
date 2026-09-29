@@ -1,7 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { type SessionEndContext, sessionClientLocation } from "@alexkroman1/aai";
-import { setSessionClient, setSessionLocation } from "@alexkroman1/aai/host-internal";
+import {
+  setSessionCall,
+  setSessionClient,
+  setSessionLocation,
+} from "@alexkroman1/aai/host-internal";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
@@ -141,5 +145,35 @@ describe("openSessionMemory", () => {
         expect.objectContaining({ error: "later" }),
       ),
     );
+  });
+
+  test("a refusal installs nothing, loads no history, and silences onSessionEnd", async () => {
+    const onSessionEnd = vi.fn();
+    const { memory, prompt, sessionId, history } = wire({
+      sessionContext: () => ({ refuse: "stranger", instructions: "never installed" }),
+      onSessionEnd,
+    });
+    setSessionClient(sessionId, `refused-${sessionId}`);
+    await bindClientSession(history, "earlier", `refused-${sessionId}`);
+
+    expect(await memory.open()).toEqual([]);
+    expect(memory.refused).toBe("stranger");
+    expect(prompt.setContext).not.toHaveBeenCalled();
+    memory.ended(3);
+    expect(onSessionEnd).not.toHaveBeenCalled();
+  });
+
+  test("both hooks are handed the session's call", async () => {
+    const call = { carrier: "twilio", callId: "CA1", parameters: { call: "c_1" } };
+    const sessionContext = vi.fn(() => undefined);
+    const ended: SessionEndContext[] = [];
+    const { memory, sessionId } = wire({ sessionContext, onSessionEnd: (c) => void ended.push(c) });
+    setSessionCall(sessionId, call);
+
+    await memory.open();
+    memory.ended(0);
+    expect(sessionContext).toHaveBeenCalledWith(expect.objectContaining({ call }));
+    expect(ended[0]?.call).toEqual(call);
+    expect(memory.refused).toBeUndefined();
   });
 });

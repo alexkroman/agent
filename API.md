@@ -1372,6 +1372,9 @@ export type ChannelOutboxEntry = {
 };
 
 // @internal
+export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean;
+
+// @internal
 export const CLIENT_ID_RE: RegExp;
 
 // @internal
@@ -2013,7 +2016,22 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
 export const SESSION_RESUME_GRACE_MS = 120000;
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export type SessionEnder = (options: {
+    afterReply: boolean;
+}) => void;
+
+// @public
 type SessionMode = "s2s" | "pipeline" | "text";
+
+// @internal
+export function setSessionCall(sessionId: string, call: SessionCall): void;
 
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
@@ -2956,6 +2974,14 @@ export interface DialogVoiceConfig {
 type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 // @public
+export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
+
+// @public
+export type EndSessionOptions = {
+    afterReply?: boolean | undefined;
+};
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -3415,6 +3441,16 @@ export function safeJsonParse(text: string): unknown;
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
+export type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
+export function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined;
+
+// @public
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
 
 // @public
@@ -3428,10 +3464,12 @@ export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 export interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -3440,6 +3478,7 @@ export interface SessionContextArgs {
 
 // @public @sealed
 export interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
@@ -5344,14 +5383,23 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
+
+// @public
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    refuse?: string | undefined;
 };
 
 // @public @sealed
 interface SessionContextArgs {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
@@ -5360,6 +5408,7 @@ interface SessionContextArgs {
 
 // @public @sealed
 interface SessionEndContext {
+    call?: SessionCall;
     clientId?: string;
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
@@ -8084,6 +8133,11 @@ interface DialogToolResult<R> extends DialogPosition {
 }
 
 // @public
+export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
+    afterReply: boolean;
+}[];
+
+// @public
 export function eventsOf<E extends {
     type: string;
 }, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
@@ -8286,6 +8340,13 @@ export interface SentEvent {
     // (undocumented)
     event: string;
 }
+
+// @public
+type SessionCall = {
+    readonly carrier: string;
+    readonly callId?: string;
+    readonly parameters: Readonly<Record<string, string>>;
+};
 
 // @public
 type SleepOptions = {
@@ -8752,6 +8813,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public
@@ -11364,6 +11426,7 @@ import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -11446,12 +11509,19 @@ export type CarrierCodec = {
 
 // @public
 export type CarrierInbound =
-/** The call's media stream has begun; `streamId` must be echoed on outbound frames. */
+/**
+* The call's media stream has begun; `streamId` must be echoed on outbound
+* frames. `callId` and `parameters` are the call's identity, bounded by the
+* shipped codecs (see `MAX_CALL_PARAMETERS`). OPTIONAL so a codec written
+* before they existed still type-checks; absent reads as "none".
+*/
     {
     kind: "start";
     streamId: string;
     encoding: string | null;
     sampleRate: number | null;
+    callId?: string | null;
+    parameters?: Readonly<Record<string, string>>;
 }
 /** One 20 ms chunk of caller audio, base64 μ-law. */
 | {
@@ -11919,6 +11989,7 @@ export type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -11975,6 +12046,7 @@ type SleepRecord = {
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
     carrier: CarrierCodec;
     logger?: Logger;
+    startTimeoutMs?: number;
 }): void;
 
 // @public
@@ -12046,6 +12118,9 @@ export const TELEPHONY_SAMPLE_RATE = 8000;
 export type TelephonyBridgeOptions = {
     carrier: CarrierCodec;
     logger?: Logger;
+    onStart?: (start: Extract<CarrierInbound, {
+        kind: "start";
+    }>) => void;
 };
 
 // @public
@@ -12218,6 +12293,7 @@ import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -12256,6 +12332,10 @@ export type AttachSessionOptions = {
     sessionStartTimeoutMs?: number;
     resumeFrom?: string;
     closeAfterFailure?: () => void;
+    closeAfterRefusal?: (reason: string) => void;
+    closeOnEndSession?: (options: {
+        afterReply: boolean;
+    }) => void;
 };
 
 // @public
@@ -12996,6 +13076,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
 };
 ```
 

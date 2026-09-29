@@ -27,13 +27,16 @@
 
 import type http from "node:http";
 import type { Duplex } from "node:stream";
+import type { SessionCall } from "@alexkroman1/aai";
 import { requestPath, requestQuery, TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
 import type { WebSocketServer } from "ws";
-import type { Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { SessionRuntime } from "../server.ts";
 import { asSessionWebSocket, type SessionWebSocket } from "../ws-frames.ts";
 import { type CarrierCodec, type CarrierName, carrierByName } from "./carriers.ts";
-import { createTelephonyBridge } from "./telephony-bridge.ts";
+import { type CarrierStart, createTelephonyBridge } from "./telephony-bridge.ts";
 
 /** Path `createRuntimeServer` serves carrier media streams on. */
 export const TELEPHONY_PATH = "/phone";
@@ -71,24 +74,99 @@ export function enabledCarriers(
 }
 
 /**
- * Start a session over a carrier's media-stream socket.
+ * How long a carrier's stream may stay open without its `start` frame before
+ * it is closed.
  *
- * The whole of the telephony integration at the session layer: wrap the
- * socket, hand it to the runtime, done. No session option is set — the
- * defaults are already the right ones for a phone call, and the one that
- * would be tempting to change is `audioLeadMs`, which must stay PACED (see
- * the module doc in `telephony-bridge.ts`).
+ * Twilio sends `connected` and then `start` in the same breath as the upgrade,
+ * and Telnyx sends `start` first; a live call's arrives in milliseconds. 5 s is
+ * far past that and short enough that a socket which will never send one — a
+ * stranger's, a proxy's health check — does not hold a session slot. A stream
+ * with no `start` has no stream id to echo either, so it could never have been
+ * heard: closing it loses nothing.
+ */
+export const TELEPHONY_START_TIMEOUT_MS = 5000;
+
+/** Close code for a stream that never sent its `start` frame. */
+const WS_CLOSE_POLICY_VIOLATION = 1008;
+
+/** What the wait for `start` resolves to when the deadline passes first. */
+const TIMED_OUT: unique symbol = Symbol("carrier start timed out");
+
+/** The `call` a session is started with, from the carrier's `start` frame. */
+function callOf(carrier: CarrierCodec, start: CarrierStart): SessionCall {
+  return {
+    carrier: carrier.name,
+    parameters: start.parameters ?? {},
+    ...omitUndefined({ callId: start.callId ?? undefined }),
+  };
+}
+
+/**
+ * Start a session over a carrier's media-stream socket, once the carrier has
+ * said which call it is.
+ *
+ * **The session waits for the carrier's `start` frame**, bounded by
+ * {@link TELEPHONY_START_TIMEOUT_MS}. The frame is where the call's identity is
+ * — Twilio's `callSid` and `customParameters`, Telnyx's `call_control_id` — and
+ * the app's `sessionContext` is asked inside `session.start()`, which begins
+ * the moment `runtime.startSession` is called. Started on the upgrade, as this
+ * used to be, the hook ran before the frame had arrived and could never see
+ * the call it was deciding about. So the bridge is built first (it buffers what
+ * it decodes until the runtime attaches, the `audio_ready` included), the
+ * `start` is awaited, and only then is the session started with it as `call`.
+ * A stream that closes first starts nothing; one that never sends `start` is
+ * closed with a 1008.
+ *
+ * No other session option is set — the defaults are already the right ones for
+ * a phone call, and the one that would be tempting to change is `audioLeadMs`,
+ * which must stay PACED (see the module doc in `telephony-bridge.ts`).
  *
  * @public
  */
 export function startTelephonySession(
   carrierSocket: SessionWebSocket,
   runtime: SessionRuntime,
-  options: { carrier: CarrierCodec; logger?: Logger },
+  options: { carrier: CarrierCodec; logger?: Logger; startTimeoutMs?: number },
 ): void {
-  const bridge = createTelephonyBridge(carrierSocket, options);
-  runtime.startSession(bridge, {
-    logContext: { transport: "phone", carrier: options.carrier.name },
+  const { carrier, startTimeoutMs = TELEPHONY_START_TIMEOUT_MS } = options;
+  const log = options.logger ?? consoleLogger;
+  let settle: (start: CarrierStart | null) => void = () => undefined;
+  const started = new Promise<CarrierStart | null>((resolve) => {
+    settle = resolve;
+  });
+  const bridge = createTelephonyBridge(carrierSocket, {
+    carrier,
+    logger: log,
+    onStart: (start) => settle(start),
+  });
+  // A hang-up before `start` is the caller's to make; nothing is started for it.
+  carrierSocket.addEventListener("close", () => settle(null));
+  void pTimeout(started, {
+    milliseconds: startTimeoutMs,
+    fallback: (): typeof TIMED_OUT => TIMED_OUT,
+  }).then((start) => {
+    if (start === null) {
+      log.info("telephony: carrier closed the stream before it started", {
+        carrier: carrier.name,
+      });
+      return;
+    }
+    if (start === TIMED_OUT) {
+      log.warn("telephony: no start frame from the carrier; closing the stream", {
+        carrier: carrier.name,
+        timeoutMs: startTimeoutMs,
+      });
+      try {
+        carrierSocket.close?.(WS_CLOSE_POLICY_VIOLATION, "no start frame");
+      } catch (err) {
+        log.debug("telephony: close failed", { error: String(err) });
+      }
+      return;
+    }
+    runtime.startSession(bridge, {
+      logContext: { transport: "phone", carrier: carrier.name },
+      call: callOf(carrier, start),
+    });
   });
 }
 

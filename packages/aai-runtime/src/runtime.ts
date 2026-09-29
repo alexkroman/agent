@@ -393,7 +393,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // ── AgentRuntime methods ──────────────────────────────────────────────
 
   function startSession(ws: SessionWebSocket, startOpts?: SessionStartOptions): void {
-    const { resumeFrom, clientLocation, clientId, clientPhone } = startOpts ?? {};
+    const { resumeFrom, clientLocation, clientId, clientPhone, call } = startOpts ?? {};
     const userOnSessionEnd = startOpts?.onSessionEnd;
     wireSessionSocket(ws, {
       sessions,
@@ -421,7 +421,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
         userOnSessionEnd?.(sid, sink);
       },
       ...omitUndefined({ sessionStartTimeoutMs, resumeFrom }),
-      ...omitUndefined({ clientLocation, clientId, clientPhone }),
+      ...omitUndefined({ clientLocation, clientId, clientPhone, call }),
     });
   }
 

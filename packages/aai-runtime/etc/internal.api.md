@@ -23,6 +23,7 @@ import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai';
 import { SessionEventBody } from '@alexkroman1/aai';
@@ -61,6 +62,10 @@ export type AttachSessionOptions = {
     sessionStartTimeoutMs?: number;
     resumeFrom?: string;
     closeAfterFailure?: () => void;
+    closeAfterRefusal?: (reason: string) => void;
+    closeOnEndSession?: (options: {
+        afterReply: boolean;
+    }) => void;
 };
 
 // @public
@@ -801,6 +806,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
+    call?: SessionCall;
 };
 
 // (No @packageDocumentation comment for this package)

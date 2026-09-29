@@ -20,7 +20,10 @@
  * - **The answer is checked.** It crosses from author code, so a non-string
  *   `instructions` or a non-finite `historySince` is dropped with a warning
  *   rather than concatenated into a prompt or compared against a timestamp,
- *   and a `location` is held to the rule the socket's `?location=` is.
+ *   and a `location` is held to the rule the socket's `?location=` is. A
+ *   `refuse` is kept only as a non-empty string, control characters replaced
+ *   and capped at {@link MAX_REFUSE_REASON_CHARS} — acting on it is
+ *   `runtime-session-stream.ts`'s.
  *
  * Its own module rather than a closure in `runtime-session-memory.ts` so the
  * three rules are testable without a session around them.
@@ -40,6 +43,29 @@ import type { Logger } from "./runtime-config.ts";
  * this runs in is not otherwise on the caller's critical path until they speak.
  */
 export const SESSION_CONTEXT_TIMEOUT_MS = 1500;
+
+/**
+ * Longest `refuse` reason kept. It is the app's words and lands in a log line
+ * and in a WebSocket close frame, whose reason is capped at 123 BYTES by the
+ * protocol — the transport truncates again there; this bounds the log.
+ */
+export const MAX_REFUSE_REASON_CHARS = 200;
+
+/** A usable `refuse` reason, or undefined for none. */
+function refusalOf(value: unknown, log: Logger, sid: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    log.warn("sessionContext `refuse` is not a string; ignored", { sid });
+    return undefined;
+  }
+  // Control characters become spaces, the `location` rule: a reason is one log
+  // line, never a forged second one.
+  const reason = value
+    .replace(/\p{Cc}/gu, " ")
+    .trim()
+    .slice(0, MAX_REFUSE_REASON_CHARS);
+  return reason === "" ? undefined : reason;
+}
 
 /** What the deadline resolves with — a symbol, so no author answer can equal it. */
 const TIMED_OUT: unique symbol = Symbol("sessionContext timed out");
@@ -71,6 +97,8 @@ function checked(value: unknown, log: Logger, sid: string): SessionContext | und
   else if (location !== undefined) {
     log.warn("sessionContext `location` is not a usable string; ignored", { sid });
   }
+  const refuse = refusalOf(value.refuse, log, sid);
+  if (refuse !== undefined) out.refuse = refuse;
   return out;
 }
 

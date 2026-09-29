@@ -42,6 +42,7 @@
 
 import type { SessionEvent } from "@alexkroman1/aai";
 import type { SessionMemory } from "./runtime-session-memory.ts";
+import { SessionRefusedError } from "./session-attach-end.ts";
 import type { ServerSession } from "./session-core.ts";
 import { historyFromEvents } from "./session-event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
@@ -107,6 +108,13 @@ export function attachSessionStream(
   core.start = async () => {
     await stream.hydrate(sessionId);
     const prior = (await memory?.open()) ?? [];
+    // BEFORE the history restore and `startCore()`: the core's own start is what
+    // connects the providers and, once the client is ready, speaks the greeting,
+    // so a refused session reaches neither a model nor the caller's ear.
+    // `attachSession` recognizes the rejection and closes the connection as a
+    // refusal rather than as a failed start.
+    const refused = memory?.refused;
+    if (refused !== undefined) throw new SessionRefusedError(refused);
     // Only on a RESUME. A fresh session's log is empty, so the read would be a
     // round trip that can only answer nothing — and `resumed` is known from the
     // socket's own `?sessionId=`, which is cheaper and more honest than

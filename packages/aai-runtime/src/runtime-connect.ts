@@ -164,6 +164,10 @@ function attachConnection(
       };
       return session;
     },
+    // `endSession(ctx)` on a caller-owned sink: the same wait for the goodbye
+    // to play, then the same close a resume takeover gets — which detaches.
+    closeOnEndSession: (request) =>
+      paced.endAfterReply(request, () => client.close?.("session ended by the agent")),
     ...omitUndefined({
       logger: deps.logger,
       sessionStartTimeoutMs: deps.sessionStartTimeoutMs,
