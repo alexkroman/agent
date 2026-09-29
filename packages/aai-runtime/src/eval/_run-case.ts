@@ -80,15 +80,18 @@ export async function runCase(run: CaseRun): Promise<void> {
           ...omitUndefined({ stepFetch: net?.stepFetch }),
         })
       : undefined;
+  // The suite's identity comes OUT of the spread, so a case's `null` can
+  // clear it: spreading it in and then overriding could only ever replace.
+  const { clientId, phone, call, ...suite } = options ?? {};
   const session = await openEvalSessionWithSeams({
-    ...options,
+    ...suite,
     agent,
     ...omitUndefined({
       // The case's identity over the suite's, field by field: a case naming
       // only a `call` still runs as the suite's client.
-      clientId: caseOptions?.clientId,
-      phone: caseOptions?.phone,
-      call: caseOptions?.call,
+      clientId: caseOrSuite(caseOptions?.clientId, clientId),
+      phone: caseOrSuite(caseOptions?.phone, phone),
+      call: caseOrSuite(caseOptions?.call, call),
       workflows: workflows?.client,
       // What the builtins take — the network, when there is one.
       fetch: net?.fetch,
@@ -120,6 +123,14 @@ export async function runCase(run: CaseRun): Promise<void> {
     // and is refused into this case's log rather than let out.
     if (net !== undefined) run.net.end();
   }
+}
+
+/**
+ * One identity field for a case: `null` is "none", absent is the suite's.
+ */
+function caseOrSuite<T>(own: T | null | undefined, suite: T | undefined): T | undefined {
+  if (own === null) return undefined;
+  return own ?? suite;
 }
 
 /**

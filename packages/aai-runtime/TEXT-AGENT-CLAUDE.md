@@ -381,6 +381,11 @@ nothing else. Two decisions:
   fails at the first line.
 - **A non-E.164 `phone` THROWS**, where the socket drops it: a device's typo is
   a stranger's input, an eval's is the author's.
+- **A case's `null` CLEARS the suite's field** (`clientId: null`,
+  `call: null`), absent keeps it. `runCase` takes the three out of the suite's
+  spread before applying the case's, because spreading them in and overriding
+  could only replace, and a calling agent's "not a placed call" refusal sits in
+  a suite whose other cases are all the one call.
 
 The greeting wait reads `sessionContext`'s answered greeting by WATCHING the
 one call the runtime makes (`observeSessionContext`), never by calling the hook

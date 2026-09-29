@@ -343,12 +343,12 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ```ts
 type EvalCaseOptions = {
-  call?: SessionCall;
-  clientId?: string;
+  call?: SessionCall | null;
+  clientId?: string | null;
   live?: boolean;
   network?:   | EvalNetwork
      | (() => EvalNetwork);
-  phone?: string;
+  phone?: string | null;
   scripted?: boolean;
   stubGenerate?: StubScript;
   stubReply?: StubScript;
@@ -362,26 +362,30 @@ What a case gets to say about how it should be run.
 ##### call?
 
 ```ts
-readonly optional call?: SessionCall;
+readonly optional call?: SessionCall | null;
 ```
 
 This case's placed phone call, over the suite's — what `sessionContext`
 receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
-lands on `session.refused`.
+lands on `session.refused`. `null` is "not a placed call": a calling
+agent's refusal of a session no carrier started, inside a suite whose
+other cases are all the one call.
 
 ##### clientId?
 
 ```ts
-readonly optional clientId?: string;
+readonly optional clientId?: string | null;
 ```
 
 WHO this case's session is, over the suite's own
 ([DescribeEvalOptions](#describeevaloptions)) — the client id `sessionClientId(ctx)`
-answers. See `EvalSessionOptions.clientId`.
+answers. See `EvalSessionOptions.clientId`. `null` is "no client id for
+this case", whatever the suite set; absent is "the suite's".
 
 Per case because a suite's cases are rarely all the same caller: a
 speaker agent's "a device with no client id is refused" case sits beside
-twenty that run as the kitchen speaker.
+twenty that run as the kitchen speaker, and it is written
+`{ clientId: null }`.
 
 ##### live?
 
@@ -408,10 +412,11 @@ service that answers differently in this one scenario) passes them here.
 ##### phone?
 
 ```ts
-readonly optional phone?: string;
+readonly optional phone?: string | null;
 ```
 
-This case's reported phone number, over the suite's. See `EvalSessionOptions.phone`.
+This case's reported phone number, over the suite's. See
+`EvalSessionOptions.phone`. `null` is "no number for this case".
 
 ##### scripted?
 

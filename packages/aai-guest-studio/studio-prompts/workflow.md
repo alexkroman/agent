@@ -666,9 +666,10 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
      a case `{ live: true }` instead when no script could honestly stand in
      (a tool the model has to choose for itself, a refusal, a judgement).
 
-   **Who is calling** is a suite or case option: `clientId`, `phone` and `call`
-   are what `sessionClientId`, `sessionClientPhone`, `sessionCall` and your
-   `sessionContext` see; a call it refuses reads as `session.refused`. A tool's
+   **Who is calling** is a suite or case option (a case's `null` clears it):
+   `clientId`, `phone` and `call` are what `sessionClientId`,
+   `sessionClientPhone`, `sessionCall` and your `sessionContext` see; a call it
+   refuses reads as `session.refused`. A tool's
    `endSession(ctx)` really hangs up: `turn.endedSession`, `session.ended`.
    `network: evalNetwork({ routes })` answers every `fetch` your tools, builtins
    and steps make, and refuses the rest; read it back as `ctx.network`. A

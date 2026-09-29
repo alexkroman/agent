@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `describeEval`'s `clientId`/`phone`/`call`: set per suite, overridden per
- * case, and a refused call readable from the case body.
+ * `describeEval`'s `clientId`/`phone`/`call`: set per suite, overridden or
+ * CLEARED (`null`) per case, and a refused call readable from the case body.
  *
  * FORCED into stub mode at module scope, for `describe.test.ts`'s reason: the
  * mode is read at collection time, and without it this unit file would drive a
@@ -33,14 +33,16 @@ const identity = z.object({
   call: z.string().nullable(),
 });
 
-/** A calling agent's gate: only a call it placed gets a session. */
+/** A calling agent's gate: only a call it placed gets a session, and nothing else does. */
 const caller = withTools(
   agent({
     name: "Identity Suite",
-    sessionContext: ({ call }) =>
-      call === undefined || call.parameters.call?.startsWith("call_")
+    sessionContext: ({ call }) => {
+      if (call === undefined) return { refuse: "not a placed call" };
+      return call.parameters.call?.startsWith("call_")
         ? undefined
-        : { refuse: "not a call we placed" },
+        : { refuse: "not a call we placed" };
+    },
   }),
   { who_am_i: whoAmI },
 );
@@ -74,6 +76,30 @@ describeEval(
         });
       },
       { ...ASK, clientId: "eval-hallway-speaker" },
+    );
+
+    test(
+      "a case's `null` clears the suite's client id and phone, and keeps its call",
+      async ({ session }) => {
+        const turn = await session.say("who is this?");
+        expect(toolResultIn(turn.toolCalls, "who_am_i", identity)).toEqual({
+          client: null,
+          phone: null,
+          call: "call_7f3a",
+        });
+      },
+      { ...ASK, clientId: null, phone: null },
+    );
+
+    test(
+      "`call: null` is a session no carrier placed, inside a suite that sets one",
+      async ({ session }) => {
+        // The suite's call would have been let through; `null` removes it, so
+        // the gate sees no call at all and refuses.
+        expect(session.refused).toBe("not a placed call");
+        await expect(session.say("hello?")).rejects.toThrow(/REFUSED/);
+      },
+      { call: null },
     );
 
     test(

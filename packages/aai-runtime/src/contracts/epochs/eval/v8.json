@@ -3,7 +3,7 @@
   "capability": "eval",
   "epoch": 8,
   "rule": 2,
-  "sha256": "10fb19c347694cdd281b36ae52ede0e3d89fd619b8ba5ff4b32b7956a84ed662",
+  "sha256": "e5ff8066c404167eb9f08e5d7960a3d00d9fd6adec692a8dfeb8e64e1bf417b1",
   "exports": [
     "DEFAULT_RUN_TIMEOUT_MS",
     "DescribeEvalOptions",
@@ -92,7 +92,7 @@
     {
       "revision": 1,
       "rule": 2,
-      "sha256": "10fb19c347694cdd281b36ae52ede0e3d89fd619b8ba5ff4b32b7956a84ed662",
+      "sha256": "e5ff8066c404167eb9f08e5d7960a3d00d9fd6adec692a8dfeb8e64e1bf417b1",
       "reason": "additive (checked): +transcriptOf"
     }
   ]

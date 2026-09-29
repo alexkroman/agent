@@ -101,21 +101,28 @@ export type EvalCaseOptions = {
   /**
    * WHO this case's session is, over the suite's own
    * ({@link DescribeEvalOptions}) — the client id `sessionClientId(ctx)`
-   * answers. See `EvalSessionOptions.clientId`.
+   * answers. See `EvalSessionOptions.clientId`. `null` is "no client id for
+   * this case", whatever the suite set; absent is "the suite's".
    *
    * Per case because a suite's cases are rarely all the same caller: a
    * speaker agent's "a device with no client id is refused" case sits beside
-   * twenty that run as the kitchen speaker.
+   * twenty that run as the kitchen speaker, and it is written
+   * `{ clientId: null }`.
    */
-  readonly clientId?: string;
-  /** This case's reported phone number, over the suite's. See `EvalSessionOptions.phone`. */
-  readonly phone?: string;
+  readonly clientId?: string | null;
+  /**
+   * This case's reported phone number, over the suite's. See
+   * `EvalSessionOptions.phone`. `null` is "no number for this case".
+   */
+  readonly phone?: string | null;
   /**
    * This case's placed phone call, over the suite's — what `sessionContext`
    * receives as `call`. See `EvalSessionOptions.call`; a call the hook refuses
-   * lands on `session.refused`.
+   * lands on `session.refused`. `null` is "not a placed call": a calling
+   * agent's refusal of a session no carrier started, inside a suite whose
+   * other cases are all the one call.
    */
-  readonly call?: SessionCall;
+  readonly call?: SessionCall | null;
   /**
    * This case's fake network, over the suite's — see
    * `DescribeEvalOptions.network`. A case needing routes of its own (a

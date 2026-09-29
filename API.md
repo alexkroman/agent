@@ -11379,9 +11379,9 @@ export type EvalCaseOptions = {
     readonly stubGenerate?: StubScript;
     readonly live?: boolean;
     readonly scripted?: boolean;
-    readonly clientId?: string;
-    readonly phone?: string;
-    readonly call?: SessionCall;
+    readonly clientId?: string | null;
+    readonly phone?: string | null;
+    readonly call?: SessionCall | null;
     readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
