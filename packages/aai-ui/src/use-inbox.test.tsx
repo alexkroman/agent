@@ -88,6 +88,7 @@ function deliver(id: string): void {
 beforeEach(() => {
   sockets = [];
   FakeAudioContext.made = [];
+  localStorage.clear();
   vi.stubGlobal(
     "WebSocket",
     recordingWebSocketClass((s) => sockets.push(s)),
@@ -142,6 +143,30 @@ describe("useInbox", () => {
     expect(ctx?.sources[0]?.start).toHaveBeenCalledOnce();
     act(() => hook.result.current.stopPlayback());
     expect(ctx?.sources[0]?.stop).toHaveBeenCalledOnce();
+  });
+
+  test("only the tab touched last plays; the rest still ack and see the notice", () => {
+    const onNotice = vi.fn();
+    const { hook } = mount({ onNotice });
+    act(() => {
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(localStorage.getItem("aai.inbox.player.kitchen")).toBe("kitchen-tab1");
+    // Another tab of the same browser was clicked after this one.
+    localStorage.setItem("aai.inbox.player.kitchen", "kitchen-tab2");
+    deliver("r1");
+    const [ctx] = FakeAudioContext.made;
+    expect(ctx?.sources).toHaveLength(0);
+    expect(onNotice).toHaveBeenCalledOnce();
+    expect(replies()).toEqual([{ type: "ack", id: "r1" }]);
+    // That tab closed and gave the claim back: every unlocked tab plays again.
+    localStorage.removeItem("aai.inbox.player.kitchen");
+    deliver("r2");
+    expect(ctx?.sources[0]?.start).toHaveBeenCalledOnce();
+    // Closing this one gives back its own claim, and only its own.
+    localStorage.setItem("aai.inbox.player.kitchen", "kitchen-tab1");
+    hook.unmount();
+    expect(localStorage.getItem("aai.inbox.player.kitchen")).toBeNull();
   });
 
   test("play: false leaves the audio to the caller", () => {

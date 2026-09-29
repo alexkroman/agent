@@ -20,6 +20,13 @@
  * - **Playback is unlocked by the page's first gesture** (`notice-player.ts`):
  *   the autoplay policy silences a context created without one, and a notice
  *   arrives hours after any click.
+ * - **One tab plays: the one last touched.** Every tab is a holder of its own,
+ *   and the inbox sends a notice to each, so nine open tabs played it nine
+ *   times a few milliseconds apart — heard as one choppy, phasing voice. A
+ *   gesture claims the client's player in `localStorage`, which every tab of
+ *   the origin shares synchronously; the others still ack and still call
+ *   `onNotice`, they just stay quiet. A claimant that closes gives the claim
+ *   back, and with no claim every unlocked tab plays, as before.
  *
  * @module
  */
@@ -76,6 +83,40 @@ export type UseInboxResult = {
 /** The page gestures that unlock playback — see `notice-player.ts`. */
 const GESTURES = ["pointerdown", "keydown"] as const;
 
+/** The `localStorage` key naming which holder of `clientId` plays its notices. */
+const playerKey = (clientId: string): string => `aai.inbox.player.${clientId}`;
+
+/**
+ * Read, claim or release the client's player — see the module doc. Storage
+ * that throws (a sandboxed frame, a full quota) claims nothing, so every tab
+ * plays, which is the behaviour before there was a claim at all.
+ */
+const claims = {
+  mine(clientId: string, holder: string): boolean {
+    try {
+      const owner = localStorage.getItem(playerKey(clientId));
+      return owner === null || owner === holder;
+    } catch {
+      return true;
+    }
+  },
+  claim(clientId: string, holder: string): void {
+    try {
+      localStorage.setItem(playerKey(clientId), holder);
+    } catch {
+      // No storage: nothing to claim, so every tab plays.
+    }
+  },
+  release(clientId: string, holder: string): void {
+    try {
+      if (localStorage.getItem(playerKey(clientId)) === holder)
+        localStorage.removeItem(playerKey(clientId));
+    } catch {
+      // No storage: nothing to claim, so every tab plays.
+    }
+  },
+};
+
 /**
  * Hold this session's `WS /inbox` socket open for the life of the component,
  * and play what arrives — see the module doc.
@@ -114,24 +155,40 @@ export function useInbox(options: UseInboxOptions = {}): UseInboxResult {
 
   useEffect(() => {
     const notices = player.current;
-    const unlock = () => notices?.unlock();
+    const { identity } = session;
+    const holder = identity.holderId();
+    const unlock = () => {
+      notices?.unlock();
+      const client = identity.clientId();
+      if (client) claims.claim(client, holder);
+    };
+    const release = () => {
+      const client = identity.clientId();
+      if (client) claims.release(client, holder);
+    };
     for (const type of GESTURES) addEventListener(type, unlock, { capture: true });
+    addEventListener("pagehide", release);
     return () => {
       for (const type of GESTURES) removeEventListener(type, unlock, { capture: true });
+      removeEventListener("pagehide", release);
+      release();
       notices?.close();
     };
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     const { identity } = session;
+    const holder = identity.holderId();
     const inbox = createInbox({
       platformUrl: identity.platformUrl,
       client: () => identity.clientId(),
-      holder: identity.holderId(),
+      holder,
       events,
       busy: () => (latest.current.busy ?? (() => session.getSnapshot().running))(),
       onNotice: (notice) => {
-        if (latest.current.play !== false) player.current?.play(notice.pcm);
+        const client = identity.clientId();
+        const mine = client === undefined || claims.mine(client, holder);
+        if (latest.current.play !== false && mine) player.current?.play(notice.pcm);
         latest.current.onNotice?.(notice);
       },
       onEvent: (event) => latest.current.onEvent?.(event),
