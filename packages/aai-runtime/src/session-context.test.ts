@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import {
   MAX_REFUSE_REASON_CHARS,
+  MAX_SESSION_GREETING_CHARS,
   resolveSessionContext,
   SESSION_CONTEXT_TIMEOUT_MS,
 } from "./session-context.ts";
@@ -157,6 +158,40 @@ describe("resolveSessionContext — refuse", () => {
     expect(await ask(true, logger)).toEqual({});
     expect(logger.warn).toHaveBeenCalledWith(
       "sessionContext `refuse` is not a string; ignored",
+      expect.anything(),
+    );
+  });
+});
+
+describe("resolveSessionContext — greeting", () => {
+  const ask = (greeting: unknown, logger = makeLogger()) =>
+    resolveSessionContext({
+      hook: () => JSON.parse(JSON.stringify({ greeting })),
+      args: ARGS,
+      logger,
+    });
+
+  test("a greeting is kept, trimmed, control characters spaced and capped", async () => {
+    expect(await ask("  Hi, calling for Sam. ")).toEqual({ greeting: "Hi, calling for Sam." });
+    // A TTS provider reads a control character as markup or noise.
+    expect(await ask("Hi\tSam,\u0000 hello")).toEqual({ greeting: "Hi Sam,  hello" });
+    const long = await ask(`Hi ${"x".repeat(MAX_SESSION_GREETING_CHARS)}`);
+    expect(long?.greeting).toHaveLength(MAX_SESSION_GREETING_CHARS);
+    // A cut that lands on a space does not end the spoken line on one.
+    const spaced = await ask(`${"x".repeat(MAX_SESSION_GREETING_CHARS - 1)} tail`);
+    expect(spaced?.greeting).toBe("x".repeat(MAX_SESSION_GREETING_CHARS - 1));
+  });
+
+  test('an empty greeting is KEPT — it means "none this session", unlike an empty refusal', async () => {
+    expect(await ask("")).toEqual({ greeting: "" });
+    expect(await ask(" \n ")).toEqual({ greeting: "" });
+  });
+
+  test("a non-string greeting is warned about and ignored, so the agent's stands", async () => {
+    const logger = makeLogger();
+    expect(await ask(42, logger)).toEqual({});
+    expect(logger.warn).toHaveBeenCalledWith(
+      "sessionContext `greeting` is not a string; ignored",
       expect.anything(),
     );
   });

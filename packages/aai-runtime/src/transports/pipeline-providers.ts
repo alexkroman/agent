@@ -34,8 +34,6 @@ export interface PipelineProviderOptions {
   ttsSampleRate: number;
   /** Optional STT prompt injected via SttOpenOptions.sttPrompt. */
   sttPrompt?: string | undefined;
-  /** Agent greeting, seeded as connect-time STT agent context. */
-  greeting?: string | undefined;
   /** Session-scoped abort signal — a session torn down mid-open closes late arrivals. */
   signal: AbortSignal;
   /** Provider event handlers, implemented by the turn orchestrator. */

@@ -12354,6 +12354,7 @@ under 500 characters (Twilio's own limit), non-string values dropped.
 
 ```ts
 type SessionContext = {
+  greeting?: string;
   historySince?: number;
   instructions?: string;
   location?: string;
@@ -12364,6 +12365,42 @@ type SessionContext = {
 What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
 
 #### Properties
+
+##### greeting?
+
+```ts
+optional greeting?: string;
+```
+
+The greeting for THIS session, spoken instead of `agent({ greeting })` —
+for an opening only known per connect, like an outbound call that names
+who it is calling for:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({
+  name: "Reminder calls",
+  greeting: "Hi, this is an AI assistant.",
+  telephony: ["twilio"],
+  sessionContext: ({ call }) => ({
+    greeting: `Hi, this is an AI assistant calling on behalf of ${call?.parameters.for ?? "a customer"}. Do you have a moment?`,
+  }),
+});
+```
+
+It replaces the TEXT, never the decision: a session that would not greet —
+a resume, `?resume=1` — still does not, and one that would speaks this
+exactly as it speaks the agent's (synthesized as written, no model call,
+recorded in history as the agent's opening line, spoken again after a
+client `reset`). An empty string means no greeting this session. Control
+characters become spaces, and the text is trimmed and cut at
+`MAX_SESSION_GREETING_CHARS` (500). Absent — or a throw, or an answer past
+the `SESSION_CONTEXT_TIMEOUT_MS` deadline — keeps the agent's greeting.
+
+Every transport honours it: the pipeline and OpenAI Realtime read it when
+the greeting fires, AssemblyAI S2S when it sends its session config — both
+after this hook has answered.
 
 ##### historySince?
 

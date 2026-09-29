@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "91e024920df0a50d48958db74054cd66caaf0cfdb45bcc2ed939ec464b6ad812",
+  "sha256": "eb6e97f35ef0ac9d8a92817ea4e25ac8804add1c7020f3f1e46131004919b832",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -76,7 +76,7 @@
     {
       "revision": 2,
       "rule": 2,
-      "sha256": "91e024920df0a50d48958db74054cd66caaf0cfdb45bcc2ed939ec464b6ad812",
+      "sha256": "eb6e97f35ef0ac9d8a92817ea4e25ac8804add1c7020f3f1e46131004919b832",
       "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +EndSessionOptions, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionCall, +SessionContext, +SessionContextArgs, +SessionEndContext, +endSession, +routeResponse, +sessionCall, +sessionClientLocation"
     }
   ]

@@ -93,6 +93,34 @@ describe("pipeline greeting", () => {
       await t.stop();
     });
 
+    test("a greeting THUNK is resolved when the greeting fires, not at construction", async () => {
+      // The runtime's case: `sessionContext` answers a session's own greeting
+      // inside `start()`, after the transport was built with a thunk over it.
+      let answered: string | undefined;
+      const { opts, tts, callbacks } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: () => answered ?? GREETING },
+      });
+      const t = createPipelineTransport(opts);
+      answered = "Calling for Sam.";
+      await t.start();
+      await vi.waitFor(() => {
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
+      });
+      expect(tts.last()?.textChunks).toEqual(["Calling for Sam."]);
+      await t.stop();
+    });
+
+    test("a greeting thunk answering an empty string starts no greeting turn", async () => {
+      const { opts, callbacks } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: () => "" },
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("a resume that recovered NOTHING greets", async () => {
       // The failure this closes: a well-formed id naming a session whose state is
       // gone — a reload past SESSION_RESUME_GRACE_MS, or a guest that self-exited

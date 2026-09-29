@@ -203,9 +203,39 @@ export type TransportSessionConfig = {
    * never directly.
    */
   systemPrompt: SystemPromptOption;
-  greeting?: string;
+  /**
+   * The opening line, or a thunk read when it fires — see {@link GreetingOption}.
+   * Read it through {@link resolveGreeting}, never directly.
+   */
+  greeting?: GreetingOption | undefined;
   history?: Message[];
 };
+
+/**
+ * A session's greeting: the text, or a THUNK that knows it later.
+ *
+ * The thunk exists for the reason {@link SkipGreetingOption}'s does: the
+ * runtime builds a transport before `session.start()`, and `sessionContext` —
+ * whose `greeting` replaces the agent's for one session — answers INSIDE that
+ * window. Every transport reads its greeting after `start()` (pipeline in
+ * `greet()`, OpenAI Realtime in `sendGreeting`, AssemblyAI S2S in its
+ * `session.update`), so a thunk resolved there sees the answer. An empty or
+ * absent result means no greeting.
+ *
+ * @internal
+ */
+export type GreetingOption = string | (() => string | undefined);
+
+/**
+ * Resolve a {@link GreetingOption} at the moment the greeting is spoken or sent.
+ * One spelling, for the reason {@link resolveSystemPrompt} is one: a site that
+ * forgot the call would speak a function's source text.
+ *
+ * @internal
+ */
+export function resolveGreeting(greeting: GreetingOption | undefined): string | undefined {
+  return typeof greeting === "function" ? greeting() : greeting;
+}
 
 /**
  * Transport abstraction — one implementation per provider strategy

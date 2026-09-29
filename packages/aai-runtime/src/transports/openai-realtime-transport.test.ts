@@ -8,6 +8,7 @@ import {
   createOpenaiRealtimeTransport,
   type OpenaiRealtimeWebSocket,
 } from "./openai-realtime-transport.ts";
+import type { GreetingOption } from "./types.ts";
 
 type Listener = (ev: unknown) => void;
 
@@ -152,7 +153,7 @@ describe("openai-realtime-transport: connect and session.update", () => {
 });
 
 describe("greeting", () => {
-  function makeWithGreeting(args: { greeting?: string; skipGreeting?: boolean }) {
+  function makeWithGreeting(args: { greeting?: GreetingOption; skipGreeting?: boolean }) {
     const fake = makeFakeWs();
     const transport = createOpenaiRealtimeTransport({
       apiKey: "sk",
@@ -186,6 +187,15 @@ describe("greeting", () => {
     // JSON.stringify quotes the greeting and escapes any embedded quotes —
     // protects against prompt-injection by closing the instruction string.
     expect(greetingMsg.response.instructions).toBe('Say exactly: "Hello, \\"friend\\"."');
+  });
+
+  test("a greeting THUNK is resolved when it is sent — a session's own, from sessionContext", async () => {
+    const greeting = vi.fn(() => "Calling for Sam.");
+    const { fake, ready } = makeWithGreeting({ greeting });
+    await ready;
+    expect(greeting).toHaveBeenCalledOnce();
+    const msg = JSON.parse(fake.sent[1] ?? "{}");
+    expect(msg.response.instructions).toBe('Say exactly: "Calling for Sam."');
   });
 
   test("no greeting send when greeting is undefined", async () => {

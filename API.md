@@ -3464,6 +3464,7 @@ export type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    greeting?: string | undefined;
     refuse?: string | undefined;
 };
 
@@ -5394,6 +5395,7 @@ type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
     location?: string | undefined;
+    greeting?: string | undefined;
     refuse?: string | undefined;
 };
 

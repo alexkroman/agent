@@ -13,7 +13,8 @@
  *   as the session's (over the socket's `?location=`). Concurrently with
  *   the bind: neither needs the other, and both are on the start path. A
  *   `refuse` installs nothing and is left on {@link SessionMemory.refused} for
- *   the stream to act on.
+ *   the stream to act on; a `greeting` is left on {@link SessionMemory.greeting}
+ *   for the transport, which reads it when the greeting fires.
  * - **Load the client's prior sessions** (`session-client-history.ts`), narrowed
  *   by the context's `historySince`, and hand them to
  *   `runtime-session-stream.ts`, which restores them together with a resume's
@@ -65,6 +66,18 @@ export type SessionMemory = {
    */
   readonly refused: string | undefined;
   /**
+   * The greeting `sessionContext` answered, once `open()` has settled — `""`
+   * for "none this session", `undefined` for "the agent's" (no answer, no
+   * field, a timeout, or a refusal).
+   *
+   * A getter the transport reads LATE rather than a value handed to it: the
+   * transport is built before `open()` runs, and every transport speaks (or
+   * sends) its greeting only after `start()`, which `open()` precedes — see
+   * `runtime-session-stream.ts`. So the answer is in time without the session
+   * waiting any longer than it already waits for the hook.
+   */
+  readonly greeting: string | undefined;
+  /**
    * The session stopped and its log is flushed through `lastEventIndex`. Never
    * throws. A no-op for a REFUSED session: it never began, and a summarizer
    * started for it would digest a conversation a stranger was denied.
@@ -94,9 +107,13 @@ export function openSessionMemory(deps: {
   // it before the session is built, from the carrier's `start` frame.
   const callOf = (): SessionCall | undefined => sessionCall({ sessionId });
   let refused: string | undefined;
+  let greeting: string | undefined;
   return {
     get refused() {
       return refused;
+    },
+    get greeting() {
+      return greeting;
     },
     async open() {
       const clientId = clientOf();
@@ -116,6 +133,7 @@ export function openSessionMemory(deps: {
         return [];
       }
       if (context?.instructions) deps.prompt.setContext(context.instructions);
+      greeting = context?.greeting;
       // AFTER the socket's `?location=` (recorded before the session was built),
       // so the app's answer is the one the builtins and `sessionClientLocation` read.
       if (context?.location) setSessionLocation(sessionId, context.location);
