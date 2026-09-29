@@ -10723,6 +10723,46 @@ export type EvalEmitted = {
     readonly chunk: unknown;
 };
 
+// @public @sealed
+export type EvalNetwork = {
+    readonly fetch: typeof globalThis.fetch;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public
+export function evalNetwork(options?: EvalNetworkOptions): EvalNetwork;
+
+// @public
+export type EvalNetworkOptions = {
+    readonly routes?: Readonly<Record<string, EvalRoute>>;
+    readonly passthrough?: readonly string[];
+    readonly refuse?: "throw" | "403";
+};
+
+// @public @sealed
+export type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
+
+// @public
+export type EvalRoute = (request: Request, info: EvalRequest) => unknown;
+
 // @public
 export type EvalRunOptions = StartOptions & {
     readonly timeoutMs?: number | undefined;
@@ -11318,6 +11358,7 @@ export function describeEval(agent: AgentDef, define: (test: EvalTest) => void, 
 // @public
 export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
     readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
 // @public
@@ -11338,6 +11379,7 @@ export type EvalCaseOptions = {
     readonly clientId?: string;
     readonly phone?: string;
     readonly call?: SessionCall;
+    readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
 // @public
@@ -11348,6 +11390,33 @@ type EvalEmitted = {
 
 // @public
 export type EvalMode = "live" | "stub";
+
+// @public @sealed
+type EvalNetwork = {
+    readonly fetch: typeof globalThis.fetch;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public @sealed
+type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
 
 // @public
 type EvalRunOptions = StartOptions & {
@@ -11392,6 +11461,7 @@ export type EvalTestContext = {
     readonly session: EvalSession;
     readonly mode: EvalMode;
     readonly workflows: EvalWorkflows | undefined;
+    readonly network: EvalNetwork | undefined;
 };
 
 // @public @sealed

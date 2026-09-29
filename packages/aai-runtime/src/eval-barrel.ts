@@ -118,6 +118,20 @@ export {
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
+// A fake network that FAILS CLOSED: routes answer, the live model's hosts pass,
+// everything else is refused and logged. Public because every downstream suite
+// that evaluated a tool-calling agent hand-rolled one, open by default, and
+// stubbed the three fetches a case can reach separately. Its own capability
+// (`eval-network`): a young surface, which should move without taking the
+// harness's epoch with it.
+export {
+  type EvalNetwork,
+  type EvalNetworkOptions,
+  type EvalRequest,
+  type EvalRequestFilter,
+  type EvalRoute,
+  evalNetwork,
+} from "./eval/network.ts";
 // The `run_code` builtin's two halves, read off a call list. Public because
 // four template evals had each declared the same schema and the same reader, and
 // each then guarded against the builtin's REFUSAL with a hand-typed regex over a

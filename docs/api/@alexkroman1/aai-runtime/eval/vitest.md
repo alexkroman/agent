@@ -275,6 +275,8 @@ reason: string;
 
 ```ts
 type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
+  network?:   | EvalNetwork
+     | (() => EvalNetwork);
   workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 ```
@@ -292,6 +294,32 @@ hand off to a run had to install that inside the case body, which worked only
 because the engine publishes nothing when nobody passed one.
 
 #### Type Declaration
+
+##### network?
+
+```ts
+readonly optional network?: 
+  | EvalNetwork
+  | (() => EvalNetwork);
+```
+
+A fake network for every case — an `evalNetwork(...)`, or a FACTORY
+returning one, called afresh for every case and every `AAI_EVAL_REPEAT`
+repeat.
+
+It becomes all three fetches a case's code can reach: the global `fetch`
+a custom tool calls, the `fetch` the builtins take, and the step fetch a
+workflow step (or `sendToChannel`) reads. A request no route answers is
+REFUSED and logged; only the live model's own provider hosts pass through,
+worked out from the agent's `llm` (in a scripted run, not even those).
+The global is swapped for the whole SUITE rather than per case, so an
+`onSessionEnd` that fires after a case closed is refused into that case's
+log rather than reaching the real network.
+
+Prefer the factory when a route keeps STATE (rows a fake database holds):
+an instance's log is reset per case, but the handlers' own state is theirs,
+and state carried from one repeat into the next makes the second repeat
+measure the first. Mutually exclusive with `fetch`, which it replaces.
 
 ##### workflowOptions?
 
@@ -318,6 +346,8 @@ type EvalCaseOptions = {
   call?: SessionCall;
   clientId?: string;
   live?: boolean;
+  network?:   | EvalNetwork
+     | (() => EvalNetwork);
   phone?: string;
   scripted?: boolean;
   stubGenerate?: StubScript;
@@ -362,6 +392,18 @@ readonly optional live?: boolean;
 This case only means something against a live model — it is SKIPPED in stub
 mode. Use it for a claim no script can honestly satisfy: a tool the model
 has to choose for itself, a refusal, a judgement.
+
+##### network?
+
+```ts
+readonly optional network?: 
+  | EvalNetwork
+  | (() => EvalNetwork);
+```
+
+This case's fake network, over the suite's — see
+`DescribeEvalOptions.network`. A case needing routes of its own (a
+service that answers differently in this one scenario) passes them here.
 
 ##### phone?
 
@@ -489,6 +531,7 @@ project lights up red on a file the SDK told them to write:
 ```ts
 type EvalTestContext = {
   mode: EvalMode;
+  network: EvalNetwork | undefined;
   session: EvalSession;
   workflows: EvalWorkflows | undefined;
 };
@@ -549,6 +592,18 @@ test("a wrong guess is relayed without a point", async ({ session, mode }) => {
 A case that cannot be written that way wants `{ scripted: true }` instead,
 which skips it live rather than weakening it — see
 [EvalCaseOptions.scripted](#scripted).
+
+##### network
+
+```ts
+readonly network: EvalNetwork | undefined;
+```
+
+The fake network every `fetch` of this case went through — `undefined`
+when neither the suite nor the case passed one. Its log holds THIS case's
+requests (THIS repeat's, under `AAI_EVAL_REPEAT`), so a case asserts on
+`network.calls("textbelt.com")` or `network.expectNoOutbound(/twilio/)`
+without filtering out another run's traffic.
 
 ##### session
 

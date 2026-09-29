@@ -399,6 +399,30 @@ then rejects, and `sayAll` stops after the ending turn. The eval session stops
 ONCE through one `stopSession`: the core's `stop()` is idempotent, the runtime's
 wrappers around it are not, and a second call fired `onSessionEnd` twice.
 
+**`network` fails CLOSED, and the SUITE owns the global.** `evalNetwork`
+(`eval/network.ts`, its own `eval-network` capability) answers a request by a
+route, passes it to a `passthrough` host, or REFUSES it (a throw, or a 403) and
+logs it. Every downstream fake it replaced failed OPEN — forwarding whatever it
+did not recognize, because the live model's requests share the global — and
+stubbed the three fetches (global, builtin, step) separately, so a hole in one
+was invisible. The rules, each argued in `eval/_network-install.ts`:
+
+- **One dispatcher per SUITE**, swapped in at `beforeAll`: `onSessionEnd` is
+  fire-and-forget, so a per-case restore let a late write reach the real
+  network. Between cases a request is refused into the last case's log.
+- **The live model's hosts pass through unlogged, in LIVE mode only**, read off
+  the agent's descriptors (`eval/_model-hosts.ts`): a hard-coded
+  `assemblyai.com` is wrong the day an agent names another provider. Scripted,
+  a provider host is a tool's request like any other.
+- **Per case AND per repeat**: a factory is called afresh, an instance's log is
+  reset. A downstream fake carried rows across `AAI_EVAL_REPEAT` repeats, so
+  the second measured the first. `network` beside `fetch` or
+  `workflowOptions.stepFetch` throws: which one won would be spread order.
+- The passthrough reads the AMBIENT fetch through one accessor
+  (`evalPassthroughFetch`), not the pooled egress fetch `guard-invariants`
+  rule 29 asks for — it carries the model's traffic, whose client uses the
+  global in production (the `_request-body-extras.ts` argument).
+
 **`ctx.generate` answers from the script too**, and that was a hole rather than
 a limit: `generateText` calls the fake model's `doGenerate`, which used to
 throw, so every tool that reasons with a model — a grader, a planner, a

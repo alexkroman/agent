@@ -476,6 +476,27 @@ change — a gate whose meaning moves under it is not a gate.
 
 ***
 
+### evalNetwork()
+
+```ts
+function evalNetwork(options?: EvalNetworkOptions): EvalNetwork;
+```
+
+Build a fake network: every request is answered by a route, passed through
+to a host named in `passthrough`, or refused and recorded.
+
+#### Parameters
+
+##### options?
+
+[`EvalNetworkOptions`](#evalnetworkoptions)
+
+#### Returns
+
+[`EvalNetwork`](#evalnetwork)
+
+***
+
 ### evalTextCredentials()
 
 ```ts
@@ -1567,7 +1588,7 @@ The same record a carrier's `start` frame produces on `WS /phone`
 through the same seam: recorded under the session id before the session is
 built, and read by the runtime's own `sessionContext` step. So the hook's
 `refuse`, `instructions` and `greeting` take effect exactly as they do for
-a real call — a refusal lands on [EvalSession.refused](#refused), an answered
+a real call — a refusal lands on [EvalSession.refused](#refused-1), an answered
 greeting is the one the session opens with. A call is all the runtime
 derives from the phone path above the audio boundary; the μ-law codec and
 the carrier socket are below it, and an eval drives neither.
@@ -1604,8 +1625,8 @@ implicitly.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -1616,7 +1637,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1625,7 +1646,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -1638,7 +1659,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1647,7 +1668,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -1818,8 +1839,8 @@ implicitly.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -1830,7 +1851,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1839,7 +1860,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -1852,7 +1873,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -1861,7 +1882,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -2003,8 +2024,8 @@ The agent to run — an ordinary `agent()` definition.
 
 ```ts
 optional fetch?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
+  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
 };
 ```
 
@@ -2015,7 +2036,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+(input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -2024,7 +2045,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`RequestInfo` \| `URL`
+`URL` \| `RequestInfo`
 
 ###### init?
 
@@ -2037,7 +2058,7 @@ to keep a spec or an eval case off the network.
 ###### Call Signature
 
 ```ts
-(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 ```
 
 [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
@@ -2046,7 +2067,7 @@ to keep a spec or an eval case off the network.
 
 ###### input
 
-`string` \| `Request` \| `URL`
+`string` \| `URL` \| `Request`
 
 ###### init?
 
@@ -2708,6 +2729,329 @@ The stream the step named.
 
 ***
 
+### EvalNetwork
+
+```ts
+type EvalNetwork = {
+  fetch: typeof globalThis.fetch;
+  calls: readonly EvalRequest[];
+  expectNoOutbound: void;
+  expectNothingRefused: void;
+  refused: readonly EvalRequest[];
+  requests: readonly EvalRequest[];
+  reset: void;
+};
+```
+
+**`Sealed`**
+
+A fake network and its request log.
+
+#### Methods
+
+##### calls()
+
+```ts
+calls(host: string | RegExp): readonly EvalRequest[];
+```
+
+The requests a HOST really received — routed or passed through, never
+refused. A string matches the way a route key does (`"*.example"` works);
+a `RegExp` is tested against the hostname.
+
+###### Parameters
+
+###### host
+
+`string` \| `RegExp`
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### expectNoOutbound()
+
+```ts
+expectNoOutbound(filter: EvalRequestFilter): void;
+```
+
+Throw, listing them, when any request matching `filter` was even
+ATTEMPTED — refused ones included. "It never tried to reach the carrier"
+is the claim, and a refusal is a try.
+
+###### Parameters
+
+###### filter
+
+[`EvalRequestFilter`](#evalrequestfilter)
+
+###### Returns
+
+`void`
+
+##### expectNothingRefused()
+
+```ts
+expectNothingRefused(): void;
+```
+
+Throw, listing them, when anything was refused.
+
+###### Returns
+
+`void`
+
+##### refused()
+
+```ts
+refused(): readonly EvalRequest[];
+```
+
+Every refused request, in order.
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### requests()
+
+```ts
+requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+```
+
+Every request so far, in order, whatever its outcome — narrowed by a
+`filter` when one is given: a string is matched the way a route key is, a
+`RegExp` is tested against the full URL.
+
+###### Parameters
+
+###### filter?
+
+[`EvalRequestFilter`](#evalrequestfilter)
+
+###### Returns
+
+readonly [`EvalRequest`](#evalrequest)[]
+
+##### reset()
+
+```ts
+reset(): void;
+```
+
+Forget the log. `describeEval` calls it before every case and every
+`AAI_EVAL_REPEAT` repeat; a route's OWN state is the handler's to reset —
+pass `describeEval` a factory instead of an instance to get a fresh one.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### fetch
+
+```ts
+readonly fetch: typeof globalThis.fetch;
+```
+
+The network as a `fetch`: routed, passed through, or refused.
+
+***
+
+### EvalNetworkOptions
+
+```ts
+type EvalNetworkOptions = {
+  passthrough?: readonly string[];
+  refuse?: "throw" | "403";
+  routes?: Readonly<Record<string, EvalRoute>>;
+};
+```
+
+What [evalNetwork](#evalnetwork-1) takes.
+
+#### Properties
+
+##### passthrough?
+
+```ts
+readonly optional passthrough?: readonly string[];
+```
+
+Keys (same forms as `routes`) that reach the REAL network. Leave the live
+model's own hosts out — `describeEval` adds those — and list anything else
+only when a case genuinely means to leave the machine.
+
+##### refuse?
+
+```ts
+readonly optional refuse?: "throw" | "403";
+```
+
+How an unrouted request is refused. `"throw"` (the default) rejects the
+`fetch` the way an unreachable host does, which is the failure a tool most
+reliably surfaces; `"403"` answers `403 Forbidden`, for an agent whose tool
+swallows network errors but reports statuses. Either way it is recorded.
+
+##### routes?
+
+```ts
+readonly optional routes?: Readonly<Record<string, EvalRoute>>;
+```
+
+Handlers by where they answer. A key is one of:
+
+- a HOST — `"api.mem0.ai"` — matching that hostname exactly;
+- a WILDCARD host — `"*.example"` — matching any subdomain of it (and not
+  the bare domain);
+- a URL PREFIX — `"https://crm.example/rest/v1/calls"` — matching any URL
+  that starts with it.
+
+The most specific key answers: the longest matching URL prefix, then an
+exact host, then the longest matching wildcard.
+
+***
+
+### EvalRequest
+
+```ts
+type EvalRequest = {
+  body: unknown;
+  headers: Readonly<Record<string, string>>;
+  host: string;
+  method: string;
+  outcome: "routed" | "passthrough" | "refused";
+  route?: string;
+  status?: number;
+  text: string;
+  url: URL;
+};
+```
+
+**`Sealed`**
+
+One request the network saw, whatever became of it.
+
+#### Properties
+
+##### body
+
+```ts
+readonly body: unknown;
+```
+
+The body parsed as JSON when it parses, else [EvalRequest.text](#text-1);
+`undefined` for a request with no body.
+
+##### headers
+
+```ts
+readonly headers: Readonly<Record<string, string>>;
+```
+
+The request's headers, names lower-cased.
+
+##### host
+
+```ts
+readonly host: string;
+```
+
+`url.hostname`, the key most assertions filter on.
+
+##### method
+
+```ts
+readonly method: string;
+```
+
+Upper-case, `"GET"` when the caller named none.
+
+##### outcome
+
+```ts
+readonly outcome: "routed" | "passthrough" | "refused";
+```
+
+What became of it: answered by a `route`, sent on to the real network
+(`passthrough`), or `refused`.
+
+##### route?
+
+```ts
+readonly optional route?: string;
+```
+
+The route key that answered it, for `outcome: "routed"`.
+
+##### status?
+
+```ts
+readonly optional status?: number;
+```
+
+The response's status, for a request that got one.
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The body as text — `""` for none.
+
+##### url
+
+```ts
+readonly url: URL;
+```
+
+***
+
+### EvalRequestFilter
+
+```ts
+type EvalRequestFilter = 
+  | string
+  | RegExp
+  | ((request: EvalRequest) => boolean);
+```
+
+Which requests a query selects: a key (as a route key), a URL pattern, or a predicate.
+
+***
+
+### EvalRoute
+
+```ts
+type EvalRoute = (request: Request, info: EvalRequest) => unknown;
+```
+
+A route handler: the request (a fresh `Request`, so its body is readable)
+and the record the log holds for it, with the body already parsed.
+
+It returns a `Response`, used as is; `undefined`, answered `204 No Content`;
+or any other value, answered as `200` JSON — so a fixture route is one line.
+A handler that THROWS answers `500` with the message, and the case sees what
+its tool made of a failing service.
+
+#### Parameters
+
+##### request
+
+`Request`
+
+##### info
+
+[`EvalRequest`](#evalrequest)
+
+#### Returns
+
+`unknown`
+
+***
+
 ### EvalRunOptions
 
 ```ts
@@ -2814,7 +3158,7 @@ the harness's.
 
 ###### Throws
 
-When the session was [refused](#refused), or has
+When the session was [refused](#refused-1), or has
   [ended](#ended) — each naming which.
 
 ##### sayAll()

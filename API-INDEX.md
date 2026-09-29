@@ -20,7 +20,7 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 484 names
 - [Browser client](#browser-client) — 148 names
-- [Testing and evals](#testing-and-evals) — 230 names
+- [Testing and evals](#testing-and-evals) — 236 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
 - [Framework internals](#framework-internals) — 355 names
 
@@ -636,6 +636,10 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `EvalCredentials` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | What `evalCredentials` found on this machine. |
 | `EvalEmitted` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One chunk `stepEmit()` wrote during a run, and the stream it named. |
 | `EvalMode` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | How the suite is running, and why. |
+| `EvalNetwork`, `EvalNetworkOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A fake network and its request log. |
+| `EvalRequest` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | One request the network saw, whatever became of it. |
+| `EvalRequestFilter` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | Which requests a query selects: a key (as a route key), a URL pattern, or a predicate. |
+| `EvalRoute` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | A route handler: the request (a fresh `Request`, so its body is readable) and the record the log holds for it, with the body already parsed. |
 | `EvalRunOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Per-run knobs. |
 | `EvalSession`, `EvalSessionOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One live eval session. |
 | `EvalSimulationContext` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a case gets for running a simulated caller and grading the result. |
@@ -765,6 +769,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `endSessionCalls` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every `endSession(ctx, …)` a tool made on a `createToolContext` context's session, in call order, with its options resolved (`afterReply` defaults to `true`). |
 | `errorsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Every `error.reported` in `events`, in order — what the RUNTIME reported, as opposed to what the agent said or called. |
 | `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run evals against `agent`? |
+| `evalNetwork` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval-network` | Build a fake network: every request is answered by a route, passed through to a host named in `passthrough`, or refused and recorded. |
 | `evalSimulation`, `EvalSimulationOptions` | function | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | Build the `simulate`/`judge` pair for one case. |
 | `evalTextCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run a TEXT agent's eval live, and if not, which key is missing? |
 | `evalWorkflowCredentials` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Can this machine run workflow evals against `agent`? |
