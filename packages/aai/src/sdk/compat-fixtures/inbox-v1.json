@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "InboxServerFrame": [
+    { "type": "notice", "id": "run-1", "event": "reminder", "bytes": 0 },
+    {
+      "type": "notice",
+      "id": "run-1",
+      "event": "reminder",
+      "data": { "text": "call the plumber" },
+      "bytes": 32000
+    },
+    { "type": "notice", "id": "run-2", "event": "said", "data": "free text", "bytes": 2 },
+    {
+      "type": "session_event",
+      "sessionId": "sess-abc",
+      "event": {
+        "type": "user-transcript.committed",
+        "text": "remind me at five",
+        "meta": { "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV", "at": 1700000000000 }
+      }
+    },
+    {
+      "type": "session_event",
+      "sessionId": "sess-abc",
+      "event": {
+        "type": "tool.called",
+        "toolCallId": "tc1",
+        "toolName": "set_reminder",
+        "args": { "at": "17:00" },
+        "meta": { "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV", "at": 1700000000000 }
+      }
+    },
+    { "type": "session_ended", "sessionId": "sess-abc" }
+  ],
+  "InboxClientFrame": [{ "type": "ack", "id": "run-1" }, { "type": "busy", "id": "run-1" }]
+}

@@ -320,6 +320,29 @@ Host-provided agent configuration for a host-mode connection.
 
 ***
 
+### InboxClientFrame
+
+```ts
+type InboxClientFrame = z.infer<typeof InboxClientFrameSchema>;
+```
+
+One text frame a client sends on `WS /inbox`: its answer to the notice whose
+`id` it names.
+
+***
+
+### InboxServerFrame
+
+```ts
+type InboxServerFrame = z.infer<typeof InboxServerFrameSchema>;
+```
+
+One text frame the server sends on `WS /inbox`: a notice header, or — for a
+holder that asked with `?events=1` — a frame of the client's live
+conversation.
+
+***
+
 ### ReadyConfig
 
 ```ts
@@ -523,6 +546,52 @@ agent.
 Validated standalone rather than as a `SessionCommandSchema` member — the
 host-mode handshake consumes this message *before* `wireSessionSocket`
 attaches, so it must never reach `dispatchMessage`/`SessionCommandSchema`.
+
+***
+
+### InboxClientFrameSchema
+
+```ts
+const InboxClientFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+  id: z.ZodString;
+  type: z.ZodLiteral<"ack">;
+}, z.core.$strip>, z.ZodObject<{
+  id: z.ZodString;
+  type: z.ZodLiteral<"busy">;
+}, z.core.$strip>], "type">;
+```
+
+Zod schema for [InboxClientFrame](#inboxclientframe).
+
+***
+
+### InboxServerFrameSchema
+
+```ts
+const InboxServerFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+  bytes: z.ZodNumber;
+  data: z.ZodOptional<z.ZodUnknown>;
+  event: z.ZodString;
+  id: z.ZodString;
+  type: z.ZodLiteral<"notice">;
+}, z.core.$strip>, z.ZodObject<{
+  event: z.ZodObject<{
+     type: z.ZodString;
+  }, z.core.$loose>;
+  sessionId: z.ZodString;
+  type: z.ZodLiteral<"session_event">;
+}, z.core.$strip>, z.ZodObject<{
+  sessionId: z.ZodString;
+  type: z.ZodLiteral<"session_ended">;
+}, z.core.$strip>], "type">;
+```
+
+Zod schema for [InboxServerFrame](#inboxserverframe).
+
+A reader parses LENIENTLY where the two ends may disagree on a detail that is
+not this socket's: a `session_event`'s `event` is checked only for its
+`type`, since the session event vocabulary grows on its own schedule, and a
+notice's `data` is whatever the step sent.
 
 ***
 

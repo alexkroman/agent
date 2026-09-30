@@ -3,7 +3,7 @@
   "capability": "protocol",
   "epoch": 2,
   "rule": 2,
-  "sha256": "99cdc6cd6ecd2e378bd379a8333d87012a03775db94668eae02da6bc2fe4071c",
+  "sha256": "d4f462f521fa40e7ee15389c65948f5e10bbc65dc064438499ae681f3b090faa",
   "exports": [
     "CLIENT_CONFIG_METHODS",
     "CLIENT_CONFIG_PATH",
@@ -12,6 +12,10 @@
     "HostConfig",
     "HostConfigMessageSchema",
     "HostConfigSchema",
+    "InboxClientFrame",
+    "InboxClientFrameSchema",
+    "InboxServerFrame",
+    "InboxServerFrameSchema",
     "ReadyConfig",
     "ReadyConfigSchema",
     "RestoredToolCall",
@@ -28,5 +32,20 @@
     "buildReadyConfig",
     "lenientParse"
   ],
-  "rollup": "b5970fdd5674ecda6769c8a1fc01df76be29a1b0e3999ab2185fd46d6efa6fd3"
+  "rollup": "b5970fdd5674ecda6769c8a1fc01df76be29a1b0e3999ab2185fd46d6efa6fd3",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "99cdc6cd6ecd2e378bd379a8333d87012a03775db94668eae02da6bc2fe4071c",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "d4f462f521fa40e7ee15389c65948f5e10bbc65dc064438499ae681f3b090faa",
+      "reason": "additive (checked): +InboxClientFrame, +InboxClientFrameSchema, +InboxServerFrame, +InboxServerFrameSchema"
+    }
+  ]
 }

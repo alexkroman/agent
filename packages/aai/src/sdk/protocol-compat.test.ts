@@ -18,6 +18,7 @@ import {
 import { isRecord } from "./is-record.ts";
 import { SessionCommandSchema, SessionErrorCodeSchema } from "./protocol.ts";
 import { SessionEventSchema } from "./protocol-events.ts";
+import { InboxClientFrameSchema, InboxServerFrameSchema } from "./protocol-inbox.ts";
 
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
 
@@ -172,4 +173,64 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
       }
     });
   });
+});
+
+// The `WS /inbox` frames, pinned the same way in their own fixtures
+// (`inbox-v<N>.json`, skipped by the discovery above): a firmware client in the
+// field reads these headers and sends these answers, on no schedule of ours.
+type InboxFixture = {
+  version: number;
+  InboxServerFrame: Record<string, unknown>[];
+  InboxClientFrame: Record<string, unknown>[];
+};
+
+const inboxFixtureFiles = readdirSync(FIXTURE_DIR)
+  .filter((f) => /^inbox-v\d+\.json$/.test(f))
+  .sort();
+
+describe("inbox compat fixture discovery", () => {
+  test("finds the pinned inbox fixtures", () => {
+    expect(inboxFixtureFiles.length).toBeGreaterThan(0);
+  });
+});
+
+describe.each(inboxFixtureFiles)("inbox compat fixture: %s", (filename) => {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, filename), "utf-8")) as InboxFixture;
+  const groups: CompatGroup[] = [
+    {
+      label: "InboxServerFrame",
+      schema: InboxServerFrameSchema,
+      messages: fixture.InboxServerFrame,
+      discriminant: "type",
+    },
+    {
+      label: "InboxClientFrame",
+      schema: InboxClientFrameSchema,
+      messages: fixture.InboxClientFrame,
+      discriminant: "type",
+    },
+  ];
+
+  for (const { label, schema, messages, discriminant } of groups) {
+    test(`the ${label} fixture carries messages`, () => {
+      expect(messages.length).toBeGreaterThan(0);
+    });
+
+    test.each(messages.map((m, i) => [`${m[discriminant] as string}#${i}`, m]))(
+      `${label} %s parses against current schema`,
+      (_label, msg) => {
+        const result = schema.safeParse(msg);
+        if (!result.success) expect.fail(compatError(filename, label, msg, result.error.message));
+      },
+    );
+
+    test(`no ${label} variants removed`, () => {
+      for (const value of new Set(messages.map((m) => m[discriminant] as string))) {
+        expect(
+          schemaAcceptsDiscriminant(schema, { [discriminant]: value }),
+          `${label} variant "${value}" was removed`,
+        ).toBe(true);
+      }
+    });
+  }
 });
