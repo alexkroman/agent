@@ -116,6 +116,7 @@ export type {
   WorkflowOutputOf,
   WorkflowRunOf,
 } from "./workflow-readings.ts";
+export type { SayOnClientNotice } from "./workflow-say-on-client.ts";
 
 /**
  * A workflow body: an ordinary async function of its input and a

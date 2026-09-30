@@ -1,0 +1,26 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow",
+  "epoch": 3,
+  "rule": 2,
+  "sha256": "6007697ac272a01bc59ae479b53a7ae1c29a3f55a10a37b1cd834e6795336145",
+  "exports": [
+    "DEFAULT_STEP_MAX_ATTEMPTS",
+    "PollOptions",
+    "PollResult",
+    "SayOnClientNotice",
+    "SleepOptions",
+    "StepOptions",
+    "StepSchemaOptions",
+    "WaitForOptions",
+    "WaitForSchemaOptions",
+    "WorkflowClient",
+    "WorkflowContext",
+    "WorkflowDef",
+    "WorkflowFailureContext",
+    "WorkflowFailureHandler",
+    "WorkflowFailureHook",
+    "workflow"
+  ],
+  "rollup": "cc75f11d00da38a5fda2413bdc5a361b22388ca32c9708532f5255ad5aa1c6c2"
+}

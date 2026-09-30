@@ -48,6 +48,11 @@
  * re-thrown, so the run is marked failed with its real reason. A suspension is
  * not a failure: waits park out of band and never reach a `catch`.
  *
+ * `onFailure` may instead be a `{ run, maxAttempts }` handler — what
+ * `sayFailureOnClient` (`@alexkroman1/aai/step`) returns — which is handed to
+ * the ENGINE as `workflow({ onFailure })` rather than run from a body `catch`,
+ * so it runs only once the engine has classified the throw as the run failing.
+ *
  * @module
  */
 
@@ -76,6 +81,7 @@ import type { InferSchemaOutput } from "./schema.ts";
 import type { StepGenerateOptions } from "./step-generate.ts";
 import type { WorkflowDef } from "./workflow.ts";
 import type { WorkflowContext } from "./workflow-ctx.ts";
+import type { WorkflowFailureHook } from "./workflow-failure.ts";
 
 /** The budget a pass gets for every field left out. @public */
 export const DEFAULT_DEEP_RESEARCH_BUDGET: Readonly<Record<keyof DeepResearchBudget, number>> = {
@@ -124,12 +130,16 @@ export interface DeepResearchOptions<P extends DeepResearchInputSchema, R> {
    * with the original error. Same rules as `deliver`: steps for anything
    * non-deterministic. If it throws itself, the ORIGINAL error still fails the
    * run — the reason a person reads is the research's, not the apology's.
+   *
+   * Or a `{ run, maxAttempts }` handler (`sayFailureOnClient`'s), passed to the
+   * engine as the workflow's own `onFailure` — see the module doc.
    */
-  readonly onFailure?: (
-    error: unknown,
-    input: InferSchemaOutput<P>,
-    ctx: WorkflowContext,
-  ) => Promise<void> | void;
+  readonly onFailure?:
+    | ((error: unknown, input: InferSchemaOutput<P>, ctx: WorkflowContext) => Promise<void> | void)
+    | {
+        run: WorkflowFailureHook<InferSchemaOutput<P>>;
+        maxAttempts?: number | undefined;
+      };
 }
 /**
  * Declare a durable deep-research workflow, ready for `agent({ workflows })`.
@@ -162,7 +172,10 @@ export function deepResearchWorkflow<P extends DeepResearchInputSchema, R = Deep
   options: DeepResearchOptions<P, R>,
 ): WorkflowDef<P, R> {
   const settings = resolveSettings(options);
-  const { deliver, onFailure } = options;
+  const { deliver } = options;
+  // A function runs in the body's `catch`; a handler object goes to the engine.
+  const onFailure = typeof options.onFailure === "function" ? options.onFailure : undefined;
+  const engineFailure = typeof options.onFailure === "function" ? undefined : options.onFailure;
 
   async function run(input: InferSchemaOutput<P>, ctx: WorkflowContext): Promise<R> {
     try {
@@ -181,7 +194,11 @@ export function deepResearchWorkflow<P extends DeepResearchInputSchema, R = Deep
     }
   }
 
-  return { ...omitUndefined({ description: options.description }), input: options.input, run };
+  return {
+    ...omitUndefined({ description: options.description, onFailure: engineFailure }),
+    input: options.input,
+    run,
+  };
 }
 
 /** The options a stage reads, with every default filled. Exported for this module's spec. */

@@ -7,9 +7,12 @@ import { callTwiml } from "./_twilio-calls.ts";
 import { publishStepEnv } from "./step-env.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 import {
+  CALL_OVER_STATUSES,
   DEFAULT_CALL_RING_TIMEOUT_S,
   DEFAULT_CALL_TIME_LIMIT_S,
+  isCallOver,
   PlaceCallError,
+  type PlacedCallStatus,
   stepCallStatus,
   stepPlaceCall,
 } from "./step-place-call.ts";
@@ -172,5 +175,21 @@ describe("stepCallStatus", () => {
     await expect(stepCallStatus({ carrier: "twilio", callId: "CA1", credentials })).rejects.toThrow(
       /teleported/,
     );
+  });
+});
+
+describe("isCallOver", () => {
+  test("the five terminal statuses, and nothing else, are over", () => {
+    expect([...CALL_OVER_STATUSES].sort()).toEqual(
+      ["busy", "canceled", "completed", "failed", "no-answer"].sort(),
+    );
+    const live: PlacedCallStatus[] = ["queued", "ringing", "in-progress"];
+    for (const status of live) expect(isCallOver(status)).toBe(false);
+    for (const status of CALL_OVER_STATUSES) expect(isCallOver(status)).toBe(true);
+  });
+
+  test("an unknown status is not over", () => {
+    expect(isCallOver("initiated")).toBe(false);
+    expect(isCallOver("")).toBe(false);
   });
 });

@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 16,
   "rule": 2,
-  "sha256": "dabd594f9829f2170e0ccdd741d01e2f833796722539633b6a3a3ec1e915a786",
+  "sha256": "5e231e177a957f4b661ad8555564164806b7e3fd33a1735ed6cf0a8f8e195cb6",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -21,6 +21,10 @@
     "AssemblyAIPipelineOptions",
     "BuiltinTool",
     "ClientInboxOptions",
+    "ClientRun",
+    "ClientRunStatus",
+    "ClientRunsResponse",
+    "ClientRunsRoutesOptions",
     "EndSessionOptions",
     "MCP_SERVER_KEY_RE",
     "MCP_TOOL_NAME_MAX",
@@ -60,6 +64,7 @@
     "WebhookRouteOptions",
     "agent",
     "assemblyAIPipeline",
+    "clientRunsRoutes",
     "endSession",
     "mcpToolName",
     "route",
@@ -71,5 +76,20 @@
     "webhookRoute",
     "workflowApp"
   ],
-  "rollup": "da3083e321c551652c9da18a8c0b4f8b69cf0f15df75716efb7fc198964b39dd"
+  "rollup": "da3083e321c551652c9da18a8c0b4f8b69cf0f15df75716efb7fc198964b39dd",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "dabd594f9829f2170e0ccdd741d01e2f833796722539633b6a3a3ec1e915a786",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "5e231e177a957f4b661ad8555564164806b7e3fd33a1735ed6cf0a8f8e195cb6",
+      "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +clientRunsRoutes"
+    }
+  ]
 }

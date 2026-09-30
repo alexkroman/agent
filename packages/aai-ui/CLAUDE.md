@@ -88,8 +88,8 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
 - `default-client.tsx` / `build-default-client.ts` — the default UI for agents
   with no `client.tsx`, and its build step.
 - `use-*.ts` — public hooks (conversation, conversation log, session controls,
-  push-to-talk, tap-to-talk, route, stored value, workflow
-  run/runs/progress/submit/stream, download URL, flash, copy).
+  push-to-talk, tap-to-talk, route, route mutation, client runs, stored value,
+  workflow run/runs/progress/submit/stream, download URL, flash, copy).
 - `conversation-log.ts` — the log's pure half (`recordSession`, parsing);
   `_tap-to-talk-state.ts` — `useTapToTalk`'s statechart; `route-fetch.ts`,
   `stored-value.ts`, `linked-client.ts`, `phone.ts` — a device twin page's

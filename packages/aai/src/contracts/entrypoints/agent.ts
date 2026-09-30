@@ -109,8 +109,10 @@
  * `routeResponse`, for the same reason: `routes` is a field of the literal, and
  * what a handler receives and returns is what declaring one looks like. So are
  * the handler helpers written inside that literal: `route` (with `RouteDef`
- * and `ValidatedRouteRequest`), the thrown `routeError`/`RouteError`, and
- * `webhookRoute`/`verifyStandardWebhook` with their options.
+ * and `ValidatedRouteRequest`), the thrown `routeError`/`RouteError`,
+ * `webhookRoute`/`verifyStandardWebhook` with their options, and
+ * `clientRunsRoutes` with its options and the `ClientRun` rows it answers —
+ * handlers spread into that same `routes` literal.
  *
  * `AgentClientInbox` is the eighth, with `ClientInboxOptions`, for the same
  * reason: `clientInbox` is a field of the literal.
@@ -145,6 +147,11 @@ export {
   assemblyAIPipeline,
   type BuiltinTool,
   type ClientInboxOptions,
+  type ClientRun,
+  type ClientRunStatus,
+  type ClientRunsResponse,
+  type ClientRunsRoutesOptions,
+  clientRunsRoutes,
   type EndSessionOptions,
   endSession,
   MCP_SERVER_KEY_RE,

@@ -10,7 +10,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
-| work that outlives the call | [workflow](#workflow-2) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
+| work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
 | who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
@@ -37,7 +37,7 @@ to swap a stage; the rest keep the default.
 **Three primitives here run a defined process, and they are not
 interchangeable.** A [dialog](#dialog-1) gates a CONVERSATION — what the agent may
 say or do next, across turns. A [procedure](#procedure-2) runs ONE UNIT OF WORK inside
-a single tool call. A [workflow](#workflow-2) runs DURABLY, outliving the session.
+a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the session.
 
 ## Everything else is on a subpath, chosen by WHO READS IT
 
@@ -256,6 +256,65 @@ voice rides on the descriptor, because the service synthesizes.
 
 ***
 
+### clientRunsRoutes()
+
+```ts
+function clientRunsRoutes(options?: ClientRunsRoutesOptions): Record<string, RouteHandler>;
+```
+
+The pair of routes a page's "Running" panel reads and cancels through —
+`GET <path>` answering [ClientRunsResponse](#clientrunsresponse), `DELETE <path>/:runId`
+answering `{ cancelled }` — to spread into `agent({ routes })`. See this
+module's doc.
+
+Both require `?client=` (a 400 without it). The cancel answers a 404 unless
+the run's correlation key is that client, and `{ cancelled: false }` for a
+run that had already finished.
+
+#### Parameters
+
+##### options?
+
+[`ClientRunsRoutesOptions`](#clientrunsroutesoptions)
+
+The path, the window and the three per-run choices; see
+  [ClientRunsRoutesOptions](#clientrunsroutesoptions).
+
+#### Returns
+
+`Record`\<`string`, [`RouteHandler`](#routehandler)\>
+
+The two handlers, keyed `"GET <path>"` and `"DELETE <path>/:runId"`.
+
+#### Example
+
+**A speaker's running jobs, without the appEvent runs that told nobody**
+
+```ts
+import { agent, clientRunsRoutes } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Kitchen speaker",
+  routes: {
+    ...clientRunsRoutes({
+      include: (r) =>
+        !(r.workflow === "appEvent" && r.status === "completed" &&
+          (r.output as { told?: unknown } | undefined)?.told !== true),
+      progressFor: (r) => r.workflow === "research",
+      // A call completes whether or not anyone answered: what it said is the result.
+      detail: (r) => {
+        const said = r.status === "completed" && r.workflow === "call"
+          ? (r.output as { said?: unknown } | undefined)?.said
+          : undefined;
+        return typeof said === "string" ? said : undefined;
+      },
+    }),
+  },
+});
+```
+
+***
+
 ### clockTime()
 
 ```ts
@@ -293,6 +352,49 @@ export default tool({
   inputSchema: z.object({ time: clockTime("the wake-up time") }),
   execute: (args) => ({ at: args.time }),
 });
+```
+
+***
+
+### codeMatches()
+
+```ts
+function codeMatches(said: string, hash: string): Promise<boolean>;
+```
+
+Whether what a caller SAID is the code whose [hashCode](#hashcode) is `hash`.
+
+`said` is normalized with `spokenDigits` — everything but digits dropped — so
+STT's `"4819 02"`, `"4819-02"` and `"it's 4 8 1 9 0 2"` all match `"481902"`.
+The hashes are compared in constant time, and hex case is ignored. A
+read-back with no digits at all never matches.
+
+#### Parameters
+
+##### said
+
+`string`
+
+##### hash
+
+`string`
+
+#### Returns
+
+`Promise`\<`boolean`\>
+
+#### Example
+
+```ts
+import { codeMatches } from "@alexkroman1/aai";
+
+declare const stored: { codeHash: string; attempts: number };
+
+export async function verify(said: string): Promise<boolean> {
+  if (stored.attempts >= 5) return false; // the cap is the app's
+  stored.attempts++;
+  return await codeMatches(said, stored.codeHash);
+}
 ```
 
 ***
@@ -541,7 +643,7 @@ export const claim = dialog("claim", {
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 #### Call Signature
@@ -839,6 +941,37 @@ const addNote = failable((board: Board, id: string, note: string) => {
 
 ***
 
+### hashCode()
+
+```ts
+function hashCode(code: string): Promise<string>;
+```
+
+The SHA-256 of `code`, as lower-case hex — what to STORE for a one-time code
+instead of the code itself.
+
+Hashes exactly the string given. It does not normalize, because the one
+string it is handed at mint time is already the canonical code; a READ-BACK
+goes through [codeMatches](#codematches), which normalizes before it hashes. Hashing
+a read-back here by hand means normalizing it first (`spokenDigits`).
+
+A six-digit code's hash is brute-forced in a millisecond by anyone holding
+it, so the hash keeps the code out of logs and backups, not out of a
+determined attacker with the table: the attempt cap and the expiry are the
+defence.
+
+#### Parameters
+
+##### code
+
+`string`
+
+#### Returns
+
+`Promise`\<`string`\>
+
+***
+
 ### isClockTime()
 
 ```ts
@@ -1122,6 +1255,48 @@ mintCode("RES", { taken: new Set(["RES-7K2M"]) });
 
 ***
 
+### mintDigitCode()
+
+```ts
+function mintDigitCode(digits?: number): string;
+```
+
+A `digits`-long code of decimal digits, drawn from the platform's
+cryptographic randomness with no modulo bias — `"048190"`, leading zeros
+kept, because the code is a STRING a caller reads, not a number.
+
+Deliberately takes no `random` source, unlike `mintCode`: a code that proves
+who is on the line must not be a journaled, replayable value. Mint it inside
+a tool body or a `ctx.step` and store [hashCode](#hashcode)'s output, never the
+code.
+
+#### Parameters
+
+##### digits?
+
+`number`
+
+How many digits. Default 6. An integer from 1 to 32.
+
+#### Returns
+
+`string`
+
+#### Throws
+
+RangeError if `digits` is not an integer in that range.
+
+#### Example
+
+```ts
+import { hashCode, mintDigitCode } from "@alexkroman1/aai";
+
+const code = mintDigitCode(); // e.g. "048190"
+const stored = await hashCode(code); // keep this, say `code`
+```
+
+***
+
 ### omitUndefined()
 
 ```ts
@@ -1394,7 +1569,7 @@ export default tool({
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 ***
@@ -2754,7 +2929,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -2848,7 +3023,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -5095,6 +5270,178 @@ export default tool({
 
 The payload is typed on the SENDING side only: on the wire it is still a
 `custom.emitted` frame whose `data` the schema admits as any JSON value.
+
+***
+
+### ClientRun
+
+One row of the list [clientRunsRoutes](#clientrunsroutes) answers — plain JSON, what a
+page renders a run from.
+
+#### Properties
+
+##### createdAt
+
+```ts
+createdAt: number;
+```
+
+When the run was created, as epoch ms — the list is in this order, oldest first.
+
+##### detail?
+
+```ts
+optional detail?: string;
+```
+
+One line about it, when there is one: `options.detail`'s answer; else, for
+a failed run, its error as `spokenErrorReason` says it (short, no URL, no
+credential); else, for a running one, its newest progress line when that
+is a string.
+
+##### runId
+
+```ts
+runId: string;
+```
+
+The run's id — what the cancel route takes.
+
+##### status
+
+```ts
+status: ClientRunStatus;
+```
+
+Where it has got to; see [ClientRunStatus](#clientrunstatus).
+
+##### title
+
+```ts
+title: string;
+```
+
+The run's `label` (`StartOptions.label`), else its workflow's key.
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's key in `agent({ workflows })`.
+
+***
+
+### ClientRunsResponse
+
+The body the list route answers.
+
+#### Properties
+
+##### runs
+
+```ts
+runs: ClientRun[];
+```
+
+The client's runs, oldest first.
+
+***
+
+### ClientRunsRoutesOptions
+
+Options for [clientRunsRoutes](#clientrunsroutes).
+
+#### Properties
+
+##### detail?
+
+```ts
+optional detail?: (run: WorkflowRunSnapshot) => string | undefined;
+```
+
+The run's `detail`, when you have a better one — a completed call's own
+summary of what happened, say. `undefined` falls back to the defaults
+[ClientRun.detail](#detail) lists.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`string` \| `undefined`
+
+##### include?
+
+```ts
+optional include?: (run: WorkflowRunSnapshot) => boolean;
+```
+
+Whether to list this run at all, before the recent-window rule. Default:
+every run. What drops a run that finished having decided to do nothing —
+an event judged not worth telling anyone about.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`boolean`
+
+##### limit?
+
+```ts
+optional limit?: number;
+```
+
+Most runs read per request, newest first, before filtering. Default 100 (the ceiling).
+
+##### path?
+
+```ts
+optional path?: string;
+```
+
+The routes' path, as an `agent({ routes })` key spells it: the list is
+`GET <path>`, the cancel `DELETE <path>/:runId`. Default `"/tasks"`.
+
+##### progressFor?
+
+```ts
+optional progressFor?: (run: WorkflowRunSnapshot) => boolean;
+```
+
+Whether to read this RUNNING run's newest progress line
+(`ctx.workflows.lastLine`) for its `detail`. Default: every running run.
+Each is one stream read per request, so narrow it to the workflows that
+narrate. A line that cannot be read is simply not shown.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`boolean`
+
+##### recentMs?
+
+```ts
+optional recentMs?: number;
+```
+
+A finished run is listed while it was created less than this long ago
+(see the module doc for why creation). Pending and running runs are always
+listed. Default 10 minutes.
 
 ***
 
@@ -11608,6 +11955,17 @@ speaker playing at 16 kHz declares `16_000`).
 
 ***
 
+### ClientRunStatus
+
+```ts
+type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+```
+
+A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
+`waiting` — the word a person reads for "queued, not started".
+
+***
+
 ### DeepReadonly
 
 ```ts
@@ -13049,6 +13407,127 @@ Compile-time stage tag; never present at runtime.
 
 ***
 
+### SayOnClientNotice
+
+```ts
+type SayOnClientNotice = {
+  ackTimeoutMs?: number;
+  data?: Record<string, unknown>;
+  event: string;
+  id?: string;
+  language?: string;
+  maxAttempts?: number;
+  retryAfterMs?: number;
+  sampleRate?: number;
+  signal?: AbortSignal;
+  text: string;
+  voice?: string;
+};
+```
+
+What `ctx.sayOnClient` says: `stepSayOnClient`'s options (from
+`@alexkroman1/aai/step`) with the delivery `id` optional — it defaults to the
+run id — plus the step's `maxAttempts`.
+
+Spelled out rather than derived with `Omit`, so the root surface that
+`WorkflowContext` lives on does not reach into `/step`'s types;
+`workflow-say-on-client.test-d.ts` pins the two key sets together.
+
+#### Properties
+
+##### ackTimeoutMs?
+
+```ts
+optional ackTimeoutMs?: number;
+```
+
+How long to wait for the device's ack — see `stepNotifyClient`.
+
+##### data?
+
+```ts
+optional data?: Record<string, unknown>;
+```
+
+Anything JSON-serializable the device reads alongside `event`; `said` is set on top.
+
+##### event
+
+```ts
+event: string;
+```
+
+What the device should do with it, e.g. `"reminder"`.
+
+##### id?
+
+```ts
+optional id?: string;
+```
+
+Identifies the DELIVERY, so the device drops a repeat. Defaults to the run
+id — right for a run's one announcement. A run that announces twice gives
+the second its own (`${ctx.runId}:progress`), or the device drops it.
+
+##### language?
+
+```ts
+optional language?: string;
+```
+
+Spoken language, as `stepSpeak` takes it.
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+The step's attempt budget, which is the redelivery budget. Defaults to
+`DEFAULT_CLIENT_DELIVERY_ATTEMPTS`, an hour at the 30-second retry.
+
+##### retryAfterMs?
+
+```ts
+optional retryAfterMs?: number;
+```
+
+When the step's next attempt runs after the device was unreachable.
+
+##### sampleRate?
+
+```ts
+optional sampleRate?: number;
+```
+
+Samples per second; defaults to the agent's `clientInbox.sampleRate`.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Abort the synthesis and the delivery.
+
+##### text
+
+```ts
+text: string;
+```
+
+What to say. Also sent as `data.said`.
+
+##### voice?
+
+```ts
+optional voice?: string;
+```
+
+Voice id, as `stepSpeak` takes it.
+
+***
+
 ### SessionCall
 
 ```ts
@@ -14241,7 +14720,7 @@ deadlineAt: number;
 ```
 
 When THIS call's deadline expires, as epoch milliseconds — the instant the
-runtime will abort [ToolContext.signal](#signal-4) and hand the model a timeout.
+runtime will abort [ToolContext.signal](#signal-5) and hand the model a timeout.
 
 Read it to budget under the deadline rather than to be cut off by it: a
 tool that can answer partially (a search that has some results, a graph that
@@ -15716,7 +16195,7 @@ that has self-exited by the time the callback comes. Treat `hook.url` as
 guest-local and use this for anything leaving the system.
 
 Synchronous, and it THROWS when no public URL is configured, naming the
-option. The token is the CALLER's, exactly as [signal](#signal-5) takes it. See
+option. The token is the CALLER's, exactly as [signal](#signal-6) takes it. See
 "A callback URL comes from `publicWebhookUrl`" in
 `packages/aai/src/sdk/CLAUDE.md`.
 
@@ -16040,6 +16519,7 @@ type WorkflowContext = {
   now: Promise<number>;
   poll: Promise<PollResult<T>>;
   random: Promise<number>;
+  sayOnClient: Promise<string>;
   sleep: Promise<void>;
   step: Promise<InferSchemaOutput<S>>;
   uuid: Promise<string>;
@@ -16176,6 +16656,46 @@ and the reason a BULK draw belongs in a step:
 ###### Returns
 
 `Promise`\<`number`\>
+
+##### sayOnClient()
+
+```ts
+sayOnClient<Name extends string>(
+   name: Name & Literal<Name>, 
+   clientId: string, 
+   notice: SayOnClientNotice
+): Promise<string>;
+```
+
+Say `notice.text` on device `clientId` as ONE step `name` (a string LITERAL):
+`ctx.step(name, () => stepSayOnClient(clientId, …))` with the delivery `id`
+defaulting to the run id and `maxAttempts` to `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`,
+journaled as that step was. Resolves the text said. A run's FAILURE is
+`sayFailureOnClient` (`/step`) in `workflow({ onFailure })`.
+
+###### Type Parameters
+
+###### Name
+
+`Name` *extends* `string`
+
+###### Parameters
+
+###### name
+
+`Name` & `Literal`\<`Name`\>
+
+###### clientId
+
+`string`
+
+###### notice
+
+[`SayOnClientNotice`](#sayonclientnotice)
+
+###### Returns
+
+`Promise`\<`string`\>
 
 ##### sleep()
 
@@ -17094,7 +17614,7 @@ only reader is one field is documented by sitting next to it.
 const DEFAULT_STEP_MAX_ATTEMPTS: number;
 ```
 
-Attempts a step gets when [StepOptions.maxAttempts](#maxattempts-1) says nothing.
+Attempts a step gets when [StepOptions.maxAttempts](#maxattempts-2) says nothing.
 
 Three, which is what the DevKit's queue hardcoded — kept deliberately so the
 migration changes no retry behaviour it does not have to. Note attempts ARE

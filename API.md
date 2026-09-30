@@ -408,6 +408,21 @@ type RandomSource = () => number;
 export const READ_LIMIT: number;
 
 // @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
 type SleepOptions = {
     correlationId?: string;
 };
@@ -650,6 +665,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -754,6 +770,177 @@ interface ClientEventMap {
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+export function composio<K extends string = "default">(options?: ComposioOptions<K>): ComposioClient<K>;
+
+// @public
+export const COMPOSIO_API_KEY_ENV: string;
+
+// @public
+export const COMPOSIO_BASE_URL: string;
+
+// @public
+export const COMPOSIO_MCP_TOOLS: readonly string[];
+
+// @public
+export const COMPOSIO_TRIGGER_MESSAGE = "composio.trigger.message";
+
+// @public
+export const COMPOSIO_WEBHOOK_SECRET_ENV: string;
+
+// @public
+export interface ComposioApp {
+    connected: boolean;
+    description: string;
+    logo: string;
+    name: string;
+    slug: string;
+}
+
+// @public
+export interface ComposioClient<K extends string> {
+    api: JsonClient;
+    connectLink(ctx: EnvContext, user: string, app: string, callbackUrl: string, options?: {
+        kind?: K;
+    }): Promise<string>;
+    deleteTrigger(ctx: EnvContext, triggerId: string): Promise<boolean>;
+    disconnect(ctx: EnvContext, user: string, app: string): Promise<boolean>;
+    execute(ctx: EnvContext, user: string, toolSlug: string, args: Readonly<Record<string, unknown>>, options?: {
+        kind?: K;
+    }): Promise<ComposioExecuteResult>;
+    findTriggers(ctx: EnvContext, app: string, options?: {
+        limit?: number;
+    }): Promise<ComposioTriggerType[]>;
+    listApps(ctx: EnvContext, user: string, options?: ComposioListAppsOptions): Promise<ComposioApp[]>;
+    mcpServer(options: ComposioMcpServerOptions<K>): McpServerConfig;
+    upsertTrigger(ctx: EnvContext, user: string, slug: string, config: Readonly<Record<string, unknown>>): Promise<string>;
+}
+
+// @public
+export function composioErrorMessage(body: unknown): string | undefined;
+
+// @public
+export type ComposioExecuteResult = {
+    ok: true;
+    data: unknown;
+    logId: string;
+} | {
+    ok: false;
+    error: string;
+    logId?: string;
+};
+
+// @public
+export interface ComposioListAppsOptions {
+    connectedOnly?: boolean;
+    limit?: number;
+    search?: string;
+}
+
+// @public
+export interface ComposioMcpServerOptions<K extends string> {
+    allowedTools?: readonly string[];
+    kind: K;
+}
+
+// @public
+export interface ComposioOptions<K extends string> {
+    apiKeyEnv?: string;
+    baseUrl?: string;
+    sessions?: Readonly<Record<K, ComposioSessionConfig>>;
+    sessionStore?: ComposioSessionStore;
+}
+
+// @public
+export interface ComposioSessionConfig {
+    manageConnections?: boolean;
+    workbench?: boolean;
+}
+
+// @public
+export interface ComposioSessionStore {
+    // (undocumented)
+    delete(user: string, kind: string, ctx: EnvContext): Promise<void> | void;
+    // (undocumented)
+    get(user: string, kind: string, ctx: EnvContext): Promise<string | undefined> | string | undefined;
+    // (undocumented)
+    set(user: string, kind: string, id: string, ctx: EnvContext): Promise<void> | void;
+}
+
+// @public
+export type ComposioTriggerEvent = {
+    id: string;
+    type: string;
+    timestamp?: string;
+    metadata?: {
+        trigger_id?: string;
+        trigger_slug?: string;
+        user_id?: string;
+        connected_account_id?: string;
+        auth_config_id?: string;
+        log_id?: string;
+    };
+    data?: unknown;
+};
+
+// @public
+export function composioTriggerText(data: unknown, options: {
+    maxChars: number;
+    maxString?: number;
+}): string;
+
+// @public
+export interface ComposioTriggerType {
+    config: {
+        name: string;
+        type: string;
+        required: boolean;
+        description?: string;
+    }[];
+    description: string;
+    name: string;
+    polled: boolean;
+    slug: string;
+}
+
+// @public
+export function composioWebhookRoute(options: ComposioWebhookRouteOptions, onTrigger: (event: ComposioTriggerEvent, ctx: RouteContext, req: RouteRequest) => unknown): RouteHandler;
+
+// @public
+export interface ComposioWebhookRouteOptions {
+    secretEnv?: string;
+    toleranceS?: number;
+}
+
+// @public
 export interface DeepResearchBrief {
     // (undocumented)
     readonly brief: string;
@@ -790,7 +977,10 @@ export interface DeepResearchOptions<P extends DeepResearchInputSchema, R> {
     readonly description?: string;
     readonly generate?: Pick<StepGenerateOptions, "model" | "apiKeyEnv" | "gatewayUrl">;
     readonly input: P;
-    readonly onFailure?: (error: unknown, input: InferSchemaOutput<P>, ctx: WorkflowContext) => Promise<void> | void;
+    readonly onFailure?: ((error: unknown, input: InferSchemaOutput<P>, ctx: WorkflowContext) => Promise<void> | void) | {
+        run: WorkflowFailureHook<InferSchemaOutput<P>>;
+        maxAttempts?: number | undefined;
+    };
     readonly prompts?: DeepResearchPrompts;
     readonly researcher?: DeepResearchResearcher;
 }
@@ -863,6 +1053,24 @@ interface DelegateResult extends SubagentAnswer {
 }
 
 // @public
+export function ensureComposioWebhook(ctx: EnvContext, url: string, options?: EnsureComposioWebhookOptions): Promise<{
+    id: string;
+    secret: string;
+}>;
+
+// @public
+export interface EnsureComposioWebhookOptions {
+    apiKeyEnv?: string;
+    baseUrl?: string;
+}
+
+// @public
+type EnvContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal;
+};
+
+// @public
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -909,6 +1117,20 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+type JsonClient = <T = unknown>(ctx: JsonClientContext, method: string, path: string, body?: unknown, init?: JsonRequestInit) => Promise<T>;
+
+// @public
+interface JsonClientContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal | undefined;
+}
+
+// @public
+interface JsonRequestInit {
+    headers?: Record<string, string>;
+}
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -1020,6 +1242,44 @@ interface ProviderDescriptor<Kind extends string, Options> {
 // @public
 type RandomSource = () => number;
 
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    headers: Record<string, string>;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+    rawBody?: string;
+}
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -1070,6 +1330,15 @@ type StartOptions = {
     dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
+};
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
 };
 
 // @public
@@ -1310,6 +1579,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -2747,6 +3017,30 @@ export const safeFetch: typeof globalThis.fetch;
 // @internal
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
 
+// @internal
+export type SayOnClientHost = {
+    readonly runId: string;
+    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+};
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @internal
+export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientId: string, notice: SayOnClientNotice): Promise<string>;
+
 // @public
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
@@ -3274,6 +3568,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -3572,6 +3867,37 @@ export type ClientInboxOptions = {
 };
 
 // @public
+export interface ClientRun {
+    createdAt: number;
+    detail?: string;
+    runId: string;
+    status: ClientRunStatus;
+    title: string;
+    workflow: string;
+}
+
+// @public
+export interface ClientRunsResponse {
+    runs: ClientRun[];
+}
+
+// @public
+export function clientRunsRoutes(options?: ClientRunsRoutesOptions): Record<string, RouteHandler>;
+
+// @public
+export interface ClientRunsRoutesOptions {
+    detail?: (run: WorkflowRunSnapshot) => string | undefined;
+    include?: (run: WorkflowRunSnapshot) => boolean;
+    limit?: number;
+    path?: string;
+    progressFor?: (run: WorkflowRunSnapshot) => boolean;
+    recentMs?: number;
+}
+
+// @public
+export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
@@ -3602,6 +3928,9 @@ type ClientTranscriptTool = {
 
 // @public
 export function clockTime(what?: string): z.ZodString;
+
+// @public
+export function codeMatches(said: string, hash: string): Promise<boolean>;
 
 // @public
 export function createKeyedLock(): KeyedLock;
@@ -3869,6 +4198,9 @@ export interface HandoffResult {
 }
 
 // @public
+export function hashCode(code: string): Promise<string>;
+
+// @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
@@ -4037,6 +4369,9 @@ export interface MintCodeOptions {
     random?: () => number;
     taken?: ReadonlySet<string>;
 }
+
+// @public
+export function mintDigitCode(digits?: number): string;
 
 // @public
 export interface ModelTuning {
@@ -4297,6 +4632,21 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 // @public
 export function safeJsonParse(text: string): unknown;
+
+// @public
+export type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
@@ -5093,6 +5443,7 @@ export type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -5503,6 +5854,21 @@ export const RESERVED_SLUGS: ReadonlySet<string>;
 // @internal
 export const RESUME_ID_RE: RegExp;
 
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
 // @internal
 export function sleep(ms: number, options?: SleepTimerOptions): Promise<void>;
 
@@ -5653,6 +6019,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -6402,6 +6769,21 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
 type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
@@ -7110,6 +7492,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -7827,6 +8210,9 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
+export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus>;
+
+// @public
 export type CallStatusOptions = {
     carrier: "twilio";
     callId: string;
@@ -7981,6 +8367,9 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isCallOver(status: string): boolean;
 
 // @public
 export function isTransientStatus(status: number): boolean;
@@ -8168,6 +8557,35 @@ type RetryableErrorOptions = {
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
+
+// @public
+export function sayFailureOnClient<I>(options: SayFailureOnClientOptions<I>): {
+    run: WorkflowFailureHook<I>;
+    maxAttempts: number;
+};
+
+// @public
+export type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions, "event" | "sampleRate" | "voice" | "language" | "ackTimeoutMs" | "retryAfterMs"> & {
+    clientId: (input: I) => string | undefined;
+    text: (error: Error, input: I, reason: string) => string;
+    data?: Record<string, unknown> | ((input: I) => Record<string, unknown>) | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export type Settled<T, R> = {
@@ -8406,6 +8824,24 @@ type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOpti
 
 // @public
 export function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenAudio>;
+
+// @public
+export function stepTextOwner(text: string, options?: StepTextOwnerOptions): Promise<StepTextOwnerResult>;
+
+// @public
+export type StepTextOwnerOptions = {
+    phone?: string | undefined;
+    links?: "keep" | "strip" | undefined;
+};
+
+// @public
+export type StepTextOwnerResult = {
+    sent: true;
+    to: string;
+} | {
+    sent: false;
+    why?: string;
+};
 
 // @public
 export function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
@@ -8756,6 +9192,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -9606,6 +10043,21 @@ export function runTool<T extends {
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
@@ -10291,6 +10743,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -10644,6 +11097,21 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 type RandomSource = () => number;
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 type SleepOptions = {
@@ -11089,6 +11557,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -11534,6 +12003,21 @@ export type PollResult<T> = {
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
 export type SleepOptions = {
     correlationId?: string;
 };
@@ -11745,6 +12229,7 @@ export type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -15199,9 +15684,13 @@ import { AgentClient } from '@alexkroman1/aai/workflow-api';
 import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { ClientRun } from '@alexkroman1/aai';
+import { ClientRunsResponse } from '@alexkroman1/aai';
+import { ClientRunStatus } from '@alexkroman1/aai';
 import { ComponentType } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
+import { errorMessage } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
 import type { InputHTMLAttributes } from 'react';
@@ -15367,6 +15856,12 @@ export type ClientHandle = {
     [Symbol.dispose](): void;
 };
 
+export { ClientRun }
+
+export { ClientRunsResponse }
+
+export { ClientRunStatus }
+
 // @public
 export type ClientTheme = {
     bg?: string;
@@ -15478,6 +15973,8 @@ export function createStoredValue(key: string, options?: StoredValueOptions): St
 
 // @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
+
+export { errorMessage }
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -15658,6 +16155,11 @@ export type RouteFetchOptions = {
 
 // @public
 export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+// @public
+export type RouteMutationRunOptions = {
+    key?: string | undefined;
+};
 
 // @public
 export function SelectField(input: FieldShell & {
@@ -15892,6 +16394,24 @@ export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 export function useClientId(): string | undefined;
 
 // @public
+export function useClientRuns(path?: string, options?: UseClientRunsOptions): UseClientRunsResult;
+
+// @public
+export type UseClientRunsOptions = {
+    pollMs?: number | undefined;
+    client?: string | undefined;
+};
+
+// @public
+export type UseClientRunsResult = {
+    runs: ClientRun[] | undefined;
+    error: string | undefined;
+    reload: () => void;
+    cancel: (runId: string) => Promise<boolean>;
+    cancelling: string | undefined;
+};
+
+// @public
 export function useConversation(): UseConversationResult;
 
 // @public
@@ -16016,6 +16536,23 @@ export type UsePushToTalkResult = {
 
 // @public
 export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+
+// @public
+export function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
+
+// @public
+export type UseRouteMutationOptions = {
+    client?: string | undefined;
+    onSettled?: (() => void) | undefined;
+};
+
+// @public
+export type UseRouteMutationResult = {
+    run: <T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
+    busy: string | undefined;
+    error: string | undefined;
+    clearError: () => void;
+};
 
 // @public
 export type UseRouteOptions = {

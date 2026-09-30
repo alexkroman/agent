@@ -29,7 +29,7 @@
  * | a run reaching the page later | {@link useInbox} (a reminder, a finished job — played when it lands) |
  * | what was said | {@link useConversation}, {@link useUserTranscript}, {@link useConversationLog} (across sessions, persisted) |
  * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnDetection: "manual"`) |
- * | the agent's own `/api` routes | {@link useRoute}, {@link routeFetch} |
+ * | the agent's own `/api` routes | {@link useRoute}, {@link useRouteMutation}, {@link routeFetch}, {@link useClientRuns} (a `clientRunsRoutes()` pair) |
  * | what this browser remembers | {@link useStoredValue} / {@link createStoredValue}, {@link phoneE164} |
  * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
@@ -63,6 +63,15 @@
  * @module
  */
 
+// Re-exported from `@alexkroman1/aai` — one declaration, two reference pages —
+// because a page renders a caught error as often as a tool body does, and
+// the SDK root is not a page's import.
+export {
+  type ClientRun,
+  type ClientRunStatus,
+  type ClientRunsResponse,
+  errorMessage,
+} from "@alexkroman1/aai";
 // The seven default state words, so a chrome overrides the one it has a better
 // term for instead of writing a ternary chain over the whole union. Same shape
 // and same argument as `WORKFLOW_STATUS_LABELS` below.
@@ -249,7 +258,8 @@ export { mountPage, type PageConfig, type PageHandle } from "./page.tsx";
 // A typed phone number as the E.164 `phone` the session must carry.
 export { type PhoneE164Options, phoneE164 } from "./phone.ts";
 // The agent's own JSON routes (`agent({ routes })`, under `/api`): one call,
-// with `?client=` and the route's `{ error }` sentence. `useRoute` reads.
+// with `?client=` and the route's `{ error }` sentence. `useRoute` reads,
+// `useRouteMutation` writes, `useClientRuns` is `clientRunsRoutes()`' page half.
 export { type RouteFetchOptions, type RouteMethod, routeFetch } from "./route-fetch.ts";
 // Session core (for advanced use)
 export { createBrowserSession } from "./session-core.ts";
@@ -288,6 +298,12 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
+// The runs going on for this client, from a `clientRunsRoutes()` pair.
+export {
+  type UseClientRunsOptions,
+  type UseClientRunsResult,
+  useClientRuns,
+} from "./use-client-runs.ts";
 // The conversation with nothing rendered — what `MessageList` is now built
 // from, so a custom chrome inherits the interleave, the streaming row, the
 // transcript's null-vs-empty distinction and the thinking rule instead of
@@ -332,6 +348,12 @@ export {
 // mints one of these for itself now, so this is for the page that wants a
 // different one — an account's id, or a key that outlives the tab.
 export { type UseRouteOptions, type UseRouteResult, useRoute } from "./use-route.ts";
+export {
+  type RouteMutationRunOptions,
+  type UseRouteMutationOptions,
+  type UseRouteMutationResult,
+  useRouteMutation,
+} from "./use-route-mutation.ts";
 export { useRunKey } from "./use-run-key.ts";
 // The two flags and four methods a control row renders from, on two one-field
 // subscriptions — what `SessionControls` is built on, for the chrome whose

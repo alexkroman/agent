@@ -298,6 +298,32 @@ stays for non-file registries (the studio's coding agent).
   `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable
   server (a step can retry), where host start degrades (a session cannot wait).
 
+## Composio (`composio.ts`, `composio-api.ts`, `composio-webhook.ts`, on `/experimental`)
+
+`composio({ sessions, sessionStore })` is the Composio Platform client over
+`jsonClient`; the webhook half is `composioWebhookRoute` (over `webhookRoute`)
+and `ensureComposioWebhook` (a setup script's, not an agent's).
+
+- **The `user` is always the AUTHOR's id**, never a model argument, and
+  `disconnect` resolves the account among that user's own; `listApps`
+  re-filters `connected_accounts` to the user and `ACTIVE` because a filter
+  Composio ignores must not leak another user's account.
+- **Sessions: one promise per `(kind, user)` in a `createOwnedMap`, then the
+  store; made WITHOUT the caller's signal** (a barge-in must not kill the
+  create others wait on). A 404 whose message names the session is remade
+  ONCE, and only by the caller still owning the lost id — so concurrent callers
+  do not delete a successor. A failed create is not remembered.
+- **`execute`'s refusal split is the contract**: a 4xx other than 401/403/429 is
+  `{ ok: false }`; those three and 5xx THROW (key, project, rate — not the
+  request's fault).
+- **No error may carry the key**: `composioApi` rebuilds an `HttpError` that
+  echoes it WITHOUT a `cause` (the cause is the unredacted original). The base
+  URL is an author literal, `https://` only, so it is not SSRF-screened; the
+  session's MCP url is screened by the MCP client like any other.
+- App policy (tables, connect hints, watch limits, what an event means) stays
+  in the app. `composio.test.ts` / `composio-webhook.test.ts` pin all of it
+  with `stubFetchRoutes`.
+
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
@@ -329,8 +355,10 @@ wired to a SESSION here" in `packages/aai-runtime/src/CLAUDE.md`.
 
 `spoken*.ts`, `calendar.ts`, `tool-fields.ts`: inbound `resolveOne` (ambiguity
 is an ANSWER, never a guess), outbound `spokenMoney`/`spokenDate`/`spokenTime`/
-`mintCode`. [`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md)
-owns all of it.
+`mintCode`, and one-time codes (`one-time-code.ts`: `mintDigitCode`/`hashCode`/
+`codeMatches`, Web Crypto only, the compare shared with `standard-webhook.ts`
+via `_timing-safe-equal.ts`).
+[`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md) owns all of it.
 
 **`agent({ voicePresets: [...] })`** (`voice-presets.ts`) — `echoVerification`,
 `speechNormalization`, `natoAlphabet`, composed after `## TOOLS` and before the
@@ -412,6 +440,23 @@ pipeline only).
   Audio for an undelivered utterance is held across the step's retries.
   **`stepEnvContext()`** is the whole step env plus the step's signal
   (`StepInfo.signal`) as an `EnvContext`, which a `ToolContext` also satisfies.
+- **`ctx.sayOnClient(name, clientId, notice)` is ONE `ctx.step` around
+  `stepSayOnClient`** (`workflow-say-on-client.ts`), `id` defaulting to the run
+  id and `maxAttempts` to `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`; like `ctx.poll`,
+  every `WorkflowContext` delegates to `sayOnClientWorkflow` (`/host-internal`).
+  Its failure half is **`sayFailureOnClient({ clientId, event, text })`**
+  (`say-failure-on-client.ts`, `/step`), a `workflow({ onFailure })` handler
+  (`${runId}:failed`, `data.failed: true`, `spokenErrorReason` handed to
+  `text`); `deepResearchWorkflow` takes the same `{ run, maxAttempts }` object
+  and hands it to the engine, where a FUNCTION `onFailure` still runs in its
+  body `catch`.
+- **`stepTextOwner(text, { phone?, links? })`** (`step-text-owner.ts`, `/step`)
+  is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env,
+  a non-retryable refusal as `{ sent: false, why }`, a transient one thrown
+  through `throwStepError`, a missing key FATAL. The env names are
+  `_owner-text-env.ts`, which `host/text-me.ts` imports too.
+- **`isCallOver(status)`/`CALL_OVER_STATUSES`** (`step-place-call.ts`) are the
+  five terminal `PlacedCallStatus`es a dial-and-follow loop stops on.
 
 ## Uploads (the client half)
 

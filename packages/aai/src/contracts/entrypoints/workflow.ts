@@ -29,6 +29,8 @@ export {
   // body exactly as `ctx.sleep` is.
   type PollOptions,
   type PollResult,
+  // `ctx.sayOnClient`'s notice: `stepSayOnClient`'s options with the id optional.
+  type SayOnClientNotice,
   type SleepOptions,
   type StepOptions,
   // The schema-bearing halves of both bags. A step's output and a hook's
