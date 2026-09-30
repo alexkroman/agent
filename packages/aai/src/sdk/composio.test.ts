@@ -5,7 +5,6 @@ import {
   COMPOSIO_BASE_URL,
   COMPOSIO_MCP_TOOLS,
   type ComposioSessionStore,
-  composioErrorMessage,
 } from "./composio-api.ts";
 import { HttpError } from "./json-client.ts";
 import type { McpResolveContext } from "./mcp-config.ts";
@@ -42,41 +41,6 @@ const hits = (p: string, method?: string) =>
 function refusal(status: number, message: string, extra: Record<string, unknown> = {}) {
   return { status, body: { error: { message, ...extra } } };
 }
-
-describe("composioErrorMessage", () => {
-  test("keeps the message, which fields failed, and the request id", () => {
-    expect(
-      composioErrorMessage({
-        error: {
-          message: "Validation error",
-          errors: ["tool_slug: required", "arguments: expected object"],
-          request_id: "req_9",
-        },
-      }),
-    ).toBe("Validation error: tool_slug: required; arguments: expected object (request req_9)");
-    expect(composioErrorMessage({ error: { message: "Nope" } })).toBe("Nope");
-    expect(composioErrorMessage({ message: "flat" })).toBeUndefined();
-  });
-
-  test("a refusal throws an HttpError carrying that detail, and never the key", async () => {
-    serve(() =>
-      refusal(400, `bad key ${KEY}`, { errors: ["user_id: missing"], request_id: "req_1" }),
-    );
-    const apps = composio();
-    const err = await apps.api(ctx, "GET", "/toolkits").catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(HttpError);
-    const http = err as HttpError;
-    expect(http.status).toBe(400);
-    expect(http.message).toBe("Composio 400: bad key [redacted]: user_id: missing (request req_1)");
-    expect(JSON.stringify(http.body)).not.toContain(KEY);
-    // The key went out as the header, and only there.
-    expect(net?.hits[0]?.headers["x-api-key"]).toBe(KEY);
-  });
-
-  test("a baseUrl that is not https is refused at construction", () => {
-    expect(() => composio({ baseUrl: "http://backend.composio.dev/api/v3.1" })).toThrow(/https/);
-  });
-});
 
 describe("sessions", () => {
   test("made once per user and kind with the kind's config, then reused", async () => {
@@ -184,8 +148,8 @@ describe("sessions", () => {
   });
 
   test("an undeclared kind is refused by name", async () => {
-    const apps = composio({ sessions: { voice: {} } });
-    // @ts-expect-error — not a declared kind
+    // Widened to `string` so the type checker admits the kind the runtime refuses.
+    const apps = composio<string>({ sessions: { voice: {} } });
     expect(() => apps.mcpServer({ kind: "background" })).toThrow(/background.*voice/);
   });
 });

@@ -21,6 +21,7 @@ import { routeResponse } from "./agent-routes.ts";
 import { composioApi } from "./composio-api.ts";
 import { fitToolResult } from "./fit-tool-result.ts";
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { webhookRoute } from "./standard-webhook.ts";
 import type { EnvContext } from "./step-env.ts";
 
@@ -109,7 +110,7 @@ export function composioWebhookRoute(
   return webhookRoute(
     {
       secretEnv: options.secretEnv ?? COMPOSIO_WEBHOOK_SECRET_ENV,
-      ...(options.toleranceS === undefined ? {} : { toleranceS: options.toleranceS }),
+      ...omitUndefined({ toleranceS: options.toleranceS }),
     },
     async (req, ctx) => {
       const event = req.body;
