@@ -172,6 +172,19 @@ export type ToolContext = {
    * this very call, so the tool must NOT await `done` before it returns, or it
    * waits until its own timeout. A sessionless context (a workflow step's
    * `stepDelegate`) holds one that settles every line `"dropped"`.
+   *
+   * @remarks
+   * The TWELFTH field on this type, and the one that raised `guard-invariants`
+   * rule 24 from eleven. It passes the rule's test: it is per-SESSION and it
+   * cannot be reached any other way. `ctx.sessionId` names a session but
+   * reaches nothing, and a process-wide lookup keyed on it would bind to
+   * whichever runtime last published the slot (two runtimes share a process
+   * under `aai dev` and in a guest), which is why `RouteContext.clientTranscript`
+   * is bound to the context as well. The second reason is structural: an
+   * `events` handler's context carries `speech`, and a `ToolContext` has always
+   * been a superset of that context. Authors pass a `createToolContext()` to a
+   * handler in a spec (eight templates did), so leaving the field off this type
+   * would have broken every one of those specs.
    */
   speech: SessionSpeech;
   /**
