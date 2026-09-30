@@ -35,7 +35,7 @@ const CHANNEL_OUTBOX_SLOT = Symbol.for("@alexkroman1/aai.channelOutbox");
 /**
  * One captured send: the channel's kind, the recipient when the descriptor
  * names one, and the JSON body the platform WOULD have been posted — with
- * every credential removed (see {@link CHANNEL_CREDENTIAL_FIELDS}).
+ * every field its kind declares a credential removed.
  *
  * @internal
  */
@@ -58,23 +58,24 @@ export type ChannelOutbox = (entry: ChannelOutboxEntry) => void | Promise<void>;
 
 type OutboxSlot = { [CHANNEL_OUTBOX_SLOT]?: ChannelOutbox };
 
-/**
- * Descriptor option and body fields that are CREDENTIALS: dropped before an
- * entry reaches a sink, and their VALUES redacted from every refusal
- * `postToChannel` turns into an error ({@link redactChannelCredentials}).
+/*
+ * Which option and body fields are CREDENTIALS is declared per kind, on the
+ * registration (`ChannelRegistration.credentialFields` in `send.ts`), and
+ * handed to the two functions below by the send path. Per kind rather than one
+ * global list, because a field NAME is only a secret on the platform that puts
+ * one there: Textbelt's `key` is its API key, while a third-party channel's
+ * body field called `key` may be the message's own data — and a third-party
+ * channel's secret may be named something no shared list would guess.
  *
- * The one place this list lives, because a sink's whole purpose is to be read
- * — appended to a file in a project directory, printed, diffed — and a key in
- * it is a key on disk; and because an error message is read too, and further
- * afield: it is a durable run's stored error (a Postgres row), a log line and
- * a UI string. Textbelt carries its API key in the body as `key`. Slack
- * carries its secret in the URL rather than the body (a webhook URL IS the
- * credential), which is why an entry never carries the URL at all and why
- * `webhookUrl` is listed: it never names a body field, but it is an OPTION
- * whose value must not come back in a refusal. A channel that puts a secret
- * anywhere else adds the field here.
+ * Why it matters: a sink's whole purpose is to be read — appended to a file in
+ * a project directory, printed, diffed — and a key in it is a key on disk; an
+ * error message is read too, and further afield: it is a durable run's stored
+ * error (a Postgres row), a log line and a UI string. Slack carries its secret
+ * in the URL rather than the body (a webhook URL IS the credential), which is
+ * why an entry never carries the URL at all and why Slack declares
+ * `webhookUrl`: it never names a body field, but it is an OPTION whose value
+ * must not come back in a refusal.
  */
-export const CHANNEL_CREDENTIAL_FIELDS: ReadonlySet<string> = new Set(["key", "webhookUrl"]);
 
 /** What a redacted credential reads as in an error message. @internal */
 export const REDACTED = "[redacted]";
@@ -89,8 +90,9 @@ const SECRET_QUERY_PARAM =
   /([?&](?:api[_-]?key|access[_-]?token|auth|client[_-]?secret|key|password|secret|sig|signature|token)=)[^&#\s"'<>)]+/gi;
 
 /**
- * `text` with every credential in `channel`'s options replaced by
- * {@link REDACTED}, and every secret-named query parameter's value too.
+ * `text` with the value of each of `credentialFields` in `channel`'s options
+ * replaced by {@link REDACTED}, and every secret-named query parameter's value
+ * too. `credentialFields` is what the kind's registration declared.
  *
  * **A platform's refusal can quote the credential back.** Textbelt answered a
  * text with a link, on a key not yet allowed links, `200 {"success": false,
@@ -107,9 +109,13 @@ const SECRET_QUERY_PARAM =
  *
  * @internal
  */
-export function redactChannelCredentials(channel: Channel, text: string): string {
+export function redactChannelCredentials(
+  channel: Channel,
+  credentialFields: readonly string[],
+  text: string,
+): string {
   return redactCredentials(
-    [...CHANNEL_CREDENTIAL_FIELDS].map((field) => channel.options[field]),
+    credentialFields.map((field) => channel.options[field]),
     text,
   );
 }
@@ -156,13 +162,19 @@ export function publishedChannelOutbox(): ChannelOutbox | undefined {
 
 /**
  * The entry a sink is handed for `payload` rendered from `channel`: never the
- * URL, never a {@link CHANNEL_CREDENTIAL_FIELDS} field.
+ * URL, never a body field named in `credentialFields` (what the kind's
+ * registration declared).
  *
  * @internal
  */
-export function channelOutboxEntry(channel: Channel, payload: ChannelPayload): ChannelOutboxEntry {
+export function channelOutboxEntry(
+  channel: Channel,
+  payload: ChannelPayload,
+  credentialFields: readonly string[],
+): ChannelOutboxEntry {
+  const secret = new Set(credentialFields);
   const body = Object.fromEntries(
-    Object.entries(payload.body).filter(([field]) => !CHANNEL_CREDENTIAL_FIELDS.has(field)),
+    Object.entries(payload.body).filter(([field]) => !secret.has(field)),
   );
   const to = channel.options.to;
   return { kind: channel.kind, ...(typeof to === "string" ? { to } : {}), body };

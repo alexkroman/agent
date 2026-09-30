@@ -40,6 +40,7 @@ export {
   type ChannelHandler,
   type ChannelMessage,
   type ChannelPayload,
+  type ChannelRegistration,
   type ChannelSection,
   escapeSlackMrkdwn,
   explainChannelFailure,

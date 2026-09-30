@@ -36,12 +36,7 @@ import { stepFetch } from "../../step-fetch.ts";
 import { isTransientStatus, retryAfter } from "../../step-retry.ts";
 import { responseErrorMessage } from "../../utils.ts";
 import { SLACK_CHANNEL_HANDLER } from "../slack.ts";
-import {
-  TEXTBELT_CHANNEL_HANDLER,
-  TEXTBELT_CHANNEL_KIND,
-  textbeltOptions,
-  textbeltRefusal,
-} from "../textbelt.ts";
+import { TEXTBELT_CHANNEL_HANDLER, textbeltOptions, textbeltRefusal } from "../textbelt.ts";
 import type { Channel, ChannelHandler, ChannelMessage, ChannelPayload } from "./channel-types.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
 import { channelOutboxEntry, publishedChannelOutbox, redactChannelCredentials } from "./outbox.ts";
@@ -52,7 +47,46 @@ import { channelOutboxEntry, publishedChannelOutbox, redactChannelCredentials } 
  */
 export const CHANNEL_POST_TIMEOUT_MS: number = 30_000;
 
-const CHANNEL_KINDS = new Map<string, ChannelHandler>();
+/**
+ * What a registration carries BESIDE the handler: the two things only some
+ * platforms need, declared by the platform that needs them.
+ *
+ * Kept off {@link ChannelHandler} rather than as fields on it: that interface
+ * is the shared, contract-hashed shape every channel implements
+ * (guard-invariants rule 25), and neither of these is something a new channel
+ * would have to INVENT to render at all. They ride on the registration, and
+ * the registry stores them with the handler for that kind.
+ *
+ * @public
+ */
+export interface ChannelRegistration {
+  /**
+   * Reads a REFUSAL out of a 2xx body, for a platform that answers one with a
+   * 200 — Textbelt says `200 {"success": false, "error": …}`. Returns the
+   * reason, or `undefined` when the body means delivered. Without it, every
+   * 2xx is a delivery.
+   */
+  readonly refusal?: (body: string) => string | undefined;
+  /**
+   * Descriptor option and rendered-body fields that are CREDENTIALS: their
+   * values are redacted from every refusal the send path turns into an error,
+   * and a body field of that name never reaches a channel outbox
+   * (`publishChannelOutbox`). Textbelt declares `key` (its API key rides in
+   * the body); Slack declares `webhookUrl` (the URL is the credential, and an
+   * outbox entry never carries a URL anyway). A kind that declares none has
+   * only the secret-named query-parameter scrub, which applies to every kind.
+   */
+  readonly credentialFields?: readonly string[];
+}
+
+/** One registered kind: its handler, plus what its registration declared. */
+type ChannelKindEntry = {
+  readonly handler: ChannelHandler;
+  readonly refusal: ((body: string) => string | undefined) | undefined;
+  readonly credentialFields: readonly string[];
+};
+
+const CHANNEL_KINDS = new Map<string, ChannelKindEntry>();
 
 /**
  * Register a channel kind, so `sendToChannel` can dispatch a descriptor
@@ -69,8 +103,13 @@ const CHANNEL_KINDS = new Map<string, ChannelHandler>();
  * never have imported. Register at module load in the agent's entry, not
  * lazily beside the first call.
  *
- * Re-registering a kind REPLACES it, which is what makes a shipped channel
- * overridable — and is why the tag is the identity rather than the value.
+ * Re-registering a kind REPLACES it — handler and registration together —
+ * which is what makes a shipped channel overridable, and is why the tag is the
+ * identity rather than the value.
+ *
+ * **A channel that carries a secret declares it** in `registration`'s
+ * `credentialFields`, so a refusal quoting it back is redacted and an outbox
+ * never records it; see {@link ChannelRegistration}.
  *
  * **A handler typed on its own options (`ChannelHandler<MyOptions>`) is
  * registered WITH the function that narrows the raw record into them**, which
@@ -81,7 +120,10 @@ const CHANNEL_KINDS = new Map<string, ChannelHandler>();
  *
  * @public
  */
-export function registerChannelHandler(handler: ChannelHandler): void;
+export function registerChannelHandler(
+  handler: ChannelHandler,
+  registration?: ChannelRegistration,
+): void;
 /**
  * Register a channel kind whose `render`/`advice` read their OWN options type,
  * narrowed from the descriptor's raw options by `options` (throwing a sentence
@@ -92,41 +134,30 @@ export function registerChannelHandler(handler: ChannelHandler): void;
 export function registerChannelHandler<O>(
   handler: ChannelHandler<O>,
   options: (raw: Record<string, unknown>) => O,
+  registration?: ChannelRegistration,
 ): void;
 export function registerChannelHandler<O>(
   handler: ChannelHandler<O>,
-  options?: (raw: Record<string, unknown>) => O,
+  optionsOrRegistration?: ((raw: Record<string, unknown>) => O) | ChannelRegistration,
+  maybeRegistration?: ChannelRegistration,
 ): void {
-  if (options === undefined) {
-    // The first overload: `O` is the raw record, so the handler is stored as is.
-    const raw: unknown = handler;
-    CHANNEL_KINDS.set(handler.kind, raw as ChannelHandler);
-    return;
-  }
+  const options = typeof optionsOrRegistration === "function" ? optionsOrRegistration : undefined;
+  const registration =
+    typeof optionsOrRegistration === "function" ? maybeRegistration : optionsOrRegistration;
+  const stored: ChannelHandler =
+    options === undefined
+      ? // The first overload: `O` is the raw record, so the handler is stored as is.
+        (handler as unknown as ChannelHandler)
+      : {
+          kind: handler.kind,
+          render: (message, raw) => handler.render(message, options(raw)),
+          advice: (raw, detail) => handler.advice(options(raw), detail),
+        };
   CHANNEL_KINDS.set(handler.kind, {
-    kind: handler.kind,
-    render: (message, raw) => handler.render(message, options(raw)),
-    advice: (raw, detail) => handler.advice(options(raw), detail),
+    handler: stored,
+    refusal: registration?.refusal,
+    credentialFields: [...(registration?.credentialFields ?? [])],
   });
-}
-
-/**
- * Readers for a platform that answers a REFUSAL with a 2xx — Textbelt says
- * `200 {"success": false, "error": …}` — keyed by kind. Each returns the
- * reason read out of a 2xx body, or `undefined` when it means delivered.
- *
- * Kept beside the registry rather than as a field on `ChannelHandler`: that
- * interface is the shared, contract-hashed shape (guard-invariants rule 25),
- * and only the SDK's own Textbelt channel needs this today.
- */
-const CHANNEL_REFUSALS = new Map<string, (body: string) => string | undefined>();
-
-/** @internal Register a 2xx-refusal reader (`CHANNEL_REFUSALS`) for `kind`. */
-export function registerChannelRefusal(
-  kind: string,
-  refusal: (body: string) => string | undefined,
-): void {
-  CHANNEL_REFUSALS.set(kind, refusal);
 }
 
 /** The tags {@link sendToChannel} can dispatch, in registration order. */
@@ -134,13 +165,15 @@ export function registeredChannelKindNames(): readonly string[] {
   return [...CHANNEL_KINDS.keys()];
 }
 
-registerChannelHandler(SLACK_CHANNEL_HANDLER);
-registerChannelHandler(TEXTBELT_CHANNEL_HANDLER, textbeltOptions);
-registerChannelRefusal(TEXTBELT_CHANNEL_KIND, textbeltRefusal);
+registerChannelHandler(SLACK_CHANNEL_HANDLER, { credentialFields: ["webhookUrl"] });
+registerChannelHandler(TEXTBELT_CHANNEL_HANDLER, textbeltOptions, {
+  refusal: textbeltRefusal,
+  credentialFields: ["key"],
+});
 
-function handlerFor(channel: Channel): ChannelHandler {
-  const handler = CHANNEL_KINDS.get(channel.kind);
-  if (handler === undefined) {
+function entryFor(channel: Channel): ChannelKindEntry {
+  const entry = CHANNEL_KINDS.get(channel.kind);
+  if (entry === undefined) {
     throw new Error(
       `Unknown channel kind ${JSON.stringify(channel.kind)}. ` +
         `Registered kinds: ${registeredChannelKindNames().join(", ") || "(none)"}. ` +
@@ -149,7 +182,11 @@ function handlerFor(channel: Channel): ChannelHandler {
         "imported neither unless the agent's entry does it at module load.",
     );
   }
-  return handler;
+  return entry;
+}
+
+function handlerFor(channel: Channel): ChannelHandler {
+  return entryFor(channel).handler;
 }
 
 /**
@@ -193,7 +230,8 @@ export function explainChannelFailure(channel: Channel, detail: string): string 
  *
  * @returns whatever the platform answered with, or `"ok"` when it sent no body.
  * @throws {ChannelDeliveryError} on any non-2xx, and on a 2xx the channel reads
- *   as a refusal (Textbelt's `{"success": false}`), which is never retryable.
+ *   as a refusal (a registration's `refusal` — Textbelt's `{"success": false}`),
+ *   which is never retryable.
  *
  * @example
  * ```ts
@@ -233,15 +271,16 @@ export async function postToChannel(
   message: ChannelMessage,
   fetchFn: ChannelFetch,
 ): Promise<string> {
-  const handler = handlerFor(channel);
+  const { handler, refusal, credentialFields } = entryFor(channel);
   const payload = handler.render(message, channel.options);
   // A published OUTBOX takes the send instead of the network (`outbox.ts`):
   // checked AFTER rendering, so a descriptor with a bad field still fails the
   // way it would for real, and BEFORE `fetchFn`, so nothing leaves the process.
-  // The entry carries no URL and no credential field — see `channelOutboxEntry`.
+  // The entry carries no URL and none of the kind's declared credential
+  // fields — see `channelOutboxEntry`.
   const outbox = publishedChannelOutbox();
   if (outbox !== undefined) {
-    await outbox(channelOutboxEntry(channel, payload));
+    await outbox(channelOutboxEntry(channel, payload, credentialFields));
     return "ok";
   }
   // Every string below that the PLATFORM wrote — a 2xx refusal, a non-2xx
@@ -250,7 +289,7 @@ export async function postToChannel(
   // finished message goes through it again in case a handler's advice quotes
   // its options. Textbelt has answered with our key in a link, and the message
   // is stored with the run, logged and shown (see `redactChannelCredentials`).
-  const redact = (text: string) => redactChannelCredentials(channel, text);
+  const redact = (text: string) => redactChannelCredentials(channel, credentialFields, text);
   const response = await fetchFn(payload.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...payload.headers },
@@ -265,7 +304,7 @@ export async function postToChannel(
   });
   if (response.ok) {
     const body = await response.text();
-    const refused = CHANNEL_REFUSALS.get(channel.kind)?.(body);
+    const refused = refusal?.(body);
     if (refused === undefined) return body || "ok";
     throw new ChannelDeliveryError(
       redact(`${handler.advice(channel.options, redact(refused))} (HTTP ${response.status})`),

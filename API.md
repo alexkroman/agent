@@ -120,6 +120,12 @@ export interface ChannelPayload {
 }
 
 // @public
+export interface ChannelRegistration {
+    readonly credentialFields?: readonly string[];
+    readonly refusal?: (body: string) => string | undefined;
+}
+
+// @public
 export interface ChannelSection {
     readonly body?: string;
     readonly bullets?: readonly string[];
@@ -147,10 +153,10 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelHandler(handler: ChannelHandler): void;
+export function registerChannelHandler(handler: ChannelHandler, registration?: ChannelRegistration): void;
 
 // @public
-export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
+export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O, registration?: ChannelRegistration): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];
@@ -2380,9 +2386,6 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 export function createDetachedSlotStore(): SlotStore;
 
 // @internal
-export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch;
-
-// @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 // @internal
@@ -3123,7 +3126,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 // @internal
-export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch, extraCredentialHeaders?: readonly string[]): Promise<Response>;
+export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
 export interface StandardSchemaIssue {

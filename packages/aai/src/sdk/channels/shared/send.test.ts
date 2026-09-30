@@ -8,7 +8,7 @@ import { slackChannel } from "../slack.ts";
 import { textbeltChannel } from "../textbelt.ts";
 import { ChannelDeliveryError } from "./channel-types.ts";
 import { redactChannelCredentials } from "./outbox.ts";
-import { type ChannelFetch, postToChannel } from "./send.ts";
+import { type ChannelFetch, postToChannel, registerChannelHandler } from "./send.ts";
 
 const FAKE_KEY = "fakekey0123456789abcdef";
 const textbelt = textbeltChannel({ key: FAKE_KEY, to: "+15555550123" });
@@ -90,12 +90,41 @@ describe("a refusal that quotes the credential back", () => {
 describe("redactChannelCredentials", () => {
   test("scrubs a secret-named query parameter no option names", () => {
     const text = "see https://x.test/a?token=abc&page=2 and https://x.test/b?api_key=zzz#top";
-    expect(redactChannelCredentials(textbelt, text)).toBe(
+    expect(redactChannelCredentials(textbelt, ["key"], text)).toBe(
       "see https://x.test/a?token=[redacted]&page=2 and https://x.test/b?api_key=[redacted]#top",
     );
   });
 
   test("leaves a detail with no credential in it alone", () => {
-    expect(redactChannelCredentials(textbelt, "Out of quota")).toBe("Out of quota");
+    expect(redactChannelCredentials(textbelt, ["key"], "Out of quota")).toBe("Out of quota");
+  });
+});
+
+describe("a registration's refusal and credential fields", () => {
+  const handler = {
+    kind: "test-refusing",
+    render: (message: { text: string }, options: Record<string, unknown>) => ({
+      url: "https://refuse.test/post",
+      body: { text: message.text, secret: options.secret },
+    }),
+    advice: (_options: Record<string, unknown>, detail: string) => `refused: ${detail}`,
+  };
+  const channel = { kind: "test-refusing", options: { secret: "s3cr3t-value" } };
+
+  test("a declared 2xx refusal throws, redacting the declared secret", async () => {
+    registerChannelHandler(handler, {
+      refusal: (body) => (body.startsWith("NO") ? body : undefined),
+      credentialFields: ["secret"],
+    });
+    const err = await refusal(
+      postToChannel(channel, { text: "hi" }, answering("NO: bad s3cr3t-value")),
+    );
+    expect(err.message).toBe("refused: NO: bad [redacted] (HTTP 200)");
+    await expect(postToChannel(channel, { text: "hi" }, answering("fine"))).resolves.toBe("fine");
+  });
+
+  test("without a refusal reader every 2xx is a delivery", async () => {
+    registerChannelHandler(handler);
+    await expect(postToChannel(channel, { text: "hi" }, answering("NO"))).resolves.toBe("NO");
   });
 });

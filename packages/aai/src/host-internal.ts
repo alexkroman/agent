@@ -47,7 +47,7 @@ export {
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
 export { getSessionLocation } from "./host/session-location.ts";
-export { CONTAINED_ENV, credentialSafeFetch, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
+export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";

@@ -19,8 +19,9 @@ import {
   builtinFetch,
   CONTAINED_ENV,
   isPrivateIp,
-  pinnedFetch,
   pinnedLookup,
+  redirectSafeFetch,
+  redirectSafeRequest,
   resolveAndAssertPublic,
   safeFetch,
   ssrfSafeFetch,
@@ -328,9 +329,8 @@ describe("SSRF: request-input normalization", () => {
     expect(modes).toEqual(["manual", "manual"]);
   });
 
-  test("an extra credential header is dropped once a redirect leaves the origin", async () => {
-    // An MCP server authenticated with `x-api-key` must not have the key
-    // replayed to wherever an open redirect on its host points.
+  /** Two same-origin hops, then one to another origin; records each hop's headers. */
+  function crossOriginChain() {
     const seen: Headers[] = [];
     let hop = 0;
     const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
@@ -343,15 +343,71 @@ describe("SSRF: request-input normalization", () => {
         ? new Response("", { status: 302, headers: { Location: "https://1.1.1.1/c" } })
         : new Response("done");
     });
-    await ssrfSafeFetch(
-      "https://93.184.216.34/a",
-      { headers: { "x-api-key": "k", "x-other": "o" } },
-      fakeFetch(fetchFn),
-      ["x-api-key"],
-    );
-    // Same origin: kept. Different origin: the named header goes, the rest stays.
+    return { seen, fetch: fakeFetch(fetchFn) };
+  }
+
+  const CALLER_HEADERS = {
+    "x-goog-api-key": "goog-secret",
+    "x-api-key": "k",
+    authorization: "Bearer t",
+    cookie: "sid=1",
+    Accept: "application/json",
+    "Accept-Language": "en",
+    "Content-Type": "application/json",
+    "User-Agent": "aai-test",
+  };
+
+  test("a vendor credential header is kept same-origin and dropped cross-origin", async () => {
+    // `fetchJson(url, { headers: { "x-goog-api-key": key } })` must not have
+    // the key replayed to wherever an open redirect on its host points — and
+    // this module cannot know every vendor's header NAME, so off-origin the
+    // caller's headers are cut to a safelist rather than a deny-list.
+    const { seen, fetch } = crossOriginChain();
+    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, fetch);
+    expect(seen.map((h) => h.get("x-goog-api-key"))).toEqual(["goog-secret", "goog-secret", null]);
     expect(seen.map((h) => h.get("x-api-key"))).toEqual(["k", "k", null]);
-    expect(seen[2]?.get("x-other")).toBe("o");
+    expect(seen[1]?.get("authorization")).toBe("Bearer t");
+    expect(seen[2]?.get("authorization")).toBeNull();
+    expect(seen[2]?.get("cookie")).toBeNull();
+  });
+
+  test("only the four descriptive headers survive a cross-origin hop", async () => {
+    const { seen, fetch } = crossOriginChain();
+    await ssrfSafeFetch("https://93.184.216.34/a", { headers: CALLER_HEADERS }, fetch);
+    expect([...(seen[2]?.keys() ?? [])].sort()).toEqual([
+      "accept",
+      "accept-language",
+      "content-type",
+      "user-agent",
+    ]);
+  });
+
+  test("the container's builtin fetch applies the same header rule, unscreened", async () => {
+    // Inside a container the address screen is skipped, but a caller's
+    // credential header is still the caller's: `redirectSafeFetch` walks the
+    // hops itself so undici's spec-only strip (three names) is not the rule.
+    // The unscreened path must not consult DNS or the bogon list, so a private
+    // target is followed rather than refused.
+    const seen: Headers[] = [];
+    let hop = 0;
+    const fetchFn = fakeFetch(
+      vi.fn(async (_url: string, init: RequestInit) => {
+        seen.push(new Headers(init.headers));
+        expect(init.redirect).toBe("manual");
+        hop++;
+        return hop === 1
+          ? new Response("", { status: 302, headers: { Location: "http://10.0.0.1/c" } })
+          : new Response("done");
+      }),
+    );
+    const res = await redirectSafeRequest(
+      "https://api.example.test/a",
+      { headers: CALLER_HEADERS },
+      fetchFn,
+    );
+    expect(await res.text()).toBe("done");
+    expect(seen.map((h) => h.get("x-goog-api-key"))).toEqual(["goog-secret", null]);
+    expect(seen[1]?.get("accept")).toBe("application/json");
   });
 });
 
@@ -570,7 +626,7 @@ describe("builtinFetch", () => {
   });
 
   test("opens up only when a spawner declares a real container", () => {
-    expect(builtinFetch({ [CONTAINED_ENV]: "1" })).toBe(pinnedFetch);
+    expect(builtinFetch({ [CONTAINED_ENV]: "1" })).toBe(redirectSafeFetch);
   });
 
   test("a guest is not automatically contained", () => {

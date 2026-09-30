@@ -72,6 +72,7 @@ export {
 } from "./channels/shared/channel-types.ts";
 export {
   CHANNEL_POST_TIMEOUT_MS,
+  type ChannelRegistration,
   explainChannelFailure,
   registerChannelHandler,
   registeredChannelKindNames,

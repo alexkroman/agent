@@ -606,9 +606,6 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 export function createDetachedSlotStore(): SlotStore;
 
 // @internal
-export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch;
-
-// @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 // @internal
@@ -1349,7 +1346,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 // @internal
-export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch, extraCredentialHeaders?: readonly string[]): Promise<Response>;
+export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
 export interface StandardSchemaIssue {

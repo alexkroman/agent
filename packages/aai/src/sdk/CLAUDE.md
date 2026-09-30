@@ -292,7 +292,7 @@ stays for non-file registries (the studio's coding agent).
   every `headers` value** (`wireMcpServers`), so a header credential never
   reaches a stored config. A resolved URL gets the same http(s) check and SSRF
   screen as a literal, and every author header is stripped on a cross-origin
-  redirect (`credentialSafeFetch`, `host/ssrf.ts`).
+  redirect (`safeFetch`'s safelist, `host/ssrf.ts`).
 - **`stepMcp` (`step-mcp.ts`, on `/experimental`) is a published slot** like
   `stepDelegate`: the connector is `aai-runtime`'s `step-mcp.ts` over the same
   `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable
