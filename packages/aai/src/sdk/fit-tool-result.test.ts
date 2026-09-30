@@ -54,6 +54,46 @@ describe("fitToolResult", () => {
     expect(JSON.stringify(input)).toBe(before);
   });
 
+  // Pinned from the implementation that re-serialized every list on every
+  // pass; the incremental measure must pick the same lists in the same order,
+  // ties to the first in walk order, and count a function item as `null`.
+  test("regression: nested lists are trimmed exactly as the re-serializing trim did", () => {
+    const input = {
+      id: 7,
+      runs: [
+        { name: "a", steps: ["s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"], skip: null },
+        { name: "b", steps: ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
+        { name: "c", steps: [" ", 'é"', "x"] },
+      ],
+      tags: ["one", "two", "three", "four"],
+      fn: () => 1,
+      list: [() => 1, "k", Symbol("q")],
+    };
+    expect(JSON.stringify(fitToolResult(input, { maxChars: 215 }))).toBe(
+      '{"result":{"id":7,"runs":[{"name":"a","steps":["s1","s2","s3"]}],"tags":["one","two"],' +
+        '"list":[null,"k",null]},"note":"Trimmed to fit: kept 1 of 3; kept 3 of 8; kept 2 of 4. ' +
+        'Ask for fewer or narrower results."}',
+    );
+  });
+
+  test("regression: a toJSON method is measured by JSON.stringify itself", () => {
+    const input = {
+      rows: ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"].map((r) => ({
+        r,
+        at: { toJSON: (key: string) => `at-${key}` },
+      })),
+    };
+    expect(fitToolResult(input, { maxChars: 150 })).toEqual({
+      result: {
+        rows: [
+          { r: "r0", at: expect.anything() },
+          { r: "r1", at: expect.anything() },
+        ],
+      },
+      note: "Trimmed to fit: kept 2 of 8. Ask for fewer or narrower results.",
+    });
+  });
+
   test("property: whatever the value, the answer fits", () => {
     fc.assert(
       fc.property(fc.jsonValue(), fc.integer({ min: 200, max: 3000 }), (value, maxChars) => {
