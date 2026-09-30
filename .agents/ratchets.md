@@ -71,13 +71,13 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   file BINARY to `git grep`, silently exempting it from every line rule and
   every hatch pattern — and the corpus floor cannot catch it BY DESIGN, the file
   still being in `git ls-files`. It has cost this repo three times
-  (`host/workflow-notify.ts`, `host/workflow-keys.ts`, `konsistent-config.test.ts`,
-  which used raw NULs as regex placeholder sentinels), the first two fixed one
-  byte at a time with no detector added — which is the argument for the
-  detector. Spell the character as an escape: byte-identical, and the file is
-  text again. A genuinely binary extension goes in `KNOWN_BINARY`
-  (`scripts/_ratchet.mjs`), a DENY-list so a new source extension defaults into
-  being checked.
+  (`host/workflow-notify.ts`, `host/workflow-keys.ts`,
+  `konsistent-config.test.ts`, which used raw NULs as regex placeholder
+  sentinels), the first two fixed one byte at a time with no detector added —
+  which is the argument for the detector. Spell the character as an escape:
+  byte-identical, and the file is text again. A genuinely binary extension goes
+  in `KNOWN_BINARY` (`scripts/_ratchet.mjs`), a DENY-list so a new source
+  extension defaults into being checked.
 
   **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
   patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
@@ -116,7 +116,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   block the very campaign the gate exists to encourage.
 
   **Markdown is not scanned**: the patterns are plain substrings with no notion
-  of code versus prose, so any doc that *discusses* a hatch scores as one — and
+  of code versus prose, so any doc that _discusses_ a hatch scores as one — and
   `CHANGELOG.md` is generated from changeset summaries, so one naming a pattern
   failed the Version Packages PR on a file no human wrote. A changeset summary
   may name a pattern freely. `escape-hatch-scope.test.ts` guards the
@@ -134,6 +134,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   The baseline is itself a list of the pattern names, so it needs the same
   pathspec exclusion the script does — its first per-file run scored its own
   keys as four fresh hatches. Same trap as markdown, by a new route.
+
 - **`pnpm check:package-layout`** (`scripts/check-package-layout.mjs`) — a
   package's TypeScript lives under `src/` (see "Package layout"). Stated from
   BOTH sides, since "no `.ts` outside `src/`" is vacuously true of an emptied
@@ -159,16 +160,16 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   `external` (the first takes 26 of the 52 with it, being their tree) and the
   25 that remain are pure JS where inlining is free.
 
-  It RUNS the studio build and reads tsdown's own `Detected dependencies in
-  bundle` hint rather than re-deriving the set from the lockfile: rolldown
-  inlines what is imported, not what is declared, and a gate whose set
-  disagrees with the real bundle is worse than none. An ABSENT hint is a hard
-  failure — `deps.onlyBundle` suppresses it while ALSO externalizing
-  `aai-server` itself, which is the cold-start regression that config's comment
-  exists to prevent, and an unparsed hint and a bundle that swallows nothing
-  look identical from here. `bundled-deps.test.ts` holds the config to
-  `alwaysBundle` from the authoring side, because the specifier checks beside it
-  pass either way.
+  It RUNS the studio build and reads tsdown's own
+  `Detected dependencies in bundle` hint rather than re-deriving the set from
+  the lockfile: rolldown inlines what is imported, not what is declared, and a
+  gate whose set disagrees with the real bundle is worse than none. An ABSENT
+  hint is a hard failure — `deps.onlyBundle` suppresses it while ALSO
+  externalizing `aai-server` itself, which is the cold-start regression that
+  config's comment exists to prevent, and an unparsed hint and a bundle that
+  swallows nothing look identical from here. `bundled-deps.test.ts` holds the
+  config to `alwaysBundle` from the authoring side, because the specifier checks
+  beside it pass either way.
 
 - **`pnpm check:optional-peers`** (`scripts/check-optional-peers.mjs`) — no
   module a PUBLISHED entry can reach may statically import an OPTIONAL PEER.
@@ -252,18 +253,19 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   already over on an unpushed branch —
   `aai-runtime/src/transports/pipeline-transport.ts` at 530 and
   `pipeline-user-speech.ts` at 592, neither allowlisted, 122 lines over between
-  them — and the violation went unnoticed only because that branch had never been
-  pushed and so had never run a pre-push `pnpm check`. Both files sat within six
-  lines of the cap on `main` (500 and 494), so *any* feature touching them
-  owed a split before it owed anything else. Two branches then extracted from
-  the SAME
-  file independently and produced duplicate modules, which is the shape to expect
-  when a hot file has no headroom.
+  them — and the violation went unnoticed only because that branch had never
+  been pushed and so had never run a pre-push `pnpm check`. Both files sat
+  within six lines of the cap on `main` (500 and 494), so _any_ feature touching
+  them owed a split before it owed anything else. Two branches then extracted
+  from the SAME
+  file independently and produced duplicate modules, which is the shape to
+  expect when a hot file has no headroom.
 
   **And `aai-runtime/src/session-history-replay-equivalence.test.ts` is at
-  exactly 700/700**, so the next line added there forces a split. Recorded rather
-  than pre-split: the seam is not obvious and the split should belong to whoever
-  next needs the room.
+  exactly 700/700**, so the next line added there forces a split. Recorded
+  rather than pre-split: the seam is not obvious and the split should belong to
+  whoever next needs the room.
+
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
   `assert`. A test with no assertion still runs the code, still counts in the
@@ -289,7 +291,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   **It runs on a real parse** — `oxc-parser`, via
   `scripts/_test-assertions-parse.mjs`, whose module doc carries the argument
   and the ~140 lines of hand-written lexer it replaced. Masking comments and
-  strings (a JSDoc paragraph *about* `test()` is not a test) and excluding
+  strings (a JSDoc paragraph _about_ `test()` is not a test) and excluding
   `RegExp.prototype.test` (five of the first run's eight offenders) are
   properties of an AST rather than patterns to keep correct — and the parse sees
   a family the regex could not: the old opener admitted one `.word(…)` before
@@ -302,7 +304,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   directory `CLAUDE.md`, `docs/CLAUDE.md`) get **40,000 characters**, because
   Claude Code loads them unasked on every task in that directory.
   **Reference** files (`*-CLAUDE.md` siblings, `.agents/*.md`, the scaffold and
-  template guides) get **120,000**, 20% under the ~150k point past which a read
+  template guides) get **130,000**, ~13% under the ~150k point past which a read
   silently drops the rest. An auto-loaded guide still over 40k is listed in
   `scripts/claude-md-baseline.json`, which is shrink-only: growing past an
   entry fails, shrinking below one fails until `pnpm claude-md:update` records
@@ -317,6 +319,31 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
   announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
   `check.yml` sets. Floored at the measured script count.
+- **`pnpm check:prettier`** — Prettier (with `prettier-plugin-sh`) as the
+  FORMATTER for Markdown, MDX, YAML, shell scripts and Dockerfiles, which Biome
+  does not read; `pnpm format:prettier` applies it. Markdown keeps
+  `proseWrap: preserve` (markdownlint's 80 columns still hold, so re-wrap a
+  line Prettier pushes over) and leaves fenced code alone. Two things it
+  cannot touch: the generated files `.prettierignore` lists, and the
+  guide-index tables in AGENTS.md, fenced by `prettier-ignore-start`/`-end` so
+  the generator and the formatter do not fight. Prettier pads tables to
+  aligned columns, which is why the reference cap is 130,000. YAML that a gate
+  spec parses by regex keeps its shape with a `# prettier-ignore` line. Never
+  let a code span wrap across lines: Prettier strips the continuation's
+  indentation.
+- **`pnpm check:polyglot`** (`scripts/check-polyglot.mjs`) — lints and
+  format-checks every tracked file in a language the rest of the pipeline does
+  not read: yamllint (`.yamllint.yaml`), ruff check + format (`ruff.toml`),
+  sqlfluff (`.sqlfluff`), hadolint and taplo. `--fix` (`pnpm format:polyglot`)
+  runs each fixer. It also fails when a tracked file's extension is in neither
+  its `COVERAGE` table (extension → linter + formatter) nor `NOT_SOURCE` (data,
+  assets, generated), so a new language cannot arrive unread. **Applied
+  migrations are frozen**: a sqlfluff finding in one is silenced with an inline
+  `-- noqa`, never fixed by rewriting the statement, and the vendored DevKit
+  migration is excluded. Same PATH shape as `check:shell` under
+  `AAI_REQUIRE_POLYGLOT=1`, with pipx pins in `check.yml`; taplo is a pnpm
+  devDependency and never skips. Each tool is floored at its measured file
+  count. `pnpm format` runs every fixer: Biome, Prettier, this.
 - **`pnpm check:guide-index`** (`scripts/docs-list.mjs --check`) — every agent
   guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md`, its
   `*-CLAUDE.md` siblings, and directory guides under `src/`) opens with a

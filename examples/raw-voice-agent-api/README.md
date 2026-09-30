@@ -43,14 +43,14 @@ sent back as `tool.result`.
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| `server.mjs` | Token minter + static file server. Node stdlib only. |
-| `public/index.html` | Markup + styles (ported from the template's `client.tsx`). |
-| `public/app.js` | Audio capture/playback worklets, the WebSocket session, tool dispatch, and DOM rendering. |
-| `public/tools.js` | The 12 dispatch tools as `{ schema, execute }` — JSON-Schema written by hand instead of generated from zod. |
+| File                 | Purpose                                                                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server.mjs`         | Token minter + static file server. Node stdlib only.                                                                                                              |
+| `public/index.html`  | Markup + styles (ported from the template's `client.tsx`).                                                                                                        |
+| `public/app.js`      | Audio capture/playback worklets, the WebSocket session, tool dispatch, and DOM rendering.                                                                         |
+| `public/tools.js`    | The 12 dispatch tools as `{ schema, execute }` — JSON-Schema written by hand instead of generated from zod.                                                       |
 | `public/dispatch.js` | The domain engine (triage scoring, protocols, resource recommendation) + an in-memory KV with `localStorage` persistence. Ported from the template's `shared.ts`. |
-| `public/prompt.js` | The system prompt assembled exactly as the platform's `buildSystemPrompt()` does, plus the greeting. |
+| `public/prompt.js`   | The system prompt assembled exactly as the platform's `buildSystemPrompt()` does, plus the greeting.                                                              |
 
 ## Run it
 
@@ -61,8 +61,8 @@ node server.mjs
 # open http://localhost:3000 and click "Start Dispatch"
 ```
 
-Then talk to it: *"Log an incident at Main and 5th, caller reports a cardiac
-arrest"*, or *"run the active shooter scenario"*, or *"give me the dashboard."*
+Then talk to it: _"Log an incident at Main and 5th, caller reports a cardiac
+arrest"_, or _"run the active shooter scenario"_, or _"give me the dashboard."_
 
 ## How the wire protocol maps
 
@@ -91,17 +91,17 @@ The whole integration is just a handful of JSON messages over one WebSocket:
 
 **Events down** that we handle:
 
-| Server event | What `app.js` does |
-| --- | --- |
-| `session.ready` / `session.updated` | start the mic, flip UI to *listening* |
-| `input.speech.started` | barge-in: flush playback |
-| `transcript.user` | render the operator's line |
-| `reply.started` | UI → *transmitting* |
-| `reply.audio` (`data` field) | feed PCM16 to the playback worklet |
-| `transcript.agent` | render the dispatcher's line |
+| Server event                                 | What `app.js` does                             |
+| -------------------------------------------- | ---------------------------------------------- |
+| `session.ready` / `session.updated`          | start the mic, flip UI to _listening_          |
+| `input.speech.started`                       | barge-in: flush playback                       |
+| `transcript.user`                            | render the operator's line                     |
+| `reply.started`                              | UI → _transmitting_                            |
+| `reply.audio` (`data` field)                 | feed PCM16 to the playback worklet             |
+| `transcript.agent`                           | render the dispatcher's line                   |
 | `tool.call` (`call_id`, `name`, `arguments`) | run the tool locally, reply with `tool.result` |
-| `reply.done` | finalize playback, UI → *listening* |
-| `session.error` / `error` | surface in the error bar |
+| `reply.done`                                 | finalize playback, UI → _listening_            |
+| `session.error` / `error`                    | surface in the error bar                       |
 
 **Answering a tool call** — note `result` is a JSON-encoded **string**:
 

@@ -167,9 +167,9 @@ INSTALL_ROOT_FILES = ("pnpm-lock.yaml", "pnpm-workspace.yaml")
 # parse because the deploy environment is `pip install modal` and nothing else
 # (see .github/workflows/deploy.yml) — the block is a flat map of scalars, and a
 # declaration this cannot read fails loudly below rather than staging nothing.
-PATCHED_DEPENDENCIES_KEY = re.compile(r"^patchedDependencies:", re.M)
+PATCHED_DEPENDENCIES_KEY = re.compile(r"^patchedDependencies:", re.MULTILINE)
 PATCHED_DEPENDENCIES_BLOCK = re.compile(
-    r"^patchedDependencies:[ \t]*\n((?:[ \t]+\S.*\n)+)", re.M
+    r"^patchedDependencies:[ \t]*\n((?:[ \t]+\S.*\n)+)", re.MULTILINE
 )
 
 

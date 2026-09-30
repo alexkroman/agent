@@ -8,7 +8,7 @@
  *   `docs/CLAUDE.md`): `AUTO_BUDGET`, or the file's shrink-only entry in
  *   `scripts/claude-md-baseline.json`.
  * - REFERENCE (`*-CLAUDE.md` siblings, `.agents/*.md`, the scaffold guide):
- *   `REFERENCE_BUDGET`, 20% under the `HARD_LIMIT` past which a read silently
+ *   `REFERENCE_BUDGET`, ~13% under the `HARD_LIMIT` past which a read silently
  *   drops the rest.
  *
  * Reads its subjects as TEXT (`?raw`) — this package has no node types — and
@@ -20,8 +20,8 @@ import { byCodeUnit, GATE_WIRING, numericConstant, repoPathOf, sole } from "./_g
 
 /** The point past which an agent's context silently drops the remainder. */
 const HARD_LIMIT = 150_000;
-/** Cap for a file read on demand — 20% under the hard limit. */
-const REFERENCE_BUDGET = 120_000;
+/** Cap for a file read on demand — ~13% under the hard limit. */
+const REFERENCE_BUDGET = 130_000;
 /** Cap for a guide Claude Code loads unasked. */
 const AUTO_BUDGET = 40_000;
 

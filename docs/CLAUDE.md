@@ -30,11 +30,11 @@ means for that package.
 
 ## One Astro build renders both halves
 
-| Command | Output | What it is |
-| --- | --- | --- |
-| `pnpm --filter aai-docs docs` (`astro build`) | `docs/dist/**` | the whole site — the HANDWRITTEN guide plus the generated reference at `/reference/` |
-| `pnpm docs:api` | the same, from the repo root | what CI and the turbo `docs` task run |
-| `pnpm docs:md` | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files |
+| Command                                       | Output                                  | What it is                                                                           |
+| --------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `pnpm --filter aai-docs docs` (`astro build`) | `docs/dist/**`                          | the whole site — the HANDWRITTEN guide plus the generated reference at `/reference/` |
+| `pnpm docs:api`                               | the same, from the repo root            | what CI and the turbo `docs` task run                                                |
+| `pnpm docs:md`                                | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files                                        |
 
 `pnpm --filter aai-docs docs:dev` serves it with hot reload.
 `.github/workflows/docs.yml` publishes `docs/dist` to GitHub Pages on every push
@@ -55,9 +55,9 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
   once there and reaches both renderings.
 - **`/reference/` belongs entirely to the generator.** Keep authored pages out
   of it (the CLI page is at `/cli/`).
-- **The reference renders one page per MODULE** (`outputFileStrategy:
-  "modules"`), so guide pages are not drowned in Pagefind search results and the
-  site matches the committed markdown's shape.
+- **The reference renders one page per MODULE**
+  (`outputFileStrategy: "modules"`), so guide pages are not drowned in Pagefind
+  search results and the site matches the committed markdown's shape.
 - **The generated pages are gitignored**, which also keeps them out of
   `assertEveryDocsPageListed` (`scripts/_docs-site-pages.mjs`).
 - **A package overview page's duplicate `<h1>` (from its README) is hidden in
@@ -73,13 +73,13 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
   plugin (`typeDocSidebarGroup`).
 - **`pruneLinklessSidebarGroups()` drops every sidebar group with no clickable
   descendant** (under per-module output the plugin's per-kind groups are
-  empty). It must stay a plugin AFTER `starlightTypeDoc()`, and its no-op warning
-  means either the generator changed (remove it) or the sidebar shape did (fix
-  it).
+  empty). It must stay a plugin AFTER `starlightTypeDoc()`, and its no-op
+  warning means either the generator changed (remove it) or the sidebar shape
+  did (fix it).
 - **What is rendered is what somebody writing an `agent.ts` imports**: all of
   `aai` and `aai-ui`, and `aai-runtime`'s `/eval`, `/eval/vitest`,
-  `/eval/simulate` and `/testing`. What an EMBEDDER imports (`aai-runtime`'s root
-  barrel), the `/internal` escape hatches and `aai-cli`'s build hooks are
+  `/eval/simulate` and `/testing`. What an EMBEDDER imports (`aai-runtime`'s
+  root barrel), the `/internal` escape hatches and `aai-cli`'s build hooks are
   excluded, each with a written reason in `UNDOCUMENTED_SUBPATHS`
   (`scripts/docs-markdown.mjs`).
 - **Every subpath export with a `types` target must be an entry point in its
@@ -132,8 +132,9 @@ Rules:
 - The reports stay out of the `aai` tarball via `.npmignore` (the other three
   declare `files`) and out of markdownlint, as generated files.
 - Guard specs under the gate: `packages/aai-gates/src/api-surface-file.test.ts`
-  (reports and `API.md` agree, parsed independently) and `api-index-file.test.ts`
-  (the index is `API-EXPORTS.json` inverted, one section per name).
+  (reports and `API.md` agree, parsed independently) and
+  `api-index-file.test.ts` (the index is `API-EXPORTS.json` inverted, one
+  section per name).
 
 ## The authoring surface is versioned in epochs
 
@@ -149,19 +150,19 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 ### Revisions and the compatibility probe
 
 - **A provably compatible change is a REVISION of the same epoch**
-  (`--update`), not a new epoch. `scripts/_api-contracts-compat.mjs` compiles the
-  epoch's ORIGINAL rollup and the new one as two modules with a probe, under
+  (`--update`), not a new epoch. `scripts/_api-contracts-compat.mjs` compiles
+  the epoch's ORIGINAL rollup and the new one as two modules with a probe, under
   `strict` + `exactOptionalPropertyTypes`: every old name still exported; a
   TYPE mutually assignable; a VALUE assignable new-to-old. `--bump` refuses a
   change the probe proved compatible.
 - **Additive changes pass** (optional member, optional parameter, new export,
-  widened parameter, narrowed return). **These need `--bump`**: a removed export,
-  an added required member, a removed member (even optional — excess-property
-  and missing-property errors), a changed union, an added required parameter, a
-  weaker return, a stricter generic constraint.
-- **Methods and constructors are compared strictly** (rewritten to function-typed
-  properties), except the `label: L & Literal<L>` idiom, which TypeScript
-  cannot relate strictly.
+  widened parameter, narrowed return). **These need `--bump`**: a removed
+  export, an added required member, a removed member (even optional —
+  excess-property and missing-property errors), a changed union, an added
+  required parameter, a weaker return, a stricter generic constraint.
+- **Methods and constructors are compared strictly** (rewritten to
+  function-typed properties), except the `label: L & Literal<L>` idiom, which
+  TypeScript cannot relate strictly.
 - **A one-sided `any` is UNPROVEN** — a `--bump`, not a revision.
 - **`@sealed` means an author only RECEIVES the type** (a branded handle, a
   result or `ctx` object the SDK builds). A sealed type is probed new-to-old
@@ -200,9 +201,10 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   `--bump` whose hash equals a supported epoch points `current` back at it, so
   `current` may be older than the newest epoch.
 - **Capabilities are QUALIFIED by package** — `aai`, `aai-ui` and `aai-runtime`
-  carry contracts, and `workflow` exists in more than one. Anything a human types
-  is `aai-ui:workflow`; a bare name works only when unambiguous, and ambiguity
-  is refused. Epoch files stay unqualified (the path names the package).
+  carry contracts, and `workflow` exists in more than one. Anything a human
+  types is `aai-ui:workflow`; a bare name works only when unambiguous, and
+  ambiguity is refused. Epoch files stay unqualified (the path names the
+  package).
 - **Opting a package in is creating `src/contracts/entrypoints/` in it.** Its
   authoring subpaths are then everything it publishes with types MINUS
   `NON_AUTHORING_SUBPATHS` (`scripts/_api-contracts-tree.mjs`, a reason each) —
@@ -215,13 +217,13 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   both. A contracted signature may not name an experimental type (it would be
   unowned). `packages/aai/CLAUDE.md` has the authoring half.
 - **The capability set is exhaustive**: every `@public` export of an authoring
-  subpath belongs to exactly one capability of its package, so a new export fails
-  until somebody decides which contract it joins. A name on both `.` and a
+  subpath belongs to exactly one capability of its package, so a new export
+  fails until somebody decides which contract it joins. A name on both `.` and a
   narrower subpath belongs to the narrower one.
-- **No `@internal` names on a public subpath.** `src/contracts/internal-surface.json`
-  is a shrink-only ratchet (at 0 in all three packages; `--update-internal`
-  lowers it) and the gate refuses a new one outright — put internals in an
-  `_`-module or on `/internal`.
+- **No `@internal` names on a public subpath.**
+  `src/contracts/internal-surface.json` is a shrink-only ratchet (at 0 in all
+  three packages; `--update-internal` lowers it) and the gate refuses a new one
+  outright — put internals in an `_`-module or on `/internal`.
 - **Every hashed declaration has exactly ONE owner**
   (`scripts/_api-contracts-ownership.mjs`). An UNOWNED declaration (exported but
   selected by no capability) or FORGOTTEN one (`ae-forgotten-export`) fails the
@@ -232,8 +234,8 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 - **A retained epoch obliges a frozen, compiling example** at
   `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` (`.tsx`
   where the package tsconfig sets `jsx`), written as that epoch was authored, so
-  **`pnpm typecheck` is the backward-compatibility gate**. Never edit one to make
-  an error go away — the error is the finding. `--bump --drop` deletes the
+  **`pnpm typecheck` is the backward-compatibility gate**. Never edit one to
+  make an error go away — the error is the finding. `--bump --drop` deletes the
   dropped epoch's example. `api-contracts-gate.test.ts` checks each exists, is
   not the scaffold, imports from `..`, and that each capability's examples
   import every name its retained epochs promised (exemptions:
@@ -324,17 +326,17 @@ and CI, after `check:api-report`.
   `dist/` would churn the committed diff); `list`, never `table`, member formats
   (table cells cannot hold multi-paragraph comments);
   `typeDeclarationVisibility: "compact"`.
-- **Reading order lives in `docs/typedoc.json`'s `packageOptions`**, because under
-  `entryPointStrategy: "packages"` a top-level option never reaches a package:
-  `groupOrder` puts callables first (keep the trailing `"*"`), and
+- **Reading order lives in `docs/typedoc.json`'s `packageOptions`**, because
+  under `entryPointStrategy: "packages"` a top-level option never reaches a
+  package: `groupOrder` puts callables first (keep the trailing `"*"`), and
   `excludeExternals: true` drops inherited lib/`@types/node` members. Review a
   change to either by heading set, not line by line.
 - **The script renders into a temp directory in BOTH modes**, then syncs
   (replacing `docs/api/` wholesale, so removed subpaths disappear) or diffs.
-- **Floors (12 files, 300 KB)** stop an empty render agreeing with an empty tree;
-  `packages/aai-gates/src/docs-markdown-gate.test.ts` guards the committed tree
-  and config, including that every package with a `typedoc.json` has committed
-  markdown.
+- **Floors (12 files, 300 KB)** stop an empty render agreeing with an empty
+  tree; `packages/aai-gates/src/docs-markdown-gate.test.ts` guards the committed
+  tree and config, including that every package with a `typedoc.json` has
+  committed markdown.
 - `docs/api/**` is ignored by markdownlint (generated).
 
 ## `docs/` pins its own TypeScript
@@ -355,14 +357,14 @@ typedoc a dependency of this workspace.
 ## Code examples in docs compile
 
 `pnpm check:doc-examples` (`scripts/check-doc-examples.mjs`, in `pnpm check` and
-CI) compiles every ```` ```ts ````/```` ```tsx ```` fence in published-package doc
-comments, the scaffold guide, READMEs, `docs/home.md`, the site's guide pages and
-the studio prompt modules, as self-contained modules under the scaffold
-tsconfig. A deliberate fragment opts out with ```` ```ts no-check ````. The list
+CI) compiles every ` ```ts `/` ```tsx ` fence in published-package doc
+comments, the scaffold guide, READMEs, `docs/home.md`, the site's guide pages
+and the studio prompt modules, as self-contained modules under the scaffold
+tsconfig. A deliberate fragment opts out with ` ```ts no-check `. The list
 is explicit, so the generated `docs/api/` is not in it.
 
 **`home.md` opens with NO heading** (hence the
-`markdownlint-disable-next-line MD041` on its first line), because the renderer
+`markdownlint-disable MD041` on its first line), because the renderer
 titles the page and a body `# …` produces a second `<h1>`. Keep markdown
 characters out of any HTML comment in it: the parser reads a comment's contents
 and backticks there break it open onto the page.

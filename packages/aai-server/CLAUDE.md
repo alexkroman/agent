@@ -48,8 +48,9 @@ a path based on another variable rather than the file's own directory, and an
   `/:slug/websocket` upgrade with a 302 to the live sandbox.
 - `sandbox.ts` — one agent sandbox's lifecycle: `sessionUrl()`,
   `drain(deadlineMs?)`, `shutdown()`.
-- `warm-harness.ts` — guest wiring shared by all three backends: dial-with-retry,
-  stdio draining, free-port allocation, `WarmHarness` exit/cleanup.
+- `warm-harness.ts` — guest wiring shared by all three backends:
+  dial-with-retry, stdio draining, free-port allocation, `WarmHarness`
+  exit/cleanup.
 - `modal/context.ts` — the memoized Modal client, App, harness-baked snapshot
   image (content-addressed tag) and harness bytes; a spawn racing the boot-time
   prewarm joins it. `modal/sandbox.ts` is the control-channel (studio) spawn;
@@ -59,9 +60,10 @@ a path based on another variable rather than the file's own directory, and an
 - `modal_deploy.py` — Modal deployment of this service
   (`pnpm --filter aai-server deploy:modal`); the image recipe is
   `scripts/modal_image.py` (see [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md)).
-- `agent-store.ts` — `aai_platform.agents`: slug, credential hashes, worker/client
-  blob hashes, and a deploy `version` that is the cross-replica invalidation
-  signal. No agent description (see "The platform stores no agent config").
+- `agent-store.ts` — `aai_platform.agents`: slug, credential hashes,
+  worker/client blob hashes, and a deploy `version` that is the cross-replica
+  invalidation signal. No agent description (see "The platform stores no agent
+  config").
 - `realtime-events.ts` — production `PlatformEvents` (Supabase Realtime
   `postgres_changes` on `agents` / `studio_workspaces` / `studio_chats`, plus
   the boot-time publication setup). **A channel that is DOWN is counted, not
@@ -69,7 +71,7 @@ a path based on another variable rather than the file's own directory, and an
   (drop-after-join warns, a rejoin reports the gap, down past `JOIN_BUDGET_MS`
   escalates once). `PlatformEvents.health()` reports it in `/health`'s BODY,
   never as a 503 — the causes are project-wide and every replica would leave
-  rotation at once. Track *currently* down, not a high-water `joined` flag.
+  rotation at once. Track _currently_ down, not a high-water `joined` flag.
 - `studio-paths.ts` — `isStudioPath`, the studio/agent boundary; must agree with
   `RESERVED_SLUGS`.
 - `app-middleware.ts` — both apps' shared base middleware (CORS/framing).
@@ -84,7 +86,8 @@ a path based on another variable rather than the file's own directory, and an
   stale-build reload.
 - `rate-limit.ts` — the shared fixed-window limiter (memory + Postgres, one
   atomic upsert per check, so a limit holds platform-wide). Mechanism only;
-  every window is the studio's (`aai-studio-server/src/CLAUDE.md`, "Rate limits").
+  every window is the studio's (`aai-studio-server/src/CLAUDE.md`, "Rate
+  limits").
 - `client-ip.ts` — the rate-limit key reads the **last** `X-Forwarded-For` entry
   (our proxy's hop); the leftmost is client-supplied. `public-origin.ts` reads
   the FIRST entry and is right to — it wants what the browser saw.
@@ -106,9 +109,9 @@ a path based on another variable rather than the file's own directory, and an
   - Caches are read-through, and cold-replica bursts are collapsed by
     `createSingleFlight` (`_memo.ts`), which retains nothing. `invalidate`
     **drops the row and version flights** so a post-mutation caller never joins
-    a pre-mutation read. The release runs **out of band** (`then(release,
-    release)`, never an awaited `.finally`) — an extra microtask is observable
-    by `sandbox/resolve.test.ts`'s fixed drain.
+    a pre-mutation read. The release runs **out of band**
+    (`then(release, release)`, never an awaited `.finally`) — an extra microtask
+    is observable by `sandbox/resolve.test.ts`'s fixed drain.
 - **`blob-storage.ts`** — Supabase Storage via `@supabase/storage-js` in
   production (same `SUPABASE_SERVICE_ROLE_KEY` as Realtime), memory in
   dev/tests. Surface is `getItem`/`setItem`/`signedUrl` only. **A 404 MUST
@@ -134,9 +137,9 @@ a path based on another variable rather than the file's own directory, and an
   has its own empty-table guard, and waits `UPLOAD_ORPHAN_GRACE` (3 days,
   because `create` writes bytes before the row). The table cascades on agent
   delete, so `deleteAgent` does not grow a step.
-- **`deploy.ts` / `delete.ts`** — a delete is `deleteAgentResources`: a slug lock
-  around `store.deleteAgent(slug)` (agents row + `agent-env:<slug>` secret).
-  **A delete whose external step fails must FAIL (503), never warn and
+- **`deploy.ts` / `delete.ts`** — a delete is `deleteAgentResources`: a slug
+  lock around `store.deleteAgent(slug)` (agents row + `agent-env:<slug>`
+  secret). **A delete whose external step fails must FAIL (503), never warn and
   continue** — keep this for any future external teardown step.
 - **`secret-store.ts`** — `SecretStore`: Supabase Vault
   (`createVaultSecretStore` over `SUPABASE_DB_URL`) in production, memory in
@@ -193,10 +196,10 @@ with a backup; never delete the secret while the database survives
 **`SUPABASE_DB_URL` decides where platform state lives; `AAI_LOCAL_DEV=1`
 decides whether tenant code gets a real boundary.** They are independent.
 
-| Question | Sentinel | Set | Unset |
-| --- | --- | --- | --- |
-| Where is platform state? | `SUPABASE_DB_URL` (`hasPlatformDb`) | Postgres/Vault/Realtime/Storage, companions REQUIRED | memory, everywhere |
-| Is this a local run? | `AAI_LOCAL_DEV=1` (`isLocalDev`) | `microsandbox` backend, key verification optional, origin retained | production defaults |
+| Question                 | Sentinel                            | Set                                                                | Unset               |
+| ------------------------ | ----------------------------------- | ------------------------------------------------------------------ | ------------------- |
+| Where is platform state? | `SUPABASE_DB_URL` (`hasPlatformDb`) | Postgres/Vault/Realtime/Storage, companions REQUIRED               | memory, everywhere  |
+| Is this a local run?     | `AAI_LOCAL_DEV=1` (`isLocalDev`)    | `microsandbox` backend, key verification optional, origin retained | production defaults |
 
 - **There is no third tier** (memory stores beside real Postgres state): with a
   platform database every store is Supabase's, and `SUPABASE_URL` /
@@ -236,7 +239,7 @@ guest's leftovers.
 Deliberately in-process: the slot cache and resident sandboxes (an
 accelerator; the agents change stream keeps them correct), TTL-bounded or
 content-hash-keyed caches (staleness documented at each site), and the
-in-process workspace/slug mutexes kept *under* the distributed ones.
+in-process workspace/slug mutexes kept _under_ the distributed ones.
 
 ### Two arms per store contract, and the stack is the only real one
 

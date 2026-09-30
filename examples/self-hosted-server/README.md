@@ -10,11 +10,11 @@ agent.ts + tools/  →  withToolsDir()  →  createAgentServer()  →  listen()
 
 Three things:
 
-| Path | What it is |
-| --- | --- |
-| [`agent.ts`](./agent.ts) | The [`quickstart-agent`](../../packages/aai-templates/templates/quickstart-agent) template, verbatim — what `aai init` scaffolds. Eight lines, no server code in it, and no list of tools. |
-| [`tools/`](./tools) | One file per tool. [`roll_die.ts`](./tools/roll_die.ts) is the tool `roll_die`; the file name is the name the model calls. |
-| [`server.mjs`](./server.mjs) | The deployment. Imports the agent, discovers `tools/`, wires the SDK runtime and the bundled HTTP + WebSocket server, serves `@alexkroman1/aai-ui`'s prebuilt browser client. |
+| Path                         | What it is                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`agent.ts`](./agent.ts)     | The [`quickstart-agent`](../../packages/aai-templates/templates/quickstart-agent) template, verbatim — what `aai init` scaffolds. Eight lines, no server code in it, and no list of tools. |
+| [`tools/`](./tools)          | One file per tool. [`roll_die.ts`](./tools/roll_die.ts) is the tool `roll_die`; the file name is the name the model calls.                                                                 |
+| [`server.mjs`](./server.mjs) | The deployment. Imports the agent, discovers `tools/`, wires the SDK runtime and the bundled HTTP + WebSocket server, serves `@alexkroman1/aai-ui`'s prebuilt browser client.              |
 
 The split is the point. `agent.ts` and `tools/` know nothing about being
 self-hosted — the same files run under `aai dev`, publish to the managed
@@ -154,11 +154,11 @@ deliberately (`listen(port, "0.0.0.0")`) behind your own proxy/auth.
 
 ## The other two examples
 
-| Example | Who supplies the agent | Where tools run |
-| --- | --- | --- |
-| **self-hosted-server** (this one) | you, at deploy time | in your server process |
-| [`host-server`](../host-server) | the caller, per connection | in the caller's process |
-| [`raw-voice-agent-api`](../raw-voice-agent-api) | the browser, no SDK at all | in the browser |
+| Example                                         | Who supplies the agent     | Where tools run         |
+| ----------------------------------------------- | -------------------------- | ----------------------- |
+| **self-hosted-server** (this one)               | you, at deploy time        | in your server process  |
+| [`host-server`](../host-server)                 | the caller, per connection | in the caller's process |
+| [`raw-voice-agent-api`](../raw-voice-agent-api) | the browser, no SDK at all | in the browser          |
 
 ## Custom UI
 

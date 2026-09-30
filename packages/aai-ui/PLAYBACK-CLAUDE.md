@@ -30,11 +30,11 @@ length; `pcm` is in `KNOWN_BINARY` in `scripts/_ratchet.mjs` for that reason.
 Three harnesses sit behind it, all excluded from coverage by the
 `_*-harness.ts` glob:
 
-| Harness | Job |
-| --- | --- |
-| `_tts-trace-harness.ts` | capture (`captureTtsTrace`, needs a live key, takes an INJECTED opener because `resolveTts` is on no published subpath) and replay (`readTtsTraceSync`, keyless and offline) |
+| Harness                      | Job                                                                                                                                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_tts-trace-harness.ts`      | capture (`captureTtsTrace`, needs a live key, takes an INJECTED opener because `resolveTts` is on no published subpath) and replay (`readTtsTraceSync`, keyless and offline)                             |
 | `_playback-bench-harness.ts` | provider frames -> pacer model -> network profile -> the real worklet, on a virtual sample clock. ~3 ms per 17-second render, so a sweep of hundreds of settings is instant and byte-identical every run |
-| `_playback-bench-page.ts` | the same thing in a real browser: a real `AudioContext` at the trace's rate, the real worklet, audible output, sliders, and a tap node that captures exactly what reached the destination |
+| `_playback-bench-page.ts`    | the same thing in a real browser: a real `AudioContext` at the trace's rate, the real worklet, audible output, sliders, and a tap node that captures exactly what reached the destination                |
 
 **The browser half is not decoration — it is what makes the offline sweep
 believable.** Cross-checked over four link profiles x three settings, concealed
@@ -107,13 +107,13 @@ Measured across leads including no pacing at all, **startup is 155 ms at every
 one of them** — the fill target is met by the first frames either way. Everything
 the pacer does to the audio is subtraction:
 
-| lead / burst | absorbs a freeze of | peak in flight | ear behind forwarded |
-| --- | --- | --- | --- |
-| 1000 / 200 (shipped) | 820 ms | 46 KiB | 848 ms |
-| 1000 / 100 | 914 ms | 46 KiB | 955 ms |
-| 1500 / 100 | 1453 ms | 68 KiB | 1456 ms |
-| 2000 / 100 | 1945 ms | 93 KiB | 1947 ms |
-| unpaced | the whole reply | 354 KiB | 4149 ms |
+| lead / burst         | absorbs a freeze of | peak in flight | ear behind forwarded |
+| -------------------- | ------------------- | -------------- | -------------------- |
+| 1000 / 200 (shipped) | 820 ms              | 46 KiB         | 848 ms               |
+| 1000 / 100           | 914 ms              | 46 KiB         | 955 ms               |
+| 1500 / 100           | 1453 ms             | 68 KiB         | 1456 ms              |
+| 2000 / 100           | 1945 ms             | 93 KiB         | 1947 ms              |
+| unpaced              | the whole reply     | 354 KiB        | 4149 ms              |
 
 So the pacer earns its keep on backpressure (`MAX_CLIENT_WS_BUFFERED_BYTES` is
 4 MiB, so even unpaced this reply is nowhere near it — the guard is for a genuinely
@@ -138,11 +138,11 @@ is, and `remainingMs()` already reports the client's unplayed backlog. Anything
 the constant adds on top double-counts it. Driving the host's own arithmetic
 against the audio the ear really received (`heardErrorMs` in the test):
 
-| `lagMs` | perfect | typical | mobile |
-| --- | --- | --- | --- |
-| 0 | +8 ms | +55 ms | +130 ms |
-| 150 (shipped) | -142 ms | -95 ms | -20 ms |
-| 750 (the old value) | -742 ms | -694 ms | -619 ms |
+| `lagMs`                | perfect | typical | mobile  |
+| ---------------------- | ------- | ------- | ------- |
+| 0                      | +8 ms   | +55 ms  | +130 ms |
+| 150 (shipped)          | -142 ms | -95 ms  | -20 ms  |
+| 750 (the old value)    | -742 ms | -694 ms | -619 ms |
 | 950 (`lead - burst/2`) | -942 ms | -894 ms | -819 ms |
 
 Positive means the cursor runs AHEAD of the ear — over-keeping, the failure

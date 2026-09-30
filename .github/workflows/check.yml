@@ -151,8 +151,16 @@ jobs:
         run: |
           pipx install zizmor==1.30.1
           pipx install actionlint-py==1.7.12.25
+      # The same shape for the YAML, Python, SQL and Dockerfile linters
+      # `scripts/check-polyglot.mjs` runs.
+      - name: Install polyglot linters
+        run: |
+          pipx install yamllint==1.38.0
+          pipx install ruff==0.16.9
+          pipx install sqlfluff==4.3.0
+          pipx install hadolint-bin==2.15.1
       # The tasks that are NOT rows of the gate table: the turbo tasks, plus
-      # the seven root-level scripts turbo cannot own.
+      # the root-level scripts turbo cannot own.
       - run: |
           pnpm exec turbo run check:publint check:attw docs
           pnpm run check:knip
@@ -173,6 +181,11 @@ jobs:
           pnpm run check:dedupe
           pnpm run check:sherif
           pnpm run check:markdown
+          # YAML, shell and Dockerfile formatting — the files Biome does not read.
+          pnpm run check:prettier
+          # yamllint, ruff, sqlfluff, hadolint, taplo, and the check that every
+          # tracked extension has a linter and a formatter.
+          AAI_REQUIRE_POLYGLOT=1 pnpm run check:polyglot
           # ubuntu-latest ships shellcheck; the flag makes its absence a failure.
           AAI_REQUIRE_SHELLCHECK=1 pnpm run check:shell
           # actionlint + zizmor, with zizmor's policy read from the BASE so a PR
@@ -223,6 +236,8 @@ jobs:
         # in CI" asymmetry running backwards, and fully green for a PR that
         # breaks them. This is NOT the documented eval-tier exemption: that is
         # scoped to `check:eval`, which is separately and deliberately absent.
+        # Kept on one line: `ci-gate-job.test.ts` parses this bracketed list.
+        # prettier-ignore
         package: [aai, aai-ui, aai-runtime, aai-cli, aai-guest, aai-guest-core, aai-guest-studio, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-gates, aai-evals]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

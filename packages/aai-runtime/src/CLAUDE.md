@@ -223,7 +223,8 @@ needs `node:fs` and dynamic `import()`, and the SDK must stay browser-loadable.
 The two SILENT traps (resume anchors index the client-visible list;
 `toModelMessage` maps non-`user` roles to `assistant`, hence `isLlmSeedable`)
 are in [`../TOOL-OUTCOMES-CLAUDE.md`](../TOOL-OUTCOMES-CLAUDE.md). Author-facing
-account: `packages/aai/src/sdk/CLAUDE.md`, "`ctx.generate`, `ctx.messages`, `ctx.delegate`".
+account: `packages/aai/src/sdk/CLAUDE.md`, "`ctx.generate`, `ctx.messages`,
+`ctx.delegate`".
 
 ### A tool's throw is CLASSIFIED, and only the author can call one FATAL
 
@@ -303,9 +304,9 @@ supplying what an author would get wrong:
 
 Rules:
 
-- **`SubagentRunner` takes `ToolCallDefaults`** (`Omit<ExecuteToolCallOptions,
-  "tool">`, declared in `tool-executor.ts`), so a capability added to a tool
-  context cannot be missing from a delegated one.
+- **`SubagentRunner` takes `ToolCallDefaults`**
+  (`Omit<ExecuteToolCallOptions, "tool">`, declared in `tool-executor.ts`), so a
+  capability added to a tool context cannot be missing from a delegated one.
 - **The context is the parent's minus `ctx.messages`** — same `env`, slots,
   `db`, `sessionId`; `DelegateOptions.task` must be a complete brief.
 - **Budget**: a delegated run spends on the DELEGATING session's meter per step
@@ -349,11 +350,11 @@ Postgres; `_upload-blobs.ts` carries why.
   already held at the same lengths is a NO-OP (the completing request is the one
   whose answer can be lost). The byte route refuses independently
   (`aai-server/upload-handler.ts`).
-- **A streamed upload's first windows are cut small** — `windows(body, limit,
-  grow)` doubles from `UPLOAD_CHUNK_BYTES` to `UPLOAD_PART_BYTES` so `size` (the
-  contiguous READABLE prefix) advances. Never count bytes that merely arrived.
-  Only a published cut may be non-uniform, because `create` derives boundaries
-  from `windowList`.
+- **A streamed upload's first windows are cut small** —
+  `windows(body, limit, grow)` doubles from `UPLOAD_CHUNK_BYTES` to
+  `UPLOAD_PART_BYTES` so `size` (the contiguous READABLE prefix) advances. Never
+  count bytes that merely arrived. Only a published cut may be non-uniform,
+  because `create` derives boundaries from `windowList`.
 - **Neither direction takes turns with the socket**:
   `UPLOAD_WINDOW_CONCURRENCY` on write, `UPLOAD_READ_AHEAD` on read, both via
   `mapStream`.
@@ -366,11 +367,11 @@ Postgres; `_upload-blobs.ts` carries why.
 multiplexed platform socket, see
 [`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)) and
 `blobFetch` (window bytes); `_egress-pool.ts` builds them and `step-fetch.ts`
-takes a third. **`globalThis.fetch` is banned here by `guard-invariants` rule
-29.** Both default to HTTP/1.1: under HTTP/2 concurrent requests share one
-flow-control window and a capacity limit arrives as a status-less reset
-(`sdk/step-fetch.ts` has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the
-RPC pool only.
+takes a third. **`globalThis.fetch` is banned here by
+`guard-invariants` rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent
+requests share one flow-control window and a capacity limit arrives as a
+status-less reset (`sdk/step-fetch.ts` has the measurement).
+`AAI_EGRESS_RPC_HTTP2` switches the RPC pool only.
 
 - **Per PROCESS, a lazy singleton**; `closeEgressFetch()` RESETS rather than
   poisons it.

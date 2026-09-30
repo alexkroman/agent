@@ -18,11 +18,11 @@ ship.
 
 Never hardcode a key in agent code. Put it in one of these instead:
 
-| Where | How |
-| --- | --- |
-| Local | `.env` in the project root |
-| Production | `printf %s "$VALUE" \| aai secret put NAME` |
-| In a tool | `ctx.env.MY_KEY`, or `requireEnv(ctx, "MY_KEY")` |
+| Where      | How                                              |
+| ---------- | ------------------------------------------------ |
+| Local      | `.env` in the project root                       |
+| Production | `printf %s "$VALUE" \| aai secret put NAME`      |
+| In a tool  | `ctx.env.MY_KEY`, or `requireEnv(ctx, "MY_KEY")` |
 
 `aai publish` syncs `.env` into the agent's secrets **before** it deploys, so a
 key that works locally works deployed — on the first publish as much as on every

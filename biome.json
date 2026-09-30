@@ -9,6 +9,10 @@
       "*.json",
       ".markdownlint-cli2.jsonc",
       ".syncpackrc.json",
+      ".oxlintrc.json",
+      ".prettierrc.json",
+      ".changeset/*.json",
+      ".claude/settings.json",
       "examples/**",
       "docs/**",
       "!API-EXPORTS.json",
@@ -24,7 +28,8 @@
       "!**/__snapshots__",
       "!tmp",
       "!.worktrees",
-      "!.claude"
+      "!.claude/*",
+      ".claude/settings.json"
     ]
   },
   "linter": {

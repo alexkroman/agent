@@ -121,7 +121,7 @@ import modal
 # The image recipe is shared with the studio app so the two services can never
 # run different dependency trees — see scripts/modal_image.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
-from modal_image import build_image, install_proxy_noise_filter, run_node  # noqa: E402
+from modal_image import build_image, install_proxy_noise_filter, run_node
 
 PORT = 8080
 

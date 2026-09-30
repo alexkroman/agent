@@ -52,12 +52,12 @@ That is the whole setup. What follows is reference.
 
 ## Carrier values
 
-| Value | Result |
-| --- | --- |
-| `["twilio"]` | Serves Twilio, refuses Telnyx |
-| `["twilio", "telnyx"]` | Serves both |
-| `true` | Serves every carrier this build ships a codec for |
-| `false`, `[]`, or absent | Does not serve the route at all |
+| Value                    | Result                                            |
+| ------------------------ | ------------------------------------------------- |
+| `["twilio"]`             | Serves Twilio, refuses Telnyx                     |
+| `["twilio", "telnyx"]`   | Serves both                                       |
+| `true`                   | Serves every carrier this build ships a codec for |
+| `false`, `[]`, or absent | Does not serve the route at all                   |
 
 ## Do not assemble the URL by hand
 
@@ -92,6 +92,6 @@ is. The CLI sees the env it is about to upload, and cannot see what an earlier
 `aai secret put` already stored against the agent — so a secret the platform
 holds looks missing from here.
 
-Worth knowing: verification is on for the whole route as soon as *either*
+Worth knowing: verification is on for the whole route as soon as _either_
 secret is set. A call naming a carrier whose secret is missing is then refused
 rather than let through unverified.

@@ -81,15 +81,15 @@ fi
 
 # Generate a random filename (mimics changeset CLI style)
 WORDS=("brave" "calm" "cool" "cyan" "dark" "deep" "fair" "fast" "free" "gold"
-       "gray" "keen" "kind" "lean" "loud" "mild" "neat" "nice" "pale" "pink"
-       "pure" "rare" "real" "rich" "safe" "slim" "soft" "tall" "thin" "warm"
-       "wide" "wild" "wise" "bold" "cold")
+  "gray" "keen" "kind" "lean" "loud" "mild" "neat" "nice" "pale" "pink"
+  "pure" "rare" "real" "rich" "safe" "slim" "soft" "tall" "thin" "warm"
+  "wide" "wild" "wise" "bold" "cold")
 NOUNS=("ants" "bats" "bees" "cats" "cows" "deer" "dogs" "dove" "duck" "eels"
-       "fish" "frog" "goat" "hawk" "hens" "lamb" "lion" "mice" "moth" "mule"
-       "newt" "owls" "pigs" "rats" "seal" "slug" "swan" "toad" "vole" "wasp"
-       "wolf" "worm" "yaks" "crow" "bear")
+  "fish" "frog" "goat" "hawk" "hens" "lamb" "lion" "mice" "moth" "mule"
+  "newt" "owls" "pigs" "rats" "seal" "slug" "swan" "toad" "vole" "wasp"
+  "wolf" "worm" "yaks" "crow" "bear")
 VERBS=("ask" "bid" "bow" "cry" "dig" "eat" "fly" "hum" "jog" "mix"
-       "nap" "nod" "pop" "run" "sew" "sit" "tap" "try" "win" "yawn")
+  "nap" "nod" "pop" "run" "sew" "sit" "tap" "try" "win" "yawn")
 
 FILENAME=""
 for _attempt in 1 2 3 4 5; do
@@ -116,6 +116,6 @@ fi
   echo "---"
   echo ""
   echo "$SUMMARY"
-} > "$FILENAME"
+} >"$FILENAME"
 
 echo "Created changeset: $FILENAME"

@@ -35,7 +35,8 @@ table (`phase`, `fatal`, one runner); turbo starts dependency-free tasks at once
 and build-dependent ones after `build`.
 
 - **`pnpm check:local`** runs the subset build, typecheck, lint, publint,
-  syncpack, sherif, knip, `test:coverage` with `--continue`, and ends by naming
+  syncpack, sherif, knip, `check:prettier`, `check:polyglot`, `test:coverage`
+  with `--continue`, and ends by naming
   the gates it skipped (`check:attw`, `check:markdown`, `check:integration`,
   `check:e2e`, `docs`) so a green subset is not read as a green branch.
 - **Both modes run `test:coverage`, not `test`**, because the coverage floors
@@ -66,9 +67,9 @@ and build-dependent ones after `build`.
   `check.yml`).
 - `typecheck` must keep `**/*.test.ts` in its `inputs`, since every tsconfig
   includes tests.
-- To prove a file is hashed: capture `turbo run <task> --filter <pkg>
-  --dry=json`'s hash, touch the file, capture again. An identical hash is the
-  bug.
+- To prove a file is hashed: capture the hash from
+  `turbo run <task> --filter <pkg> --dry=json`, touch the file, capture again.
+  An identical hash is the bug.
 
 **Caches must point at the directory that is written, in the job that writes
 it.**

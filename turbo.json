@@ -473,7 +473,31 @@
       ]
     },
     "//#check:markdown": {
-      "inputs": ["**/*.md"]
+      "inputs": ["**/*.md", "**/*.mdx", ".markdownlint.yaml", ".markdownlint-cli2.jsonc"]
+    },
+    // The formatter for Markdown, MDX, YAML, shell scripts and Dockerfiles,
+    // which Biome does not read.
+    "//#check:prettier": {
+      "inputs": [
+        "**/*.md",
+        "**/*.mdx",
+        "**/*.yml",
+        "**/*.yaml",
+        "**/*.sh",
+        "**/*.Dockerfile",
+        ".prettierrc.json",
+        ".prettierignore"
+      ]
+    },
+    // yamllint, ruff, sqlfluff, hadolint and taplo, plus the check that every
+    // tracked extension has a linter and a formatter — see
+    // `scripts/check-polyglot.mjs`. `AAI_REQUIRE_POLYGLOT` is declared for the
+    // same reason as `AAI_REQUIRE_SHELLCHECK`: strict env mode would strip it,
+    // and a missing binary would then SKIP in the one job meant to fail. Every
+    // tracked path is an input because the coverage check reads them all.
+    "//#check:polyglot": {
+      "inputs": ["**", "!**/node_modules/**", "!**/dist/**"],
+      "env": ["AAI_REQUIRE_POLYGLOT"]
     },
     // Everything Biome lints that lives OUTSIDE a package, which `turbo run lint`
     // structurally cannot reach: that task runs `biome check .` from each
@@ -538,6 +562,10 @@
         "*.json",
         ".markdownlint-cli2.jsonc",
         ".syncpackrc.json",
+        ".oxlintrc.json",
+        ".prettierrc.json",
+        ".changeset/config.json",
+        ".claude/settings.json",
         "biome.json"
       ]
     },

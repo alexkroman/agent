@@ -22,11 +22,11 @@ You do **not** need it to write an agent. Authoring is
 Three shapes, and the choice between them is **who supplies the agent** — not
 how much code you want to write. All three are runnable examples in the repo:
 
-| Example | Who supplies the agent | Where tools run | Entry point |
-| --- | --- | --- | --- |
-| [`self-hosted-server`][ex-self] | you, at deploy time | in your server process | `createAgentServer` |
-| [`host-server`][ex-host] | the caller, per connection | in the caller's process | `createHostServer` |
-| [`raw-voice-agent-api`][ex-raw] | the browser, no SDK at all | in the browser | — (no runtime) |
+| Example                         | Who supplies the agent     | Where tools run         | Entry point         |
+| ------------------------------- | -------------------------- | ----------------------- | ------------------- |
+| [`self-hosted-server`][ex-self] | you, at deploy time        | in your server process  | `createAgentServer` |
+| [`host-server`][ex-host]        | the caller, per connection | in the caller's process | `createHostServer`  |
+| [`raw-voice-agent-api`][ex-raw] | the browser, no SDK at all | in the browser          | — (no runtime)      |
 
 The third is here for contrast: it talks to the AssemblyAI Voice Agent API
 directly with no SDK, so it uses none of this package. Read it to see what the
@@ -78,7 +78,7 @@ Four things worth knowing before you copy it:
 - **`agent.ts` stays server-agnostic.** It declares no tools and imports
   nothing from this package, which is why the same file runs under `aai dev`,
   publishes with `aai publish`, and is served here. Swapping templates means
-  replacing that file and nothing else. Only the *enumeration* of `tools/`
+  replacing that file and nothing else. Only the _enumeration_ of `tools/`
   differs off-platform: `aai build` does it in the bundler, because a deployed
   agent is handed one ESM string and has no directory to scan; this process has
   a directory, so it reads it itself.
@@ -101,7 +101,7 @@ Four things worth knowing before you copy it:
 [`host-server`][ex-host] inverts the arrangement: the server ships with no
 agent and holds no credentials, and each WebSocket connection deploys its own.
 The first frame is the handshake, carrying the system prompt, the tool
-*schemas* and the provider key that session runs on:
+_schemas_ and the provider key that session runs on:
 
 ```ts
 import { createHostServer } from "@alexkroman1/aai-runtime";
@@ -121,7 +121,7 @@ in this process and none of it needs a sandbox.
 
 `defaults` is operator policy — a non-AssemblyAI pipeline, `idleTimeoutMs`,
 `builtinTools` — and stands for every tenant; provider descriptors are plain
-data, so declaring one still costs no credential. What host mode does *not*
+data, so declaring one still costs no credential. What host mode does _not_
 give you is authentication (it authenticates the caller's provider key, not the
 caller — add your own via the `upgrade` hook or a proxy), persistence (a
 "deploy" lasts one connection), or a managed platform.

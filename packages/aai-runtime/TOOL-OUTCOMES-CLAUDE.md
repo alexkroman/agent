@@ -64,13 +64,13 @@ The four call sites, and the one thing each contributes that the others do not
 (`transports/pipeline-transport.ts` is listed because it is where the first
 one's sink is bound, not as a fifth literal):
 
-| Producer | Sink | What is particular to it |
-| --- | --- | --- |
-| `to-vercel-tools.ts` | `recordToolResult?` on the tool context | The pipeline's and the text agent's tool loop. The AI SDK hands the string straight back to the model and the assistant/`tool` pair only materializes at the END of the step, so this is the one moment the host knows a result at all |
-| `transports/pipeline-transport.ts` | `history.pushToolResult(message)` | Wires that sink to the pipeline's own conversation view |
-| `text-agent.ts` | a per-turn `view` array, plus `toContextMessages` | Two entries: the sink for a turn it runs, and the conversion of an INCOMING `ToolModelMessage`'s `tool-result` parts when a caller hands the agent a history |
-| `session-tool-steps.ts` → `session-core.ts` | `recordToolResult` → `pushMessages` | S2S, where the provider runs the loop and the runtime only observes it |
-| `session-event-history.ts` | the rebuilt `messages` array | RESUME, from the `tool.completed` events in the session's own log |
+| Producer                                    | Sink                                              | What is particular to it                                                                                                                                                                                                               |
+| ------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `to-vercel-tools.ts`                        | `recordToolResult?` on the tool context           | The pipeline's and the text agent's tool loop. The AI SDK hands the string straight back to the model and the assistant/`tool` pair only materializes at the END of the step, so this is the one moment the host knows a result at all |
+| `transports/pipeline-transport.ts`          | `history.pushToolResult(message)`                 | Wires that sink to the pipeline's own conversation view                                                                                                                                                                                |
+| `text-agent.ts`                             | a per-turn `view` array, plus `toContextMessages` | Two entries: the sink for a turn it runs, and the conversion of an INCOMING `ToolModelMessage`'s `tool-result` parts when a caller hands the agent a history                                                                           |
+| `session-tool-steps.ts` → `session-core.ts` | `recordToolResult` → `pushMessages`               | S2S, where the provider runs the loop and the runtime only observes it                                                                                                                                                                 |
+| `session-event-history.ts`                  | the rebuilt `messages` array                      | RESUME, from the `tool.completed` events in the session's own log                                                                                                                                                                      |
 
 Three details in that table are decisions rather than plumbing:
 

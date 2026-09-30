@@ -15,11 +15,11 @@ Three committed artifacts describe the published surface, and a change owes
 each one it moves. The mechanism and its rules are in `docs/CLAUDE.md`; this is
 the procedure.
 
-| Gate | Artifact | Regenerate / record with |
-| --- | --- | --- |
-| `pnpm check:api-report` | `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md` | `pnpm api-report` |
+| Gate                       | Artifact                                                                       | Regenerate / record with                             |
+| -------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `pnpm check:api-report`    | `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md`        | `pnpm api-report`                                    |
 | `pnpm check:api-contracts` | `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` (+ `.rollup.txt`) | `node scripts/api-contracts.mjs --update` / `--bump` |
-| `pnpm check:docs-md` | `docs/api/**` | `pnpm docs:md` |
+| `pnpm check:docs-md`       | `docs/api/**`                                                                  | `pnpm docs:md`                                       |
 
 Never hand-edit any of them. All three read the BUILT `dist/*.d.ts`, so build
 first.

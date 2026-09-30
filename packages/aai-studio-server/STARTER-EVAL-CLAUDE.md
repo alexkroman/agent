@@ -20,14 +20,14 @@ reports rather than gates — is
 
 ## Five files, and why they are in this package
 
-| File | What it is |
-| --- | --- |
-| `studio-starter.eval.test.ts` | the case loop: one starter prompt per case, on `aai-evals/register` |
-| `studio-eval-target.ts` | the TARGET: create project → broker a sandbox session → stream one chat turn → read the synced workspace |
-| `studio-starter-expectations.ts` | what each starter prompt ASKED FOR, as checkable facts |
-| `studio-starter-grade.ts` | which checks run, under what label, and the failure taxonomy |
-| `studio-template-contract.ts` | the opt-in BEHAVIOUR half: run the template's own eval against the generated workspace |
-| `studio-eval-env.ts` | `AAI_EVAL_ORIGIN`, `AAI_EVAL_CONTRACTS`, `AAI_STEP_CAP_HINT` |
+| File                             | What it is                                                                                               |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `studio-starter.eval.test.ts`    | the case loop: one starter prompt per case, on `aai-evals/register`                                      |
+| `studio-eval-target.ts`          | the TARGET: create project → broker a sandbox session → stream one chat turn → read the synced workspace |
+| `studio-starter-expectations.ts` | what each starter prompt ASKED FOR, as checkable facts                                                   |
+| `studio-starter-grade.ts`        | which checks run, under what label, and the failure taxonomy                                             |
+| `studio-template-contract.ts`    | the opt-in BEHAVIOUR half: run the template's own eval against the generated workspace                   |
+| `studio-eval-env.ts`             | `AAI_EVAL_ORIGIN`, `AAI_EVAL_CONTRACTS`, `AAI_STEP_CAP_HINT`                                             |
 
 They were in `packages/aai-evals/src/` until they were not, and the line that
 moved them is what a module is ABOUT rather than what runs it. `aai-evals` names
@@ -99,13 +99,13 @@ tool-output text. That is the right motivation for the event stream and the wron
 prediction about these five, and the audit is worth recording because it says
 where the remaining work actually is.
 
-| | what it reads | replaceable by events? |
-| --- | --- | --- |
-| `TS_ERROR` | a tool RESULT's text carries a TypeScript diagnostic | **no** |
-| `BUILD_FAILED` | `test_agent`'s text says the build failed | **no** |
-| `TESTS_FAILED` | `test_agent`'s text says the tests failed | **no** |
-| `WRITE_DIAGNOSTIC_PREAMBLE` | strips `formatPostWriteDiagnostics`' fixed instruction | **no** |
-| `TEST_AGENT_PREAMBLE` | strips `test_agent`'s success prose | **no** |
+|                             | what it reads                                          | replaceable by events? |
+| --------------------------- | ------------------------------------------------------ | ---------------------- |
+| `TS_ERROR`                  | a tool RESULT's text carries a TypeScript diagnostic   | **no**                 |
+| `BUILD_FAILED`              | `test_agent`'s text says the build failed              | **no**                 |
+| `TESTS_FAILED`              | `test_agent`'s text says the tests failed              | **no**                 |
+| `WRITE_DIAGNOSTIC_PREAMBLE` | strips `formatPostWriteDiagnostics`' fixed instruction | **no**                 |
+| `TEST_AGENT_PREAMBLE`       | strips `test_agent`'s success prose                    | **no**                 |
 
 All five classify or trim the CONTENT of a tool result, and an event carries
 that content as the same string (`tool.completed.result`) — so an in-process

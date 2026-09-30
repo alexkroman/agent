@@ -52,7 +52,7 @@ with a ceiling on how many are in flight at once. A fan-out of any size stays
 one literal name: sixty segments are sixty records under `transcribeSegment`,
 which is exactly what the occurrence counter is for.
 
-So do not build a name per item. `` ctx.step(`segment-${index}`, …) `` looks
+So do not build a name per item. ``ctx.step(`segment-${index}`, …)`` looks
 like the careful version and is the bug.
 
 :::caution[An interpolated step name breaks the replay]

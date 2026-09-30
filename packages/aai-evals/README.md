@@ -28,30 +28,30 @@ scripted model fails instead. That default exists because it was not always
 there: before it, `pnpm test:eval` on a machine with a saved key ran all 25
 template evals against a SCRIPTED model and printed `25 passed (25)`.
 
-| Flag / variable | Effect |
-| --- | --- |
-| `AAI_EVAL_ONLY=pizza` | one case, substring match on its name |
-| `AAI_EVAL_REPEAT=3` | repeat and report the spread — see below |
-| `AAI_EVAL_MIN_SCORE=0.8` | opt into gating, against the spread's LOWER bound |
-| `AAI_EVAL_CONTRACTS=1` | also run each starter's template behaviour contract |
-| `AAI_EVAL_ORIGIN=…` | a studio somewhere other than `127.0.0.1:8080` |
-| `--stub` | scripted model — the wiring check CI gates on |
-| `--allow-scripted` | let a template missing its provider key degrade rather than fail |
+| Flag / variable          | Effect                                                           |
+| ------------------------ | ---------------------------------------------------------------- |
+| `AAI_EVAL_ONLY=pizza`    | one case, substring match on its name                            |
+| `AAI_EVAL_REPEAT=3`      | repeat and report the spread — see below                         |
+| `AAI_EVAL_MIN_SCORE=0.8` | opt into gating, against the spread's LOWER bound                |
+| `AAI_EVAL_CONTRACTS=1`   | also run each starter's template behaviour contract              |
+| `AAI_EVAL_ORIGIN=…`      | a studio somewhere other than `127.0.0.1:8080`                   |
+| `--stub`                 | scripted model — the wiring check CI gates on                    |
+| `--allow-scripted`       | let a template missing its provider key degrade rather than fail |
 
 `templates/custom-pipeline-agent` names an Anthropic LLM stage, so a live run of
 it also wants `ANTHROPIC_API_KEY`; without it, use `--allow-scripted`.
 
 ## What is in here
 
-| File | Role |
-| --- | --- |
-| `runner.ts` | one case, N times, every assertion RECORDED rather than thrown |
-| `report.ts` | the spread, the flip list, failure grouping |
-| `assertions.ts`, `tool-assertions.ts` | the vocabulary over a session's event stream |
-| `gate.ts` | the live-key precondition, and how a skip announces itself |
-| `register.ts` | registering cases with vitest |
-| `env.ts` | how this tier reads an environment variable |
-| `behaviour.eval.test.ts` | **level 1** — four cases against a small fixture agent |
+| File                                  | Role                                                           |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `runner.ts`                           | one case, N times, every assertion RECORDED rather than thrown |
+| `report.ts`                           | the spread, the flip list, failure grouping                    |
+| `assertions.ts`, `tool-assertions.ts` | the vocabulary over a session's event stream                   |
+| `gate.ts`                             | the live-key precondition, and how a skip announces itself     |
+| `register.ts`                         | registering cases with vitest                                  |
+| `env.ts`                              | how this tier reads an environment variable                    |
+| `behaviour.eval.test.ts`              | **level 1** — four cases against a small fixture agent         |
 
 The **studio codegen** eval is not here: it drives the studio's own HTTP surface
 and grades the source its coding agent writes, so it lives in the package it is

@@ -63,6 +63,9 @@ ARG SDK_SPECS
 # has no display for, and the apt lists are dropped with the layer that fetched
 # them: a cached index is bytes on every sandbox's cold-start path and stale
 # within a day besides.
+# Unpinned on purpose: Debian drops superseded versions from its archive, so an
+# `ffmpeg=<version>` pin would break the build rather than hold it steady.
+# hadolint ignore=DL3008
 RUN test -n "${SYSTEM_PACKAGES}" \
       || { echo "SYSTEM_PACKAGES is empty — see GUEST_SYSTEM_PACKAGES in modal-system-packages.ts" >&2; exit 1; } \
  && apt-get update \
@@ -101,7 +104,7 @@ RUN test -n "${SYSTEM_PACKAGES}" \
 # by construction: a hijacked transitive arrives there with no integrity hash to
 # fail against.
 WORKDIR ${GUEST_ROOT}
-COPY toolchain/package.json      ${GUEST_ROOT}/package.json
+COPY toolchain/package.json ${GUEST_ROOT}/package.json
 COPY toolchain/package-lock.json ${GUEST_ROOT}/package-lock.json
 RUN npm ci --no-audit --no-fund --ignore-scripts
 # AFTER `npm ci`, so a tarball changing on every local build does not invalidate
@@ -111,6 +114,9 @@ RUN npm ci --no-audit --no-fund --ignore-scripts
 # cannot branch, and a `COPY` of a path that may not exist fails the build — the
 # `.gitkeep` is committed for exactly that reason.
 COPY sdk-tarballs/ ${GUEST_ROOT}/sdk-tarballs/
+# `resolveSdkSpecs()` already pins every spec to an exact version or a tarball;
+# hadolint sees only the variable.
+# hadolint ignore=DL3016
 RUN test -n "${SDK_SPECS}" \
       || { echo "SDK_SPECS is empty — see SDK_PACKAGES in modal-harness-image.ts" >&2; exit 1; } \
  && npm install --prefix ${GUEST_ROOT} --no-audit --no-fund --ignore-scripts ${SDK_SPECS}

@@ -43,8 +43,8 @@ Every case runs in one of two modes, and the case decides what that means:
 
 A case that means nothing against a fake takes `{ live: true }` as a third
 argument to `test` and is skipped in stub mode. Reach for it when a step has to
-reach the far side for the claim to hold: a transcript that has to be *of* the
-audio, a summary that has to be *of* the page.
+reach the far side for the claim to hold: a transcript that has to be _of_ the
+audio, a summary that has to be _of_ the page.
 
 ## Installing the fakes
 
@@ -53,14 +53,14 @@ Its steps reach a model, a transcription endpoint, an upload store, a stranger's
 web server — and each of those has a published fake on
 `@alexkroman1/aai/testing/vitest`:
 
-| Fake | Stands in for |
-| --- | --- |
-| `installStubUploads` | the upload store a step reads bytes from |
-| `installStubTranscribe` | transcription |
-| `installStubSpeech` | speech synthesis |
-| `installStubStepFetch` | a step's outbound `fetch` |
-| `installFetchRoutes` | the global `fetch` and a step's, through one URL/method table |
-| `installStubClientInbox` | the device `stepNotifyClient` pushes to |
+| Fake                     | Stands in for                                                 |
+| ------------------------ | ------------------------------------------------------------- |
+| `installStubUploads`     | the upload store a step reads bytes from                      |
+| `installStubTranscribe`  | transcription                                                 |
+| `installStubSpeech`      | speech synthesis                                              |
+| `installStubStepFetch`   | a step's outbound `fetch`                                     |
+| `installFetchRoutes`     | the global `fetch` and a step's, through one URL/method table |
+| `installStubClientInbox` | the device `stepNotifyClient` pushes to                       |
 
 `installStubUploads` takes a map of upload id to bytes. The bare form is the
 common case; the object form adds a filename and content type:

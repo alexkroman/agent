@@ -1,8 +1,8 @@
 ---
 summary: >-
-  The guest harness: one binary / two modes (plus warm-up), user-shipped runtime, dev-prod
-  parity, `run_code`, guest network access + SSRF, credential separation, and
-  the snapshot image the harness runs from
+  The guest harness: one binary / two modes (plus warm-up), user-shipped
+  runtime, dev-prod parity, `run_code`, guest network access + SSRF, credential
+  separation, and the snapshot image the harness runs from
 read_when: >-
   changing what runs inside a sandbox, what a guest may reach, or how the guest
   image and its toolchain are built
@@ -78,13 +78,13 @@ no agent config ("The platform stores no agent config" in
 
 Known remaining asymmetries:
 
-| Divergence | Direction | Why it stands |
-| --- | --- | --- |
-| Memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools uncapped in the host process. |
-| `run_code` | fails in dev, works in prod | The host-side guard refuses; fail-closed. `AAI_RUN_CODE=deno` runs it self-hosted in a zero-permission Deno. |
-| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate: a shell-exported key works for `aai dev`. The dev server warns when a required key came only from the shell (`agentEnvWarnings`), and `aai deploy` preflights required credentials (`aai-cli/_preflight.ts`) — warns, since it cannot see stored secrets. |
-| Durable-run backing | different backend | Dev uses the DevKit postgres world at the developer's `DATABASE_URL`; a deployed guest reaches run storage, queue, session state and uploads over HTTP and opens no tenant DB connection. |
-| Modal credentials | prod stricter | Production spawns Modal sandboxes (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`); local dev uses an isolation-free child process ("Modal sandbox notes", `packages/aai-server/MODAL-CLAUDE.md`). |
+| Divergence                                                         | Direction                   | Why it stands                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools uncapped in the host process.                                                                                                                                                                                                                    |
+| `run_code`                                                         | fails in dev, works in prod | The host-side guard refuses; fail-closed. `AAI_RUN_CODE=deno` runs it self-hosted in a zero-permission Deno.                                                                                                                                                          |
+| `withHostCredentialFallback` (`providers/host-env.ts`)             | works in dev, fails in prod | Deliberate: a shell-exported key works for `aai dev`. The dev server warns when a required key came only from the shell (`agentEnvWarnings`), and `aai deploy` preflights required credentials (`aai-cli/_preflight.ts`) — warns, since it cannot see stored secrets. |
+| Durable-run backing                                                | different backend           | Dev uses the DevKit postgres world at the developer's `DATABASE_URL`; a deployed guest reaches run storage, queue, session state and uploads over HTTP and opens no tenant DB connection.                                                                             |
+| Modal credentials                                                  | prod stricter               | Production spawns Modal sandboxes (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`); local dev uses an isolation-free child process ("Modal sandbox notes", `packages/aai-server/MODAL-CLAUDE.md`).                                                                             |
 
 The guest base image's Node major is covered under "The snapshot image".
 
@@ -100,15 +100,15 @@ deployed agent.
   `aai-guest-core/types.ts`): `{ env, runCode?, publicUrl? }` in,
   `{ startSession, shutdown }` out. Membership rule: **a capability or fact only
   the HARNESS holds** (`runCode` = the sandbox executor; `publicUrl` = the
-  spawner's `AAI_PUBLIC_BASE_URL`, translated by `ensureRuntime` so the SDK never
-  reads an `AAI_*` key). Every field is OPTIONAL and additive: old bundles
+  spawner's `AAI_PUBLIC_BASE_URL`, translated by `ensureRuntime` so the SDK
+  never reads an `AAI_*` key). Every field is OPTIONAL and additive: old bundles
   ignore new fields, new bundles degrade without them.
 - A bundle without the factory is rejected at load; no embedded fallback.
 - Bundles are ~8 MB before user code (`MAX_WORKER_SIZE` 30 MB).
   `evalWorkerBundle` imports via a temp `file:` URL (the runtime's CJS interop
   calls `createRequire(import.meta.url)`, which rejects `data:`), and **unlinks
-  the file once `import()` resolves** — otherwise repeated `test_agent` runs fill
-  `tmpdir()`.
+  the file once `import()` resolves** — otherwise repeated `test_agent` runs
+  fill `tmpdir()`.
 - The dev server passes `runtime: false` to `buildWorker` (fast reloads);
   `aai build` / `aai deploy` / studio builds always ship it.
 
@@ -309,12 +309,12 @@ one reference; a build context makes the harness and toolchain plain `COPY`s.
   registry), so recorded pins survive the switch; tested.
 - **A missing image fails at CREATE, not resolution** (`fromRegistry` is lazy),
   so the chosen source and registry are logged at boot.
-- **Published by a RELEASE, live on a DEPLOY.** `ship.yml`'s image job `needs:
-  release` (no `paths` filter: the tag hashes nearly all of `packages/`); a new
-  tag goes live only when a version-bump deploy ships a server hashing to it.
-  Between releases main's head has no published image — for local dev leave
-  `GUEST_IMAGE_REGISTRY` unset, push with `scripts/build-guest-image.mjs`, or
-  dispatch `ship.yml`.
+- **Published by a RELEASE, live on a DEPLOY.** `ship.yml`'s image job
+  `needs: release` (no `paths` filter: the tag hashes nearly all of
+  `packages/`); a new tag goes live only when a version-bump deploy ships a
+  server hashing to it. Between releases main's head has no published image —
+  for local dev leave `GUEST_IMAGE_REGISTRY` unset, push with
+  `scripts/build-guest-image.mjs`, or dispatch `ship.yml`.
 - **The Dockerfile lives in `aai-server`** beside the constants it mirrors
   (`GUEST_SYSTEM_PACKAGES`, `SDK_PACKAGES`, `GUEST_ROOT`,
   `DEFAULT_SANDBOX_IMAGE`) so `guest/image-dockerfile.test.ts` is hashed with
@@ -337,12 +337,12 @@ a fresh `dist/harness.mjs` demonstrably contains. Same trap on Modal.
 A guest's agent bundle resolves `@alexkroman1/*` from the IMAGE's
 `node_modules`, so `SDK_SPECS` in `guest-image.Dockerfile` decides which SDK:
 
-| Build | `SDK_SPECS` | Installs |
-| --- | --- | --- |
-| local (`pnpm build:guest-image [--msb]`) | paths under `sdk-tarballs/` | this checkout, packed |
-| `--sdk-pack-dir <dir>` (CI release) | paths under `sdk-tarballs/` | the release's `changeset pack` tarballs |
-| `--registry` / `--push` (CI otherwise) | `name@version` | published versions |
-| local `--published-sdk` | `name@version` | published versions |
+| Build                                    | `SDK_SPECS`                 | Installs                                |
+| ---------------------------------------- | --------------------------- | --------------------------------------- |
+| local (`pnpm build:guest-image [--msb]`) | paths under `sdk-tarballs/` | this checkout, packed                   |
+| `--sdk-pack-dir <dir>` (CI release)      | paths under `sdk-tarballs/` | the release's `changeset pack` tarballs |
+| `--registry` / `--push` (CI otherwise)   | `name@version`              | published versions                      |
+| local `--published-sdk`                  | `name@version`              | published versions                      |
 
 - `packWorkspaceSdk` builds and `pnpm pack`s the four packages (`workspace:*`
   becomes exact versions).

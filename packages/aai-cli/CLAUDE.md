@@ -63,8 +63,9 @@ A narrowed run must never report a green verdict over specs it skipped.
   `ran`/`unrun`/`complete` on `TestData` and `ran` on `EvalData`.
 - **`--all` is accepted and does nothing** — old CI pipelines pass it and
   `assertKnownArgv` would otherwise reject them.
-- **`aai build` runs the whole suite** (`runVitest(cwd, { candidates:
-  TEST_FILES, all: true })`); `--skipTests` is the honest opt-out.
+- **`aai build` runs the whole suite**
+  (`runVitest(cwd, { candidates: TEST_FILES, all: true })`); `--skipTests` is
+  the honest opt-out.
 - **`runVitest` announces the unrun set itself** (`announceUnrun`, default
   `true`). `aai test` passes `false` (its result reports it); `aai eval` passes
   `false` (the unrun set is a test-tier claim).
@@ -246,17 +247,18 @@ from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 - **`REACT_REFRESH_EXCLUDE` must keep `dist/` and `client.tsx`.** A LINKED
   `aai-ui` resolves outside `node_modules`, so its bundled chunks became
-  refresh boundaries and a rebuild threw `Session hooks must be used within
-  <SessionProvider>`; `client.tsx` exports nothing and re-running it
-  double-mounts. `exclude` REPLACES the plugin's `node_modules` default.
+  refresh boundaries and a rebuild threw
+  `Session hooks must be used within <SessionProvider>`; `client.tsx` exports
+  nothing and re-running it double-mounts. `exclude` REPLACES the plugin's
+  `node_modules` default.
 - **Do not** use `optimizeDeps.include: ["@alexkroman1/aai-ui"]` or
   `resolve.preserveSymlinks` (silent staleness; the latter also two Reacts).
 
 ## `aai dev --tunnel`, `AAI_DEV_SOURCE`, `secret put --local`
 
 - **`--tunnel`** (`_dev-tunnel.ts`): cloudflared quick tunnel (binary
-  `AAI_CLOUDFLARED_PATH` or `PATH`, never installed) to the PRINTED port; its URL
-  becomes `PUBLIC_URL` before the first build. `--on-public-url <cmd>` runs
+  `AAI_CLOUDFLARED_PATH` or `PATH`, never installed) to the PRINTED port; its
+  URL becomes `PUBLIC_URL` before the first build. `--on-public-url <cmd>` runs
   with the URL once up and with it EMPTY on exit; a failing hook warns. The
   tunnel dying exits 1. The scrape excludes `api.trycloudflare.com` (a failed
   request logs it).
@@ -446,10 +448,11 @@ reverse — a new target is a new file plus two lines.
   from `DEPLOY_ENV_DECLARATION_FILE` alone. It warns rather than gates (a build
   cannot see runtime-only host vars); `node` is exempt.
 - **Vercel routing brackets `handle: filesystem` with two `/assets/` rules**
-  (Vite's content-hashed dir): before it, `cache-control: public,
-  max-age=31536000, immutable` with `continue: true`; after it, a terminal 404
-  with `no-store` (a miss there is a stale `index.html`, and would otherwise
-  inherit the immutable header). Everything else falls through.
+  (Vite's content-hashed dir): before it,
+  `cache-control: public, max-age=31536000, immutable` with `continue: true`;
+  after it, a terminal 404 with `no-store` (a miss there is a stale
+  `index.html`, and would otherwise inherit the immutable header). Everything
+  else falls through.
 - **Vercel's Node major rounds UP** (`vercelNodeRuntime`: smallest offered
   major ≥ the build's, clamped at newest).
 - **`--target deno` emits a self-contained `.aai/deno/`** (bundled server,

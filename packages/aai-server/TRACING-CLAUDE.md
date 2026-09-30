@@ -27,10 +27,10 @@ predicate, never re-parsed.
 
 ## Two span sources, and they are not yet ONE trace
 
-| Source | Spans | Where |
-| --- | --- | --- |
-| `@hono/otel` | one SERVER span per platform HTTP request | `aai-server` |
-| AI SDK telemetry | `ai.generate`, `ai.step`, `ai.languageModelCall`, `ai.toolCall <name>` | `aai-guest` |
+| Source           | Spans                                                                  | Where        |
+| ---------------- | ---------------------------------------------------------------------- | ------------ |
+| `@hono/otel`     | one SERVER span per platform HTTP request                              | `aai-server` |
+| AI SDK telemetry | `ai.generate`, `ai.step`, `ai.languageModelCall`, `ai.toolCall <name>` | `aai-guest`  |
 
 **Guest spans now adopt the platform's span as parent**, so a model call and
 the platform HTTP request that caused it are ONE trace. Three things had to be

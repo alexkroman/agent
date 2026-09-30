@@ -62,11 +62,11 @@ the router parses, so they cannot drift.
 client here POSTs to (run storage, queue, session state, upload records) from
 **`AAI_PLATFORM_BASE_URL`**, falling back to `AAI_PUBLIC_BASE_URL`.
 
-| | `AAI_PUBLIC_BASE_URL` | `AAI_PLATFORM_BASE_URL` |
-| --- | --- | --- |
-| Claim | "a third party reaches this agent here" | "the platform is dialable here" |
-| Reader | `publicUrl` → `publicWebhookUrl` | `resolvePlatformQueue` |
-| Must resolve from | the internet | **inside the sandbox** |
+|                   | `AAI_PUBLIC_BASE_URL`                   | `AAI_PLATFORM_BASE_URL`         |
+| ----------------- | --------------------------------------- | ------------------------------- |
+| Claim             | "a third party reaches this agent here" | "the platform is dialable here" |
+| Reader            | `publicUrl` → `publicWebhookUrl`        | `resolvePlatformQueue`          |
+| Must resolve from | the internet                            | **inside the sandbox**          |
 
 - They differ under `microsandbox` (the guest's own `127.0.0.1:8080` is not the
   platform). Never rewrite the public key to a sandbox alias — webhook URLs
@@ -102,10 +102,11 @@ accident:
   halves; refuse a malformed payload. The escape never reads the tag's value,
   so it needs no change. Known hole: no unsupported-type guard, so other exotic
   values journal as `{}` — the fix is a structural check at the step boundary.
-- Strict decoding: base64 via `Uint8Array.fromBase64(…, { lastChunkHandling:
-  "strict" })`; an unparsable `iso` throws (`iso: null` still revives an
-  invalid `Date` — the encoder's own spelling). Callers classify the throw
-  (`decodeBody` → 400; the guest fails the step).
+- Strict decoding: base64 via
+  `Uint8Array.fromBase64(…, { lastChunkHandling: "strict" })`; an unparsable
+  `iso` throws (`iso: null` still revives an invalid `Date` — the encoder's own
+  spelling). Callers classify the throw (`decodeBody` → 400; the guest fails the
+  step).
 - Only the storage RPC emits the date envelope; the queue path never does.
 
 **`typed-json-property.test.ts` is the pattern for other codecs**: keys drawn

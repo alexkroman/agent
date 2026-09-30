@@ -95,7 +95,9 @@
         "scripts/gen-gateway-models.mjs",
         "stryker*.config.mjs"
       ],
-      "ignoreDependencies": []
+      // `scripts/check-polyglot.mjs` runs taplo by its `node_modules/.bin` path,
+      // which knip does not read as a use of the package that provides it.
+      "ignoreDependencies": ["@taplo/cli"]
     },
     "packages/aai": {
       "entry": [

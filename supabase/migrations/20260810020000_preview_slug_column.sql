@@ -59,7 +59,7 @@
 -- scheduling if the table ever became large.
 alter table aai_platform.studio_workspaces
   add column if not exists preview_slug text
-  generated always as (doc->>'previewSlug') stored;
+  generated always as (doc->>'previewSlug') stored; -- noqa: LT01
 
 create index if not exists studio_workspaces_preview_slug
   on aai_platform.studio_workspaces (preview_slug);

@@ -25,17 +25,18 @@ in `packages/aai-server/src/guest/routes.ts`.
    error (`satisfies Record<keyof typeof GUEST_ROUTES, …>`). Pick by **who calls
    it**, not what it does:
 
-   | Kind | Caller | Platform owes |
-   | --- | --- | --- |
-   | `proxied` | brokered clients (a page, a third party, a CLI) | a `/:slug<path>` route per method, forwarding via `guest/forward.ts` |
-   | `direct-dial` | a client handed the sandbox URL (browser voice session, carrier after TwiML, studio chat) | nothing |
-   | `host-only` | the platform itself, through the sandbox URL, bearer-gated | nothing public |
-   | `guest-internal` | the guest's own machinery on loopback only | nothing — never write `host-only` here; that describes a token gate that is not there |
+   | Kind             | Caller                                                                                    | Platform owes                                                                         |
+   | ---------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+   | `proxied`        | brokered clients (a page, a third party, a CLI)                                           | a `/:slug<path>` route per method, forwarding via `guest/forward.ts`                  |
+   | `direct-dial`    | a client handed the sandbox URL (browser voice session, carrier after TwiML, studio chat) | nothing                                                                               |
+   | `host-only`      | the platform itself, through the sandbox URL, bearer-gated                                | nothing public                                                                        |
+   | `guest-internal` | the guest's own machinery on loopback only                                                | nothing — never write `host-only` here; that describes a token gate that is not there |
 
    For `proxied`: list the methods the **guest** answers, read from its
    dispatch (`if (url === X)` chains — there is no table to derive verbs from).
    Add `suffix` when the platform path ends in a parameter the guest parses
    itself (e.g. the webhook token).
+
 3. **Make the platform match.** Register each proxied method under `/:slug` in
    the orchestrator. A route forwarding a streaming request body needs
    `bound: "activity"` (see `forwardToGuest`'s `bound` doc).

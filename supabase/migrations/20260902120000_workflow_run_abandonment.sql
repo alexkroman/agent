@@ -45,7 +45,7 @@
 -- transaction while every write to the journal queues behind IT.
 set local lock_timeout = '5s';
 
-alter table aai_platform.workflow_runs add column if not exists reconciles integer not null default 0;
+alter table aai_platform.workflow_runs add column if not exists reconciles integer not null default 0; -- noqa: LT05
 
 -- ── The retention scan's own index ───────────────────────────────────────────
 --

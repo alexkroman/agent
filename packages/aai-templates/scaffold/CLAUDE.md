@@ -41,6 +41,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `runTool(agent, "name", …)` form answers `unknown`). `expectDeployable(agentDef)`
    runs the build's checks and returns a `DeployedConfig` (`name`,
    `systemPrompt`, `mode`, `builtinTools`, …) to assert on.
+
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
    Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
@@ -91,6 +92,7 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    No eval can see anything below the audio boundary — when the agent decides
    you stopped talking, barge-in, two sentences merging into one turn. Those
    need `pnpm dev` and your own voice.
+
 4. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
    type-checks, validates the manifest, and runs the WHOLE spec suite first.
    Catches issues `dev` won't.
@@ -946,14 +948,14 @@ deploy. Use `stepGenerateJsonOrFail` with a Zod `schema` if you need a shape.
 can fail against a remote service, and **inside a step the wrapper is the one to
 use**:
 
-| Raw, on `@alexkroman1/aai/step` | Use this instead, on `@alexkroman1/aai/step-errors` |
-| --- | --- |
-| `stepGenerate` | `stepGenerateOrFail` |
-| `stepGenerateJson` | `stepGenerateJsonOrFail` |
-| `stepFetch` | `stepFetchOrFail` |
-| `stepTranscribeSync` | `stepTranscribeSyncOrFail` |
-| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail` |
-| `sendToChannel` (`/channels`) | `sendToChannelOrFail` |
+| Raw, on `@alexkroman1/aai/step`            | Use this instead, on `@alexkroman1/aai/step-errors` |
+| ------------------------------------------ | --------------------------------------------------- |
+| `stepGenerate`                             | `stepGenerateOrFail`                                |
+| `stepGenerateJson`                         | `stepGenerateJsonOrFail`                            |
+| `stepFetch`                                | `stepFetchOrFail`                                   |
+| `stepTranscribeSync`                       | `stepTranscribeSyncOrFail`                          |
+| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail`                              |
+| `sendToChannel` (`/channels`)              | `sendToChannelOrFail`                               |
 
 `stepFetchOrFail` is the one that is not spelled `*OrFail`, and the name is the
 difference: the others turn an already-thrown failure into a classified one,
@@ -1106,7 +1108,7 @@ for `mapConcurrent` over large bodies (8 concurrent 17.66 MB uploads: `fetch`
 landed 14 of 16 at p50 8094ms, HTTP/1.1 16 of 16 at p50 3037ms).
 
 **The two it lost matter more than the latency.** On
-HTTP/2 a capacity limit arrives as a *stream reset* — `NGHTTP2_ENHANCE_YOUR_CALM`
+HTTP/2 a capacity limit arrives as a _stream reset_ — `NGHTTP2_ENHANCE_YOUR_CALM`
 — and a stream error carries no HTTP status, so `isTransientStatus` and
 `retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
 into the same reset, exhausts the step's attempts, and fails the run with
@@ -1158,7 +1160,7 @@ into a live pipeline's playback, and a step has no turn to be part of and has to
 return a value. So this is the smaller thing: text in, the whole utterance out
 as a WAV, on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come
 from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list
-rather than typing an id, because a wrong one is refused *after* the socket
+rather than typing an id, because a wrong one is refused _after_ the socket
 opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
 gives you autocomplete over it and nothing more: it accepts any string, so that
 a voice the service adds after this release still compiles.
@@ -1690,7 +1692,7 @@ let best: Pick | null = null;          // ✅
 const [picks, set] = useState<Pick[]>([]);  // ✅
 ```
 
-Annotating the *use* instead does not help — the declaration is still wrong,
+Annotating the _use_ instead does not help — the declaration is still wrong,
 so the next push just reports the next line.
 
 ### Session state
@@ -2051,21 +2053,21 @@ Enable via `builtinTools` in `agent()`. **Omitted, only `think` is on**; the
 rest are opt-in. Setting the field REPLACES the default: list `"think"` to keep
 it, `[]` for none.
 
-| Tool | Description | Params |
-| --- | --- | --- |
-| `web_search` | Search the web (DuckDuckGo), no key | `query`, `max_results?` (default 5) |
-| `visit_webpage` | Fetch URL to plain text | `url` |
-| `get_page_design` | Fetch URL's raw HTML + CSS to study/mimic a site's design | `url` |
-| `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
-| `run_code` | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout) | `code` |
-| `think` | Private reasoning scratchpad, no side effects | `thought` |
-| `remember` | Save a confirmed fact to session notes | `key`, `value` |
-| `recall` | Read session notes saved with `remember` | `key?` |
-| `calculate` | Safe arithmetic evaluator, no code execution | `expression` |
-| `open_meteo` | Weather + forecast (Open-Meteo), no key | `location`, `days?`, `units?` |
-| `brave_search` | Brave Search API — `BRAVE_API_KEY` | `query`, `max_results?`, `freshness?` |
-| `google_places` | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY` | `query`, `max_results?`, `open_now?` |
-| `text_me` | Text the owner (Textbelt) — `TEXTBELT_KEY`, `SMS_TO_PHONE`; a client's `?phone=` only if in `SMS_ALLOWED_PHONES` (`*`: any) | `message`, `url?` |
+| Tool              | Description                                                                                                                 | Params                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `web_search`      | Search the web (DuckDuckGo), no key                                                                                         | `query`, `max_results?` (default 5)   |
+| `visit_webpage`   | Fetch URL to plain text                                                                                                     | `url`                                 |
+| `get_page_design` | Fetch URL's raw HTML + CSS to study/mimic a site's design                                                                   | `url`                                 |
+| `fetch_json`      | HTTP GET a JSON API                                                                                                         | `url`, `headers?`                     |
+| `run_code`        | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout)        | `code`                                |
+| `think`           | Private reasoning scratchpad, no side effects                                                                               | `thought`                             |
+| `remember`        | Save a confirmed fact to session notes                                                                                      | `key`, `value`                        |
+| `recall`          | Read session notes saved with `remember`                                                                                    | `key?`                                |
+| `calculate`       | Safe arithmetic evaluator, no code execution                                                                                | `expression`                          |
+| `open_meteo`      | Weather + forecast (Open-Meteo), no key                                                                                     | `location`, `days?`, `units?`         |
+| `brave_search`    | Brave Search API — `BRAVE_API_KEY`                                                                                          | `query`, `max_results?`, `freshness?` |
+| `google_places`   | Google Places: address, phone, hours, rating — `GOOGLE_PLACES_API_KEY`                                                      | `query`, `max_results?`, `open_now?`  |
+| `text_me`         | Text the owner (Textbelt) — `TEXTBELT_KEY`, `SMS_TO_PHONE`; a client's `?phone=` only if in `SMS_ALLOWED_PHONES` (`*`: any) | `message`, `url?`                     |
 
 A keyed builtin reads its key from the agent env; list it in `requiredEnv`.
 
@@ -2091,16 +2093,16 @@ Zero-dependency helpers a tool body, a step or a client may reach for, so the
 same three lines are not rewritten per template. Import from `/utils`, which is
 safe from a `workflows/*.ts` module and from a browser bundle:
 
-| Helper | For |
-| --- | --- |
-| `errorMessage(err)`, `errorDetail(err)` | Turning an unknown `catch` value into a sentence for the model or the log |
-| `responseErrorMessage(res, label)` | The same for a non-2xx `Response`, preferring a JSON `error` field over the bare status |
-| `safeJsonParse(text)` | A parse that answers `undefined` instead of throwing |
+| Helper                                                  | For                                                                                                                                                                                                            |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `errorMessage(err)`, `errorDetail(err)`                 | Turning an unknown `catch` value into a sentence for the model or the log                                                                                                                                      |
+| `responseErrorMessage(res, label)`                      | The same for a non-2xx `Response`, preferring a JSON `error` field over the bare status                                                                                                                        |
+| `safeJsonParse(text)`                                   | A parse that answers `undefined` instead of throwing                                                                                                                                                           |
 | `formatBytes`, `formatDuration`, `countWords`, `plural` | Narration. Each returns ONE fixed shape, so a step's progress line and the page rendering the same run cannot disagree — they did, one template printing `1:04:09` from its workflow and `64:09` from its page |
-| `pushCapped(list, item, max)` | An append that keeps the last N, for a log a session accumulates |
-| `isRecord(x)`, `omitUndefined(obj)` | The object guard and the spread-free way to drop undefined fields |
-| `decodeHtmlEntities(text)` | Six entities, no dependency. Enough for a `client.tsx`; for a page or a feed see `/html` below |
-| `createKeyedLock()` / `withLock(lock, key, work)` | Serializing async work per key |
+| `pushCapped(list, item, max)`                           | An append that keeps the last N, for a log a session accumulates                                                                                                                                               |
+| `isRecord(x)`, `omitUndefined(obj)`                     | The object guard and the spread-free way to drop undefined fields                                                                                                                                              |
+| `decodeHtmlEntities(text)`                              | Six entities, no dependency. Enough for a `client.tsx`; for a page or a feed see `/html` below                                                                                                                 |
+| `createKeyedLock()` / `withLock(lock, key, work)`       | Serializing async work per key                                                                                                                                                                                 |
 
 **`createKeyedLock` is the one an agent most needs and least expects to.** The
 LLM loop runs a step's tool calls CONCURRENTLY, so two tools mutating the same
@@ -2255,32 +2257,32 @@ mountClient({ component: MyApp });
 
 ### `mountClient()` config
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `name` | `string` | — | Header/start screen title (tier 1) |
-| `component` | `ComponentType` | — | Custom root component (tier 2) |
-| `sidebar` | `ComponentType` | — | Sidebar alongside default chat (tier 1) |
-| `sidebarWidth` | `string` | `"18rem"` | CSS width of sidebar |
-| `theme` | `ClientTheme` | — | `{ bg, primary, text, surface, border }` |
-| `target` | `string \| HTMLElement` | `"#app"` | Mount target |
-| `tools` | `ToolDisplayConfig` | — | Icon/label overrides per tool name |
-| `client` | `string \| () => string` | — | `?client=`; `"auto"` = per-browser id |
+| Field          | Type                     | Default   | Description                              |
+| -------------- | ------------------------ | --------- | ---------------------------------------- |
+| `name`         | `string`                 | —         | Header/start screen title (tier 1)       |
+| `component`    | `ComponentType`          | —         | Custom root component (tier 2)           |
+| `sidebar`      | `ComponentType`          | —         | Sidebar alongside default chat (tier 1)  |
+| `sidebarWidth` | `string`                 | `"18rem"` | CSS width of sidebar                     |
+| `theme`        | `ClientTheme`            | —         | `{ bg, primary, text, surface, border }` |
+| `target`       | `string \| HTMLElement`  | `"#app"`  | Mount target                             |
+| `tools`        | `ToolDisplayConfig`      | —         | Icon/label overrides per tool name       |
+| `client`       | `string \| () => string` | —         | `?client=`; `"auto"` = per-browser id    |
 
 Beside a `component`, `sidebar` still renders; `name` becomes the page title.
 
 ### `useSession()` return type
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `state` | `AgentState` | `"disconnected"` `"connecting"` `"ready"` `"listening"` `"thinking"` `"speaking"` `"error"` |
-| `messages` | `ChatMessage[]` | `{ role, content }` |
-| `toolCalls` | `ToolCallInfo[]` | `{ callId, name, args, status, result? }` |
-| `customEvents` | `AgentCustomEvent[]` | `{ id, event, data }` from `ctx.send()` |
-| `userTranscript` | `string \| null` | `null` = not speaking, `""` = speech detected, string = text |
-| `agentTranscript` | `string \| null` | `null` = not speaking, string = streaming response |
-| `error` | `SessionError \| null` | `{ code, message }` |
-| `started` | `boolean` | Whether session started |
-| `running` | `boolean` | Whether session active |
+| Field             | Type                   | Description                                                                                 |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
+| `state`           | `AgentState`           | `"disconnected"` `"connecting"` `"ready"` `"listening"` `"thinking"` `"speaking"` `"error"` |
+| `messages`        | `ChatMessage[]`        | `{ role, content }`                                                                         |
+| `toolCalls`       | `ToolCallInfo[]`       | `{ callId, name, args, status, result? }`                                                   |
+| `customEvents`    | `AgentCustomEvent[]`   | `{ id, event, data }` from `ctx.send()`                                                     |
+| `userTranscript`  | `string \| null`       | `null` = not speaking, `""` = speech detected, string = text                                |
+| `agentTranscript` | `string \| null`       | `null` = not speaking, string = streaming response                                          |
+| `error`           | `SessionError \| null` | `{ code, message }`                                                                         |
+| `started`         | `boolean`              | Whether session started                                                                     |
+| `running`         | `boolean`              | Whether session active                                                                      |
 
 Methods: `start()`, `toggle()`, `cancel()`, `disconnect()`, `resetState()`,
 and:
@@ -2372,15 +2374,15 @@ re-processes every tool call on every render, causing duplicates.
 
 Available from `@alexkroman1/aai-ui`:
 
-| Component | Props | Description |
-| --- | --- | --- |
-| `StartScreen` | `children` (**required**)`, icon?, title?, subtitle?, buttonText?` | **Wrapper, never self-closing.** Shows the start card, then renders `children` — your whole app — once the session starts |
-| `ChatView` | `icon?, title?` | Chat interface (header + messages + controls) |
-| `SidebarLayout` | `sidebar, children, sidebarWidth?, sidebarPosition?` | Two-column layout |
-| `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
-| `Controls` | — | Stop/Resume + New Conversation buttons |
-| `Button` | — | Styled button |
-| `UploadProgressBar` | `upload, onPause?, onResume?` | Bytes in flight, with pause/resume |
+| Component           | Props                                                              | Description                                                                                                               |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `StartScreen`       | `children` (**required**)`, icon?, title?, subtitle?, buttonText?` | **Wrapper, never self-closing.** Shows the start card, then renders `children` — your whole app — once the session starts |
+| `ChatView`          | `icon?, title?`                                                    | Chat interface (header + messages + controls)                                                                             |
+| `SidebarLayout`     | `sidebar, children, sidebarWidth?, sidebarPosition?`               | Two-column layout                                                                                                         |
+| `MessageList`       | —                                                                  | Messages with auto-scroll, tool calls, transcript                                                                         |
+| `Controls`          | —                                                                  | Stop/Resume + New Conversation buttons                                                                                    |
+| `Button`            | —                                                                  | Styled button                                                                                                             |
+| `UploadProgressBar` | `upload, onPause?, onResume?`                                      | Bytes in flight, with pause/resume                                                                                        |
 
 **Forms are declared, not written.** `<Form onSubmit>` collects typed values off
 the DOM and hands them over once the browser's own validation passes; the field

@@ -32,9 +32,10 @@ works.
   sockets — cutting each chunked body before its terminating `0\r\n\r\n`.
   That is a protocol error to whatever is reading, and in production the
   reader is Modal's in-container ASGI proxy, which surfaced it as a recurring
-  unretrieved-task `ClientPayloadError: Response payload is not completed:
-  <TransferEncodingError: 400, 'Not enough data to satisfy transfer length
-  header.'>` on `GET /studio/projects/<x>/events`, with nothing tying it to a
+  unretrieved-task `ClientPayloadError: Response payload is not completed:`
+  `<TransferEncodingError: 400,`
+  `'Not enough data to satisfy transfer length header.'>` on
+  `GET /studio/projects/<x>/events`, with nothing tying it to a
   replica scale-in. The studio's SSE pusher (`studio-sse.ts`) registers; with
   both surfaces in one process that is the only place a stream is owned. (The
   split deployment additionally relayed proxied streams through one it owned —
@@ -56,7 +57,7 @@ works.
     seconds at best, and up to `SHUTDOWN_TEARDOWN_TIMEOUT_MS` when a guest is
     unreachable or still booting (it was genuinely unbounded before that
     deadline existed). Modal SIGKILLs the container when its stop grace lapses,
-    so ending them *after* the teardown made the graceful end contingent on
+    so ending them _after_ the teardown made the graceful end contingent on
     sandbox teardown finishing in time — which is a bound now, but still not a
     dependency worth having.
   - **The registry LATCHES closed.** Nothing drains it twice, so a stream
@@ -69,6 +70,7 @@ works.
   - **The crash path ends them too** (`installProcessSafetyNets` in
     `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
     sockets exactly as a scale-in does.
+
 - **A caller's concurrent streams are CAPPED per scope**
   (`MAX_LIVE_STREAMS_PER_SCOPE`, enforced by `reserveLiveStream` in
   `aai-server/live-streams.ts`; both routes answer **429** when a scope is at
@@ -100,6 +102,7 @@ works.
   per-project key would let a caller cycling project names hold unlimited
   streams, the same evasion that made the scope-keyed rate limits decorative
   before they were paired with an IP key.
+
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. The app therefore sets it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h, matching
@@ -156,10 +159,10 @@ works.
   goes. It is also matched on TWO discriminators (the exception name **and**
   `_proxy_http_request` in the record), so it can never decay into swallowing
   asyncio errors: one of our own tasks dying the same way, or Modal's proxy
-  task dying of anything else, still prints in full. `modal/image-inputs.test.ts`
-  pins all three properties, which is worth the ceremony because every way this
-  rots is silent and in the same direction — toward eating a traceback you
-  needed, in a log nobody reads until an incident.
+  task dying of anything else, still prints in full.
+  `modal/image-inputs.test.ts` pins all three properties, which is worth the
+  ceremony because every way this rots is silent and in the same direction —
+  toward eating a traceback you needed, in a log nobody reads until an incident.
 
   **Capping the streams' own lifetime was considered and rejected.** It cannot
   reduce the above — a tab close still aborts whatever stream is open — while

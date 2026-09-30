@@ -43,12 +43,12 @@ using.
 Four frames, declared once in `aai-runtime/platform-socket-frames.ts` and parsed
 on both ends. One JSON object per text frame.
 
-| Direction | Frame |
-| --- | --- |
+| Direction        | Frame                                      |
+| ---------------- | ------------------------------------------ |
 | guest → platform | `{t:"req", id, route, traceparent?, body}` |
-| platform → guest | `{t:"res", id, status, body}` |
-| guest → platform | `{t:"ping", id}` |
-| platform → guest | `{t:"pong", id}` |
+| platform → guest | `{t:"res", id, status, body}`              |
+| guest → platform | `{t:"ping", id}`                           |
+| platform → guest | `{t:"pong", id}`                           |
 
 **Not JSON-RPC**, though this repo speaks it on the host→guest control socket
 (`rpc-transport.ts`). JSON-RPC's reply is `result` XOR `error`, and every one of
@@ -71,10 +71,10 @@ fail a call that HTTP would have served.
 Which call may be retried over HTTP is a CORRECTNESS question, not a tidiness
 one, and the answer is the frame write:
 
-| Situation | Code | What the caller does |
-| --- | --- | --- |
-| no socket, or the in-flight cap is reached, or the write threw | `PLATFORM_SOCKET_UNAVAILABLE` | uses HTTP — the platform provably never saw it |
-| the socket died with the frame already written | `PLATFORM_UNAVAILABLE` (what a 503 carries) | rethrown; the engine's own retry decides |
+| Situation                                                      | Code                                        | What the caller does                           |
+| -------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------- |
+| no socket, or the in-flight cap is reached, or the write threw | `PLATFORM_SOCKET_UNAVAILABLE`               | uses HTTP — the platform provably never saw it |
+| the socket died with the frame already written                 | `PLATFORM_UNAVAILABLE` (what a 503 carries) | rethrown; the engine's own retry decides       |
 
 Re-sending a WRITTEN frame over HTTP would run one `appendEvents` twice. The
 second row is exactly what an HTTP connection reset already did, so the
@@ -100,10 +100,10 @@ cannot hold an input forever.
 
 ## The two caps, and why they are different numbers
 
-| | guest, `MAX_INFLIGHT` | platform, `MAX_SOCKET_INFLIGHT` |
-| --- | --- | --- |
-| value | 64 | 128 |
-| over it | refuse before writing → HTTP | answer 503 |
+|         | guest, `MAX_INFLIGHT`        | platform, `MAX_SOCKET_INFLIGHT` |
+| ------- | ---------------------------- | ------------------------------- |
+| value   | 64                           | 128                             |
+| over it | refuse before writing → HTTP | answer 503                      |
 
 The guest's is deliberately the one that binds: its refusal costs a caller
 nothing, where a 503 is a real answer that has to be retried. The platform's is
@@ -154,11 +154,11 @@ availability.
 
 ## Where the tests are, and what each can see
 
-| Tier | File | Sees |
-| --- | --- | --- |
-| unit | `aai-runtime/platform-socket.test.ts` | the guest end against a fake peer: correlation, the refusal taxonomy, the heartbeat on virtual time, reconnect |
-| unit | `aai-runtime/platform-rpc.test.ts` | the transport CHOICE — prefer, fall back on a refusal, never retry a written call |
-| unit | `aai-server/platform-socket-handler.test.ts` | the frame loop against a real Hono app: dispatch, the route allowlist, ping, the in-flight cap, the handshake refusals |
+| Tier     | File                                          | Sees                                                                                                                                   |
+| -------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| unit     | `aai-runtime/platform-socket.test.ts`         | the guest end against a fake peer: correlation, the refusal taxonomy, the heartbeat on virtual time, reconnect                         |
+| unit     | `aai-runtime/platform-rpc.test.ts`            | the transport CHOICE — prefer, fall back on a refusal, never retry a written call                                                      |
+| unit     | `aai-server/platform-socket-handler.test.ts`  | the frame loop against a real Hono app: dispatch, the route allowlist, ping, the in-flight cap, the handshake refusals                 |
 | scenario | `aai-server/platform-socket.scenario.test.ts` | both REAL ends over a real port: the handshake, the bearer, and a socket answer compared byte for byte against the same call over HTTP |
 
 The scenario one is the only tier that can say the two ends are wired to each
@@ -166,9 +166,9 @@ other at all — every unit suite either side passes against a fake peer.
 
 ## An unmeasured transport change
 
-`_egress-fetch.ts` states the bar this did not clear: *"nothing has measured the
+`_egress-fetch.ts` states the bar this did not clear: _"nothing has measured the
 RPC path either way, and an unmeasured change to the transport under every
-durable run is not a change to make on a plausible argument."* That is still
+durable run is not a change to make on a plausible argument."_ That is still
 true of what the SOCKET saves. What makes it shippable anyway is the fallback —
 it can only ever be a latency change, because a call it cannot serve is served by
 the same HTTP route as before.

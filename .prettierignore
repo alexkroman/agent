@@ -1,0 +1,15 @@
+# Prettier formats what Biome does not read: Markdown, MDX, YAML, shell scripts
+# and Dockerfiles (`pnpm check:prettier`). `.gitignore` is read too, so build
+# output and scratch directories need no entry here.
+
+# Generated — the files `.markdownlint-cli2.jsonc` ignores, on its grounds: a
+# finding in one can only be fixed by editing a file the next run overwrites.
+**/CHANGELOG.md
+**/etc/*.api.md
+API.md
+API-INDEX.md
+docs/api/**
+packages/aai/AGENT_GUIDE.md
+packages/aai-guest-studio/studio-prompts/*.md
+packages/aai-templates/templates/**/system-prompt.md
+pnpm-lock.yaml
