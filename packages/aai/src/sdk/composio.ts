@@ -113,7 +113,12 @@ const enc = encodeURIComponent;
  *
  * @example
  * ```ts
- * import { composio } from "@alexkroman1/aai/experimental";
+ * import { composio, stepMcp } from "@alexkroman1/aai/experimental";
+ * import type { EnvContext } from "@alexkroman1/aai/step";
+ *
+ * declare const ctx: EnvContext; // a tool's `ctx`, or `stepEnvContext()` in a step
+ * declare const userId: string;
+ * declare const clientId: string;
  *
  * export const apps = composio({
  *   sessions: { voice: {}, background: { workbench: true } },
