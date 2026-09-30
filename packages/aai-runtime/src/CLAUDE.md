@@ -259,6 +259,27 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
 - The four guard rules are in
   [`../TOOL-OUTCOMES-CLAUDE.md`](../TOOL-OUTCOMES-CLAUDE.md).
 
+### A `clientTool` is answered by the PAGE, over the wire host mode already speaks
+
+`clientTool()` (SDK) is an ordinary `ToolDef` carrying a brand (its
+`timeoutMs`). The self-hosted dispatcher in `runtime-tools.ts` binds each call's
+wait on `client-tool-broker.ts`, keyed by (session, `toolCallId`), onto the
+`ToolContext` as `clientCall`; the tool's own `execute` calls it. The session
+emits `tool.called` / `tool.completed` as for any tool; the page's `tool_result`
+reaches the broker through `ServerSessionOptions.clientTools`, which
+`session-core.ts` consults only when there is no relay (`onToolResult` owns
+every `tool_result` in host mode).
+
+- **The wait rides the CONTEXT, never a swapped `execute`**: a persona gate or
+  dialog `when` wraps a tool by calling `def.execute(args, ctx)`, and replacing
+  the outer `execute` would skip that gate.
+- **`ctx.delegate` strips `clientCall`** — a subagent's tools must not wait on
+  the parent's call id.
+- **An answer may beat its wait** (neither transport orders `tool.called` after
+  the executor starts), so the broker HOLDS an unmatched answer, bounded
+  runtime-wide (`MAX_EARLY_ANSWERS`, oldest evicted), never swept per session.
+- **Both symbols are `Symbol.for`** for the two-copies reason (`../CLAUDE.md`).
+
 ### A tool can SPEAK, and a filler line may not open the barge-in gate
 
 `ToolDef.messages` declares `start`, `delayed`, `complete` and `failed` lines;

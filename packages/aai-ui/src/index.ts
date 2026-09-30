@@ -90,6 +90,8 @@ export {
 // and the `session.identity` handle. Published because a page shows the id and
 // a link-code flow must name THIS browser even while it sends another id.
 export { browserClientId, type SessionIdentity } from "./client-identity.ts";
+// The page answering a `clientTool` call — the one hook that talks BACK.
+export { useClientTool } from "./client-tool.ts";
 // Components
 // The player for a file a RUN produced — heading, pending line, announced
 // error, `<audio>` with an optional one-cue caption track, download link — over
@@ -271,6 +273,7 @@ export type {
   browserSessionBrand,
   SendTextOptions,
   SessionSnapshot,
+  ToolCallOutcome,
   // `session.userTurn` — push-to-talk's three edges, the `push-to-talk`
   // capability's beside `usePushToTalk`.
   UserTurnControls,

@@ -2038,6 +2038,54 @@ the tool also returns an error, because `Promise<DrugInfo>` does not accept
 `{ error: "not found" }`. Every such annotation eventually costs a build
 round to widen into a union. Let it infer.
 
+### A tool the BROWSER runs — `clientTool()`
+
+`ctx.send` is fire-and-forget: a tool cannot wait for the page. When the answer
+only the browser has (its location, what is on screen, a click on "Confirm", a
+picked file) IS the tool's result, declare it a `clientTool`. It has no
+`execute`: the page's `useClientTool(name, handler)` runs it, and whatever the
+handler returns is the result the model reads. A throw in the handler is a
+failed call the model is told about.
+
+```ts
+// tools/get_location.ts
+import { clientTool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default clientTool({
+  description: "Get the caller's location from their browser",
+  inputSchema: z.object({}),
+  // Waits on a PERSON (the permission prompt), so longer than the 30 s default.
+  timeoutMs: 60_000,
+});
+```
+
+```tsx
+// client.tsx — render <LocationTool /> anywhere inside the mounted tree
+import { useClientTool } from "@alexkroman1/aai-ui";
+
+export function LocationTool() {
+  useClientTool(
+    "get_location",
+    () =>
+      new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(
+          (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+          (err) => reject(new Error(err.message)),
+        ),
+      ),
+  );
+  return null;
+}
+```
+
+- **Only a browser session can answer it.** On a phone call, in a text agent
+  or a subagent the call fails naming why — give such an agent a server path.
+- **No page answer within `timeoutMs` fails the call**, as does a barge-in.
+- **Never send a secret the model should not see through one** — the result
+  goes into the conversation like any other tool result. Return the token, the
+  last four digits, the decision — not the card number.
+
 ### A file in `tools/` IS a tool — there is no registration step
 
 **`tools/` is not a convention, it is the mechanism.** A file there is named for
@@ -2413,6 +2461,20 @@ Client: `useEvent("order", (data) => ...)`.
 **`useTheme`** — returns `{ bg, primary, text, surface, border }`.
 
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
+
+**`useClientTool`** — runs a server `clientTool` in the page and answers the
+model with the handler's return value (see "A tool the BROWSER runs"):
+
+```tsx
+import { useClientTool } from "@alexkroman1/aai-ui";
+
+export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolean> }) {
+  useClientTool<{ question: string }>("confirm", async ({ question }) => ({
+    approved: await ask(question),
+  }));
+  return null;
+}
+```
 
 **Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived
 state. Use `useToolResult` — it deduplicates. The `useEffect` pattern

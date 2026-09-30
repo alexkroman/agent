@@ -4,7 +4,8 @@
  *
  * What a client reads off the agent rather than off the session: the state a
  * tool synced, the tool calls as they start and settle, and the custom events
- * `ctx.send` puts on the wire.
+ * `ctx.send` puts on the wire — and the one hook that answers back,
+ * `useClientTool`, which runs a server `clientTool` in the page.
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -15,6 +16,7 @@
 export {
   type ToolCallInfo,
   useAgentState,
+  useClientTool,
   useEvent,
   useToolCallStart,
   useToolResult,

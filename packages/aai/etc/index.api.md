@@ -215,6 +215,14 @@ export interface ClientRunsRoutesOptions {
 export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
+export function clientTool<P extends ToolInputSchema = ToolInputSchema>(def: ClientToolDef<P>): ToolDef<P>;
+
+// @public
+export type ClientToolDef<P extends ToolInputSchema = ToolInputSchema> = Omit<ToolDef<P>, "execute"> & {
+    timeoutMs?: number;
+};
+
+// @public
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };

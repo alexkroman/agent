@@ -37,6 +37,8 @@ import {
   serializeToolFailure,
 } from "@alexkroman1/aai/host-internal";
 import {
+  bindClientToolCall,
+  type ClientToolCall,
   rejectingWorkflows,
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
@@ -148,6 +150,12 @@ type ExecuteToolCallOptions = {
   onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /**
+   * This call's wait for the page, bound onto the context for a `clientTool`'s
+   * `execute` to find (`sdk/client-tool.ts`). Never carried into `ctx.delegate`:
+   * the answer it waits for is the PARENT call's.
+   */
+  clientCall?: ClientToolCall | undefined;
+  /**
    * `ctx.speech` — the calling session's `say`/`interrupt`. Absent (a
    * sessionless call), a context holds `DETACHED_SESSION_SPEECH`.
    */
@@ -185,7 +193,7 @@ function buildToolContext(
 ): ToolContext {
   const { env, slots, messages, sessionId, send, signal, generate, subagents, workflows, usage } =
     options;
-  return {
+  const ctx: ToolContext = {
     env,
     speech: options.speech ?? DETACHED_SESSION_SPEECH,
     deadlineAt: options.deadlineAt,
@@ -235,7 +243,7 @@ function buildToolContext(
       if (!subagents) {
         return Promise.reject(new Error("delegate is not available in this execution context"));
       }
-      const { tool: _tool, ...defaults } = options;
+      const { tool: _tool, clientCall: _parentCall, ...defaults } = options;
       return subagents(subagent, delegateOpts, { ...defaults, signal });
     }) as DelegateFn,
     messages: messages ?? [],
@@ -251,6 +259,8 @@ function buildToolContext(
       send?.(event, data);
     },
   };
+  if (options.clientCall) bindClientToolCall(ctx, options.clientCall);
+  return ctx;
 }
 
 /**

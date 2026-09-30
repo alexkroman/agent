@@ -20,6 +20,7 @@ import type {
   RestoredToolCall,
   SessionCommand,
 } from "@alexkroman1/aai/protocol";
+import type { ClientToolBroker } from "./client-tool-broker.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { Transport, TransportEventBody } from "./transports/types.ts";
@@ -55,6 +56,12 @@ export type ServerSessionOptions = {
    * hook could not.
    */
   onToolResult?: (message: { toolCallId: string; result: string; error?: string }) => void;
+  /**
+   * Where an inbound `tool_result` goes when there is no relay: a page answering
+   * a `clientTool` call, under this session's id. Unlike {@link onToolResult} it
+   * changes nothing about how the session emits tool calls.
+   */
+  clientTools?: Pick<ClientToolBroker, "answer">;
 };
 
 /**

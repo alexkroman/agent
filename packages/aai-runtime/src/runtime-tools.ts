@@ -7,12 +7,12 @@
  * and in-process self-hosted mode.
  */
 
-import type { AgentDef, StateProjection, ToolDef } from "@alexkroman1/aai";
+import type { AgentDef, StateProjection } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
-import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
+import { SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
-  DEFAULT_BUILTIN_TOOLS,
+  clientToolBrand,
   decideClientEvent,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
@@ -21,8 +21,9 @@ import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest"
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
+import type { ClientToolBroker } from "./client-tool-broker.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
-import type { Logger } from "./runtime-config.ts";
+import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SpeechDirectory } from "./session-speech.ts";
@@ -36,52 +37,6 @@ import {
 } from "./tool-executor.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { type RunNotifier, withNotify } from "./workflow/notify.ts";
-
-/**
- * Merge the agent's builtins with the tools a mode dispatches itself — the
- * single owner of the collision policy for every tool path — sandbox/relay,
- * self-hosted, and {@link createTextAgent}. A provided tool with the same name as a builtin wins,
- * and the colliding builtin is dropped from both dispatch and schemas so the
- * host never shadows a tool the caller expects to execute and the LLM never
- * sees a duplicate name. Provided schemas/guidance come first, builtins after.
- *
- * **A dropped builtin is LOGGED**, because the author declared it. `tools/
- * web_search.ts` beside `builtinTools: ["web_search"]` is one of two things — a
- * deliberate replacement, or a file whose name collided by accident — and
- * nothing anywhere said which had happened: the entry in `builtinTools` simply
- * did nothing, and an author debugging "why is my search not the built-in one"
- * (or the reverse) had no thread to pull. The policy itself is unchanged; the
- * file still wins.
- */
-export function mergeBuiltinSurface(
-  agent: AgentDef,
-  builtinOpts: Parameters<typeof resolveAllBuiltins>[1],
-  provided: { schemas: ToolSchema[]; guidance?: string[] },
-  logger?: Logger | undefined,
-): {
-  defs: Record<string, ToolDef>;
-  schemas: ToolSchema[];
-  guidance: string[];
-} {
-  const providedNames = new Set(provided.schemas.map((s) => s.name));
-  const declared = agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS;
-  const names = declared.filter((name) => !providedNames.has(name));
-  // Only an entry the author WROTE is reported: a `tools/think.ts` beside an
-  // unset `builtinTools` is the file replacing the default, which is the
-  // policy working, not an entry that silently does nothing.
-  const shadowed = (agent.builtinTools ?? []).filter((name) => providedNames.has(name));
-  if (shadowed.length > 0) {
-    logger?.info?.(
-      `builtinTools ${shadowed.map((name) => `"${name}"`).join(", ")} ${shadowed.length === 1 ? "is" : "are"} inert: a tools/ file of the same name is what the model will call. Rename the file if that was not the intent.`,
-    );
-  }
-  const builtins = resolveAllBuiltins(names, builtinOpts);
-  return {
-    defs: builtins.defs,
-    schemas: [...provided.schemas, ...builtins.schemas],
-    guidance: [...(provided.guidance ?? []), ...builtins.guidance],
-  };
-}
 
 /**
  * `agent.syncState` as a list, since it takes one projection or several.
@@ -176,6 +131,8 @@ type ToolSetupDeps = {
    * than refused — see `usage-meter.ts`.
    */
   meters: OwnedMap<string, UsageMeter>;
+  /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
+  clientTools: ClientToolBroker;
   /**
    * `ctx.speech` per session, resolved through the runtime's session map at
    * each `say` — a tool that arms a timer speaks after a resume swapped the
@@ -288,6 +245,7 @@ function setupSandboxTools(
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
   const { agent, options, env, workflows, notifier, logger, emitters, meters, speech, stateStore } =
     deps;
+  const { clientTools } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -381,9 +339,20 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
      * reconnected client stays stale with no further push coming.
      */
     const liveEmitter = (): SessionEmitter | undefined => emitters.get(sid);
+    // A `clientTool` is answered by the page. The wait for this call's
+    // `tool_result` rides the CONTEXT, so a wrapper that gates the tool (a
+    // persona, a dialog) still runs before it; the brand only sets the deadline.
+    const brand = clientToolBrand(tool);
+    const callId = call.options?.toolCallId;
     const run = () =>
       executeToolCall(name, args, {
         tool,
+        ...omitUndefined({
+          clientCall:
+            callId === undefined
+              ? undefined
+              : (signal: AbortSignal) => clientTools.wait(sid, callId, signal),
+        }),
         env: frozenEnv,
         slots: stateStore.viewFor(sid),
         sessionId: sid,
@@ -400,7 +369,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // there means the SESSION is over, which neither of its two arms is.
         onUncaught: (message) =>
           liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
-        timeoutMs: options.toolTimeoutMs,
+        timeoutMs: brand?.timeoutMs ?? options.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.

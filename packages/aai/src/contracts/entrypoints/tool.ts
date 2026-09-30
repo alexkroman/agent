@@ -21,6 +21,9 @@
  * agent SAYS while a tool runs and what it says instead of the model when the
  * tool lands. `dialog` owns the def that also accepts one, not the vocabulary.
  *
+ * `clientTool` is a tool whose execute is the connected page (`useClientTool` in
+ * `aai-ui`); it returns an ordinary `ToolDef`, so it belongs with `tool()`.
+ *
  * Re-exported from `@alexkroman1/aai`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
  * for this capability alone, hash it, and hold it to a committed epoch. See
@@ -28,6 +31,8 @@
  */
 
 export {
+  type ClientToolDef,
+  clientTool,
   type DefaultToolResult,
   failable,
   type InferSchemaOutput,

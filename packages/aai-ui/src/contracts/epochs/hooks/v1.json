@@ -3,7 +3,29 @@
   "capability": "hooks",
   "epoch": 1,
   "rule": 2,
-  "sha256": "8da1deb2035707fd1608ee0ab982efc0eb1fe715d6b754409594a23ddf87cc6e",
-  "exports": ["ToolCallInfo", "useAgentState", "useEvent", "useToolCallStart", "useToolResult"],
-  "rollup": "9e150234676d93fedf01065e6f4977188854b70d6da5c8f2333fe84f2e15d386"
+  "sha256": "2385b688ff54fd81f2ebd1aa6d0b45358bbeff9e20c97c6178516243f1dc2ebd",
+  "exports": [
+    "ToolCallInfo",
+    "useAgentState",
+    "useClientTool",
+    "useEvent",
+    "useToolCallStart",
+    "useToolResult"
+  ],
+  "rollup": "9e150234676d93fedf01065e6f4977188854b70d6da5c8f2333fe84f2e15d386",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "8da1deb2035707fd1608ee0ab982efc0eb1fe715d6b754409594a23ddf87cc6e",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "2385b688ff54fd81f2ebd1aa6d0b45358bbeff9e20c97c6178516243f1dc2ebd",
+      "reason": "additive (checked): +useClientTool"
+    }
+  ]
 }
