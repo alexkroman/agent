@@ -30,17 +30,36 @@ describe("createToolContext", () => {
       "desk",
       "env",
       "generate",
+      // How many times `ctx.speech.interrupt()` was called — see `said`.
+      "interrupts",
       "messages",
       // …and its `ctx.generate` twin.
       "model",
       "random",
+      // Every `ctx.speech.say`, the recorder behind the default `speech`.
+      "said",
       "send",
       "sent",
       "sessionId",
       "signal",
       "slots",
+      "speech",
       "workflows",
     ]);
+  });
+
+  test("ctx.speech records every say into ctx.said, and every played line settles PLAYED", async () => {
+    const ctx = createToolContext();
+    const handle = ctx.speech.say("Your timer is done.", { interrupt: true });
+    ctx.speech.say("Anything else?");
+    expect(ctx.speech.interrupt()).toBe(true);
+
+    await expect(handle.done).resolves.toBe("played");
+    expect(ctx.said).toEqual([
+      { text: "Your timer is done.", interrupt: true },
+      { text: "Anything else?", interrupt: false },
+    ]);
+    expect(ctx.interrupts).toBe(1);
   });
 
   test("ctx.random is SEEDED, so a spec that never mentions it is still deterministic", () => {

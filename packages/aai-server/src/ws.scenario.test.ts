@@ -50,6 +50,8 @@ function makeStubCore(
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
+    say: vi.fn(() => ({ done: Promise.resolve("played" as const), interrupt: vi.fn() })),
+    interrupt: vi.fn(() => true),
     configure: vi.fn((config: ReadyConfig) => {
       client?.event(stampSessionEvent({ type: "session.configured", ...config, sessionId }));
     }),

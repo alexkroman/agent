@@ -106,7 +106,7 @@ describe("speakFixedLine", () => {
 describe("createLineReply", () => {
   test("a line that PLAYED is recorded whole, in both views", async () => {
     const { reply, history } = harness(() => undefined);
-    await reply("pipeline-greeting", LINE);
+    await expect(reply("pipeline-greeting", LINE)).resolves.toBe("played");
     expect(history.conversation).toEqual([{ role: "assistant", content: LINE }]);
     expect(history.llm).toEqual([{ role: "assistant", content: LINE }]);
   });
@@ -118,7 +118,7 @@ describe("createLineReply", () => {
       advance(1500);
       cut();
     });
-    await reply("pipeline-greeting", LINE);
+    await expect(reply("pipeline-greeting", LINE)).resolves.toBe("interrupted");
 
     const [entry] = history.conversation;
     expect(history.conversation).toHaveLength(1);
@@ -186,6 +186,13 @@ describe("createLineReply", () => {
     box.gate = h.gate;
     await h.reply("pipeline-greeting", LINE);
     expect(h.history.conversation).toEqual([]);
+  });
+
+  test("onStart fires as the line takes the floor, before its caption", async () => {
+    const order: string[] = [];
+    const { reply, reported } = harness(() => undefined);
+    await reply("pipeline-say", LINE, () => order.push(`start:${reported.length}`));
+    expect(order).toEqual(["start:0"]);
   });
 
   test("the caption is still committed up front, whatever the outcome", async () => {

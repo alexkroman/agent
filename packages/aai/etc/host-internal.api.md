@@ -699,6 +699,9 @@ interface DelegateResult extends SubagentAnswer {
     revisions: number;
 }
 
+// @internal
+export const DETACHED_SESSION_SPEECH: SessionSpeech;
+
 // @public
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
@@ -1316,6 +1319,11 @@ type SayOnClientNotice = {
 export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientId: string, notice: SayOnClientNotice): Promise<string>;
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+};
+
+// @public
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
 // @internal
@@ -1349,6 +1357,12 @@ export type SessionIdentity = {
 
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
 
 // @internal
 export function setSessionCall(sessionId: string, call: SessionCall): void;
@@ -1393,6 +1407,15 @@ export type SpawnCappedResult = {
     stdout: string;
     stderr: string;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -1632,6 +1655,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

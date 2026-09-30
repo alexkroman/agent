@@ -63,8 +63,8 @@ plus the two audio paths is the whole inbound surface. `guard-invariants` rule
 ## A hook's write needs a commit, and a guard
 
 `agent({ events })` handlers may WRITE session state (authoring half:
-`packages/aai/src/sdk/CLAUDE.md`, "A session event hook WRITES state, and still
-cannot SPEAK"). Both mechanics live in `session-emitter.ts`:
+`packages/aai/src/sdk/CLAUDE.md`, "A session event hook WRITES state and may
+SAY, but cannot change the turn"). Both mechanics live in `session-emitter.ts`:
 
 - **The COMMIT.** `slot.update` is synchronous and cannot flush itself, and the
   tool executor's `finally` is the only other commit point. `runHooks` runs
@@ -83,6 +83,23 @@ cannot SPEAK"). Both mechanics live in `session-emitter.ts`:
 
 `commitSessionState` is absent on the SANDBOX tool path (the runtime holds no
 state there): a hook's write still lands in the store, without the commit.
+
+## `say` and `interrupt` reach a session through ONE directory
+
+`session-speech.ts` is the host half of the SDK's `SessionSpeech`.
+`createSpeechVerbs` is one session's pair: `interrupt()` IS the client `cancel`
+command (so a cut from code and one from the client report the same
+`reply.cancelled`), and answers `false` only when `Transport.isReplying` says
+the agent is silent. `say` goes to `Transport.speakLine`, or settles
+`"unsupported"` with one warning per session when the transport has none.
+
+- **Every author-facing handle resolves the session per CALL**, through
+  `speechDirectory(sessions)` built once in `runtime.ts`: `of(sid)` for a tool
+  or handler context (a timer can fire after a resume swapped the session),
+  `live(sid)` for `RouteContext.speech`, and `announce` for a run's `notify`.
+  Never capture a `ServerSession` in a context.
+- A sessionless context (a step's `stepDelegate`, an unwired double) holds
+  `DETACHED_SESSION_SPEECH` from `/host-internal`: every line `"dropped"`.
 
 ## `createAgentServer` is the front door
 

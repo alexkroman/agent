@@ -405,6 +405,17 @@ type SayOnClientNotice = {
 };
 
 // @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
+};
+
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
+// @public
 export type Settled<T, R> = {
     readonly item: T;
     readonly ok: true;
@@ -434,6 +445,15 @@ export type SpeakOptions = {
     apiKeyEnv?: string | undefined;
     signal?: AbortSignal | undefined;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 export type SpokenAudio = {
@@ -755,6 +775,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

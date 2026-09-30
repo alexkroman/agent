@@ -110,6 +110,7 @@ function harness(overrides: { terminated?: boolean } = {}) {
       },
       audioReady: () => true,
       greet: note("lifecycle.greet"),
+      speakLine: () => Promise.resolve("played"),
     },
     providers: () => providers,
     history,

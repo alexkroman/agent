@@ -39,7 +39,6 @@
  */
 
 import { onTestFinished, vi } from "vitest";
-import { createStubWorkflows } from "./_testing-context.ts";
 import type { StubStepAnswer, StubStepFetch, StubStepRequest } from "./_testing-step-fetch.ts";
 import { stubStepFetch } from "./_testing-step-fetch.ts";
 import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcribe.ts";
@@ -63,6 +62,7 @@ import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
 import { stubSpeech } from "./testing-speech.ts";
 import type { StubUpload, StubUploads, StubUploadsOptions } from "./testing-uploads.ts";
 import { stubUploads } from "./testing-uploads.ts";
+import { createStubWorkflows } from "./testing-workflows.ts";
 import type { WorkflowClient } from "./workflow-client.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 

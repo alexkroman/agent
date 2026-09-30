@@ -19,7 +19,7 @@ import {
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
-import { makeAgent, makeUsageMeter } from "./_test-utils.ts";
+import { makeAgent, makeSpeech, makeUsageMeter } from "./_test-utils.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
@@ -82,6 +82,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     logger,
     emitters,
     meters: createOwnedMap<string, UsageMeter>(),
+    speech: { of: () => makeSpeech() },
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
   return { executeTool, emitters, release, parked };
@@ -336,6 +337,7 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
       logger: consoleLogger,
       emitters: createOwnedMap<string, SessionEmitter>(),
       meters,
+      speech: { of: () => makeSpeech() },
       stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
     });
 

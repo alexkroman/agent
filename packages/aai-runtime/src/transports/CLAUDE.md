@@ -151,6 +151,23 @@ reply in flight or playing (reporting `reply.cancelled` BEFORE the
 the same path a final does, under either `turnDetection`. S2S omits the verb;
 the dispatcher warns once.
 
+## `speakLine` is the greeting's path for any caller
+
+`Transport.speakLine(text, { signal, onStart })` (the SDK's `speech.say`) queues
+a VERBATIM line on the turn chain and speaks it through `createLineReply`, so a
+`say` follows every greeting rule: captioned once, interruptible, history
+written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
+`"dropped"` and never rejects.
+
+- **A line asked for before TTS is adopted is HELD** and queued by
+  `onAudioReady` behind the greeting; teardown drops held lines. Without the
+  hold a webhook's line on a fresh call "played" into no socket.
+- **The queue epoch is read when the line is ASKED for**, not when it reaches
+  the chain, so an interrupt drops a held line as it drops a queued one.
+  `TurnChain.chain`'s `onStranded` answers for a line the gate stranded.
+- `isReplying()` is `turns.inFlight() || heard.pending()`; both S2S transports
+  omit both verbs.
+
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the starting session take an

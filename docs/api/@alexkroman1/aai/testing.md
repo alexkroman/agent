@@ -2606,6 +2606,30 @@ The descriptor's options, as they cross the wire.
 
 ***
 
+### SaidLine
+
+One `ctx.speech.say` a [createToolContext](#createtoolcontext) context recorded.
+
+#### Properties
+
+##### interrupt
+
+```ts
+readonly interrupt: boolean;
+```
+
+Whether it asked to cut the agent off first (`{ interrupt: true }`).
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The text, exactly as passed.
+
+***
+
 ### ScriptedToolContext
 
 What [scriptedToolContext](#scriptedtoolcontext-1) answers: the context to run tools against,
@@ -5184,15 +5208,20 @@ The content type the step declared, or `""`.
 ```ts
 type TestToolContext = ToolContext & {
   desk: StubDelegate;
+  interrupts: number;
   model: StubGenerate;
+  said: SaidLine[];
   sent: SentEvent[];
 };
 ```
 
-A [ToolContext](index.md#toolcontext) that records what its tools sent.
+**`Sealed`**
+
+A [ToolContext](index.md#toolcontext) that records what its tools sent and said.
 
 Assignable to `ToolContext` wherever one is required, so it passes straight
-to `execute`.
+to `execute`. Only [createToolContext](#createtoolcontext) makes one, so a recorder it
+gains is a revision rather than a break.
 
 #### Type Declaration
 
@@ -5204,6 +5233,14 @@ readonly desk: StubDelegate;
 
 The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked
 for. Present and wired on the same terms as `TestToolContext.model`.
+
+##### interrupts
+
+```ts
+readonly interrupts: number;
+```
+
+How many times `ctx.speech.interrupt()` was called.
 
 ##### model
 
@@ -5218,6 +5255,15 @@ whenever `generate` arrived as a script or as a fake. Given a bare function
 (or nothing at all) it is a fake nothing reaches: `model.calls` stays empty
 for the same reason `TestToolContext.sent` does when a test brings its
 own `send` spy — the seam belongs to the caller, and so does the log.
+
+##### said
+
+```ts
+readonly said: SaidLine[];
+```
+
+Every `ctx.speech.say`, in call order. Empty when a spec passes its own
+`speech`, on the rule `sent` follows for `send`.
 
 ##### sent
 
@@ -5276,6 +5322,7 @@ type ToolContextOverrides = {
   sessionId?: ToolContext["sessionId"];
   signal?: ToolContext["signal"];
   slots?: ToolContext["slots"];
+  speech?: ToolContext["speech"];
   workflows?: ToolContext["workflows"];
 };
 ```
@@ -5472,6 +5519,14 @@ optional slots?: ToolContext["slots"];
 ```
 
 See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+
+##### speech?
+
+```ts
+optional speech?: ToolContext["speech"];
+```
+
+See [ToolContext.speech](index.md#speech-2). Defaults to the recorder behind `TestToolContext.said`.
 
 ##### workflows?
 

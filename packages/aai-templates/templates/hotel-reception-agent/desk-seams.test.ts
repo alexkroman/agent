@@ -145,7 +145,7 @@ describe("a hang-up mid-booking leaves a lead behind", () => {
 
     const ctx = createToolContext();
     await bookUpToCard(ctx);
-    handler?.(CALLER_GONE, { sessionId: ctx.sessionId, env: ctx.env, slots: ctx.slots });
+    handler?.(CALLER_GONE, ctx);
 
     const written = hotelSlot.get(ctx).tickets.at(-1) as Ticket | undefined;
     expect(written?.details.kind).toBe("abandoned_booking");

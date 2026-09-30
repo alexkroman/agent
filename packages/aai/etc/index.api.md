@@ -885,6 +885,7 @@ export interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
     signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
 }
 
@@ -967,6 +968,11 @@ export type SayOnClientNotice = {
 };
 
 // @public
+export type SayOptions = {
+    interrupt?: boolean | undefined;
+};
+
+// @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
 
 // @public
@@ -1029,6 +1035,7 @@ export type SessionEventContext = {
     sessionId: string;
     env: Readonly<Partial<Record<string, string>>>;
     slots: SlotStore;
+    speech: SessionSpeech;
 };
 
 // @public
@@ -1295,6 +1302,12 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
 // @public
 export type SessionSourcedEventType = (typeof SESSION_SOURCED_EVENT_TYPES)[number];
 
+// @public @sealed
+export interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnlyField | ProviderField | FrontDoorField> & Partial<Pick<AgentDef, Exclude<DefaultedAgentField, InlineToolsField>>> & {
     tools?: InlineToolsMisuse;
@@ -1344,6 +1357,15 @@ export type SlotStore = {
 export interface SlotToolDef<P extends ToolInputSchema, V, R> extends Omit<ToolDef<P, R>, "execute"> {
     execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
 }
+
+// @public @sealed
+export interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+export type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 export function spokenAlphanumeric(spoken: string): string;
@@ -1561,6 +1583,7 @@ export type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;

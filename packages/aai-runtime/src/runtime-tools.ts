@@ -25,6 +25,7 @@ import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import type { SpeechDirectory } from "./session-speech.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import {
@@ -176,6 +177,12 @@ type ToolSetupDeps = {
    */
   meters: OwnedMap<string, UsageMeter>;
   /**
+   * `ctx.speech` per session, resolved through the runtime's session map at
+   * each `say` — a tool that arms a timer speaks after a resume swapped the
+   * session in, for the reason `emitters` is resolved per send.
+   */
+  speech: Pick<SpeechDirectory, "of">;
+  /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
    * grace window by `session-state-sweeps.ts`.
@@ -258,6 +265,7 @@ function setupSandboxTools(
         generate,
         subagents,
         usage: deps.meters.get(sessionId ?? ""),
+        ...omitUndefined({ speech: sessionId ? deps.speech.of(sessionId) : undefined }),
         logger,
         signal: callOptions?.signal,
         timeoutMs: options.toolTimeoutMs,
@@ -278,7 +286,8 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
-  const { agent, options, env, workflows, notifier, logger, emitters, meters, stateStore } = deps;
+  const { agent, options, env, workflows, notifier, logger, emitters, meters, speech, stateStore } =
+    deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -385,6 +394,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // Resolved when the call STARTS rather than captured at setup: the
         // meter belongs to the session, and a resume mints a new one.
         usage: meters.get(sid),
+        speech: speech.of(sid),
         logger,
         // The frame exists so a throw is VISIBLE — see `onUncaught`. `fatal`
         // there means the SESSION is over, which neither of its two arms is.

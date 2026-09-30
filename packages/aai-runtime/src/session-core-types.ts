@@ -11,7 +11,7 @@
  * unchanged.
  */
 
-import type { Message } from "@alexkroman1/aai";
+import type { Message, SayOptions, SpeechHandle } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import type {
@@ -126,6 +126,18 @@ export type ServerSession = {
    * "this session cannot be spoken to" is what a notifier needs to stop trying.
    */
   announce(instruction: string): boolean;
+  /**
+   * Speak `text` VERBATIM as a reply of its own, and hand back a handle to
+   * await its playout or take it back: the SDK's `speech.say`. See
+   * `session-speech.ts`. Never throws; an S2S transport settles
+   * `"unsupported"`.
+   */
+  say(text: string, options?: SayOptions): SpeechHandle;
+  /**
+   * Stop the agent, exactly as the client's `cancel` command does. `false`
+   * when there was provably nothing to cut, or the session has stopped.
+   */
+  interrupt(): boolean;
   /**
    * Put a prior conversation back, on resume.
    *

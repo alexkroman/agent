@@ -22,6 +22,7 @@ import type {
   GenerateOptions,
   GenerateResult,
   Message,
+  SessionSpeech,
   SlotStore,
   SubagentDef,
   ToolContext,
@@ -30,6 +31,7 @@ import type {
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import {
   createDetachedSlotStore,
+  DETACHED_SESSION_SPEECH,
   EMPTY_PARAMS,
   formatSchemaIssues,
   serializeToolFailure,
@@ -145,6 +147,11 @@ type ExecuteToolCallOptions = {
    */
   onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
+  /**
+   * `ctx.speech` — the calling session's `say`/`interrupt`. Absent (a
+   * sessionless call), a context holds `DETACHED_SESSION_SPEECH`.
+   */
+  speech?: SessionSpeech | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
    *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
   signal?: AbortSignal | undefined;
@@ -180,6 +187,7 @@ function buildToolContext(
     options;
   return {
     env,
+    speech: options.speech ?? DETACHED_SESSION_SPEECH,
     deadlineAt: options.deadlineAt,
     // A caller with no session gets its own detached store rather than a shared
     // one: two such calls must not read each other's slots, which is the same

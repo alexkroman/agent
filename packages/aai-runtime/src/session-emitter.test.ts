@@ -5,7 +5,7 @@ import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
+import { makeLogger, makeSpeech } from "./_test-utils.ts";
 import { createSessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
@@ -55,6 +55,7 @@ function setup(opts?: {
             handlers: opts.handlers,
             env: { MY_KEY: "v" },
             slots,
+            speech: makeSpeech(),
           },
         }
       : {}),
@@ -96,6 +97,7 @@ describe("session emitter", () => {
         handlers: { "*": (e) => seen.push(e.type) },
         env: {},
         slots: slotsFor(),
+        speech: makeSpeech(),
       },
     });
 
@@ -163,6 +165,7 @@ describe("session event hooks", () => {
         handlers: { "*": () => order.push("hook") },
         env: {},
         slots: slotsFor(),
+        speech: makeSpeech(),
       },
     });
 

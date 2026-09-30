@@ -441,6 +441,12 @@ export function runTool<T extends {
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public
+export interface SaidLine {
+    readonly interrupt: boolean;
+    readonly text: string;
+}
+
+// @public
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -453,6 +459,11 @@ type SayOnClientNotice = {
     retryAfterMs?: number | undefined;
     signal?: AbortSignal | undefined;
     maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOptions = {
+    interrupt?: boolean | undefined;
 };
 
 // @public
@@ -489,6 +500,12 @@ type SessionCall = {
     readonly parameters: Readonly<Record<string, string>>;
 };
 
+// @public @sealed
+interface SessionSpeech {
+    interrupt(): boolean;
+    say(text: string, options?: SayOptions): SpeechHandle;
+}
+
 // @public
 type SleepOptions = {
     correlationId?: string;
@@ -499,6 +516,15 @@ type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
 };
+
+// @public @sealed
+interface SpeechHandle {
+    readonly done: Promise<SpeechOutcome>;
+    interrupt(): void;
+}
+
+// @public
+type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
 
 // @public
 interface StandardSchemaIssue {
@@ -948,9 +974,11 @@ interface SubagentToolCall {
     name: string;
 }
 
-// @public
+// @public @sealed
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
+    readonly said: SaidLine[];
+    readonly interrupts: number;
     readonly model: StubGenerate;
     readonly desk: StubDelegate;
 };
@@ -979,6 +1007,7 @@ type ToolContext = {
     messages: readonly Message[];
     sessionId: string;
     send: ClientEventSender;
+    speech: SessionSpeech;
     signal: AbortSignal;
     deadlineAt: number;
     workflows: WorkflowClient;
@@ -996,6 +1025,7 @@ export type ToolContextOverrides = {
     deadlineAt?: ToolContext["deadlineAt"] | undefined;
     workflows?: ToolContext["workflows"] | undefined;
     random?: ToolContext["random"] | undefined;
+    speech?: ToolContext["speech"] | undefined;
     generate?: ToolContext["generate"] | StubGenerateScript | undefined;
     delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
     model?: StubGenerate | undefined;

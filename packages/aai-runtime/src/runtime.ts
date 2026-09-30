@@ -42,6 +42,7 @@ import type {
 import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
+import { speechDirectory } from "./session-speech.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { platformGuestOptions } from "./workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
@@ -174,6 +175,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // and release-by-claim is what keeps that drain from evicting the
   // successor's entry (see sdk/owned-map.ts).
   const sessions = createOwnedMap<string, ServerSession>();
+  const speech = speechDirectory(sessions);
   const sinkMap = createOwnedMap<string, ClientSink>();
   // What `ctx.send` and a `syncState` push resolve through, for the same resume
   // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
@@ -207,12 +209,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
   // makes the agent say so — see `workflow/notify.ts`. The session map is the
-  // half only this scope has.
-  const notifier = buildRunNotifier(
-    workflows,
-    (sid, text) => sessions.get(sid)?.announce(text) ?? false,
-    logger,
-  );
+  // half only this scope has, reached through the speech directory.
+  const notifier = buildRunNotifier(workflows, speech.announce, logger);
 
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot, commitSessionState } =
     setupTools({
@@ -226,6 +224,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       logger,
       emitters,
       meters,
+      speech,
       stateStore: sessionState.store,
     });
 
@@ -274,7 +273,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     ...omitUndefined({ instructions: systemPromptResolver(agent.systemPrompt) }),
   });
 
-  const recall = { agent, env, workflows, logger, history: sessionState.history };
+  const recall = { agent, env, workflows, logger, history: sessionState.history, speech };
   function createSession(sessionOpts: SessionBuildOpts): ServerSession {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
@@ -294,6 +293,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       limits: agentConfig.usageLimits,
       transport: () => transport,
       logger,
+      speech: speech.of(sessionOpts.id),
       ...omitUndefined({ commitSessionState }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);

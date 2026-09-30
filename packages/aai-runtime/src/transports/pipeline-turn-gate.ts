@@ -55,8 +55,12 @@ export function createTurnGate(): TurnGate {
 
 /** Serializes turns behind one promise chain — see {@link createTurnChain}. */
 export interface TurnChain {
-  /** Enqueue `start` behind the active turn (if any). */
-  chain(start: () => Promise<void>): void;
+  /**
+   * Enqueue `start` behind the active turn (if any). `onStranded` runs INSTEAD
+   * when the turn never starts (the session moved past it, or ended), for a
+   * caller that owes somebody an answer either way: `speakLine`'s `done`.
+   */
+  chain(start: () => Promise<void>, onStranded?: () => void): void;
   /** Await the tail of the chain, swallowing rejections. `stop()`'s drain. */
   settled(): Promise<void>;
 }
@@ -73,7 +77,7 @@ export function createTurnChain(deps: {
 }): TurnChain {
   let turnPromise: Promise<void> | null = null;
   return {
-    chain(start: () => Promise<void>): void {
+    chain(start: () => Promise<void>, onStranded?: () => void): void {
       // Captured at enqueue, re-checked at run: a reset/stop/cancelReply landing
       // while this turn waits behind an active one strands it — otherwise it
       // would run a full billed streamText turn after the session moved on.
@@ -83,7 +87,10 @@ export function createTurnChain(deps: {
       // serializer (a rejected turnPromise would mean no turn ever runs again).
       turnPromise = (turnPromise ?? Promise.resolve())
         .catch(() => undefined)
-        .then(() => (deps.isTerminated() || !deps.gate.queueCurrent(epoch) ? undefined : start()));
+        .then(() => {
+          if (deps.isTerminated() || !deps.gate.queueCurrent(epoch)) return onStranded?.();
+          return start();
+        });
     },
     async settled(): Promise<void> {
       if (turnPromise !== null) await turnPromise.catch(() => undefined);

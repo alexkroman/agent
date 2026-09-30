@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 16,
   "rule": 2,
-  "sha256": "5e231e177a957f4b661ad8555564164806b7e3fd33a1735ed6cf0a8f8e195cb6",
+  "sha256": "1d4367242b1b8cf7efd52ac37de5329f08bcda128bb34c7934af0115ed66ad51",
   "exports": [
     "AgentClientInbox",
     "AgentDef",
@@ -44,12 +44,16 @@
     "RouteRequest",
     "RouteResponse",
     "S2sAgentParams",
+    "SayOptions",
     "SessionCall",
     "SessionContext",
     "SessionContextArgs",
     "SessionEndContext",
     "SessionEventContext",
+    "SessionSpeech",
     "SharedAgentParams",
+    "SpeechHandle",
+    "SpeechOutcome",
     "StandardWebhookOptions",
     "StaticAgentParams",
     "TelephonyAccess",
@@ -77,7 +81,7 @@
     "workflowApp"
   ],
   "rollup": "da3083e321c551652c9da18a8c0b4f8b69cf0f15df75716efb7fc198964b39dd",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -90,6 +94,12 @@
       "rule": 2,
       "sha256": "5e231e177a957f4b661ad8555564164806b7e3fd33a1735ed6cf0a8f8e195cb6",
       "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +clientRunsRoutes"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "1d4367242b1b8cf7efd52ac37de5329f08bcda128bb34c7934af0115ed66ad51",
+      "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +ClientRunsRoutesOptions, +SayOptions, +SessionSpeech, +SpeechHandle, +SpeechOutcome, +clientRunsRoutes"
     }
   ]
 }

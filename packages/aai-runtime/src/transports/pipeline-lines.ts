@@ -104,8 +104,16 @@ export interface LineReplyDeps {
 }
 
 /**
- * Speak a recorded fixed line as a reply of its own — the greeting — and write
- * it to history once its outcome is known.
+ * How a {@link createLineReply} line ended: played out to the end, or cut off
+ * (a barge-in, a cancel, a reset, the session ending) after it started.
+ *
+ * @internal
+ */
+export type LineOutcome = "played" | "interrupted";
+
+/**
+ * Speak a recorded fixed line as a reply of its own — the greeting, and every
+ * `say` — and write it to history once its outcome is known.
  *
  * The body drains TTS ITSELF rather than returning `true` for `runReply` to
  * drain, because the history write has to follow the drain inside the reply:
@@ -125,12 +133,18 @@ export interface LineReplyDeps {
  * client playback report can only extend it, so it is re-read after each
  * sleep.
  *
+ * It resolves with the {@link LineOutcome}, read off the reply's own signal:
+ * that is what a `say`'s `done` reports, and "played" means the heard clock ran
+ * out, not that synthesis did. `onStart` fires as the line takes the floor.
+ *
  * @internal
  */
 export function createLineReply(deps: LineReplyDeps) {
   const { history, heard, gate, turns } = deps;
-  return (idPrefix: string, text: string): Promise<void> =>
-    deps.runReply(idPrefix, async (signal) => {
+  return async (idPrefix: string, text: string, onStart?: () => void): Promise<LineOutcome> => {
+    let outcome: LineOutcome = "interrupted";
+    await deps.runReply(idPrefix, async (signal) => {
+      onStart?.();
       const historyEpoch = gate.historyEpoch();
       speakFixedLine(deps, { text });
       turns.setDraining(true);
@@ -140,6 +154,7 @@ export function createLineReply(deps: LineReplyDeps) {
       } finally {
         turns.setDraining(false);
       }
+      if (!signal.aborted) outcome = "played";
       if (!gate.historyCurrent(historyEpoch)) return false;
       if (signal.aborted) {
         // The same rule, and the same helper, a model reply cut by a barge-in
@@ -156,4 +171,6 @@ export function createLineReply(deps: LineReplyDeps) {
       history.pushLlm({ role: "assistant", content: text });
       return false;
     });
+    return outcome;
+  };
 }

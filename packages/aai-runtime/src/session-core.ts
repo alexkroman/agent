@@ -34,6 +34,7 @@ import { historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
+import { createSpeechVerbs } from "./session-speech.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
 import type { TransportEventBody } from "./transports/types.ts";
 
@@ -180,6 +181,16 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       history = [];
     },
     ...omitUndefined({ onToolResult: opts.onToolResult }),
+  });
+
+  // `say`/`interrupt` for code that is not the model's turn — see
+  // `session-speech.ts`. The interrupt IS the client's cancel.
+  const speech = createSpeechVerbs({
+    sid: opts.id,
+    transport: opts.transport,
+    log,
+    stopped: () => stopped,
+    cancel: () => handleCommand({ type: "cancel" }),
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
@@ -330,6 +341,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       opts.transport.sendUserAudio(bytes);
     },
     command: handleCommand,
+    say: speech.say,
+    interrupt: speech.interrupt,
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
       // the check is the session's own flag rather than the transport's.

@@ -212,6 +212,23 @@ export type TransportSessionConfig = {
 };
 
 /**
+ * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
+ * line back, and `onStart` fires as the line takes the floor, which is what
+ * tells the session a later take-back must cut a reply rather than skip one.
+ *
+ * @internal
+ */
+export type SpokenLine = { readonly signal: AbortSignal; readonly onStart: () => void };
+
+/**
+ * How a {@link Transport.speakLine} line ended. The SDK's `SpeechOutcome` minus
+ * `"unsupported"`, which the session answers for a transport with no such verb.
+ *
+ * @internal
+ */
+export type SpokenLineOutcome = "played" | "interrupted" | "dropped";
+
+/**
  * A session's greeting: the text, or a THUNK that knows it later.
  *
  * The thunk exists for the reason {@link SkipGreetingOption}'s does: the
@@ -295,6 +312,33 @@ export interface Transport {
    * `ServerSession.announce`, which reports it rather than pretending.
    */
   injectTurn?(instruction: string): void;
+  /**
+   * Speak `text` VERBATIM as a reply of its own: the SDK's `speech.say`.
+   *
+   * Queued on the turn chain like `injectTurn`, and spoken through the
+   * greeting's path (`createLineReply`): interruptible, captioned once, and
+   * written to history as what was HEARD. A line asked for before TTS is open
+   * waits for it, behind the greeting, as the greeting does. Resolves once the line is over, never
+   * rejects: `"played"` when the playback clock ran out, `"interrupted"` when it
+   * was cut after starting, `"dropped"` when it never started (taken back
+   * through `line.signal` while queued, stranded by an interrupt, or the
+   * transport ended).
+   *
+   * OPTIONAL for a sharper reason than `injectTurn`: an S2S service has no
+   * verb that speaks host text as written. OpenAI Realtime's greeting is a
+   * `response.create` INSTRUCTION ("Say exactly: …") the model may paraphrase,
+   * which is fine for a greeting and is not what "verbatim" promises. The
+   * session reports `"unsupported"` instead.
+   */
+  speakLine?(text: string, line: SpokenLine): Promise<SpokenLineOutcome>;
+  /**
+   * Is a reply in flight or still playing out? What `speech.interrupt()` reads
+   * to answer `false` rather than report a `reply.cancelled` for nothing.
+   *
+   * OPTIONAL: neither S2S transport tracks playback on the client, so the
+   * session treats "unknown" as "yes" there.
+   */
+  isReplying?(): boolean;
   /**
    * Push-to-talk: the client OPENED a turn (`user_turn_start`). Answers `true`
    * when opening it interrupted the agent — a reply in flight or still playing

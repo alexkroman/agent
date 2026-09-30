@@ -13,6 +13,7 @@
  */
 
 import { recordSessionIdentity } from "./_session-identity-store.ts";
+import { recordingSpeech, type SaidLine } from "./_testing-session-speech.ts";
 import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -23,7 +24,6 @@ import { createDetachedSlotStore } from "./session-state.ts";
 import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
 import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
 import type { ToolContext } from "./types.ts";
-import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
 /**
@@ -36,11 +36,13 @@ export interface SentEvent {
 }
 
 /**
- * A {@link ToolContext} that records what its tools sent.
+ * A {@link ToolContext} that records what its tools sent and said.
  *
  * Assignable to `ToolContext` wherever one is required, so it passes straight
- * to `execute`.
+ * to `execute`. Only {@link createToolContext} makes one, so a recorder it
+ * gains is a revision rather than a break.
  *
+ * @sealed
  * @public
  */
 export type TestToolContext = ToolContext & {
@@ -50,6 +52,13 @@ export type TestToolContext = ToolContext & {
    * is not here, for the same reason it is not in the browser.
    */
   readonly sent: SentEvent[];
+  /**
+   * Every `ctx.speech.say`, in call order. Empty when a spec passes its own
+   * `speech`, on the rule `sent` follows for `send`.
+   */
+  readonly said: SaidLine[];
+  /** How many times `ctx.speech.interrupt()` was called. */
+  readonly interrupts: number;
   /**
    * The `ctx.generate` fake — `model.calls` is every prompt the tools sent.
    *
@@ -162,6 +171,8 @@ export type ToolContextOverrides = {
   workflows?: ToolContext["workflows"] | undefined;
   /** See {@link ToolContext.random}. Defaults to a SEEDED source. */
   random?: ToolContext["random"] | undefined;
+  /** See {@link ToolContext.speech}. Defaults to the recorder behind `TestToolContext.said`. */
+  speech?: ToolContext["speech"] | undefined;
   /**
    * A real `ctx.generate`, or `stubGenerate`'s own SCRIPT — `{ reply }` or
    * `{ routes }`.
@@ -221,41 +232,6 @@ export type ToolContextOverrides = {
    */
   call?: SessionCall | undefined;
 };
-
-/**
- * A `ctx.workflows` for testing a tool that starts or reads durable runs: every
- * method rejects by default, and `overrides` replaces the ones the test drives.
- *
- * **The alternative is a cast, and the cast is what goes wrong.** A complete
- * `WorkflowClient` is eight methods, of which a tool's test usually drives one or
- * two, so the hand-rolled version is a literal with `as WorkflowClient` — which
- * keeps compiling when the client GAINS a method and leaves that method
- * `undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
- * `stream` to the client is what surfaced it: the casts still compiled.
- *
- * Rejecting rather than no-op defaults, for the reason `createUnusedDb` rejected
- * before it went away with `ctx.db` — a tool that reaches for a method the test
- * did not stub should say so, not silently receive `undefined`. `listing` is the exception and returns `[]`,
- * because it is synchronous and an empty list is a truthful answer.
- *
- * ```ts
- * import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
- *
- * const workflows = createStubWorkflows({ start: async () => "wrun_1" });
- * const ctx = createToolContext({ workflows });
- * ```
- *
- * @public
- */
-export function createStubWorkflows(overrides: Partial<WorkflowClient> = {}): WorkflowClient {
-  return {
-    ...rejectingWorkflows(
-      "This ctx.workflows method was not stubbed for this test — pass it in the " +
-        "overrides handed to createStubWorkflows",
-    ),
-    ...overrides,
-  };
-}
 
 /**
  * The seed behind `createToolContext`'s default `ctx.random`.
@@ -417,6 +393,7 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   // spelling of that (guard-invariants rule 2), and taking a whole overrides
   // object through it is what lets every field accept `undefined` in the first
   // place.
+  const speech = recordingSpeech();
   const ctx: TestToolContext = {
     sessionId: `test-session-${sessionCounter}`,
     env: {},
@@ -473,6 +450,11 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
       sent.push({ event, data });
     },
     sent,
+    speech: speech.speech,
+    said: speech.said,
+    get interrupts() {
+      return speech.interrupts();
+    },
     model: modelFake,
     desk: deskFake,
     ...omitUndefined(rest),

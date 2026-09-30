@@ -1468,6 +1468,40 @@ Twilio codes; never the token). A lost answer can ring twice: keep the dial
 step's `maxAttempts` small. `timeLimitS` (default 600) caps the call. Specs:
 `stubPlaceCall()` (`/testing`). Twilio only.
 
+### Saying something from outside a turn — `ctx.speech`
+
+A timer, a webhook, or an event can put an exact sentence on a live call, or
+stop the agent. `ctx.speech` is on an `events` handler's and a tool's context,
+and `ctx.speech(sessionId)` on a route's (`undefined` when no such call is
+live). `say(text)` is a reply of its OWN: spoken verbatim (no model call),
+queued behind the reply in flight (`{ interrupt: true }` cuts that off first),
+interruptible, and recorded in history as what the caller heard. `interrupt()`
+is the client's `cancel()`.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Kitchen timer",
+  events: {
+    "tool.called": (event, ctx) => {
+      if (event.toolName !== "start_timer") return;
+      setTimeout(async () => {
+        const outcome = await ctx.speech.say("Your timer is done.", { interrupt: true }).done;
+        if (outcome !== "played") console.log(`timer line ${outcome}`);
+      }, 60_000);
+    },
+  },
+});
+```
+
+`done` never rejects: `"played"` once playback ends, `"interrupted"`,
+`"dropped"` (the call ended, or it was taken back with `handle.interrupt()`),
+or `"unsupported"` on an S2S agent (pipeline only). **Never await `done` inside
+the reply it waits behind** (a tool's `execute`), or it waits for itself. **A
+session id is not authorization**: verify a webhook (`webhookRoute`) before a
+route speaks into a call. Specs: `createToolContext()` records into `ctx.said`.
+
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs
@@ -1642,6 +1676,8 @@ ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ctx.delegate(sub, opts): Promise<DelegateResult> // run a subagent — a whole tool loop with its own
                                                // context window (see "Subagents")
 ctx.signal: AbortSignal                        // aborts on barge-in, reset, session stop, or this call's timeout
+ctx.speech: SessionSpeech                      // say(text) verbatim LATER, or interrupt() — see "Saying
+                                               // something from outside a turn"; never await it in execute
 ```
 
 **Declare an event's payload once** and every `ctx.send` of it is checked:

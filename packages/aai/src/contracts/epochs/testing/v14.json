@@ -3,7 +3,7 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "9d5c64d9d088d278caedeb5adba1f682d1b894323ca5a2819dea53db48c73cca",
+  "sha256": "acc6c7a0d7592aca0a02f66fce8fc34db978e76d7dd0de731f6a9eeb913d8dd0",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
@@ -20,6 +20,7 @@
     "RecordingWorkflowsOptions",
     "RunSnapshotOverrides",
     "STUB_SPEECH_PCM_BYTES",
+    "SaidLine",
     "ScriptedToolContext",
     "ScriptedToolContextOptions",
     "SentEvent",
@@ -131,7 +132,7 @@
     "toolRunner"
   ],
   "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -156,6 +157,12 @@
       "rule": 2,
       "sha256": "9d5c64d9d088d278caedeb5adba1f682d1b894323ca5a2819dea53db48c73cca",
       "reason": "additive (checked): +FetchRouteHandler, +FetchRouteHit, +FetchRouteRequest, +FetchRouteTable, +FetchRoutesOptions, +RecordedStart, +RecordingWorkflows, +RecordingWorkflowsOptions, +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubFetchRoutes, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +createRecordingWorkflows, +endSessionCalls, +installFetchRoutes, +installStubClientInbox, +stubClientInbox, +stubClientTranscript, +stubFetchRoutes, +stubPlaceCall"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "acc6c7a0d7592aca0a02f66fce8fc34db978e76d7dd0de731f6a9eeb913d8dd0",
+      "reason": "additive (checked): +FetchRouteHandler, +FetchRouteHit, +FetchRouteRequest, +FetchRouteTable, +FetchRoutesOptions, +RecordedStart, +RecordingWorkflows, +RecordingWorkflowsOptions, +SaidLine, +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubFetchRoutes, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +createRecordingWorkflows, +endSessionCalls, +installFetchRoutes, +installStubClientInbox, +stubClientInbox, +stubClientTranscript, +stubFetchRoutes, +stubPlaceCall"
     }
   ]
 }

@@ -43,6 +43,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 import { type ClientHistoryDeps, readClientTranscript } from "./session-client-history.ts";
+import type { SpeechDirectory } from "./session-speech.ts";
 
 /**
  * The methods a route key may name — also what `SERVER_ROUTES.api` declares, so
@@ -163,8 +164,10 @@ export function compileAgentRoutes(deps: {
   /** The durable client log `ctx.clientTranscript` reads. */
   history: ClientHistoryDeps;
   logger: Logger;
+  /** What `ctx.speech(sessionId)` answers — see `SpeechDirectory.live`. */
+  speech: Pick<SpeechDirectory, "live">;
 }): AgentRuntime["serveRoute"] {
-  const { routes, env, history, logger } = deps;
+  const { routes, env, history, logger, speech } = deps;
   if (routes === undefined) return undefined;
   const table = Object.entries(routes)
     .map(([key, handler]) => compileKey(key, handler))
@@ -216,7 +219,13 @@ export function compileAgentRoutes(deps: {
       body: call.body,
       ...omitUndefined({ rawBody: call.rawBody, clientId: call.clientId }),
     };
-    const context: RouteContext = { env, workflows, clientTranscript, signal: call.signal };
+    const context: RouteContext = {
+      env,
+      workflows,
+      clientTranscript,
+      speech: speech.live,
+      signal: call.signal,
+    };
     try {
       const value: unknown = await hit.route.handler(request, context);
       return readRouteResponse(value) ?? { status: 200, body: value ?? null };

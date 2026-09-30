@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 581 names
+- [Agent authoring](#agent-authoring) — 585 names
 - [Browser client](#browser-client) — 179 names
-- [Testing and evals](#testing-and-evals) — 253 names
+- [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 380 names
+- [Framework internals](#framework-internals) — 381 names
 
 ## Agent authoring
 
@@ -241,6 +241,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `STEP_SPEAK_SAMPLE_RATE` | const | `@alexkroman1/aai/step` | `aai:step` | Sample rate `stepSpeak` asks for when a caller names none. |
 | `STEP_SPEAK_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:step` | How long one `stepSpeak` call may take before it is abandoned. |
 | `SayOnClientNotice` | type | `@alexkroman1/aai` | `aai:workflow` | What `ctx.sayOnClient` says: `stepSayOnClient`'s options (from `@alexkroman1/aai/step`) with the delivery `id` optional — it defaults to the run id — plus the … |
+| `SayOptions` | type | `@alexkroman1/aai` | `aai:agent` | Options for `SessionSpeech.say`. |
 | `SessionCall` | type | `@alexkroman1/aai` | `aai:agent` | A phone session's call identity, as the carrier's `start` frame reported it. |
 | `SessionContext` | type | `@alexkroman1/aai` | `aai:agent` | What `AgentSessionLifecycle.sessionContext` may answer. |
 | `SessionContextArgs` | interface | `@alexkroman1/aai` | `aai:agent` | What `AgentSessionLifecycle.sessionContext` is called with. |
@@ -255,6 +256,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `SessionEventType` | type | `@alexkroman1/aai` | `aai:events` | Every event name a handler map, a dialog's `@` keys or a spec may name. |
 | `SessionSlot`, `SessionSlotOptions` | interface | `@alexkroman1/aai` | `aai:state` | A named slot of per-session state, created by `sessionSlot`. |
 | `SessionSourcedEventType` | type | `@alexkroman1/aai` | `aai:events` | One of `SESSION_SOURCED_EVENT_TYPES`. |
+| `SessionSpeech` | interface | `@alexkroman1/aai` | `aai:agent` | A live session's speech: say a sentence on the line, or stop the agent. |
 | `Settled` | type | `@alexkroman1/aai/step` | `aai:step` | What one item of a `mapSettled` came back as: its value, or the reason it failed, beside the item itself. |
 | `SharedAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Fields shared by both session modes: everything on `AgentDef` minus the providers and the pipeline-only tuning knobs, plus the authoring conveniences. |
 | `SlackChannel`, `SlackChannelOptions` | type | `@alexkroman1/aai/channels` | `aai:channels` | A Slack channel descriptor, as returned by `slackChannel`. |
@@ -265,6 +267,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `SlotToolDef` | interface | `@alexkroman1/aai` | `aai:state` | The authoring shape of a slot-backed tool: `ToolDef` with the slot's value handed to `execute` directly. |
 | `SmsRecipientEnv` | interface | `@alexkroman1/aai/channels` | `aai:channels` | The env this rule reads. |
 | `SpeakOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepSpeak` accepts. |
+| `SpeechHandle` | interface | `@alexkroman1/aai` | `aai:agent` | One utterance `SessionSpeech.say` queued: await `done` for when the caller finished hearing it, or `interrupt()` to take it back. |
+| `SpeechOutcome` | type | `@alexkroman1/aai` | `aai:agent` | How one `SessionSpeech.say` ended. |
 | `SpokenAudio` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepSpeak` resolves with. |
 | `StandardSchemaIssue` | interface | `@alexkroman1/aai` |  | One validation issue in a failed Standard Schema result. |
 | `StandardSchemaResult` | type | `@alexkroman1/aai` |  | A successful or failed Standard Schema validation. |
@@ -785,6 +789,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `STUB_LLM_API_KEY_ENV` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The env var the stub model resolves its (unused) credential from. |
 | `STUB_SPEECH_API_KEY_ENV` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The env var the fake stages resolve their (unused) credential from. |
 | `STUB_SPEECH_PCM_BYTES` | const | `@alexkroman1/aai/testing` | `aai:testing` | PCM bytes `stubSpeech` answers with when no size is named — ~0.25s at 24 kHz. |
+| `SaidLine` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One `ctx.speech.say` a `createToolContext` context recorded. |
 | `ScriptedTextStep` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One step of a scripted turn: what the model says, and what it calls. |
 | `ScriptedToolCall` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One tool call in a `ScriptedTextStep`. |
 | `ScriptedToolContext`, `ScriptedToolContextOptions` | interface | `@alexkroman1/aai/testing` | `aai:testing` | What `scriptedToolContext` answers: the context to run tools against, and the two fakes it was built from, for asserting what each was asked. |
@@ -846,7 +851,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `StubUploads`, `StubUploadsOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubUploads` returns. |
 | `StubWorkflowsOptions` | type | `@alexkroman1/aai/testing/vitest` | `aai:testing` | What `installStubWorkflows` answers each read with. |
 | `TURN_ENDS` | const | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The events that END a reply. |
-| `TestToolContext` | type | `@alexkroman1/aai/testing` | `aai:testing` | A `ToolContext` that records what its tools sent. |
+| `TestToolContext` | type | `@alexkroman1/aai/testing` | `aai:testing` | A `ToolContext` that records what its tools sent and said. |
 | `TextAgentTestRun` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | What one scripted turn produced. |
 | `TextAgentTestToolCall` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One tool call the turn made, with what it was given and what it answered. |
 | `ToolBearingAgent` | type | `@alexkroman1/aai/testing` | `aai:testing` | The slice of an agent these helpers read: its tool table. |
@@ -1275,6 +1280,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_VOICE_FOCUS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_VOICE_FOCUS_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_WORKFLOW_POLL_MS` | const | `@alexkroman1/aai-ui/internal` |  | How often `useWorkflowRun` re-reads a live run when it has to poll. |
+| `DETACHED_SESSION_SPEECH` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `Db` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `DelayedRung` | type | `@alexkroman1/aai/host-internal` |  | One rung of a delay ladder: what to say, and how long into the call. |
 | `EGRESS_KEEP_ALIVE_MS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
