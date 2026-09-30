@@ -150,15 +150,3 @@ export interface SessionSpeech {
    */
   interrupt(): boolean;
 }
-
-/**
- * The speech of a context with no live session behind it: every line settles
- * `"dropped"` and `interrupt()` answers `false`, the answers an ended session
- * gives.
- *
- * @internal
- */
-export const DETACHED_SESSION_SPEECH: SessionSpeech = Object.freeze({
-  say: (): SpeechHandle => ({ done: Promise.resolve("dropped"), interrupt: () => undefined }),
-  interrupt: () => false,
-});

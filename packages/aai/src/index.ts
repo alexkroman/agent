@@ -375,12 +375,8 @@ export { sessionClientPhone } from "./sdk/session-phone.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.
 export * from "./sdk/session-slot.ts";
-export type {
-  SayOptions,
-  SessionSpeech,
-  SpeechHandle,
-  SpeechOutcome,
-} from "./sdk/session-speech.ts";
+// `speech.say`/`interrupt` — the handle an `events` handler, a tool and a route hold.
+export * from "./sdk/session-speech.ts";
 /**
  * The two names a slot's own signatures mention, and only those.
  *

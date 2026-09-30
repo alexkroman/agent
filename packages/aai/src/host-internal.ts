@@ -73,6 +73,8 @@ export {
   recordSessionIdentity,
   type SessionIdentity,
 } from "./sdk/_session-identity-store.ts";
+// A context with no live session behind it: every `say` settles `"dropped"`.
+export { DETACHED_SESSION_SPEECH } from "./sdk/_session-speech-detached.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";
@@ -268,8 +270,6 @@ export { normalizeClientLocation, setSessionLocation } from "./sdk/session-locat
 // E.164 rule the socket's `?phone=` goes through, which the eval harness's
 // `phone` option applies too so both paths record the same number.
 export { normalizeE164, setSessionPhone } from "./sdk/session-phone.ts";
-// A context with no live session behind it: every `say` settles `"dropped"`.
-export { DETACHED_SESSION_SPEECH } from "./sdk/session-speech.ts";
 export { createDetachedSlotStore, freezeStorable } from "./sdk/session-state.ts";
 // The formatter AND the two types beside it. The type was reachable from no
 // published subpath at all, so the runtime's eval readers — which validate a
