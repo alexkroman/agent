@@ -48,13 +48,13 @@
 -- prevent.
 delete from aai_platform.studio_chats c
 where not exists (
-  select 1 from aai_platform.studio_workspaces w
+  select 1 from aai_platform.studio_workspaces w -- noqa: AL01
   where w.scope = c.scope and w.project = c.project
 );
 
 delete from aai_platform.studio_sessions s
 where not exists (
-  select 1 from aai_platform.studio_workspaces w
+  select 1 from aai_platform.studio_workspaces w -- noqa: AL01
   where w.scope = s.scope and w.project = s.project
 );
 

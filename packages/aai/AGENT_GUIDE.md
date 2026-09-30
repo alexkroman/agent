@@ -1485,12 +1485,12 @@ for the providers you actually use.
 
 ### STT — `@alexkroman1/aai/stt`
 
-| Factory         | Default model          | Env var              |
+| Factory | Default model | Env var |
 | --------------- | ---------------------- | -------------------- |
-| `assemblyAIStt` | `"universal-3-5-pro"`  | `ASSEMBLYAI_API_KEY` |
-| `deepgramStt`   | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
+| `assemblyAIStt` | `"universal-3-5-pro"` | `ASSEMBLYAI_API_KEY` |
+| `deepgramStt` | `"nova-3"` | `DEEPGRAM_API_KEY` |
 | `elevenLabsStt` | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
-| `sonioxStt`     | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
+| `sonioxStt` | `"stt-rt-v3"` | `SONIOX_API_KEY` |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgramStt()`, `sonioxStt()`, etc.) use the default model. Language is spelled
@@ -1512,18 +1512,18 @@ API keys require it; the US endpoints reject them. Example:
 ONE factory, `llm({ provider, model, baseUrl?, apiKeyEnv?, providerOptions? })`.
 The provider is a string, not a function name:
 
-| `provider`     | SDK package         | Env var                        |
+| `provider` | SDK package | Env var |
 | -------------- | ------------------- | ------------------------------ |
-| `"anthropic"`  | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
-| `"openai"`     | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
-| `"google"`     | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `"mistral"`    | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
-| `"xai"`        | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
-| `"groq"`       | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
-| `"cerebras"`   | `@ai-sdk/openai`    | `CEREBRAS_API_KEY`             |
-| `"openrouter"` | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
-| `"gateway"`    | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
-| `"assemblyai"` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
+| `"anthropic"` | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY` |
+| `"openai"` | `@ai-sdk/openai` | `OPENAI_API_KEY` |
+| `"google"` | `@ai-sdk/google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `"mistral"` | `@ai-sdk/mistral` | `MISTRAL_API_KEY` |
+| `"xai"` | `@ai-sdk/xai` | `XAI_API_KEY` |
+| `"groq"` | `@ai-sdk/groq` | `GROQ_API_KEY` |
+| `"cerebras"` | `@ai-sdk/openai` | `CEREBRAS_API_KEY` |
+| `"openrouter"` | `@ai-sdk/openai` | `OPENROUTER_API_KEY` |
+| `"gateway"` | `ai` (built in) | `AI_GATEWAY_API_KEY` |
+| `"assemblyai"` | `@ai-sdk/openai` | `ASSEMBLYAI_API_KEY` |
 
 `model` is required. Example:
 `llm({ provider: "anthropic", model: "claude-haiku-4-5" })`.
@@ -1573,11 +1573,11 @@ export default agent({
 
 ### TTS — `@alexkroman1/aai/tts`
 
-| Factory         | Default voice                            | Env var              |
+| Factory | Default voice | Env var |
 | --------------- | ---------------------------------------- | -------------------- |
-| `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
-| `cartesiaTts`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
-| `rimeTts`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
+| `assemblyAITts` | `"jane"` | `ASSEMBLYAI_API_KEY` |
+| `cartesiaTts` | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY` |
+| `rimeTts` | `"cove"` (model `mistv2`) | `RIME_API_KEY` |
 
 Bare calls (`assemblyAITts()`, `cartesiaTts()`, `rimeTts()`) use the defaults.
 Override with `{ voice, model, language }`.

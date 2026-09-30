@@ -1,3 +1,25 @@
 MD013:
   tables: false
   code_blocks: false
+MD003:
+  style: atx
+MD004:
+  style: dash
+MD029:
+  style: one_or_ordered
+MD035:
+  style: "---"
+MD046:
+  style: fenced
+MD048:
+  style: backtick
+MD049:
+  style: asterisk
+MD050:
+  style: asterisk
+MD055:
+  style: leading_and_trailing
+MD060:
+  style: compact
+MD033:
+  allowed_elements: [Card, CardGrid]

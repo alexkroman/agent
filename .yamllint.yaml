@@ -1,0 +1,14 @@
+# yamllint over every tracked YAML file (`pnpm check:polyglot`). Layout is
+# Prettier's job (`pnpm check:prettier`), so the rules Prettier already decides
+# are off here, and what is left is what a formatter cannot see: duplicate keys,
+# truthy values, broken anchors.
+extends: default
+
+rules:
+  document-start: disable
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  # GitHub Actions' `on:` key is the one bare truthy word YAML 1.1 would misread.
+  truthy:
+    check-keys: false

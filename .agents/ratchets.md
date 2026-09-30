@@ -317,6 +317,27 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   no shell. The binary comes from PATH (or `SHELLCHECK`): a missing one is an
   announced SKIP locally and a failure under `AAI_REQUIRE_SHELLCHECK=1`, which
   `check.yml` sets. Floored at the measured script count.
+- **`pnpm check:prettier`** — Prettier (with `prettier-plugin-sh`) as the
+  FORMATTER for YAML, shell scripts and Dockerfiles, which Biome does not read.
+  `pnpm format:prettier` applies it. Not Markdown: Prettier pads every table to
+  aligned columns, which the generated guide tables and the guides' character
+  caps cannot absorb, so Markdown is formatted by `pnpm format:markdown`
+  (`markdownlint-cli2 --fix` against the layout rules `.markdownlint.yaml`
+  pins: list markers, emphasis, compact table pipes). YAML that a gate spec
+  parses by regex keeps its shape with a `# prettier-ignore` line.
+- **`pnpm check:polyglot`** (`scripts/check-polyglot.mjs`) — lints and
+  format-checks every tracked file in a language the rest of the pipeline does
+  not read: yamllint (`.yamllint.yaml`), ruff check + format (`ruff.toml`),
+  sqlfluff (`.sqlfluff`), hadolint and taplo. `--fix` (`pnpm format:polyglot`)
+  runs each fixer. It also fails when a tracked file's extension is in neither
+  its `COVERAGE` table (extension → linter + formatter) nor `NOT_SOURCE` (data,
+  assets, generated), so a new language cannot arrive unread. **Applied
+  migrations are frozen**: a sqlfluff finding in one is silenced with an inline
+  `-- noqa`, never fixed by rewriting the statement, and the vendored DevKit
+  migration is excluded. Same PATH shape as `check:shell` under
+  `AAI_REQUIRE_POLYGLOT=1`, with pipx pins in `check.yml`; taplo is a pnpm
+  devDependency and never skips. Each tool is floored at its measured file
+  count. `pnpm format` runs every fixer: Biome, markdownlint, Prettier, this.
 - **`pnpm check:guide-index`** (`scripts/docs-list.mjs --check`) — every agent
   guide (`.agents/*.md`, `docs/CLAUDE.md`, each package's `CLAUDE.md`, its
   `*-CLAUDE.md` siblings, and directory guides under `src/`) opens with a

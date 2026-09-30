@@ -1,0 +1,15 @@
+# sqlfluff over every tracked SQL file (`pnpm check:polyglot`): `sqlfluff lint`
+# lints and checks layout, `pnpm format:sql` (`sqlfluff fix`) applies it.
+[sqlfluff]
+dialect = postgres
+max_line_length = 100
+# LT02: the migrations hang a statement's continuation clauses (`set`, `where`,
+# `on`) one indent under it, which sqlfluff's indentation model cannot express.
+# RF04: `key`, `value` and `data` are column names in applied migrations, so a
+# rename is a schema change, not a style fix.
+exclude_rules = LT02, RF04
+# The migrations are APPLIED, so their statements are frozen: a finding in one is
+# silenced with an inline `-- noqa`, never fixed by rewriting the SQL.
+
+[sqlfluff:indentation]
+tab_space_size = 2

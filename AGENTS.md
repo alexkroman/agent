@@ -247,6 +247,12 @@ frontmatter by `pnpm sync:guide-index` (`check:guide-index` fails when stale).
   files are exempt because they mirror snake_case LLM tool names. Biome
   `^2.5.12` is a FLOOR, exempt from the release-age quarantine
   (`pnpm-workspace.yaml`) — do not lower it.
+- **Every tracked extension has a linter AND a formatter**: Biome for
+  TS/JS/JSON/CSS/HTML, markdownlint (`--fix` formats) for Markdown/MDX,
+  Prettier + yamllint/ShellCheck/hadolint for YAML/shell/Dockerfiles, ruff,
+  sqlfluff and taplo for Python/SQL/TOML. `pnpm format` runs every fixer, and
+  `check:polyglot` fails on an extension with neither
+  ([`.agents/ratchets.md`](.agents/ratchets.md)).
 
 ### Package layout
 

@@ -1,0 +1,7 @@
+# ruff over every tracked Python file (`pnpm check:polyglot`): `ruff check` lints,
+# `ruff format` formats. The line length matches Biome's.
+line-length = 100
+
+[lint]
+# S310 is the rule the `noqa` in verify_modal_deploy.py names.
+extend-select = ["B", "I", "S310", "UP"]

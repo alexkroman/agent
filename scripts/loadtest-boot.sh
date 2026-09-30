@@ -50,7 +50,7 @@ WORKDIR=${WORKDIR:-"$HOME/aai-loadtest"}
 # worktree fails `pnpm check` on files no one in this repo wrote. That cost a
 # blocked push once already.
 case "$(cd "$WORKDIR" 2>/dev/null && pwd || echo "$WORKDIR")" in
-  "$REPO"|"$REPO"/*)
+  "$REPO" | "$REPO"/*)
     echo "WORKDIR must be outside the repo ($REPO) — got $WORKDIR" >&2
     echo "Scaffolded projects carry .md files that \`pnpm check\` would lint." >&2
     exit 2
@@ -70,7 +70,7 @@ export PGPASSWORD
 CONFIG_DIR=${AAI_CONFIG_DIR:-"$WORKDIR/.aai-config"}
 mkdir -p "$CONFIG_DIR" "$WORKDIR"
 [ -f "$CONFIG_DIR/config.json" ] || {
-  printf '{"apiKey":"test"}' > "$CONFIG_DIR/config.json"
+  printf '{"apiKey":"test"}' >"$CONFIG_DIR/config.json"
   chmod 600 "$CONFIG_DIR/config.json"
 }
 export AAI_CONFIG_DIR="$CONFIG_DIR"
@@ -90,8 +90,14 @@ psql_q() { psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -tAc "$1" "${2:-postgres}
 # own — a different measurement rather than a sixth template, so neither shares
 # the template window.
 case "${1:-}" in
-  stub)     AGENTS="stub";     STUB_PORT=4900 ;;
-  workflow) AGENTS="workflow"; STUB_PORT=4960 ;;
+  stub)
+    AGENTS="stub"
+    STUB_PORT=4900
+    ;;
+  workflow)
+    AGENTS="workflow"
+    STUB_PORT=4960
+    ;;
 esac
 
 port=4110
@@ -103,12 +109,16 @@ for template in $AGENTS; do
   # links the workspace SDK and writes the tsconfig, and none of that is worth
   # a second implementation.
   init_template=$template
-  case "$template" in stub|workflow) init_template=simple ;; esac
+  case "$template" in stub | workflow) init_template=simple ;; esac
 
   if [ ! -d "$dir" ]; then
     echo "scaffolding $template..."
-    ( cd "$WORKDIR" && node "$CLI" init "$template" --template "$init_template" --yes --skipDeploy ) \
-      > "$WORKDIR/init-$template.log" 2>&1 || { echo "$template: init FAILED, see $WORKDIR/init-$template.log"; port=$((port+10)); continue; }
+    (cd "$WORKDIR" && node "$CLI" init "$template" --template "$init_template" --yes --skipDeploy) \
+      >"$WORKDIR/init-$template.log" 2>&1 || {
+      echo "$template: init FAILED, see $WORKDIR/init-$template.log"
+      port=$((port + 10))
+      continue
+    }
   fi
 
   # Copied on EVERY run, not only the first: these sources are the thing being
@@ -129,20 +139,20 @@ for template in $AGENTS; do
   fi
 
   psql_q "select 1 from pg_database where datname='$db'" | grep -q 1 \
-    || psql_q "create database $db" > /dev/null
+    || psql_q "create database $db" >/dev/null
   grep -q '^DATABASE_URL=' "$dir/.env" 2>/dev/null \
-    || echo "DATABASE_URL=postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$db" >> "$dir/.env"
+    || echo "DATABASE_URL=postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$db" >>"$dir/.env"
 
   if [ "$template" = "stub" ]; then
     # `host.ts`, deliberately: a stub registered inside a BUNDLED agent lands in
     # the bundle's own copy of the runtime and the server resolves against
     # another. Its header has the measurement. `node` strips the types.
-    ( cd "$dir" && nohup env PORT="$port" DATABASE_URL="$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2-)" \
-        node host.ts > "$WORKDIR/dev-$template.log" 2>&1 & )
+    (cd "$dir" && nohup env PORT="$port" DATABASE_URL="$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2-)" \
+      node host.ts >"$WORKDIR/dev-$template.log" 2>&1 &)
   else
-    ( cd "$dir" && nohup node "$CLI" dev --port "$port" > "$WORKDIR/dev-$template.log" 2>&1 & )
+    (cd "$dir" && nohup node "$CLI" dev --port "$port" >"$WORKDIR/dev-$template.log" 2>&1 &)
   fi
-  port=$((port+10))
+  port=$((port + 10))
 done
 
 echo
@@ -153,8 +163,11 @@ for template in $AGENTS; do
   for _ in $(seq 1 90); do
     # Scan the window this agent owns and take the LAST responder: with a client
     # both Vite and the backend answer, and the backend is the higher port.
-    for p in $(seq $((port+4)) -1 "$port"); do
-      curl -sf -m 2 "http://localhost:$p/health" 2>/dev/null | grep -q '"status":"ok"' && { found=$p; break; }
+    for p in $(seq $((port + 4)) -1 "$port"); do
+      curl -sf -m 2 "http://localhost:$p/health" 2>/dev/null | grep -q '"status":"ok"' && {
+        found=$p
+        break
+      }
     done
     [ -n "$found" ] && break
     sleep 2
@@ -164,5 +177,5 @@ for template in $AGENTS; do
   else
     echo "  $template FAILED — $(tail -2 "$WORKDIR/dev-$template.log" 2>/dev/null | tr '\n' ' ')"
   fi
-  port=$((port+10))
+  port=$((port + 10))
 done

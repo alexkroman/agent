@@ -45,6 +45,10 @@ export const TURBO_TASKS = {
     // Skips with a notice when the binaries are absent, so it costs a laptop
     // nothing; CI installs them and sets AAI_REQUIRE_WORKFLOW_LINT.
     "check:workflows",
+    // Both in the local subset for the reason above: ~5s together, and the
+    // PATH tools `check:polyglot` runs skip with a notice when absent.
+    "check:prettier",
+    "check:polyglot",
     "test:coverage",
   ],
   full: [
@@ -61,6 +65,8 @@ export const TURBO_TASKS = {
     "check:markdown",
     "check:shell",
     "check:workflows",
+    "check:prettier",
+    "check:polyglot",
     "lint:root",
     "lint:promises",
     "test:coverage",
