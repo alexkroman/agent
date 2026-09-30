@@ -63,6 +63,12 @@ export interface ChannelPayload {
 }
 
 // @public
+export interface ChannelRegistration {
+    readonly credentialFields?: readonly string[];
+    readonly refusal?: (body: string) => string | undefined;
+}
+
+// @public
 export interface ChannelSection {
     readonly body?: string;
     readonly bullets?: readonly string[];
@@ -90,10 +96,10 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelHandler(handler: ChannelHandler): void;
+export function registerChannelHandler(handler: ChannelHandler, registration?: ChannelRegistration): void;
 
 // @public
-export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
+export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O, registration?: ChannelRegistration): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];

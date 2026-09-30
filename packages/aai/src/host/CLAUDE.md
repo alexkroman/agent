@@ -20,6 +20,18 @@ platform's guest-fetch proxy and the SDK builtins share ONE copy). The policy,
 `AAI_SANDBOX_CONTAINED`, the screen's bypass classes and the undici-version
 traps: "Guest network access" in `packages/aai-guest/CLAUDE.md`.
 
+### Redirects: off-origin, only four caller headers survive
+
+**Once a redirect leaves the original origin, every header the CALLER set is
+dropped except `accept`, `accept-language`, `content-type` and `user-agent`**
+(`CROSS_ORIGIN_SAFE_HEADERS` in `ssrf.ts`); same-origin hops keep them all. A
+credential can ride in a header no list could name (`x-goog-api-key` on a
+`fetchJson` call, `x-api-key` on an MCP server), so the rule is an ALLOW-list —
+never add a per-caller credential-name list back. Both `safeFetch` and the
+contained builtin fetch (`redirectSafeFetch`: the same redirect loop, no
+address screen) walk the hops themselves with `redirect: "manual"`; undici's
+own follow strips only the fetch spec's three names. Pinned in `ssrf.test.ts`.
+
 ## A builtin's HTTP read is bounded at the READ, in BYTES
 
 **`fetchCappedText` (`_fetch-capped.ts`) is the one bounded fetch** for every
@@ -32,7 +44,11 @@ builtin reading a model-controlled URL (`visit_webpage`, `fetch_json`,
 - **Budget in BYTES, never `String.length`.**
 
 `truncated` is the caller's call (a page is readable in part, clipped JSON is
-not). HTTP failure is `{ ok: false }`, not a throw.
+not). HTTP failure is `{ ok: false }`, not a throw. **`fetchCappedJson` is the
+one read-refuse-parse for a JSON body** (`fetch_json`/`fetchJson`'s
+`requestJson`, `open_meteo`, `brave_search`, `google_places`) and never throws:
+a network failure or SSRF refusal is `{ ok: false }` too, with `status` set only
+for an HTTP failure.
 
 ## `/step-files` (`step-files.ts`)
 

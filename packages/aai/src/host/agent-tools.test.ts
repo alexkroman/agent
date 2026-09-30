@@ -30,6 +30,34 @@ describe("callable builtins", () => {
     expect(result.error).toContain("503");
   });
 
+  test("fetchJson answers a network failure as { error, url } rather than throwing", async () => {
+    // One shape for every failure (`fetchCappedJson`'s): a refused connection
+    // or an SSRF refusal is an answer, like a 503 — only an HTTP failure,
+    // which carries a status, is prefixed `HTTP `.
+    const fetch = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    for (const out of [
+      await fetchJson("https://api.example.com/quote", { fetch }),
+      await fetchJson("https://api.example.com/quote", { fetch, method: "POST", body: {} }),
+    ]) {
+      expect(out).toEqual({ error: "fetch failed", url: "https://api.example.com/quote" });
+    }
+  });
+
+  test("fetchJson keeps the HTTP prefix on a status failure only", async () => {
+    const failing = vi.fn(async () => new Response("", { status: 404, statusText: "Not Found" }));
+    expect(await fetchJson("https://api.example.com/q", { fetch: failing })).toEqual({
+      error: "HTTP 404 Not Found",
+      url: "https://api.example.com/q",
+    });
+    const garbled = vi.fn(async () => new Response("not json", { status: 200 }));
+    expect(await fetchJson("https://api.example.com/q", { fetch: garbled })).toEqual({
+      error: "Response was not valid JSON",
+      url: "https://api.example.com/q",
+    });
+  });
+
   test("fetchJson strips credential headers the caller passed", async () => {
     // The same sanitizer the builtin uses. A tool author forwarding request
     // headers wholesale must not leak an Authorization to a third-party host.

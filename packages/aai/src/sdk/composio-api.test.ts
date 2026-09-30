@@ -51,6 +51,27 @@ describe("composioApi", () => {
     expect(net.hits[0]?.headers["x-api-key"]).toBe(KEY);
   });
 
+  test("a key quoted URL-encoded, or in a secret-named query parameter, is scrubbed too", async () => {
+    const odd = "ak/with+chars";
+    net = stubFetchRoutes({
+      [HOST]: () => ({
+        status: 400,
+        body: {
+          error: {
+            message: `see https://x.test/?key=${encodeURIComponent(odd)} and ?token=other`,
+          },
+        },
+      }),
+    });
+    const err = (await composioApi()({ env: { COMPOSIO_API_KEY: odd } }, "GET", "/toolkits").catch(
+      (e: unknown) => e,
+    )) as HttpError;
+    expect(err.message).not.toContain(encodeURIComponent(odd));
+    expect(err.message).not.toContain("other");
+    expect(JSON.stringify(err.body)).not.toContain(encodeURIComponent(odd));
+    expect(err.cause).toBeUndefined();
+  });
+
   test("the key is read from apiKeyEnv, per call", async () => {
     net = stubFetchRoutes({ [HOST]: () => ({ body: { ok: 1 } }) });
     const api = composioApi({ apiKeyEnv: "MY_COMPOSIO" });

@@ -22,10 +22,9 @@ import { z } from "zod";
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
-import { safeJsonParse } from "../sdk/utils.ts";
 import { builtinCover } from "./_builtin-cover.ts";
 import { calculate } from "./_calculate.ts";
-import { fetchCappedText } from "./_fetch-capped.ts";
+import { fetchCappedJson, fetchCappedText } from "./_fetch-capped.ts";
 import { createBraveSearch } from "./brave-search.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGooglePlaces } from "./google-places.ts";
@@ -139,7 +138,13 @@ function createFetchJson(
 /**
  * The `fetch_json` request, GET for the model and any method for a direct
  * `fetchJson` caller: headers screened, the body read under the byte cap,
- * every failure answered as `{ error, url }`.
+ * every failure — HTTP, oversized, unparseable, and a network failure or SSRF
+ * refusal too — answered as `{ error, url }`, never thrown.
+ *
+ * The read, the refusal of a clipped body and the parse are `fetchCappedJson`'s;
+ * this adds only the header screen and the model-facing error shape. An HTTP
+ * failure keeps its `HTTP ` prefix (`"HTTP 404 Not Found"`), told apart from
+ * the other failures by the `status` only an HTTP failure carries.
  *
  * @internal
  */
@@ -150,10 +155,9 @@ export async function requestJson(
 ): Promise<unknown> {
   const hasBody = init.body !== undefined;
   // The URL is prompt-injectable, so the cap has to bound what is READ:
-  // `fetchCappedText` stops the body stream at MAX_JSON_BYTES rather than
-  // buffering it whole and measuring afterwards. A clipped JSON document is
-  // not parseable, so a body that hit the budget is refused outright.
-  const body = await fetchCappedText(url, {
+  // `fetchCappedJson` stops the body stream at MAX_JSON_BYTES rather than
+  // buffering it whole and measuring afterwards, and refuses a clipped one.
+  const json = await fetchCappedJson(url, {
     fetch: fetchFn,
     maxBytes: MAX_JSON_BYTES,
     headers: hasBody
@@ -162,10 +166,8 @@ export async function requestJson(
     body: hasBody ? JSON.stringify(init.body) : undefined,
     method: init.method?.toUpperCase(),
   });
-  if (!body.ok) return { error: `HTTP ${body.error}`, url };
-  if (body.truncated) return { error: "Response too large", url };
-  const parsed = safeJsonParse(body.text);
-  return parsed === undefined ? { error: "Response was not valid JSON", url } : parsed;
+  if (json.ok) return json.value;
+  return { error: json.status === undefined ? json.error : `HTTP ${json.error}`, url };
 }
 
 // ─── think ───────────────────────────────────────────────────────────────

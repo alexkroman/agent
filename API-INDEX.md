@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 580 names
+- [Agent authoring](#agent-authoring) — 581 names
 - [Browser client](#browser-client) — 179 names
 - [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 368 names
+- [Framework internals](#framework-internals) — 367 names
 
 ## Agent authoring
 
@@ -77,6 +77,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ChannelHandler` | interface | `@alexkroman1/aai/channels` | `aai:channels` | Everything one channel kind supplies: how to turn a `ChannelMessage` into the request body that platform takes, and what to say when the platform refuses one. |
 | `ChannelMessage` | interface | `@alexkroman1/aai/channels` | `aai:channels` | What gets posted, in terms no single platform owns. |
 | `ChannelPayload` | interface | `@alexkroman1/aai/channels` | `aai:channels` | A rendered request: where to POST and what to send. |
+| `ChannelRegistration` | interface | `@alexkroman1/aai/channels` | `aai:channels` | What a registration carries BESIDE the handler: the two things only some platforms need, declared by the platform that needs them. |
 | `ChannelSection` | interface | `@alexkroman1/aai/channels` | `aai:channels` | One block of a message: a titled chunk, optionally linked, with prose and bullets under it. |
 | `ClientConfigResponse` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | Parsed body of `GET /client-config`. |
 | `ClientConfigResponseSchema` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`) | `aai:workflow-api` | Body of `GET /client-config`. |
@@ -1467,7 +1468,6 @@ trace or a type error can be traced back to something.
 | `createSessionEventStream` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionStateStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
-| `credentialSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `decideClientEvent` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `defaultProviders` | function | `@alexkroman1/aai/host-internal` |  | The default providers for the pipeline stages a config leaves unset: each missing stage of the `stt`/`llm`/`tts` triple is filled from the all-AssemblyAI … |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
