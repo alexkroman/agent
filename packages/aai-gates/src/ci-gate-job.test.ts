@@ -299,6 +299,23 @@ describe("the Postgres image pull", () => {
     );
   });
 
+  test("the Supabase stack's retry switches registry, not only waits", () => {
+    // Same failure, other job: `supabase start` pinned to public.ecr.aws hit
+    // its data cap on every one of four attempts (2026-09-30). Only a second
+    // registry clears that, so the retry must move `SUPABASE_INTERNAL_IMAGE_REGISTRY`.
+    const stack = jobBody("platform-stack");
+    const registries = /registries=\(([^)]+)\)/.exec(stack);
+    expect(registries, "`supabase start` no longer rotates registries").not.toBeNull();
+    expect(
+      new Set((registries?.[1] ?? "").trim().split(/\s+/)).size,
+      "a rotation needs more than one distinct registry",
+    ).toBeGreaterThan(1);
+    expect(stack, "the retry no longer sets the registry per attempt").toMatch(
+      /export SUPABASE_INTERNAL_IMAGE_REGISTRY="\$\{registries\[/,
+    );
+    expect(stack, "a data-cap refusal no longer triggers the retry").toContain("data limit");
+  });
+
   test("exhausting the retries FAILS the job", () => {
     // The trap this guards is a loop that falls out and carries on, leaving
     // `docker run` to fail later with an error naming the container rather than

@@ -763,7 +763,7 @@ jobs:
       # `ensurePlatformTables`, which reports that drift as a sentence).
       #
       #
-      # **From public.ecr.aws, not ghcr.io, and retried on a THROTTLE only.**
+      # **From public.ecr.aws first, and retried on a THROTTLE only.**
       # `setup-cli` points the CLI at ghcr.io (`SUPABASE_INTERNAL_IMAGE_REGISTRY`),
       # and on 2026-09-23 ghcr.io answered `toomanyrequests` to six consecutive
       # runs across two PRs, before a test had run: logged in or not, and
@@ -776,20 +776,30 @@ jobs:
       # because the quota is per unit TIME, and every image that finished
       # pulling stays cached so each attempt asks for fewer. Any other failure
       # exits at once — a broken migration has to stay fast and loud.
+      #
+      # **And each retry SWITCHES registry, public.ecr.aws ↔ ghcr.io.** On
+      # 2026-09-30 public.ecr.aws refused all ten images with `toomanyrequests:
+      # Data limit exceeded` — its anonymous per-IP data cap, which no in-job
+      # backoff outlasts — on every attempt of a 15/45/90s retry, while ghcr.io
+      # served every one of the same tags. Two registries throttling at once is
+      # the failure left; one throttling for the whole job no longer is.
       - name: Start the Supabase stack
-        env:
-          SUPABASE_INTERNAL_IMAGE_REGISTRY: public.ecr.aws
         run: |
           set -uo pipefail
           log="$RUNNER_TEMP/supabase-start.log"
+          registries=(public.ecr.aws ghcr.io public.ecr.aws ghcr.io)
+          attempt=0
           for delay in 15 45 90 0; do
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY="${registries[$attempt]}"
+            attempt=$((attempt + 1))
+            echo "supabase start: attempt ${attempt}/4 from ${SUPABASE_INTERNAL_IMAGE_REGISTRY}"
             if supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket 2>&1 | tee "$log"; then
               exit 0
             fi
-            if ! grep -qiE 'toomanyrequests|rate exceeded' "$log" || [ "$delay" = 0 ]; then
+            if ! grep -qiE 'toomanyrequests|rate exceeded|data limit' "$log" || [ "$delay" = 0 ]; then
               exit 1
             fi
-            echo "::warning title=Registry throttled supabase start::retrying in ${delay}s"
+            echo "::warning title=Registry throttled supabase start::${SUPABASE_INTERNAL_IMAGE_REGISTRY} throttled; retrying in ${delay}s from the other registry"
             supabase stop --no-backup || true
             sleep "$delay"
           done
