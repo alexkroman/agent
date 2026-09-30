@@ -93,7 +93,22 @@ function publishedSubpaths(): string[] {
     readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
   );
   const exportsField = (manifest as { exports?: Record<string, unknown> }).exports;
-  return Object.keys(exportsField ?? {}).sort();
+  // A string target is a CONFIG file (`./tsconfig` → a JSON preset), not a
+  // module: nothing to `import()`. `configExports` below covers those.
+  return Object.entries(exportsField ?? {})
+    .filter(([, target]) => typeof target !== "string")
+    .map(([subpath]) => subpath)
+    .sort();
+}
+
+/** The string-target exports — shipped config files — and their paths. */
+function configExports(): [string, string][] {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+  ) as { exports?: Record<string, unknown> };
+  return Object.entries(manifest.exports ?? {}).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string",
+  );
 }
 
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
@@ -119,6 +134,15 @@ describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
   // subpath" and was wrong. A new subpath export now fails here until it is
   // covered by the two claims above, which is the same moment it becomes
   // something a consumer can import.
+  test("every config export names a file that exists and parses", () => {
+    const configs = configExports();
+    expect(configs.map(([subpath]) => subpath)).toContain("./tsconfig");
+    for (const [subpath, target] of configs) {
+      const text = readFileSync(new URL(`../../${target}`, import.meta.url), "utf8");
+      expect(text.length, `${subpath} -> ${target}`).toBeGreaterThan(0);
+    }
+  });
+
   test("the table covers every published subpath", () => {
     const covered = SUBPATH_IMPORTS.map((entry) => entry.subpath).sort();
     expect(covered, "add the new subpath to SUBPATH_IMPORTS, with a literal import()").toEqual(

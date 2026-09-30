@@ -189,8 +189,10 @@ describe("startDevServer", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
+      // A `vite.config.ts` too, so the plugins are the project's config's to
+      // supply — the default pair is `_client-plugins.test.ts`'s subject.
       vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
-        String(p).endsWith("client.tsx"),
+        /(client\.tsx|vite\.config\.ts)$/.test(String(p)),
       );
 
       // Mock vite (dynamically imported when client.tsx exists)
@@ -224,8 +226,10 @@ describe("startDevServer", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
+      // A `vite.config.ts` too, so the plugins are the project's config's to
+      // supply — the default pair is `_client-plugins.test.ts`'s subject.
       vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
-        String(p).endsWith("client.tsx"),
+        /(client\.tsx|vite\.config\.ts)$/.test(String(p)),
       );
       await withViteMock(
         () => ({

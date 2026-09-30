@@ -25,9 +25,12 @@ exists so a component re-renders on its own slice rather than on every frame:
 | Reading | Hooks |
 | --- | --- |
 | the call itself | [useSession](#usesession) (everything), [useSessionStatus](#usesessionstatus), [useSessionError](#usesessionerror), [useSessionActions](#usesessionactions), [useSessionSelector](#usesessionselector) |
-| who the client is | [useSessionId](#usesessionid), [useClientId](#useclientid), [browserClientId](#browserclientid) |
+| who the client is | [useSessionId](#usesessionid), [useClientId](#useclientid), [browserClientId](#browserclientid), [createLinkedClient](#createlinkedclient) |
 | a run reaching the page later | [useInbox](#useinbox) (a reminder, a finished job — played when it lands) |
-| what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript) |
+| what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript), [useConversationLog](#useconversationlog) (across sessions, persisted) |
+| the talk button | [useTapToTalk](#usetaptotalk) (tap on, tap off), [usePushToTalk](#usepushtotalk) (hold, for `turnDetection: "manual"`) |
+| the agent's own `/api` routes | [useRoute](#useroute), [routeFetch](#routefetch) |
+| what this browser remembers | [useStoredValue](#usestoredvalue) / [createStoredValue](#createstoredvalue), [phoneE164](#phonee164) |
 | what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
 | a durable run | [useWorkflowSubmit](#useworkflowsubmit) (start one), [useWorkflowRun](#useworkflowrun) (watch one), [useWorkflowRuns](#useworkflowruns) / [useWorkflows](#useworkflows) (list), [useWorkflowProgress](#useworkflowprogress) / [useWorkflowStream](#useworkflowstream) (its output as it arrives) |
@@ -706,6 +709,96 @@ RangeError when `holder` is not a valid holder id.
 
 ***
 
+### createLinkedClient()
+
+```ts
+function createLinkedClient(options: LinkedClientOptions): LinkedClient;
+```
+
+A page's client id with a link on top — see this module's doc.
+
+#### Parameters
+
+##### options
+
+[`LinkedClientOptions`](#linkedclientoptions)
+
+Where the link is kept, and the unlinked id; see [LinkedClientOptions](#linkedclientoptions).
+
+#### Returns
+
+[`LinkedClient`](#linkedclient)
+
+The handle; see [LinkedClient](#linkedclient).
+
+#### Example
+
+**A page that can be linked to a speaker**
+
+```ts
+import { createLinkedClient, mountClient } from "@alexkroman1/aai-ui";
+
+const client = createLinkedClient({ key: "my-speaker:linked" });
+
+mountClient({ client: client.id });
+// …after the speaker reads out its id: client.set(spokenId); location.reload();
+```
+
+***
+
+### createStoredValue()
+
+```ts
+function createStoredValue(key: string, options?: StoredValueOptions): StoredValue;
+```
+
+A string remembered in this browser under `key` — see this module's doc.
+
+Create it once at module scope and share it: `get()` in a getter outside
+React, [useStoredValue](#usestoredvalue) in a component.
+
+The key is used as given, so choose one that is yours (`"my-app:phone"`);
+two agents on one origin share a key they both name.
+
+#### Parameters
+
+##### key
+
+`string`
+
+The storage key.
+
+##### options?
+
+[`StoredValueOptions`](#storedvalueoptions)
+
+`initial` and which storage; see [StoredValueOptions](#storedvalueoptions).
+
+#### Returns
+
+[`StoredValue`](#storedvalue)
+
+The value's handle; see [StoredValue](#storedvalue).
+
+#### Example
+
+**A phone number for the session, edited in a settings field**
+
+```tsx
+import { createStoredValue, mountClient, phoneE164, useStoredValue } from "@alexkroman1/aai-ui";
+
+const phone = createStoredValue("my-speaker:phone");
+
+function PhoneField() {
+  const [value, setValue] = useStoredValue(phone);
+  return <input defaultValue={value} onBlur={(e) => setValue(e.currentTarget.value.trim())} />;
+}
+
+mountClient({ phone: () => phoneE164(phone.get()), component: PhoneField });
+```
+
+***
+
 ### createWorkflowApi()
 
 ```ts
@@ -1148,6 +1241,45 @@ function NameForm() {
 
 ***
 
+### inboxEventToItem()
+
+```ts
+function inboxEventToItem(event: InboxEvent, id?: number): ConversationItem | undefined;
+```
+
+The log item for one frame of a client's live conversation — what
+`useInbox({ onEvent })` delivers for another session of the same client (a
+device's, when the page is linked to one) — or `undefined` for a frame that
+is not shown: a partial transcript, a recovery phrase ("sorry, say that
+again", the agent's filler rather than a reply), a tool's completion, a
+`session_ended`.
+
+`useConversationLog().mirror` is built on this; call it yourself to render
+another session some other way.
+
+#### Parameters
+
+##### event
+
+[`InboxEvent`](#inboxevent)
+
+The inbox frame.
+
+##### id?
+
+`number`
+
+The id to give the item: its index in that session's list, say.
+  Messages take it as `id`, tool calls as `seq`.
+
+#### Returns
+
+[`ConversationItem`](#conversationitem) \| `undefined`
+
+A committed user or assistant turn, a tool call (pending), or `undefined`.
+
+***
+
 ### isTerminal()
 
 ```ts
@@ -1345,6 +1477,129 @@ passed straight through.
 #### Returns
 
 `Element`
+
+***
+
+### phoneE164()
+
+```ts
+function phoneE164(typed: string, options?: PhoneE164Options): string | undefined;
+```
+
+The phone number `typed` in E.164 form (`"+15035550123"`), or `undefined`
+when it cannot be one — see [PhoneE164Options](#phonee164options) for how a number
+without a country code is read.
+
+#### Parameters
+
+##### typed
+
+`string`
+
+The number as entered.
+
+##### options?
+
+[`PhoneE164Options`](#phonee164options)
+
+The country to assume; see [PhoneE164Options](#phonee164options).
+
+#### Returns
+
+`string` \| `undefined`
+
+The E.164 number, or `undefined`.
+
+#### Example
+
+**The session's phone, from a stored setting, assuming North America**
+
+```ts
+import { mountClient, phoneE164 } from "@alexkroman1/aai-ui";
+
+declare function storedPhone(): string;
+
+mountClient({ phone: () => phoneE164(storedPhone(), { countryCode: "1" }) });
+```
+
+***
+
+### routeFetch()
+
+```ts
+function routeFetch<T = unknown>(
+   method: RouteMethod, 
+   path: string, 
+   body?: unknown, 
+   options?: RouteFetchOptions
+): Promise<T>;
+```
+
+Call one of the agent's own routes and return its JSON — see this module's
+doc for what it handles.
+
+`path` is the route as declared, without `/api`: `routeFetch("GET",
+"/memories")` calls `"GET /memories"`. A body is sent as JSON. A response
+that is not 2xx throws an `Error` whose message is the route's `{ error }`
+field when it answered one (`routeResponse(404, { error: "No such memory" })`),
+else `"<METHOD> <path>: <status>"`. A 2xx with no JSON body resolves `{}`.
+
+#### Type Parameters
+
+##### T
+
+`T` = `unknown`
+
+The shape the route answers. Not checked: annotate what you know.
+
+#### Parameters
+
+##### method
+
+[`RouteMethod`](#routemethod)
+
+The route's method.
+
+##### path
+
+`string`
+
+The route's path as declared, starting with `/`; `?query` allowed.
+
+##### body?
+
+`unknown`
+
+Sent as JSON when given.
+
+##### options?
+
+[`RouteFetchOptions`](#routefetchoptions)
+
+`client`, `baseUrl` and `signal`; see [RouteFetchOptions](#routefetchoptions).
+
+#### Returns
+
+`Promise`\<`T`\>
+
+The parsed JSON body.
+
+#### Example
+
+**Saving a field for the session's client**
+
+```tsx
+import { routeFetch, useClientId } from "@alexkroman1/aai-ui";
+
+function SaveName({ name }: { name: string }) {
+  const client = useClientId();
+  return (
+    <button type="button" onClick={() => void routeFetch("PUT", "/profile", { name }, { client })}>
+      Save
+    </button>
+  );
+}
+```
 
 ***
 
@@ -2266,6 +2521,53 @@ function Transcript() {
 
 ***
 
+### useConversationLog()
+
+```ts
+function useConversationLog(options?: UseConversationLogOptions): UseConversationLogResult;
+```
+
+A transcript that outlives the session — see this module's doc.
+
+Must be used inside the provider `mountClient()` installs; call it once per
+page, since two logs over one key would overwrite each other.
+
+#### Parameters
+
+##### options?
+
+[`UseConversationLogOptions`](#useconversationlogoptions)
+
+Where it is stored and how much; see [UseConversationLogOptions](#useconversationlogoptions).
+
+#### Returns
+
+[`UseConversationLogResult`](#useconversationlogresult)
+
+The entries and the ways to add to them; see [UseConversationLogResult](#useconversationlogresult).
+
+#### Example
+
+**The whole history, with a note per new session and a linked speaker mirrored**
+
+```tsx
+import { ConversationView, useConversationLog, useInbox } from "@alexkroman1/aai-ui";
+
+function History() {
+  const log = useConversationLog();
+  useInbox({ onEvent: log.mirror, onNotice: (n) => log.addNote(n.event) });
+  return (
+    <ConversationView
+      log={log.entries}
+      className="flex-1 min-h-0"
+      renderMessage={(m) => <p data-role={m.role}>{m.content}</p>}
+    />
+  );
+}
+```
+
+***
+
 ### useCopy()
 
 ```ts
@@ -2556,6 +2858,76 @@ function TalkButton() {
     <button type="button" {...buttonProps}>
       {talking ? "Listening… release to send" : "Hold to talk (or hold Space)"}
     </button>
+  );
+}
+```
+
+***
+
+### useRoute()
+
+```ts
+function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+```
+
+`GET` one of the agent's own routes, on mount, on `reload()` and every
+`pollMs` — see this module's doc.
+
+#### Type Parameters
+
+##### T
+
+`T` = `unknown`
+
+The shape the route answers. Not checked.
+
+#### Parameters
+
+##### path
+
+`string` \| `null`
+
+The route's path as declared, without `/api`. `null` reads nothing.
+
+##### options?
+
+[`UseRouteOptions`](#userouteoptions)
+
+`pollMs` and `client`; see [UseRouteOptions](#userouteoptions).
+
+#### Returns
+
+[`UseRouteResult`](#userouteresult)\<`T`\>
+
+The answer, the last error, and `reload`; see [UseRouteResult](#userouteresult).
+
+#### Example
+
+**A list that re-reads after each delete**
+
+```tsx
+import { routeFetch, useClientId, useRoute } from "@alexkroman1/aai-ui";
+
+type Memory = { id: string; text: string };
+
+function Memories() {
+  const client = useClientId();
+  const { data, error, reload } = useRoute<{ memories: Memory[] }>("/memories");
+  if (error) return <p role="alert">{error}</p>;
+  return (
+    <ul>
+      {data?.memories.map((m) => (
+        <li key={m.id}>
+          {m.text}
+          <button
+            type="button"
+            onClick={() => void routeFetch("DELETE", `/memories/${m.id}`, undefined, { client }).then(reload)}
+          >
+            Forget
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 ```
@@ -2898,6 +3270,113 @@ import { AGENT_STATE_LABELS, useSessionStatus } from "@alexkroman1/aai-ui";
 function StatusDot() {
   const status = useSessionStatus();
   return <span data-state={status}>{AGENT_STATE_LABELS[status]}</span>;
+}
+```
+
+***
+
+### useStoredValue()
+
+```ts
+function useStoredValue(source: string | StoredValue, initial?: string): [string, (value: string | undefined) => void];
+```
+
+A remembered string as React state: the value, and a setter that writes it
+through to storage — see this module's doc.
+
+Pass the key (and an `initial`) for a value one component owns, or a
+[StoredValue](#storedvalue) shared with code outside React.
+
+#### Parameters
+
+##### source
+
+`string` \| [`StoredValue`](#storedvalue)
+
+A storage key, or a [StoredValue](#storedvalue).
+
+##### initial?
+
+`string`
+
+With a key: what to answer while nothing is stored. Default `""`.
+  Ignored with a `StoredValue`, which carries its own.
+
+#### Returns
+
+\[`string`, (`value`: `string` \| `undefined`) => `void`\]
+
+`[value, setValue]`; `setValue("")` forgets it.
+
+#### Example
+
+```tsx
+import { useStoredValue } from "@alexkroman1/aai-ui";
+
+function Units() {
+  const [units, setUnits] = useStoredValue("my-app:units", "metric");
+  return (
+    <button type="button" onClick={() => setUnits(units === "metric" ? "imperial" : "metric")}>
+      {units}
+    </button>
+  );
+}
+```
+
+***
+
+### useTapToTalk()
+
+```ts
+function useTapToTalk(options?: UseTapToTalkOptions): UseTapToTalkResult;
+```
+
+Tap to go live, tap to hang up, over the session — see this module's doc
+for what it handles beyond the tap.
+
+Must be used inside the provider `mountClient()` installs. Call it ONCE per
+page: it owns the session's mute and hang-up clock.
+
+#### Parameters
+
+##### options?
+
+[`UseTapToTalkOptions`](#usetaptotalkoptions)
+
+The talk key and the three clocks; see [UseTapToTalkOptions](#usetaptotalkoptions).
+
+#### Returns
+
+[`UseTapToTalkResult`](#usetaptotalkresult)
+
+The phase, the live flag and the controls; see [UseTapToTalkResult](#usetaptotalkresult).
+
+#### Example
+
+**A talk button and a composer**
+
+```tsx
+import { useTapToTalk } from "@alexkroman1/aai-ui";
+
+function Speaker() {
+  const { live, phase, send, buttonProps } = useTapToTalk();
+  return (
+    <>
+      <button type="button" {...buttonProps}>
+        {phase === "connecting" ? "Connecting…" : live ? "Tap to hang up" : "Tap to talk"}
+      </button>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem("say") as HTMLInputElement;
+          send(input.value);
+          input.value = "";
+        }}
+      >
+        <input name="say" placeholder="…or type" />
+      </form>
+    </>
+  );
 }
 ```
 
@@ -4564,7 +5043,7 @@ session.resume(picked.sessionId);
 ##### sendText()
 
 ```ts
-sendText(text: string): void;
+sendText(text: string, options?: SendTextOptions): void;
 ```
 
 Send a TYPED user turn: the agent answers `text` exactly as if the caller
@@ -4576,8 +5055,9 @@ discarded here at once, as `cancel()` does). The message is NOT echoed into
 `user-transcript.committed` a spoken turn produces, and that is what adds
 the row — so it is also what a resumed session replays.
 
-`text` is trimmed; an empty message, or a call while disconnected, sends
-nothing. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
+`text` is trimmed; an empty message sends nothing, and so does a call
+while disconnected — unless `options.connect` is set, which opens the
+session (see [SendTextOptions](#sendtextoptions)) and sends once it is up. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
 the server. A speech-to-speech agent cannot take a typed turn: the server
 logs a warning once and the message is ignored.
 
@@ -4586,6 +5066,10 @@ logs a warning once and the message is ignored.
 ###### text
 
 `string`
+
+###### options?
+
+[`SendTextOptions`](#sendtextoptions)
 
 ###### Returns
 
@@ -5274,6 +5758,121 @@ problem. `kind` is what a `switch` in a custom renderer narrows on.
 
 ***
 
+### ConversationLogEntry
+
+```ts
+type ConversationLogEntry = 
+  | {
+  at: number;
+  clientId?: string;
+  items: readonly ConversationItem[];
+  kind: "session";
+  run: number;
+  sessionId: string;
+}
+  | {
+  at: number;
+  kind: "note";
+  text: string;
+}
+  | {
+  at: number;
+  kind: "spoken";
+  text: string;
+};
+```
+
+One entry of a [useConversationLog](#useconversationlog) transcript.
+
+- `session` — a stretch of one server session's conversation. `run` tells
+  apart two conversations the server held under one id (a retired session
+  that came back empty); `clientId` is whose it was — this browser's own or
+  a linked device's, since only the page's CURRENT client can resume one.
+  Tool calls are stored without their `result`, which is the agent's to keep
+  and can be large.
+- `note` — a line the page logged itself (`addNote`): "New session".
+- `spoken` — what the agent said on its own, outside a session (a reminder
+  read aloud): rendered as an assistant turn.
+
+#### Union Members
+
+##### Type Literal
+
+```ts
+{
+  at: number;
+  clientId?: string;
+  items: readonly ConversationItem[];
+  kind: "session";
+  run: number;
+  sessionId: string;
+}
+```
+
+###### at
+
+```ts
+readonly at: number;
+```
+
+When the entry was started, epoch ms.
+
+###### clientId?
+
+```ts
+readonly optional clientId?: string;
+```
+
+###### items
+
+```ts
+readonly items: readonly ConversationItem[];
+```
+
+###### kind
+
+```ts
+readonly kind: "session";
+```
+
+###### run
+
+```ts
+readonly run: number;
+```
+
+###### sessionId
+
+```ts
+readonly sessionId: string;
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  at: number;
+  kind: "note";
+  text: string;
+}
+```
+
+***
+
+##### Type Literal
+
+```ts
+{
+  at: number;
+  kind: "spoken";
+  text: string;
+}
+```
+
+***
+
 ### ConversationViewProps
 
 ```ts
@@ -5281,7 +5880,14 @@ type ConversationViewProps = {
   className?: string;
   contentClassName?: string;
   empty?: ReactNode;
+  log?: readonly ConversationLogEntry[];
   renderMessage: (message: ChatMessage) => ReactNode;
+  renderNote?: (entry: Extract<ConversationLogEntry, {
+     kind: "note";
+  }>) => ReactNode;
+  renderSessionHeader?: (entry: Extract<ConversationLogEntry, {
+     kind: "session";
+  }>) => ReactNode;
   renderStreaming?: (text: string) => ReactNode;
   renderTool?: (toolCall: ToolCallInfo) => ReactNode;
   renderTranscript?: (transcript: UseUserTranscriptResult) => ReactNode;
@@ -5323,6 +5929,20 @@ optional empty?: ReactNode;
 
 Rendered inside the scroll region while there is nothing to show at all.
 
+##### log?
+
+```ts
+optional log?: readonly ConversationLogEntry[];
+```
+
+A persisted transcript to render IN PLACE of the live session's items —
+`useConversationLog().entries`, whose newest session entry already is the
+live conversation. Session entries render through `renderMessage` /
+`renderTool`, each after `renderSessionHeader`; a `spoken` entry is
+`renderMessage` over an assistant message (id `-2`); a `note` is
+`renderNote`. The streaming reply, the transcript and the thinking row are
+rendered after it as usual.
+
 ##### renderMessage
 
 ```ts
@@ -5336,6 +5956,51 @@ One finalized message, in this chrome's own markup.
 ###### message
 
 [`ChatMessage`](#chatmessage)
+
+###### Returns
+
+`ReactNode`
+
+##### renderNote?
+
+```ts
+optional renderNote?: (entry: Extract<ConversationLogEntry, {
+  kind: "note";
+}>) => ReactNode;
+```
+
+A log `note`. Absent, a small centred muted line.
+
+###### Parameters
+
+###### entry
+
+`Extract`\<[`ConversationLogEntry`](#conversationlogentry), \{
+  `kind`: `"note"`;
+\}\>
+
+###### Returns
+
+`ReactNode`
+
+##### renderSessionHeader?
+
+```ts
+optional renderSessionHeader?: (entry: Extract<ConversationLogEntry, {
+  kind: "session";
+}>) => ReactNode;
+```
+
+What goes above each log `session` entry — a timestamp, a "continue"
+button. Absent, nothing.
+
+###### Parameters
+
+###### entry
+
+`Extract`\<[`ConversationLogEntry`](#conversationlogentry), \{
+  `kind`: `"session"`;
+\}\>
 
 ###### Returns
 
@@ -6017,6 +6682,128 @@ built-in playback plays at 16 kHz. Empty for a notice with no audio.
 
 ***
 
+### LinkedClient
+
+```ts
+type LinkedClient = {
+  clear: void;
+  id: string;
+  linked: string | undefined;
+  own: string;
+  set: void;
+};
+```
+
+Which client a page is — see [createLinkedClient](#createlinkedclient).
+
+#### Methods
+
+##### clear()
+
+```ts
+clear(): void;
+```
+
+Unlink: back to this browser's own id.
+
+###### Returns
+
+`void`
+
+##### id()
+
+```ts
+id(): string;
+```
+
+The client this page is now: the linked one, else this browser's own.
+
+###### Returns
+
+`string`
+
+##### linked()
+
+```ts
+linked(): string | undefined;
+```
+
+The linked client, or `undefined` while unlinked.
+
+###### Returns
+
+`string` \| `undefined`
+
+##### own()
+
+```ts
+own(): string;
+```
+
+This browser's own id, linked or not — what it asks for a link code AS.
+
+###### Returns
+
+`string`
+
+##### set()
+
+```ts
+set(id: string | undefined): void;
+```
+
+Link to `id` (`undefined` unlinks). An invalid id unlinks too. Takes effect
+on the next read — a mounted session's next connection attempt, since
+`mountClient({ client })` asks per attempt; reload to move the inbox too.
+
+###### Parameters
+
+###### id
+
+`string` \| `undefined`
+
+###### Returns
+
+`void`
+
+***
+
+### LinkedClientOptions
+
+```ts
+type LinkedClientOptions = {
+  fallback?: () => string;
+  key: string;
+};
+```
+
+Options for [createLinkedClient](#createlinkedclient).
+
+#### Properties
+
+##### fallback?
+
+```ts
+optional fallback?: () => string;
+```
+
+This browser's own id, used while unlinked. Default: [browserClientId](#browserclientid)
+for the page's agent — pass your own to carry over an id minted before.
+
+###### Returns
+
+`string`
+
+##### key
+
+```ts
+key: string;
+```
+
+The `localStorage` key the link is kept under, used as given — choose one that is yours.
+
+***
+
 ### MarkdownProps
 
 ```ts
@@ -6067,6 +6854,7 @@ transcript). Colors are unaffected — they come from the theme either way.
 ```ts
 type MessageListProps = {
   className?: string;
+  log?: readonly ConversationLogEntry[];
 };
 ```
 
@@ -6087,6 +6875,15 @@ The container is an [AutoScroll](#autoscroll), so it must end up with a BOUNDED
 height (`flex-1 min-h-0`, `h-full`, a fixed height). Unbounded, it grows
 with the conversation and never scrolls, so nothing pins to the newest
 message.
+
+##### log?
+
+```ts
+optional log?: readonly ConversationLogEntry[];
+```
+
+A persisted transcript to show in place of the live session's items —
+`useConversationLog().entries`, rendered as [ConversationView](#conversationview) renders it.
 
 ***
 
@@ -6184,6 +6981,115 @@ Unmount the React tree.
 ###### Returns
 
 `void`
+
+***
+
+### PhoneE164Options
+
+```ts
+type PhoneE164Options = {
+  countryCode?: string;
+};
+```
+
+Options for [phoneE164](#phonee164).
+
+#### Properties
+
+##### countryCode?
+
+```ts
+optional countryCode?: string;
+```
+
+The country calling code to assume for a number typed WITHOUT one — `"1"`
+for the US and Canada, `"44"` for the UK. Without it, only a number that
+already starts with `+` (or the `00` international prefix) is accepted.
+
+With `"1"`, a 10-digit number takes `+1`, and an 11-digit one starting
+with `1` is taken as already carrying it. With any other code, one leading
+trunk `0` is dropped before the code is prepended (`020 7946 0958` with
+`"44"` is `+442079460958`).
+
+***
+
+### RouteFetchOptions
+
+```ts
+type RouteFetchOptions = {
+  baseUrl?: string;
+  client?: string;
+  signal?: AbortSignal;
+};
+```
+
+Options for [routeFetch](#routefetch).
+
+#### Properties
+
+##### baseUrl?
+
+```ts
+optional baseUrl?: string;
+```
+
+The agent's base URL. Default: the page's own directory.
+
+##### client?
+
+```ts
+optional client?: string;
+```
+
+The client the call is about, sent as `?client=` — the route's
+`req.clientId`. `useClientId()` is the session's; absent or empty sends
+none.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Abort the request.
+
+***
+
+### RouteMethod
+
+```ts
+type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+```
+
+The HTTP methods an `agent({ routes })` key can declare.
+
+***
+
+### SendTextOptions
+
+```ts
+type SendTextOptions = {
+  connect?: boolean;
+};
+```
+
+Options for [BrowserSession.sendText](#sendtext).
+
+#### Properties
+
+##### connect?
+
+```ts
+optional connect?: boolean;
+```
+
+Open the session for this message if it is not up: `start()` before the
+first call, `toggle()` after a hang-up (so a resumable session RESUMES),
+then send once the server has configured it. Messages typed meanwhile are
+kept in order. They are DROPPED if the session stops before it is up — a
+hang-up, `end()`, a failed connection — so a message typed into a call
+that never came is not answered by a later one. Default `false`: sending
+while disconnected does nothing.
 
 ***
 
@@ -6331,7 +7237,7 @@ Continue an earlier session by its id — see [BrowserSession.resume](#resume).
 ##### sendText()
 
 ```ts
-sendText(text: string): void;
+sendText(text: string, options?: SendTextOptions): void;
 ```
 
 Send a typed user turn, answered as if spoken — see [BrowserSession.sendText](#sendtext).
@@ -6341,6 +7247,10 @@ Send a typed user turn, answered as if spoken — see [BrowserSession.sendText](
 ###### text
 
 `string`
+
+###### options?
+
+[`SendTextOptions`](#sendtextoptions)
 
 ###### Returns
 
@@ -7045,6 +7955,112 @@ Defaults to `true`; a chrome whose dot glows rather than beats passes
 
 ***
 
+### StoredValue
+
+```ts
+type StoredValue = {
+  key: string;
+  get: string;
+  set: void;
+  subscribe: () => void;
+};
+```
+
+One remembered string — see [createStoredValue](#createstoredvalue).
+
+#### Methods
+
+##### get()
+
+```ts
+get(): string;
+```
+
+The value now: what is stored, else the `initial`.
+
+###### Returns
+
+`string`
+
+##### set()
+
+```ts
+set(value: string | undefined): void;
+```
+
+Remember `value`; `""` or `undefined` forgets it. Every holder of the key is told.
+
+###### Parameters
+
+###### value
+
+`string` \| `undefined`
+
+###### Returns
+
+`void`
+
+##### subscribe()
+
+```ts
+subscribe(listener: () => void): () => void;
+```
+
+Be told when the value changes — here, in another holder, or in another tab.
+
+###### Parameters
+
+###### listener
+
+() => `void`
+
+###### Returns
+
+() => `void`
+
+#### Properties
+
+##### key
+
+```ts
+readonly key: string;
+```
+
+The storage key, as given.
+
+***
+
+### StoredValueOptions
+
+```ts
+type StoredValueOptions = {
+  initial?: string;
+  storage?: "local" | "session";
+};
+```
+
+Options for [createStoredValue](#createstoredvalue).
+
+#### Properties
+
+##### initial?
+
+```ts
+optional initial?: string;
+```
+
+What a read answers while nothing is stored. Default `""`.
+
+##### storage?
+
+```ts
+optional storage?: "local" | "session";
+```
+
+`"local"` (the default) outlives the tab; `"session"` does not.
+
+***
+
 ### SubmitInputOf
 
 ```ts
@@ -7236,6 +8252,134 @@ A paused upload is not a stopped one: the windows already stored stay stored,
 the file. So a bar rendering this reads "Paused at 62%", never "62% and
 frozen" — which is what a page could otherwise only guess from a number that
 stopped moving, the same ambiguity `complete` exists to remove on the run side.
+
+***
+
+### UseConversationLogOptions
+
+```ts
+type UseConversationLogOptions = {
+  max?: number;
+  storageKey?: string;
+};
+```
+
+Options for [useConversationLog](#useconversationlog).
+
+#### Properties
+
+##### max?
+
+```ts
+optional max?: number;
+```
+
+Entries kept; the oldest go first. Default 300 — `localStorage` holds a few MB per origin.
+
+##### storageKey?
+
+```ts
+optional storageKey?: string;
+```
+
+The `localStorage` key, read once on mount. Default: one per agent URL, so
+two agents on one origin keep separate logs.
+
+***
+
+### UseConversationLogResult
+
+```ts
+type UseConversationLogResult = {
+  entries: readonly ConversationLogEntry[];
+  addNote: void;
+  addSpoken: void;
+  clear: void;
+  mirror: void;
+};
+```
+
+What [useConversationLog](#useconversationlog) returns.
+
+#### Methods
+
+##### addNote()
+
+```ts
+addNote(text: string): void;
+```
+
+Log a line of the page's own: "New session", "Continuing an earlier conversation".
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### addSpoken()
+
+```ts
+addSpoken(text: string): void;
+```
+
+Log what the agent said outside a session — a reminder read aloud — as an assistant turn.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### clear()
+
+```ts
+clear(): void;
+```
+
+Forget the whole log, stored copy included.
+
+###### Returns
+
+`void`
+
+##### mirror()
+
+```ts
+mirror(event: InboxEvent): void;
+```
+
+Mirror a frame of the client's live conversation into the log — pass it as
+`useInbox({ onEvent: log.mirror })`. The page's own session is skipped (it
+logs itself); every other session of the client is logged as it happens.
+
+###### Parameters
+
+###### event
+
+[`InboxEvent`](#inboxevent)
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### entries
+
+```ts
+readonly entries: readonly ConversationLogEntry[];
+```
+
+The log, oldest first; the live session is its newest session entry.
 
 ***
 
@@ -7839,6 +8983,98 @@ Whether a turn is being held open right now — the button is DOWN.
 
 ***
 
+### UseRouteOptions
+
+```ts
+type UseRouteOptions = {
+  client?: string;
+  pollMs?: number;
+};
+```
+
+Options for [useRoute](#useroute).
+
+#### Properties
+
+##### client?
+
+```ts
+optional client?: string;
+```
+
+The `?client=` to send. Default: the session's client
+(`session.identity.clientId()`, read per request) inside `mountClient()`,
+none on a page with no session.
+
+##### pollMs?
+
+```ts
+optional pollMs?: number;
+```
+
+Read again every this many ms, while mounted. Default: never.
+
+***
+
+### UseRouteResult
+
+```ts
+type UseRouteResult<T> = {
+  data: T | undefined;
+  error: string | undefined;
+  loading: boolean;
+  reload: () => void;
+};
+```
+
+What [useRoute](#useroute) returns.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### data
+
+```ts
+data: T | undefined;
+```
+
+The last answer, kept through a failed re-read. `undefined` until the first.
+
+##### error
+
+```ts
+error: string | undefined;
+```
+
+Why the LAST read failed — the route's `{ error }` when it said — or `undefined`.
+
+##### loading
+
+```ts
+loading: boolean;
+```
+
+Whether a read is in flight.
+
+##### reload
+
+```ts
+reload: () => void;
+```
+
+Read again now — after a write, say.
+
+###### Returns
+
+`void`
+
+***
+
 ### UserTurnControls
 
 ```ts
@@ -7983,6 +9219,209 @@ toggle: () => void;
 ```
 
 Pause a running call, or resume a paused one.
+
+###### Returns
+
+`void`
+
+***
+
+### UseTapToTalkOptions
+
+```ts
+type UseTapToTalkOptions = {
+  connectTimeoutMs?: number;
+  idleHangupMs?: number;
+  key?: string | false;
+  thinkingHangupMs?: number;
+};
+```
+
+Options for [useTapToTalk](#usetaptotalk).
+
+#### Properties
+
+##### connectTimeoutMs?
+
+```ts
+optional connectTimeoutMs?: number;
+```
+
+Give up on a connection attempt after this long, and report `failed`. Default 8000 ms.
+
+##### idleHangupMs?
+
+```ts
+optional idleHangupMs?: number;
+```
+
+Hang up a call that is NOT live after this long with nothing happening —
+the device's follow-up window. Default 3000 ms.
+
+##### key?
+
+```ts
+optional key?: string | false;
+```
+
+The keyboard key that taps, as a `KeyboardEvent.code` — `"Space"` by
+default. `false` turns the page-wide key off; the button itself still
+answers a click, Space and Enter.
+
+##### thinkingHangupMs?
+
+```ts
+optional thinkingHangupMs?: number;
+```
+
+Hang up a call that is not live when the agent has been thinking this
+long. Default 60,000 ms — long enough for a slow tool.
+
+***
+
+### UseTapToTalkResult
+
+```ts
+type UseTapToTalkResult = {
+  buttonProps: {
+     aria-pressed: boolean;
+     onClick: () => void;
+     onKeyDown: (event: {
+        code: string;
+        preventDefault: void;
+     }) => void;
+     onKeyUp: (event: {
+        code: string;
+        preventDefault: void;
+     }) => void;
+  };
+  failed: boolean;
+  hangUp: () => void;
+  live: boolean;
+  phase: "idle" | "connecting" | "active";
+  send: (text: string) => void;
+  toggle: () => void;
+};
+```
+
+What [useTapToTalk](#usetaptotalk) returns.
+
+#### Properties
+
+##### buttonProps
+
+```ts
+buttonProps: {
+  aria-pressed: boolean;
+  onClick: () => void;
+  onKeyDown: (event: {
+     code: string;
+     preventDefault: void;
+  }) => void;
+  onKeyUp: (event: {
+     code: string;
+     preventDefault: void;
+  }) => void;
+};
+```
+
+Spread onto a `<button>`: the click, the keyboard guard against a double
+tap, and `aria-pressed`. Style it however you like.
+
+###### aria-pressed
+
+```ts
+aria-pressed: boolean;
+```
+
+###### onClick
+
+```ts
+() => void
+```
+
+###### onKeyDown
+
+```ts
+(event: {
+  code: string;
+  preventDefault: void;
+}) => void
+```
+
+###### onKeyUp
+
+```ts
+(event: {
+  code: string;
+  preventDefault: void;
+}) => void
+```
+
+##### failed
+
+```ts
+failed: boolean;
+```
+
+Whether the last attempt failed: the connection timed out or the session
+reported an error. Cleared by the next tap or typed turn.
+
+##### hangUp
+
+```ts
+hangUp: () => void;
+```
+
+Hang up now — resumably (`disconnect()`), live or not.
+
+###### Returns
+
+`void`
+
+##### live
+
+```ts
+live: boolean;
+```
+
+Whether the caller is live — mic open, in a realtime conversation. The button is ON.
+
+##### phase
+
+```ts
+phase: "idle" | "connecting" | "active";
+```
+
+The call: `"idle"` (not meant to be running), `"connecting"`, or
+`"active"` — up, whatever the agent is doing.
+
+##### send
+
+```ts
+send: (text: string) => void;
+```
+
+A typed turn. Sent at once while the call is up; while idle it opens the
+session WITHOUT the mic and is sent once connected. Blank text is ignored.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### toggle
+
+```ts
+toggle: () => void;
+```
+
+Tap: go live (connecting first if idle), or hang up if live.
 
 ###### Returns
 

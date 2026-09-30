@@ -1,0 +1,45 @@
+// @public
+export function createLinkedClient(options: LinkedClientOptions): LinkedClient;
+
+// @public
+export function createStoredValue(key: string, options?: StoredValueOptions): StoredValue;
+
+// @public
+export type LinkedClient = {
+    id(): string;
+    linked(): string | undefined;
+    own(): string;
+    set(id: string | undefined): void;
+    clear(): void;
+};
+
+// @public
+export type LinkedClientOptions = {
+    key: string;
+    fallback?: (() => string) | undefined;
+};
+
+// @public
+export function phoneE164(typed: string, options?: PhoneE164Options): string | undefined;
+
+// @public
+export type PhoneE164Options = {
+    countryCode?: string | undefined;
+};
+
+// @public
+export type StoredValue = {
+    readonly key: string;
+    get(): string;
+    set(value: string | undefined): void;
+    subscribe(listener: () => void): () => void;
+};
+
+// @public
+export type StoredValueOptions = {
+    initial?: string | undefined;
+    storage?: "local" | "session" | undefined;
+};
+
+// @public
+export function useStoredValue(source: StoredValue | string, initial?: string): [string, (value: string | undefined) => void];

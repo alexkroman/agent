@@ -10,6 +10,11 @@ import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
 // @public
+interface AgentClientInbox {
+    clientInbox?: ClientInboxOptions | undefined;
+}
+
+// @public
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
 // @internal
@@ -78,10 +83,14 @@ export const AgentConfigSchema: z.ZodObject<{
     }>>;
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-        url: z.ZodURL;
+        url: z.ZodOptional<z.ZodURL>;
         tokenEnv: z.ZodOptional<z.ZodString>;
+        allowedTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
         pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     }, z.core.$strict>>>;
+    clientInbox: z.ZodOptional<z.ZodObject<{
+        sampleRate: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
     page: z.ZodOptional<z.ZodEnum<{
         static: "static";
         voice: "voice";
@@ -90,8 +99,9 @@ export const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
     systemPrompt?: AgentSystemPrompt;
+    mcpServers?: McpServers | undefined;
 } & {
     [K in HostOnlyAgentField]?: unknown;
 };
@@ -109,7 +119,7 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public
-interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
+interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -220,6 +230,11 @@ interface ClientEventMap {
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+type ClientInboxOptions = {
+    sampleRate?: number | undefined;
+};
 
 // @public
 type ClientTranscript = {
@@ -340,6 +355,13 @@ type EventMapOf<U extends {
 };
 
 // @public
+type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+};
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -420,9 +442,21 @@ type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
 type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
 // @public
+type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
+
+// @public
+type McpResolveContext = {
+    readonly clientId: string | undefined;
+    readonly env: Readonly<Partial<Record<string, string>>>;
+    readonly signal: AbortSignal;
+};
+
+// @public
 type McpServerConfig = {
-    url: string;
+    url: McpResolvable<string>;
+    headers?: McpResolvable<Readonly<Record<string, string>>>;
     tokenEnv?: string;
+    allowedTools?: readonly string[];
     pinnedTools?: Readonly<Record<string, string>>;
 };
 
@@ -513,6 +547,21 @@ interface PipelineVoiceTuning {
     turnDetection?: TurnDetectionMode;
     userTurnLimit?: UserTurnLimit;
 }
+
+// @public
+type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+};
 
 // @public
 interface ProviderDescriptor<Kind extends string, Options> {
@@ -894,6 +943,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
 };
@@ -1241,6 +1291,9 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+    cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
+    cancelAll(workflow: string, key: string): Promise<number>;
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
@@ -1263,6 +1316,7 @@ type WorkflowContext = {
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -1276,7 +1330,24 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
+    onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
+
+// @public
+type WorkflowFailureContext<I = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly input: I;
+};
+
+// @public
+type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
+    run: WorkflowFailureHook<I>;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
 // @public
 type WorkflowRunBase = {
@@ -1305,6 +1376,9 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 | (WorkflowRunBase & {
     status: "cancelled";
 });
+
+// @public
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
 type WorkflowSummary = {

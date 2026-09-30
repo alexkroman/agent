@@ -73,7 +73,7 @@
  * going.
  */
 
-import { safeFetch } from "@alexkroman1/aai/host-internal";
+import { credentialSafeFetch, safeFetch } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { ToolSet } from "ai";
 import pTimeout from "p-timeout";
@@ -110,6 +110,12 @@ export type ResolvedMcpServer = {
   url: string;
   /** The bearer token read from `tokenEnv`, absent when the server needs none. */
   token?: string;
+  /**
+   * The author's own headers (`McpServerConfig.headers`), already resolved.
+   * Every one is treated as a credential: dropped when a redirect leaves the
+   * server's origin, and never logged.
+   */
+  headers?: Readonly<Record<string, string>>;
 };
 
 /**
@@ -263,8 +269,19 @@ export async function openMcpSession(
   server: ResolvedMcpServer,
   options: McpConnectOptions = {},
 ): Promise<McpSession> {
-  const headers: Record<string, string> = {};
-  if (server.token) headers.authorization = `Bearer ${server.token}`;
+  // The author's headers first, so a `tokenEnv` bearer wins an `authorization`
+  // collision — the one field the config names explicitly for it.
+  const headers: Record<string, string> = { ...server.headers };
+  if (server.token) {
+    for (const name of Object.keys(headers)) {
+      if (name.toLowerCase() === "authorization") delete headers[name];
+    }
+    headers.authorization = `Bearer ${server.token}`;
+  }
+  // An author header may be a credential this client cannot recognise by name
+  // (`x-api-key`), so every one of them gets `authorization`'s redirect rule.
+  const authored = Object.keys(server.headers ?? {});
+  const screened = authored.length > 0 ? credentialSafeFetch(authored) : safeFetch;
   const budget = options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
   const createMCPClient = await loadCreateMcpClient();
   const connecting = createMCPClient({
@@ -272,7 +289,7 @@ export async function openMcpSession(
       type: "http",
       url: server.url,
       headers,
-      fetch: options.fetch ?? safeFetch,
+      fetch: options.fetch ?? screened,
     },
     clientName: MCP_CLIENT_NAME,
     version: MCP_CLIENT_VERSION,

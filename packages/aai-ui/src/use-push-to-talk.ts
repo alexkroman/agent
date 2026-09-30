@@ -24,6 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isTypingTarget } from "./_utils.ts";
 import { useSessionCore, useSessionSelector } from "./context.ts";
 import type { SessionSnapshot } from "./session-core-types.ts";
 
@@ -76,12 +77,6 @@ export type UsePushToTalkResult = {
 
 // Module scope for a stable selection identity — see `use-user-transcript.ts`.
 const selectRunning = (snapshot: SessionSnapshot): boolean => snapshot.running;
-
-/** True when a key event came from somewhere typing belongs. */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
 
 /**
  * Hold-to-speak over the session's push-to-talk methods, with the four ways a

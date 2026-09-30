@@ -384,6 +384,48 @@ The frame's `event:` name — `run`, `chunk`, `done`, `idle`, `missing`.
 
 ***
 
+### FindByKeyOptions
+
+```ts
+type FindByKeyOptions = {
+  limit?: number;
+  since?: number | Date;
+  statuses?: readonly WorkflowRunStatus[];
+};
+```
+
+Options for `WorkflowClient.findByKey`.
+
+#### Properties
+
+##### limit?
+
+```ts
+optional limit?: number;
+```
+
+Most runs to return, newest first ACROSS workflows. Defaults to
+`DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to `MAX_WORKFLOW_FIND_LIMIT`;
+each workflow is read to the same limit before the merge.
+
+##### since?
+
+```ts
+optional since?: number | Date;
+```
+
+Only runs created at or after this instant (epoch milliseconds or a `Date`).
+
+##### statuses?
+
+```ts
+optional statuses?: readonly WorkflowRunStatus[];
+```
+
+Only runs in one of these statuses. Omitted, every status.
+
+***
+
 ### FindOptions
 
 ```ts
@@ -412,6 +454,7 @@ Most runs to return, newest first. Defaults to
 
 ```ts
 type StartOptions = {
+  dedupeKey?: string;
   key?: string;
   label?: string;
   notify?: boolean | string;
@@ -425,6 +468,28 @@ TOOL. A caller OUTSIDE the agent (a page, a script) starts a run through
 speak into.
 
 #### Properties
+
+##### dedupeKey?
+
+```ts
+optional dedupeKey?: string;
+```
+
+Start at most ONE run of this workflow per `dedupeKey`: when a run started
+with it already exists — in any status, finished or not — `start` resolves
+THAT run's id and starts nothing.
+
+For the start that can be asked twice for one piece of work: a webhook the
+sender redelivers (key it by the event id), a hook that fires again for the
+same thing (`${sessionId}:${watermark}`). Without it each app kept a table
+of seen ids beside the runs, or double-ran on the retry nobody expected.
+
+Scoped to the workflow, and as long-lived as the run: the run's id is derived
+from the workflow and this key, so two racing starts create one run, and the
+key is free again only once that run has expired from the journal. The
+input of a deduplicated start is not compared or stored — the first start's
+is what ran. Independent of [StartOptions.key](#key); pass both to find the
+run later.
 
 ##### key?
 
@@ -447,7 +512,7 @@ the run again without the agent maintaining an index of its own in a database
 it brought.
 
 Not unique: starting twice with one key is legal and `find` returns the
-newest first. Deduplicating is a decision only the caller can make.
+newest first. To make a second start a no-op, pass [StartOptions.dedupeKey](#dedupekey).
 
 ##### label?
 
@@ -2078,6 +2143,18 @@ from an older server still parses.
 
 ## References
 
+### PollOptions
+
+Re-exports [PollOptions](index.md#polloptions)
+
+***
+
+### PollResult
+
+Re-exports [PollResult](index.md#pollresult)
+
+***
+
 ### SleepOptions
 
 Re-exports [SleepOptions](index.md#sleepoptions)
@@ -2135,6 +2212,24 @@ Re-exports [WorkflowContext](index.md#workflowcontext)
 ### WorkflowDef
 
 Re-exports [WorkflowDef](index.md#workflowdef)
+
+***
+
+### WorkflowFailureContext
+
+Re-exports [WorkflowFailureContext](index.md#workflowfailurecontext)
+
+***
+
+### WorkflowFailureHandler
+
+Re-exports [WorkflowFailureHandler](index.md#workflowfailurehandler)
+
+***
+
+### WorkflowFailureHook
+
+Re-exports [WorkflowFailureHook](index.md#workflowfailurehook)
 
 ***
 

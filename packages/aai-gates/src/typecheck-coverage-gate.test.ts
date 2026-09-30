@@ -209,7 +209,8 @@ describe("typecheck coverage", () => {
     // the scaffold tree is checked by that gate instead — under the compiler a
     // user actually gets. Which means the gate's `include` list is the only
     // thing standing between a shipped config and no compiler at all, and it
-    // named `global.d.ts` and `server.mjs` only.
+    // once named `global.d.ts` and `server.mjs` only. The list is DERIVED from
+    // the scaffold tree, so a script file added there is covered or red.
     const gate = (sole(
       import.meta.glob("../../../scripts/check-template-types.mjs", {
         query: "?raw",
@@ -218,7 +219,11 @@ describe("typecheck coverage", () => {
       }),
     ) ?? "") as string;
     expect(gate.length).toBeGreaterThan(1000);
-    for (const name of ["global.d.ts", "server.mjs", "vite.config.ts", "vitest.config.ts"]) {
+    const shipped = Object.keys(
+      import.meta.glob("../../aai-templates/scaffold/*.{ts,tsx,mjs}", { eager: false }),
+    ).map((file) => file.split("/").pop() ?? file);
+    expect(shipped, "the scaffold glob matched no script file").toContain("vitest.config.ts");
+    for (const name of shipped) {
       expect(gate, `check-template-types.mjs does not check scaffold/${name}`).toContain(
         `"${name}"`,
       );

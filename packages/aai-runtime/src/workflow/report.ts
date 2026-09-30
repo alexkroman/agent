@@ -35,7 +35,7 @@ import type { StepInfoReader, StepReporter } from "@alexkroman1/aai/host-interna
 // `StepInfo` is the PUBLIC shape a step reads, so it comes from the subpath a
 // step author imports rather than from the host support surface beside it.
 import type { StepInfo } from "@alexkroman1/aai/step";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../runtime-config.ts";
 import { currentRun } from "./run-context.ts";
 
@@ -138,6 +138,7 @@ export function createStepInfoReader(): StepInfoReader {
       attempt: step.attempt,
       maxAttempts: step.maxAttempts,
       isLastAttempt: step.attempt >= step.maxAttempts,
+      ...omitUndefined({ signal: step.signal }),
     };
   };
 }

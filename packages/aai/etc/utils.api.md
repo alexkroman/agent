@@ -26,6 +26,16 @@ export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Pr
 export function failable<A extends readonly unknown[], R>(fn: (...args: A) => R): (...args: A) => R | ToolFailure;
 
 // @public
+export function fitToolResult(value: unknown, options?: FitToolResultOptions): unknown;
+
+// @public
+export interface FitToolResultOptions {
+    hint?: string;
+    maxChars?: number;
+    maxString?: number;
+}
+
+// @public
 export function formatBytes(bytes: number): string;
 
 // @public
@@ -35,10 +45,43 @@ export function formatDuration(ms: number): string;
 export function formatMoney(amount: number, symbol?: string): string;
 
 // @public
+export class HttpError extends Error {
+    constructor(status: number, message: string, body?: unknown);
+    readonly body?: unknown;
+    readonly status: number;
+}
+
+// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
+
+// @public
+export type JsonClient = <T = unknown>(ctx: JsonClientContext, method: string, path: string, body?: unknown, init?: JsonRequestInit) => Promise<T>;
+
+// @public
+export function jsonClient(options: JsonClientOptions): JsonClient;
+
+// @public
+export interface JsonClientContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal | undefined;
+}
+
+// @public
+export interface JsonClientOptions {
+    baseUrl: string | ((env: Readonly<Partial<Record<string, string>>>) => string);
+    errorMessage?: (body: unknown) => string | undefined;
+    fetch?: typeof globalThis.fetch;
+    headers?: Record<string, string> | ((env: Readonly<Partial<Record<string, string>>>) => Record<string, string>);
+    label: string;
+}
+
+// @public
+export interface JsonRequestInit {
+    headers?: Record<string, string>;
+}
 
 // @public (undocumented)
 export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
@@ -55,6 +98,14 @@ export class KeyedLockTimeoutError extends Error {
     constructor(key: string, timeoutMs: number, options?: ErrorOptions);
     // (undocumented)
     readonly key: string;
+}
+
+// @public
+export function normalizePhone(raw: string, options?: NormalizePhoneOptions): string | undefined;
+
+// @public
+export interface NormalizePhoneOptions {
+    defaultCountry?: "US" | "CA";
 }
 
 // @public
@@ -79,6 +130,14 @@ export function roundMoney(amount: number): number;
 
 // @public
 export function safeJsonParse(text: string): unknown;
+
+// @public
+export function spokenErrorReason(err: unknown, options?: SpokenErrorReasonOptions): string;
+
+// @public
+export type SpokenErrorReasonOptions = {
+    max?: number;
+};
 
 // @public
 export type ToolFailure = {

@@ -35,7 +35,7 @@
  */
 
 import type { RouteContext, RouteHandler, RouteRequest } from "@alexkroman1/aai";
-import { CLIENT_ID_RE, readRouteResponse } from "@alexkroman1/aai/host-internal";
+import { CLIENT_ID_RE, readRouteError, readRouteResponse } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import type { ClientTranscript, StepClientTranscriptOptions } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
@@ -221,6 +221,11 @@ export function compileAgentRoutes(deps: {
       const value: unknown = await hit.route.handler(request, context);
       return readRouteResponse(value) ?? { status: 200, body: value ?? null };
     } catch (err: unknown) {
+      // A `routeError(status, message)` is the handler ANSWERING, not failing:
+      // its status and sentence go back as they are, and nothing is logged.
+      const refusal = readRouteError(err);
+      if (refusal !== undefined)
+        return { status: refusal.status, body: { error: refusal.message } };
       // The MESSAGE only: a stack names this server's files, and the caller is
       // whoever can reach the port. The log gets the route, never the body.
       const message = errorMessage(err);

@@ -282,6 +282,20 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
 /** Headers that must never be replayed to a different origin across a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
 
+/** One hop's headers: the caller's, minus every credential once off-origin. */
+function hopHeaders(
+  init: RequestInit["headers"],
+  offOrigin: boolean,
+  extraCredentialHeaders: readonly string[],
+): Headers {
+  const headers = new Headers(init);
+  if (offOrigin) {
+    for (const h of CREDENTIAL_HEADERS) headers.delete(h);
+    for (const h of extraCredentialHeaders) headers.delete(h);
+  }
+  return headers;
+}
+
 /**
  * The lower-level SSRF-guarded fetch engine — NOT an alias of `safeFetch`.
  * Takes a mandatory `fetchFn` and drives the validate → pin → follow-redirects
@@ -294,17 +308,19 @@ export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
+  extraCredentialHeaders: readonly string[] = [],
 ): Promise<Response> {
   const originalOrigin = new URL(url).origin;
   let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
-    const headers = new Headers(init.headers);
     // Drop credentials once the request has left its original origin so an
     // open redirect on an allowed host can't exfiltrate the agent's token.
-    if (new URL(currentUrl).origin !== originalOrigin) {
-      for (const h of CREDENTIAL_HEADERS) headers.delete(h);
-    }
+    const headers = hopHeaders(
+      init.headers,
+      new URL(currentUrl).origin !== originalOrigin,
+      extraCredentialHeaders,
+    );
     const reqInit: PinnedRequestInit = { ...init, headers, redirect: "manual" };
     // resolvedIp is null when the URL already names a literal IP — it was
     // validated directly, so there is no DNS step to pin.
@@ -335,6 +351,21 @@ function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
  */
 export const safeFetch: typeof globalThis.fetch = (input, init) =>
   ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch);
+
+/**
+ * {@link safeFetch}, with more header names treated as credentials — dropped,
+ * like `authorization`, once a redirect leaves the original origin.
+ *
+ * For a caller that sends a credential in a header this module cannot know the
+ * name of: an MCP server authenticated with `x-api-key` would otherwise have
+ * that key replayed to wherever an open redirect on its host pointed.
+ *
+ * @internal
+ */
+export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch {
+  const names = credentialHeaders.map((name) => name.toLowerCase());
+  return (input, init) => ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch, names);
+}
 
 /**
  * Env flag a SPAWNER sets when the runtime is wrapped in a real container.

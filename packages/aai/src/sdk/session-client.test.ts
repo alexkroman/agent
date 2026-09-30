@@ -2,7 +2,8 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createToolContext } from "./_testing-context.ts";
-import { sessionClientId, setSessionClient } from "./session-client.ts";
+import { requireSessionClient, sessionClientId, setSessionClient } from "./session-client.ts";
+import { isToolFailure } from "./utils.ts";
 
 afterEach(() => vi.useRealTimers());
 
@@ -38,5 +39,21 @@ describe("sessionClientId", () => {
   test("createToolContext({ clientId }) seeds it for the context's session, and only that one", () => {
     expect(sessionClientId(createToolContext({ clientId: "porch" }))).toBe("porch");
     expect(sessionClientId(createToolContext())).toBeUndefined();
+  });
+});
+
+describe("requireSessionClient", () => {
+  test("answers the client id when the session has one", () => {
+    setSessionClient("sess-req-a", "kitchen");
+    expect(requireSessionClient({ sessionId: "sess-req-a" })).toBe("kitchen");
+  });
+
+  test("answers a ToolFailure — the caller's sentence, else a default — when it has none", () => {
+    expect(requireSessionClient({ sessionId: "sess-req-none" }, "Speakers only.")).toEqual({
+      error: "Speakers only.",
+    });
+    const fallback = requireSessionClient(createToolContext());
+    expect(isToolFailure(fallback)).toBe(true);
+    expect((fallback as { error: string }).error).toMatch(/device with its own id/);
   });
 });

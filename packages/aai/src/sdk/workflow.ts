@@ -78,6 +78,7 @@ import type { StandardSchemaV1 } from "./standard-schema.ts";
 // writing a body needs to name it, and `workflow.ts` is the one module they
 // already import from.
 import type { WorkflowContext } from "./workflow-ctx.ts";
+import type { WorkflowFailureHandler } from "./workflow-failure.ts";
 
 /**
  * `ctx.workflows` — the type of the handle, re-exported because `ToolContext`
@@ -93,6 +94,8 @@ import type { WorkflowContext } from "./workflow-ctx.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  type PollOptions,
+  type PollResult,
   type SleepOptions,
   type StepOptions,
   type StepSchemaOptions,
@@ -100,6 +103,11 @@ export {
   type WaitForSchemaOptions,
   type WorkflowContext,
 } from "./workflow-ctx.ts";
+export type {
+  WorkflowFailureContext,
+  WorkflowFailureHandler,
+  WorkflowFailureHook,
+} from "./workflow-failure.ts";
 // The three `…Of<typeof def>` readings of a declaration, one file over — see
 // that module's doc for the seam. Re-exported so every subpath that resolved
 // them through this module still does.
@@ -209,6 +217,40 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    * and a schema describes one value.
    */
   run: WorkflowBody<InferSchemaOutput<P>, R>;
+  /**
+   * What to do when a run FAILS for good — say so on the channel its result
+   * would have used — before the failure is recorded.
+   *
+   * Runs as one journaled step named `onFailure`, with the error the body
+   * threw, only when the engine has classified the throw as the run failing:
+   * never for a suspension, a cancel, a journal outage it will retry, or a
+   * divergence refusal. So it replaces the body-wide `try`/`catch` that
+   * announced and re-threw, which could announce a run that then resumed and
+   * succeeded. Pass `{ run, maxAttempts }` to give the step a retry budget. A
+   * hook that fails is logged; the run's own failure is still what is recorded.
+   *
+   * ```ts
+   * import { workflow } from "@alexkroman1/aai";
+   * import { DEFAULT_CLIENT_DELIVERY_ATTEMPTS, stepSayOnClient } from "@alexkroman1/aai/step";
+   * import { spokenErrorReason } from "@alexkroman1/aai/utils";
+   * import { z } from "zod";
+   *
+   * declare function research(topic: string): Promise<string>;
+   *
+   * export const digest = workflow({
+   *   input: z.object({ clientId: z.string(), topic: z.string() }),
+   *   run: async ({ topic }) => ({ summary: await research(topic) }),
+   *   onFailure: {
+   *     run: async (err, { runId, input }) => {
+   *       const text = `Sorry, I couldn't finish that: ${spokenErrorReason(err)}`;
+   *       await stepSayOnClient(input.clientId, { id: `${runId}:failed`, event: "research", text });
+   *     },
+   *     maxAttempts: DEFAULT_CLIENT_DELIVERY_ATTEMPTS,
+   *   },
+   * });
+   * ```
+   */
+  onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
 /**

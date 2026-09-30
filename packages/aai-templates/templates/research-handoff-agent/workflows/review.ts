@@ -3,14 +3,14 @@
  * The review wait — the one suspension this desk takes, and the one thing its
  * body and one of its tools have to agree on exactly.
  *
- * `researchFlow` opens the wait with {@link REVIEW_SLEEP_ID} and `file_it_now`
+ * `deliverResearch` opens the wait with {@link REVIEW_SLEEP_ID} and `file_it_now`
  * ends it by naming the same id, so the two are a pair in the way
  * `meeting-recap-agent/workflows/tokens.ts` describes: a string written twice is a
  * string that drifts once, and the symptom is `wakeUp` answering `0` — which is
  * ALSO what "the run had already moved past its wait" looks like. One module
  * both sides import is what makes those two answers mean different things.
  *
- * It cannot live in `shared.ts` (which imports the body, so the body cannot
+ * It cannot live in `shared.ts` (which imports the delivery, so the delivery cannot
  * import it back) and it cannot live in `research.ts` (a tool that imported the
  * body module to read one constant would pull the whole research pass into its
  * graph for a string). A module with no directive is legal under `workflows/`

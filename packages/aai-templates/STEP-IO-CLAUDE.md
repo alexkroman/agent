@@ -216,7 +216,7 @@ template's spec is one import:
 
 ```ts no-check
 // `no-check`: `virtual:aai/agent` is an ambient module the scaffold's
-// global.d.ts declares — it resolves in a template, not in a doc example.
+// tsconfig preset declares — it resolves in a template, not in a doc example.
 import agentDef from "virtual:aai/agent";
 ```
 

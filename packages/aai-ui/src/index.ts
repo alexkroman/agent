@@ -25,9 +25,12 @@
  * | Reading | Hooks |
  * | --- | --- |
  * | the call itself | {@link useSession} (everything), {@link useSessionStatus}, {@link useSessionError}, {@link useSessionActions}, {@link useSessionSelector} |
- * | who the client is | {@link useSessionId}, {@link useClientId}, {@link browserClientId} |
+ * | who the client is | {@link useSessionId}, {@link useClientId}, {@link browserClientId}, {@link createLinkedClient} |
  * | a run reaching the page later | {@link useInbox} (a reminder, a finished job — played when it lands) |
- * | what was said | {@link useConversation}, {@link useUserTranscript} |
+ * | what was said | {@link useConversation}, {@link useUserTranscript}, {@link useConversationLog} (across sessions, persisted) |
+ * | the talk button | {@link useTapToTalk} (tap on, tap off), {@link usePushToTalk} (hold, for `turnDetection: "manual"`) |
+ * | the agent's own `/api` routes | {@link useRoute}, {@link routeFetch} |
+ * | what this browser remembers | {@link useStoredValue} / {@link createStoredValue}, {@link phoneE164} |
  * | what the agent projects | {@link useAgentState} — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
  * | tools, as they run | {@link useToolCallStart}, {@link useToolResult}, {@link useEvent} |
  * | a durable run | {@link useWorkflowSubmit} (start one), {@link useWorkflowRun} (watch one), {@link useWorkflowRuns} / {@link useWorkflows} (list), {@link useWorkflowProgress} / {@link useWorkflowStream} (its output as it arrives) |
@@ -217,6 +220,10 @@ export {
   useSessionStatus,
   useTheme,
 } from "./context.ts";
+// The browser twin of a device keeps its own transcript across the device's
+// short resumable sessions: the persisted entries, and the mapping from a
+// mirrored inbox frame to a row. The hook is `useConversationLog` below.
+export { type ConversationLogEntry, inboxEventToItem } from "./conversation-log.ts";
 export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { mountClient } from "./define-client.tsx";
@@ -226,6 +233,12 @@ export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hook
 // fills it from the session and plays what arrives.
 export { type CreateInboxOptions, createInbox, type Inbox } from "./inbox.ts";
 export type { InboxEvent, InboxNotice } from "./inbox-protocol.ts";
+// Which client a page IS — a device it was linked to, else this browser.
+export {
+  createLinkedClient,
+  type LinkedClient,
+  type LinkedClientOptions,
+} from "./linked-client.ts";
 // Workflow apps — the `workflowApp()` half of this package. `mountPage()`
 // is the mount (no session, no audio, no socket), and its `component` is
 // OPTIONAL: with none it renders a form per declared workflow, the run's
@@ -233,6 +246,11 @@ export type { InboxEvent, InboxNotice } from "./inbox-protocol.ts";
 // own talks to the agent with is those same exports, in place of
 // `useSession()`.
 export { mountPage, type PageConfig, type PageHandle } from "./page.tsx";
+// A typed phone number as the E.164 `phone` the session must carry.
+export { type PhoneE164Options, phoneE164 } from "./phone.ts";
+// The agent's own JSON routes (`agent({ routes })`, under `/api`): one call,
+// with `?client=` and the route's `{ error }` sentence. `useRoute` reads.
+export { type RouteFetchOptions, type RouteMethod, routeFetch } from "./route-fetch.ts";
 // Session core (for advanced use)
 export { createBrowserSession } from "./session-core.ts";
 export type {
@@ -241,11 +259,24 @@ export type {
   // The seal `BrowserSession` carries. TYPE-ONLY: there is no value to import,
   // which is what stops a hand-written object from satisfying the type.
   browserSessionBrand,
+  SendTextOptions,
   SessionSnapshot,
   // `session.userTurn` — push-to-talk's three edges, the `push-to-talk`
   // capability's beside `usePushToTalk`.
   UserTurnControls,
 } from "./session-core-types.ts";
+// A clipboard write that reports a REFUSED one instead of doing nothing
+// visible, keyed by the copied text so one row's "Copied" does not light up
+// every button. Built on `useFlash` below; three hand-rolled copies preceded
+// the pair, this package's own URL chips among them.
+// A string this browser remembers — a setting, a phone — readable in a getter
+// outside React and reactive inside it, synced across holders and tabs.
+export {
+  createStoredValue,
+  type StoredValue,
+  type StoredValueOptions,
+  useStoredValue,
+} from "./stored-value.ts";
 // Types
 export type {
   AgentState,
@@ -266,10 +297,13 @@ export {
   type UseConversationResult,
   useConversation,
 } from "./use-conversation.ts";
-// A clipboard write that reports a REFUSED one instead of doing nothing
-// visible, keyed by the copied text so one row's "Copied" does not light up
-// every button. Built on `useFlash` below; three hand-rolled copies preceded
-// the pair, this package's own URL chips among them.
+// Everything the page has said and heard, across resumable sessions, persisted
+// in `localStorage` — with a resumed session's replay logged once.
+export {
+  type UseConversationLogOptions,
+  type UseConversationLogResult,
+  useConversationLog,
+} from "./use-conversation-log.ts";
 export { type UseCopyResult, useCopy } from "./use-copy.ts";
 // An upload id a run PRODUCED, as a URL a DOM element accepts — with the
 // object-URL revoke and the stale-run guard that two templates had each
@@ -297,6 +331,7 @@ export {
 // The opaque, storage-backed key `useWorkflowSubmit` looks a run up by. It
 // mints one of these for itself now, so this is for the page that wants a
 // different one — an account's id, or a key that outlives the tab.
+export { type UseRouteOptions, type UseRouteResult, useRoute } from "./use-route.ts";
 export { useRunKey } from "./use-run-key.ts";
 // The two flags and four methods a control row renders from, on two one-field
 // subscriptions — what `SessionControls` is built on, for the chrome whose
@@ -304,6 +339,14 @@ export { useRunKey } from "./use-run-key.ts";
 export { type UseSessionControlsResult, useSessionControls } from "./use-session-controls.ts";
 // The two ids a page keys things by, current without `onSessionId` wiring.
 export { useClientId, useSessionId } from "./use-session-id.ts";
+// Tap to go live, tap to hang up — the toggle counterpart of `usePushToTalk`
+// for an automatic-turn agent: resumable hang-up, mute unless live, a typed
+// turn that opens the session, and the self-hang-up clocks.
+export {
+  type UseTapToTalkOptions,
+  type UseTapToTalkResult,
+  useTapToTalk,
+} from "./use-tap-to-talk.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";

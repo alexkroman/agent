@@ -27,6 +27,17 @@ interface ClientEventMap {
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+
+// @public
 type DelegateFn = {
     <T>(subagent: TypedSubagentDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
     (subagent: SubagentDef, options: DelegateOptions): Promise<DelegateResult>;
@@ -45,6 +56,42 @@ interface DelegateResult extends SubagentAnswer {
     complaint?: string;
     revisions: number;
 }
+
+// @public
+type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
+
+// @public
+type FetchRouteHit = FetchRouteRequest & {
+    readonly outcome: "routed" | "passthrough" | "unmatched";
+    readonly route?: string | undefined;
+    readonly via: "fetch" | "stepFetch";
+    readonly status?: number | undefined;
+};
+
+// @public
+type FetchRouteRequest = StubStepRequest & {
+    readonly host: string;
+    readonly pathname: string;
+    readonly searchParams: URLSearchParams;
+    readonly json: unknown;
+};
+
+// @public
+type FetchRoutesOptions = {
+    unmatched?: "throw" | "notFound" | "passthrough" | undefined;
+    passThrough?: RegExp | undefined;
+    stepFetch?: boolean | undefined;
+};
+
+// @public
+type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
+
+// @public
+type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+};
 
 // @public
 type FindOptions = {
@@ -86,6 +133,12 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function installFetchRoutes(routes: FetchRouteTable | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
+
+// @public
+export function installStubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
 
 // @public
 export function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
@@ -146,6 +199,21 @@ interface ModelTuning {
 }
 
 // @public
+type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+};
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -203,6 +271,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
 };
@@ -222,6 +291,23 @@ type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOpti
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
+};
+
+// @public
+type StubClientInbox = {
+    calls: StubClientInboxCall[];
+    restore(): void;
+};
+
+// @public
+type StubClientInboxCall = {
+    clientId: string;
+    notice: ClientNotice;
+};
+
+// @public
+type StubClientInboxOptions = {
+    answer?: "acked" | ClientUnreachableReason | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason) | undefined;
 };
 
 // @public
@@ -256,6 +342,14 @@ type StubDelegateScript = {
 type StubEmitted = {
     namespace: string;
     chunk: unknown;
+};
+
+// @public
+type StubFetchRoutes = {
+    readonly hits: FetchRouteHit[];
+    to(filter: string | RegExp): FetchRouteHit[];
+    readonly fetch: typeof globalThis.fetch;
+    restore(): void;
 };
 
 // @public
@@ -299,6 +393,7 @@ type StubSpeechCall = {
 type StubSpeechOptions = {
     pcmBytes?: number | undefined;
     error?: Error | undefined;
+    requireApiKey?: boolean | undefined;
 };
 
 // @public
@@ -547,6 +642,9 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+    cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
+    cancelAll(workflow: string, key: string): Promise<number>;
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
@@ -569,6 +667,7 @@ type WorkflowContext = {
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -582,7 +681,24 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
+    onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
+
+// @public
+type WorkflowFailureContext<I = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly input: I;
+};
+
+// @public
+type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
+    run: WorkflowFailureHook<I>;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
 // @public
 type WorkflowRunBase = {
@@ -611,6 +727,9 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 | (WorkflowRunBase & {
     status: "cancelled";
 });
+
+// @public
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
 type WorkflowSummary = {

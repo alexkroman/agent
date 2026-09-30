@@ -102,6 +102,18 @@ Each helper's doc carries the detail; the rules:
   may be async.
 - **`stubTranscribe`** stages a refusal as an HTTP STATUS so the SDK's own
   classifier runs. `stubUploads` answers `{ restore, writes, read }`.
+- **`stubSpeech` needs no credential** — it marks its synthesizer
+  `keylessSynthesizer` (`step-speak.ts`), so `stepSpeak` hands it `""` rather
+  than refusing; `requireApiKey: true` restores the refusal.
+- **`stubFetchRoutes`/`installFetchRoutes`** — ONE table for the global fetch
+  AND the step fetch (published unless `stepFetch: false`), keys as
+  `evalNetwork`'s plus an optional METHOD; unmatched THROWS by default, for
+  `routeStepFetch`'s reason. `toStepResponse` drops the body of a null-body
+  status (`{ status: 204 }` threw in the `Response` constructor).
+- **`createRecordingWorkflows`** records starts and runs nothing; a start is
+  readable back as `running`, seeded runs answer `find`/`get`/`recent`. The
+  eval's recording client: `describeEval(…, { workflows: () =>
+  createRecordingWorkflows({ workflows: def.workflows }) })`.
 - **`commandedBuiltins`/`expectPromptBuiltinsDeclared`**
   (`testing-prompt-builtins.ts`) — a single-word builtin (`think`,
   `calculate`) counts only where the prose NAMES it: backticks, "the X tool",
@@ -268,6 +280,20 @@ stays for non-file registries (the studio's coding agent).
   `agent({ subagents })`. Host half: "Subagents" in
   `packages/aai-runtime/src/CLAUDE.md`.
 
+## MCP servers: declared here, connected in `aai-runtime`
+
+- **`mcp-config.ts` holds types only** — nothing in `sdk/` opens a socket.
+  `url`/`headers` may be RESOLVERS called once per connection with
+  `{ clientId, env, signal }`; **`toAgentConfig` strips every resolver and
+  every `headers` value** (`wireMcpServers`), so a header credential never
+  reaches a stored config. A resolved URL gets the same http(s) check and SSRF
+  screen as a literal, and every author header is stripped on a cross-origin
+  redirect (`credentialSafeFetch`, `host/ssrf.ts`).
+- **`stepMcp` (`step-mcp.ts`, on `/experimental`) is a published slot** like
+  `stepDelegate`: the connector is `aai-runtime`'s `step-mcp.ts` over the same
+  `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable
+  server (a step can retry), where host start degrades (a session cannot wait).
+
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
@@ -354,6 +380,33 @@ a host fills. One claim per run; properties in
 `start(def, input, { key, notify })` makes the starting session take an
 unprompted, interruptible turn when the run lands (`Transport.injectTurn`,
 pipeline only).
+
+### Run lifecycle helpers: each is COMPOSED, and each has one owner
+
+- **`StartOptions.dedupeKey` DERIVES the run id** (`aai-runtime`'s
+  `workflow/dedupe-run-id.ts`): every journal already refuses a second
+  `createRun` for one id, so two racing starts meet at one insert and no store
+  grew a table. Dedupes against a run in ANY status until it expires.
+- **`findByKey`/`cancelAll` are `find`/`cancel` composed**
+  (`workflow/client-keyed.ts`) — the key index is `(workflow, key)` in all three
+  backends, the platform's table included, so a cross-workflow read is N
+  lookups merged once, not a new query.
+- **`ctx.poll` is `ctx.step` + `ctx.sleep` under one name** (`workflow-poll.ts`),
+  so it journals exactly the hand-written loop's keys; its budget is a COUNT
+  (`floor(maxMs / everyMs)` sleeps), replay-safe without a `ctx.now` per round.
+  Every `WorkflowContext` (engine, `/testing` recorder, eval) delegates to it.
+  `stepPollUntil` is the in-step, wall-clock, non-durable sibling.
+- **`workflow({ onFailure })` runs in the ENGINE, not a body `catch`**
+  (`workflow-failure.ts`, runtime `replay/failure-hook.ts`): only for a throw
+  classified as the run failing (never a suspend, cancel, journal failure or
+  divergence refusal), as the journaled step `onFailure`, before the failure is
+  recorded. Not run for an `output`-schema failure (decided after the walk).
+- **`stepSayOnClient`** = `stepSpeak` + `stepNotifyClient` with `data.said`; the
+  default rate is `agent({ clientInbox: { sampleRate } })`, published beside the
+  step env by `createAgentServer` and `aai dev` (`publishClientInboxDefaults`).
+  Audio for an undelivered utterance is held across the step's retries.
+  **`stepEnvContext()`** is the whole step env plus the step's signal
+  (`StepInfo.signal`) as an `EnvContext`, which a `ToolContext` also satisfies.
 
 ## Uploads (the client half)
 

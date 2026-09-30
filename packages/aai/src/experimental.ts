@@ -31,7 +31,33 @@ import { omitUndefined } from "./sdk/omit-undefined.ts";
 import { llm } from "./sdk/providers/llm/llm.ts";
 import type { LlmProvider } from "./sdk/providers.ts";
 
+export {
+  DEFAULT_DEEP_RESEARCH_BUDGET,
+  type DeepResearchOptions,
+  deepResearchWorkflow,
+} from "./sdk/deep-research.ts";
+export {
+  DEFAULT_DEEP_RESEARCH_PROMPTS,
+  type DeepResearchPrompts,
+} from "./sdk/deep-research-prompts.ts";
+export { citedSources } from "./sdk/deep-research-stages.ts";
+export type {
+  DeepResearchBrief,
+  DeepResearchBudget,
+  DeepResearchInputSchema,
+  DeepResearchNote,
+  DeepResearchResearcher,
+  DeepResearchResult,
+  DeepResearchSource,
+} from "./sdk/deep-research-types.ts";
 export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
+export {
+  type StepMcp,
+  type StepMcpOptions,
+  type StepMcpServer,
+  stepMcp,
+  stubStepMcp,
+} from "./sdk/step-mcp.ts";
 
 /** Options for {@link openAICompatibleLlm}. */
 export interface OpenAICompatibleLlmOptions {

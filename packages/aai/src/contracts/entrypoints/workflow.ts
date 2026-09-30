@@ -25,6 +25,10 @@ export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   // `WorkflowContext.sleep`'s options. Durable sleep is what makes a replay engine
   // worth having, so its option bag is part of the declaring surface.
+  // `ctx.poll`'s bag and result: a durable check-and-wait loop is written in a
+  // body exactly as `ctx.sleep` is.
+  type PollOptions,
+  type PollResult,
   type SleepOptions,
   type StepOptions,
   // The schema-bearing halves of both bags. A step's output and a hook's
@@ -47,5 +51,9 @@ export {
   // for is a method call now, so it is part of the declaring surface.
   type WorkflowContext,
   type WorkflowDef,
+  // `onFailure` on a workflow: declared in the same literal as `run`.
+  type WorkflowFailureContext,
+  type WorkflowFailureHandler,
+  type WorkflowFailureHook,
   workflow,
 } from "../../index.ts";

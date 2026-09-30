@@ -1,0 +1,32 @@
+// @public
+export function useTapToTalk(options?: UseTapToTalkOptions): UseTapToTalkResult;
+
+// @public
+export type UseTapToTalkOptions = {
+    key?: string | false | undefined;
+    idleHangupMs?: number | undefined;
+    thinkingHangupMs?: number | undefined;
+    connectTimeoutMs?: number | undefined;
+};
+
+// @public
+export type UseTapToTalkResult = {
+    phase: "idle" | "connecting" | "active";
+    live: boolean;
+    failed: boolean;
+    toggle: () => void;
+    send: (text: string) => void;
+    hangUp: () => void;
+    buttonProps: {
+        onClick: () => void;
+        onKeyDown: (event: {
+            code: string;
+            preventDefault(): void;
+        }) => void;
+        onKeyUp: (event: {
+            code: string;
+            preventDefault(): void;
+        }) => void;
+        "aria-pressed": boolean;
+    };
+};

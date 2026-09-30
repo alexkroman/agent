@@ -4,8 +4,9 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
+import type { ConversationLogEntry } from "../conversation-log.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
-import { useConversation } from "../use-conversation.ts";
+import { type ConversationItem, useConversation } from "../use-conversation.ts";
 import type { UseUserTranscriptResult } from "../use-user-transcript.ts";
 import { AutoScroll } from "./auto-scroll.tsx";
 import { ToolCallRow } from "./tool-call-row.tsx";
@@ -16,6 +17,8 @@ import { ToolCallRow } from "./tool-call-row.tsx";
  * collide with — or be mistaken for — a message in `items`.
  */
 const STREAMING_MESSAGE_ID = -1;
+/** The id a `spoken` log entry is rendered with — negative for the same reason. */
+const SPOKEN_MESSAGE_ID = -2;
 
 /**
  * Props of {@link ConversationView}.
@@ -51,6 +54,25 @@ export type ConversationViewProps = {
    * the bottom of its conversation column, outside the scroll.
    */
   transcriptPosition?: "inline" | "below" | undefined;
+  /**
+   * A persisted transcript to render IN PLACE of the live session's items —
+   * `useConversationLog().entries`, whose newest session entry already is the
+   * live conversation. Session entries render through `renderMessage` /
+   * `renderTool`, each after `renderSessionHeader`; a `spoken` entry is
+   * `renderMessage` over an assistant message (id `-2`); a `note` is
+   * `renderNote`. The streaming reply, the transcript and the thinking row are
+   * rendered after it as usual.
+   */
+  log?: readonly ConversationLogEntry[] | undefined;
+  /** A log `note`. Absent, a small centred muted line. */
+  renderNote?: ((entry: Extract<ConversationLogEntry, { kind: "note" }>) => ReactNode) | undefined;
+  /**
+   * What goes above each log `session` entry — a timestamp, a "continue"
+   * button. Absent, nothing.
+   */
+  renderSessionHeader?:
+    | ((entry: Extract<ConversationLogEntry, { kind: "session" }>) => ReactNode)
+    | undefined;
   /** Rendered inside the scroll region while there is nothing to show at all. */
   empty?: ReactNode | undefined;
   /**
@@ -85,6 +107,10 @@ function defaultTool(toolCall: ToolCallInfo): ReactNode {
       className="self-start"
     />
   );
+}
+
+function defaultNote(entry: Extract<ConversationLogEntry, { kind: "note" }>): ReactNode {
+  return <p className="text-xs text-center opacity-50">{entry.text}</p>;
 }
 
 function defaultTranscript(transcript: UseUserTranscriptResult): ReactNode {
@@ -146,6 +172,9 @@ export function ConversationView({
   renderStreaming,
   renderTranscript = defaultTranscript,
   transcriptPosition = "inline",
+  log,
+  renderNote = defaultNote,
+  renderSessionHeader,
   empty,
   thinkingLabel = "Thinking",
   thinkingIndicator = DEFAULT_INDICATOR,
@@ -160,17 +189,16 @@ export function ConversationView({
   // Memoized on the renderers as well as the items: a caller that hoists or
   // `useCallback`s its renderers (as `MessageList` does) then pays for one row
   // per appended message, and one that writes them inline pays what it wrote.
-  const rows = useMemo(
-    () =>
-      items.map((item) =>
-        item.kind === "message"
-          ? // Prefixed, so a numeric message id and a tool call whose id happens
-            // to be the same digits cannot share a key.
-            renderKeyed(`m${item.message.id}`, renderMessage(item.message))
-          : renderKeyed(`t${item.toolCall.callId}`, renderTool(item.toolCall)),
-      ),
-    [items, renderMessage, renderTool],
-  );
+  const rows = useMemo(() => {
+    const renderItem = (item: ConversationItem, key: string): ReactNode =>
+      item.kind === "message"
+        ? renderKeyed(`${key}m${item.message.id}`, renderMessage(item.message))
+        : renderKeyed(`${key}t${item.toolCall.callId}`, renderTool(item.toolCall));
+    // Prefixed, so a numeric message id and a tool call whose id happens to be
+    // the same digits cannot share a key.
+    if (!log) return items.map((item) => renderItem(item, ""));
+    return logRows(log, renderItem, renderMessage, renderNote, renderSessionHeader);
+  }, [items, log, renderMessage, renderTool, renderNote, renderSessionHeader]);
 
   // A stable object per streaming text, so a memoized bubble handed the default
   // streaming message re-renders on a new delta and not on every list update.
@@ -192,7 +220,7 @@ export function ConversationView({
         scrollClassName={scrollClassName}
         style={style}
       >
-        {items.length === 0 && streaming === null && empty}
+        {(log ?? items).length === 0 && streaming === null && empty}
         {rows}
         {streamingMessage !== null &&
           (renderStreaming
@@ -211,6 +239,42 @@ export function ConversationView({
       {transcriptPosition === "below" && transcriptRow}
     </>
   );
+}
+
+/**
+ * A log's rows. Keys are the entry's own identity (kind, time, session and run)
+ * plus a repeat count, not its index: the log is trimmed from the FRONT, and an
+ * index key would remount every row on each trim. Items within a session entry
+ * are keyed by position — a chain is append-only.
+ */
+function logRows(
+  log: readonly ConversationLogEntry[],
+  renderItem: (item: ConversationItem, key: string) => ReactNode,
+  renderMessage: (message: ChatMessage) => ReactNode,
+  renderNote: (entry: Extract<ConversationLogEntry, { kind: "note" }>) => ReactNode,
+  renderSessionHeader:
+    | ((entry: Extract<ConversationLogEntry, { kind: "session" }>) => ReactNode)
+    | undefined,
+): ReactNode[] {
+  const seen = new Map<string, number>();
+  return log.flatMap((entry) => {
+    const id =
+      entry.kind === "session"
+        ? `s${entry.at}:${entry.sessionId}:${entry.run}`
+        : `${entry.kind}${entry.at}`;
+    const n = seen.get(id) ?? 0;
+    seen.set(id, n + 1);
+    const key = `${id}#${n}`;
+    if (entry.kind === "note") return [renderKeyed(key, renderNote(entry))];
+    if (entry.kind === "spoken") {
+      const said: ChatMessage = { id: SPOKEN_MESSAGE_ID, role: "assistant", content: entry.text };
+      return [renderKeyed(key, renderMessage(said))];
+    }
+    return [
+      renderKeyed(`${key}h`, renderSessionHeader?.(entry) ?? null),
+      ...entry.items.map((item, i) => renderItem(item, `${key}/${i}`)),
+    ];
+  });
 }
 
 /** Give a slot's output a key without asking the renderer to remember one. */

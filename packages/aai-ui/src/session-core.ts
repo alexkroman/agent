@@ -105,14 +105,16 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     return partial[key] === currentSnapshot[key];
   }
 
+  /** `sendText(…, { connect: true })` waiting for a session — see `UserTurnDeps.queued`. */
+  const queuedText: string[] = [];
+
   function updateState(partial: Partial<SessionSnapshot>): void {
-    // A write that changes no field still notified, so every consumer
-    // re-rendered on every server event that "cleared" an already-null error or
-    // re-announced a state it was already in. Two call sites used to guard that
-    // themselves by reading the snapshot back first; now that the state machine
-    // answers "did anything move" — a declined transition returns the position
-    // unchanged — the check belongs here, where it covers the other thirty
-    // callers too. `session-core-events.test.ts` pins both cases.
+    // Every way a session stops being meant to run passes through here.
+    if (partial.running === false) queuedText.length = 0;
+    // A write that changes no field still notified every consumer. Now that
+    // the state machine answers "did anything move" (a declined transition
+    // returns the position unchanged), the check lives here for every caller;
+    // `session-core-events.test.ts` pins both cases.
     if (Object.keys(partial).every((key) => isUnchanged(key as keyof SessionSnapshot, partial))) {
       return;
     }
@@ -220,6 +222,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   function onServerConfig(config: SessionConfigMessage): void {
     dialer.configured(config.sid);
     if (config.sid) options.onSessionId?.(config.sid);
+    flushQueued();
     // The audio path reports its own failures — see `session-core-audio-state.ts`.
     audio.start(config);
   }
@@ -322,23 +325,16 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
         // a survivor would fire against the NEXT attempt's open window.
         handshake.disarm();
         audio.teardown();
-        // A FATAL error is the server saying the session cannot work, and it is
-        // not retryable by construction — the same rule as `retiredByServer`,
-        // read off the latch that already owns the question rather than a second
-        // flag every writer would have to set. Without it the ladder ran in full
-        // while the page said CONNECTING, and the server's own sentence landed
-        // ~110s and 10 socket opens later, when partysocket ran out of retries;
-        // on the platform the URL provider re-brokers per attempt, so those ten
-        // are ten broker calls that can boot a sandbox. Measured in
+        // A FATAL error is not retryable by construction — the rule
+        // `retiredByServer` follows, read off the latch that owns it. Without
+        // it the ladder ran ~110s and 10 socket opens (10 broker calls that can
+        // boot a sandbox) before the server's sentence landed; measured in
         // `session-core-reconnect.test.ts`.
         if (!(conn.retiredByServer || agentState.fatal()) && reconnectPending(socket)) {
-          // partysocket retries with backoff. Keep the listeners attached
-          // and the session logically alive: the URL provider re-derives the
-          // resume URL, and the server restores the conversation itself.
-          // The `audio.teardown()` above already stopped a bring-up still
-          // awaiting getUserMedia, and released it if the grant lands late —
-          // that used to need a second mechanism (a generation bump) because
-          // clearing the in-flight flag could not stop the work it guarded.
+          // partysocket retries with backoff. Keep the listeners attached and
+          // the session logically alive: the URL provider re-derives the resume
+          // URL, and the server restores the conversation itself. The
+          // `audio.teardown()` above stopped (and releases) a pending bring-up.
           // A socket error here is part of the retry cycle, not terminal —
           // clear it so a later clean disconnect isn't misreported.
           socketErrored = false;
@@ -397,9 +393,13 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   }
 
   // Push-to-talk's three edges and the typed turn — see `session-core-user-turn.ts`.
-  const { userTurn, sendText } = createUserInput({
+  const { userTurn, sendText, flushQueued } = createUserInput({
     snapshot: () => currentSnapshot,
     connected: () => openSocket() !== null,
+    queued: queuedText,
+    open: () => {
+      if (!currentSnapshot.running) (currentSnapshot.started ? toggle : start)();
+    },
     bargeIn: () => bargeIn(conn, audio),
     agentState,
     updateState,

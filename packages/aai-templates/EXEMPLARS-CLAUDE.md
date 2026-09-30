@@ -58,7 +58,8 @@ table and the allowlist — "the last remover pays".
 | `SubagentDef.expectedOutput` | all four of `topic-briefing-agent`'s; its spec asserts each declares one |
 | `SubagentDef.guardrail` | `applicant-screening-agent`'s `emailWriter`, `executive-inbox-agent`'s meeting assistant, `research-planner-agent`'s executor. `topic-briefing-agent`'s `factChecker` moved to `schema` — reach for a guardrail only when a schema cannot say it |
 | `SubagentDef.tools` | `research-planner-agent`'s executor gets its own `search`/`read` over `@alexkroman1/aai/tools`, keeping `/tools` exercised |
-| `stepDelegate` | `research-handoff-agent`'s `investigate`: `maxSteps` is the budget, the forced final answer the stop rule, `expectedOutput` the compression |
+| `stepDelegate` | no template calls it directly any more (allowlisted): `research-handoff-agent`'s researcher moved into `deepResearchWorkflow` (`aai/src/sdk/deep-research.ts`), where `maxSteps` is the budget, the forced final answer the stop rule, `expectedOutput` the compression |
+| `deepResearchWorkflow` (`/experimental`) | `research-handoff-agent`: overrides two prompts, keeps the default researcher and budget, and its `deliver` is the review wait plus filing |
 | `personas()` + `Personas.handoff` + `HANDOFF_TOOL_NAME` | `front-desk-agent` — three desks; code handoff, model routing, per-desk gating |
 | `mapSettled` + `partitionSettled` | `applicant-screening-agent` (`crews.ts`), `topic-briefing-agent` (`research_topic`) |
 | `webSearch` / `visitWebpage` | `research-planner-agent` only, from an ordinary tool body |
@@ -67,9 +68,9 @@ table and the allowlist — "the last remover pays".
 
 | Primitive | Demonstrated by |
 | --- | --- |
-| `workflow()` + `ctx.workflows` + `isTerminal` | `research-handoff-agent` (the handoff), `meeting-recap-agent` (plus `cancel` and a live-run check) |
+| `workflow()` + `ctx.workflows` + `isTerminal` | `research-handoff-agent` (the handoff, its def from `deepResearchWorkflow`), `meeting-recap-agent` (plus `cancel` and a live-run check) |
 | `mapConcurrent`, `stepEmit`, `stepEnv`/`requireStepEnv`, `stepGenerate`, `stepFetch`/`multipartBody` | every workflow template, imported from `@alexkroman1/aai/step` |
-| `stepGenerateJson` + `stripJsonFence` | `research-handoff-agent`, `link-digest-workflow`, `document-redline-workflow`, `meeting-recap-agent`; `stripJsonFence` only through `stepGenerateJson` |
+| `stepGenerateJson` + `stripJsonFence` | `link-digest-workflow`, `document-redline-workflow`, `meeting-recap-agent`; `stripJsonFence` only through `stepGenerateJson` |
 | `toStepError` / `throwStepError` / `throwFatalStepError` | every workflow template |
 | `stepFetchOrFail` | `link-digest-workflow`, `meeting-recap-agent`'s `request()`, `podcast-digest-workflow`'s `fetchText`. `meeting-recap-agent`'s DELETE stays on raw `stepFetch` (404 = already deleted) |
 | `stepTranscribeUpload` / `Submit` / `Poll`, `stepTranscribeSync` | the three transcribing templates; `transcription-workflow` is the reference (`batch.ts`, `sync-api.ts`); `meeting-recap-agent` converts SUBMIT only |
@@ -164,22 +165,24 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
 
 ## `research-handoff-agent`
 
-The voice-to-workflow handoff. The body and its steps live in
-`workflows/research.ts` (a convention now: a spec can import the steps alone);
-the declaration is in `shared.ts` because four tools import it.
+The voice-to-workflow handoff, and the worked example of `deepResearchWorkflow`
+(`@alexkroman1/aai/experimental`). The declaration is in `shared.ts` because
+four tools import it; `workflows/research.ts` is now only the desk's `deliver`
+(the named review `ctx.sleep`, then `file`), `workflows/prompts.ts` the two
+prompts it overrides (the phone brief and the phone summary).
 
-Five stages adapted from LangChain's `open_deep_research` (MIT;
-`workflows/prompts.ts` has attribution and the stage mapping): `writeBrief`,
-`planAngles` (fan-out width comes from this step's journaled result),
-`investigate` (one `stepDelegate` researcher per angle with
-`web_search`/`visit_webpage`), `findGaps`, `writeReport` (report plus two
-spoken sentences). The research loop's budget is `maxSteps`, not the prompt;
-the loop is journaled as ONE step result (what the researcher concluded); a
-failed search is shown to the researcher, not only logged. The compression
-prompt says to REPEAT relevant text rather than summarize.
+The pass is five stages adapted from LangChain's `open_deep_research` (MIT;
+attribution and stage mapping in `aai/src/sdk/deep-research-prompts.ts`):
+`writeBrief`, `planAngles` (fan-out width from this step's journaled result),
+`investigate` (one `stepDelegate` researcher per angle), `findGaps`,
+`investigateGap`, `writeReport` (report plus summary in ONE step). The step
+names are the ones this template journaled under before the move. The loop's
+budget is `maxSteps`, not the prompt; the loop is journaled as ONE step result;
+the compression prompt says to REPEAT relevant text rather than summarize. The
+stage-level specs live in `sdk/deep-research.test.ts`.
 
-Spec tiers: tools against stubbed `ctx.workflows`; steps directly against a
-stubbed fetch; the body via `createWorkflowContext` and via `runWorkflow` on the
+Spec tiers: tools against stubbed `ctx.workflows`; the desk's configuration
+and delivery via `createWorkflowContext`; the whole run via `runWorkflow` on the
 real replay engine. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier
 above.
 

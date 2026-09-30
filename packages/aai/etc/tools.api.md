@@ -16,10 +16,14 @@ type DefaultToolResult = any;
 // @public
 export function fetchJson<T = UntypedJsonBody>(url: string | ({
     url: string;
+} & FetchJsonOptions), options?: FetchJsonOptions): Promise<T | ToolFailure>;
+
+// @public
+export type FetchJsonOptions = {
     headers?: Record<string, string>;
-} & CallOptions), options?: {
-    headers?: Record<string, string>;
-} & CallOptions): Promise<T | ToolFailure>;
+    method?: string;
+    body?: unknown;
+} & CallOptions;
 
 // @public
 type ToolFailure = {

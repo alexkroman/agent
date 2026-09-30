@@ -17,7 +17,12 @@ export function addDays(iso: string, days: number): string;
 export function agent(def: AgentParams): AgentDef;
 
 // @public
-export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes {
+export interface AgentClientInbox {
+    clientInbox?: ClientInboxOptions | undefined;
+}
+
+// @public
+export interface AgentDef extends PipelineVoiceTuning, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
     dialogs?: readonly AnyDialog[];
@@ -172,6 +177,11 @@ export interface ClientEventMap {
 
 // @public
 export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public
+export type ClientInboxOptions = {
+    sampleRate?: number | undefined;
+};
 
 // @public
 type ClientTranscript = {
@@ -406,6 +416,13 @@ export function failable<A extends readonly unknown[], R>(fn: (...args: A) => Pr
 export function failable<A extends readonly unknown[], R>(fn: (...args: A) => R): (...args: A) => R | ToolFailure;
 
 // @public
+type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+};
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -542,9 +559,21 @@ export const MCP_TOOL_NAME_MAX: number;
 export const MCP_TOOL_PREFIX = "mcp_";
 
 // @public
+export type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
+
+// @public
+export type McpResolveContext = {
+    readonly clientId: string | undefined;
+    readonly env: Readonly<Partial<Record<string, string>>>;
+    readonly signal: AbortSignal;
+};
+
+// @public
 export type McpServerConfig = {
-    url: string;
+    url: McpResolvable<string>;
+    headers?: McpResolvable<Readonly<Record<string, string>>>;
     tokenEnv?: string;
+    allowedTools?: readonly string[];
     pinnedTools?: Readonly<Record<string, string>>;
 };
 
@@ -717,6 +746,21 @@ export interface PipelineVoiceTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
+// @public
+export type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+export type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+};
+
 // @public @sealed
 export interface Procedure<M extends AnyStateMachine> {
     readonly machine: M;
@@ -775,6 +819,9 @@ export function requireEnv(ctx: {
 }, name: string): string;
 
 // @public
+export function requireSessionClient(ctx: Pick<ToolContext, "sessionId">, message?: string): string | ToolFailure;
+
+// @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, options: ResolveOneOptions<T>): T | ToolFailure;
 
 // @public
@@ -789,6 +836,9 @@ export interface ResolveOneOptions<T> {
 // @public
 export function responseErrorMessage(response: Response, label?: string): Promise<string>;
 
+// @public
+export function route<S extends StandardSchemaV1 = StandardSchemaV1<unknown, unknown>, Client extends boolean = false>(def: RouteDef<S, Client>): RouteHandler;
+
 // @public @sealed
 export interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
@@ -796,6 +846,22 @@ export interface RouteContext {
     signal: AbortSignal;
     workflows: WorkflowClient;
 }
+
+// @public
+export interface RouteDef<S extends StandardSchemaV1 = StandardSchemaV1<unknown, unknown>, Client extends boolean = false> {
+    body?: S;
+    handler: (req: ValidatedRouteRequest<InferSchemaOutput<S>, Client>, ctx: RouteContext) => unknown;
+    requireClient?: Client;
+}
+
+// @public
+export class RouteError extends Error {
+    constructor(status: number, message: string);
+    readonly status: number;
+}
+
+// @public
+export function routeError(status: number, message: string): RouteError;
 
 // @public
 export type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
@@ -1275,8 +1341,15 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
 }
 
 // @public
+export interface StandardWebhookOptions {
+    nowS?: number;
+    toleranceS?: number;
+}
+
+// @public
 type StartOptions = {
     key?: string;
+    dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
 };
@@ -1532,6 +1605,18 @@ export interface UserTurnLimit {
 }
 
 // @public
+export type ValidatedRouteRequest<Body, Client extends boolean> = Omit<RouteRequest, "body" | "clientId"> & {
+    body: Body;
+} & (Client extends true ? {
+    clientId: string;
+} : {
+    clientId?: string;
+});
+
+// @public
+export function verifyStandardWebhook(req: Pick<RouteRequest, "headers" | "rawBody">, secret: string, options?: StandardWebhookOptions): Promise<boolean>;
+
+// @public
 export const VOICE_PRESETS: Readonly<Record<"echoVerification" | "speechNormalization" | "natoAlphabet", string>>;
 
 // @public
@@ -1552,6 +1637,15 @@ export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> 
 type WakeUpOptions = {
     correlationIds?: string[];
 };
+
+// @public
+export function webhookRoute(options: WebhookRouteOptions, handler: RouteHandler): RouteHandler;
+
+// @public
+export interface WebhookRouteOptions {
+    secretEnv: string;
+    toleranceS?: number;
+}
 
 // @public
 export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;
@@ -1585,6 +1679,9 @@ export type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+    cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
+    cancelAll(workflow: string, key: string): Promise<number>;
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
@@ -1607,6 +1704,7 @@ export type WorkflowContext = {
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -1620,7 +1718,24 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
+    onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
+
+// @public
+export type WorkflowFailureContext<I = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly input: I;
+};
+
+// @public
+export type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
+    run: WorkflowFailureHook<I>;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+export type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
 // @public
 export type WorkflowInputOf<D> = D extends {
@@ -1663,6 +1778,9 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 | (WorkflowRunBase & {
     status: "cancelled";
 });
+
+// @public
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
 type WorkflowSummary = {

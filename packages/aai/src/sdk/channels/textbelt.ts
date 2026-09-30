@@ -36,6 +36,7 @@
  */
 
 import { isRecord } from "../is-record.ts";
+import { omitUndefined } from "../omit-undefined.ts";
 import type {
   Channel,
   ChannelHandler,
@@ -73,6 +74,13 @@ export interface TextbeltChannelOptions {
    * 10-digit number in the US, as Textbelt accepts. Personal data.
    */
   readonly to: string;
+  /**
+   * `"strip"` takes every link out of the text before it is sent — for a key
+   * Textbelt has not yet allowed to send links (https://textbelt.com/whitelist),
+   * which refuses any text containing one. The words still arrive; `"keep"`
+   * (the default) sends the text as written.
+   */
+  readonly links?: "keep" | "strip";
 }
 
 /** A Textbelt channel descriptor, as returned by {@link textbeltChannel}. */
@@ -113,6 +121,45 @@ export function textbeltChannel(options: TextbeltChannelOptions): TextbeltChanne
  * @public
  */
 export function renderTextbeltText(message: ChannelMessage): string {
+  return capText(joinedText(message));
+}
+
+/** `text` cut at {@link TEXTBELT_MAX_MESSAGE_CHARS}, marked. */
+function capText(text: string): string {
+  return text.length <= TEXTBELT_MAX_MESSAGE_CHARS
+    ? text
+    : `${text.slice(0, TEXTBELT_MAX_MESSAGE_CHARS - 1)}…`;
+}
+
+/** A URL or anything that reads as one: a scheme, `www.`, or a bare domain with a common TLD. */
+// A link ends before trailing punctuation: "(see https://x.com)," keeps its ")" and ",".
+const LINK_RE =
+  /\b(?:https?:\/\/|www\.)\S+?(?=[)\]>.,;:!?"']*(?:\s|$))|\b(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|co|us|uk|ca|au|de|fr|dev|ai|app|info|biz|me|tv|news|blog)\b(?:\/\S*?(?=[)\]>.,;:!?"']*(?:\s|$)))?/gi;
+
+/**
+ * `text` with every link removed, and what removing them leaves behind tidied
+ * away: empty brackets, bare `[n]` source markers, a trailing empty
+ * "Sources:", doubled spaces and blank lines.
+ *
+ * @internal — `textbeltChannel({ links: "strip" })` and the `text_me` builtin.
+ */
+export function stripLinks(text: string): string {
+  return text
+    .replace(LINK_RE, "")
+    .replace(/\(\s*\)|<\s*>|\[\s*\]\(\s*\)/g, "")
+    .split("\n")
+    .filter((line) => !/^\s*\[\d+\]\s*[-:]?\s*$/.test(line))
+    .join("\n")
+    .replace(/\n\n?Sources:\s*$/, "")
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Every part of a message as one text, uncut. */
+function joinedText(message: ChannelMessage): string {
   const lines = [
     message.heading ?? message.text,
     ...(message.subtitle === undefined ? [] : [message.subtitle]),
@@ -124,10 +171,13 @@ export function renderTextbeltText(message: ChannelMessage): string {
       ...(section.bullets ?? []).map((bullet) => `- ${bullet}`),
     ]),
   ];
-  const text = lines.join("\n").trim();
-  return text.length <= TEXTBELT_MAX_MESSAGE_CHARS
-    ? text
-    : `${text.slice(0, TEXTBELT_MAX_MESSAGE_CHARS - 1)}…`;
+  return lines.join("\n").trim();
+}
+
+/** The SMS body a channel sends: links out first when it strips them, then the cap. */
+function textbeltBody(message: ChannelMessage, options: TextbeltChannelOptions): string {
+  const text = joinedText(message);
+  return capText(options.links === "strip" ? stripLinks(text) : text);
 }
 
 /** Textbelt's JSON: `phone`, `message`, `key`. @internal */
@@ -137,7 +187,7 @@ export function renderTextbeltChannelPayload(
 ): ChannelPayload {
   return {
     url: TEXTBELT_ENDPOINT,
-    body: { phone: options.to, message: renderTextbeltText(message), key: options.key },
+    body: { phone: options.to, message: textbeltBody(message, options), key: options.key },
   };
 }
 
@@ -198,7 +248,11 @@ export function textbeltOptions(options: Record<string, unknown>): TextbeltChann
       "A Textbelt channel needs a string `to`. Build one with `textbeltChannel({ key, to })`.",
     );
   }
-  return { key: key.trim(), to: to.trim() };
+  const { links } = options;
+  if (links !== undefined && links !== "keep" && links !== "strip") {
+    throw new Error('A Textbelt channel\'s `links` is "keep" or "strip".');
+  }
+  return { key: key.trim(), to: to.trim(), ...omitUndefined({ links }) };
 }
 
 /**

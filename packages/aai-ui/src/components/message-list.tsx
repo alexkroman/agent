@@ -11,6 +11,7 @@ import {
   useCallback,
 } from "react";
 import { useTheme } from "../context.ts";
+import type { ConversationLogEntry } from "../conversation-log.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import type { UseUserTranscriptResult } from "../use-user-transcript.ts";
 import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
@@ -154,6 +155,11 @@ export type MessageListProps = {
    * message.
    */
   className?: string;
+  /**
+   * A persisted transcript to show in place of the live session's items —
+   * `useConversationLog().entries`, rendered as {@link ConversationView} renders it.
+   */
+  log?: readonly ConversationLogEntry[] | undefined;
 };
 
 /**
@@ -179,7 +185,7 @@ export type MessageListProps = {
  * @public
  */
 export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>> = memo(
-  function MessageList({ className }: MessageListProps) {
+  function MessageList({ className, log }: MessageListProps) {
     // Every rule this list renders by — the interleave, the streaming row, the
     // `null`-vs-`""` transcript distinction, the thinking suppression — is
     // `useConversation`'s, and the ORDER of the rows, the empty-state guard and
@@ -220,6 +226,7 @@ export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps
     return (
       <ConversationView
         className={className}
+        log={log}
         style={{ background: theme.surface }}
         contentClassName="flex flex-col gap-4 p-7"
         renderMessage={renderMessage}

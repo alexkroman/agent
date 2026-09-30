@@ -1,0 +1,79 @@
+import type { DefaultToolResult } from '@alexkroman1/aai';
+
+// @public
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+type ConversationItem = {
+    kind: "message";
+    message: ChatMessage;
+} | {
+    kind: "tool";
+    toolCall: ToolCallInfo;
+};
+
+// @public
+export type ConversationLogEntry = {
+    readonly kind: "session";
+    readonly sessionId: string;
+    readonly run: number;
+    readonly at: number;
+    readonly items: readonly ConversationItem[];
+    readonly clientId?: string;
+} | {
+    readonly kind: "note";
+    readonly at: number;
+    readonly text: string;
+} | {
+    readonly kind: "spoken";
+    readonly at: number;
+    readonly text: string;
+};
+
+// @public
+type InboxEvent = {
+    readonly type: "session_event";
+    readonly sessionId: string;
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+} | {
+    readonly type: "session_ended";
+    readonly sessionId: string;
+};
+
+// @public
+export function inboxEventToItem(event: InboxEvent, id?: number): ConversationItem | undefined;
+
+// @public
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+export function useConversationLog(options?: UseConversationLogOptions): UseConversationLogResult;
+
+// @public
+export type UseConversationLogOptions = {
+    storageKey?: string | undefined;
+    max?: number | undefined;
+};
+
+// @public
+export type UseConversationLogResult = {
+    readonly entries: readonly ConversationLogEntry[];
+    addNote(text: string): void;
+    addSpoken(text: string): void;
+    mirror(event: InboxEvent): void;
+    clear(): void;
+};

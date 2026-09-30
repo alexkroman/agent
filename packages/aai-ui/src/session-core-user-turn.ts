@@ -16,7 +16,7 @@
 
 import type { SessionCommand } from "@alexkroman1/aai/protocol";
 import type { SessionStateMachine } from "./session-core-state.ts";
-import type { SessionSnapshot, UserTurnControls } from "./session-core-types.ts";
+import type { SendTextOptions, SessionSnapshot, UserTurnControls } from "./session-core-types.ts";
 
 /** What the three edges need from the session around them. @internal */
 export type UserTurnDeps = {
@@ -28,6 +28,16 @@ export type UserTurnDeps = {
   agentState: SessionStateMachine;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   sendJson: (msg: SessionCommand) => void;
+  /**
+   * Typed turns waiting for a session — `sendText(text, { connect: true })`
+   * while none is up. OWNED by the session core, which empties it whenever the
+   * session stops being meant to run (`running: false`): a hang-up, `end()`, a
+   * terminal close. A message typed into a call that then failed must not be
+   * answered by the next one.
+   */
+  queued: string[];
+  /** Bring the session up if it is not meant to be running — `start()` or `toggle()`. */
+  open: () => void;
 };
 
 /**
@@ -54,24 +64,41 @@ function interruptLocally(deps: UserTurnDeps): void {
  */
 export function createUserInput(deps: UserTurnDeps): {
   userTurn: UserTurnControls;
-  sendText: (text: string) => void;
+  sendText: (text: string, options?: SendTextOptions) => void;
+  /** A session came up (a `config` frame): send what was typed while it was not. */
+  flushQueued: () => void;
 } {
+  function send(trimmed: string): void {
+    // Typing over the agent means to replace what it is saying, exactly as
+    // pressing the button does.
+    interruptLocally(deps);
+    // No local echo into `messages`: the server answers with the same
+    // `user-transcript.committed` a spoken turn produces, and THAT is what
+    // adds the row — so a resumed session, which replays the stream, shows
+    // exactly what this one did.
+    deps.sendJson({ type: "user_text", text: trimmed });
+  }
   return {
     userTurn: createUserTurnActions(deps),
-    sendText(text: string): void {
-      if (!deps.connected()) return;
+    sendText(text: string, options?: SendTextOptions): void {
       // Trimmed here as well as on the server so an empty message is not a
       // frame the server has to reject (and warn about).
       const trimmed = text.trim();
       if (trimmed === "") return;
-      // Typing over the agent means to replace what it is saying, exactly as
-      // pressing the button does.
-      interruptLocally(deps);
-      // No local echo into `messages`: the server answers with the same
-      // `user-transcript.committed` a spoken turn produces, and THAT is what
-      // adds the row — so a resumed session, which replays the stream, shows
-      // exactly what this one did.
-      deps.sendJson({ type: "user_text", text: trimmed });
+      if (deps.connected() && deps.queued.length === 0) {
+        send(trimmed);
+        return;
+      }
+      // Nothing is waiting and the caller did not ask for a session: the
+      // documented no-op while disconnected. Anything behind a waiting message
+      // queues too, never ahead of it — the order is what was typed.
+      if (deps.queued.length === 0 && options?.connect !== true) return;
+      deps.queued.push(trimmed);
+      deps.open();
+    },
+    flushQueued(): void {
+      if (!deps.connected()) return;
+      for (const text of deps.queued.splice(0)) send(text);
     },
   };
 }

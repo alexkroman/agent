@@ -213,9 +213,12 @@ export type EvalTestContext = {
    * `undefined` for an agent that declares no workflows and was given none.
    *
    * Typed by what the suite passed, in the body a case hands
-   * {@link EvalTest}: a suite whose factory returns a recording client with
-   * its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
-   * reads `workflowClient.started`, typed, with no module-level log to reset.
+   * {@link EvalTest}: a suite whose factory returns a recording client —
+   * `() => createRecordingWorkflows({ workflows: agentDef.workflows })` from
+   * `@alexkroman1/aai/testing`, which records every start and runs nothing —
+   * reads `workflowClient.started("remind")` and seeds the runs `find`
+   * answers with `workflowClient.seed(...)`, typed, with no module-level log
+   * to reset.
    */
   readonly workflowClient: WorkflowClient | undefined;
   /**
@@ -353,8 +356,8 @@ export function describeEval<
      * for every case and every `AAI_EVAL_REPEAT` repeat, exactly as `network`'s
      * is. The case reads the live one as `ctx.workflowClient`.
      *
-     * Prefer the factory for a client that RECORDS (a `createStubWorkflows`
-     * whose `start` logs what it was asked): an instance's log is its own, and
+     * Prefer the factory for a client that RECORDS (`createRecordingWorkflows`
+     * on `@alexkroman1/aai/testing`): an instance's log is its own, and
      * one carried into the next repeat makes the second measure the first — the
      * log a downstream suite reset by hand at the top of every case.
      *

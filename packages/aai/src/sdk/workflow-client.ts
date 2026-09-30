@@ -17,6 +17,7 @@
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { AnyWorkflowDef, WorkflowDef, WorkflowSummary } from "./workflow.ts";
 import type {
+  FindByKeyOptions,
   FindOptions,
   StartOptions,
   StreamOptions,
@@ -84,6 +85,29 @@ export type WorkflowClient = {
     options?: FindOptions,
   ): Promise<WorkflowRunSnapshot<R>[]>;
   find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+  /**
+   * Runs started with this correlation key across EVERY workflow this agent
+   * declares, newest first — `find` for each, merged.
+   *
+   * What a page listing "everything running for this caller" wants, where one
+   * `find` per workflow was six lookups and a hand-written merge that had to be
+   * edited whenever a workflow was added. `since` and `statuses` filter the
+   * merged list; `limit` caps it.
+   */
+  findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+  /**
+   * Cancel every run of `workflow` started with this correlation key that has
+   * not finished yet, and resolve how many THIS call ended.
+   *
+   * `find` plus a `cancel` per pending or running run — "cancel my reminders".
+   * A run that finished between the two is not counted, and `0` is an answer
+   * rather than an error. Reads at most `MAX_WORKFLOW_FIND_LIMIT` runs.
+   */
+  cancelAll<P extends ToolInputSchema, R>(
+    workflow: WorkflowDef<P, R>,
+    key: string,
+  ): Promise<number>;
+  cancelAll(workflow: string, key: string): Promise<number>;
   /**
    * Runs of `workflow`, newest first, whatever key they carry.
    *

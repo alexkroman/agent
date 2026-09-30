@@ -297,7 +297,9 @@ describe("createStubWorkflows", () => {
     }
     expect(Object.keys(workflows).sort()).toEqual([
       "cancel",
+      "cancelAll",
       "find",
+      "findByKey",
       "get",
       "lastLine",
       "listing",

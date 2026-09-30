@@ -46,8 +46,17 @@ import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcrib
 import { stubTranscribe } from "./_testing-transcribe.ts";
 import type { StubReporter } from "./testing.ts";
 import { stubReporter } from "./testing.ts";
+import type { StubClientInbox, StubClientInboxOptions } from "./testing-client-inbox.ts";
+import { stubClientInbox } from "./testing-client-inbox.ts";
 import type { StubDelegateScript, StubStepDelegate } from "./testing-delegate.ts";
 import { stubStepDelegate } from "./testing-delegate.ts";
+import type {
+  FetchRouteHandler,
+  FetchRoutesOptions,
+  FetchRouteTable,
+  StubFetchRoutes,
+} from "./testing-fetch-routes.ts";
+import { stubFetchRoutes } from "./testing-fetch-routes.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
 import { stubGateway } from "./testing-gateway.ts";
 import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
@@ -118,6 +127,42 @@ export function installStubGateway(
  */
 function restoreAfterThisTest(restore: () => void): void {
   onTestFinished(restore);
+}
+
+/**
+ * Route the global `fetch` — and the step fetch — through one URL/method
+ * table, restored when this test finishes, and return the request log.
+ *
+ * `stubFetchRoutes` with the bookkeeping done — see it (and
+ * {@link FetchRouteTable}) for the key forms, which key wins, and why an
+ * unmatched request THROWS by default. It replaces the per-file
+ * `vi.stubGlobal("fetch", async (url, init) => …)` that parsed the URL and the
+ * body, pushed onto a `calls` array and answered anything unforeseen `200 {}`.
+ *
+ * @example
+ * In a test body or a `beforeEach`:
+ * ```ts
+ * import { installFetchRoutes } from "@alexkroman1/aai/testing/vitest";
+ *
+ * const net = installFetchRoutes({
+ *   "POST https://api.mem0.ai/v3/memories/add/": { body: { event_id: "e1" } },
+ * });
+ * await fetch("https://api.mem0.ai/v3/memories/add/", {
+ *   method: "POST",
+ *   body: JSON.stringify({ user_id: "home" }),
+ * });
+ * console.log(net.hits[0]?.json); // { user_id: "home" }
+ * ```
+ *
+ * @public
+ */
+export function installFetchRoutes(
+  routes: FetchRouteTable | readonly FetchRouteHandler[],
+  options: FetchRoutesOptions = {},
+): StubFetchRoutes {
+  const routed = stubFetchRoutes(routes, options);
+  restoreAfterThisTest(routed.restore);
+  return routed;
 }
 
 /**
@@ -211,6 +256,34 @@ export function installStubSpeech(options: StubSpeechOptions = {}): StubSpeech {
   const speech = stubSpeech(options);
   restoreAfterThisTest(speech.restore);
   return speech;
+}
+
+/**
+ * Publish a device inbox for `stepNotifyClient`, restored when this test
+ * finishes.
+ *
+ * `stubClientInbox` with the bookkeeping done — see it for the call log and how
+ * to make the device answer busy or offline. The usual partner of
+ * {@link installStubSpeech}: a step that speaks a notice and pushes it to a
+ * speaker needs both, and each used to cost a `try`/`finally` of its own.
+ *
+ * @example
+ * In a test body or a `beforeEach`:
+ * ```ts
+ * import { stepNotifyClient } from "@alexkroman1/aai/step";
+ * import { installStubClientInbox } from "@alexkroman1/aai/testing/vitest";
+ *
+ * const inbox = installStubClientInbox();
+ * await stepNotifyClient("kitchen", { id: "wrun_1", event: "reminder" });
+ * console.log(inbox.calls[0]?.clientId); // "kitchen"
+ * ```
+ *
+ * @public
+ */
+export function installStubClientInbox(options: StubClientInboxOptions = {}): StubClientInbox {
+  const inbox = stubClientInbox(options);
+  restoreAfterThisTest(inbox.restore);
+  return inbox;
 }
 
 /**
@@ -314,8 +387,13 @@ export function installStubWorkflows(options: StubWorkflowsOptions = {}): Workfl
     // session started" and "this session's runs" cannot disagree.
     get: vi.fn(async () => runs[0]),
     find: vi.fn(async () => [...runs]),
+    findByKey: vi.fn(async () => [...runs]),
     recent: vi.fn(async () => [...runs]),
     cancel: vi.fn(async () => true),
+    // As many as `cancel` would have ended, one by one: the unfinished runs.
+    cancelAll: vi.fn(
+      async () => runs.filter((r) => r.status === "pending" || r.status === "running").length,
+    ),
     // `0` woken: a `wakeUp` that reports work done is the interesting case and
     // the one a spec overrides, so the default is the quiet answer.
     wakeUp: vi.fn(async () => 0),

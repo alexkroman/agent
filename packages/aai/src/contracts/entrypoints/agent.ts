@@ -40,7 +40,7 @@
  * half-owned. The four stage types themselves stay with their stages, which
  * publish the factories that produce them.
  *
- * The six `Mcp*` names are here for the same reason `AgentDef` is: `mcpServers`
+ * The eight `Mcp*` names are here for the same reason `AgentDef` is: `mcpServers`
  * is a field of an agent declaration, so its shape, the grammar of a server
  * key, and the rule turning a server's tool name into the one the model calls
  * are all part of what declaring an agent looks like. The CLIENT that reads
@@ -107,7 +107,13 @@
  *
  * `AgentRoutes` is the seventh, with its request/context/handler types and
  * `routeResponse`, for the same reason: `routes` is a field of the literal, and
- * what a handler receives and returns is what declaring one looks like.
+ * what a handler receives and returns is what declaring one looks like. So are
+ * the handler helpers written inside that literal: `route` (with `RouteDef`
+ * and `ValidatedRouteRequest`), the thrown `routeError`/`RouteError`, and
+ * `webhookRoute`/`verifyStandardWebhook` with their options.
+ *
+ * `AgentClientInbox` is the eighth, with `ClientInboxOptions`, for the same
+ * reason: `clientInbox` is a field of the literal.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
@@ -121,6 +127,7 @@
  */
 
 export {
+  type AgentClientInbox,
   type AgentDef,
   type AgentGuardrail,
   type AgentGuardrails,
@@ -137,11 +144,14 @@ export {
   agent,
   assemblyAIPipeline,
   type BuiltinTool,
+  type ClientInboxOptions,
   type EndSessionOptions,
   endSession,
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
+  type McpResolvable,
+  type McpResolveContext,
   type McpServerConfig,
   type McpServers,
   type ModelTuning,
@@ -150,9 +160,13 @@ export {
   type ProviderCredentialOptions,
   type ProviderDescriptor,
   type RouteContext,
+  type RouteDef,
+  RouteError,
   type RouteHandler,
   type RouteRequest,
   type RouteResponse,
+  route,
+  routeError,
   routeResponse,
   type S2sAgentParams,
   type SessionCall,
@@ -161,6 +175,7 @@ export {
   type SessionEndContext,
   type SessionEventContext,
   type SharedAgentParams,
+  type StandardWebhookOptions,
   type StaticAgentParams,
   sessionCall,
   sessionClientLocation,
@@ -170,7 +185,11 @@ export {
   type ToolChoice,
   type TurnDetectionMode,
   type UsageLimits,
+  type ValidatedRouteRequest,
   VOICE_PRESETS,
   type VoicePresetName,
+  verifyStandardWebhook,
+  type WebhookRouteOptions,
+  webhookRoute,
   workflowApp,
 } from "../../index.ts";

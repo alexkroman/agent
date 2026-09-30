@@ -124,6 +124,26 @@ describe("a real handshake over the injected fetch", () => {
     }
   });
 
+  test("author headers ride every request, and a tokenEnv bearer wins an authorization clash", async () => {
+    const posts: { headers: Headers; body: JsonRpc }[] = [];
+    const session = await openMcpSession(
+      {
+        key: "apps",
+        url: ENDPOINT,
+        token: "sekret",
+        headers: { "x-api-key": "k-1", Authorization: "Basic nope" },
+      },
+      { fetch: mcpFetch({ tools: [], posts }) },
+    );
+    await session.tools();
+    await session.close();
+    expect(posts.length).toBeGreaterThan(0);
+    for (const post of posts) {
+      expect(post.headers.get("x-api-key")).toBe("k-1");
+      expect(post.headers.get("authorization")).toBe("Bearer sekret");
+    }
+  });
+
   test("no token means no authorization header — never an empty one", async () => {
     const posts: { headers: Headers; body: JsonRpc }[] = [];
     const session = await openMcpSession(

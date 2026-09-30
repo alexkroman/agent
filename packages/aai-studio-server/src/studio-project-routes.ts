@@ -110,7 +110,7 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
           // it could write the user's, and a starter test asserting the dice
           // tools had to be rewritten too. The project is not shapeless
           // though — `ensureProjectShape` in the guest supplies package.json,
-          // tsconfig.json, global.d.ts and vite.config.ts when the session
+          // tsconfig.json and vitest.config.ts when the session
           // materializes.
           files: {},
           kind,

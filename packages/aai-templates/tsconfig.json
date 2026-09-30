@@ -5,13 +5,20 @@
     "jsxImportSource": "react",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noEmit": true,
+    // What a scaffolded project gets from `@alexkroman1/aai/tsconfig`'s
+    // `types`: Vite's client ambients (`?raw`, `.css`, `import.meta.glob`),
+    // plus `node` — which naming `types` at all stops being picked up
+    // implicitly, and the evals import.
+    "types": ["node", "vite/client"],
     "paths": {
       "@alexkroman1/aai": ["../aai/src/index.ts"],
       "@alexkroman1/aai-ui": ["../aai-ui/src/index.ts"]
     }
   },
   "include": [
-    "scaffold/global.d.ts",
+    // The `virtual:aai/agent` declaration a scaffolded project gets through
+    // its tsconfig preset's `files`.
+    "../aai/presets/agent-env.d.ts",
     // Deliberately generic: tsc's `include` only sets *root* files, and a
     // test file is imported by nothing, so anything not listed here is
     // never typechecked at all (unlike source modules, which get pulled in

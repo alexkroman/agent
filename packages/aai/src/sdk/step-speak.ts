@@ -62,7 +62,7 @@ import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
 } from "./providers/tts/assemblyai.ts";
-import { requireStepEnv } from "./step-env.ts";
+import { requireStepEnv, stepEnv } from "./step-env.ts";
 import { encodeWav, pcmDurationMs } from "./wav.ts";
 
 /** Sample rate {@link stepSpeak} asks for when a caller names none. */
@@ -175,6 +175,24 @@ export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefi
   else (globalThis as StepSpeakSlot)[STEP_SPEAK_SLOT] = synthesizer;
 }
 
+/** Marks a synthesizer that never dials a provider, so needs no credential. */
+const KEYLESS = Symbol.for("@alexkroman1/aai.speechSynthesizer.keyless");
+
+/**
+ * Mark `synthesizer` as one that never reaches a provider — a spec's fake —
+ * so {@link stepSpeak} hands it the credential when the env has one and `""`
+ * when it does not, rather than refusing over a key nothing will present.
+ *
+ * A property on the function rather than a second slot, so the one published
+ * value says both what speaks and whether it needs a key; `Symbol.for`, so the
+ * agent bundle's copy of this module reads the mark the testing module wrote.
+ *
+ * @internal — `stubSpeech`'s half. A host never marks its synthesizer.
+ */
+export function keylessSynthesizer(synthesizer: SpeechSynthesizer): SpeechSynthesizer {
+  return Object.assign(synthesizer, { [KEYLESS]: true });
+}
+
 /**
  * The sentence a step gets when no synthesizer was published.
  *
@@ -200,7 +218,8 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  * @throws {Error} when no synthesizer is published — the message names both
  *   causes (a process serving no agent, and a spec calling the step directly).
  * @throws {Error} when the credential named by `apiKeyEnv` is not in the
- *   agent's env, which `requireStepEnv` reports by name.
+ *   agent's env, which `requireStepEnv` reports by name. (`stubSpeech`'s fake
+ *   needs none unless told to — see `StubSpeechOptions.requireApiKey`.)
  *
  * @example
  * Speak and STORE in one step, and return the id. A step is journaled by what
@@ -239,7 +258,7 @@ export async function stepSpeak(text: string, options: SpeakOptions = {}): Promi
 
   const pcm = await synthesizer({
     text: spoken,
-    apiKey: requireStepEnv(options.apiKeyEnv ?? ASSEMBLYAI_TTS_API_KEY_ENV),
+    apiKey: credentialFor(synthesizer, options.apiKeyEnv ?? ASSEMBLYAI_TTS_API_KEY_ENV),
     voice,
     language: options.language,
     sampleRate,
@@ -253,4 +272,14 @@ export async function stepSpeak(text: string, options: SpeakOptions = {}): Promi
     durationMs: pcmDurationMs(pcm.length, { sampleRate }),
     voice,
   };
+}
+
+/**
+ * The credential handed to `synthesizer`: required from the step env, unless
+ * the synthesizer is a {@link keylessSynthesizer} — a fake that would present
+ * it to nobody, and whose spec should not have to invent one.
+ */
+function credentialFor(synthesizer: SpeechSynthesizer, name: string): string {
+  if ((synthesizer as { [KEYLESS]?: true })[KEYLESS] === true) return stepEnv(name) ?? "";
+  return requireStepEnv(name);
 }

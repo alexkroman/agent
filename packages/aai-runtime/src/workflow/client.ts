@@ -23,21 +23,11 @@
  *
  * ## A workflow has ONE name now
  *
- * This section used to be titled "the two vocabularies use the word name for
- * different strings", and deleting it is the visible half of removing the
- * Workflow DevKit. A run record's `workflowName` was the COMPILER's identifier —
- * `workflow//./workflows/digest//digestFlow`, which the DevKit's own docs call
- * machine-readable — while ours was the key in `agent({ workflows })`. Both
- * directions of that translation had been missing, and each was silent in its
- * own way: `recent` filtered by the declared name, which matched no stored run,
- * so it answered `[]` for every workflow and took `GET /workflows/runs` and
- * `aai workflow runs <name>` with it; while every snapshot reported the machine
- * id as its `workflow`, which a status tool reads to a caller down the phone.
- *
- * The engine now records a run under the declared name, so there is one string,
- * `nameByDef` is the only index, and neither bug is representable. What remains
- * is the reason the mapping is by IDENTITY rather than a `name` field on the def
- * — see `resolve`.
+ * The DevKit recorded a run under its COMPILER's identifier while ours was the
+ * key in `agent({ workflows })`, and the missing translation silently emptied
+ * `recent` and mislabelled every snapshot. The engine now records the declared
+ * name, so `nameByDef` is the only index; why it maps by IDENTITY is `resolve`'s.
+ * `findByKey`/`cancelAll` are composed of `find`/`cancel` in `client-keyed.ts`.
  */
 
 import { formatSchemaIssues, toToolJsonSchema } from "@alexkroman1/aai/host-internal";
@@ -45,6 +35,7 @@ import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
+  FindByKeyOptions,
   FindOptions,
   StartOptions,
   StreamOptions,
@@ -56,6 +47,7 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../runtime-config.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
+import { cancelAllByKey, findByKeyAcross } from "./client-keyed.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
 import { normalizeRunLabel } from "./run-label.ts";
 import { workflowWebhookUrl } from "./serve.ts";
@@ -265,6 +257,20 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     return record ? await toSnapshot(record, undefined) : undefined;
   }
 
+  /** `find` for one declared name — shared with `findByKey` and `cancelAll`. */
+  async function findOne(name: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
+    const runIds = await keys.lookup(name, key, limit);
+    const records = await mapConcurrent(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
+    // A recorded id whose run is gone is dropped rather than reported: runs
+    // expire, and a `find` that threw because one of five results had aged out
+    // would be useless exactly when history matters. The key stays indexed.
+    return await mapConcurrent(
+      records.filter((r): r is WdkRunRecord => r !== undefined),
+      RUN_READ_CONCURRENCY,
+      (r) => toSnapshot(r, key),
+    );
+  }
+
   return {
     async start(
       workflow: AnyWorkflowDef | string,
@@ -277,9 +283,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // an unlabelled start calls the adapter exactly as it always did.
       const label = normalizeRunLabel(options?.label);
       const args = [validated];
-      const runId = await (label === undefined
+      // `dedupeKey` is the ENGINE's to honour — it derives the run id from it, so
+      // two racing starts meet at one `createRun` (`workflow/engine.ts`).
+      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey });
+      const runId = await (Object.keys(startOptions).length === 0
         ? wdk.start(name, args)
-        : wdk.start(name, args, { label }));
+        : wdk.start(name, args, startOptions));
       if (options?.key !== undefined) {
         // A failed key write must not fail the `start`: the run is already
         // created and running, so throwing here would tell the caller nothing
@@ -301,23 +310,20 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       return snapshotById(runId);
     },
 
-    async find(
+    find(
       workflow: AnyWorkflowDef | string,
       key: string,
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
-      const { name } = resolve(workflow);
-      const runIds = await keys.lookup(name, key, resolveFindLimit(options?.limit));
-      const records = await mapConcurrent(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
-      // A recorded id whose run is gone is dropped rather than reported: runs
-      // expire, and a `find` that threw because one of five results had aged out
-      // would be useless exactly when history matters. The key stays indexed —
-      // sweeping it would need a second writer for no read it affects.
-      return await mapConcurrent(
-        records.filter((r): r is WdkRunRecord => r !== undefined),
-        RUN_READ_CONCURRENCY,
-        (r) => toSnapshot(r, key),
-      );
+      return findOne(resolve(workflow).name, key, resolveFindLimit(options?.limit));
+    },
+
+    findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]> {
+      return findByKeyAcross(Object.keys(workflows), findOne, key, options);
+    },
+
+    cancelAll(workflow: AnyWorkflowDef | string, key: string): Promise<number> {
+      return cancelAllByKey(resolve(workflow).name, findOne, (id) => wdk.cancel(id), key);
     },
 
     async recent(

@@ -100,6 +100,12 @@ export type StepInfo = {
    * `false` is not a promise that another attempt will happen.
    */
   readonly isLastAttempt: boolean;
+  /**
+   * Aborted when this delivery stops — the run was cancelled, or the delivery
+   * was abandoned. Pass it to whatever the step waits on; `stepFetch` already
+   * reads it. Absent from a reader that has none (an eval's).
+   */
+  readonly signal?: AbortSignal;
 };
 
 /**

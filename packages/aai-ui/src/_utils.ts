@@ -35,3 +35,13 @@ export function pageBaseUrl(): string {
 export function setPageTitle(name: string | undefined): void {
   if (name && typeof document !== "undefined") document.title = name;
 }
+
+/**
+ * True when a key event came from somewhere typing belongs — where Space is a
+ * character, not a talk key. Shared by the two talk-button hooks
+ * (`use-push-to-talk.ts`, `use-tap-to-talk.ts`) so they cannot disagree.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}

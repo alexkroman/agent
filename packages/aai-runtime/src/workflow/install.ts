@@ -2,8 +2,8 @@
 /**
  * The slots a process must publish before a step can do its job: somewhere to
  * read uploads from, somewhere to report to, which attempt this is, something to
- * speak with, the HTTP/1.1-pinned fetch a step's outbound call goes through, and
- * the subagent runner behind `stepDelegate`.
+ * speak with, the HTTP/1.1-pinned fetch a step's outbound call goes through, the
+ * subagent runner behind `stepDelegate`, and the MCP connector behind `stepMcp`.
  *
  * (This said "the four" for as long as there were five, and adding the sixth is
  * what made the count worth not writing down: the LIST below is the inventory,
@@ -31,6 +31,7 @@ import {
   publishStepDelegate,
   publishStepFetch,
   publishStepInfoReader,
+  publishStepMcp,
   publishStepReporter,
   publishUploadReader,
 } from "@alexkroman1/aai/host-internal";
@@ -44,6 +45,7 @@ import type { CloseableDb } from "../postgres-db.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createStepDelegate } from "../step-delegate.ts";
 import { createStepFetch } from "../step-fetch.ts";
+import { createStepMcp } from "../step-mcp.ts";
 import { speakOverWebSocket } from "../step-speak.ts";
 import { isPerProcessDataDir, localWorkflowDataDir } from "./data-dir.ts";
 import { platformGuestOptions } from "./platform-world.ts";
@@ -240,6 +242,10 @@ export function installWorkflowSupport(options: {
   publishStepDelegate(
     createStepDelegate({ ...omitUndefined({ env: options.env }), logger: options.logger }),
   );
+  // The MCP connector behind `stepMcp`, for the reason the delegate slot is
+  // here: a run that resumes on boot reaches it before any runtime exists.
+  // Nothing to close: each call owns its connections and closes them itself.
+  publishStepMcp(createStepMcp({ ...omitUndefined({ env: options.env }), logger: options.logger }));
   // `stepNotifyClient`'s slot: the device sockets this server holds.
   const inbox = installClientInbox(options.logger);
   // The channel outbox, when `AAI_CHANNEL_OUTBOX` names a file: every text and

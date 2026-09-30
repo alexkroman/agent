@@ -23,6 +23,7 @@ export {
   type ChatMessage,
   type ConversationItem,
   createBrowserSession,
+  type SendTextOptions,
   type Session,
   type SessionActions,
   type SessionError,

@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 15,
-    "supported": [1, 2, 3, 9, 11, 12, 15],
+    "current": 16,
+    "supported": [1, 2, 3, 9, 11, 12, 15, 16],
     "dropped": {
       "4": "keyterms, agentContext and the lowConfidence policy are removed. An epoch-4 agent that declared assemblyAIStt({ keyterms }) or agent({ lowConfidence }) no longer compiles, so its frozen example could not either — which is why this is a retire rather than an example somebody owes.",
       "5": "Epoch 5 is the epoch that HAD the fast/slow split: it added `AgentModelTuning.twoTier`, `TwoTierConfig`, `SlowTierEffort` and the digest constants, and epoch 7 removes all of them. An epoch-5 author's declaration does not compile, so a frozen example for it could not either — which is why this is a retire rather than an example somebody owes. Epoch 4, the last epoch BEFORE the field, is unaffected and stays supported: removing `twoTier` restores exactly the surface its own frozen example was written against.",
@@ -221,8 +221,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "workflow-api": {

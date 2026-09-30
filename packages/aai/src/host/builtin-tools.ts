@@ -132,23 +132,40 @@ function createFetchJson(
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     inputSchema: fetchJsonParams,
     messages: builtinCover("I'm waiting on that service."),
-    async execute(args, _ctx) {
-      const { url, headers } = args;
-      // The URL is prompt-injectable, so the cap has to bound what is READ:
-      // `fetchCappedText` stops the body stream at MAX_JSON_BYTES rather than
-      // buffering it whole and measuring afterwards. A clipped JSON document is
-      // not parseable, so a body that hit the budget is refused outright.
-      const body = await fetchCappedText(url, {
-        fetch: fetchFn,
-        maxBytes: MAX_JSON_BYTES,
-        headers: sanitizeHeaders(headers),
-      });
-      if (!body.ok) return { error: `HTTP ${body.error}`, url };
-      if (body.truncated) return { error: "Response too large", url };
-      const parsed = safeJsonParse(body.text);
-      return parsed === undefined ? { error: "Response was not valid JSON", url } : parsed;
-    },
+    execute: (args, _ctx) => requestJson(fetchFn, args.url, { headers: args.headers }),
   };
+}
+
+/**
+ * The `fetch_json` request, GET for the model and any method for a direct
+ * `fetchJson` caller: headers screened, the body read under the byte cap,
+ * every failure answered as `{ error, url }`.
+ *
+ * @internal
+ */
+export async function requestJson(
+  fetchFn: typeof globalThis.fetch,
+  url: string,
+  init: { headers?: Record<string, string> | undefined; method?: string; body?: unknown } = {},
+): Promise<unknown> {
+  const hasBody = init.body !== undefined;
+  // The URL is prompt-injectable, so the cap has to bound what is READ:
+  // `fetchCappedText` stops the body stream at MAX_JSON_BYTES rather than
+  // buffering it whole and measuring afterwards. A clipped JSON document is
+  // not parseable, so a body that hit the budget is refused outright.
+  const body = await fetchCappedText(url, {
+    fetch: fetchFn,
+    maxBytes: MAX_JSON_BYTES,
+    headers: hasBody
+      ? { "content-type": "application/json", ...sanitizeHeaders(init.headers) }
+      : sanitizeHeaders(init.headers),
+    body: hasBody ? JSON.stringify(init.body) : undefined,
+    method: init.method?.toUpperCase(),
+  });
+  if (!body.ok) return { error: `HTTP ${body.error}`, url };
+  if (body.truncated) return { error: "Response too large", url };
+  const parsed = safeJsonParse(body.text);
+  return parsed === undefined ? { error: "Response was not valid JSON", url } : parsed;
 }
 
 // ─── think ───────────────────────────────────────────────────────────────

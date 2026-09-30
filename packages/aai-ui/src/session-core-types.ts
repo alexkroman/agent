@@ -202,6 +202,24 @@ export type UserTurnControls = {
 };
 
 /**
+ * Options for {@link BrowserSession.sendText}.
+ *
+ * @public
+ */
+export type SendTextOptions = {
+  /**
+   * Open the session for this message if it is not up: `start()` before the
+   * first call, `toggle()` after a hang-up (so a resumable session RESUMES),
+   * then send once the server has configured it. Messages typed meanwhile are
+   * kept in order. They are DROPPED if the session stops before it is up — a
+   * hang-up, `end()`, a failed connection — so a message typed into a call
+   * that never came is not answered by a later one. Default `false`: sending
+   * while disconnected does nothing.
+   */
+  connect?: boolean | undefined;
+};
+
+/**
  * A framework-agnostic voice session that manages WebSocket communication,
  * audio capture/playback, and agent state transitions.
  *
@@ -250,8 +268,9 @@ export type BrowserSession = {
    * `user-transcript.committed` a spoken turn produces, and that is what adds
    * the row — so it is also what a resumed session replays.
    *
-   * `text` is trimmed; an empty message, or a call while disconnected, sends
-   * nothing. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
+   * `text` is trimmed; an empty message sends nothing, and so does a call
+   * while disconnected — unless `options.connect` is set, which opens the
+   * session (see {@link SendTextOptions}) and sends once it is up. Text longer than `MAX_TRANSCRIPT_CHARS` (100,000) is refused by
    * the server. A speech-to-speech agent cannot take a typed turn: the server
    * logs a warning once and the message is ignored.
    *
@@ -261,7 +280,7 @@ export type BrowserSession = {
    * session.sendText("What's the weather tomorrow?");
    * ```
    */
-  sendText(text: string): void;
+  sendText(text: string, options?: SendTextOptions): void;
   /**
    * Mute or unmute the microphone WITHOUT dropping the session — the gate a
    * hold-to-talk button over an agent with automatic turn detection is built

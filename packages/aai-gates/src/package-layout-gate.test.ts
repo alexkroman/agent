@@ -162,11 +162,13 @@ describe("check:package-layout", () => {
   test("the exempted product trees really exist", () => {
     // An exemption for a directory that is gone is an exemption that will be
     // inherited by whatever next takes the path — and it reads as deliberate.
-    for (const dir of Object.values(PRODUCT_TREES).flat()) {
-      expect(
-        repoFiles.some((f) => f.startsWith(`packages/aai-templates/${dir}/`)),
-        `packages/aai-templates/${dir} is exempt but holds no TypeScript`,
-      ).toBe(true);
+    for (const [pkg, dirs] of Object.entries(PRODUCT_TREES)) {
+      for (const dir of dirs) {
+        expect(
+          repoFiles.some((f) => f.startsWith(`packages/${pkg}/${dir}/`)),
+          `packages/${pkg}/${dir} is exempt but holds no TypeScript`,
+        ).toBe(true);
+      }
     }
   });
 

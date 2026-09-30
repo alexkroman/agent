@@ -63,8 +63,20 @@
  * an `Authorization` header meant for something else on the same origin. Treat
  * them as secrets: never log them, echo them back, or forward them. A route
  * that authenticates its caller itself — a webhook checking an HMAC over
- * `rawBody` — does so against those headers, and should compare in constant
- * time (`crypto.timingSafeEqual`).
+ * `rawBody` — does so against those headers: for the Standard Webhooks scheme
+ * (`webhook-id`/`webhook-timestamp`/`webhook-signature`), use
+ * `verifyStandardWebhook` or wrap the handler in `webhookRoute`, which check
+ * the replay window, rotated signatures and compare in constant time. Any
+ * other scheme should compare in constant time too.
+ *
+ * ## Refusing a request
+ *
+ * Return `routeResponse(400, { error })`, or THROW `routeError(400, "…")` from
+ * anywhere under the handler — both answer that status with the sentence,
+ * where any other throw is a 500. `route({ body, requireClient, handler })`
+ * does the usual door checks (a JSON body against a Standard Schema, a
+ * required `?client=`) and answers each with a 400. Both are in
+ * `agent-route-helpers.ts`.
  *
  * ## Where it is served
  *
@@ -167,8 +179,9 @@ export interface RouteContext {
 /**
  * One `agent({ routes })` handler. Its return value is the response body, sent
  * as JSON with status 200 (`undefined` is sent as `null`); return
- * {@link routeResponse} for any other status. A throw is a 500 whose body is
- * `{ error: <the message> }` — never the stack.
+ * {@link routeResponse} for any other status. A thrown `routeError(status,
+ * message)` answers that status with `{ error: message }`; any other throw is a
+ * 500 whose body is `{ error: <the message> }` — never the stack.
  *
  * @public
  */

@@ -34,6 +34,15 @@ function refuseValueInArgv(positionals: string[] | undefined): void {
   );
 }
 
+/**
+ * `--local`: the project's `.env` instead of the platform — the file `aai dev`
+ * reads and `aai publish` uploads (`_dotenv-file.ts`). No login, no network.
+ */
+const localArg = {
+  type: "boolean",
+  description: "Edit this project's .env instead of the platform's secrets (no login needed)",
+} as const;
+
 const secretPut = defineExec({
   // The stdin contract belongs in `--help` — that is where someone looks when
   // a command appears to hang, and it said only "NAME". It is split across
@@ -54,17 +63,22 @@ const secretPut = defineExec({
         "when stdin is a terminal",
       required: true,
     },
+    local: localArg,
     ...platformArgs,
   },
   cwd: "any",
   async run({ args, mode, cwd }) {
     refuseValueInArgv(args._);
-    const { executeSecretPut, resolveSecretValue } = await import("./secret.ts");
+    const { executeLocalSecretPut, executeSecretPut, resolveSecretValue } = await import(
+      "./secret.ts"
+    );
     // Resolved here, not inside the executor: which SOURCE a value comes from
     // is a property of the invocation (is stdin a terminal?), and reading
     // stdin when it is one is what made this command block forever.
     const value = await resolveSecretValue(args.name, mode);
-    return executeSecretPut(cwd, args.name, value, args.server);
+    return args.local
+      ? executeLocalSecretPut(cwd, args.name, value)
+      : executeSecretPut(cwd, args.name, value, args.server);
   },
 });
 
@@ -72,12 +86,15 @@ const secretDelete = defineExec({
   meta: { name: "delete", description: "Delete a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
+    local: localArg,
     ...platformArgs,
   },
   cwd: "any",
   async run({ args, cwd }) {
-    const { executeSecretDelete } = await import("./secret.ts");
-    return executeSecretDelete(cwd, args.name, args.server);
+    const { executeLocalSecretDelete, executeSecretDelete } = await import("./secret.ts");
+    return args.local
+      ? executeLocalSecretDelete(cwd, args.name)
+      : executeSecretDelete(cwd, args.name, args.server);
   },
 });
 

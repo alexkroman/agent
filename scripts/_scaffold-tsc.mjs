@@ -19,6 +19,7 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,10 +29,38 @@ export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url
 /** The scaffold `aai init` ships — the project layout being type-checked against. */
 export const SCAFFOLD_DIR = path.join(REPO_ROOT, "packages/aai-templates/scaffold");
 
-/** The scaffold's own `compilerOptions`, read fresh so this cannot drift from it. */
-export function scaffoldCompilerOptions() {
-  return JSON.parse(readFileSync(path.join(SCAFFOLD_DIR, "tsconfig.json"), "utf-8"))
-    .compilerOptions;
+/**
+ * Vite's client types (`vite/client`) as an absolute path, resolved from the
+ * scaffold's package the way a scaffolded project resolves them from its own
+ * install.
+ *
+ * The preset names `vite/client` in `types`, and a `types` entry resolves from
+ * the CONFIG's directory — the repo root here (see the module doc), whose
+ * `node_modules` has no `vite`. A path entry is resolved as a file instead.
+ */
+export const VITE_CLIENT_TYPES = path.join(
+  path.dirname(
+    createRequire(path.join(SCAFFOLD_DIR, "..", "package.json")).resolve("vite/package.json"),
+  ),
+  "client",
+);
+
+/**
+ * The scaffold's `tsconfig.json`, read fresh so this cannot drift from it: its
+ * own `compilerOptions`, and the preset it `extends`
+ * (`@alexkroman1/aai/tsconfig`) resolved to an ABSOLUTE path the way the
+ * scaffold's own `tsc` resolves it — through the SDK's `exports` map, from the
+ * scaffold's directory. The generated config extends that same file, so the
+ * preset's options AND its `files` entry (`presets/agent-env.d.ts`, the
+ * `virtual:aai/agent` declaration) reach every program checked here.
+ */
+export function scaffoldTsconfig() {
+  const parsed = JSON.parse(readFileSync(path.join(SCAFFOLD_DIR, "tsconfig.json"), "utf-8"));
+  const extendsPath =
+    typeof parsed.extends === "string"
+      ? createRequire(path.join(SCAFFOLD_DIR, "package.json")).resolve(parsed.extends)
+      : undefined;
+  return { extends: extendsPath, compilerOptions: parsed.compilerOptions ?? {} };
 }
 
 /**
@@ -51,8 +80,11 @@ export function scaffoldCompilerOptions() {
  */
 export function runScaffoldTsc({ name, include, overrides = {} }) {
   const configPath = path.join(REPO_ROOT, `tsconfig.${name}.json`);
+  const scaffold = scaffoldTsconfig();
   const config = {
-    compilerOptions: { ...scaffoldCompilerOptions(), noEmit: true, ...overrides },
+    // `JSON.stringify` drops an `undefined` value, so no preset writes no key.
+    extends: scaffold.extends,
+    compilerOptions: { ...scaffold.compilerOptions, noEmit: true, ...overrides },
     include,
   };
   writeFileSync(configPath, JSON.stringify(config, null, 2));

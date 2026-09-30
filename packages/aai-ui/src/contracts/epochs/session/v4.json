@@ -3,7 +3,7 @@
   "capability": "session",
   "epoch": 4,
   "rule": 2,
-  "sha256": "d198ede0629cdaff5309e8a49d45f4c6a392e913ff282db382a6b99bd9089720",
+  "sha256": "c833d62593786479293081d0fde9ce51c1113d0609e2ba3139a585d9989213e5",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",
@@ -11,6 +11,7 @@
     "BrowserSession",
     "ChatMessage",
     "ConversationItem",
+    "SendTextOptions",
     "Session",
     "SessionActions",
     "SessionError",
@@ -37,7 +38,7 @@
     "useUserTranscript"
   ],
   "rollup": "b2673909e5aa8b37733b5f2faf0d6058a8f48482de9b7aa017ed21167f691ef3",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -50,6 +51,12 @@
       "rule": 2,
       "sha256": "d198ede0629cdaff5309e8a49d45f4c6a392e913ff282db382a6b99bd9089720",
       "reason": "additive (checked): +SessionIdentity, +browserClientId, +useClientId, +useSessionId"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "c833d62593786479293081d0fde9ce51c1113d0609e2ba3139a585d9989213e5",
+      "reason": "additive (checked): +SendTextOptions, +SessionIdentity, +browserClientId, +useClientId, +useSessionId"
     }
   ]
 }

@@ -56,9 +56,11 @@ exports[`cli usage snapshots > aai dev --help 1`] = `
 "Start a local development server (dev)
 USAGE dev [OPTIONS]
 OPTIONS
-  -p, --port=<port>    Port to listen on (Default: 3000)
-            --watch    Restart on file changes (default at a terminal; AAI_DEV_WATCH=0 disables)
-             --json    Output JSON (auto-detected in non-TTY)"
+      -p, --port=<port>    Port to listen on (Default: 3000)
+                --watch    Restart on file changes (default at a terminal; AAI_DEV_WATCH=0 disables)
+               --tunnel    Expose the server on a cloudflared quick tunnel; its URL becomes PUBLIC_URL
+  --on-public-url=<cmd>    Shell command run with PUBLIC_URL set once the server is up, and with it empty on exit
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai eval --help 1`] = `
@@ -96,6 +98,7 @@ USAGE delete [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name (Required)
 OPTIONS
+                --local    Edit this project's .env instead of the platform's secrets (no login needed)
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"
 `;
@@ -114,6 +117,7 @@ USAGE put [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name. The VALUE is not an argument — pipe it in (\`printf %s "$VALUE" | aai secret put NAME\`), or be prompted, masked, when stdin is a terminal (Required)
 OPTIONS
+                --local    Edit this project's .env instead of the platform's secrets (no login needed)
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"
 `;

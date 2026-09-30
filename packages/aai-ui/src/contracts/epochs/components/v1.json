@@ -3,7 +3,7 @@
   "capability": "components",
   "epoch": 1,
   "rule": 2,
-  "sha256": "364cdb0f3804cfc6670d16a5eaaedbea599f5cf85e8ca549002f4e564cf467eb",
+  "sha256": "9e546248757625684dd602d60aaf88acee89ef5aae593b2a2bbe28bf62db5449",
   "exports": [
     "AutoScroll",
     "BulletList",
@@ -44,5 +44,20 @@
     "useCopy",
     "useFlash"
   ],
-  "rollup": "cb7ac544dc1d732cb0784f482177e8eefd719e654133a8affc32107e53e9c332"
+  "rollup": "cb7ac544dc1d732cb0784f482177e8eefd719e654133a8affc32107e53e9c332",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "364cdb0f3804cfc6670d16a5eaaedbea599f5cf85e8ca549002f4e564cf467eb",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "9e546248757625684dd602d60aaf88acee89ef5aae593b2a2bbe28bf62db5449",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

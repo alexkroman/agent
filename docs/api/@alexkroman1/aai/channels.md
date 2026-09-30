@@ -1055,6 +1055,17 @@ readonly key: string;
 
 A Textbelt API key. Append `_test` to check a request without sending.
 
+##### links?
+
+```ts
+readonly optional links?: "keep" | "strip";
+```
+
+`"strip"` takes every link out of the text before it is sent — for a key
+Textbelt has not yet allowed to send links (https://textbelt.com/whitelist),
+which refuses any text containing one. The words still arrive; `"keep"`
+(the default) sends the text as written.
+
 ##### to
 
 ```ts

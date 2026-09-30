@@ -120,4 +120,34 @@ describe("text_me", () => {
     expect(message.endsWith(`…\n${url}`)).toBe(true);
     expect(message.length).toBeLessThanOrEqual(1000);
   });
+
+  test("TEXTBELT_LINKS=strip leaves every link out, and the result says so", async () => {
+    const mockFetch = textbelt();
+    const result = await createTextMe(fakeFetch(mockFetch)).execute(
+      { message: "The menu (https://example.com/menu) is long.", url: "https://example.com/x" },
+      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+    );
+    expect(result).toEqual({ sent: true, note: expect.stringContaining("Links were left out") });
+    expect(sentBody(mockFetch).message).toBe("The menu is long.");
+  });
+
+  test("under strip, a text with no link is sent as written, with no note", async () => {
+    const mockFetch = textbelt();
+    const result = await createTextMe(fakeFetch(mockFetch)).execute(
+      { message: "Milk, eggs, bread." },
+      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+    );
+    expect(result).toEqual({ sent: true });
+    expect(sentBody(mockFetch).message).toBe("Milk, eggs, bread.");
+  });
+
+  test("under strip, a text that was only links is refused and nothing is sent", async () => {
+    const mockFetch = textbelt();
+    const result = await createTextMe(fakeFetch(mockFetch)).execute(
+      { message: "https://example.com/a" },
+      createMockToolContext({ env: { ...env, TEXTBELT_LINKS: "strip" } }),
+    );
+    expect(result).toEqual({ error: expect.stringContaining("only links") });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });

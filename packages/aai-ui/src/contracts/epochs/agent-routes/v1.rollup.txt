@@ -1,0 +1,29 @@
+// @public
+export function routeFetch<T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteFetchOptions): Promise<T>;
+
+// @public
+export type RouteFetchOptions = {
+    client?: string | undefined;
+    baseUrl?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+// @public
+export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+
+// @public
+export type UseRouteOptions = {
+    pollMs?: number | undefined;
+    client?: string | undefined;
+};
+
+// @public
+export type UseRouteResult<T> = {
+    data: T | undefined;
+    error: string | undefined;
+    loading: boolean;
+    reload: () => void;
+};

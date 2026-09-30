@@ -136,8 +136,8 @@ export type ProjectFiles = {
  * // `no-check`: two of these imports are files YOU own — `./agent.ts` and
  * // `./system-prompt.md?raw` — which exist in your project and in no tree of
  * // ours, so nothing here can resolve them. (`import.meta.glob` is not the
- * // blocker: the doc-example gate compiles against the scaffold's own
- * // `global.d.ts`, which carries `/// <reference types="vite/client" />`.)
+ * // blocker: the doc-example gate compiles with Vite's client types, as the
+ * // scaffold's `@alexkroman1/aai/tsconfig` preset does.)
  * import { deployedAgent } from "@alexkroman1/aai/testing";
  * import authored from "./agent.ts";
  * import systemPrompt from "./system-prompt.md?raw";

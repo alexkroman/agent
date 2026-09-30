@@ -339,9 +339,10 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   change. Same PATH/`AAI_REQUIRE_WORKFLOW_LINT=1` shape as `check:shell`;
   `check.yml` installs pinned versions with pipx. Offline audits only.
 - **`pnpm check:template-types`** (`scripts/check-template-types.mjs`) — every
-  template, plus the scaffold's `server.mjs`, `global.d.ts` and two configs,
-  compiled under the tsconfig `aai init` ships (derived at run time by
-  `_scaffold-tsc.mjs`, never copied). **It runs TWICE**: that config verbatim,
+  template, plus the scaffold's `server.mjs` and `vitest.config.ts`, compiled
+  under the tsconfig `aai init` ships (derived at run time by
+  `_scaffold-tsc.mjs`, which EXTENDS the scaffold's `@alexkroman1/aai/tsconfig`
+  preset rather than copying it). **It runs TWICE**: that config verbatim,
   then with `exactOptionalPropertyTypes: true` overlaid. The second pass exists
   because `_api-contracts-compat.mjs` proves an epoch revision compatible
   under that flag, while nothing compiled a real consumer under it — so a

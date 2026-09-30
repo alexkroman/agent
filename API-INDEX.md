@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 484 names
-- [Browser client](#browser-client) — 148 names
-- [Testing and evals](#testing-and-evals) — 237 names
+- [Agent authoring](#agent-authoring) — 542 names
+- [Browser client](#browser-client) — 172 names
+- [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 355 names
+- [Framework internals](#framework-internals) — 366 names
 
 ## Agent authoring
 
@@ -36,6 +36,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ASSEMBLYAI_TTS_LANGUAGES` | const | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code → the `language` query-param value the service accepts. |
 | `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` (also `@alexkroman1/aai`) | `aai:tts` | The voice catalog — voice id → the language it speaks and its accent. |
 | `AgentClient` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Everything one agent answers: every `WorkflowApi` call, plus the front door. |
+| `AgentClientInbox` | interface | `@alexkroman1/aai` | `aai:agent` | The device-inbox half of an agent declaration — see this module's header. |
 | `AgentDef` | interface | `@alexkroman1/aai` | `aai:agent` | Fully resolved agent definition. |
 | `AgentGuardrail` | type | `@alexkroman1/aai` | `aai:agent` | Judge one piece of text — see `AgentDef.inputGuardrails` and `AgentDef.outputGuardrails`. |
 | `AgentGuardrails` | interface | `@alexkroman1/aai` | `aai:agent` | The two guardrail fields on `AgentDef` — see this module's header for what each can actually prevent. |
@@ -75,6 +76,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ClientConfigResponseSchema` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai/protocol`) | `aai:workflow-api` | Body of `GET /client-config`. |
 | `ClientEventMap` | interface | `@alexkroman1/aai` | `aai:events` | The agent's OWN custom events — what `ctx.send(event, data)` pushes to the browser — keyed by event name, and EMPTY until the agent declares some. |
 | `ClientEventSender` | type | `@alexkroman1/aai` | `aai:events` | What `ctx.send` is: push one custom event to the connected browser client, typed by `ClientEventMap`. |
+| `ClientInboxOptions` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about the audio it pushes to devices over `WS /inbox`. |
 | `ClientNotice` | type | `@alexkroman1/aai/step` | `aai:inbox` | One thing to tell a client. |
 | `ClientTranscript` | type | `@alexkroman1/aai/step` | `aai:inbox` | What `stepClientTranscript` returns. |
 | `ClientTranscriptMessage` | type | `@alexkroman1/aai/step` | `aai:inbox` | One committed line of a client's conversation. |
@@ -88,13 +90,25 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DEFAULT_CALL_RING_TIMEOUT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.ringTimeoutS`: thirty seconds of ringing, then `no-answer` — about five rings, short of most voicemail pickups. |
 | `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
 | `DEFAULT_CLIENT_ACK_TIMEOUT_MS` | const | `@alexkroman1/aai/step` | `aai:inbox` | Default `StepNotifyClientOptions.ackTimeoutMs`. |
+| `DEFAULT_CLIENT_DELIVERY_ATTEMPTS` | const | `@alexkroman1/aai/step` | `aai:inbox` | A step `maxAttempts` that rides out an hour-long device outage: 120 attempts at `stepNotifyClient`'s 30-second retry. |
 | `DEFAULT_CLIENT_RETRY_MS` | const | `@alexkroman1/aai/step` | `aai:inbox` | Default `StepNotifyClientOptions.retryAfterMs`. |
+| `DEFAULT_DEEP_RESEARCH_BUDGET` | const | `@alexkroman1/aai/experimental` |  | The budget a pass gets for every field left out. |
+| `DEFAULT_DEEP_RESEARCH_PROMPTS` | const | `@alexkroman1/aai/experimental` |  | The defaults behind `DeepResearchPrompts`, exported so a consumer can compose against one (`${DEFAULT_DEEP_RESEARCH_PROMPTS.report} Plain text only.`) rather … |
 | `DEFAULT_GUARDRAIL_MAX_REVISIONS` | const | `@alexkroman1/aai` | `aai:subagent` | How many times a `SubagentDef.guardrail` may send an answer back when the subagent names no `SubagentDef.maxRevisions` of its own. |
 | `DEFAULT_RETRY_DELAY_MS` | const | `@alexkroman1/aai/step-errors` | `aai:step-errors` | How long a `RetryableError` that names no delay waits. |
 | `DEFAULT_STEP_MAX_ATTEMPTS` | const | `@alexkroman1/aai` | `aai:workflow` | Attempts a step gets when `StepOptions.maxAttempts` says nothing. |
 | `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when `systemPrompt` is not provided. |
 | `DELEGATE_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:subagent` | The name the model calls a roster by. |
 | `DeepReadonly` | type | `@alexkroman1/aai` | `aai:state` | `Readonly<T>`, all the way down. |
+| `DeepResearchBrief` | interface | `@alexkroman1/aai/experimental` |  | The request as a researcher is held to it. |
+| `DeepResearchBudget` | interface | `@alexkroman1/aai/experimental` |  | What a pass may cost. |
+| `DeepResearchInputSchema` | type | `@alexkroman1/aai/experimental` |  | An input schema whose parsed value carries the `topic` to research. |
+| `DeepResearchNote` | interface | `@alexkroman1/aai/experimental` |  | What one researcher concluded about one angle. |
+| `DeepResearchOptions` | interface | `@alexkroman1/aai/experimental` |  | Options for `deepResearchWorkflow`. |
+| `DeepResearchPrompts` | interface | `@alexkroman1/aai/experimental` |  | The prompt for each stage of a deep-research pass. |
+| `DeepResearchResearcher` | interface | `@alexkroman1/aai/experimental` |  | The researcher each angle is handed to. |
+| `DeepResearchResult` | interface | `@alexkroman1/aai/experimental` |  | What a finished pass hands `deliver` — and, with no `deliver`, what the run answers with. |
+| `DeepResearchSource` | interface | `@alexkroman1/aai/experimental` |  | One source a researcher actually used. |
 | `DefaultToolResult` | type | `@alexkroman1/aai` | `aai:tool` | Default type of a tool result observed on the client (`useToolResult`) — `any`, so untyped reads compile. |
 | `DelegateFn` | type | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
 | `DelegateOptions` | interface | `@alexkroman1/aai` | `aai:subagent` | Per-call options for `DelegateFn`. |
@@ -113,6 +127,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DialogToolDef` | interface | `@alexkroman1/aai` | `aai:dialog` | The authoring shape of a gated tool — `ToolDef` plus the `DialogGate` that makes it part of a dialog. |
 | `DialogToolResult` | interface | `@alexkroman1/aai` | `aai:dialog` | What a `Dialog.tool` answers on success. |
 | `DialogVoiceConfig` | interface | `@alexkroman1/aai` | `aai:dialog` | The per-state voice settings a dialog declares — what `Dialog.voiceConfig` answers with, from the deepest active state that declares any of them. |
+| `EnvContext` | type | `@alexkroman1/aai/step` | `aai:step` | The part of a context a helper needs to reach an outside service: the agent's env, and a signal to stop on. |
 | `EventMapOf` | type | `@alexkroman1/aai` | `aai:events` | Key a union of `{ type }` members by their `type`. |
 | `EventStreamFrame` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | One parsed frame. |
 | `FatalError` | class | `@alexkroman1/aai/step-errors` | `aai:step-errors` | A failure that another attempt cannot fix. |
@@ -122,6 +137,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `FfmpegRunOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
 | `FfmpegRunResult` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
 | `FfmpegSource` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | A media input: a filesystem path, or the bytes themselves. |
+| `FindByKeyOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for `WorkflowClient.findByKey`. |
 | `FindOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Options for `WorkflowClient.find`. |
 | `GLOB_LIMIT` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Max `glob` results before the list is truncated, newest first. |
 | `GenerateFn` | type | `@alexkroman1/aai` |  | One-shot LLM generation — the signature of `ctx.generate`. |
@@ -132,9 +148,13 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `HANDOFF_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:persona` | The name the model hands off by. |
 | `HandoffOptions` | interface | `@alexkroman1/aai` | `aai:persona` | Per-call options for `Personas.handoff`. |
 | `HandoffResult` | interface | `@alexkroman1/aai` | `aai:persona` | What a handoff returns — the shape a tool hands back as its result so the model learns, in the same turn, who is speaking now. |
+| `HttpError` | class | `@alexkroman1/aai/utils` | `aai:utils` | A refused request from a `jsonClient`: the HTTP `status`, a `message` of the form `"<label> <status>: <what the service said>"`, and the parsed `body` (the raw … |
 | `InferSchemaOutput` | type | `@alexkroman1/aai` | `aai:tool` | The output (validated) type of a Standard Schema. |
 | `InferToolInput` | type | `@alexkroman1/aai` | `aai:tool` | The validated input type a tool's `execute` receives — inferred from the tool's `inputSchema`. |
 | `InferToolOutput` | type | `@alexkroman1/aai` | `aai:tool` | The result type a tool's `execute` returns (awaited, so a sync and an `async` body infer alike). |
+| `JsonClient`, `JsonClientOptions` | type | `@alexkroman1/aai/utils` | `aai:utils` | One call to the API a `jsonClient` describes. |
+| `JsonClientContext` | interface | `@alexkroman1/aai/utils` | `aai:utils` | The context a `JsonClient` call reads: a tool's `ctx`, a route's `ctx`, or `{ env: … }` built from `stepEnv` in a workflow step. |
+| `JsonRequestInit` | interface | `@alexkroman1/aai/utils` | `aai:utils` | Per-call extras for a `JsonClient` request. |
 | `KeyedLock`, `KeyedLockOptions` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` |  |
 | `KeyedLockTimeoutError` | class | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Thrown when an acquire deadline lapses before the key came free. |
 | `LlmDescriptorOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | What an `LlmProvider` descriptor's `options` carry — the one shape `llm()` writes and the host resolver reads. |
@@ -144,6 +164,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `MCP_SERVER_KEY_RE` | const | `@alexkroman1/aai` | `aai:agent` | The grammar for a server KEY — the name an author gives one server, and the first segment of every tool name it contributes. |
 | `MCP_TOOL_NAME_MAX` | const | `@alexkroman1/aai` | `aai:agent` | Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the strictest this SDK routes to, and therefore the one that decides. |
 | `MCP_TOOL_PREFIX` | const | `@alexkroman1/aai` | `aai:agent` | The prefix every MCP-derived tool name carries. |
+| `McpResolvable` | type | `@alexkroman1/aai` | `aai:agent` | A value an author may write literally, or compute per connection from `McpResolveContext`. |
+| `McpResolveContext` | type | `@alexkroman1/aai` | `aai:agent` | What a RESOLVER is handed when a server's `url` or `headers` is a function. |
 | `McpServerConfig` | type | `@alexkroman1/aai` | `aai:agent` | One MCP server an agent may take tools from. |
 | `McpServers` | type | `@alexkroman1/aai` | `aai:agent` | The servers an agent declares, keyed by the name that prefixes their tools. |
 | `MediaInfo` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`. |
@@ -171,6 +193,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `PlaceCallOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepPlaceCall` takes. |
 | `PlacedCall` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepPlaceCall` resolves: the carrier's id for the call (Twilio's `CA…` SID). |
 | `PlacedCallStatus` | type | `@alexkroman1/aai/step` | `aai:step` | Where a placed call is. |
+| `PollOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Options for `ctx.poll` — check something, and wait between checks, until it is done or the budget runs out. |
+| `PollResult` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/step`, `@alexkroman1/aai/workflow-api`) | `aai:workflow` | What `ctx.poll` (and `stepPollUntil`) resolve with. |
 | `ProbeOptions` | type | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` |  |
 | `Procedure` | interface | `@alexkroman1/aai` | `aai:procedure` | A machine that can be run as a unit of work, created by `procedure`. |
 | `ProcedureNotFinishedError` | class | `@alexkroman1/aai` | `aai:procedure` | The error a run that did not finish rejects with. |
@@ -183,6 +207,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ReadUploadOptions` | type | `@alexkroman1/aai/step` | `aai:uploads` | Options for `stepReadUpload`. |
 | `RetryableError`, `RetryableErrorOptions` | class | `@alexkroman1/aai/step-errors` | `aai:step-errors` | A failure another attempt might survive, with an optional "not before". |
 | `RouteContext` | interface | `@alexkroman1/aai` | `aai:agent` | What an `agent({ routes })` handler is called with beside its request. |
+| `RouteDef` | interface | `@alexkroman1/aai` | `aai:agent` | What `route` takes. |
+| `RouteError` | class | `@alexkroman1/aai` | `aai:agent` | A route's refusal, THROWN: the route answers `status` with `{ error: message }`. |
 | `RouteHandler` | type | `@alexkroman1/aai` | `aai:agent` | One `agent({ routes })` handler. |
 | `RouteRequest` | interface | `@alexkroman1/aai` | `aai:agent` | One request to an `agent({ routes })` handler, already parsed. |
 | `RouteResponse` | interface | `@alexkroman1/aai` | `aai:agent` | A route's answer with a status of its own — what `routeResponse` makes. |
@@ -223,12 +249,15 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StandardSchemaIssue` | interface | `@alexkroman1/aai` |  | One validation issue in a failed Standard Schema result. |
 | `StandardSchemaResult` | type | `@alexkroman1/aai` |  | A successful or failed Standard Schema validation. |
 | `StandardSchemaV1` | interface | `@alexkroman1/aai` |  | The [Standard Schema](https://standardschema.dev) V1 interface, inlined as the spec recommends (it is a types-only contract). |
+| `StandardWebhookOptions` | interface | `@alexkroman1/aai` | `aai:agent` | What `verifyStandardWebhook` takes beside the request and secret. |
 | `StartOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a TOOL. |
 | `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` and `SessionSlot.projection` are, and what `agent({ syncState })` takes. |
 | `StaticAgentParams` | type | `@alexkroman1/aai` | `aai:agent` | Workflow-app params: `page: "static"`, the workflows that ARE the product, and nothing from the session half of the agent shape. |
 | `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
 | `StepGenerateError` | class | `@alexkroman1/aai/step` | `aai:step` | A model call that failed, with the one thing a step has to decide from. |
 | `StepInfo` | type | `@alexkroman1/aai/step` | `aai:step` | Which step is running, and which attempt of it. |
+| `StepMcp`, `StepMcpOptions` | type | `@alexkroman1/aai/experimental` |  | An open `stepMcp` connection. |
+| `StepMcpServer` | type | `@alexkroman1/aai/experimental` |  | What one server contributed to a `stepMcp` connection. |
 | `StepOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-step overrides. |
 | `StepSchemaOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | `StepOptions` with the schema PRESENT — what selects the validating overload of `ctx.step`, whose result is the schema's output rather than whatever the body … |
 | `StepTransportError` | class | `@alexkroman1/aai/step` | `aai:step` | A request that never got an answer. |
@@ -296,6 +325,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `UsageLimits` | interface | `@alexkroman1/aai` | `aai:agent` | The token budget a session may spend before the runtime stops it. |
 | `UserTurnLimit` | interface | `@alexkroman1/aai` |  | A cap on ONE user turn — see `PipelineVoiceTuning.userTurnLimit`. |
 | `VOICE_PRESETS` | const | `@alexkroman1/aai` | `aai:agent` | The shipped text of every preset, keyed by the name `agent({ voicePresets })` takes. |
+| `ValidatedRouteRequest` | type | `@alexkroman1/aai` | `aai:agent` | The request a `route` handler receives: `body` already validated (the schema's OUTPUT), and `clientId` a `string` when `requireClient` is set. |
 | `VoicePresetName` | type | `@alexkroman1/aai` | `aai:agent` | A preset name — one of the opt-in prompt presets THIS release ships (see `VOICE_PRESETS` for what each one says and what it costs), or any other string. |
 | `WAV_HEADER_BYTES` | const | `@alexkroman1/aai/step` | `aai:step` | Bytes of WAV header `encodeWav` writes — `RIFF`, `fmt `, and `data`. |
 | `WaitForOptions` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Per-wait options, for a wait that carries a DEADLINE. |
@@ -310,6 +340,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `WorkflowClient` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Start and inspect workflow runs. |
 | `WorkflowContext` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | The handle a workflow body receives as its second argument. |
 | `WorkflowDef` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | Definition of one durable workflow: its schema, its description, and the function that is its body. |
+| `WorkflowFailureContext` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | What an `onFailure` hook is told about the run that failed. |
+| `WorkflowFailureHandler` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | `WorkflowDef.onFailure`: the hook alone, or the hook with the step's `maxAttempts` (a device announcement wants `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`). |
+| `WorkflowFailureHook` | type | `@alexkroman1/aai` (also `@alexkroman1/aai/workflow-api`) | `aai:workflow` | A workflow's failure hook: runs as ONE step, with the error the body threw. |
 | `WorkflowFollowOutputOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.followOutput`'s options: which channel, from which chunk. |
 | `WorkflowGetOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.get`'s options: an optional `wait` for the run to settle. |
 | `WorkflowInputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's INPUT type — what its declared schema parses to, which is exactly what the body's parameter should be. |
@@ -334,6 +367,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `blockAlign` | function | `@alexkroman1/aai/step` | `aai:step` | Bytes one sample frame occupies — every channel of one instant. |
 | `bytesPerSecond` | function | `@alexkroman1/aai/step` | `aai:step` | Bytes of audio per second of wall clock — the constant that converts a byte offset into a timestamp, and a duration into a request size. |
 | `cartesiaTts`, `CartesiaTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Cartesia TTS descriptor for pipeline mode. |
+| `citedSources` | function | `@alexkroman1/aai/experimental` |  | The sources a report actually cites, each with the number it was cited under, in source order — so a consumer can append real URLs rather than trust ones a … |
 | `clockTime` | function | `@alexkroman1/aai` | `aai:calendar` | A time-of-day argument: 24-hour `HH:MM`, zero-padded. |
 | `countWords` | function | `@alexkroman1/aai/utils` | `aai:utils` | How many words a string holds — whitespace-separated runs, after trimming. |
 | `createAgentClient` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Create a client for one agent. |
@@ -344,6 +378,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `createWorkflowApiClient` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Create a workflow API client. |
 | `daysBetween` | function | `@alexkroman1/aai` | `aai:calendar` | Whole calendar days from `from` to `to` — a stay's night count. |
 | `decodeHtmlEntities` | function | `@alexkroman1/aai/utils` | `aai:utils` | Decode the five XML/HTML entities that matter, plus a numeric apostrophe. |
+| `deepResearchWorkflow` | function | `@alexkroman1/aai/experimental` |  | Declare a durable deep-research workflow, ready for `agent({ workflows })`. |
 | `deepgramStt`, `DeepgramSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build a Deepgram STT descriptor. |
 | `describeMedia` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | A probe as one phrase for a progress line — `41:20 of aac`. |
 | `dialog` | function | `@alexkroman1/aai` | `aai:dialog` | Declare a dialog statechart for an agent's conversation. |
@@ -357,8 +392,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `explainSlackChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on, chosen from what the URL and the body say. |
 | `explainTextbeltChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on. |
 | `failable` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Wrap a function whose body uses `orFail`, so a failure it hits becomes the function's return value. |
-| `fetchJson` | function | `@alexkroman1/aai/tools` | `aai:builtins` | GET a URL and return its parsed JSON. |
+| `fetchJson`, `FetchJsonOptions` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Request a URL (GET unless told otherwise) and return its parsed JSON. |
 | `ffmpegBaseArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The standing flags every ffmpeg invocation in a guest wants, before anything the caller is actually asking for. |
+| `fitToolResult`, `FitToolResultOptions` | function | `@alexkroman1/aai/utils` | `aai:utils` | `value` made to fit a tool result of `maxChars` characters of JSON without cutting through its structure — nulls and empties dropped, long strings clipped, the … |
 | `formatBytes` | function | `@alexkroman1/aai/utils` | `aai:utils` | A byte count at the scale a person reads it: `"17.7 MB"`, `"110 KB"`, `"512 B"`. |
 | `formatDuration` | function | `@alexkroman1/aai/utils` | `aai:utils` | A duration as a clock reading: `"4:09"` under an hour, `"1:04:09"` over one. |
 | `formatMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | `$1,234.00` — an amount of money, grouped in threes and always to the cent. |
@@ -373,6 +409,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `isToolFailure` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Whether a value is a `ToolFailure`. |
 | `isTransientStatus` | function | `@alexkroman1/aai/step` | `aai:step` | Will another attempt plausibly answer differently? |
 | `isoDate` | function | `@alexkroman1/aai` | `aai:calendar` | A calendar date argument: `YYYY-MM-DD`, and a real date. |
+| `jsonClient` | function | `@alexkroman1/aai/utils` | `aai:utils` | Declare a JSON REST API once, and call it from tools, routes and steps. |
 | `llm`, `LlmOptions` | function | `@alexkroman1/aai/llm` | `aai:llm` | Build an LLM descriptor for `agent({ llm })`, `subagent({ llm })` or `ctx.generate({ llm })`. |
 | `localStt`, `LocalSttOptions` | function | `@alexkroman1/aai/experimental` |  | Build a local-model STT descriptor. |
 | `mapConcurrent` | function | `@alexkroman1/aai/step` | `aai:step` | Map `items` through `run`, at most `width` at a time, in a replay-safe order. |
@@ -380,6 +417,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `mcpToolName` | function | `@alexkroman1/aai` | `aai:agent` | The name the MODEL calls, for one remote tool on one server. |
 | `mintCode`, `MintCodeOptions` | function | `@alexkroman1/aai` | `aai:spoken` | A `PREFIX-XXXX` reference, on an alphabet a caller can read back. |
 | `multipartBody` | function | `@alexkroman1/aai/step` | `aai:step` | Encode `multipart/form-data` as BYTES. |
+| `normalizePhone`, `NormalizePhoneOptions` | function | `@alexkroman1/aai/utils` | `aai:utils` | `raw` as an E.164 number (`"+15125550123"`), or `undefined` when it is not one. |
 | `offsetToMs` | function | `@alexkroman1/aai/step` | `aai:step` | Where a byte offset in the FILE falls in the recording, in milliseconds. |
 | `omitUndefined` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Drop the `undefined`-valued entries of `obj`, typing every surviving key as optional-and-defined — exactly what `exactOptionalPropertyTypes` wants on the … |
 | `openAICompatibleLlm`, `OpenAICompatibleLlmOptions` | function | `@alexkroman1/aai/experimental` |  | An `llm()` descriptor for an OpenAI-compatible chat-completions endpoint the runtime has no built-in entry for — a self-hosted server, an inference host, a … |
@@ -407,12 +445,15 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `renderSlackPlainText` | function | `@alexkroman1/aai/channels` | `aai:channels` | The trigger body: one string, because that is all a variable can hold. |
 | `renderTextbeltText` | function | `@alexkroman1/aai/channels` | `aai:channels` | A message as one SMS body: `heading` (else `text`), `subtitle`, then each section's title, link, prose and bullets, cut at `TEXTBELT_MAX_MESSAGE_CHARS`. |
 | `requireEnv` | function | `@alexkroman1/aai` | `aai:tool` | Read a variable off `ToolContext.env`, failing by NAME when it is not set. |
+| `requireSessionClient` | function | `@alexkroman1/aai` | `aai:inbox` | This session's client id (`sessionClientId`), or a `ToolFailure` saying why the tool cannot run without one — the guard every tool that keys work by device … |
 | `requireStepEnv` | function | `@alexkroman1/aai/step` | `aai:step` | `stepEnv`, failing by name when the key is not set. |
 | `resolveOne`, `ResolveOneOptions` | function | `@alexkroman1/aai` | `aai:spoken` | Pick the one candidate an utterance names, or fail saying why. |
 | `responseErrorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Read a failed `Response`'s error sentence — the one every route this SDK serves answers with. |
 | `retryAfter` | function | `@alexkroman1/aai/step` | `aai:step` | When the far side asked to be called back, as a `Date`. |
 | `rimeTts`, `RimeTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Rime TTS descriptor for pipeline mode. |
 | `roundMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | An amount snapped to whole cents — `roundMoney(0.1 + 0.2)` is `0.3`. |
+| `route` | function | `@alexkroman1/aai` | `aai:agent` | A route handler with its checks at the door: `body` validated against a Standard Schema and `?client=` required, each refused with a 400 and the reason. |
+| `routeError` | function | `@alexkroman1/aai` | `aai:agent` | A `RouteError` to throw from anywhere under a route handler: `throw routeError(400, "name: text up to 80 characters")`. |
 | `routeResponse` | function | `@alexkroman1/aai` | `aai:agent` | Answer a route with `status` and `body` instead of a plain 200: `return routeResponse(404, { error: "No such memory" })`, `return routeResponse(201, created)`. |
 | `runFfmpeg` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Run ffmpeg with `args`, exactly as given. |
 | `safeJsonParse` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Parse JSON, returning `undefined` on malformed input. |
@@ -430,6 +471,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `spokenAlphanumeric` | function | `@alexkroman1/aai` | `aai:spoken` | The letters and digits of a spoken code, upper-cased, with everything else dropped — `spokenDigits` for an id that carries letters too. |
 | `spokenDate` | function | `@alexkroman1/aai` | `aai:spoken` | A `YYYY-MM-DD` as a receptionist says it — `"Monday, June 8"`. |
 | `spokenDigits` | function | `@alexkroman1/aai` | `aai:spoken` | The digits of a spoken number, with everything else dropped. |
+| `spokenErrorReason`, `SpokenErrorReasonOptions` | function | `@alexkroman1/aai/utils` | `aai:utils` | Turn a failure into a short reason a person can hear: its FIRST sentence, with credentials redacted and URLs removed, capped at about one spoken sentence. |
 | `spokenMoney` | function | `@alexkroman1/aai` | `aai:spoken` | An amount as a voice reads it — `"240 dollars and 50 cents"`. |
 | `spokenOrdinal` | function | `@alexkroman1/aai` | `aai:spoken` | The position an utterance names, as an index, or `undefined` if it names none. |
 | `spokenTime` | function | `@alexkroman1/aai` | `aai:spoken` | A 24-hour `HH:MM` as a voice reads it — `"7 PM"`, `"6:30 PM"`. |
@@ -438,6 +480,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `stepDelegate` | function | `@alexkroman1/aai/step` | `aai:step` | Hand a bounded task to a SUBAGENT from inside a step. |
 | `stepEmit` | function | `@alexkroman1/aai/step` | `aai:step` | Write one structured chunk into a NAMED stream of this run. |
 | `stepEnv` | function | `@alexkroman1/aai/step` | `aai:step` | Read one key of the agent's env from inside a step. |
+| `stepEnvContext` | function | `@alexkroman1/aai/step` | `aai:step` | The whole agent env, plus the running step's cancel signal, as an `EnvContext` — what a helper shared with tools is handed inside a step. |
 | `stepFetch` | function | `@alexkroman1/aai/step` | `aai:step` | Make one HTTP request from inside a step. |
 | `stepFetchOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepFetch`, with the non-2xx branch every caller was writing by hand. |
 | `stepGenerate`, `StepGenerateOptions` | function | `@alexkroman1/aai/step` | `aai:step` | Ask the AssemblyAI LLM Gateway one question and return its reply. |
@@ -445,11 +488,14 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `stepGenerateJsonOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepGenerateJson`, with its failure classified — see `stepGenerateOrFail`. |
 | `stepGenerateOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepGenerate`, with its failure classified — the whole of what the wrapper adds is `throwStepError`, and see this module's doc for why that is worth an export … |
 | `stepInfo` | function | `@alexkroman1/aai/step` | `aai:step` | Which step this code is running inside, or `undefined` when it is not in one. |
+| `stepMcp` | function | `@alexkroman1/aai/experimental` |  | Connect MCP servers for one client from inside a step, and get their tools as `ToolDef`s. |
 | `stepNotifyClient`, `StepNotifyClientOptions` | function | `@alexkroman1/aai/step` | `aai:inbox` | Push `notice` to the client connected to this agent's `WS /inbox` as `clientId`, and resolve once it acks. |
 | `stepPlaceCall` | function | `@alexkroman1/aai/step` | `aai:step` | Dial `to` from `from` and, once answered, stream the call to the agent at `agentUrl`. |
+| `stepPollUntil`, `StepPollUntilOptions` | function | `@alexkroman1/aai/step` | `aai:step` | Check `check()` every `everyMs` until `done(value)` holds or `maxMs` has passed, inside a step, and resolve the last value. |
 | `stepReadUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Read a window of an uploaded file. |
 | `stepReport` | function | `@alexkroman1/aai/step` | `aai:step` | Write one progress line for the run this step belongs to. |
 | `stepRequireCompleteUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | One upload's metadata, refused unless every byte is in. |
+| `stepSayOnClient`, `StepSayOnClientOptions` | function | `@alexkroman1/aai/step` | `aai:inbox` | Say `text` on the device connected to `WS /inbox` as `clientId`: synthesize it, push the audio with `data.said = text`, and resolve with the text once the … |
 | `stepSpeak` | function | `@alexkroman1/aai/step` | `aai:step` | Speak `text`, and answer with the whole utterance as a WAV. |
 | `stepTranscribePoll` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Ask once whether a job has finished, and read it when it has. |
 | `stepTranscribePollOrFail` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | `stepTranscribePoll`, with its failure classified — see `stepTranscribeSubmitOrFail`. |
@@ -463,6 +509,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `stepWebhookUrl` | function | `@alexkroman1/aai/step` | `aai:step` | The public URL a third party POSTs to in order to resolve `ctx.waitFor(token)` for the run this step belongs to. |
 | `stepWriteUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Store a file a step PRODUCED, and answer with the record naming it. |
 | `stripJsonFence` | function | `@alexkroman1/aai/step` | `aai:step` | Unwrap a ```` ```json ```` fence, which models add however firmly they are told not to. |
+| `stubStepMcp` | function | `@alexkroman1/aai/experimental` |  | Publish a fake connector for a spec: every `stepMcp` call answers `tools` (default none) and records what it was asked. |
 | `subagent` | function | `@alexkroman1/aai` | `aai:subagent` |  |
 | `textbeltChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Declare an SMS destination: one number, texted through Textbelt. |
 | `throwFatalStepError` | function | `@alexkroman1/aai/step-errors` | `aai:step-errors` | Stop the engine retrying: throw a `FatalError` whatever the cause was. |
@@ -474,10 +521,12 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `transcodeToWav`, `TranscodeToWavOptions` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Re-encode anything ffmpeg can read into linear-PCM WAV bytes. |
 | `ttsVoiceIds` | function | `@alexkroman1/aai/tts` | `aai:tts` | The catalog's voice ids, optionally only those speaking `language`, as the non-empty tuple a `z.enum` takes. |
 | `ttsVoiceInfo` | function | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about `voice` — its language and accent — or `undefined` for a voice this release's catalog does not list. |
+| `verifyStandardWebhook` | function | `@alexkroman1/aai` | `aai:agent` | Whether a route request is a genuine Standard Webhooks delivery signed with `secret`: its `webhook-signature` carries a `v1` HMAC-SHA256 of … |
 | `visitWebpage` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Fetch a page and return its content as clean text. |
 | `wavEncodeArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The encoder half of a linear-PCM WAV argv — no input, no output. |
 | `wavHeader` | function | `@alexkroman1/aai/step` | `aai:step` | The WAV header for a payload of `byteLength` bytes, and nothing else. |
 | `webSearch` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Search the web (DuckDuckGo-backed, no API key) and return ranked results. |
+| `webhookRoute`, `WebhookRouteOptions` | function | `@alexkroman1/aai` | `aai:agent` | A route handler that runs `handler` only for a delivery `verifyStandardWebhook` accepts under the secret in `env[secretEnv]`. |
 | `withLock` | const | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Run `fn` while holding a keyed lock, releasing it in every outcome. |
 | `withTempDir`, `WithTempDirOptions` | function | `@alexkroman1/aai/step-files` | `aai:step-files` | Run `work` with a private temp directory, and remove it afterwards. |
 | `workflow` | function | `@alexkroman1/aai` | `aai:workflow` | Declare a durable workflow. |
@@ -510,6 +559,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ConsoleShell`, `ConsoleShellProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design-system "console" chrome: a 760px column on the themed page with a header (icon + live-status eyebrow), an announced error banner, the main content … |
 | `Controls`, `ControlsProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Session control buttons: **Stop / Resume** and **New Conversation**. |
 | `ConversationItem` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | One row of the conversation: a finalized message, or a tool invocation. |
+| `ConversationLogEntry` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | One entry of a `useConversationLog` transcript. |
 | `ConversationView`, `ConversationViewProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The conversation's skeleton over `useConversation`, with every row a render slot: a pinned scroll region holding the empty state, the interleaved messages and … |
 | `Facts`, `FactsProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A muted line of run facts, joined by `·` — "6 segments · 12:04 of audio · 1,840 words". |
 | `Field` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | Label + control + hint, in the layout every field here uses. |
@@ -522,13 +572,16 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `Inbox` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | A held inbox socket — see `createInbox`. |
 | `InboxEvent` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | One frame of the client's live conversation, sent to a holder that asked for events: every session bound to the client, this tab's own included — filter on … |
 | `InboxNotice` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | One notice from the agent — what a workflow step sent with `stepNotifyClient`, e.g. a reminder coming due. |
+| `LinkedClient`, `LinkedClientOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | Which client a page is — see `createLinkedClient`. |
 | `Markdown`, `MarkdownProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Agent prose, rendered as Markdown. |
 | `MarkdownVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Type scale for `Markdown`: `"default"` is the deployed agent UI's scale, `"compact"` a notch smaller for denser surfaces (the studio's chat transcript). |
 | `MessageList`, `MessageListProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Scrollable list of all chat messages, tool-call blocks, live transcript, streaming agent utterance, and a thinking indicator. |
 | `NumberField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A number input. |
 | `PageConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Configuration for `mountPage`. |
 | `PageHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Handle returned by `mountPage`. |
+| `RouteMethod` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The HTTP methods an `agent({ routes })` key can declare. |
 | `SelectField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A dropdown. |
+| `SendTextOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Options for `BrowserSession.sendText`. |
 | `Session` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSession` returns: the live `SessionSnapshot` fields (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`, `apiUrl`, … |
 | `SessionActions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods, and nothing else — what a `client.tsx` may legitimately CALL on a session, as against what it may read. |
 | `SessionControlAction` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Which of the four buttons a `SessionControlButton` is. |
@@ -541,6 +594,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `SessionStateDot`, `SessionStateDotProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The live session state as a coloured dot and a word, on its own narrow subscription. |
 | `SidebarLayout` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A two-column layout with a fixed-width sidebar and a flexible main area. |
 | `StartScreen` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A centered start screen: a white card on the cream page with the logo, an eyebrow label, a serif title, subtitle, and the start CTA. |
+| `StoredValue`, `StoredValueOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | One remembered string — see `createStoredValue`. |
 | `SubmitButton` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | The form's submit button, disabled and relabelled while a submit is in flight. |
 | `SubmitInputOf` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `submit()` takes for `D` — `undefined` when `D` declares no schema. |
 | `TextAreaField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A multi-line text input. |
@@ -551,13 +605,16 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI. |
 | `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | How far a form's files have got, rendered as a bar. |
 | `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `WorkflowSubmission.upload` reports while the bytes are going. |
+| `UseConversationLogResult` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | What `useConversationLog` returns. |
 | `UseConversationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useConversation` returns. |
 | `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
 | `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useDownloadUrl` reports. |
 | `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
 | `UseInboxResult` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | What `useInbox` returns. |
 | `UsePushToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | What `usePushToTalk` returns. |
+| `UseRouteResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useRoute` returns. |
 | `UseSessionControlsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSessionControls` returns. |
+| `UseTapToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:tap-to-talk` | What `useTapToTalk` returns. |
 | `UseUserTranscriptResult` | interface | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useUserTranscript` returns. |
 | `UseWorkflowProgressResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
 | `UseWorkflowRunResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
@@ -581,21 +638,28 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `browserSessionBrand` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The seal on a `BrowserSession`. |
 | `createBrowserSession` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | Create a framework-agnostic voice session core that connects to an AAI server via WebSocket. |
 | `createInbox`, `CreateInboxOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold `WS /inbox?client=&holder=` open, reconnecting with backoff, and answer every notice the way the protocol requires — `ack` once it has arrived whole, … |
+| `createLinkedClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | A page's client id with a link on top — see this module's doc. |
+| `createStoredValue` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | A string remembered in this browser under `key` — see this module's doc. |
 | `createWorkflowApi` | function | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Create a client for the agent serving this page. |
 | `defaultClientDir` | function | `@alexkroman1/aai-ui/client-dir` | `aai-ui:client-dir` | Absolute path to the prebuilt browser client's static files — pass it to `createRuntimeServer`/`createAgentServer` as `clientDir`. |
 | `fetchClientConfig` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
 | `fieldKindFor` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Which control `<WorkflowFields>` renders for one property of an input schema. |
+| `inboxEventToItem` | function | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | The log item for one frame of a client's live conversation — what `useInbox({ onEvent })` delivers for another session of the same client (a device's, when the … |
 | `mountClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client` | Define and mount a client UI for a voice agent. |
 | `mountPage` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Mount a page for an agent whose work happens in workflows. |
+| `phoneE164`, `PhoneE164Options` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | The phone number `typed` in E.164 form (`"+15035550123"`), or `undefined` when it cannot be one — see `PhoneE164Options` for how a number without a country … |
+| `routeFetch`, `RouteFetchOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Call one of the agent's own routes and return its JSON — see this module's doc for what it handles. |
 | `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
 | `useClientId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The client id this session sends as `?client=` — the id a tool reads with `sessionClientId(ctx)` and the inbox socket is held under. |
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
+| `useConversationLog`, `UseConversationLogOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | A transcript that outlives the session — see this module's doc. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
 | `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read an upload's bytes and hand back a URL a DOM element can use. |
 | `useEvent` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Subscribe to custom events emitted by agent tools via `ctx.send(event, data)`; the callback receives each event's `data`. |
 | `useFlash` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | A transient value: set it, and it clears itself after `ms`. |
 | `useInbox`, `UseInboxOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold this session's `WS /inbox` socket open for the life of the component, and play what arrives — see the module doc. |
 | `usePushToTalk`, `UsePushToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Hold-to-speak over the session's push-to-talk methods, with the four ways a turn gets stuck open handled — see this module's doc. |
+| `useRoute`, `UseRouteOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | `GET` one of the agent's own routes, on mount, on `reload()` and every `pollMs` — see this module's doc. |
 | `useRunKey` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A lookup key for `useWorkflowSubmit({ key })`, stable across reloads. |
 | `useSession` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Return the live `Session`: the current snapshot fields plus the control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`, `cancel`, `end`). |
 | `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `sendText`, `setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`, `toggle`, `end` — with … |
@@ -604,6 +668,8 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `useSessionId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The server's id for the current session: `undefined` before the session's first `config` frame and after `end()`; a resume or a new session updates it from its … |
 | `useSessionSelector` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to a narrow slice of the session snapshot. |
 | `useSessionStatus` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The agent's live `AgentState` — `disconnected`, `connecting`, `ready`, `listening`, `thinking`, `speaking`, `error` — on its own narrow subscription. |
+| `useStoredValue` | hook | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | A remembered string as React state: the value, and a setter that writes it through to storage — see this module's doc. |
+| `useTapToTalk`, `UseTapToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:tap-to-talk` | Tap to go live, tap to hang up, over the session — see this module's doc for what it handles beyond the tap. |
 | `useTheme` | hook | `@alexkroman1/aai-ui` | `aai-ui:theme` | Read the resolved theme (every `ClientTheme` field filled with its default) from the nearest theme context. |
 | `useToolCallStart` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Fire a callback when ONE named tool starts, before its result arrives. |
 | `useToolResult` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Fire a callback when ONE named tool settles, with its parsed JSON result. |
@@ -623,6 +689,8 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | --- | --- | --- | --- | --- |
 | `AAI_AGENT_MODULE` | const | `@alexkroman1/aai/testing/vite` |  | The module specifier a spec imports. |
 | `AaiVitePlugin` | type | `@alexkroman1/aai/testing/vite` |  | The minimal Vite plugin shape, declared structurally. |
+| `AgentTestConfig` | type | `@alexkroman1/aai/testing/vite` |  | What `defineAgentTestConfig` returns — a Vitest `UserConfig`, declared structurally. |
+| `AgentTestConfigOverrides` | type | `@alexkroman1/aai/testing/vite` |  | Overrides for `defineAgentTestConfig`. |
 | `CallVerdict` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | The judge's verdict over a whole conversation. |
 | `CriterionVerdict` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | One criterion's ruling. |
 | `DEFAULT_MAX_DELIVERIES` | const | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | How many deliveries one run may take before the driver gives up. |
@@ -657,6 +725,11 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `EvalWorkflowTest` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare one workflow eval case. |
 | `EvalWorkflowTestContext` | type | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | What a workflow case body is handed. |
 | `EvalWorkflows`, `EvalWorkflowsOptions` | type | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One open eval workflow app. |
+| `FetchRouteHandler` | type | `@alexkroman1/aai/testing` | `aai:testing` | A route: answers a request with a `Response` or the `{ status, body, headers }` shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to the … |
+| `FetchRouteHit` | type | `@alexkroman1/aai/testing` | `aai:testing` | One request the router saw, whatever became of it. |
+| `FetchRouteRequest` | type | `@alexkroman1/aai/testing` | `aai:testing` | One request as a route sees it: the recorded request (`url`, `method`, `headers`, `body` — the same fields `stubStepFetch` records) plus the parts a route … |
+| `FetchRouteTable` | type | `@alexkroman1/aai/testing` | `aai:testing` | Routes by where they answer. |
+| `FetchRoutesOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubFetchRoutes` may be told. |
 | `HookRecord` | type | `@alexkroman1/aai-runtime/testing` |  | One outstanding HOOK: a body parked on somebody else's answer. |
 | `HostGenerateFn` | type | `@alexkroman1/aai-runtime/eval` |  | The host-side `ctx.generate` implementation — takes `GenerateOptions` and resolves a `GenerateResult`, with an extra per-call options bag: the tool executor … |
 | `JournalConflictError` | class | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A journal call the store REFUSED on the run's own merits. |
@@ -664,7 +737,9 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `JudgeInput` | type | `@alexkroman1/aai-runtime/eval/simulate` | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, a SESSION (anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or a … |
 | `ProjectFiles` | type | `@alexkroman1/aai/testing` | `aai:testing` | What the BUILD lowers onto an `agent.ts` default export — the files beside it that a deployed agent runs with and a spec has to apply itself. |
 | `RecordedSleep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One wait the body asked for — and did NOT take. |
+| `RecordedStart` | type | `@alexkroman1/aai/testing` | `aai:testing` | One `start` the client recorded. |
 | `RecordedStep` | type | `@alexkroman1/aai/testing` | `aai:testing` | One step the body reached, as the recorder saw it. |
+| `RecordingWorkflows`, `RecordingWorkflowsOptions` | type | `@alexkroman1/aai/testing` | `aai:testing` | A `WorkflowClient` that records, plus its log. |
 | `ResumableRun` | type | `@alexkroman1/aai-runtime/testing` |  | One run a local dispatcher still owes a delivery, as `JournalStore.resumableRuns` answers it. |
 | `RunRecord` | type | `@alexkroman1/aai-runtime/testing` |  | One run, as stored. |
 | `RunSnapshotOverrides` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `createRunSnapshot` accepts: the shared fields, plus whatever the chosen status requires. |
@@ -699,6 +774,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `StubDelegateRoute` | type | `@alexkroman1/aai/testing` | `aai:testing` | How a route answers: a fixed reply, or a function of the call — the function form being what a route asked more than once (a subagent run per document) needs … |
 | `StubDelegateScript` | type | `@alexkroman1/aai/testing` | `aai:testing` | Everything `stubDelegate` and `stubStepDelegate` accept: ONE route answering every delegation, or a table of routes keyed by subagent name — each under a key … |
 | `StubEmitted` | type | `@alexkroman1/aai/testing` | `aai:testing` | One chunk `stepEmit()` wrote, and the stream it went to. |
+| `StubFetchRoutes` | type | `@alexkroman1/aai/testing` | `aai:testing` | What `stubFetchRoutes` returns. |
 | `StubGateway`, `StubGatewayOptions` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A fake gateway: the `fetch` to install, and what it was asked. |
 | `StubGatewayCall` | interface | `@alexkroman1/aai/testing` | `aai:testing` | One request a `StubGateway` answered. |
 | `StubGatewayRoute` | interface | `@alexkroman1/aai/testing` | `aai:testing` | A gateway answer for a `stepFetch`-published slot, plus what it was asked. |
@@ -750,6 +826,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `commandedBuiltins` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every builtin the system prompt COMMANDS by name, in first-mention order. |
 | `completedOutput` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The output of a run that COMPLETED, or a throw naming what actually happened. |
 | `createProgressStream` | function | `@alexkroman1/aai/testing` | `aai:testing` | The progress channel of a run, from the read side — what `ctx.workflows.stream` resolves with. |
+| `createRecordingWorkflows` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `RecordingWorkflows`. |
 | `createRunSnapshot` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `WorkflowRunSnapshot` — the right arm of the union, without a cast. |
 | `createStubSttOpener` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One fake STT stage, and the last stream it opened. |
 | `createStubTtsOpener` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | One fake TTS stage, and the last stream it opened. |
@@ -758,6 +835,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `createVmRunCode` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Build a `run_code` executor that evaluates in a fresh `node:vm` context and answers with whatever the code PRINTED. |
 | `createWorkflowContext` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a `WorkflowContext` that runs a body and records what it asked for. |
 | `customEventsIn` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | An event the AGENT named, via `ctx.send` — `{ event, data }` pairs, in order. |
+| `defineAgentTestConfig` | function | `@alexkroman1/aai/testing/vite` |  | The Vitest config an agent project needs, with room to add to it. |
 | `deployedAgent` | function | `@alexkroman1/aai/testing` | `aai:testing` | The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its `tools/` directory declares, plus what its `system-prompt.md` says. |
 | `describeEval`, `DescribeEvalOptions` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for `agent`. |
 | `describeTextEval`, `DescribeTextEvalOptions` | function | `@alexkroman1/aai-runtime/eval/vitest` | `aai-runtime:eval` | Declare an eval suite for a TEXT agent. |
@@ -781,6 +859,8 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `expectPromptBuiltinsDeclared` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every builtin the prompt commands is one `builtinTools` declares — or a throw naming the ones that are not. |
 | `expectToolBeforeSpeech` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | The agent ACTED before it spoke: this turn's first `tool.called` precedes its first committed reply. |
 | `expectToolOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The value a gated tool's own `execute` returned, or a throw naming the refusal. |
+| `installFetchRoutes` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Route the global `fetch` — and the step fetch — through one URL/method table, restored when this test finishes, and return the request log. |
+| `installStubClientInbox` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish a device inbox for `stepNotifyClient`, restored when this test finishes. |
 | `installStubGateway` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Install a fake LLM gateway as the global `fetch`, and return its call log. |
 | `installStubLlm` | function | `@alexkroman1/aai-runtime/eval` | `aai-runtime:eval` | Register a model that answers with `replies`, one per model call, repeating the last for as long as it is asked. |
 | `installStubReporter` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Capture what a step narrates and emits, restored when this test finishes. |
@@ -818,6 +898,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `stubClientInbox` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish an inbox whose device records every notice and answers it. |
 | `stubClientTranscript` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a reader that answers every `stepClientTranscript` with `answer` — a fixed transcript, or one computed per call (e.g. honouring the cursor). |
 | `stubDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.delegate` from a script: one reply, or routes keyed by subagent name. |
+| `stubFetchRoutes` | function | `@alexkroman1/aai/testing` | `aai:testing` | Install one router as the global `fetch` (and, by default, the published step fetch), and return its log. |
 | `stubGateway` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake LLM gateway answering `replies` in order. |
 | `stubGatewayRoute` | function | `@alexkroman1/aai/testing` | `aai:testing` | A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot rather than the global `fetch`. |
 | `stubGenerate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.generate` from a script: one reply, or routes keyed by system prompt. |
@@ -1110,6 +1191,7 @@ trace or a type error can be traced back to something.
 | `ChannelOutboxEntry` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ClientEventDecision` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ClientEventDrop` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `ClientInboxDefaults` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ClientNotifier` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ClientSessionLog` | type | `@alexkroman1/aai-runtime/internal` |  | The client half of a `SessionStateBackend` (`store.ts`). |
 | `ClientSessionRecord` | type | `@alexkroman1/aai-runtime/internal` |  | One session's binding to a client, as `ClientSessionLog.clientSessions` lists it. |
@@ -1222,6 +1304,7 @@ trace or a type error can be traced back to something.
 | `PlatformReplyFrame` | type | `@alexkroman1/aai-runtime/internal` |  |  |
 | `PlatformRoute` | type | `@alexkroman1/aai-runtime/internal` |  | One of `PLATFORM_ROUTES`. |
 | `PlatformSocket` | type | `@alexkroman1/aai-runtime/internal` |  |  |
+| `PollHost` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ProviderEnvVarsQuery` | type | `@alexkroman1/aai-runtime/internal` |  | What `requiredProviderEnvVars` (`resolve.ts`) reads off an agent: its four descriptor slots and its front door. |
 | `RESERVED_SLUGS` | const | `@alexkroman1/aai/internal` |  | Slugs that collide with top-level platform routes and can never be claimed by an agent. |
 | `RESUME_ID_RE` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1232,6 +1315,7 @@ trace or a type error can be traced back to something.
 | `RIME_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `RUN_CODE_REFUSAL` | const | `@alexkroman1/aai/host-internal` |  | What `run_code` answers when no executor was supplied — the sentence the model reads off-platform. |
 | `ResolvedBuiltins` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtins with defs, schemas, and guidance computed in a single pass. |
+| `ResolvedFailureHandler` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `S2S_MAX_RESUME_ATTEMPTS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SANDBOX_ONLY_BUILTINS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SERVER_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1268,6 +1352,7 @@ trace or a type error can be traced back to something.
 | `StateSyncSession` | type | `@alexkroman1/aai-runtime/internal` |  | The per-session state this decision reads and writes. |
 | `StepDelegateFn` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepInfoReader` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `StepMcpFn` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepReporter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StepWebhookMinter` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `StoredSessionEvent` | type | `@alexkroman1/aai-runtime/internal` |  | One retained session event: its index in the session's log, and its JSON. |
@@ -1317,6 +1402,7 @@ trace or a type error can be traced back to something.
 | `agentServerEnv` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `applyWorkflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `asDispatcher` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `asFailureError` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `assemblyAITtsLanguageCodes` | function | `@alexkroman1/aai/host-internal` |  | The codes `resolveAssemblyAITtsLanguage` accepts, for error messages. |
 | `assertProviderTriple` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `assertUploadToken` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1343,6 +1429,7 @@ trace or a type error can be traced back to something.
 | `createSessionEventStream` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createSessionStateStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createUploadStore` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `credentialSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `decideClientEvent` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `defaultProviders` | function | `@alexkroman1/aai/host-internal` |  | The default providers for the pipeline stages a config leaves unset: each missing stage of the `stt`/`llm`/`tts` triple is filled from the all-AssemblyAI … |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
@@ -1380,7 +1467,9 @@ trace or a type error can be traced back to something.
 | `pinnedFetch` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `planDelayedLadder` | function | `@alexkroman1/aai/host-internal` |  | The ladder this call gets: one line per DISTINCT `afterMs`, ascending. |
 | `platformSocketUrl` | function | `@alexkroman1/aai-runtime/internal` |  | `<base>/platform-socket` with a WebSocket scheme. |
+| `pollWorkflow` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishChannelOutbox` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishClientInboxDefaults` | function · `@internal` | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
 | `publishClientNotifier` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishClientTranscriptReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishSpeechSynthesizer` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1388,6 +1477,7 @@ trace or a type error can be traced back to something.
 | `publishStepEnv` | function · `@internal` | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
 | `publishStepFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepInfoReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepMcp` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepReporter` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepWebhookUrl` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishUploadReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1395,6 +1485,7 @@ trace or a type error can be traced back to something.
 | `publishedClientTranscriptReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `queueNameKind` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `readRouteError` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteResponse` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1407,6 +1498,7 @@ trace or a type error can be traced back to something.
 | `resolveCartesiaTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveDeepgramSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveElevenLabsSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `resolveFailureHandler` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `resolveLocalSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveRimeTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveSonioxSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |

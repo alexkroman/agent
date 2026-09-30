@@ -11,10 +11,12 @@
 import { statSync } from "node:fs";
 import path from "node:path";
 import { requestPath } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
 import { isPathInside, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost } from "./_dev-env.ts";
+import { devSourceViteConfig } from "./_dev-source.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
 
 /**
@@ -186,18 +188,27 @@ export function viteDevConfig(
   cwd: string,
   vitePort: number,
   backendPort: number,
+  /**
+   * The client plugins when the project has no `vite.config.*` of its own
+   * (`defaultClientPlugins`); empty when Vite loads the project's config.
+   */
+  clientPlugins: import("vite").PluginOption[] = [],
 ): import("vite").InlineConfig {
   const target = `http://127.0.0.1:${backendPort}`;
   // Resolved once here rather than per request: it is invariant for the life of
   // the config, and a workflow-app page polls its run.
   const viteRoot = path.resolve(cwd);
+  // `AAI_DEV_SOURCE=1` adds `@dev/source` to the resolve conditions, so a
+  // linked `aai-ui` is served from its `src/` — see `_dev-source.ts`.
+  const devSource = devSourceViteConfig();
   return {
     root: cwd,
-    plugins: [fallbackHtmlPlugin(cwd)],
+    plugins: [fallbackHtmlPlugin(cwd), ...clientPlugins],
     // The same peer contract `buildClient` states, for the same reason and a
     // different symptom — see DEDUPED_PEERS. Without it a project whose SDK is
     // linked rather than installed loads two Reacts and renders a blank page.
-    resolve: { dedupe: DEDUPED_PEERS },
+    resolve: { ...devSource.resolve, dedupe: DEDUPED_PEERS },
+    ...omitUndefined({ ssr: devSource.ssr }),
     server: {
       port: vitePort,
       strictPort: true,

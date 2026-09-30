@@ -3,13 +3,14 @@
   "capability": "workflow-api",
   "epoch": 3,
   "rule": 2,
-  "sha256": "dc139499ab2fb993bb591db8345e58482918a6429f0387f2ace9cc91ea7ef72b",
+  "sha256": "e9029e86c79194df4314ac002de17f95884cf3ba5246e298cc328cd7477e8873",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
     "ClientConfigResponse",
     "ClientConfigResponseSchema",
     "EventStreamFrame",
+    "FindByKeyOptions",
     "FindOptions",
     "StartOptions",
     "StreamOptions",
@@ -44,7 +45,7 @@
     "readEventStream"
   ],
   "rollup": "245028ca7865b5d27bc7bdb955c160acaf1a31e3262b46a8a71feb613324c06b",
-  "revision": 1,
+  "revision": 2,
   "revisions": [
     {
       "revision": 0,
@@ -57,6 +58,12 @@
       "rule": 2,
       "sha256": "dc139499ab2fb993bb591db8345e58482918a6429f0387f2ace9cc91ea7ef72b",
       "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    },
+    {
+      "revision": 2,
+      "rule": 2,
+      "sha256": "e9029e86c79194df4314ac002de17f95884cf3ba5246e298cc328cd7477e8873",
+      "reason": "additive (checked): +FindByKeyOptions"
     }
   ]
 }

@@ -14,8 +14,7 @@
 
 import { agent, tool, workflow } from "@alexkroman1/aai";
 import { withTools } from "@alexkroman1/aai/manifest";
-import { createStubWorkflows } from "@alexkroman1/aai/testing";
-import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import { createRecordingWorkflows, createRunSnapshot } from "@alexkroman1/aai/testing";
 import { afterAll, expect, vi } from "vitest";
 import { z } from "zod";
 import { describeEval } from "./describe.ts";
@@ -29,7 +28,7 @@ const passed = (name: string): void => void passes.set(name, (passes.get(name) ?
 afterAll(() => {
   // A throw rather than an `expect`: a hook is not a test.
   const counts = [...passes.values()];
-  if (counts.length !== 2 || counts.some((n) => n !== 2)) {
+  if (counts.length !== 3 || counts.some((n) => n !== 2)) {
     throw new Error(
       `every case must pass BOTH repeats; passes: ${JSON.stringify(Object.fromEntries(passes))}`,
     );
@@ -48,17 +47,8 @@ const def = withTools(agent({ name: "Workflow Client Suite", workflows: { remind
   remind_me: remindMe,
 });
 
-/** A client that RECORDS what it was asked to start, its log attached and typed. */
-function recordingWorkflows() {
-  const started: unknown[] = [];
-  const client = createStubWorkflows({
-    start: (async (_workflow: unknown, input?: unknown) => {
-      started.push(input);
-      return `wrun_eval_${started.length}`;
-    }) as WorkflowClient["start"],
-  });
-  return Object.assign(client, { started });
-}
+/** A client that RECORDS what it was asked to start — the SDK's, its log typed. */
+const recordingWorkflows = () => createRecordingWorkflows({ workflows: def.workflows });
 
 const REMIND = { stubReply: [{ tool: "remind_me", args: { text: "plumber" } }, "Okay."] };
 
@@ -69,9 +59,13 @@ describeEval(
       "a factory's client is this case's ctx.workflows, fresh on every repeat",
       async ({ session, workflowClient, workflows }) => {
         const turn = await session.say("remind me to call the plumber");
-        expect(toolResultIn(turn.toolCalls, "remind_me")).toEqual({ runId: "wrun_eval_1" });
+        expect(toolResultIn(turn.toolCalls, "remind_me")).toEqual({ runId: "wrun_rec_1" });
         // Typed: the log is the factory's own, and it holds THIS repeat alone.
-        expect(workflowClient.started).toEqual([{ text: "plumber" }]);
+        expect(workflowClient.started("remind").map((s) => s.input)).toEqual([{ text: "plumber" }]);
+        // Recorded, never run: the run it "started" reads back as running.
+        await expect(workflowClient.get("wrun_rec_1")).resolves.toMatchObject({
+          status: "running",
+        });
         // A suite that supplied its own client gets no engine.
         expect(workflows).toBeUndefined();
         passed("factory");
@@ -80,6 +74,48 @@ describeEval(
     );
   },
   { workflows: recordingWorkflows },
+);
+
+const cancelAll = tool({
+  description: "Cancel every pending reminder.",
+  execute: async (_args, ctx) => {
+    const pending = (await ctx.workflows.find(remind, "kitchen")).filter(
+      (run) => run.status === "running",
+    );
+    for (const run of pending) await ctx.workflows.cancel(run.runId);
+    return { cancelled: pending.length };
+  },
+});
+
+const cancelDef = withTools(agent({ name: "Seeded Runs Suite", workflows: { remind } }), {
+  cancel_reminders: cancelAll,
+});
+
+describeEval(
+  cancelDef,
+  (test) => {
+    test(
+      "a case seeds the runs find answers from, and reads what was cancelled",
+      async ({ session, workflowClient }) => {
+        workflowClient.seed(
+          createRunSnapshot({ workflow: "remind", key: "kitchen", runId: "wrun_pending" }),
+          createRunSnapshot({
+            workflow: "remind",
+            key: "kitchen",
+            runId: "wrun_done",
+            status: "completed",
+            output: {},
+          }),
+        );
+        const turn = await session.say("cancel my reminders");
+        expect(toolResultIn(turn.toolCalls, "cancel_reminders")).toEqual({ cancelled: 1 });
+        expect(workflowClient.cancelled).toEqual(["wrun_pending"]);
+        passed("seeded");
+      },
+      { stubReply: [{ tool: "cancel_reminders" }, "Done."] },
+    );
+  },
+  { workflows: () => createRecordingWorkflows({ workflows: cancelDef.workflows }) },
 );
 
 describeEval(def, (test) => {

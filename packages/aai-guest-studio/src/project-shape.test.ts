@@ -55,13 +55,7 @@ describe("ensureProjectShape", () => {
   test("writes the missing project files", async () => {
     const dir = tempDir();
     await ensureProjectShape(dir);
-    for (const rel of [
-      "package.json",
-      "tsconfig.json",
-      "global.d.ts",
-      "vite.config.ts",
-      "vitest.config.ts",
-    ]) {
+    for (const rel of ["package.json", "tsconfig.json", "vitest.config.ts"]) {
       await expect(readFile(path.join(dir, rel), "utf-8")).resolves.toBeTruthy();
     }
     const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as {
@@ -77,19 +71,28 @@ describe("ensureProjectShape", () => {
     expect(pkg.dependencies).toEqual({});
   });
 
-  test("tsconfig excludes tests and pins node types (studio variant)", async () => {
+  test("tsconfig extends the preset, excludes tests and pins its types (studio variant)", async () => {
     const parsed = JSON.parse(workspaceTsconfig(await scaffold("tsconfig.json"))) as {
+      extends?: string;
       compilerOptions: Record<string, unknown> & { types: string[] };
       exclude: string[];
     };
-    expect(parsed.compilerOptions.strict).toBe(true);
-    expect(parsed.compilerOptions.types).toEqual(["node"]);
+    // The compiler options live in the SDK's preset; the workspace keeps the
+    // pointer, so the baked SDK's preset is the one it compiles under.
+    expect(parsed.extends).toBe("@alexkroman1/aai/tsconfig");
+    expect(parsed.compilerOptions.types).toEqual(["node", "vite/client"]);
     expect(parsed.exclude).toContain("**/*.test.ts");
-    // `noImplicitAny` is NOT turned off here or in the scaffold: switching it
+    // `noImplicitAny` is NOT turned off here or in the preset: switching it
     // off also disables evolving-array/evolving-let inference, which is the
     // more expensive failure. See the WORKSPACE_TSCONFIG doc.
     expect(parsed.compilerOptions.noImplicitAny).toBeUndefined();
-    expect(parsed.compilerOptions.useUnknownInCatchVariables).toBe(false);
+    const preset = await readFile(
+      path.resolve(import.meta.dirname, "../../aai/presets/tsconfig.agent.json"),
+      "utf-8",
+    );
+    expect(preset).toMatch(/"strict": true/);
+    expect(preset).toMatch(/"useUnknownInCatchVariables": false/);
+    expect(preset).not.toMatch(/noImplicitAny/);
   });
 });
 
@@ -102,16 +105,22 @@ describe("ensureProjectShape", () => {
 describe("scaffold deltas", () => {
   test("keeps every compiler option the scaffold sets, except `types`", async () => {
     type Opts = Record<string, unknown>;
-    const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;
-    const theirs = of(await scaffold("tsconfig.json"));
-    const mine = of(workspaceTsconfig(await scaffold("tsconfig.json")));
+    type Config = { extends?: string; compilerOptions?: Opts };
+    const scaffoldText = await scaffold("tsconfig.json");
+    const of = (text: string) => (JSON.parse(text) as Config).compilerOptions ?? {};
+    const theirs = of(scaffoldText);
+    const mine = of(workspaceTsconfig(scaffoldText));
+    // The preset pointer is carried over untouched — it is where the options are.
+    expect((JSON.parse(workspaceTsconfig(scaffoldText)) as Config).extends).toBe(
+      (JSON.parse(scaffoldText) as Config).extends,
+    );
     // Soft: a scaffold change usually moves several options at once, and one
     // hard failure would hide the rest behind a second run.
     for (const key of Object.keys(theirs)) {
       if (key === "types") continue;
       expect.soft(mine[key], key).toEqual(theirs[key]);
     }
-    expect(mine.types).toEqual(["node"]);
+    expect(mine.types).toEqual(["node", "vite/client"]);
   });
 
   test("the platform-owned set still matches the scaffold's runtime dependencies", async () => {

@@ -3,7 +3,7 @@
   "capability": "agent",
   "epoch": 15,
   "rule": 2,
-  "sha256": "0f5fd2c6b1104651d9105d80c90f8f7ea94b0e7b384b774f6763c6ef371ba4a8",
+  "sha256": "0e8e3036ae07b6321a7c4b68b8d7d39714f7ffa4c0f0396f91cb95470986cd8a",
   "exports": [
     "AgentDef",
     "AgentGuardrail",
@@ -30,6 +30,8 @@
     "ProviderCredentialOptions",
     "ProviderDescriptor",
     "RouteContext",
+    "RouteDef",
+    "RouteError",
     "RouteHandler",
     "RouteRequest",
     "RouteResponse",
@@ -40,6 +42,7 @@
     "SessionEndContext",
     "SessionEventContext",
     "SharedAgentParams",
+    "StandardWebhookOptions",
     "StaticAgentParams",
     "TelephonyAccess",
     "TelephonyCarrier",
@@ -48,18 +51,24 @@
     "TurnDetectionMode",
     "UsageLimits",
     "VOICE_PRESETS",
+    "ValidatedRouteRequest",
     "VoicePresetName",
+    "WebhookRouteOptions",
     "agent",
     "assemblyAIPipeline",
     "endSession",
     "mcpToolName",
+    "route",
+    "routeError",
     "routeResponse",
     "sessionCall",
     "sessionClientLocation",
+    "verifyStandardWebhook",
+    "webhookRoute",
     "workflowApp"
   ],
   "rollup": "adc0531f206162784e680b1c87de80c146fbbb9834dd64776027dd5bd6230535",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -84,6 +93,12 @@
       "rule": 2,
       "sha256": "0f5fd2c6b1104651d9105d80c90f8f7ea94b0e7b384b774f6763c6ef371ba4a8",
       "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +EndSessionOptions, +RouteContext, +RouteHandler, +RouteRequest, +RouteResponse, +SessionCall, +SessionContext, +SessionContextArgs, +SessionEndContext, +endSession, +routeResponse, +sessionCall, +sessionClientLocation"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "0e8e3036ae07b6321a7c4b68b8d7d39714f7ffa4c0f0396f91cb95470986cd8a",
+      "reason": "additive (checked): +AgentRoutes, +AgentSessionLifecycle, +EndSessionOptions, +RouteContext, +RouteDef, +RouteError, +RouteHandler, +RouteRequest, +RouteResponse, +SessionCall, +SessionContext, +SessionContextArgs, +SessionEndContext, +StandardWebhookOptions, +ValidatedRouteRequest, +WebhookRouteOptions, +endSession, +route, +routeError, +routeResponse, +sessionCall, +sessionClientLocation, +verifyStandardWebhook, +webhookRoute"
     }
   ]
 }

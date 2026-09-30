@@ -2,14 +2,7 @@
 /**
  * What a workflow BODY is handed: the journal and the clock, as two methods.
  *
- * This is the half of the authoring surface that replaced the Workflow DevKit's
- * `"use workflow"` / `"use step"` directives. Those were a compile-time
- * rewrite performed by a 921 KB WASM SWC plugin, and carrying it meant a
- * per-tenant, three-transform bundling pipeline — this image is baked once and
- * serves every tenant, so there is no `workflows/` directory in existence when
- * it is built. A `workflows/` module is now ordinary TypeScript compiled by the
- * agent bundle's own Vite pass, and durability is a method call instead of a
- * string literal.
+ * It replaced the Workflow DevKit's directives: durability is a method call.
  *
  * ## The body is REPLAYED, which is the whole reason this type exists
  *
@@ -41,12 +34,9 @@
  * unreachable on that delivery. The engine suspends the run on a channel the
  * body holds no reference to (`aai-runtime/workflow-replay-suspend.ts`).
  *
- * This used to be a throw, and it was the one rule a body had to obey by hand:
- * a `catch` was told to test the signal and re-throw it. One shipped template
- * forgot — its saga unwound a compensation stack, deleted the transcript the run
- * was waiting for, journaled the deletion as successful, and the run reported as
- * healthily suspended. So `try`/`catch` in a body is now ordinary: it sees step
- * failures and nothing else.
+ * It used to be a throw a `catch` had to re-throw by hand, and a template that
+ * forgot deleted the transcript its run was waiting on. So `try`/`catch` in a
+ * body is now ordinary: it sees step failures and nothing else.
  *
  * **THREE layers check this now, and none is a substitute for another.** For a
  * long time nothing did — the build scan that used to try went with the DevKit,
@@ -55,10 +45,8 @@
  * about a `Date.now()` INSIDE a step callback (legal) while blind to the
  * boundary it existed to police. What replaced it:
  *
- * - **`Literal`, at the call site.** A name that has widened to `string`
- *   is a compile error. Cheap, and it cannot reach a name whose type is a union
- *   of literals — that type's own doc carries the gap and why closing it with an
- *   `IsUnion` rejection was refused.
+ * - **`Literal`, at the call site.** A name widened to `string` is a compile
+ *   error; a union of literals is the gap its own doc carries.
  * - **`guard-invariants` rule 30, before it ships.** A clock, a random number, a
  *   uuid or a `fetch` in a shipped `workflows/*.ts` is a gate failure; the
  *   legitimate case — the same read inside a step body — is baselined with its
@@ -91,10 +79,8 @@
  * delivery, side effects included — measured, a one-step body ran its effect
  * twice and reported `completed`. And a wait parks on a promise that never
  * settles, so a step awaiting one holds the walk open against the very check
- * that would suspend it and the delivery never returns. (The third reason was
- * the key slide above: settling the step stops its wait being reached, which
- * shifted every later wait one place down a positional key space. Naming the
- * waits closed that one.) A fourth layer therefore fails the run on the spot,
+ * that would suspend it and the delivery never returns. (The third, the key
+ * slide above, closed when waits were named.) A fourth layer fails the run on the spot,
  * naming the fix: `aai-runtime/workflow-replay-wait.ts`. It has to be the ENGINE
  * and not a type, because the callback captures the outer `ctx` and no
  * step-scoped parameter can take a binding out of lexical scope.
@@ -176,6 +162,8 @@
 import type { Literal } from "./_workflow-ctx-literal.ts";
 import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import type {
+  PollOptions,
+  PollResult,
   SleepOptions,
   StepOptions,
   StepSchemaOptions,
@@ -188,6 +176,8 @@ import type {
 // file-length decision, not a change to where these names live.
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  type PollOptions,
+  type PollResult,
   type SleepOptions,
   type StepOptions,
   type StepSchemaOptions,
@@ -408,6 +398,18 @@ export type WorkflowContext = {
     until: number | Date,
     options?: SleepOptions,
   ): Promise<void>;
+  /**
+   * Check something until it is done, sleeping DURABLY between checks: each check
+   * is `ctx.step(name, check)`, each wait `ctx.sleep(name, everyMs)`, so the loop
+   * journals exactly what the hand-written one did. Resolves `{ value, done,
+   * checks }` — `done: false` with the latest reading once `floor(maxMs / everyMs)`
+   * sleeps are spent. `name` is a string LITERAL, as a step's is. See {@link PollOptions}.
+   */
+  poll<T, const Name extends string>(
+    name: Name & Literal<Name>,
+    check: () => Promise<T> | T,
+    options: PollOptions<T>,
+  ): Promise<PollResult<T>>;
   /**
    * Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
    *

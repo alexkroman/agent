@@ -36,9 +36,11 @@
  */
 
 import type { WorkflowDef } from "@alexkroman1/aai";
+import { resolveFailureHandler } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../runtime-config.ts";
 import { guestCodeVersion } from "./code-version.ts";
+import { dedupedRunId } from "./dedupe-run-id.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./journal/types.ts";
 import { settleRunOutcome } from "./output.ts";
 import { type ReplayOptions, type ReplayOutcome, replayRun } from "./replay.ts";
@@ -141,11 +143,9 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    * mean NOW: a `start` has a body to walk, and a wake or a signal has an answer
    * the body is waiting to read.
    *
-   * The rejection is dropped rather than logged HERE, and that is not a swallow:
-   * a dispatcher that can fail owns its own report — `createPlatformDispatch`
-   * logs the run id at `error` before rejecting, and the in-process one cannot
-   * fail at all. What the catch buys is that an unhandled rejection, which by
-   * default ends the process, cannot come out of a tool's `start`.
+   * The rejection is dropped, not swallowed: a dispatcher that can fail logs
+   * its own (`createPlatformDispatch`), and the catch keeps an unhandled
+   * rejection — which ends the process — out of a tool's `start`.
    */
   function dispatchDetached(runId: string): void {
     void Promise.resolve(dispatch(runId)).catch(() => undefined);
@@ -169,10 +169,8 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
   /**
    * Record what one delivery's replay resolved to.
    *
-   * Split from `execute` because the two answer different questions — `execute`
-   * decides whether this delivery may run the body at all, and this decides what
-   * the run becomes afterwards. Keeping them together put both in one function
-   * Biome measured at complexity 20.
+   * Split from `execute`, which decides whether this delivery may run the body
+   * at all; this decides what the run becomes afterwards.
    */
   async function recordOutcome(
     runId: string,
@@ -230,7 +228,10 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    */
   async function runWalk(
     runId: string,
-    walk: Pick<ReplayOptions, "workflow" | "input" | "run" | "steps" | "sleeps" | "startedUnder">,
+    walk: Pick<
+      ReplayOptions,
+      "workflow" | "input" | "run" | "onFailure" | "steps" | "sleeps" | "startedUnder"
+    >,
     callerSignal: AbortSignal | undefined,
   ): Promise<RunRecord["status"] | undefined> {
     // One controller per WALK, registered before the body can run, so `cancel`
@@ -276,32 +277,41 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
   return {
     async start(workflow: string, args: unknown[], options?: WdkStartOptions): Promise<string> {
       // `args` is the adapter's shape — the DevKit's `start` was variadic. A
-      // body takes exactly one input, so the first element IS the input and a
-      // second would be silently dropped; this refuses instead, because the one
-      // caller is `workflow/client.ts` and a second element means it changed.
+      // body takes one input, so a second element would be silently dropped —
+      // refused instead: the one caller is `workflow/client.ts`, and it changed.
       if (args.length !== 1) {
         throw new Error(`workflow ${workflow} takes one input, got ${args.length} argument(s)`);
       }
       if (!workflows[workflow]) {
         throw new Error(`no workflow declared as ${JSON.stringify(workflow)}`);
       }
-      const runId = newRunId();
-      await journal.createRun({
-        runId,
-        workflow,
-        status: "pending",
-        createdAt: Date.now(),
-        input: args[0],
-        // Which CODE this run is starting against, so a walk after a redeploy can
-        // say so rather than making the divergence message guess — read from THIS
-        // process's env (`workflow/code-version.ts` says why). The label rides the
-        // same insert, so no reader sees the run without it.
-        ...omitUndefined({ codeVersion: guestCodeVersion(), label: options?.label }),
-      });
+      // A dedupe key DERIVES the id: racing starts meet at one `createRun` (`dedupe-run-id.ts`).
+      const dedupeKey = options?.dedupeKey;
+      const runId = dedupeKey === undefined ? newRunId() : dedupedRunId(workflow, dedupeKey);
+      const existing = async () => dedupeKey !== undefined && (await journal.getRun(runId));
+      if (await existing()) return runId;
+      const created = await journal
+        .createRun({
+          runId,
+          workflow,
+          status: "pending",
+          createdAt: Date.now(),
+          input: args[0],
+          // Which CODE this run starts against (`workflow/code-version.ts`); the
+          // label rides the same insert, so no reader sees the run without it.
+          ...omitUndefined({ codeVersion: guestCodeVersion(), label: options?.label }),
+          // The loser of a dedupe race: the winner's run is the answer, and theirs to dispatch.
+        })
+        .then(
+          () => true,
+          async (err: unknown) => {
+            if (await existing()) return false;
+            throw err;
+          },
+        );
       // After the record exists, never before: a dispatcher that delivered first
-      // would race a worker against `createRun` and report "no such run" for a
-      // run that is about to exist.
-      dispatchDetached(runId);
+      // would race a worker against `createRun` and find no such run.
+      if (created) dispatchDetached(runId);
       return runId;
     },
 
@@ -384,6 +394,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
           workflow: record.workflow,
           input: record.input,
           run: def.run,
+          onFailure: resolveFailureHandler(def.onFailure),
           steps,
           sleeps,
           // The version this run STARTED against, for the divergence message to

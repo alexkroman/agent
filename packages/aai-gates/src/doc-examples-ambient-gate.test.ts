@@ -13,8 +13,9 @@
  * another, and red the moment that sibling was edited — and nothing asserted
  * otherwise, because a leak makes a gate PASS.
  *
- * Two changes closed it: `scaffold/global.d.ts` (the file a real `aai init`
- * project ships, carrying that same reference) joined the program's `include`,
+ * Two changes closed it: the ambients a real `aai init` project gets — once
+ * `scaffold/global.d.ts`, now the `@alexkroman1/aai/tsconfig` preset's
+ * `vite/client` type and its `presets/agent-env.d.ts` — joined the program,
  * and the directives are now stripped out of each fence on the way to the
  * scratch tree. This suite is the guard under both halves, and it holds three
  * things a green gate cannot say for itself:
@@ -28,11 +29,12 @@
  *     parser, and at least one CHECKED fence must still carry a directive.
  *     A stripper matching nothing is the dead-pattern failure every gate spec
  *     in this package exists to catch;
- *   - **`global.d.ts` is what carries the ambient.** Its line in the `include`
- *     is load-bearing now rather than belt-and-braces: A/B'd 2026-09-01 by
- *     deleting it with stripping on, the gate reports **12 failures**, and the
- *     four `scaffold/CLAUDE.md` `client.tsx` fences that used to supply the
- *     ambient themselves are among them (`TS2882` on
+ *   - **the harness is what carries the ambient.** `vite/client` in the
+ *     generated config's `types`, and the preset it extends, are load-bearing
+ *     rather than belt-and-braces: A/B'd 2026-09-01 by deleting the then
+ *     `global.d.ts` entry with stripping on, the gate reported **12 failures**,
+ *     the four `scaffold/CLAUDE.md` `client.tsx` fences that used to supply the
+ *     ambient themselves among them (`TS2882` on
  *     `import "@alexkroman1/aai-ui/styles.css"`).
  *
  * It reads its subject as TEXT (`?raw`, eager) rather than importing it: this
@@ -50,7 +52,9 @@ import {
 import { GATE_WIRING, sole } from "./_gate-support.ts";
 
 const AMBIENTS_MODULE = "scripts/_doc-example-ambients.mjs";
-const GLOBAL_DTS = "packages/aai-templates/scaffold/global.d.ts";
+const PRESET = "packages/aai/presets/tsconfig.agent.json";
+const AGENT_ENV_DTS = "packages/aai/presets/agent-env.d.ts";
+const SCAFFOLD_TSC = "scripts/_scaffold-tsc.mjs";
 
 /** The harness transformation, read as SOURCE — for the wiring assertions. */
 const ambientsSource = sole(
@@ -76,9 +80,24 @@ const stripReferenceDirectives = sole(
   }),
 );
 
-/** The ambients themselves, so "the file still carries them" is checkable. */
-const globalDts = sole(
-  import.meta.glob("../../aai-templates/scaffold/global.d.ts", {
+/** The ambients themselves, so "the preset still carries them" is checkable. */
+const preset = sole(
+  import.meta.glob("../../aai/presets/tsconfig.agent.json", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
+const agentEnvDts = sole(
+  import.meta.glob("../../aai/presets/agent-env.d.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+);
+/** The shared harness, which must EXTEND the preset for its `files` to arrive. */
+const scaffoldTscSource = sole(
+  import.meta.glob("../../../scripts/_scaffold-tsc.mjs", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -179,28 +198,35 @@ describe("the ambient stripper's wiring", () => {
 });
 
 describe("the harness owns the ambients, not a sibling fence", () => {
-  test("global.d.ts is in the program, and still carries the reference", () => {
-    // The load-bearing pair. A/B'd 2026-09-01 with stripping ON: delete this
-    // `include` entry and the gate reports 12 failures, four of them the
-    // scaffold/CLAUDE.md `client.tsx` fences that used to supply the ambient
-    // themselves. So this is not redundancy with the stripping — it is the
-    // replacement for the leak, and removing it is a red gate.
+  test("the scaffold's ambients are in the program, and the preset still carries them", () => {
+    // The load-bearing pair. A/B'd 2026-09-01 with stripping ON: delete the
+    // ambient source (then `scaffold/global.d.ts`) and the gate reports 12
+    // failures, four of them the scaffold/CLAUDE.md `client.tsx` fences that
+    // used to supply the ambient themselves. So this is not redundancy with
+    // the stripping — it is the replacement for the leak.
     //
-    // Matched as the `path.join` EXPRESSION, not as the bare path: the docExamplesSource
-    // discusses that file in three comments, so `toContain("global.d.ts")`
-    // passed the A/B above with the real `include` entry deleted — a spec
-    // satisfied by the prose ABOUT the mechanism it is checking, which is the
-    // self-referential trap `guard-invariants.mjs` keeps its own set for.
+    // Matched as the EXPRESSION, not as a bare name: the script discusses
+    // `vite/client` in its comments, so a `toContain` would pass with the real
+    // entry deleted — a spec satisfied by the prose ABOUT the mechanism it is
+    // checking, which is the self-referential trap `guard-invariants.mjs` keeps
+    // its own set for.
     expect(
       docExamplesSource ?? "",
-      `${DOC_EXAMPLES_SCRIPT} no longer includes ${GLOBAL_DTS} in the program`,
-    ).toMatch(/path\.join\(\s*repo,\s*"packages\/aai-templates\/scaffold\/global\.d\.ts"\s*\)/);
-    expect(globalDts, `${GLOBAL_DTS} not found`).toBeTypeOf("string");
-    expect(globalDts, `${GLOBAL_DTS} no longer references vite/client`).toMatch(
-      /^\s*\/\/\/\s*<reference\s+types="vite\/client"\s*\/>/,
+      `${DOC_EXAMPLES_SCRIPT} no longer puts Vite's client types in the program`,
+    ).toMatch(/types:\s*\[\s*"node",\s*VITE_CLIENT_TYPES\s*\]/);
+    expect(
+      scaffoldTscSource ?? "",
+      `${SCAFFOLD_TSC} no longer extends the scaffold's preset, so its files entry is lost`,
+    ).toMatch(/extends:\s*scaffold\.extends,/);
+    expect(preset, `${PRESET} not found`).toBeTypeOf("string");
+    expect(preset, `${PRESET} no longer names vite/client in types`).toMatch(
+      /"types":\s*\[[^\]]*"vite\/client"/,
     );
-    // The other ambient the fences depend on, from the same file.
-    expect(globalDts, `${GLOBAL_DTS} no longer declares virtual:aai/agent`).toContain(
+    expect(preset, `${PRESET} no longer loads agent-env.d.ts`).toMatch(
+      /"files":\s*\[\s*"\.\/agent-env\.d\.ts"\s*\]/,
+    );
+    // The other ambient the fences depend on.
+    expect(agentEnvDts, `${AGENT_ENV_DTS} no longer declares virtual:aai/agent`).toContain(
       'declare module "virtual:aai/agent"',
     );
   });
@@ -221,9 +247,9 @@ describe("the harness owns the ambients, not a sibling fence", () => {
   test("the stripper still has work to do", () => {
     // Non-vacuity, and the assertion this file exists for. Measured 2026-09-01:
     // 4 — the `client.tsx` fences in scaffold/CLAUDE.md, which keep their
-    // directives ON THE PAGE deliberately, because they teach a convention a
-    // scaffolded project really uses (`scaffold/global.d.ts` opens with the same
-    // line). If this ever reaches zero the stripping is dead code: either the
+    // directives ON THE PAGE deliberately: a reader may paste the fence into a
+    // project whose tsconfig does not extend the preset, where the directive
+    // is what types the import. If this ever reaches zero the stripping is dead code: either the
     // teaching directives were removed from the docs — put them back, the fence
     // a reader copies has to be the fence a project can compile — or the
     // transformation has genuinely become unnecessary and should be DELETED

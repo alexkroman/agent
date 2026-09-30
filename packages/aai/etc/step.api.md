@@ -99,6 +99,9 @@ export const DEFAULT_CALL_TIME_LIMIT_S: number;
 export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
 
 // @public
+export const DEFAULT_CLIENT_DELIVERY_ATTEMPTS: number;
+
+// @public
 export const DEFAULT_CLIENT_RETRY_MS = 30000;
 
 // @public
@@ -123,6 +126,19 @@ interface DelegateResult extends SubagentAnswer {
 
 // @public
 export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
+
+// @public
+export type EnvContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal;
+};
+
+// @public
+type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+};
 
 // @public
 type FindOptions = {
@@ -300,6 +316,21 @@ export type PlacedCall = {
 export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
 
 // @public
+type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+export type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+};
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -413,6 +444,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 // @public
 type StartOptions = {
     key?: string;
+    dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
 };
@@ -446,6 +478,9 @@ export function stepEmit<T>(namespace: string, chunk: T): Promise<void>;
 
 // @public
 export function stepEnv(name: string): string | undefined;
+
+// @public
+export function stepEnvContext(): EnvContext;
 
 // @public
 export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
@@ -501,6 +536,7 @@ export type StepInfo = {
     readonly attempt: number;
     readonly maxAttempts: number;
     readonly isLastAttempt: boolean;
+    readonly signal?: AbortSignal;
 };
 
 // @public
@@ -526,6 +562,17 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 export function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
 
 // @public
+export function stepPollUntil<T>(check: () => Promise<T> | T, options: StepPollUntilOptions<T>): Promise<PollResult<T>>;
+
+// @public
+export type StepPollUntilOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
 export function stepReadUpload(id: string, options?: ReadUploadOptions): Promise<UploadSlice>;
 
 // @public
@@ -533,6 +580,23 @@ export function stepReport(line: string): Promise<void>;
 
 // @public
 export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
+
+// @public
+export function stepSayOnClient(clientId: string, options: StepSayOnClientOptions): Promise<string>;
+
+// @public
+export type StepSayOnClientOptions = {
+    id: string;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
 
 // @public
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
@@ -865,6 +929,9 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+    cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
+    cancelAll(workflow: string, key: string): Promise<number>;
     recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
@@ -887,6 +954,7 @@ type WorkflowContext = {
     random(): Promise<number>;
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
@@ -900,7 +968,24 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
+    onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
+
+// @public
+type WorkflowFailureContext<I = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly input: I;
+};
+
+// @public
+type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
+    run: WorkflowFailureHook<I>;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
 // @public
 type WorkflowRunBase = {
@@ -929,6 +1014,9 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 | (WorkflowRunBase & {
     status: "cancelled";
 });
+
+// @public
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 // @public
 type WorkflowSummary = {

@@ -79,8 +79,10 @@ const DECLARES_WORKFLOW_APP = /\bworkflowApp\s*\(/;
  *
  * `\bworkflow\s*\(` cannot match `workflowApp(`: the character after `workflow`
  * is `A`, not a paren or a space. Asserted below rather than reasoned about.
+ * `deepResearchWorkflow({` (`@alexkroman1/aai/experimental`) returns an
+ * ordinary def, so it is a declaration too — `research-handoff-agent`'s.
  */
-const DECLARES_WORKFLOW = /\bworkflow\s*\(\s*\{/;
+const DECLARES_WORKFLOW = /\b(?:workflow|deepResearchWorkflow)\s*\(\s*\{/;
 
 /** A slot declaration, wherever it is. */
 const DECLARES_SLOT = /\bsessionSlot\s*\(/;
@@ -187,6 +189,9 @@ describe("the corpus this gate walks", () => {
     // would ask every app to declare its def somewhere it does not.
     expect(DECLARES_WORKFLOW.test("export default workflowApp({ name: 'x' });")).toBe(false);
     expect(DECLARES_WORKFLOW.test("export const d = workflow({ input: x });")).toBe(true);
+    expect(DECLARES_WORKFLOW.test("export const d = deepResearchWorkflow({ input: x });")).toBe(
+      true,
+    );
     expect(DECLARES_WORKFLOW_APP.test("export default workflowApp({ name: 'x' });")).toBe(true);
   });
 });

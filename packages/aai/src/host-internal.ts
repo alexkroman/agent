@@ -47,7 +47,7 @@ export {
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
 export { getSessionLocation } from "./host/session-location.ts";
-export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
+export { CONTAINED_ENV, credentialSafeFetch, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
@@ -68,6 +68,8 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  * function's source text into the model's instructions.
  */
 export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
+// …and of `routeError`: a thrown refusal, read by the same kind of brand.
+export { readRouteError } from "./sdk/agent-route-helpers.ts";
 // The runtime's half of `routeResponse`: a route's answer crosses from the agent
 // bundle's copy of the SDK, so its status is read by brand, not `instanceof`.
 export { readRouteResponse } from "./sdk/agent-routes.ts";
@@ -279,6 +281,7 @@ export {
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "./sdk/step-fetch-constants.ts";
+export { publishStepMcp, type StepMcp, type StepMcpFn } from "./sdk/step-mcp.ts";
 // The publisher half of `stepNotifyClient` (authoring API on `/step`): the
 // server that holds the `WS /inbox` sockets publishes how a notice reaches one.
 export {
@@ -288,6 +291,10 @@ export {
   publishClientNotifier,
 } from "./sdk/step-notify-client.ts";
 export { publishStepReporter, type StepReporter } from "./sdk/step-report.ts";
+export {
+  type ClientInboxDefaults,
+  publishClientInboxDefaults,
+} from "./sdk/step-say-on-client.ts";
 export { publishSpeechSynthesizer, type SpeechSynthesizer } from "./sdk/step-speak.ts";
 export {
   assertUploadToken,
@@ -340,4 +347,13 @@ export {
   UPLOAD_PART_BYTES,
   UPLOAD_TOKEN_RE,
 } from "./sdk/upload-constants.ts";
+// `workflow({ onFailure })`, normalized for the engines that run it.
+export {
+  asFailureError,
+  type ResolvedFailureHandler,
+  resolveFailureHandler,
+} from "./sdk/workflow-failure.ts";
+// The one implementation of `ctx.poll`, which every `WorkflowContext` a host
+// builds (the replay engine's, an eval's) delegates to.
+export { type PollHost, pollWorkflow } from "./sdk/workflow-poll.ts";
 export { PUBLIC_URL_UNCONFIGURED_MESSAGE } from "./sdk/workflow-unavailable.ts";

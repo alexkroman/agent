@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "agent-routes",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "ddab11942d7248506b76df1dcb80fc596e24c689c27578f84f0da217e7b15173",
+  "exports": [
+    "RouteFetchOptions",
+    "RouteMethod",
+    "UseRouteOptions",
+    "UseRouteResult",
+    "routeFetch",
+    "useRoute"
+  ],
+  "rollup": "48ca3a88aeaab67fa96018ca4d8fee5a95a5a990bd7a7feb707c5f98864d8243"
+}

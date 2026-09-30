@@ -46,10 +46,10 @@ import {
   type SlackChannel,
   slackChannel,
 } from "@alexkroman1/aai/channels";
+import type { DeepResearchNote } from "@alexkroman1/aai/experimental";
 import { stepEnv, stepReport } from "@alexkroman1/aai/step";
 import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
 import { plural } from "@alexkroman1/aai/utils";
-import type { Note } from "./notes.ts";
 
 /** The webhook a finished report is posted to. Absent means "file nowhere". */
 export const FILING_WEBHOOK_ENV = "RESEARCH_SLACK_WEBHOOK_URL";
@@ -60,18 +60,17 @@ export const FILING_TEXT_PARAM_ENV = "RESEARCH_SLACK_TEXT_PARAM";
 /**
  * One angle, as a filed report names it.
  *
- * A `Pick` of `Note` rather than a restatement of its fields: `notes.ts` is a
- * leaf both this module and `research.ts` import, so naming the real type costs
- * no cycle — and what this says is that a filed message reads the two halves of
- * a note that are about the SOURCES, never the findings themselves. Those are
- * what the report is for.
+ * A `Pick` of the SDK's `DeepResearchNote` rather than a restatement of its
+ * fields: what this says is that a filed message reads the two halves of a note
+ * that are about the SOURCES, never the findings themselves. Those are what the
+ * report is for.
  */
-export type FiledAngle = Pick<Note, "angle" | "sources">;
+export type FiledAngle = Pick<DeepResearchNote, "angle" | "sources">;
 
 /** Everything a filed report says. */
 export type Filing = {
   readonly topic: string;
-  /** Who asked — `researchFlow`'s `requestedBy`, which is the calling session. */
+  /** Who asked — the run input's `requestedBy`, which is the calling session. */
   readonly requestedBy: string;
   /** The two sentences, the same ones the agent reads down the phone. */
   readonly summary: string;

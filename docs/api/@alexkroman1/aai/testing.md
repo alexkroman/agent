@@ -117,6 +117,39 @@ const workflows = createStubWorkflows({
 
 ***
 
+### createRecordingWorkflows()
+
+```ts
+function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
+```
+
+Build a [RecordingWorkflows](#recordingworkflows).
+
+#### Parameters
+
+##### options?
+
+[`RecordingWorkflowsOptions`](#recordingworkflowsoptions)
+
+#### Returns
+
+[`RecordingWorkflows`](#recordingworkflows)
+
+#### Example
+
+```ts
+import { createRecordingWorkflows, createRunSnapshot } from "@alexkroman1/aai/testing";
+
+const workflows = createRecordingWorkflows({
+  runs: [createRunSnapshot({ workflow: "remind", key: "kitchen", runId: "wrun_pending" })],
+});
+await workflows.start("remind", { text: "flip the laundry" }, { key: "kitchen" });
+console.log(workflows.started("remind").length); // 1
+console.log((await workflows.find("remind", "kitchen")).length); // 2
+```
+
+***
+
 ### createRunSnapshot()
 
 ```ts
@@ -353,8 +386,8 @@ is a statement rather than an accident.
 // `no-check`: two of these imports are files YOU own — `./agent.ts` and
 // `./system-prompt.md?raw` — which exist in your project and in no tree of
 // ours, so nothing here can resolve them. (`import.meta.glob` is not the
-// blocker: the doc-example gate compiles against the scaffold's own
-// `global.d.ts`, which carries `/// <reference types="vite/client" />`.)
+// blocker: the doc-example gate compiles with Vite's client types, as the
+// scaffold's `@alexkroman1/aai/tsconfig` preset does.)
 import { deployedAgent } from "@alexkroman1/aai/testing";
 import authored from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -1629,6 +1662,57 @@ const ctx = createToolContext({ delegate: desk.delegate });
 
 ***
 
+### stubFetchRoutes()
+
+```ts
+function stubFetchRoutes(routes: 
+  | Readonly<Record<string, 
+  | FetchRouteHandler
+  | StubStepAnswer>>
+  | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
+```
+
+Install one router as the global `fetch` (and, by default, the published
+step fetch), and return its log. Call `restore` when the test ends — or use
+`installFetchRoutes`, which registers it for you.
+
+#### Parameters
+
+##### routes
+
+  \| `Readonly`\<`Record`\<`string`, 
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+  \| [`StubStepAnswer`](#stubstepanswer)\>\>
+  \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
+
+A [FetchRouteTable](#fetchroutetable), or a list of handlers tried in
+  order (the first that answers wins).
+
+##### options?
+
+[`FetchRoutesOptions`](#fetchroutesoptions)
+
+#### Returns
+
+[`StubFetchRoutes`](#stubfetchroutes)
+
+#### Example
+
+```ts
+import { stubFetchRoutes } from "@alexkroman1/aai/testing";
+
+const net = stubFetchRoutes({
+  "GET supabase.test": (req) => ({ body: req.searchParams.get("id") ? [{ id: 1 }] : [] }),
+  "POST supabase.test": { status: 201 },
+  "https://api.mem0.ai/v3/memories/": { body: { results: [] } },
+});
+await fetch("https://supabase.test/rest/v1/calls", { method: "POST", body: "{}" });
+console.log(net.to("POST supabase.test").length); // 1
+net.restore();
+```
+
+***
+
 ### stubGateway()
 
 ```ts
@@ -2649,7 +2733,7 @@ Every request, in call order.
 ##### fetch
 
 ```ts
-fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+fetch: (url: string | Request | URL, init?: RequestInit) => Promise<Response>;
 ```
 
 Install with `vi.stubGlobal("fetch", gateway.fetch)`.
@@ -2658,7 +2742,7 @@ Install with `vi.stubGlobal("fetch", gateway.fetch)`.
 
 ###### url
 
-`string` \| `URL` \| `Request`
+`string` \| `Request` \| `URL`
 
 ###### init?
 
@@ -2875,6 +2959,209 @@ Every call, in order — the same log [stubDelegate](#stubdelegate-1) keeps.
 
 ## Type Aliases
 
+### FetchRouteHandler
+
+```ts
+type FetchRouteHandler = (request: FetchRouteRequest) => 
+  | StubStepAnswer
+  | undefined
+| Promise<StubStepAnswer | undefined>;
+```
+
+A route: answers a request with a `Response` or the `{ status, body, headers }`
+shorthand `stubStepFetch` takes — or `undefined` to DECLINE, leaving it to
+the next route (in a list) or to [FetchRoutesOptions.unmatched](#unmatched).
+
+A `StepRoute` (`routeStepFetch`'s leg, `stubGatewayRoute().route`) is one.
+
+#### Parameters
+
+##### request
+
+[`FetchRouteRequest`](#fetchrouterequest)
+
+#### Returns
+
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| `undefined`
+  \| `Promise`\<[`StubStepAnswer`](#stubstepanswer) \| `undefined`\>
+
+***
+
+### FetchRouteHit
+
+```ts
+type FetchRouteHit = FetchRouteRequest & {
+  outcome: "routed" | "passthrough" | "unmatched";
+  route?: string;
+  status?: number;
+  via: "fetch" | "stepFetch";
+};
+```
+
+One request the router saw, whatever became of it.
+
+#### Type Declaration
+
+##### outcome
+
+```ts
+readonly outcome: "routed" | "passthrough" | "unmatched";
+```
+
+Answered by a route, sent to the real network, or answered by nothing.
+
+##### route?
+
+```ts
+readonly optional route?: string;
+```
+
+The table key that answered it (a list's routes have none).
+
+##### status?
+
+```ts
+readonly optional status?: number;
+```
+
+The response's status, for a request that got one.
+
+##### via
+
+```ts
+readonly via: "fetch" | "stepFetch";
+```
+
+Which fetch it arrived through.
+
+***
+
+### FetchRouteRequest
+
+```ts
+type FetchRouteRequest = StubStepRequest & {
+  host: string;
+  json: unknown;
+  pathname: string;
+  searchParams: URLSearchParams;
+};
+```
+
+One request as a route sees it: the recorded request (`url`, `method`,
+`headers`, `body` — the same fields `stubStepFetch` records) plus the parts a
+route branches on, already parsed.
+
+#### Type Declaration
+
+##### host
+
+```ts
+readonly host: string;
+```
+
+`new URL(url).hostname`.
+
+##### json
+
+```ts
+readonly json: unknown;
+```
+
+The body parsed as JSON when it parses; `undefined` otherwise (and for none).
+
+##### pathname
+
+```ts
+readonly pathname: string;
+```
+
+`new URL(url).pathname`.
+
+##### searchParams
+
+```ts
+readonly searchParams: URLSearchParams;
+```
+
+`new URL(url).searchParams` — PostgREST filters, query strings.
+
+***
+
+### FetchRoutesOptions
+
+```ts
+type FetchRoutesOptions = {
+  passThrough?: RegExp;
+  stepFetch?: boolean;
+  unmatched?: "throw" | "notFound" | "passthrough";
+};
+```
+
+What [stubFetchRoutes](#stubfetchroutes-1) may be told.
+
+#### Properties
+
+##### passThrough?
+
+```ts
+optional passThrough?: RegExp;
+```
+
+URLs that reach the REAL network before any route is consulted, tested
+against the full URL — e.g. `/^https://[^/]*assemblyai\.com//` for a
+live model's own traffic.
+
+##### stepFetch?
+
+```ts
+optional stepFetch?: boolean;
+```
+
+Publish the router as the step fetch too (the default), so a step's
+`stepFetch` lands in the same routes and the same log as a tool's
+`fetch`. Pass `false` for a spec that installs its own step fetch.
+
+##### unmatched?
+
+```ts
+optional unmatched?: "throw" | "notFound" | "passthrough";
+```
+
+What a request no route answers means.
+
+- `"throw"` (the default) — a finding: the fetch rejects naming the method
+  and URL, the way an unreachable host does, and the request is logged
+  with `outcome: "unmatched"`. An invented `200 {}` reads to a tool as
+  success, so the spec would pass having tested the wrong branch.
+- `"notFound"` — a real 404, for a spec whose subject is one.
+- `"passthrough"` — the REAL network. Rarely right in a unit test.
+
+***
+
+### FetchRouteTable
+
+```ts
+type FetchRouteTable = Readonly<Record<string, 
+  | FetchRouteHandler
+| StubStepAnswer>>;
+```
+
+Routes by where they answer. A key is an optional METHOD, then one of:
+
+- a HOST — `"api.mem0.ai"` — matching that hostname exactly;
+- a WILDCARD host — `"*.example"` — matching any subdomain of it;
+- a URL PREFIX — `"https://api.mem0.ai/v3/memories/"` — matching any URL that
+  starts with it.
+
+So `"POST textbelt.com"` answers only a POST. The most specific key answers:
+a URL prefix (longest first), then an exact host, then a wildcard (longest
+first); a METHOD-qualified key beats the same key without one. A value is a
+[FetchRouteHandler](#fetchroutehandler), or a fixed answer given to every request it
+matches.
+
+***
+
 ### ProjectFiles
 
 ```ts
@@ -2961,6 +3248,64 @@ Exactly what the body passed: milliseconds, or a `Date`.
 
 ***
 
+### RecordedStart
+
+```ts
+type RecordedStart = {
+  def: AnyWorkflowDef | undefined;
+  input: unknown;
+  options: StartOptions | undefined;
+  runId: string;
+  workflow: string;
+};
+```
+
+One `start` the client recorded.
+
+#### Properties
+
+##### def
+
+```ts
+readonly def: AnyWorkflowDef | undefined;
+```
+
+The def passed, when one was (`undefined` for a start by name).
+
+##### input
+
+```ts
+readonly input: unknown;
+```
+
+The input, exactly as the tool passed it — not validated, since nothing runs.
+
+##### options
+
+```ts
+readonly options: StartOptions | undefined;
+```
+
+The start options (`key`, `label`, `notify`, …), when any were passed.
+
+##### runId
+
+```ts
+readonly runId: string;
+```
+
+The run id `start` resolved with.
+
+##### workflow
+
+```ts
+readonly workflow: string;
+```
+
+The declared name — the key in `agent({ workflows })` — or the string passed.
+
+***
+
 ### RecordedStep
 
 ```ts
@@ -2987,6 +3332,129 @@ What the body asked for, or `undefined` when it passed no options.
 ```ts
 name: string;
 ```
+
+***
+
+### RecordingWorkflows
+
+```ts
+type RecordingWorkflows = WorkflowClient & {
+  cancelled: string[];
+  starts: RecordedStart[];
+  seed: void;
+  started: RecordedStart[];
+};
+```
+
+A `WorkflowClient` that records, plus its log.
+
+`start` records and resolves a fresh run id, and the run it "started" is
+visible to `get`/`find`/`recent` as `running` — so a tool that checks for a
+pending run before starting a second one sees its own first start. `cancel`
+marks a known, unfinished run `cancelled` and resolves `true` (else
+`false`); `wakeUp` resolves `0`; `lastLine` resolves `undefined`. The
+progress-channel reads (`stream`, `streamTail`, `signal`,
+`publicWebhookUrl`) REJECT, as `createStubWorkflows`' do — spread over it to
+answer one.
+
+#### Type Declaration
+
+##### cancelled
+
+```ts
+readonly cancelled: string[];
+```
+
+Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### starts
+
+```ts
+readonly starts: RecordedStart[];
+```
+
+Every start, in order.
+
+##### seed()
+
+```ts
+seed(...runs: WorkflowRunSnapshot[]): void;
+```
+
+Add runs for the reads to answer from, e.g. inside a case before `say()`.
+
+###### Parameters
+
+###### runs
+
+...[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)[]
+
+###### Returns
+
+`void`
+
+##### started()
+
+```ts
+started(workflow?: string | AnyWorkflowDef): RecordedStart[];
+```
+
+The starts of one workflow — by declared name or by def — or all of them.
+
+###### Parameters
+
+###### workflow?
+
+`string` \| [`AnyWorkflowDef`](workflow-api.md#anyworkflowdef)
+
+###### Returns
+
+[`RecordedStart`](#recordedstart)[]
+
+***
+
+### RecordingWorkflowsOptions
+
+```ts
+type RecordingWorkflowsOptions = {
+  runIdPrefix?: string;
+  runs?: readonly WorkflowRunSnapshot[];
+  workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+};
+```
+
+What [createRecordingWorkflows](#createrecordingworkflows) takes.
+
+#### Properties
+
+##### runIdPrefix?
+
+```ts
+optional runIdPrefix?: string;
+```
+
+Prefix of the minted run ids, numbered from 1. Defaults to `"wrun_rec_"`.
+
+##### runs?
+
+```ts
+optional runs?: readonly WorkflowRunSnapshot[];
+```
+
+Runs the reads answer from before anything starts — a reminder already
+pending, a job that failed. Build them with `createRunSnapshot`; more can
+be added later with `seed`.
+
+##### workflows?
+
+```ts
+optional workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+```
+
+The agent's declared workflows — pass `agentDef.workflows` — so a start
+by DEF is recorded under its declared name, and `listing()` reports them.
+A def not in it is refused, as the real client refuses it. Without it, a
+def is recorded under its `description` and matched by identity.
 
 ***
 
@@ -3481,6 +3949,72 @@ The stream named at the call site.
 
 ***
 
+### StubFetchRoutes
+
+```ts
+type StubFetchRoutes = {
+  fetch: typeof globalThis.fetch;
+  hits: FetchRouteHit[];
+  restore: void;
+  to: FetchRouteHit[];
+};
+```
+
+What [stubFetchRoutes](#stubfetchroutes-1) returns.
+
+#### Methods
+
+##### restore()
+
+```ts
+restore(): void;
+```
+
+Put the global `fetch` back and unpublish the step fetch.
+
+###### Returns
+
+`void`
+
+##### to()
+
+```ts
+to(filter: string | RegExp): FetchRouteHit[];
+```
+
+The hits a filter selects: a string matched the way a route KEY is
+(`"POST supabase.test"`, `"*.example"`), a `RegExp` tested against the URL.
+
+###### Parameters
+
+###### filter
+
+`string` \| `RegExp`
+
+###### Returns
+
+[`FetchRouteHit`](#fetchroutehit)[]
+
+#### Properties
+
+##### fetch
+
+```ts
+readonly fetch: typeof globalThis.fetch;
+```
+
+The router as a `fetch`, for code handed one explicitly.
+
+##### hits
+
+```ts
+readonly hits: FetchRouteHit[];
+```
+
+Every request, in order, including passed-through and unmatched ones.
+
+***
+
 ### StubGenerateReply
 
 ```ts
@@ -3934,7 +4468,9 @@ One `stepSpeak` call, as [stubSpeech](#stubspeech-1) records it.
 apiKey: string;
 ```
 
-The credential `stepSpeak` resolved out of the step env.
+The credential `stepSpeak` resolved out of the step env — `""` when the
+env holds none, which the stub accepts unless
+[StubSpeechOptions.requireApiKey](#requireapikey) is set.
 
 ##### language
 
@@ -3976,6 +4512,7 @@ The voice, with `stepSpeak`'s default already filled in.
 type StubSpeechOptions = {
   error?: Error;
   pcmBytes?: number;
+  requireApiKey?: boolean;
 };
 ```
 
@@ -4008,6 +4545,18 @@ Defaults to [STUB\_SPEECH\_PCM\_BYTES](#stub_speech_pcm_bytes), which is enough 
 gets a number rather than zero. A caller that cares about the exact
 duration sets this: at the default 24 kHz mono 16-bit, one second is
 48,000 bytes.
+
+##### requireApiKey?
+
+```ts
+optional requireApiKey?: boolean;
+```
+
+Refuse, as the real synthesizer does, when the step env holds no
+credential. Defaults to `false`: the stub presents the key to nobody, so a
+spec should not have to `vi.stubEnv("ASSEMBLYAI_API_KEY", …)` just to get
+past a check that guards a socket it never opens. Set it for the one spec
+whose subject IS the missing-key sentence.
 
 ***
 
@@ -4840,7 +5389,7 @@ The `stubDelegate` twin of `ToolContextOverrides.model`.
 optional env?: ToolContext["env"];
 ```
 
-See [ToolContext.env](index.md#env-5). Defaults to `{}`.
+See [ToolContext.env](index.md#env-6). Defaults to `{}`.
 
 ##### generate?
 
@@ -4913,7 +5462,7 @@ See [ToolContext.sessionId](index.md#sessionid-5). Defaults to a fresh id per ca
 optional signal?: ToolContext["signal"];
 ```
 
-See [ToolContext.signal](index.md#signal-3). Defaults to a signal that never aborts.
+See [ToolContext.signal](index.md#signal-4). Defaults to a signal that never aborts.
 
 ##### slots?
 

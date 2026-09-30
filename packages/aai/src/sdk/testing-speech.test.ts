@@ -65,4 +65,23 @@ describe("stubSpeech", () => {
 
     await expect(stepSpeak("hello")).rejects.toThrow("No speech synthesizer");
   });
+
+  test("needs no credential: an env without one records an empty key", async () => {
+    const speech = stubSpeech();
+    publishStepEnv({});
+
+    await stepSpeak("hello");
+
+    expect(speech.calls[0]?.apiKey).toBe("");
+    speech.restore();
+  });
+
+  test("`requireApiKey` restores the real refusal, naming the variable", async () => {
+    const speech = stubSpeech({ requireApiKey: true });
+    publishStepEnv({});
+
+    await expect(stepSpeak("hello")).rejects.toThrow("ASSEMBLYAI_API_KEY");
+    expect(speech.calls).toEqual([]);
+    speech.restore();
+  });
 });

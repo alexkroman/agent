@@ -120,6 +120,16 @@ export {
 // A subagent's guardrail, called as the runtime calls it — the one piece of a
 // subagent a spec can test without a model.
 export { eventsOf, isEvent } from "./testing-events.ts";
+// One URL/method router for the global fetch AND the step fetch, one log.
+export {
+  type FetchRouteHandler,
+  type FetchRouteHit,
+  type FetchRouteRequest,
+  type FetchRoutesOptions,
+  type FetchRouteTable,
+  type StubFetchRoutes,
+  stubFetchRoutes,
+} from "./testing-fetch-routes.ts";
 export {
   type StubGateway,
   type StubGatewayCall,
@@ -149,6 +159,13 @@ export {
   commandedBuiltins,
   expectPromptBuiltinsDeclared,
 } from "./testing-prompt-builtins.ts";
+// A `ctx.workflows` that records starts and runs nothing — an eval's client.
+export {
+  createRecordingWorkflows,
+  type RecordedStart,
+  type RecordingWorkflows,
+  type RecordingWorkflowsOptions,
+} from "./testing-recording-workflows.ts";
 // Both model seams scripted in one call, for a tool that reasons.
 export {
   type ScriptedToolContext,

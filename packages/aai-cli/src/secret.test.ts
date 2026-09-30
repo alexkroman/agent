@@ -1,6 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { PassThrough } from "node:stream";
+import { parseEnv } from "node:util";
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -32,8 +35,15 @@ vi.mock("./_api-client.ts", async (importOriginal) => ({
   HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
 
-const { executeSecretList, executeSecretPut, executeSecretDelete, resolveSecretValue } =
-  await import("./secret.ts");
+const {
+  executeLocalSecretDelete,
+  executeLocalSecretPut,
+  executeSecretList,
+  executeSecretPut,
+  executeSecretDelete,
+  resolveSecretValue,
+} = await import("./secret.ts");
+const { withTempDir } = await import("./_test-utils.ts");
 
 afterEach(() => {
   // `mockApiRequest` needs its implementation dropped too, so `mockReset`
@@ -268,5 +278,32 @@ describe("resolveSecretValue", () => {
     await expect(
       resolveSecretValue("FOO", "human", { stdin: new PassThrough(), stdinIsTTY: true }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("aai secret put/delete --local", () => {
+  test("put writes <cwd>/.env and never calls the platform; delete removes it", async () => {
+    await withTempDir(async (dir) => {
+      const put = await executeLocalSecretPut(dir, "MY_SECRET", "s3cret value");
+      expect(put).toEqual({ ok: true, data: { name: "MY_SECRET" } });
+      const text = await readFile(path.join(dir, ".env"), "utf-8");
+      expect(parseEnv(text)).toMatchObject({ MY_SECRET: "s3cret value" });
+      expect(mockApiRequest).not.toHaveBeenCalled();
+
+      expect(await executeLocalSecretDelete(dir, "MY_SECRET")).toEqual({
+        ok: true,
+        data: { name: "MY_SECRET" },
+      });
+      expect(parseEnv(await readFile(path.join(dir, ".env"), "utf-8"))).not.toHaveProperty(
+        "MY_SECRET",
+      );
+    });
+  });
+
+  test("deleting a name that is not set is not_found", async () => {
+    await withTempDir(async (dir) => {
+      const result = await executeLocalSecretDelete(dir, "NOPE");
+      expect(result).toMatchObject({ ok: false, code: "not_found" });
+    });
   });
 });
