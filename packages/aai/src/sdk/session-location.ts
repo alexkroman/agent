@@ -26,94 +26,37 @@
  * one copy is invisible to the other — the same two-copy rendezvous
  * `session-client.ts` argues, solved the same way (a `Symbol.for` key on
  * `globalThis`), with a TTL plus a hard cap so an abandoned process cannot grow
- * it.
+ * it. The map, the normalizing rule and the one writer are
+ * `_session-identity-store.ts`.
  *
  * The value is an address — personal data: never log it.
  *
  * @module
  */
 
-import { liveSessionEntry } from "./session-client.ts";
+import {
+  liveSessionEntry,
+  recordSessionIdentity,
+  type SessionLocationEntry,
+  sessionLocationEntries,
+} from "./_session-identity-store.ts";
 import type { ToolContext } from "./tool-context.ts";
 
-const SESSION_LOCATIONS_SLOT = Symbol.for("@alexkroman1/aai.sessionLocations");
-
-/** Same bound as the other session maps: a session is far shorter, this only reaps abandoned ones. */
-const SESSION_LOCATION_TTL_MS = 86_400_000;
-const MAX_SESSION_LOCATIONS = 10_000;
-
-/**
- * Longest location honored, from either writer. A street address fits in a
- * fraction of this; the bound exists because the value is kept per session and
- * one writer is a query parameter on a public endpoint.
- */
-const MAX_LOCATION_CHARS = 200;
+export {
+  normalizeClientLocation,
+  type SessionCoords,
+  type SessionLocationEntry,
+} from "./_session-identity-store.ts";
 
 /**
- * Coordinates a builtin resolved for the location, cached on the entry.
- *
- * @internal
- */
-export type SessionCoords = { latitude: number; longitude: number };
-
-/** @internal */
-export type SessionLocationEntry = {
-  location: string;
-  /** `null` once a lookup failed, so a bad address costs one request, not one per call. */
-  coords?: SessionCoords | null | undefined;
-  expiresAt: number;
-};
-
-type Slot = { [SESSION_LOCATIONS_SLOT]?: Map<string, SessionLocationEntry> };
-
-function entries(): Map<string, SessionLocationEntry> {
-  const slot = globalThis as Slot;
-  slot[SESSION_LOCATIONS_SLOT] ??= new Map();
-  return slot[SESSION_LOCATIONS_SLOT];
-}
-
-/**
- * `raw` as a location worth keeping, or `undefined`. Control characters become
- * spaces — the value is interpolated into third-party API requests — runs of
- * whitespace collapse, and an over-long one is DROPPED rather than truncated
- * into a different place.
- *
- * One rule for both writers, so an app's `sessionContext` cannot put into the
- * slot what the socket would have refused.
- *
- * @internal
- */
-export function normalizeClientLocation(raw: string | null | undefined): string | undefined {
-  if (raw === null || raw === undefined) return;
-  const location = raw
-    .replace(/\p{Cc}/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return location && location.length <= MAX_LOCATION_CHARS ? location : undefined;
-}
-
-/**
- * Record the location for `sessionId`. The same location again keeps the
+ * Record the location for `sessionId`, normalized (`normalizeClientLocation`;
+ * one the rule refuses is not recorded). The same location again keeps the
  * cached coordinates; a different one drops them.
  *
- * @internal — the runtime's half, called by both writers in the module doc.
+ * @internal — the runtime's half; `recordSessionIdentity` records every field at once.
  */
 export function setSessionLocation(sessionId: string, location: string): void {
-  const map = entries();
-  const prev = liveSessionEntry(map, sessionId);
-  const entry: SessionLocationEntry = {
-    location,
-    coords: prev?.location === location ? prev.coords : undefined,
-    expiresAt: Date.now() + SESSION_LOCATION_TTL_MS,
-  };
-  // Delete-then-set keeps insertion order = least-recently-written first.
-  map.delete(sessionId);
-  map.set(sessionId, entry);
-  while (map.size > MAX_SESSION_LOCATIONS) {
-    const oldest = map.keys().next().value;
-    if (oldest === undefined) break;
-    map.delete(oldest);
-  }
+  recordSessionIdentity(sessionId, { location });
 }
 
 /**
@@ -123,7 +66,7 @@ export function setSessionLocation(sessionId: string, location: string): void {
  * @internal
  */
 export function sessionLocationEntry(sessionId: string): SessionLocationEntry | undefined {
-  return liveSessionEntry(entries(), sessionId);
+  return liveSessionEntry(sessionLocationEntries(), sessionId);
 }
 
 /**

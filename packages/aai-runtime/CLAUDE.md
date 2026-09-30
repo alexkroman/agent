@@ -190,7 +190,9 @@ The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
 it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
 (`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
 process, so **anything used to rendezvous between them must be keyed on
-`globalThis` (`Symbol.for`), never a module-level value.**
+`globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
+`globalSlot(key)` from `@alexkroman1/aai/internal`, not a hand-written
+`delete (globalThis as S)[SYM]` pair.
 
 The workflow run context (`workflow/run-context.ts`) and the metrics sink
 registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a

@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 179 names
 - [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 368 names
+- [Framework internals](#framework-internals) — 371 names
 
 ## Agent authoring
 
@@ -1279,6 +1279,7 @@ trace or a type error can be traced back to something.
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
+| `GlobalSlot` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HostCredentialEnv` | type | `@alexkroman1/aai/host-internal` |  | An env record that may carry host/shell provider credentials. |
 | `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1477,6 +1478,7 @@ trace or a type error can be traced back to something.
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `gatewayModelIds` | function | `@alexkroman1/aai/host-internal` |  | Ids usable for a streaming, tool-calling agent — the only shape this SDK runs — and that actually answer. |
 | `getSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | The session's effective location, if any — see `sessionClientLocation`. |
+| `globalSlot` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
@@ -1525,6 +1527,7 @@ trace or a type error can be traced back to something.
 | `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteError` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteResponse` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `recordSessionIdentity` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |

@@ -58,6 +58,7 @@
  * @module step-speak
  */
 
+import { globalSlot } from "./_global-slot.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
@@ -155,10 +156,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const STEP_SPEAK_SLOT = Symbol.for("@alexkroman1/aai.speechSynthesizer");
-
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepSpeakSlot = { [STEP_SPEAK_SLOT]?: SpeechSynthesizer };
+const STEP_SPEAK_SLOT = globalSlot<SpeechSynthesizer>("@alexkroman1/aai.speechSynthesizer");
 
 /**
  * Publish the speech synthesizer for this process's steps.
@@ -171,8 +169,7 @@ type StepSpeakSlot = { [STEP_SPEAK_SLOT]?: SpeechSynthesizer };
  * author calls {@link stepSpeak}.
  */
 export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void {
-  if (synthesizer === undefined) delete (globalThis as StepSpeakSlot)[STEP_SPEAK_SLOT];
-  else (globalThis as StepSpeakSlot)[STEP_SPEAK_SLOT] = synthesizer;
+  STEP_SPEAK_SLOT.set(synthesizer);
 }
 
 /** Marks a synthesizer that never dials a provider, so needs no credential. */
@@ -245,7 +242,7 @@ export async function stepSpeak(text: string, options: SpeakOptions = {}): Promi
   if (spoken.length === 0) {
     throw new Error("stepSpeak: nothing to say — `text` is empty.");
   }
-  const synthesizer = (globalThis as StepSpeakSlot)[STEP_SPEAK_SLOT];
+  const synthesizer = STEP_SPEAK_SLOT.get();
   if (!synthesizer) throw new Error(SPEECH_UNAVAILABLE_MESSAGE);
 
   const sampleRate = options.sampleRate ?? STEP_SPEAK_SAMPLE_RATE;

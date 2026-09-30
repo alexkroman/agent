@@ -61,11 +61,13 @@
  * @module
  */
 
+import { globalSlot } from "./_global-slot.ts";
+
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process shares it rather than shadowing it.
  */
-const STEP_INFO_SLOT = Symbol.for("@alexkroman1/aai.stepInfoReader");
+const STEP_INFO_SLOT = globalSlot<StepInfoReader>("@alexkroman1/aai.stepInfoReader");
 
 /**
  * Which step is running, and which attempt of it.
@@ -115,9 +117,6 @@ export type StepInfo = {
  */
 export type StepInfoReader = () => StepInfo | undefined;
 
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepInfoSlot = { [STEP_INFO_SLOT]?: StepInfoReader };
-
 /**
  * Publish the reader for this process's steps.
  *
@@ -131,8 +130,7 @@ type StepInfoSlot = { [STEP_INFO_SLOT]?: StepInfoReader };
  * author calls {@link stepInfo}.
  */
 export function publishStepInfoReader(reader: StepInfoReader | undefined): void {
-  if (reader === undefined) delete (globalThis as StepInfoSlot)[STEP_INFO_SLOT];
-  else (globalThis as StepInfoSlot)[STEP_INFO_SLOT] = reader;
+  STEP_INFO_SLOT.set(reader);
 }
 
 /**
@@ -152,5 +150,5 @@ export function publishStepInfoReader(reader: StepInfoReader | undefined): void 
  * @public
  */
 export function stepInfo(): StepInfo | undefined {
-  return (globalThis as StepInfoSlot)[STEP_INFO_SLOT]?.();
+  return STEP_INFO_SLOT.get()?.();
 }

@@ -43,6 +43,7 @@
  * `process.env`, which is what such a caller already controls.
  */
 
+import { globalSlot } from "./_global-slot.ts";
 import { missingEnvMessage } from "./_missing-env.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { stepInfo } from "./step-attempt.ts";
@@ -52,10 +53,7 @@ import { stepInfo } from "./step-attempt.ts";
  * this SDK in the same process (a linked workspace, a mismatched install) shares
  * it rather than shadowing it.
  */
-const STEP_ENV_SLOT = Symbol.for("@alexkroman1/aai.stepEnv");
-
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepEnvSlot = { [STEP_ENV_SLOT]?: Readonly<Record<string, string>> };
+const STEP_ENV_SLOT = globalSlot<Readonly<Record<string, string>>>("@alexkroman1/aai.stepEnv");
 
 /**
  * `process.env` where there is a process, an empty record otherwise.
@@ -101,14 +99,14 @@ export function publishStepEnv(
   env: Readonly<Record<string, string | undefined>> | undefined,
 ): void {
   if (env === undefined) {
-    delete (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+    STEP_ENV_SLOT.set(undefined);
     return;
   }
   const published: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined) published[key] = value;
   }
-  (globalThis as StepEnvSlot)[STEP_ENV_SLOT] = Object.freeze(published);
+  STEP_ENV_SLOT.set(Object.freeze(published));
 }
 
 /**
@@ -131,7 +129,7 @@ export function publishStepEnv(
  * @public
  */
 export function stepEnv(name: string): string | undefined {
-  const published = (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+  const published = STEP_ENV_SLOT.get();
   // See the module doc: no per-key fallback once an env is published, so a key
   // absent from the agent's env reads the same in dev as it does deployed.
   return published ? published[name] : processEnv()[name];
@@ -224,7 +222,7 @@ export type EnvContext = {
  * @public
  */
 export function stepEnvContext(): EnvContext {
-  const published = (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+  const published = STEP_ENV_SLOT.get();
   const env: Readonly<Partial<Record<string, string>>> =
     published ?? Object.freeze({ ...processEnv() });
   return { env, ...omitUndefined({ signal: stepInfo()?.signal }) };

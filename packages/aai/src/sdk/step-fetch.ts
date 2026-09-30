@@ -72,6 +72,7 @@
  */
 
 import { concatBytes } from "./_bytes.ts";
+import { globalSlot } from "./_global-slot.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 
 /**
@@ -115,10 +116,7 @@ export type StepFetchInit = {
 };
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const STEP_FETCH_SLOT = Symbol.for("@alexkroman1/aai.stepFetch");
-
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepFetchSlot = { [STEP_FETCH_SLOT]?: StepFetch };
+const STEP_FETCH_SLOT = globalSlot<StepFetch>("@alexkroman1/aai.stepFetch");
 
 /**
  * Publish the HTTP/1.1 fetch for this process's steps.
@@ -131,8 +129,7 @@ type StepFetchSlot = { [STEP_FETCH_SLOT]?: StepFetch };
  * author calls {@link stepFetch}.
  */
 export function publishStepFetch(fetchFn: StepFetch | undefined): void {
-  if (fetchFn === undefined) delete (globalThis as StepFetchSlot)[STEP_FETCH_SLOT];
-  else (globalThis as StepFetchSlot)[STEP_FETCH_SLOT] = fetchFn;
+  STEP_FETCH_SLOT.set(fetchFn);
 }
 
 /**
@@ -194,7 +191,7 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */
 export async function stepFetch(url: string, init: StepFetchInit = {}): Promise<Response> {
-  const published = (globalThis as StepFetchSlot)[STEP_FETCH_SLOT];
+  const published = STEP_FETCH_SLOT.get();
   try {
     if (published) return await published(url, init);
     // No host in this process — a spec, or a script calling an exported step.

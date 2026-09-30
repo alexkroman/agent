@@ -10,7 +10,7 @@
  * downstream reads them back from there: `sessionClientId(ctx)` and friends in
  * a tool, `sessionContext`'s `clientId` and `call`, `onSessionEnd`, the client
  * binding. So the eval records them at the same point and through the same
- * recorders, and nothing downstream can tell the difference — which is the
+ * recorder, and nothing downstream can tell the difference — which is the
  * whole claim. The alternative a downstream suite had to write, wrapping
  * `sessionContext` to hand it a fake `call`, reaches the hook and nothing else:
  * `sessionCall(ctx)` in a tool and `onSessionEnd`'s `call` still answered
@@ -26,12 +26,7 @@
  */
 
 import type { AgentDef, SessionCall } from "@alexkroman1/aai";
-import {
-  normalizeE164,
-  setSessionCall,
-  setSessionClient,
-  setSessionPhone,
-} from "@alexkroman1/aai/host-internal";
+import { normalizeE164, recordSessionIdentity } from "@alexkroman1/aai/host-internal";
 import { answeredGreeting } from "../session-context.ts";
 
 /** The three identity fields of `EvalSessionOptions`. */
@@ -65,14 +60,13 @@ export function checkedIdentity(identity: EvalSessionIdentity): EvalSessionIdent
 }
 
 /**
- * Record `identity` under `sessionId` — the three recorders a socket and a
- * carrier stream call, called at the same point: after the id is decided,
- * before the session is built.
+ * Record `identity` under `sessionId` — the recorder a socket and a carrier
+ * stream call, called at the same point: after the id is decided, before the
+ * session is built.
  */
 export function recordIdentity(sessionId: string, identity: EvalSessionIdentity): void {
-  if (identity.clientId !== undefined) setSessionClient(sessionId, identity.clientId);
-  if (identity.phone !== undefined) setSessionPhone(sessionId, identity.phone);
-  if (identity.call !== undefined) setSessionCall(sessionId, identity.call);
+  const { clientId, phone, call } = identity;
+  recordSessionIdentity(sessionId, { clientId, phone, call });
 }
 
 /** An agent whose `sessionContext` answer is watched, and what it said. */

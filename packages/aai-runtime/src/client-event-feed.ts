@@ -41,8 +41,9 @@
  */
 
 import { type SessionEvent, sessionClientId } from "@alexkroman1/aai";
+import { globalSlot } from "@alexkroman1/aai/internal";
 
-const FEED_SLOT = Symbol.for("@alexkroman1/aai-runtime.clientEventFeed");
+const FEED_SLOT = globalSlot<ClientEventFeed>("@alexkroman1/aai-runtime.clientEventFeed");
 
 /**
  * The event types a client's feed carries — see the module doc.
@@ -75,8 +76,6 @@ export type ClientEventFrame =
  */
 export type ClientEventFeed = (clientId: string, frame: ClientEventFrame) => void;
 
-type Slot = { [FEED_SLOT]?: ClientEventFeed };
-
 /**
  * Publish where this process's client frames go — the inbox's `feed`.
  * `undefined` unpublishes.
@@ -84,13 +83,12 @@ type Slot = { [FEED_SLOT]?: ClientEventFeed };
  * @internal
  */
 export function publishClientEventFeed(feed: ClientEventFeed | undefined): void {
-  if (feed === undefined) delete (globalThis as Slot)[FEED_SLOT];
-  else (globalThis as Slot)[FEED_SLOT] = feed;
+  FEED_SLOT.set(feed);
 }
 
 /** Hand `frame` to the feed for `sessionId`'s client, if it has one and a feed exists. */
 function send(sessionId: string, frame: ClientEventFrame): void {
-  const feed = (globalThis as Slot)[FEED_SLOT];
+  const feed = FEED_SLOT.get();
   if (!feed) return;
   const clientId = sessionClientId({ sessionId });
   if (clientId === undefined) return;

@@ -29,47 +29,28 @@
  * The runtime records the id and a tool reads it, and those are two copies of
  * this module — the agent bundle carries its own — so the map hangs off
  * `globalThis` under a `Symbol.for` key both copies agree on. The same shape as
- * the step slots (`step-env.ts` has the argument), and bounded like
- * `session-location.ts`: a TTL plus a hard cap, so an abandoned process cannot
- * grow it.
+ * the step slots (`step-env.ts` has the argument), bounded by a TTL plus a
+ * hard cap. The map and its one writer are `_session-identity-store.ts`.
  *
  * @module
  */
 
+import {
+  liveSessionEntry,
+  recordSessionIdentity,
+  sessionClientEntries,
+} from "./_session-identity-store.ts";
 import type { ToolContext } from "./tool-context.ts";
 import { type ToolFailure, toolFailure } from "./utils.ts";
-
-const SESSION_CLIENTS_SLOT = Symbol.for("@alexkroman1/aai.sessionClients");
-
-/** Longer than any session; this only reaps abandoned entries. */
-const SESSION_CLIENT_TTL_MS = 86_400_000;
-const MAX_SESSION_CLIENTS = 10_000;
-
-type Entry = { clientId: string; expiresAt: number };
-type Slot = { [SESSION_CLIENTS_SLOT]?: Map<string, Entry> };
-
-function entries(): Map<string, Entry> {
-  const slot = globalThis as Slot;
-  slot[SESSION_CLIENTS_SLOT] ??= new Map();
-  return slot[SESSION_CLIENTS_SLOT];
-}
 
 /**
  * Record the client a session's socket named. A resume that names none keeps
  * the previous one: the caller only calls this with an id.
  *
- * @internal — the runtime's half, called where the session id is decided.
+ * @internal — the runtime's half; `recordSessionIdentity` records every field at once.
  */
 export function setSessionClient(sessionId: string, clientId: string): void {
-  const map = entries();
-  // Delete-then-set keeps insertion order = least-recently-written first.
-  map.delete(sessionId);
-  map.set(sessionId, { clientId, expiresAt: Date.now() + SESSION_CLIENT_TTL_MS });
-  while (map.size > MAX_SESSION_CLIENTS) {
-    const oldest = map.keys().next().value;
-    if (oldest === undefined) break;
-    map.delete(oldest);
-  }
+  recordSessionIdentity(sessionId, { clientId });
 }
 
 /**
@@ -101,7 +82,7 @@ export function setSessionClient(sessionId: string, clientId: string): void {
  * ```
  */
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined {
-  return liveSessionEntry(entries(), ctx.sessionId)?.clientId;
+  return liveSessionEntry(sessionClientEntries(), ctx.sessionId)?.clientId;
 }
 
 /** What {@link requireSessionClient} says by default when a session has no client id. */
@@ -136,23 +117,4 @@ export function requireSessionClient(
   message: string = NO_CLIENT_MESSAGE,
 ): string | ToolFailure {
   return sessionClientId(ctx) ?? toolFailure(message);
-}
-
-/**
- * A per-session entry that has not outlived its TTL, reaping it if it has — the
- * read side every bounded session map here shares (`session-phone.ts` too).
- *
- * @internal
- */
-export function liveSessionEntry<E extends { expiresAt: number }>(
-  map: Map<string, E>,
-  sessionId: string,
-): E | undefined {
-  const entry = map.get(sessionId);
-  if (!entry) return;
-  if (entry.expiresAt <= Date.now()) {
-    map.delete(sessionId);
-    return;
-  }
-  return entry;
 }
