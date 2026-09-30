@@ -378,6 +378,7 @@
     "ChannelDescriptor",
     "ChannelHandler",
     "ChannelPayload",
+    "ChannelRegistration",
     "SLACK_CHANNEL_HANDLER",
     "SLACK_CHANNEL_KIND",
     "SmsRecipientEnv",
