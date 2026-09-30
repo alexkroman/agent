@@ -56,7 +56,12 @@ function transportDeps(overrides: Partial<TransportFactoryDeps> = {}): Transport
 /** One session's build arguments — `sessionOpts.client` is a real `ClientSink`. */
 function buildArgs(): Parameters<ReturnType<typeof createTransportFactory>>[0] {
   return {
-    sessionOpts: { id: "s1", agent: "a", client: makeClientSink() },
+    sessionOpts: {
+      id: "s1",
+      agent: "a",
+      client: makeClientSink(),
+      greeting: { opening: () => undefined, line: () => undefined },
+    },
     systemPrompt: "sp",
     callbacks: {} as TransportCallbacks,
   };

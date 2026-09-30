@@ -111,7 +111,8 @@ describe("clientRunsRoutes", () => {
     const findByKey = vi.fn(async () => RUNS);
     const lastLine = vi.fn(async () => "Reading three sources");
     const body = await list(clientRunsRoutes(), ctxWith({ findByKey, lastLine }));
-    expect(findByKey).toHaveBeenCalledWith("kitchen", { limit: 100 });
+    // The default route reads no `output`, so it asks for none.
+    expect(findByKey).toHaveBeenCalledWith("kitchen", { limit: 100, withOutput: false });
     expect(lastLine).toHaveBeenCalledTimes(1);
     expect(body.runs).toEqual([
       {
@@ -176,7 +177,8 @@ describe("clientRunsRoutes", () => {
     });
     const findByKey = vi.fn(async () => RUNS);
     const body = await list(handlers, ctxWith({ findByKey, lastLine }));
-    expect(findByKey).toHaveBeenCalledWith("kitchen", { limit: 20 });
+    // `include`/`detail` read `output`, so it is still read.
+    expect(findByKey).toHaveBeenCalledWith("kitchen", { limit: 20, withOutput: true });
     expect(lastLine).not.toHaveBeenCalled();
     // r-call (3 min) is outside a 2.5-minute window; r-quiet is excluded outright.
     expect(body.runs.map((r) => [r.runId, r.detail])).toEqual([

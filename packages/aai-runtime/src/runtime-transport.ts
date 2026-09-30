@@ -32,12 +32,7 @@ import type { TurnGuardrails } from "./transports/pipeline-guardrails.ts";
 import type { PersonaTurnSource } from "./transports/pipeline-persona-knobs.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
-import type {
-  SkipGreetingOption,
-  SystemPromptOption,
-  Transport,
-  TransportCallbacks,
-} from "./transports/types.ts";
+import type { SystemPromptOption, Transport, TransportCallbacks } from "./transports/types.ts";
 import { resolveSystemPrompt } from "./transports/types.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 
@@ -70,42 +65,63 @@ function readAssemblyS2sOptions(options: Record<string, unknown> | undefined): {
   };
 }
 
+/**
+ * A session's greeting, composed ONCE in `runtime.ts` from the three things that
+ * decide it — the resume skip, `sessionContext`'s answer and the agent's own
+ * line — so no builder below re-derives any of them.
+ *
+ * Both members are THUNKS, resolved when the greeting fires: the transport is
+ * built before `sessionContext` answers (`runtime-session-memory.ts`) and before
+ * the resume lookups run (`session-resume-found.ts`). An empty or absent result
+ * means "do not greet".
+ *
+ * Two members rather than one because the resume skip is scoped to a
+ * connection's OPENING line, and two readers want the line without it: the
+ * pipeline's `reset()` starts a new conversation and must greet (see
+ * `transports/CLAUDE.md`), and AssemblyAI S2S has never honoured a resume skip —
+ * a known gap, kept as it was rather than changed here.
+ *
+ * @internal
+ */
+export type SessionGreeting = {
+  /** The line to open THIS connection with: `""` when a resume skip applies, else {@link SessionGreeting.line}. */
+  opening: () => string | undefined;
+  /**
+   * The session's line regardless of any resume: `sessionContext`'s answer when
+   * it gave one (`""` is an answer — "no greeting this session"), else the
+   * agent's.
+   */
+  line: () => string | undefined;
+};
+
 /** Per-session identifiers and client sink a transport is built for. */
 export type TransportSessionOpts = {
   id: string;
   agent: string;
   client: ClientSink;
-  skipGreeting?: SkipGreetingOption;
   /**
    * True when this connection presented an existing session id (`?sessionId=`),
    * so the session continues rather than begins.
    *
-   * A different question from `skipGreeting`, which is about what the CALLER has
-   * already heard: this decides whether the server reads its own event stream
-   * back to restore the conversation. Defaults to false, so a direct
+   * A different question from the resume skip folded into
+   * {@link SessionGreeting.opening}, which is about what the CALLER has already
+   * heard: this decides whether the server reads its own event stream back to
+   * restore the conversation. Defaults to false, so a direct
    * `runtime.createSession()` caller gets a fresh session.
    */
   resumed?: boolean;
-  /**
-   * The greeting `sessionContext` answered for this session — `""` for none,
-   * `undefined` for the agent's. A thunk because the transport is built before
-   * the hook is asked (`runtime-session-memory.ts`); every branch below reads
-   * it only once the session has started, through {@link greetingFor}.
-   */
-  sessionGreeting?: () => string | undefined;
+  /** This session's greeting — see {@link SessionGreeting}. */
+  greeting: SessionGreeting;
 };
 
 /**
- * The session's greeting, resolved LATE: its own when `sessionContext` gave
- * one, else the agent's. `??` rather than `||` because `""` is an answer —
- * "no greeting this session" — and must not fall back to the agent's line.
+ * What `runtime.ts`'s `createSession` is called with: the transport's options
+ * before the greeting is composed, plus the socket's resume CLAIM, which is
+ * folded into {@link SessionGreeting.opening} and reaches no builder on its own.
  */
-function greetingFor(
-  sessionOpts: TransportSessionOpts,
-  agentGreeting: string | undefined,
-): () => string | undefined {
-  return () => sessionOpts.sessionGreeting?.() ?? agentGreeting;
-}
+export type SessionBuildOpts = Omit<TransportSessionOpts, "greeting"> & {
+  skipGreeting?: boolean;
+};
 
 /** Arguments to one `buildTransport` call (one per session). */
 export type BuildTransportArgs = {
@@ -236,10 +252,12 @@ export function createTransportFactory(
       llm: providers.llm,
       tts: providers.tts.opener,
       callbacks,
-      sessionConfig: {
-        systemPrompt,
-        greeting: greetingFor(sessionOpts, agentConfig.greeting),
-      },
+      // The LINE, not the opening: `reset()` re-greets through `greeting`, and the
+      // resume skip must not reach it. The opening line is `skipGreeting`'s
+      // only question — empty (a skip, or no greeting at all) keeps the start
+      // silent, which is what either input meant on its own.
+      sessionConfig: { systemPrompt, greeting: sessionOpts.greeting.line },
+      skipGreeting: () => !sessionOpts.greeting.opening(),
       toolSchemas,
       executeTool,
       providerKeys: {
@@ -273,7 +291,6 @@ export function createTransportFactory(
       startFailurePhrase: agentConfig.startFailurePhrase,
       resumeFalseInterruption: agentConfig.resumeFalseInterruption,
       preemptiveGeneration: agentConfig.preemptiveGeneration,
-      skipGreeting: sessionOpts.skipGreeting ?? false,
       ...omitUndefined({ dialogTurn: args.dialogTurn, personaTurn: args.personaTurn }),
       logger,
     });
@@ -326,17 +343,15 @@ export function createTransportFactory(
     return createOpenaiRealtimeTransport({
       apiKey: s2sApiKey(),
       options: (agent.s2s?.options ?? {}) as OpenAIS2sOptions,
-      sessionConfig: {
-        systemPrompt,
-        greeting: greetingFor(sessionOpts, agentConfig.greeting),
-      },
+      // Read once, when the socket opens: the connection's opening line, with the
+      // resume skip already folded in.
+      sessionConfig: { systemPrompt, greeting: sessionOpts.greeting.opening },
       toolSchemas,
       toolChoice: agentConfig.toolChoice ?? DEFAULT_TOOL_CHOICE,
       callbacks,
       sid: sessionOpts.id,
       inputSampleRate: s2sConfig.inputSampleRate,
       outputSampleRate: s2sConfig.outputSampleRate,
-      skipGreeting: sessionOpts.skipGreeting ?? false,
       ...omitUndefined({ createWebSocket: createOpenaiRealtimeWebSocket }),
       logger,
     });
@@ -353,7 +368,10 @@ export function createTransportFactory(
     // the limitation this seam removes for the other two transports, stated
     // where a reader wiring a third one will hit it.
     const prompt = resolveSystemPrompt(systemPrompt);
-    const greeting = greetingFor(sessionOpts, agentConfig.greeting);
+    // The LINE: this transport has never honoured a resume skip (see
+    // `SessionGreeting`), and folding one in here would change what a resumed
+    // S2S session says.
+    const greeting = sessionOpts.greeting.line;
     return createS2sTransport({
       apiKey: s2sApiKey(),
       s2sConfig,

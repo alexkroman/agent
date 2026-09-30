@@ -47,7 +47,11 @@ export type ClientSessionRecord = {
   sessionId: string;
   /** Epoch ms of the FIRST bind — a resume of the same session keeps it. */
   startedAt: number;
-  /** Epoch ms of the last event appended while bound (or the bind, before any). */
+  /**
+   * Epoch ms of the last event appended while bound (or the bind, before any).
+   * A backend may let a LIVE session's trail by up to `CLIENT_TOUCH_INTERVAL_MS`
+   * (`client-touch.ts`); a stopped session's is exact.
+   */
   lastEventAt: number;
 };
 

@@ -298,6 +298,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -1075,6 +1076,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -2518,6 +2520,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -4137,6 +4140,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -5676,6 +5680,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -6519,6 +6524,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -8325,6 +8331,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -9851,6 +9858,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -10965,6 +10973,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -11968,6 +11977,7 @@ export type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -14194,7 +14204,9 @@ export type SessionEventStream = {
     append(sessionId: string, body: SessionEventBody): SessionEvent;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string): Promise<void>;
+    flush(sessionId: string, options?: {
+        final?: boolean;
+    }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
     discard(sessionId: string): void;
     clear(): void;
@@ -15055,7 +15067,9 @@ type SessionEventStream = {
     append(sessionId: string, body: SessionEventBody): SessionEvent;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string): Promise<void>;
+    flush(sessionId: string, options?: {
+        final?: boolean;
+    }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
     discard(sessionId: string): void;
     clear(): void;
@@ -15079,6 +15093,7 @@ export type SessionStateBackend = {
     discard(sessionId: string): Promise<void>;
     bindClient?: ClientSessionLog["bindClient"];
     clientSessions?: ClientSessionLog["clientSessions"];
+    settle?(sessionId: string): Promise<void>;
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;

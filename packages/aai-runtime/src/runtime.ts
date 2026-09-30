@@ -28,7 +28,7 @@ import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
-  type TransportSessionOpts,
+  type SessionBuildOpts,
   usesAssemblyS2s,
 } from "./runtime-transport.ts";
 import type {
@@ -41,7 +41,7 @@ import type {
 } from "./runtime-types.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
-import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
+import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { platformGuestOptions } from "./workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
@@ -275,7 +275,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   });
 
   const recall = { agent, env, workflows, logger, history: sessionState.history };
-  function createSession(sessionOpts: TransportSessionOpts): ServerSession {
+  function createSession(sessionOpts: SessionBuildOpts): ServerSession {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     sessionState.sweeps.cancel(sessionOpts.id);
@@ -331,8 +331,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     const transport = buildTransport({
       sessionOpts: {
         ...sessionOpts,
-        skipGreeting: resolveSkipGreeting(skipGreeting, resumed, findings),
-        sessionGreeting: () => memory.greeting,
+        // THE one place the greeting is decided — see `SessionGreeting`.
+        greeting: composeSessionGreeting({ skipGreeting, resumed, findings, memory, agentConfig }),
       },
       // The THUNK, not its value: a transport that can resolve per turn does,
       // and one that cannot resolves it once (see `runtime-transport.ts`).

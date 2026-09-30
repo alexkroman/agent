@@ -744,6 +744,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public

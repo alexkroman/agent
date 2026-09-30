@@ -391,6 +391,7 @@ type FindByKeyOptions = {
   limit?: number;
   since?: number | Date;
   statuses?: readonly WorkflowRunStatus[];
+  withOutput?: boolean;
 };
 ```
 
@@ -423,6 +424,19 @@ optional statuses?: readonly WorkflowRunStatus[];
 ```
 
 Only runs in one of these statuses. Omitted, every status.
+
+##### withOutput?
+
+```ts
+optional withOutput?: boolean;
+```
+
+`false` to leave a completed run's `output` unread — it is `undefined` on
+every snapshot returned. Default `true`.
+
+For a caller that lists runs and never looks at what they returned (a
+"what is running" panel polling every few seconds): each completed run's
+output can be a store read of its own, paid for nothing.
 
 ***
 

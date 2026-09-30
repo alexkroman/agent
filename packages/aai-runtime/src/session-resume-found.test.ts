@@ -14,7 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "./_test-utils.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
-import { createResumeFindings } from "./session-resume-found.ts";
+import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
 
 describe("createResumeFindings", () => {
   test("starts empty, latches on the first record, and cannot be un-said", () => {
@@ -122,5 +122,46 @@ describe("attachSessionStream reports what it restored", () => {
       resumed: true,
     });
     await expect(core.start()).resolves.toBeUndefined();
+  });
+});
+
+describe("composeSessionGreeting", () => {
+  function compose(over: { skip?: boolean; resumed?: boolean; session?: string }) {
+    const findings = createResumeFindings();
+    const memory: { greeting: string | undefined } = { greeting: over.session };
+    const greeting = composeSessionGreeting({
+      skipGreeting: over.skip,
+      resumed: over.resumed,
+      findings,
+      memory,
+      agentConfig: { greeting: "Hi, agent here." },
+    });
+    return { greeting, findings, memory };
+  }
+
+  test("no claim: the opening line is the agent's, or sessionContext's once it answers", () => {
+    const { greeting, memory } = compose({});
+    expect(greeting.opening()).toBe("Hi, agent here.");
+    // Read LATE: `sessionContext` answers after the transport is built.
+    memory.greeting = "Welcome back.";
+    expect(greeting.opening()).toBe("Welcome back.");
+    // `""` is an answer ("no greeting this session"), not a fall-through.
+    memory.greeting = "";
+    expect(greeting.opening()).toBe("");
+    expect(greeting.line()).toBe("");
+  });
+
+  test("a resume claim empties the OPENING line only, once a lookup found something", () => {
+    const { greeting, findings } = compose({ skip: true, resumed: true });
+    // An id that names nothing greets — see `resolveSkipGreeting`.
+    expect(greeting.opening()).toBe("Hi, agent here.");
+    findings.record();
+    expect(greeting.opening()).toBe("");
+    // `line` ignores the claim: a reset's greeting, and AssemblyAI S2S's.
+    expect(greeting.line()).toBe("Hi, agent here.");
+  });
+
+  test("`resume=1` with no id skips without a lookup", () => {
+    expect(compose({ skip: true }).greeting.opening()).toBe("");
   });
 });
