@@ -1105,11 +1105,11 @@ export function readRouteError(err: unknown): {
 // @internal
 export function readRouteResponse(value: unknown): RouteResponse | undefined;
 
-// @internal
-export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
-
 // @public
 export function recordFetchRequest(request: Request): Promise<RequestRecord>;
+
+// @internal
+export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
 
 // @public
 export type RequestRecord = {
