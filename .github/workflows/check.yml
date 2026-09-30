@@ -349,7 +349,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          PG_IMAGE=public.ecr.aws/supabase/postgres:17.6.1.155
+          # Pinned by DIGEST and pulled from whichever of three registries
+          # answers (see the fallback note below); `PG_IMAGE` is only the local
+          # name `docker run` uses. The digest is the 17.6.1.155 index, verified
+          # identical on all three on 2026-09-30.
+          PG_REF=supabase/postgres@sha256:3866d94d8426927e8db3f1c5d790752292bfbe27b5f1f46e199ae1b7d3c1710b
+          PG_IMAGE=aai-test-pg:17.6.1.155
           # The runner's own cluster occupies 5432; this image replaces it.
           sudo systemctl stop postgresql || true
           # **The pull is its own RETRIED command, because `docker run`'s
@@ -373,23 +378,36 @@ jobs:
           # 5s, 15s, 45s rather than a fixed delay: the quota is per unit TIME,
           # so the value of a retry is how far it lands into a new window. Three
           # attempts 5s apart spend the same exhausted budget three times.
+          #
+          # **Each attempt tries three REGISTRIES, because one quota is not
+          # time-based.** On 2026-09-30 public.ecr.aws answered
+          # `toomanyrequests: Data limit exceeded` to all four attempts — its
+          # anonymous per-IP data cap, which no backoff inside a job outlasts —
+          # while the same digest was a clean pull from ghcr.io and Docker Hub.
+          # Pulling by digest is what makes a fallback safe: a registry cannot
+          # hand back a different database under the same reference.
           delay=5
           for attempt in 1 2 3 4; do
-            if out=$(docker pull "$PG_IMAGE" 2>&1); then
-              # Announced on SUCCESS too, and not as noise: the output is
-              # captured so it can be classified, so a green log would otherwise
-              # say nothing about whether a retry was needed. That number is the
-              # only evidence of throttling getting worse, on the one step whose
-              # reason for existing is throttling.
-              echo "docker pull succeeded on attempt ${attempt}/4"
-              pulled=1
-              break
-            fi
-            printf '%s\n' "$out"
-            if ! printf '%s' "$out" | grep -qiE 'toomanyrequests|rate exceeded|timeout|connection reset|TLS handshake|unexpected EOF|unexpected status: 5'; then
-              echo "::error::docker pull failed for a NON-transient reason — not retrying"
-              exit 1
-            fi
+            for registry in public.ecr.aws ghcr.io docker.io; do
+              if out=$(docker pull "$registry/$PG_REF" 2>&1); then
+                # Announced on SUCCESS too, and not as noise: the output is
+                # captured so it can be classified, so a green log would
+                # otherwise say nothing about whether a retry was needed. That
+                # number (and the registry) is the only evidence of throttling
+                # getting worse, on the one step whose reason for existing is
+                # throttling.
+                echo "docker pull succeeded on attempt ${attempt}/4 from ${registry}"
+                docker tag "$registry/$PG_REF" "$PG_IMAGE"
+                pulled=1
+                break 2
+              fi
+              printf '%s\n' "$out"
+              if ! printf '%s' "$out" | grep -qiE 'toomanyrequests|rate exceeded|data limit|timeout|connection reset|TLS handshake|unexpected EOF|unexpected status: 5'; then
+                echo "::error::docker pull failed for a NON-transient reason — not retrying"
+                exit 1
+              fi
+              echo "transient pull failure from ${registry} — trying the next registry"
+            done
             [ "$attempt" -eq 4 ] && break
             echo "transient pull failure (attempt ${attempt}/4) — retrying in ${delay}s"
             sleep "$delay"
