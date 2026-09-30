@@ -21,8 +21,8 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 581 names
 - [Browser client](#browser-client) — 179 names
 - [Testing and evals](#testing-and-evals) — 253 names
-- [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 367 names
+- [Hosting and tooling](#hosting-and-tooling) — 236 names
+- [Framework internals](#framework-internals) — 370 names
 
 ## Agent authoring
 
@@ -1000,6 +1000,10 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `HostServerOptions` | interface | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createHostServer`. |
 | `HostSessionDefaults` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Session settings every tenant inherits, minus the four the handshake owns. |
 | `IGNORED_WORKSPACE_DIRS` | const | `@alexkroman1/aai/workspace-files` |  | Directories never walked — never listed, grepped, or synced. |
+| `InboxClientFrame` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | One text frame a client sends on `WS /inbox`: its answer to the notice whose `id` it names. |
+| `InboxClientFrameSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `InboxClientFrame`. |
+| `InboxServerFrame` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | One text frame the server sends on `WS /inbox`: a notice header, or — for a holder that asked with `?events=1` — a frame of the client's live conversation. |
+| `InboxServerFrameSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `InboxServerFrame`. |
 | `LOCAL_ONLY_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Files that exist only on a developer's machine and must never reach a workspace row: secrets (`.env` rides the secret routes) and lockfiles. |
 | `LOCKFILES` | const | `@alexkroman1/aai/workspace-files` |  | Package-manager lockfiles — a resolved tree, not source. |
 | `LOG_LINE_TRUNCATED` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Appended to a line cut at `LogBufferOptions.maxLineBytes`. |
@@ -1280,6 +1284,7 @@ trace or a type error can be traced back to something.
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
+| `GlobalSlot` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HostCredentialEnv` | type | `@alexkroman1/aai/host-internal` |  | An env record that may carry host/shell provider credentials. |
 | `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1477,6 +1482,7 @@ trace or a type error can be traced back to something.
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `gatewayModelIds` | function | `@alexkroman1/aai/host-internal` |  | Ids usable for a streaming, tool-calling agent — the only shape this SDK runs — and that actually answer. |
 | `getSessionLocation` | function | `@alexkroman1/aai/host-internal` |  | The session's effective location, if any — see `sessionClientLocation`. |
+| `globalSlot` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
@@ -1525,6 +1531,7 @@ trace or a type error can be traced back to something.
 | `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteError` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteResponse` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `recordSessionIdentity` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
