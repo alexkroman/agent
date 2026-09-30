@@ -206,10 +206,10 @@ for (const tool of TOOLS) {
 
   // A pnpm-installed tool is not probed (taplo's `--version` exits 1); if it is
   // missing, running it fails below.
-  const probe = tool.pipx
-    ? spawnSync(tool.bin, ["--version"], { cwd: ROOT, stdio: "ignore" })
-    : { status: 0 };
-  if (probe.error || probe.status !== 0) {
+  const missing =
+    tool.pipx !== undefined &&
+    spawnSync(tool.bin, ["--version"], { cwd: ROOT, stdio: "ignore" }).status !== 0;
+  if (missing) {
     const hint = `install it (\`pipx install ${tool.pipx}\`) or put it on PATH`;
     if (process.env.AAI_REQUIRE_POLYGLOT === "1") {
       failed = true;
