@@ -45,6 +45,15 @@ describe("callable builtins", () => {
     }
   });
 
+  test("fetchJson still rejects on a cancel from whoever owns the fetch", async () => {
+    const fetch = vi.fn(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+    await expect(fetchJson("https://api.example.com/quote", { fetch })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
   test("fetchJson keeps the HTTP prefix on a status failure only", async () => {
     const failing = vi.fn(async () => new Response("", { status: 404, statusText: "Not Found" }));
     expect(await fetchJson("https://api.example.com/q", { fetch: failing })).toEqual({
