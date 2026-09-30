@@ -3,6 +3,7 @@
  * Core type definitions for the AAI agent SDK.
  */
 
+import type { AgentClientInbox } from "./agent-client-inbox.ts";
 import type { AgentGuardrails } from "./agent-guardrails.ts";
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
@@ -146,15 +147,15 @@ export {
  * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
  * optional — `undefined` means "not configured."
  *
- * Seven groups of fields live on interfaces this extends, each sharing ONE rule
+ * Eight groups of fields live on interfaces this extends, each sharing ONE rule
  * derived from the declaration rather than restated beside it:
  * {@link PipelineVoiceTuning} (pipeline transport or nothing), {@link AgentModelTuning}
  * (this runtime assembles the request, so S2S refuses them), {@link AgentGuardrails}
  * (the only declarations that may stop a turn), {@link AgentObservation} (the two
  * that deliberately may not), {@link AgentVoicePresets} (paid for on every model
- * request), {@link AgentSessionLifecycle} (once per session) and {@link AgentRoutes}
- * (no session at all). `agent()` and the deploy-time config check derive their
- * field lists from those, so no field skips either gate.
+ * request), {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes}
+ * and {@link AgentClientInbox} (no session at all). `agent()` and the deploy-time
+ * config check derive their field lists from those, so no field skips either gate.
  *
  * @public
  */
@@ -165,7 +166,8 @@ export interface AgentDef
     AgentObservation,
     AgentVoicePresets,
     AgentSessionLifecycle,
-    AgentRoutes {
+    AgentRoutes,
+    AgentClientInbox {
   /** Display name shown by the default client UI. */
   name: string;
   /**

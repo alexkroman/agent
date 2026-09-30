@@ -3,11 +3,12 @@
   "capability": "step",
   "epoch": 3,
   "rule": 2,
-  "sha256": "906dcc67f4fd07ac9e883861662319070839bbc17ba3b00b6daeb453ed0185e1",
+  "sha256": "89d43dd3900ab824d83947b87ecc74bbc75d3d8296dea1f2304cd977b7ed29b3",
   "exports": [
     "CallStatusOptions",
     "DEFAULT_CALL_RING_TIMEOUT_S",
     "DEFAULT_CALL_TIME_LIMIT_S",
+    "EnvContext",
     "MultipartBody",
     "MultipartPart",
     "PcmFormat",
@@ -26,6 +27,7 @@
     "StepGenerateJsonOptions",
     "StepGenerateOptions",
     "StepInfo",
+    "StepPollUntilOptions",
     "StepTransportError",
     "TWILIO_ACCOUNT_SID_ENV",
     "TWILIO_AUTH_TOKEN_ENV",
@@ -49,11 +51,13 @@
     "stepDelegate",
     "stepEmit",
     "stepEnv",
+    "stepEnvContext",
     "stepFetch",
     "stepGenerate",
     "stepGenerateJson",
     "stepInfo",
     "stepPlaceCall",
+    "stepPollUntil",
     "stepReport",
     "stepSpeak",
     "stepWebhookUrl",
@@ -61,7 +65,7 @@
     "wavHeader"
   ],
   "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -86,6 +90,12 @@
       "rule": 2,
       "sha256": "906dcc67f4fd07ac9e883861662319070839bbc17ba3b00b6daeb453ed0185e1",
       "reason": "additive (checked): +CallStatusOptions, +DEFAULT_CALL_RING_TIMEOUT_S, +DEFAULT_CALL_TIME_LIMIT_S, +PlaceCallCredentials, +PlaceCallError, +PlaceCallOptions, +PlacedCall, +PlacedCallStatus, +TWILIO_ACCOUNT_SID_ENV, +TWILIO_AUTH_TOKEN_ENV, +stepCallStatus, +stepPlaceCall"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "89d43dd3900ab824d83947b87ecc74bbc75d3d8296dea1f2304cd977b7ed29b3",
+      "reason": "additive (checked): +CallStatusOptions, +DEFAULT_CALL_RING_TIMEOUT_S, +DEFAULT_CALL_TIME_LIMIT_S, +EnvContext, +PlaceCallCredentials, +PlaceCallError, +PlaceCallOptions, +PlacedCall, +PlacedCallStatus, +StepPollUntilOptions, +TWILIO_ACCOUNT_SID_ENV, +TWILIO_AUTH_TOKEN_ENV, +stepCallStatus, +stepEnvContext, +stepPlaceCall, +stepPollUntil"
     }
   ]
 }

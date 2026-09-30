@@ -246,9 +246,9 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
   "Workflow" section (the \`pnpm dev\` / \`pnpm test\` / \`pnpm build\`
   loop) and the "CLI" section — your loop is: edit files → test_agent →
   read the reported errors → fix → test again.
-- The workspace is a REAL project: it carries package.json, tsconfig.json,
-  global.d.ts, and vite.config.ts (missing ones are filled in from the
-  scaffold — edit them if you need to). Imports resolve like a normal npm
+- The workspace is a REAL project: it carries package.json, tsconfig.json
+  (extending "@alexkroman1/aai/tsconfig") and vitest.config.ts (missing ones
+  are filled in from the scaffold — edit them if you need to). Imports resolve like a normal npm
   project. Preinstalled: workspace files, "@alexkroman1/aai" (any subpath),
   "zod", "xstate", and — for client.tsx — "@alexkroman1/aai-ui" and
   "react".

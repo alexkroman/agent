@@ -27,7 +27,7 @@ the CLI build's `inputs` so editing a template invalidates that build.
 | Path | What it is |
 | --- | --- |
 | `templates/<name>/` | 28 complete agent projects, each self-contained |
-| `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, `global.d.ts`, `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
+| `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json` (one `extends` line), `vitest.config.ts` (one `defineAgentTestConfig()` call), `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
 | `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
 | `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
 

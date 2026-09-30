@@ -18,6 +18,17 @@
  * inline `token` — because a field with two ways to say it is a field a stale
  * config can disagree with itself about.
  *
+ * ## …or a URL and headers COMPUTED per connection
+ *
+ * Some servers are per user: a vendor mints a session URL for one end user and
+ * authenticates it with a header that is not a bearer token (Composio's tool
+ * router takes `x-api-key`). So `url` and `headers` may each be a RESOLVER,
+ * handed {@link McpResolveContext} — the client the connection acts for, the
+ * agent env and an abort signal — once per connection. Resolvers and headers
+ * are host-only: `toAgentConfig` strips both, so what crosses the wire is
+ * still only what a stored config may hold. A resolved URL is screened exactly
+ * as a literal one is.
+ *
  * List each `tokenEnv` in `requiredEnv` as well. Nothing derives one from the
  * other on purpose: `requiredEnv` is what a DEPLOY preflights, and silently
  * extending it from another field would make a deploy check a name the author
@@ -69,19 +80,80 @@ export const MCP_TOOL_NAME_MAX: number = 64;
  */
 export const MCP_TOOL_PREFIX = "mcp_";
 
+/**
+ * What a RESOLVER is handed when a server's `url` or `headers` is a function.
+ *
+ * A resolver runs on the host, once per CONNECTION — once when a host connects
+ * the agent's servers (`withMcpTools`, where there is no caller yet, so
+ * `clientId` is `undefined`), and once per `stepMcp` call from a workflow step,
+ * with the `clientId` that step passed. The value is held for that connection
+ * and never re-asked, so a resolver that creates something remote (a per-user
+ * session URL) creates it once per connection, not per tool call.
+ */
+export type McpResolveContext = {
+  /**
+   * The client the connection acts for — `stepMcp`'s `clientId` option, which a
+   * run usually carries from `sessionClientId(ctx)` in the tool that started
+   * it. `undefined` at host start, where nobody is calling yet: a server that
+   * only makes sense per user should THROW here, which costs that server's
+   * tools at host start and nothing else.
+   */
+  readonly clientId: string | undefined;
+  /** The agent's env — the same record `tokenEnv` is read from. Never `process.env`. */
+  readonly env: Readonly<Partial<Record<string, string>>>;
+  /** Aborted when the connect budget runs out; pass it to any `fetch` the resolver makes. */
+  readonly signal: AbortSignal;
+};
+
+/**
+ * A value an author may write literally, or compute per connection from
+ * {@link McpResolveContext}.
+ */
+export type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
+
 /** One MCP server an agent may take tools from. */
 export type McpServerConfig = {
   /**
    * The server's streamable-HTTP endpoint, e.g.
    * `https://mcp.example.com/mcp`. Screened for SSRF before the first request
    * and on every redirect hop, like every other URL this framework dials.
+   *
+   * A FUNCTION computes it per connection — a per-user session URL, say —
+   * and what it returns is screened exactly as a literal is. A resolver is
+   * host-only: `toAgentConfig` drops it from the serialized config, the way it
+   * drops a `systemPrompt` resolver, so the wire records only that the server
+   * exists.
    */
-  url: string;
+  url: McpResolvable<string>;
+  /**
+   * Extra request headers for this server, e.g. an `x-api-key` a vendor wants
+   * instead of a bearer token.
+   *
+   * **HOST-ONLY in both spellings**: `toAgentConfig` never serializes it, so a
+   * header value never reaches a stored config, the browser or a log line.
+   * Prefer the function form and read the value from `env` — a literal secret
+   * in `agent.ts` is a secret in version control. Every header named here is
+   * treated as a credential: it is dropped when a redirect leaves the server's
+   * origin, like `authorization` is. A `tokenEnv` bearer wins over an
+   * `authorization` set here.
+   */
+  headers?: McpResolvable<Readonly<Record<string, string>>>;
   /**
    * Name of the environment variable holding a bearer token for this server —
    * the NAME, never the token. Omit it for a server that needs no credential.
    */
   tokenEnv?: string;
+  /**
+   * The REMOTE tool names this agent takes from the server; every other tool
+   * it publishes is not offered. Omitted, every tool is offered.
+   *
+   * The scope knob for a server that publishes more than one agent should see
+   * (a connection manager the agent must not drive, a write tool a read-only
+   * agent has no use for). Applied before namespacing and before the pin, and
+   * a name listed here that the server does not publish is logged, since it is
+   * usually a typo or a renamed tool.
+   */
+  allowedTools?: readonly string[];
   /**
    * The tool definitions this agent has REVIEWED, as
    * `remote tool name → fingerprint`.

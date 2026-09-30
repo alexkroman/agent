@@ -71,6 +71,7 @@ export {
   createAgentClient,
   createWorkflowApiClient,
   type EventStreamFrame,
+  type FindByKeyOptions,
   type FindOptions,
   isTerminal,
   readEventStream,

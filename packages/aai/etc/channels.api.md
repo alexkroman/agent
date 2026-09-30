@@ -161,6 +161,7 @@ export function textbeltChannel(options: TextbeltChannelOptions): TextbeltChanne
 // @public
 export interface TextbeltChannelOptions {
     readonly key: string;
+    readonly links?: "keep" | "strip";
     readonly to: string;
 }
 

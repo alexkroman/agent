@@ -24,7 +24,7 @@ rules are in the root `AGENTS.md`.
 - [`src/worklets/CLAUDE.md`](src/worklets/CLAUDE.md) — capture and playback
   processors: jitter buffer, concealment, capture rate and constraints, dead-mic
   probe.
-- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the eleven `aai-ui:`
+- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the fifteen `aai-ui:`
   capabilities and the `.tsx` compatibility fixtures.
 - [`PLAYBACK-CLAUDE.md`](PLAYBACK-CLAUDE.md) (reference, read on demand) —
   playback tuning measurements against a real TTS reply.
@@ -87,8 +87,13 @@ contract (`src/contracts/CLAUDE.md`); `pnpm check:api-contracts` fails otherwise
   `mountRoot`, which `mountPage()` (`page.tsx`) shares.
 - `default-client.tsx` / `build-default-client.ts` — the default UI for agents
   with no `client.tsx`, and its build step.
-- `use-*.ts` — public hooks (conversation, session controls, push-to-talk,
-  workflow run/runs/progress/submit/stream, download URL, flash, copy).
+- `use-*.ts` — public hooks (conversation, conversation log, session controls,
+  push-to-talk, tap-to-talk, route, stored value, workflow
+  run/runs/progress/submit/stream, download URL, flash, copy).
+- `conversation-log.ts` — the log's pure half (`recordSession`, parsing);
+  `_tap-to-talk-state.ts` — `useTapToTalk`'s statechart; `route-fetch.ts`,
+  `stored-value.ts`, `linked-client.ts`, `phone.ts` — a device twin page's
+  plumbing.
 - `_workflow-api-ref.ts` / `_repeat-until.ts` — the client-in-a-ref preamble and
   the bounded-read loop the workflow hooks share; `_upload-*.ts` — upload
   session, recall, report, file claiming.

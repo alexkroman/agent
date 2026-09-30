@@ -19,6 +19,8 @@ const executors = vi.hoisted(() => ({
     executeSecretPut: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     executeSecretDelete: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     executeSecretList: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+    executeLocalSecretPut: vi.fn().mockResolvedValue({ ok: true, data: {} }),
+    executeLocalSecretDelete: vi.fn().mockResolvedValue({ ok: true, data: {} }),
     resolveSecretValue: vi.fn().mockResolvedValue("s3cret"),
   },
   logs: { executeLogs: vi.fn().mockResolvedValue({ ok: true, data: {} }) },
@@ -46,6 +48,22 @@ const subsOf = (group: unknown): Record<string, Runnable> =>
 const runnable = (cmd: unknown): Runnable => cmd as Runnable;
 
 describe("the secret command group", () => {
+  test("--local routes put and delete to the .env executors, never the platform", async () => {
+    await subsOf(secret).put?.run({ args: { name: "KEY", json: true, local: true } });
+    expect(executors.secret.executeLocalSecretPut).toHaveBeenCalledWith(
+      expect.any(String),
+      "KEY",
+      "s3cret",
+    );
+    await subsOf(secret).delete?.run({ args: { name: "KEY", json: true, local: true } });
+    expect(executors.secret.executeLocalSecretDelete).toHaveBeenCalledWith(
+      expect.any(String),
+      "KEY",
+    );
+    expect(executors.secret.executeSecretPut).not.toHaveBeenCalled();
+    expect(executors.secret.executeSecretDelete).not.toHaveBeenCalled();
+  });
+
   test.each(["put", "delete", "list"])("declares the %s verb", (name) => {
     expect(subsOf(secret)[name]).toBeDefined();
   });

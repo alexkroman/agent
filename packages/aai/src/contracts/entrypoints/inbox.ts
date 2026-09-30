@@ -17,7 +17,7 @@
  * hash it, and hold it to a committed epoch. See `scripts/api-contracts.mjs`.
  */
 
-export { sessionClientId } from "../../index.ts";
+export { requireSessionClient, sessionClientId } from "../../index.ts";
 // The client's durable conversation, read back from a step — the other half of
 // "a device has one conversation": `onSessionEnd` starts the run, this reads
 // what was said.
@@ -30,9 +30,12 @@ export {
   ClientUnreachableError,
   type ClientUnreachableReason,
   DEFAULT_CLIENT_ACK_TIMEOUT_MS,
+  DEFAULT_CLIENT_DELIVERY_ATTEMPTS,
   DEFAULT_CLIENT_RETRY_MS,
   type StepClientTranscriptOptions,
   type StepNotifyClientOptions,
+  type StepSayOnClientOptions,
   stepClientTranscript,
   stepNotifyClient,
+  stepSayOnClient,
 } from "../../sdk/step-barrel.ts";

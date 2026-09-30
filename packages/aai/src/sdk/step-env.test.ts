@@ -12,7 +12,8 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { publishStepEnv, requireStepEnv, stepEnv } from "./step-env.ts";
+import { publishStepInfoReader } from "./step-attempt.ts";
+import { publishStepEnv, requireStepEnv, stepEnv, stepEnvContext } from "./step-env.ts";
 
 // Return the process to "nothing has published", which is how it starts.
 // Through the module's own unpublish rather than by hand-copying its private
@@ -20,7 +21,10 @@ import { publishStepEnv, requireStepEnv, stepEnv } from "./step-env.ts";
 // what made the "falls back to the process env" case reachable — so a rename of
 // `STEP_ENV_SLOT` would have turned this teardown into a silent no-op and the
 // fallback test into one that passes on the previous test's leftovers.
-afterEach(() => publishStepEnv(undefined));
+afterEach(() => {
+  publishStepEnv(undefined);
+  publishStepInfoReader(undefined);
+});
 
 describe("stepEnv", () => {
   test("reads the published agent env", () => {
@@ -94,5 +98,50 @@ describe("requireStepEnv", () => {
     // is a worse report than this one.
     publishStepEnv({ ASSEMBLYAI_API_KEY: "" });
     expect(() => requireStepEnv("ASSEMBLYAI_API_KEY")).toThrow(/Missing ASSEMBLYAI_API_KEY/);
+  });
+});
+
+describe("stepEnvContext", () => {
+  test("hands over the whole published env, frozen", () => {
+    publishStepEnv({ A: "1", B: "2", C: undefined });
+    const ctx = stepEnvContext();
+    expect(ctx.env).toEqual({ A: "1", B: "2" });
+    expect(Object.isFrozen(ctx.env)).toBe(true);
+  });
+
+  test("falls back to a frozen COPY of the process env when nothing published", () => {
+    vi.stubEnv("AAI_STEP_ENV_CONTEXT_PROBE", "from-process");
+    try {
+      const ctx = stepEnvContext();
+      expect(ctx.env.AAI_STEP_ENV_CONTEXT_PROBE).toBe("from-process");
+      expect(Object.isFrozen(ctx.env)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("carries the running step's signal, and none outside a step", () => {
+    publishStepEnv({});
+    expect(stepEnvContext()).not.toHaveProperty("signal");
+    const controller = new AbortController();
+    publishStepInfoReader(() => ({
+      name: "s",
+      key: "s#0",
+      attempt: 1,
+      maxAttempts: 3,
+      isLastAttempt: false,
+      signal: controller.signal,
+    }));
+    expect(stepEnvContext().signal).toBe(controller.signal);
+  });
+
+  test("is assignable from what a tool already holds", () => {
+    // A ToolContext-shaped value: `env` plus a required signal.
+    const fromTool: { env: Readonly<Partial<Record<string, string>>>; signal: AbortSignal } = {
+      env: { A: "1" },
+      signal: new AbortController().signal,
+    };
+    const shared: ReturnType<typeof stepEnvContext> = fromTool;
+    expect(shared.env.A).toBe("1");
   });
 });

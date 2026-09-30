@@ -141,20 +141,21 @@ Then:
 aai init             # Scaffold a new agent
 aai templates        # List available templates
 aai dev              # Start local dev server
+aai dev --tunnel     # ...on a public URL (sets PUBLIC_URL)
 aai test             # Run the project's specs via vitest
 aai test --only      # ...or agent.test.ts alone
 aai eval             # Run agent.eval.test.ts against a model
 aai build            # Bundle and validate
-aai deploy           # Deploy to production
+aai publish          # Publish to production
 aai delete           # Remove deployed agent
 aai secret put NAME  # Set a secret
+aai secret put --local NAME  # ...in .env
 aai secret delete NAME
 aai secret list
 ```
 
-The scaffold's `package.json` exposes `dev`, `build`, `test`, `eval` and
-`deploy` as `pnpm <name>` shortcuts, which run the project's own copy of the
-CLI. Other commands (`init`, `templates`, `delete`, `secret`) are CLI-only.
+The scaffold's `package.json` runs the project's own CLI as `pnpm dev`,
+`build`, `test`, `eval`, `start` and `publish:agent`.
 
 **`aai test` runs every non-eval spec in the project**, which `--only` narrows
 to `agent.test.ts` for the fast inner loop. A narrowed run does not report
@@ -313,6 +314,8 @@ my-agent/
   tsconfig.json
   .env                # Local dev secrets (gitignored)
 ```
+
+`client.tsx` needs no `vite.config.ts` (React + Tailwind by default).
 
 ## `agent()` API
 
@@ -847,7 +850,7 @@ already paid for:
 - **You cannot test it under `aai dev` without a tunnel.** `publicUrl` there is
   `http://localhost:<backend port>`, which no third party can reach — so the
   delivery never arrives and the run silently takes the fallback.
-  `PUBLIC_URL=https://<your tunnel> pnpm dev` is what makes it reachable.
+  `aai dev --tunnel` is what makes it reachable.
 
 ### Testing a workflow body
 
@@ -1072,14 +1075,15 @@ retryable error until the device acks. Test: `stubClientInbox`.
 `sessionContext`, `onSessionEnd`, `stepClientTranscript`; its id is the only
 key.
 A page is a device too: `mountClient({ client: "auto" })` keeps a per-browser
-id; `useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices.
-`useClientId()`/`useSessionId()` read the ids.
+id; `useInbox({ onNotice })` holds the inbox (busy mid-call) and plays notices;
+`useClientId()`/`useSessionId()` read the ids. Also: `useTapToTalk`,
+`useConversationLog`, `useRoute`, `createStoredValue`.
 
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
 Any outbound request from a step goes through `stepFetch` (also
-`@alexkroman1/aai/step`). It is not a style preference — `fetch` is the wrong
-call to make from a step, for a reason nothing at the call site shows:
+`@alexkroman1/aai/step`). Not a style preference: `fetch` is the wrong call
+from a step, for a reason the call site does not show:
 
 ```ts no-check
 import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/step";
@@ -1109,12 +1113,11 @@ async function transcribeChunk(key: string, bytes: Uint8Array, index: number) {
 **`fetch` speaks HTTP/2, and a fan-out is the worst case for that.** Node's
 global `fetch` offers `h2` in ALPN and the far side decides; a server that takes
 it gets every concurrent request from your process multiplexed onto ONE TCP
-connection, sharing one flow-control window. That is fine for small JSON calls
-and pathological for `mapConcurrent` over large bodies. Measured on 8 concurrent
-17.66 MB uploads: `fetch` landed 14 of 16 at p50 8094ms, HTTP/1.1 landed 16 of
-16 at p50 3037ms.
+connection, sharing one flow-control window: fine for small JSON, pathological
+for `mapConcurrent` over large bodies (8 concurrent 17.66 MB uploads: `fetch`
+landed 14 of 16 at p50 8094ms, HTTP/1.1 16 of 16 at p50 3037ms).
 
-**And the two it lost are the reason this matters more than the latency.** On
+**The two it lost matter more than the latency.** On
 HTTP/2 a capacity limit arrives as a *stream reset* — `NGHTTP2_ENHANCE_YOUR_CALM`
 — and a stream error carries no HTTP status, so `isTransientStatus` and
 `retryAfter` cannot see it. Every sibling in the batch then retries in lockstep
@@ -2523,8 +2526,6 @@ substitute, so a dice roll or a minted code is something a spec can assert.
 own journaled `ctx.random()` instead.
 
 ## Gotchas
-
-Common mistakes when working in agent projects:
 
 - **Tool execute must return a value.** A missing return = `undefined` in
   LLM context = the model thinks the tool failed.

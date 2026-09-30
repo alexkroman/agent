@@ -327,6 +327,32 @@ describe("SSRF: request-input normalization", () => {
     await ssrfSafeFetch("https://93.184.216.34/", {}, fakeFetch(fetchFn));
     expect(modes).toEqual(["manual", "manual"]);
   });
+
+  test("an extra credential header is dropped once a redirect leaves the origin", async () => {
+    // An MCP server authenticated with `x-api-key` must not have the key
+    // replayed to wherever an open redirect on its host points.
+    const seen: Headers[] = [];
+    let hop = 0;
+    const fetchFn = vi.fn(async (_url: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers));
+      hop++;
+      if (hop === 1) {
+        return new Response("", { status: 302, headers: { Location: "https://93.184.216.34/b" } });
+      }
+      return hop === 2
+        ? new Response("", { status: 302, headers: { Location: "https://1.1.1.1/c" } })
+        : new Response("done");
+    });
+    await ssrfSafeFetch(
+      "https://93.184.216.34/a",
+      { headers: { "x-api-key": "k", "x-other": "o" } },
+      fakeFetch(fetchFn),
+      ["x-api-key"],
+    );
+    // Same origin: kept. Different origin: the named header goes, the rest stays.
+    expect(seen.map((h) => h.get("x-api-key"))).toEqual(["k", "k", null]);
+    expect(seen[2]?.get("x-other")).toBe("o");
+  });
 });
 
 describe("SSRF: reserved hostnames", () => {

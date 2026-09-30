@@ -5,6 +5,7 @@ import { isRecord, plural } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import pTimeout from "p-timeout";
 import { checkedResponse, isStringArray } from "./_api-client.ts";
+import { deleteLocalSecret, putLocalSecret } from "./_dotenv-file.ts";
 import { CliError, type CommandResult, fail, type OutputMode, ok } from "./_output.ts";
 import { secretRequest } from "./_slug-api.ts";
 import { log, unwrapCancel } from "./_ui.ts";
@@ -164,6 +165,34 @@ type SecretNameData = { name: string };
 type SecretListData = { secrets: string[] };
 
 /**
+ * The value to store: `value` when the invocation supplied one (stdin), else a
+ * masked prompt's answer — empty when the prompt was dismissed or left blank.
+ */
+async function valueOrPrompt(name: string, value: string | undefined): Promise<string | undefined> {
+  if (value) return value;
+  return unwrapCancel(await p.password({ message: `Enter value for ${name}` })) || undefined;
+}
+
+/**
+ * The put both destinations share: resolve the value (stdin, else the prompt),
+ * refuse an empty one, hand it to `store`, and report where it went — `store`
+ * returns that phrase ("for my-agent", "in /p/.env").
+ */
+async function storeSecret(
+  name: string,
+  value: string | undefined,
+  store: (value: string) => Promise<string>,
+): Promise<CommandResult<SecretNameData>> {
+  const secretValue = await valueOrPrompt(name, value);
+  if (!secretValue) {
+    const { code, message, hint } = noInput(name, "the prompt came back empty");
+    return fail(code, message, hint);
+  }
+  log.success(`Set ${name} ${await store(secretValue)}`);
+  return ok({ name });
+}
+
+/**
  * Execute secret put. If `value` is provided, use it directly (the stdin
  * path). If not, prompt for it — masked — which is what
  * {@link resolveSecretValue} returning `undefined` asks for.
@@ -174,25 +203,42 @@ export async function executeSecretPut(
   value: string | undefined,
   server: string | undefined,
 ): Promise<CommandResult<SecretNameData>> {
-  let secretValue = value;
+  return storeSecret(name, value, async (secretValue) => {
+    const { target } = await secretRequest(
+      cwd,
+      "",
+      { method: "PUT", body: { [name]: secretValue }, action: "secret" },
+      server,
+    );
+    return `for ${target}`;
+  });
+}
 
-  if (!secretValue) {
-    // TTY path — interactive prompt
-    const result = unwrapCancel(await p.password({ message: `Enter value for ${name}` }));
-    if (!result) {
-      const { code, message, hint } = noInput(name, "the prompt came back empty");
-      return fail(code, message, hint);
-    }
-    secretValue = result;
-  }
-
-  const { target } = await secretRequest(
-    cwd,
-    "",
-    { method: "PUT", body: { [name]: secretValue }, action: "secret" },
-    server,
+/**
+ * `aai secret put --local`: the same value sources as the platform path (stdin,
+ * else a masked prompt), written into `<cwd>/.env` instead — see
+ * `_dotenv-file.ts` for how the file is edited.
+ */
+export async function executeLocalSecretPut(
+  cwd: string,
+  name: string,
+  value: string | undefined,
+): Promise<CommandResult<SecretNameData>> {
+  return storeSecret(
+    name,
+    value,
+    async (secretValue) => `in ${await putLocalSecret(cwd, name, secretValue)}`,
   );
-  log.success(`Set ${name} for ${target}`);
+}
+
+/** `aai secret delete --local`: remove `name` from `<cwd>/.env`. */
+export async function executeLocalSecretDelete(
+  cwd: string,
+  name: string,
+): Promise<CommandResult<SecretNameData>> {
+  const removed = await deleteLocalSecret(cwd, name);
+  if (!removed) return fail("not_found", `${name} is not set in ${cwd}/.env`);
+  log.success(`Deleted ${name} from ${cwd}/.env`);
   return ok({ name });
 }
 

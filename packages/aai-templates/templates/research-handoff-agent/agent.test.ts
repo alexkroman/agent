@@ -23,6 +23,10 @@
 import agentDef from "virtual:aai/agent";
 import { DEFAULT_STEP_MAX_ATTEMPTS, type WorkflowClient } from "@alexkroman1/aai";
 import { renderSlackPlainText } from "@alexkroman1/aai/channels";
+import {
+  DEFAULT_DEEP_RESEARCH_BUDGET,
+  DEFAULT_DEEP_RESEARCH_PROMPTS,
+} from "@alexkroman1/aai/experimental";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createRunSnapshot,
@@ -30,8 +34,6 @@ import {
   createWorkflowContext,
   parseSchemaInput,
   runTool,
-  type StubDelegateCall,
-  type StubGatewayCall,
   type StubStepAnswer,
   type StubStepFetch,
   type StubStepRequest,
@@ -67,15 +69,8 @@ import {
   filingChannel,
   renderFiling,
 } from "./workflows/filing.ts";
-import { countSources, dedupe } from "./workflows/notes.ts";
-import {
-  findGaps,
-  investigate,
-  planAngles,
-  researchFlow,
-  writeBrief,
-  writeReport,
-} from "./workflows/research.ts";
+import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./workflows/prompts.ts";
+import { deliverResearch } from "./workflows/research.ts";
 import { REVIEW_DELAY_MS, REVIEW_SLEEP_ID } from "./workflows/review.ts";
 
 /**
@@ -353,216 +348,86 @@ describe("file_it_now", () => {
 });
 
 /**
- * The WORKFLOW half of the research desk: its steps, what it files, and the run
- * itself.
+ * The WORKFLOW half of the research desk: what it configures, what it files,
+ * and the run itself.
  *
- * `agent.test.ts` beside this file drives the four TOOLS against a stubbed
- * `ctx.workflows`. Nothing here has a `ToolContext` at all, which is the split:
- * a step is an ordinary exported async function, so its prompt handling, its
- * parsing and its `FatalError` guards are all testable without an engine — and
- * the BODY is driven twice, once through `createWorkflowContext`, which records
- * what it asked for and replays nothing, and once on the REAL replay engine.
+ * The pass is `deepResearchWorkflow()`'s, and its stages — the brief's
+ * fallback, the planner's width cap, the researcher's cite-else-opened
+ * sources, the report's one numbering, the gateway's retry classification —
+ * are asserted in the SDK's own spec (`sdk/deep-research.test.ts`), where they
+ * live. What is asserted HERE is this desk's half: the prompts it overrides,
+ * the researcher and budget it keeps, the review wait and filing its `deliver`
+ * adds, and — on the REAL replay engine — that the whole run keeps the desk's
+ * promise: **answer the caller now, finish the work later**.
  *
- * `runWorkflow` from `@alexkroman1/aai-runtime/testing` is that second one, and
- * it is what makes the desk's promise — **answer the caller now, finish the work
- * later** — an assertion rather than a claim: the review wait really suspends,
- * the resume really comes off the journal, and this file reads that journal
- * directly for the three things the run's own snapshot cannot show (which sleep
- * is open and under what name, what an `investigate` left behind for a resume to
- * reuse, and whether a boot sweep would still find a run whose worker died).
+ * The body is driven twice, once through `createWorkflowContext`, which records
+ * what it asked for and replays nothing, and once through `runWorkflow`
+ * (`@alexkroman1/aai-runtime/testing`), which reads the journal directly for
+ * the three things the run's own snapshot cannot show (which sleep is open and
+ * under what name, what an `investigate` left behind for a resume to reuse, and
+ * whether a boot sweep would still find a run whose worker died).
  * `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier above both, with a
  * built project and a real queue.
  */
-describe("the pure helpers", () => {
-  test("dedupe keeps the first occurrence of each URL", () => {
-    const sources = [
-      { title: "One", url: "https://a.example" },
-      { title: "One again", url: "https://a.example" },
-      { title: "Two", url: "https://b.example" },
-    ];
-    expect(dedupe(sources)).toEqual([sources[0], sources[2]]);
-  });
-
-  test("countSources counts DISTINCT sources across every angle", () => {
-    // What the voice agent quotes. Two researchers finding the same page is one
-    // source, and reporting two would overstate the research.
-    const shared = { title: "Shared", url: "https://a.example" };
-    expect(
-      countSources([
-        { angle: "one", findings: "…", sources: [shared, { title: "B", url: "https://b" }] },
-        { angle: "two", findings: "…", sources: [shared] },
-      ]),
-    ).toBe(2);
-  });
-});
-
-describe("the steps that research", () => {
+describe("the desk's research configuration", () => {
   beforeEach(() => {
     // `stepEnv` falls back to the process env when no host has published one,
     // which is exactly the case a spec is. `unstubEnvs` clears it per test.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /**
-   * The SDK's fake gateway, installed.
-   *
-   * The fake itself is `@alexkroman1/aai/testing`'s — it answers a QUEUE of
-   * completions, repeating the last, which is what a spec needs for a loop that
-   * is a CONVERSATION (search, then read, then stop) rather than one call. What
-   * stays here is the INSTALLATION, because the lifetime of a global stub is
-   * vitest's business and the SDK helper deliberately carries no test-runner
-   * dependency.
-   */
+  const INPUT = { topic: "Tool use", requestedBy: "Ada" };
+  const brief = { brief: "How otters use tools", criteria: ["Which species"] };
 
-  /** The prompt the Nth model call carried. */
-  function promptOf(calls: readonly StubGatewayCall[], at: number): string {
-    return calls[at]?.prompt ?? "";
-  }
-
-  const brief = { brief: "How otters use tools", criteria: ["Which species", "How it is learned"] };
-
-  test("writeBrief turns a spoken request into a brief and its criteria", async () => {
+  test("the brief and the summary are the PHONE prompts, the rest the SDK's", async () => {
+    // Every stage but the two this desk overrides is answered, so the two
+    // model calls that remain are exactly the overridden ones.
     const calls = stubGateway([
-      JSON.stringify({ brief: "How otters use tools", criteria: ["Which species"] }),
+      JSON.stringify({ brief: "How otters use tools", criteria: [] }),
+      "# Otters",
+      "Otters use stones.",
     ]);
-    expect(await writeBrief("otters")).toEqual({
-      brief: "How otters use tools",
-      criteria: ["Which species"],
+    const ctx = createWorkflowContext({
+      results: {
+        planAngles: ["Tool use"],
+        investigate: { angle: "Tool use", findings: "f", sources: [] },
+        findGaps: [],
+        file: "2026-01-01T00:00:00.000Z",
+      },
     });
-    expect(promptOf(calls, 0)).toContain("otters");
+    await research.run(INPUT, ctx);
+
+    expect(calls[0]?.system?.startsWith(BRIEF_SYSTEM)).toBe(true);
+    expect(calls[1]?.system).toBe(DEFAULT_DEEP_RESEARCH_PROMPTS.report);
+    expect(calls[2]?.system).toBe(BRIEF_SUMMARY_SYSTEM);
   });
 
-  test("writeBrief falls back to the topic rather than filing an empty brief", async () => {
-    // The caller said something; a model that returns no brief must not erase it.
-    stubGateway([JSON.stringify({ criteria: [] })]);
-    expect(await writeBrief("otters")).toEqual({ brief: "otters", criteria: [] });
-  });
-
-  test("planAngles asks the model for the fan-out's width", async () => {
-    const calls = stubGateway([JSON.stringify({ angles: ["Tool use", "Which species"] })]);
-    expect(await planAngles(brief)).toEqual(["Tool use", "Which species"]);
-    // The angles are measured against the brief, so the criteria travel with it.
-    expect(promptOf(calls, 0)).toContain("Which species");
-  });
-
-  test("planAngles researches the brief itself when no angles come back", async () => {
-    // Nothing to fan out over is a plan failure, not an empty result — and the
-    // brief is the one angle that is always available.
-    stubGateway([JSON.stringify({ angles: [] })]);
-    expect(await planAngles(brief)).toEqual([brief.brief]);
-  });
-
-  test("investigate hands the angle to a subagent, with the brief as its context", async () => {
-    const desk = installStubStepDelegate({
-      routes: { researcher: "Sea otters crack shellfish [1]." },
-    });
-
-    const note = await investigate(brief, "Tool use");
-
-    expect(note.findings).toBe("Sea otters crack shellfish [1].");
-    expect(desk.calls).toHaveLength(1);
-    // The angle is the TASK and the brief rides in `context`: a subagent has not
-    // heard the call and cannot see its siblings, so an angle handed over on its
-    // own gets a confident answer about the wrong question.
-    expect(desk.calls[0]?.task).toBe("Tool use");
-    expect(desk.calls[0]?.options.context).toContain("How otters use tools");
-  });
-
-  test("the researcher is given the web builtins, the budget, and what to answer with", async () => {
-    // What this template still OWNS, now that the loop is the runtime's: which
-    // capabilities the angle is worth, and what a finding has to be.
+  test("the researcher keeps the keyless web builtins and the default budget", async () => {
     const desk = installStubStepDelegate({ routes: { researcher: "found things" } });
-    await investigate(brief, "Tool use");
+    const ctx = createWorkflowContext({
+      results: {
+        writeBrief: brief,
+        planAngles: ["Tool use"],
+        findGaps: [],
+        writeReport: { report: "r", summary: "s" },
+        file: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    await research.run(INPUT, ctx);
 
     const researcher = desk.calls[0]?.subagent;
     expect(researcher?.builtinTools).toEqual(["web_search", "visit_webpage"]);
-    expect(researcher?.maxSteps).toBe(6);
-    expect(researcher?.expectedOutput).toContain("repeat");
-    expect(Object.keys(researcher?.tools ?? {})).toEqual(["cite"]);
-  });
-
-  test("sources are what the researcher CITED", async () => {
-    const desk = installStubStepDelegate({
-      routes: {
-        // The runtime runs a subagent's tools; the stub does not, so the route
-        // calls `cite` the way a real run would. It is an ordinary `ToolDef`, which
-        // is what makes that possible at all.
-        researcher: (call: StubDelegateCall) => {
-          void call.subagent.tools?.cite?.execute(
-            { title: "Otters", url: "https://otters.example/tools" },
-            createToolContext(),
-          );
-          return "Sea otters crack shellfish [1].";
-        },
-      },
-    });
-
-    const note = await investigate(brief, "Tool use");
-
-    expect(note.sources).toEqual([{ title: "Otters", url: "https://otters.example/tools" }]);
-    expect(desk.calls).toHaveLength(1);
-  });
-
-  test("a researcher that never cited falls back to the pages it OPENED", async () => {
-    // The worse of the two failures is a note full of findings reporting no
-    // sources at all — the report stage cites from this list.
-    installStubStepDelegate({
-      routes: {
-        researcher: {
-          text: "Sea otters crack shellfish.",
-          toolCalls: [
-            { name: "web_search", input: { query: "otter tool use" } },
-            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-          ],
-        },
-      },
-    });
-
-    const note = await investigate(brief, "Tool use");
-
-    expect(note.sources).toEqual([
-      { title: "https://otters.example/tools", url: "https://otters.example/tools" },
-    ]);
-  });
-
-  test("investigate reports what the angle cost, since the searches are not visible here", async () => {
-    const reported = installStubReporter();
-    installStubStepDelegate({
-      routes: {
-        researcher: {
-          text: "found things",
-          toolCalls: [
-            { name: "web_search", input: { query: "a" } },
-            { name: "web_search", input: { query: "b" } },
-            { name: "visit_webpage", input: { url: "https://otters.example/tools" } },
-          ],
-        },
-      },
-    });
-
-    await investigate(brief, "Tool use");
-
-    // Coarser than the per-search line it replaces, and deliberately — see
-    // `investigate`. What a listener needs is that an angle is moving.
-    expect(reported.lines.join("\n")).toContain("Looking into: Tool use");
-    expect(reported.lines.join("\n")).toContain("2 searches, 1 page read");
+    expect(researcher?.maxSteps).toBe(DEFAULT_DEEP_RESEARCH_BUDGET.researcherSteps);
+    expect(desk.calls[0]?.options.context).toContain("How otters use tools");
   });
 
   test("both investigate waves are called with more attempts than the default", async () => {
-    // The retry policy is an argument to `ctx.step` now rather than a
-    // `maxRetries` property, so it is observable only at the CALL — and there
-    // are two calls, one per wave, which is exactly the kind of thing a property
-    // could not have said differently.
-    // `planAngles`' result is what the fan-out iterates, so it is supplied
-    // rather than run — the rest of the body needs no page and no model.
+    // With `runSteps: false` nothing runs, so this is the skeleton of a run: no
+    // page, no model and no search, in exchange for spelling the shape out.
     const ctx = createWorkflowContext({
       runSteps: false,
-      // Every step the body READS needs a value: with `runSteps: false` nothing
-      // runs, so this is the skeleton of a run rather than a run. That is the
-      // trade — no page, no model and no search, in exchange for spelling the
-      // shape out.
       results: {
+        writeBrief: brief,
         planAngles: ["Adoption", "Tooling"],
         findGaps: ["Cost"],
         investigate: { angle: "Adoption", findings: "f", sources: [] },
@@ -570,14 +435,14 @@ describe("the steps that research", () => {
         writeReport: { summary: "s", report: "r" },
       },
     });
-    await researchFlow({ topic: "Tool use", requestedBy: "Ada" }, ctx);
+    await research.run(INPUT, ctx);
 
     const investigations = ctx.steps.filter((step) => step.name.startsWith("investigate"));
-    expect(investigations.length).toBeGreaterThan(0);
-    // Against the SDK's own default rather than the literal 3 this used to
-    // carry: what the claim is about is that an angle gets more than an
-    // ordinary step, and a default that moved would have left the old number
-    // asserting something nobody meant.
+    expect(investigations.map((step) => step.name)).toEqual([
+      "investigate",
+      "investigate",
+      "investigateGap",
+    ]);
     for (const step of investigations) {
       expect(step.maxAttempts).toBeGreaterThan(DEFAULT_STEP_MAX_ATTEMPTS);
     }
@@ -585,93 +450,67 @@ describe("the steps that research", () => {
 
   test("the review wait is opened under the name file_it_now wakes", async () => {
     // The two halves of one agreement, and the only place a spec can see both:
-    // the body's `correlationId` here, and the tool's `correlationIds` in
-    // `agent.test.ts`. `review.ts` is the module that keeps them equal.
+    // the delivery's `correlationId` here, and the tool's `correlationIds` in
+    // the `file_it_now` block. `review.ts` is the module that keeps them equal.
     const ctx = createWorkflowContext({
       runSteps: false,
       results: {
+        writeBrief: brief,
         planAngles: ["Adoption"],
         findGaps: [],
         investigate: { angle: "Adoption", findings: "f", sources: [] },
         writeReport: { summary: "s", report: "r" },
       },
     });
-    await researchFlow({ topic: "Tool use", requestedBy: "Ada" }, ctx);
+    await research.run(INPUT, ctx);
 
     expect(ctx.slept).toHaveLength(1);
     expect(ctx.slept[0]?.correlationId).toBe(REVIEW_SLEEP_ID);
+    // The wait comes AFTER the report, and filing after the wait.
+    expect(ctx.steps.map((step) => step.name).slice(-2)).toEqual(["writeReport", "file"]);
   });
 
-  // Driven through `writeBrief` rather than `investigate`: the classification is
-  // `stepGenerateJsonOrFail`'s and every JSON stage shares it, and `investigate`
-  // stopped being one of them when its loop became a subagent's.
-  test("a rate limit is RETRYABLE, so the engine tries again", async () => {
-    // The message alone cannot say this — a 429 and a 401 read alike — so what
-    // is asserted is the class the engine actually branches on.
-    stubGateway([""], { status: 429 });
-    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
-    expect(RetryableError.is(err)).toBe(true);
-    expect((err as Error).message).toMatch(/HTTP 429/);
+  test("deliverResearch answers with what research_status reads back", async () => {
+    const ctx = createWorkflowContext({ results: { file: "2026-01-01T00:00:00.000Z" } });
+    const source = { title: "Otters", url: "https://otters.example" };
+    const out = await deliverResearch(
+      {
+        topic: "otters",
+        brief,
+        notes: [{ angle: "Tool use", findings: "f", sources: [source] }],
+        sources: [source],
+        report: "# Otters",
+        summary: "Otters use stones.",
+      },
+      INPUT,
+      ctx,
+    );
+    expect(out).toEqual({
+      topic: "otters",
+      summary: "Otters use stones.",
+      report: "# Otters",
+      sources: 1,
+      angles: ["Tool use"],
+      filedAt: "2026-01-01T00:00:00.000Z",
+    });
   });
 
-  test("a rejected request is FATAL rather than retried five times", async () => {
-    stubGateway([""], { status: 401 });
-    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
-    expect(FatalError.is(err)).toBe(true);
-    expect((err as Error).message).toMatch(/HTTP 401/);
-  });
-
-  test("a missing key is FATAL, naming the key", async () => {
+  test("a missing key is FATAL, naming the key, and fails the run rather than filing", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     stubGateway(["anything"]);
-    const err = await writeBrief("otters").catch((thrown: unknown) => thrown);
+    const ctx = createWorkflowContext();
+    const err = await Promise.resolve(research.run(INPUT, ctx)).catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
     expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
+    expect(ctx.steps.map((step) => step.name)).not.toContain("file");
   });
 
-  test("a reply that is not JSON throws plainly, because a retry may well obey", async () => {
-    stubGateway(["I would rather write you an essay."]);
-    await expect(writeBrief("otters")).rejects.toThrow(/Expected JSON/);
-  });
-
-  test("findGaps asks nothing when the first wave found nothing", async () => {
-    const calls = stubGateway([JSON.stringify({ angles: ["anything"] })]);
-    expect(await findGaps(brief, [])).toEqual([]);
-    expect(calls).toHaveLength(0);
-  });
-
-  test("findGaps names what is still unanswered against the criteria", async () => {
-    const calls = stubGateway([JSON.stringify({ angles: ["How it is learned"] })]);
-    const gaps = await findGaps(brief, [
-      { angle: "Tool use", findings: "They use stones.", sources: [] },
-    ]);
-    expect(gaps).toEqual(["How it is learned"]);
-    expect(promptOf(calls, 0)).toContain("They use stones.");
-  });
-
-  test("writeReport writes the report AND the sentence a phone can carry", async () => {
-    // Two model calls in ONE step, because they are one decision: a resume must
-    // never pair a new summary with an old report.
-    const calls = stubGateway(["# Otters\n\nThey use stones [1].", "Otters use stones as tools."]);
-    const written = await writeReport("otters", brief, [
-      { angle: "Tool use", findings: "They use stones.", sources: [] },
-    ]);
-
-    expect(written.report).toContain("# Otters");
-    expect(written.summary).toBe("Otters use stones as tools.");
-    expect(calls).toHaveLength(2);
-    // Nothing researched is dropped on the way in.
-    expect(promptOf(calls, 0)).toContain("They use stones.");
-    // …and the summary is a reduction OF the report, not a second pass at the
-    // findings — which is what keeps it consistent with what a page renders.
-    expect(promptOf(calls, 1)).toContain("# Otters");
-  });
-
-  test("an empty completion throws rather than filing a blank report", async () => {
-    stubGateway([""]);
-    await expect(
-      writeReport("otters", brief, [{ angle: "a", findings: "b", sources: [] }]),
-    ).rejects.toThrow(/empty completion/);
+  test("a rate limit is RETRYABLE, so the engine tries again", async () => {
+    stubGateway([""], { status: 429 });
+    const err = await Promise.resolve(research.run(INPUT, createWorkflowContext())).catch(
+      (thrown: unknown) => thrown,
+    );
+    expect(RetryableError.is(err)).toBe(true);
   });
 });
 
@@ -796,7 +635,8 @@ describe("filing the findings", () => {
 });
 
 /**
- * `researchFlow` itself, on the real replay engine.
+ * The whole run — `deepResearchWorkflow`'s pass plus this desk's delivery — on
+ * the real replay engine.
  *
  * The block above drives this body through `createWorkflowContext`, which records
  * what it ASKED for and replays nothing — right for the retry policy and the

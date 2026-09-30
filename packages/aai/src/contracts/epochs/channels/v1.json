@@ -3,7 +3,7 @@
   "capability": "channels",
   "epoch": 1,
   "rule": 2,
-  "sha256": "0b5f903148a8c872a73e11afaaccbd2f3c576438ecd2b9e8d20a28fd187a515c",
+  "sha256": "c756e376b6e8b70c37eff3b44c39a74405b2eb472030c5781f66ad183d3ff17c",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -42,7 +42,7 @@
     "textbeltChannel"
   ],
   "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -60,6 +60,12 @@
       "revision": 2,
       "rule": 2,
       "sha256": "0b5f903148a8c872a73e11afaaccbd2f3c576438ecd2b9e8d20a28fd187a515c",
+      "reason": "additive (checked): +SmsRecipientEnv, +TEXTBELT_CHANNEL_HANDLER, +TEXTBELT_CHANNEL_KIND, +TEXTBELT_MAX_MESSAGE_CHARS, +TextbeltChannel, +TextbeltChannelOptions, +allowedSmsRecipient, +explainTextbeltChannelFailure, +renderTextbeltText, +sessionClientPhone, +textbeltChannel"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "c756e376b6e8b70c37eff3b44c39a74405b2eb472030c5781f66ad183d3ff17c",
       "reason": "additive (checked): +SmsRecipientEnv, +TEXTBELT_CHANNEL_HANDLER, +TEXTBELT_CHANNEL_KIND, +TEXTBELT_MAX_MESSAGE_CHARS, +TextbeltChannel, +TextbeltChannelOptions, +allowedSmsRecipient, +explainTextbeltChannelFailure, +renderTextbeltText, +sessionClientPhone, +textbeltChannel"
     }
   ]

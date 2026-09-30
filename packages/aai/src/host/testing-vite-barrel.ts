@@ -21,3 +21,8 @@ export {
   type AaiVitePlugin,
   aaiAgentPlugin,
 } from "./testing-vite.ts";
+export {
+  type AgentTestConfig,
+  type AgentTestConfigOverrides,
+  defineAgentTestConfig,
+} from "./testing-vite-config.ts";

@@ -823,6 +823,8 @@
             "exportFunctions": [
               "installStubGateway",
               "installStubUploads",
+              "installStubClientInbox",
+              "installFetchRoutes",
               "installStubStepFetch",
               "installStubReporter",
               "installStubSpeech",

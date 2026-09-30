@@ -37,45 +37,44 @@
  */
 
 import path from "node:path";
-import { REPO_ROOT, runScaffoldTsc, SCAFFOLD_DIR } from "./_scaffold-tsc.mjs";
+import { REPO_ROOT, runScaffoldTsc, SCAFFOLD_DIR, VITE_CLIENT_TYPES } from "./_scaffold-tsc.mjs";
 
 const include = [
   path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.ts"),
   path.join(REPO_ROOT, "packages/aai-templates/templates/**/*.tsx"),
-  // Carries the triple-slash reference to vite's client types, without
-  // which every `?raw` and `.css` import in a template is an unresolved
-  // module. (Spelled out rather than quoted: knip parses a verbatim
-  // reference directive in a comment as a real dependency.)
-  path.join(SCAFFOLD_DIR, "global.d.ts"),
   // The shipped server entrypoint. Named as a FILE rather than a `*.mjs` glob:
   // the scaffold holds exactly one, and a glob would silently start checking
   // whatever else lands beside it under a config chosen for this file.
   path.join(SCAFFOLD_DIR, "server.mjs"),
-  // The scaffold's two shipped CONFIGS, for the reason `server.mjs` is here:
-  // a user gets them from `aai init` and every `aai test` / `aai dev` loads
-  // them, and they were checked by NOTHING — `packages/aai-templates/tsconfig.json`
-  // deliberately stops at `src` so the scaffold is checked here instead, and
-  // here only named `global.d.ts` and `server.mjs`. Confirmed by putting
-  // `const x: number = "s"` in each and watching all four type gates stay green.
+  // The scaffold's shipped CONFIG, for the reason `server.mjs` is here: a
+  // user gets it from `aai init` and every `aai test` loads it, and it was
+  // checked by NOTHING — `packages/aai-templates/tsconfig.json` deliberately
+  // stops at `src` so the scaffold is checked here instead. Confirmed by
+  // putting `const x: number = "s"` in it and watching all four type gates
+  // stay green.
   //
-  // `vitest.config.ts` is the one that can actually rot: it imports
-  // `@alexkroman1/aai/testing/vite` for `aaiAgentPlugin`, so a rename on OUR
-  // side of that subpath breaks every scaffolded project's test run, and this
-  // is the only place that would say so. `vite.config.ts` names
-  // `@tailwindcss/vite` and `@vitejs/plugin-react`, which is why this package
-  // now carries both — the alternative was leaving the file unchecked.
+  // It can rot: it imports `defineAgentTestConfig` from
+  // `@alexkroman1/aai/testing/vite`, so a rename on OUR side of that subpath
+  // breaks every scaffolded project's test run, and this is the only place
+  // that would say so. (There is no scaffold `vite.config.ts` any more: the
+  // CLI supplies the client plugins — `aai-cli/src/_client-plugins.ts`.)
   //
-  // Named as FILES, not a `*.config.ts` glob, for the same reason as
-  // `server.mjs`: the scaffold holds exactly these two.
-  path.join(SCAFFOLD_DIR, "vite.config.ts"),
+  // Named as a FILE, not a `*.config.ts` glob, for the same reason as
+  // `server.mjs`. The `virtual:aai/agent` declaration needs no line: the
+  // generated config extends the scaffold's preset, whose `files` carries it.
   path.join(SCAFFOLD_DIR, "vitest.config.ts"),
 ];
 
-// `types` differs on purpose: a scaffolded project resolves `vitest/globals`
-// from its own install, and template tools use `node` builtins. Everything
-// that decides whether a given file type-checks — strictness, target, lib,
-// jsx — comes from the scaffold untouched.
-const overrides = { types: ["vitest/globals", "node"], allowJs: true, checkJs: true };
+// `types` differs on purpose: the preset's `vitest/globals` and `vite/client`
+// (the latter is what types every `?raw`, `.css` and `import.meta.glob` in a
+// template), plus `node`, which template tools use. Everything that decides
+// whether a given file type-checks — strictness, target, lib, jsx — comes from
+// the scaffold untouched.
+const overrides = {
+  types: ["vitest/globals", VITE_CLIENT_TYPES, "node"],
+  allowJs: true,
+  checkJs: true,
+};
 
 /**
  * Two passes. The first is the config `aai init` ships, verbatim. The second

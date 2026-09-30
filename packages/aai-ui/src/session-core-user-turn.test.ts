@@ -207,4 +207,61 @@ describe("BrowserSession sendText", () => {
     expect(core.getSnapshot().state).toBe(before);
     core.disconnect();
   });
+
+  describe("with `{ connect: true }`", () => {
+    const idle = () => createBrowserSession({ platformUrl: "https://host/agent/", WebSocket: WS });
+    const configure = async () => {
+      socket?.simulateOpen();
+      socket?.simulateMessage(makeConfig());
+      await vi.advanceTimersByTimeAsync(0);
+    };
+
+    it("opens an idle session and sends once it is configured, in the order typed", async () => {
+      const core = idle();
+      core.sendText("first", { connect: true });
+      core.sendText("second");
+      expect(core.getSnapshot()).toMatchObject({ started: true, running: true });
+      socket?.simulateOpen();
+      // An open socket is not yet a session: nothing goes before `config`.
+      expect(sentText()).toEqual([]);
+      socket?.simulateMessage(makeConfig());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sentText()).toEqual([
+        { type: "user_text", text: "first" },
+        { type: "user_text", text: "second" },
+      ]);
+      core.sendText("third", { connect: true });
+      expect(sentText()).toHaveLength(3);
+      core.disconnect();
+    });
+
+    it("after a hang-up, RESUMES the session rather than starting a new one", async () => {
+      const core = await live();
+      core.disconnect();
+      expect(core.getSnapshot()).toMatchObject({ started: true, running: false });
+      core.sendText("still there?", { connect: true });
+      expect(core.getSnapshot().running).toBe(true);
+      expect(socket?.url).toContain("sessionId=sess-123");
+      await configure();
+      expect(sentText()).toEqual([{ type: "user_text", text: "still there?" }]);
+      core.disconnect();
+    });
+
+    it("drops what was waiting when the session stops before it is up", async () => {
+      const core = idle();
+      core.sendText("never answered", { connect: true });
+      core.disconnect();
+      core.start();
+      await configure();
+      expect(sentText()).toEqual([]);
+      core.disconnect();
+    });
+
+    it("an empty message neither queues nor opens anything", () => {
+      const core = idle();
+      core.sendText("   ", { connect: true });
+      expect(core.getSnapshot().running).toBe(false);
+      expect(socket).toBeNull();
+    });
+  });
 });

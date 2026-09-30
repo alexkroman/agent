@@ -45,6 +45,51 @@ describe("callable builtins", () => {
     expect(init?.headers?.Authorization).toBeUndefined();
   });
 
+  test("fetchJson POSTs a JSON body when given one, still screening headers", async () => {
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: unknown) => new Response('{"aqi":42}', { status: 200 }),
+    );
+    const out = await fetchJson("https://api.example.com/lookup", {
+      fetch,
+      headers: { "x-goog-api-key": "k", Cookie: "c=1" },
+      body: { location: { latitude: 1, longitude: 2 } },
+    });
+    expect(out).toEqual({ aqi: 42 });
+    const init = fetch.mock.calls[0]?.[1] as RequestInit & { headers: Record<string, string> };
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe('{"location":{"latitude":1,"longitude":2}}');
+    expect(init.headers["content-type"]).toBe("application/json");
+    expect(init.headers["x-goog-api-key"]).toBe("k");
+    expect(init.headers.Cookie).toBeUndefined();
+  });
+
+  test("fetchJson takes an explicit method, and a failure is still an answer", async () => {
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: unknown) => new Response("gone", { status: 404 }),
+    );
+    const out = await fetchJson({ url: "https://api.example.com/x/1", method: "delete", fetch });
+    const init = (fetch.mock.calls[0]?.[1] ?? {}) as RequestInit;
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBeUndefined();
+    expect(isToolFailure(out)).toBe(true);
+  });
+
+  test("fetchJson's signal reaches a POST too", async () => {
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: unknown) => new Response("{}", { status: 200 }),
+    );
+    const controller = new AbortController();
+    await fetchJson("https://api.example.com/x", {
+      fetch,
+      method: "PUT",
+      body: [1],
+      signal: controller.signal,
+    });
+    const signal = ((fetch.mock.calls[0]?.[1] ?? {}) as RequestInit).signal as AbortSignal;
+    controller.abort();
+    expect(signal.aborted).toBe(true);
+  });
+
   test("visitWebpage and webSearch are callable", async () => {
     const fetch = vi.fn(
       async () => new Response("<html><body>hello</body></html>", { status: 200 }),

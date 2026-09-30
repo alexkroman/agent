@@ -6,6 +6,7 @@ import { ChannelDeliveryError } from "./shared/channel-types.ts";
 import { explainChannelFailure, renderChannelPayload, sendToChannel } from "./shared/send.ts";
 import {
   renderTextbeltText,
+  stripLinks,
   TEXTBELT_MAX_MESSAGE_CHARS,
   textbeltChannel,
   textbeltRefusal,
@@ -48,6 +49,46 @@ describe("textbeltChannel", () => {
     expect(() =>
       renderChannelPayload({ kind: "textbelt", options: { key: "k", to: " " } }, { text: "x" }),
     ).toThrow(/needs a string `to`/);
+  });
+});
+
+describe("links", () => {
+  test("stripLinks removes URLs, www. and bare domains, keeping the words", () => {
+    const text = stripLinks(
+      "Try https://example.com/menu?x=1 or www.example.org, and see example.net/path (or not).",
+    );
+    expect(text).toBe("Try or, and see (or not).");
+    expect(stripLinks("The menu (https://example.com) is long")).toBe("The menu is long");
+    expect(stripLinks("Plain text with no links.")).toBe("Plain text with no links.");
+  });
+
+  test("stripLinks takes a report's source list, not its body", () => {
+    const report =
+      "Research: heat pumps\n\nThey work down to 40F [1][2].\n\nSources:\n[1] https://a.example.com/x\n[2] https://b.example.org";
+    expect(stripLinks(report)).toBe("Research: heat pumps\n\nThey work down to 40F [1][2].");
+  });
+
+  test('links: "strip" sends the text without them, section URLs included; the default keeps them', () => {
+    const stripping = textbeltChannel({ key: "k", to: "+15555550123", links: "strip" });
+    const message = {
+      text: "Menu at https://example.com/menu tonight",
+      sections: [{ title: "More", url: "https://example.com/more" }],
+    };
+    expect(renderChannelPayload(stripping, message).body).toMatchObject({
+      message: "Menu at tonight\n\nMore",
+    });
+    expect(renderChannelPayload(channel, message).body).toMatchObject({
+      message: "Menu at https://example.com/menu tonight\n\nMore\nhttps://example.com/more",
+    });
+  });
+
+  test("a journaled descriptor with a links value that is neither is refused", () => {
+    expect(() =>
+      renderChannelPayload(
+        { kind: "textbelt", options: { key: "k", to: "+15555550123", links: "drop" } },
+        { text: "x" },
+      ),
+    ).toThrow(/"keep" or "strip"/);
   });
 });
 

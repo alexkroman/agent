@@ -34,6 +34,11 @@
  * session-state mutation is not that case — `slot.update`'s window is
  * synchronous — which is what the `state` capability is for.
  *
+ * `jsonClient`/`HttpError` (one vendor REST API, declared once), `fitToolResult`
+ * (a big answer shrunk structurally to a tool result) and `normalizePhone`
+ * joined it for the same reader: each replaced a private copy in an agent's
+ * own helper modules, called from tools, routes and steps alike.
+ *
  * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
@@ -46,18 +51,30 @@ export {
   decodeHtmlEntities,
   errorDetail,
   errorMessage,
+  type FitToolResultOptions,
+  fitToolResult,
   formatBytes,
   formatDuration,
   formatMoney,
+  HttpError,
   isRecord,
+  type JsonClient,
+  type JsonClientContext,
+  type JsonClientOptions,
+  type JsonRequestInit,
+  jsonClient,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
+  type NormalizePhoneOptions,
+  normalizePhone,
   omitUndefined,
   plural,
   pushCapped,
   responseErrorMessage,
   roundMoney,
+  type SpokenErrorReasonOptions,
   safeJsonParse,
+  spokenErrorReason,
   withLock,
 } from "../../sdk/utils-barrel.ts";

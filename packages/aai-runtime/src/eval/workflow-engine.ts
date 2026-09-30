@@ -93,11 +93,14 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
+  asFailureError,
+  pollWorkflow,
   publishSpeechSynthesizer,
   publishStepEnv,
   publishStepFetch,
   publishStepInfoReader,
   publishStepReporter,
+  resolveFailureHandler,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -202,6 +205,8 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   if (opts.stepFetch) publishStepFetch(opts.stepFetch);
 
   let sequence = 0;
+  /** `workflow\u0000dedupeKey` → the run it started. */
+  const byDedupeKey = new Map<string, string>();
 
   // The same mapping the production engine uses (`workflow/wdk-record.ts`), so
   // a field one engine carries cannot go missing from the other's snapshots.
@@ -224,7 +229,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    * measures exactly as much.
    */
   function evalCtx(record: EvalRunRecord): WorkflowContext {
-    return {
+    const ctx: WorkflowContext = {
       runId: record.runId,
       workflow: record.workflowName,
       // The parameters are annotated because `WorkflowContext.step` is OVERLOADED —
@@ -255,6 +260,9 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       sleep: async (label, until) => {
         record.slept.push({ label, duration: until });
       },
+      // Composed of `step` and `sleep` above, as every context's is — so a case
+      // records each wait of the poll the way it records a hand-written loop's.
+      poll: (name, check, options) => pollWorkflow(ctx, name, check, options),
       // REFUSED, and named. A hook is the one thing on `WorkflowContext` this engine
       // cannot fake: a sleep can be skipped because the body continues either
       // way, but a `waitFor` is defined by what the SIGNALLER sends, and
@@ -284,6 +292,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
               ),
             ),
     };
+    return ctx;
   }
 
   /**
@@ -292,7 +301,12 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
    * Never rejects — the failure is the run's, and a rejection here would become
    * an unhandled one, `start()` having already resolved with the id.
    */
-  async function execute(record: EvalRunRecord, body: EvalBody, input: unknown): Promise<void> {
+  async function execute(
+    record: EvalRunRecord,
+    def: { run: EvalBody; onFailure?: WorkflowDef["onFailure"] },
+    input: unknown,
+  ): Promise<void> {
+    const body = def.run;
     const startedAt = Date.now();
     try {
       // A validated input is an object — `ToolInputSchema`'s output type says so
@@ -310,6 +324,15 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     } catch (err: unknown) {
       record.elapsedMs = Date.now() - startedAt;
       if (record.status === "cancelled") return;
+      // `onFailure`, called in line — there is no journal here to make it a step —
+      // and never allowed to change what the run is recorded as.
+      const hook = resolveFailureHandler(def.onFailure);
+      const context = { runId: record.runId, workflow: record.workflowName };
+      await Promise.resolve()
+        .then(() =>
+          hook?.run(asFailureError(err), { ...context, input: isRecord(input) ? input : {} }),
+        )
+        .catch(() => undefined);
       record.status = "failed";
       record.error = { message: errorMessage(err) };
     }
@@ -360,8 +383,15 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
           ),
         );
       }
+      // `dedupeKey`: the first run started with it answers every later start, as
+      // the real engine's derived id does (`workflow/dedupe-run-id.ts`).
+      const deduped =
+        options?.dedupeKey === undefined ? undefined : `${workflowName}\u0000${options.dedupeKey}`;
+      const earlier = deduped === undefined ? undefined : byDedupeKey.get(deduped);
+      if (earlier !== undefined) return Promise.resolve(earlier);
       sequence += 1;
       const runId = `${prefix}-run-${sequence}`;
+      if (deduped !== undefined) byDedupeKey.set(deduped, runId);
       const record: EvalRunRecord = {
         runId,
         workflowName,
@@ -377,7 +407,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       runs.set(runId, record);
       // `current.run` is what puts the record in scope for every `stepReport()` the
       // body's steps make, including the ones a fan-out makes concurrently.
-      record.settled = current.run(record, () => execute(record, entry.def.run, args[0]));
+      record.settled = current.run(record, () => execute(record, entry.def, args[0]));
       return Promise.resolve(runId);
     },
 

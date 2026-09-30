@@ -28,13 +28,21 @@
  * @module testing-speech
  */
 
-import { publishSpeechSynthesizer } from "./step-speak.ts";
+import {
+  keylessSynthesizer,
+  publishSpeechSynthesizer,
+  type SpeechSynthesizer,
+} from "./step-speak.ts";
 
 /** One `stepSpeak` call, as {@link stubSpeech} records it. */
 export type StubSpeechCall = {
   /** The text handed to the synthesizer, trimmed the way `stepSpeak` trims it. */
   text: string;
-  /** The credential `stepSpeak` resolved out of the step env. */
+  /**
+   * The credential `stepSpeak` resolved out of the step env — `""` when the
+   * env holds none, which the stub accepts unless
+   * {@link StubSpeechOptions.requireApiKey} is set.
+   */
   apiKey: string;
   /** The voice, with `stepSpeak`'s default already filled in. */
   voice: string;
@@ -64,6 +72,14 @@ export type StubSpeechOptions = {
    * different branch from a provider that answered and refused.
    */
   error?: Error | undefined;
+  /**
+   * Refuse, as the real synthesizer does, when the step env holds no
+   * credential. Defaults to `false`: the stub presents the key to nobody, so a
+   * spec should not have to `vi.stubEnv("ASSEMBLYAI_API_KEY", …)` just to get
+   * past a check that guards a socket it never opens. Set it for the one spec
+   * whose subject IS the missing-key sentence.
+   */
+  requireApiKey?: boolean | undefined;
 };
 
 /** PCM bytes {@link stubSpeech} answers with when no size is named — ~0.25s at 24 kHz. */
@@ -95,7 +111,7 @@ export type StubSpeech = {
  */
 export function stubSpeech(options: StubSpeechOptions = {}): StubSpeech {
   const calls: StubSpeechCall[] = [];
-  publishSpeechSynthesizer((request) => {
+  const synthesizer: SpeechSynthesizer = (request) => {
     calls.push({
       text: request.text,
       apiKey: request.apiKey,
@@ -109,6 +125,9 @@ export function stubSpeech(options: StubSpeechOptions = {}): StubSpeech {
     // garbage.
     const bytes = Math.max(0, Math.floor((options.pcmBytes ?? STUB_SPEECH_PCM_BYTES) / 2) * 2);
     return Promise.resolve(new Uint8Array(bytes));
-  });
+  };
+  publishSpeechSynthesizer(
+    options.requireApiKey === true ? synthesizer : keylessSynthesizer(synthesizer),
+  );
   return { calls, restore: () => publishSpeechSynthesizer(undefined) };
 }

@@ -44,6 +44,8 @@
  */
 
 import { missingEnvMessage } from "./_missing-env.ts";
+import { omitUndefined } from "./omit-undefined.ts";
+import { stepInfo } from "./step-attempt.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
@@ -163,4 +165,67 @@ export function requireStepEnv(name: string): string {
     throw new Error(missingEnvMessage(name));
   }
   return value;
+}
+
+/**
+ * The part of a context a helper needs to reach an outside service: the agent's
+ * env, and a signal to stop on.
+ *
+ * **What a helper shared between a TOOL and a STEP should take.** A
+ * `ToolContext` and a `RouteContext` both satisfy it as they are, and
+ * {@link stepEnvContext} builds one inside a step — so a `supabase.ts` or an
+ * `apps.ts` written against this runs unchanged in all three, instead of every
+ * app hand-building `{ env: { KEY: stepEnv("KEY"), … } }` per workflow and
+ * forgetting a key the helper later grew.
+ *
+ * @public
+ */
+export type EnvContext = {
+  /** The agent's env — `ctx.env` in a tool, the published agent env in a step. */
+  env: Readonly<Partial<Record<string, string>>>;
+  /**
+   * Aborted when the caller goes away — the tool call, the request, or (in a
+   * step) the run being cancelled. Absent where nothing can cancel.
+   */
+  signal?: AbortSignal;
+};
+
+/**
+ * The whole agent env, plus the running step's cancel signal, as an
+ * {@link EnvContext} — what a helper shared with tools is handed inside a step.
+ *
+ * `env` is the same record {@link stepEnv} reads key by key, so the parity rule
+ * is the same: exactly what `.env` and `aai secret put` declare once a host has
+ * published it, `process.env` in a process where nothing has (a spec, a
+ * script). It is a frozen SNAPSHOT: a copy of `process.env` in the fallback
+ * case, so a helper cannot write back through it.
+ *
+ * `signal` is present inside a step of a running workflow, and aborts when the
+ * run is cancelled; outside one (a spec calling the step directly) it is
+ * absent.
+ *
+ * @example
+ * ```ts
+ * import { type EnvContext, stepEnvContext } from "@alexkroman1/aai/step";
+ *
+ * // Shared with tools, which pass their own `ctx`.
+ * async function readProfile(ctx: EnvContext, id: string): Promise<unknown> {
+ *   const res = await fetch(`${ctx.env.PROFILE_API ?? ""}/profiles/${id}`, {
+ *     ...(ctx.signal ? { signal: ctx.signal } : {}),
+ *   });
+ *   return await res.json();
+ * }
+ *
+ * export async function loadProfile(id: string): Promise<unknown> {
+ *   return await readProfile(stepEnvContext(), id);
+ * }
+ * ```
+ *
+ * @public
+ */
+export function stepEnvContext(): EnvContext {
+  const published = (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+  const env: Readonly<Partial<Record<string, string>>> =
+    published ?? Object.freeze({ ...processEnv() });
+  return { env, ...omitUndefined({ signal: stepInfo()?.signal }) };
 }

@@ -36,6 +36,11 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   digits must not collide), the streaming row (default: `renderMessage` over a
   synthetic assistant message, `id: -1`), a `role="status"` thinking row, and the
   transcript inline or `transcriptPosition="below"`.
+- **`log` (`useConversationLog().entries`) REPLACES the live items**, not
+  adds to them — the log's newest session entry already is the live
+  conversation. Log rows are keyed by the entry's identity plus a repeat count,
+  never its index (the log is trimmed from the front); `spoken` renders through
+  `renderMessage` with id `-2`.
 - **`<MessageList>` is `<ConversationView>` with stock bubbles**
   (`useCallback`-hoisted renderers so per-row memo holds; default `renderTool` is
   `<ToolCallRow variant="compact">`). It must stay rebuildable from the public

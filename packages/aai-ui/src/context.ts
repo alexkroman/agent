@@ -12,7 +12,7 @@ import {
 // The non-shim entry point delegates to React's native useSyncExternalStore
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, ClientTheme, SessionError } from "./types.ts";
 
 // AssemblyAI design system ("website refresh"): warm cream surface, deep
@@ -68,7 +68,7 @@ export type SessionActions = {
   /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
   /** Send a typed user turn, answered as if spoken — see {@link BrowserSession.sendText}. */
-  sendText(text: string): void;
+  sendText(text: string, options?: SendTextOptions): void;
   /** Mute or unmute the mic without dropping the session — see {@link BrowserSession.setMicMuted}. */
   setMicMuted(muted: boolean): void;
   /** Clear messages, transcripts and error state, keeping the connection. */
@@ -114,6 +114,11 @@ export function useSessionCore(): BrowserSession {
   const core = useContext(SessionCtx);
   if (!core) throw new Error("Session hooks must be used within <SessionProvider>");
   return core;
+}
+
+/** The session from context, or `null` outside the provider (`useRoute` on a `mountPage()` page). */
+export function useOptionalSessionCore(): BrowserSession | null {
+  return useContext(SessionCtx);
 }
 
 /**

@@ -18,6 +18,27 @@ export type AaiVitePlugin = {
     load(id: string): string | undefined;
 };
 
+// @public
+export type AgentTestConfig = {
+    plugins: unknown[];
+    test: {
+        globals: boolean;
+        reporters: string[];
+        [option: string]: unknown;
+    };
+    [option: string]: unknown;
+};
+
+// @public
+export type AgentTestConfigOverrides = {
+    plugins?: readonly unknown[];
+    test?: Record<string, unknown>;
+    [option: string]: unknown;
+};
+
+// @public
+export function defineAgentTestConfig(overrides?: AgentTestConfigOverrides): AgentTestConfig;
+
 // (No @packageDocumentation comment for this package)
 
 ```

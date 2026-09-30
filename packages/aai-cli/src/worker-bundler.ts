@@ -42,7 +42,8 @@ import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { invariant } from "@alexkroman1/aai/internal";
-import { build, type PluginOption, type Rollup } from "vite";
+import { build, mergeConfig, type PluginOption, type Rollup } from "vite";
+import { devSourceViteConfig } from "./_dev-source.ts";
 import { errorCode } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
@@ -250,38 +251,41 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   let result: Awaited<ReturnType<typeof build>>;
   try {
     result = await withPreservedNodeEnv(() =>
-      build({
-        root: cwd,
-        logLevel: "silent",
-        ...(options.configFile === false && { configFile: false }),
-        ...(plugins.length > 0 && { plugins }),
-        // Bundle everything (the guest sandbox has no node_modules) EXCEPT
-        // `node:` builtins, which the SSR build keeps external. Without the
-        // SSR switch Vite treats this as a browser build and replaces the
-        // runtime's `node:` imports with "externalized for browser
-        // compatibility" throw-stubs.
-        ssr: { noExternal: true },
-        build: {
-          // The worker runs in the Node guest, not a browser: server resolve
-          // conditions, no browser main field, `node:` builtins external.
-          ssr: true,
-          lib: { entry: wrapperPath, formats: ["es"], fileName: "worker" },
-          target: "node20",
-          minify: options.minify ? "oxc" : false,
-          write: false,
-          rollupOptions: {
-            output: {
-              entryFileNames: "[name].js",
-              // The providers' lazy imports must be inlined rather than
-              // emitted as sibling chunks — the worker is delivered as ONE
-              // ESM string over bundle/load (same rule as the guest
-              // harness's tsdown config). Rolldown's spelling of
-              // `inlineDynamicImports: true` (which it deprecated).
-              codeSplitting: false,
+      build(
+        // `AAI_DEV_SOURCE=1`: a linked SDK bundles from its `src/` (`_dev-source.ts`).
+        mergeConfig(devSourceViteConfig(), {
+          root: cwd,
+          logLevel: "silent",
+          ...(options.configFile === false && { configFile: false }),
+          ...(plugins.length > 0 && { plugins }),
+          // Bundle everything (the guest sandbox has no node_modules) EXCEPT
+          // `node:` builtins, which the SSR build keeps external. Without the
+          // SSR switch Vite treats this as a browser build and replaces the
+          // runtime's `node:` imports with "externalized for browser
+          // compatibility" throw-stubs.
+          ssr: { noExternal: true },
+          build: {
+            // The worker runs in the Node guest, not a browser: server resolve
+            // conditions, no browser main field, `node:` builtins external.
+            ssr: true,
+            lib: { entry: wrapperPath, formats: ["es"], fileName: "worker" },
+            target: "node20",
+            minify: options.minify ? "oxc" : false,
+            write: false,
+            rollupOptions: {
+              output: {
+                entryFileNames: "[name].js",
+                // The providers' lazy imports must be inlined rather than
+                // emitted as sibling chunks — the worker is delivered as ONE
+                // ESM string over bundle/load (same rule as the guest
+                // harness's tsdown config). Rolldown's spelling of
+                // `inlineDynamicImports: true` (which it deprecated).
+                codeSplitting: false,
+              },
             },
           },
-        },
-      }),
+        }),
+      ),
     );
   } finally {
     await fs.rm(wrapperPath, { force: true }).catch(() => undefined);

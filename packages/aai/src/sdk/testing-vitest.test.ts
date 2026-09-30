@@ -1,18 +1,22 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { stepFetch } from "./step-fetch.ts";
+import { stepNotifyClient } from "./step-notify-client.ts";
 import { stepReport } from "./step-report.ts";
 import { stepSpeak } from "./step-speak.ts";
 import { stepTranscribePoll } from "./step-transcribe.ts";
 import { stepUploadInfo } from "./step-uploads.ts";
 import {
+  installStubClientInbox,
   installStubGateway,
   installStubReporter,
   installStubSpeech,
   installStubStepFetch,
   installStubTranscribe,
   installStubUploads,
+  installStubWorkflows,
 } from "./testing-vitest.ts";
+import { createRunSnapshot } from "./testing-workflows.ts";
 
 /**
  * Each fake is asserted twice: once that it is INSTALLED, and once — from the
@@ -71,19 +75,40 @@ describe("installStubReporter", () => {
 
 describe("installStubSpeech", () => {
   test("publishes a synthesizer and records what it was asked to say", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    // No `vi.stubEnv` for the key: the fake presents it to nobody, so it
+    // does not ask for one.
     const speech = installStubSpeech();
     await stepSpeak("Three findings.");
     expect(speech.calls[0]?.text).toBe("Three findings.");
   });
 
   test("a per-test install needs no registry: this test's fake is the one that answers", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // Failing rather than speaking is the half a spec cannot write by leaving
     // the slot empty: unpublished means "no synthesizer here", which is a
     // different sentence and a different branch from a provider that refused.
     installStubSpeech({ error: new Error("provider said no") });
     await expect(stepSpeak("Anything.")).rejects.toThrow("provider said no");
+  });
+});
+
+describe("installStubClientInbox", () => {
+  test("publishes an inbox and records what was pushed", async () => {
+    const inbox = installStubClientInbox();
+    await stepNotifyClient("kitchen", { id: "wrun_1", event: "reminder" });
+    expect(inbox.calls).toMatchObject([{ clientId: "kitchen", notice: { id: "wrun_1" } }]);
+  });
+
+  test("and the inbox is gone by the next test", async () => {
+    await expect(stepNotifyClient("kitchen", { id: "wrun_2", event: "reminder" })).rejects.toThrow(
+      /inbox|client/i,
+    );
+  });
+
+  test("passes its options through: a busy device is a throw the step sees", async () => {
+    installStubClientInbox({ answer: "busy" });
+    await expect(
+      stepNotifyClient("kitchen", { id: "wrun_3", event: "reminder" }),
+    ).rejects.toThrow();
   });
 });
 
@@ -116,5 +141,29 @@ describe("installStubGateway", () => {
       body: JSON.stringify({ messages: [{ role: "user", content: "Otters use tools." }] }),
     });
     expect(calls[0]?.prompt).toBe("Otters use tools.");
+  });
+});
+
+describe("installStubWorkflows", () => {
+  const runs = [
+    createRunSnapshot({ runId: "a", status: "running" }),
+    createRunSnapshot({ runId: "b", status: "pending" }),
+    createRunSnapshot({ runId: "c", status: "completed", output: "done" }),
+  ];
+
+  test("answers every lookup from the one list, findByKey included", async () => {
+    const workflows = installStubWorkflows({ runs, runId: "wrun_x" });
+    await expect(workflows.start("digest", {})).resolves.toBe("wrun_x");
+    await expect(workflows.get("a")).resolves.toMatchObject({ runId: "a" });
+    await expect(workflows.findByKey("caller-1")).resolves.toHaveLength(3);
+    await expect(workflows.find("digest", "caller-1")).resolves.toHaveLength(3);
+    await expect(workflows.recent("digest")).resolves.toHaveLength(3);
+  });
+
+  test("cancelAll counts the unfinished runs, as one cancel per run would", async () => {
+    const workflows = installStubWorkflows({ runs });
+    await expect(workflows.cancelAll("digest", "caller-1")).resolves.toBe(2);
+    await expect(workflows.cancel("a")).resolves.toBe(true);
+    await expect(workflows.wakeUp("a")).resolves.toBe(0);
   });
 });

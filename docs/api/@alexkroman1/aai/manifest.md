@@ -55,6 +55,9 @@ and out of every snapshot that did not opt in.
 ```ts
 function toAgentConfig(source: AgentConfigSource): {
   builtinTools?: readonly string[];
+  clientInbox?: {
+     sampleRate?: number;
+  };
   deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
@@ -70,9 +73,10 @@ function toAgentConfig(source: AgentConfigSource): {
   maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
+     allowedTools?: readonly string[];
      pinnedTools?: Record<string, string>;
      tokenEnv?: string;
-     url: string;
+     url?: string;
   }>;
   minBargeInWords?: number;
   mode?: "s2s" | "text" | "pipeline";
@@ -138,6 +142,9 @@ the runtime.
 ```ts
 {
   builtinTools?: readonly string[];
+  clientInbox?: {
+     sampleRate?: number;
+  };
   deadAirCoverMs?: number;
   description?: string;
   errorPhrase?: string;
@@ -153,9 +160,10 @@ the runtime.
   maxRetries?: number;
   maxSteps?: number;
   mcpServers?: Record<string, {
+     allowedTools?: readonly string[];
      pinnedTools?: Record<string, string>;
      tokenEnv?: string;
-     url: string;
+     url?: string;
   }>;
   minBargeInWords?: number;
   mode?: "s2s" | "text" | "pipeline";
@@ -209,6 +217,14 @@ the runtime.
 
 ```ts
 optional builtinTools?: readonly string[];
+```
+
+##### clientInbox?
+
+```ts
+{
+  sampleRate?: number;
+}
 ```
 
 ##### deadAirCoverMs?
@@ -284,9 +300,10 @@ optional maxSteps?: number;
 
 ```ts
 optional mcpServers?: Record<string, {
+  allowedTools?: readonly string[];
   pinnedTools?: Record<string, string>;
   tokenEnv?: string;
-  url: string;
+  url?: string;
 }>;
 ```
 
@@ -584,7 +601,8 @@ config that flows CLI → server → runtime unchanged.
 ### AgentConfigSource
 
 ```ts
-type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
+  mcpServers?: McpServers;
   systemPrompt?: AgentSystemPrompt;
 } & { [K in HostOnlyAgentField]?: unknown };
 ```
@@ -597,6 +615,16 @@ spread call sites (`{...agent, stt: maybeUndefined}`) legal under
 `exactOptionalPropertyTypes`.
 
 #### Type Declaration
+
+##### mcpServers?
+
+```ts
+optional mcpServers?: McpServers;
+```
+
+Wider than the wire's record for the same reason: an `McpServerConfig` may
+carry a `url` RESOLVER and `headers`, both host-only. `toAgentConfig`
+strips them (see `wireMcpServers`).
 
 ##### systemPrompt?
 

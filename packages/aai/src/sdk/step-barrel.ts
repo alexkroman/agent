@@ -94,7 +94,7 @@ export {
   stepClientTranscript,
 } from "./step-client-transcript.ts";
 export { stepDelegate } from "./step-delegate.ts";
-export { requireStepEnv, stepEnv } from "./step-env.ts";
+export { type EnvContext, requireStepEnv, stepEnv, stepEnvContext } from "./step-env.ts";
 export {
   type MultipartBody,
   type MultipartPart,
@@ -133,8 +133,14 @@ export {
   TWILIO_ACCOUNT_SID_ENV,
   TWILIO_AUTH_TOKEN_ENV,
 } from "./step-place-call.ts";
+export { type StepPollUntilOptions, stepPollUntil } from "./step-poll-until.ts";
 export { stepEmit, stepReport } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
+export {
+  DEFAULT_CLIENT_DELIVERY_ATTEMPTS,
+  type StepSayOnClientOptions,
+  stepSayOnClient,
+} from "./step-say-on-client.ts";
 export {
   type SpeakOptions,
   type SpokenAudio,
@@ -184,3 +190,6 @@ export {
   UnsupportedRecordingError,
   type WavFormat,
 } from "./wav-parse.ts";
+// What `stepPollUntil` resolves with — the same result `ctx.poll` has, reachable
+// here because a public signature on this entry point names it.
+export type { PollResult } from "./workflow-ctx-options.ts";

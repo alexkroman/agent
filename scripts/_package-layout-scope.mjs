@@ -44,6 +44,10 @@ export const ROOT_CONFIGS = new Set(["vitest.config.ts", "vite.config.ts", "tsdo
  */
 export const PRODUCT_TREES = {
   "aai-templates": ["templates", "scaffold"],
+  // `presets/agent-env.d.ts` ships to users' projects through the
+  // `@alexkroman1/aai/tsconfig` preset's `files` — a declaration a project
+  // compiles, not repo source this package builds.
+  aai: ["presets"],
 };
 
 /**

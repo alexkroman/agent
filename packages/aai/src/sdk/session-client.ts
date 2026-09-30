@@ -37,6 +37,7 @@
  */
 
 import type { ToolContext } from "./tool-context.ts";
+import { type ToolFailure, toolFailure } from "./utils.ts";
 
 const SESSION_CLIENTS_SLOT = Symbol.for("@alexkroman1/aai.sessionClients");
 
@@ -101,6 +102,40 @@ export function setSessionClient(sessionId: string, clientId: string): void {
  */
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined {
   return liveSessionEntry(entries(), ctx.sessionId)?.clientId;
+}
+
+/** What {@link requireSessionClient} says by default when a session has no client id. */
+const NO_CLIENT_MESSAGE =
+  "This only works from a device with its own id, such as a speaker or the page linked to it.";
+
+/**
+ * This session's client id ({@link sessionClientId}), or a `ToolFailure`
+ * saying why the tool cannot run without one — the guard every tool that keys
+ * work by device opens with.
+ *
+ * ```ts
+ * import { requireSessionClient, tool } from "@alexkroman1/aai";
+ * import { isToolFailure } from "@alexkroman1/aai/utils";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Email them the last answer.",
+ *   inputSchema: z.object({ body: z.string() }),
+ *   async execute({ body }, ctx) {
+ *     const clientId = requireSessionClient(ctx, "Email works on a speaker only.");
+ *     if (isToolFailure(clientId)) return clientId;
+ *     return { queued: body.length, for: clientId };
+ *   },
+ * });
+ * ```
+ *
+ * @param message - The sentence the model reads when there is no client id.
+ */
+export function requireSessionClient(
+  ctx: Pick<ToolContext, "sessionId">,
+  message: string = NO_CLIENT_MESSAGE,
+): string | ToolFailure {
+  return sessionClientId(ctx) ?? toolFailure(message);
 }
 
 /**

@@ -153,6 +153,9 @@ export type StubStepFetch = {
   restore: () => void;
 };
 
+/** Statuses a `Response` may not carry a body with. */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
 /**
  * Turn a {@link StubStepAnswer} into the `Response` a step will read.
  *
@@ -165,10 +168,16 @@ export function toStepResponse(answered: StubStepAnswer): Response {
   if (answered instanceof Response) return answered;
   // A JSON body is what nearly every endpoint a step calls answers with, so
   // the shorthand encodes one rather than making each spec stringify.
-  const body =
-    typeof answered.body === "string" ? answered.body : JSON.stringify(answered.body ?? {});
+  const status = answered.status ?? 200;
+  // A null-body status (`204`, `304`, …) with any body is a `TypeError` from
+  // the `Response` constructor, so `{ status: 204 }` — the natural spelling of
+  // "PATCH accepted" — would throw inside the fake instead of answering.
+  let body: string | null = null;
+  if (!NULL_BODY_STATUSES.has(status)) {
+    body = typeof answered.body === "string" ? answered.body : JSON.stringify(answered.body ?? {});
+  }
   return new Response(body, {
-    status: answered.status ?? 200,
+    status,
     headers: { "Content-Type": "application/json", ...answered.headers },
   });
 }

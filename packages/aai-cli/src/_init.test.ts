@@ -3,7 +3,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
+import {
+  CLIENT_ONLY_DEPENDENCIES,
+  patchPackageJsonForWorkspace,
+  runInit,
+  stripClientDependencies,
+} from "./_init.ts";
 import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
@@ -305,6 +310,50 @@ describe("patchPackageJsonForWorkspace", () => {
       const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
       expect(result.dependencies.preact).toBe("^10.0.0");
       expect(result.dependencies.zod).toBe("^3.0.0");
+    });
+  });
+});
+
+describe("stripClientDependencies", () => {
+  const manifest = {
+    dependencies: {
+      "@alexkroman1/aai": "^1.0.0",
+      "@alexkroman1/aai-ui": "^1.0.0",
+      react: "^19.0.0",
+      "react-dom": "^19.0.0",
+      tailwindcss: "^4.0.0",
+      zod: "^4.0.0",
+    },
+    devDependencies: {
+      "@tailwindcss/vite": "^4.0.0",
+      "@types/react": "^19.0.0",
+      "@types/react-dom": "^19.0.0",
+      "@vitejs/plugin-react": "^6.0.0",
+      vite: "^8.0.0",
+      vitest: "^4.0.0",
+    },
+  };
+
+  test("a headless project keeps its agent and test toolchain, and no UI kit", async () => {
+    await withTempDir(async (dir) => {
+      await writeFiles(dir, { "agent.ts": "", "package.json": JSON.stringify(manifest) });
+      await stripClientDependencies(dir);
+      const after = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
+      expect(Object.keys(after.dependencies)).toEqual(["@alexkroman1/aai", "zod"]);
+      // `vite` stays: vitest's base, and where the preset's `vite/client` types come from.
+      expect(Object.keys(after.devDependencies)).toEqual(["vite", "vitest"]);
+      for (const name of CLIENT_ONLY_DEPENDENCIES) {
+        expect({ ...after.dependencies, ...after.devDependencies }).not.toHaveProperty(name);
+      }
+    });
+  });
+
+  test("a project with a client.tsx is left exactly as scaffolded", async () => {
+    await withTempDir(async (dir) => {
+      const text = JSON.stringify(manifest);
+      await writeFiles(dir, { "client.tsx": "", "package.json": text });
+      await stripClientDependencies(dir);
+      expect(await fs.readFile(path.join(dir, "package.json"), "utf-8")).toBe(text);
     });
   });
 });

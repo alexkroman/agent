@@ -14,7 +14,10 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 import { buildClient } from "./client-bundler.ts";
 
-vi.mock("vite", () => ({
+vi.mock("vite", async (importOriginal) => ({
+  // The real config helpers (`mergeConfig`, the default conditions): only the
+  // BUILD is faked.
+  ...(await importOriginal<typeof import("vite")>()),
   build: vi.fn(async (config: InlineConfig) => {
     // Emit one artifact so the caller's read of the out dir succeeds.
     const outDir = path.join(String(config.root), String(config.build?.outDir));
@@ -39,10 +42,16 @@ async function uiManifest(): Promise<{
   return JSON.parse(await fs.readFile(manifest, "utf-8"));
 }
 
-/** Write the minimum a client build needs: an entry point. */
+/**
+ * Write the minimum a client build needs: an entry point, and a
+ * `vite.config.ts` so the build leaves plugins to it rather than loading the
+ * default pair from a `node_modules` a temp dir does not have (that path is
+ * `_client-plugins.test.ts`'s).
+ */
 async function withClientProject(fn: (dir: string) => Promise<void>): Promise<void> {
   await withTempDir(async (dir) => {
     await fs.writeFile(path.join(dir, "client.tsx"), "export {};", "utf-8");
+    await fs.writeFile(path.join(dir, "vite.config.ts"), "export default {};", "utf-8");
     await fn(dir);
   });
 }
@@ -105,6 +114,14 @@ describe("buildClient", () => {
       const config = lastConfig();
       expect(config.configFile).toBeUndefined();
       expect(config.plugins).toBeUndefined();
+    });
+  });
+
+  test("with no vite.config.*, the default plugins are REQUIRED of the project", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "client.tsx"), "export {};", "utf-8");
+      await expect(buildClient(dir)).rejects.toMatchObject({ code: "client_plugins_missing" });
+      expect(build).not.toHaveBeenCalled();
     });
   });
 });

@@ -18,6 +18,7 @@
 
 export {
   type CallOptions,
+  type FetchJsonOptions,
   fetchJson,
   type UntypedJsonBody,
   visitWebpage,

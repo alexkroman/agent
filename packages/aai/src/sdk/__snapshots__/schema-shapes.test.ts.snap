@@ -3,6 +3,7 @@
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
   "builtinTools",
+  "clientInbox",
   "deadAirCoverMs",
   "description",
   "errorPhrase",

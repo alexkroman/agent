@@ -3,13 +3,21 @@
   "capability": "testing",
   "epoch": 14,
   "rule": 2,
-  "sha256": "c6f49d81aa8068ced8af670e570efc32d69aef9e2f6deb2d8aba3d177f1c30b6",
+  "sha256": "9d5c64d9d088d278caedeb5adba1f682d1b894323ca5a2819dea53db48c73cca",
   "exports": [
     "DeployedConfig",
     "DeployedStage",
+    "FetchRouteHandler",
+    "FetchRouteHit",
+    "FetchRouteRequest",
+    "FetchRouteTable",
+    "FetchRoutesOptions",
     "ProjectFiles",
     "RecordedSleep",
+    "RecordedStart",
     "RecordedStep",
+    "RecordingWorkflows",
+    "RecordingWorkflowsOptions",
     "RunSnapshotOverrides",
     "STUB_SPEECH_PCM_BYTES",
     "ScriptedToolContext",
@@ -29,6 +37,7 @@
     "StubDelegateRoute",
     "StubDelegateScript",
     "StubEmitted",
+    "StubFetchRoutes",
     "StubGateway",
     "StubGatewayCall",
     "StubGatewayOptions",
@@ -69,6 +78,7 @@
     "WorkflowContextRecorder",
     "commandedBuiltins",
     "createProgressStream",
+    "createRecordingWorkflows",
     "createRunSnapshot",
     "createStubWorkflows",
     "createToolContext",
@@ -83,6 +93,8 @@
     "expectDialogRefused",
     "expectPromptBuiltinsDeclared",
     "expectToolOk",
+    "installFetchRoutes",
+    "installStubClientInbox",
     "installStubGateway",
     "installStubReporter",
     "installStubSpeech",
@@ -102,6 +114,7 @@
     "stubClientInbox",
     "stubClientTranscript",
     "stubDelegate",
+    "stubFetchRoutes",
     "stubGateway",
     "stubGatewayRoute",
     "stubGenerate",
@@ -118,7 +131,7 @@
     "toolRunner"
   ],
   "rollup": "78dbc5810c4a3308d88a95664fae49496cc7bf49f635e1f382b190be12fe65ad",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -137,6 +150,12 @@
       "rule": 2,
       "sha256": "c6f49d81aa8068ced8af670e570efc32d69aef9e2f6deb2d8aba3d177f1c30b6",
       "reason": "additive (checked): +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +endSessionCalls, +stubClientInbox, +stubClientTranscript, +stubPlaceCall"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "9d5c64d9d088d278caedeb5adba1f682d1b894323ca5a2819dea53db48c73cca",
+      "reason": "additive (checked): +FetchRouteHandler, +FetchRouteHit, +FetchRouteRequest, +FetchRouteTable, +FetchRoutesOptions, +RecordedStart, +RecordingWorkflows, +RecordingWorkflowsOptions, +StubClientInbox, +StubClientInboxCall, +StubClientInboxOptions, +StubClientTranscript, +StubClientTranscriptAnswer, +StubClientTranscriptCall, +StubFetchRoutes, +StubPlaceCall, +StubPlaceCallOptions, +StubPlaceCallRefusal, +StubPlacedCall, +createRecordingWorkflows, +endSessionCalls, +installFetchRoutes, +installStubClientInbox, +stubClientInbox, +stubClientTranscript, +stubFetchRoutes, +stubPlaceCall"
     }
   ]
 }

@@ -12,6 +12,10 @@
  * misheard request, or a stranger on the LAN, cannot point the owner's key at
  * somebody else.
  *
+ * A key Textbelt has not yet allowed to send links refuses any text holding
+ * one; `TEXTBELT_LINKS=strip` in the agent env makes `text_me` take them out
+ * instead ({@link TEXTBELT_LINKS_ENV}).
+ *
  * Every failure is the tool's RESULT (`{ error }`), never a throw, like every
  * other builtin. The key handling — agent env on each call, not derived into
  * `requiredEnv` — is `_keyed-api.ts`'s rule.
@@ -20,7 +24,11 @@
 import { z } from "zod";
 import { missingEnvMessage } from "../sdk/_missing-env.ts";
 import { postToChannel } from "../sdk/channels/shared/send.ts";
-import { TEXTBELT_MAX_MESSAGE_CHARS, textbeltChannel } from "../sdk/channels/textbelt.ts";
+import {
+  stripLinks,
+  TEXTBELT_MAX_MESSAGE_CHARS,
+  textbeltChannel,
+} from "../sdk/channels/textbelt.ts";
 import { sessionClientPhone } from "../sdk/session-phone.ts";
 import { allowedSmsRecipient } from "../sdk/sms-recipient.ts";
 import type { ToolDef } from "../sdk/types.ts";
@@ -32,6 +40,15 @@ import { builtinFetch } from "./ssrf.ts";
 export const TEXTBELT_KEY_ENV = "TEXTBELT_KEY";
 /** The owner's own number: the default recipient. */
 export const SMS_TO_PHONE_ENV = "SMS_TO_PHONE";
+
+/**
+ * Set to `strip` for a Textbelt key not yet allowed to send links
+ * (https://textbelt.com/whitelist): `text_me` then leaves every link out —
+ * the `url` argument and any link in the message — and says so in its result,
+ * rather than sending a text Textbelt will refuse. Read per call, like the key:
+ * whether a key may send links is a property of the KEY.
+ */
+export const TEXTBELT_LINKS_ENV = "TEXTBELT_LINKS";
 
 /** Longest link `text_me` takes; the message is cut to leave it room. */
 const MAX_URL_CHARS = 500;
@@ -69,6 +86,18 @@ function smsBody(message: string, url: string | undefined): string {
   return `${cut}\n${url}`;
 }
 
+/** The text to send and whether links were left out of it — see {@link TEXTBELT_LINKS_ENV}. */
+function outgoingText(
+  args: { message: string; url?: string | undefined },
+  links: string | undefined,
+): { text: string; leftOut: boolean } {
+  if (links?.trim().toLowerCase() !== "strip") {
+    return { text: smsBody(args.message, args.url), leftOut: false };
+  }
+  const text = stripLinks(args.message);
+  return { text, leftOut: text !== args.message || args.url !== undefined };
+}
+
 export function createTextMe(
   fetchFn: typeof globalThis.fetch = builtinFetch(),
 ): ToolDef<typeof textMeParams> & { guidance: string } {
@@ -93,13 +122,15 @@ export function createTextMe(
       if (!key) return { error: missingEnvMessage(TEXTBELT_KEY_ENV) };
       const to = allowedSmsRecipient(sessionClientPhone(ctx), ctx.env);
       if (to === undefined) return { error: missingEnvMessage(SMS_TO_PHONE_ENV) };
+      const { text, leftOut } = outgoingText(args, ctx.env[TEXTBELT_LINKS_ENV]);
+      if (text === "") {
+        return { error: "That text was only links, and this Textbelt key can't send links." };
+      }
       try {
-        await postToChannel(
-          textbeltChannel({ key, to }),
-          { text: smsBody(args.message, args.url) },
-          fetchFn,
-        );
-        return { sent: true };
+        await postToChannel(textbeltChannel({ key, to }), { text }, fetchFn);
+        return leftOut
+          ? { sent: true, note: "Links were left out: they can't be texted yet." }
+          : { sent: true };
       } catch (err) {
         // A ChannelDeliveryError is already a sentence naming the fix; anything
         // else is the request never getting an answer. Neither names the number.

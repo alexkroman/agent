@@ -70,6 +70,7 @@ import type {
   WaitForSchemaOptions,
   WorkflowContext,
 } from "./workflow-ctx.ts";
+import { pollWorkflow } from "./workflow-poll.ts";
 
 /**
  * The value a `schema` option passed, or a throw naming what it rejected.
@@ -238,7 +239,7 @@ export function createWorkflowContext(
   let minted = 0;
   const uuidOf = answer(options.uuid, () => `uuid-${minted++}`);
 
-  return {
+  const ctx: WorkflowContextRecorder = {
     runId: options.runId ?? "wrun_test",
     workflow: options.workflow ?? "test",
     steps,
@@ -270,6 +271,11 @@ export function createWorkflowContext(
     async sleep(label: string, until: number | Date, sleepOptions?: SleepOptions): Promise<void> {
       slept.push({ label, until, correlationId: sleepOptions?.correlationId });
     },
+
+    // Composed of `step` and `sleep` above, as the engine's is, so each check is
+    // a recorded step and each wait a recorded sleep — and a `results` entry for
+    // the poll's name answers every check.
+    poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
 
     // The three journaled reads, answered from the options above. NOT recorded
     // the way `steps`/`slept`/`waited` are, and the asymmetry is deliberate: a
@@ -321,4 +327,5 @@ export function createWorkflowContext(
       );
     },
   };
+  return ctx;
 }

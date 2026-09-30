@@ -228,3 +228,72 @@ export type SleepOptions = {
    */
   correlationId?: string;
 };
+
+/**
+ * Options for `ctx.poll` — check something, and wait between checks, until it
+ * is done or the budget runs out.
+ *
+ * ```ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ *
+ * declare function callStatus(sid: string): Promise<{ over: boolean; outcome?: string }>;
+ *
+ * export async function followCall(input: { sid: string }, ctx: WorkflowContext) {
+ *   const call = await ctx.poll("check", () => callStatus(input.sid), {
+ *     everyMs: 10_000,
+ *     maxMs: 15 * 60_000,
+ *     done: (status) => status.over,
+ *   });
+ *   return call.done ? call.value.outcome : "still going";
+ * }
+ * ```
+ *
+ * ```ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ *
+ * declare function callStatus(sid: string): Promise<{ over: boolean; outcome?: string }>;
+ *
+ * export async function followCall(input: { sid: string }, ctx: WorkflowContext) {
+ *   const call = await ctx.poll("check", () => callStatus(input.sid), {
+ *     everyMs: 10_000,
+ *     maxMs: 15 * 60_000,
+ *     done: (status) => status.over,
+ *   });
+ *   return call.done ? call.value.outcome : "still going";
+ * }
+ * ```
+ *
+ * @public
+ */
+export type PollOptions<T> = {
+  /** The durable wait between two checks, in milliseconds. At least 1. */
+  everyMs: number;
+  /**
+   * The waiting budget, in milliseconds: the poll sleeps at most
+   * `floor(maxMs / everyMs)` times, so it makes at most one more check than
+   * that. A COUNT rather than a clock, so a replay walks the same number of
+   * checks however long each one took.
+   */
+  maxMs: number;
+  /**
+   * Is this check's value the answer? Called on the JOURNALED value, so it must
+   * be a pure function of it — the same verdict on every replay.
+   */
+  done: (value: T) => boolean;
+  /** Each check's `StepOptions.maxAttempts`. */
+  maxAttempts?: number | undefined;
+};
+
+/**
+ * What `ctx.poll` (and `stepPollUntil`) resolve with.
+ *
+ * @public
+ */
+export type PollResult<T> = {
+  /** The last check's value — the answer when `done`, the latest reading when not. */
+  value: T;
+  /** `true` when `done(value)` held; `false` when the budget ran out first. */
+  done: boolean;
+  /** How many checks ran. */
+  checks: number;
+};

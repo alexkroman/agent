@@ -93,7 +93,7 @@ export type BrowserSession = {
     cancel(): void;
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
-    sendText(text: string): void;
+    sendText(text: string, options?: SendTextOptions): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -217,6 +217,24 @@ export type ConversationItem = {
 };
 
 // @public
+export type ConversationLogEntry = {
+    readonly kind: "session";
+    readonly sessionId: string;
+    readonly run: number;
+    readonly at: number;
+    readonly items: readonly ConversationItem[];
+    readonly clientId?: string;
+} | {
+    readonly kind: "note";
+    readonly at: number;
+    readonly text: string;
+} | {
+    readonly kind: "spoken";
+    readonly at: number;
+    readonly text: string;
+};
+
+// @public
 export function ConversationView(input: ConversationViewProps): ReactNode;
 
 // @public
@@ -226,6 +244,13 @@ export type ConversationViewProps = {
     renderStreaming?: ((text: string) => ReactNode) | undefined;
     renderTranscript?: ((transcript: UseUserTranscriptResult) => ReactNode) | undefined;
     transcriptPosition?: "inline" | "below" | undefined;
+    log?: readonly ConversationLogEntry[] | undefined;
+    renderNote?: ((entry: Extract<ConversationLogEntry, {
+        kind: "note";
+    }>) => ReactNode) | undefined;
+    renderSessionHeader?: ((entry: Extract<ConversationLogEntry, {
+        kind: "session";
+    }>) => ReactNode) | undefined;
     empty?: ReactNode | undefined;
     thinkingLabel?: string | undefined;
     thinkingIndicator?: ReactNode | undefined;
@@ -253,6 +278,12 @@ export type CreateInboxOptions = {
     events?: boolean | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
+
+// @public
+export function createLinkedClient(options: LinkedClientOptions): LinkedClient;
+
+// @public
+export function createStoredValue(key: string, options?: StoredValueOptions): StoredValue;
 
 // @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
@@ -345,6 +376,9 @@ export type InboxEvent = {
 };
 
 // @public
+export function inboxEventToItem(event: InboxEvent, id?: number): ConversationItem | undefined;
+
+// @public
 export type InboxNotice = {
     readonly id: string;
     readonly event: string;
@@ -353,6 +387,21 @@ export type InboxNotice = {
 };
 
 export { isTerminal }
+
+// @public
+export type LinkedClient = {
+    id(): string;
+    linked(): string | undefined;
+    own(): string;
+    set(id: string | undefined): void;
+    clear(): void;
+};
+
+// @public
+export type LinkedClientOptions = {
+    key: string;
+    fallback?: (() => string) | undefined;
+};
 
 // @public
 export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
@@ -372,6 +421,7 @@ export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps
 // @public
 export type MessageListProps = {
     className?: string;
+    log?: readonly ConversationLogEntry[] | undefined;
 };
 
 // @public
@@ -398,6 +448,27 @@ export type PageHandle = {
 };
 
 // @public
+export function phoneE164(typed: string, options?: PhoneE164Options): string | undefined;
+
+// @public
+export type PhoneE164Options = {
+    countryCode?: string | undefined;
+};
+
+// @public
+export function routeFetch<T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteFetchOptions): Promise<T>;
+
+// @public
+export type RouteFetchOptions = {
+    client?: string | undefined;
+    baseUrl?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+// @public
 export function SelectField(input: FieldShell & {
     options?: readonly (string | {
         value: string;
@@ -406,13 +477,18 @@ export function SelectField(input: FieldShell & {
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
 
 // @public
+export type SendTextOptions = {
+    connect?: boolean | undefined;
+};
+
+// @public
 export type Session = SessionSnapshot & SessionActions;
 
 // @public
 export type SessionActions = {
     start(): void;
     cancel(): void;
-    sendText(text: string): void;
+    sendText(text: string, options?: SendTextOptions): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -530,6 +606,20 @@ export function StartScreen(input: {
 }): ReactNode;
 
 // @public
+export type StoredValue = {
+    readonly key: string;
+    get(): string;
+    set(value: string | undefined): void;
+    subscribe(listener: () => void): () => void;
+};
+
+// @public
+export type StoredValueOptions = {
+    initial?: string | undefined;
+    storage?: "local" | "session" | undefined;
+};
+
+// @public
 export function SubmitButton(input: {
     children?: ReactNode;
     pending?: boolean;
@@ -612,6 +702,24 @@ export function useClientId(): string | undefined;
 
 // @public
 export function useConversation(): UseConversationResult;
+
+// @public
+export function useConversationLog(options?: UseConversationLogOptions): UseConversationLogResult;
+
+// @public
+export type UseConversationLogOptions = {
+    storageKey?: string | undefined;
+    max?: number | undefined;
+};
+
+// @public
+export type UseConversationLogResult = {
+    readonly entries: readonly ConversationLogEntry[];
+    addNote(text: string): void;
+    addSpoken(text: string): void;
+    mirror(event: InboxEvent): void;
+    clear(): void;
+};
 
 // @public
 export type UseConversationResult = {
@@ -716,6 +824,23 @@ export type UsePushToTalkResult = {
 };
 
 // @public
+export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+
+// @public
+export type UseRouteOptions = {
+    pollMs?: number | undefined;
+    client?: string | undefined;
+};
+
+// @public
+export type UseRouteResult<T> = {
+    data: T | undefined;
+    error: string | undefined;
+    loading: boolean;
+    reload: () => void;
+};
+
+// @public
 export type UserTurnControls = {
     start(): void;
     commit(): void;
@@ -757,6 +882,42 @@ export function useSessionSelector<T>(selector: (snapshot: SessionSnapshot) => T
 
 // @public
 export function useSessionStatus(): AgentState;
+
+// @public
+export function useStoredValue(source: StoredValue | string, initial?: string): [string, (value: string | undefined) => void];
+
+// @public
+export function useTapToTalk(options?: UseTapToTalkOptions): UseTapToTalkResult;
+
+// @public
+export type UseTapToTalkOptions = {
+    key?: string | false | undefined;
+    idleHangupMs?: number | undefined;
+    thinkingHangupMs?: number | undefined;
+    connectTimeoutMs?: number | undefined;
+};
+
+// @public
+export type UseTapToTalkResult = {
+    phase: "idle" | "connecting" | "active";
+    live: boolean;
+    failed: boolean;
+    toggle: () => void;
+    send: (text: string) => void;
+    hangUp: () => void;
+    buttonProps: {
+        onClick: () => void;
+        onKeyDown: (event: {
+            code: string;
+            preventDefault(): void;
+        }) => void;
+        onKeyUp: (event: {
+            code: string;
+            preventDefault(): void;
+        }) => void;
+        "aria-pressed": boolean;
+    };
+};
 
 // @public
 export function useTheme(): Required<ClientTheme>;

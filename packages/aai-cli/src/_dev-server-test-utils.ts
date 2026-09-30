@@ -247,6 +247,8 @@ export function aaiRuntimeModule(): Record<string, unknown> {
 export function aaiRuntimeInternalModule(): Record<string, unknown> {
   return {
     publishStepEnv: vi.fn(),
+    // `stepSayOnClient`'s default rate, published beside the step env.
+    publishClientInboxDefaults: vi.fn(),
     // Both keyed HERE since they left the root barrel for `/internal`.
     requiredProviderEnvVars: mockRequiredProviderEnvVars,
     // The dev server applies the self-hosted credential fallback when building

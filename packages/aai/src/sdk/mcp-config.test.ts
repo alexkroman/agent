@@ -1,6 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { type AgentConfig, AgentConfigSchema, toAgentConfig } from "./agent-config.ts";
+import {
+  type AgentConfig,
+  AgentConfigSchema,
+  type AgentConfigSource,
+  toAgentConfig,
+} from "./agent-config.ts";
 import { agent } from "./define.ts";
 import {
   MCP_SERVER_KEY_RE,
@@ -148,6 +153,50 @@ describe("AgentConfigSchema.mcpServers", () => {
     expect(declared.mcpServers).toEqual({
       docs: { url: "https://mcp.example.com/mcp", tokenEnv: "DOCS_MCP_TOKEN" },
     });
-    expectTypeOf<McpServers | undefined>().toExtend<AgentConfig["mcpServers"]>();
+    expectTypeOf<McpServers | undefined>().toExtend<AgentConfigSource["mcpServers"]>();
+  });
+
+  test("a url RESOLVER is host-only: the wire records that the server exists, not the function", () => {
+    const config = toAgentConfig({
+      ...VALID,
+      mcpServers: {
+        apps: {
+          url: ({ clientId }) => `https://mcp.example.com/u/${clientId}`,
+          allowedTools: ["search"],
+        },
+      },
+    });
+    expect(config.mcpServers).toEqual({ apps: { allowedTools: ["search"] } });
+  });
+
+  test("headers never cross the wire, literal or resolved", () => {
+    // A header is where a credential lives (`x-api-key`), and a stored config
+    // is read by more than the runtime that needs it.
+    const config = toAgentConfig({
+      ...VALID,
+      mcpServers: {
+        literal: { url: "https://a.example/mcp", headers: { "x-api-key": "sekret" } },
+        resolved: {
+          url: "https://b.example/mcp",
+          headers: ({ env }) => ({ "x-api-key": env.KEY ?? "" }),
+        },
+      },
+    });
+    expect(config.mcpServers).toEqual({
+      literal: { url: "https://a.example/mcp" },
+      resolved: { url: "https://b.example/mcp" },
+    });
+    expect(JSON.stringify(config)).not.toContain("sekret");
+  });
+
+  test.each([
+    [
+      "an allowedTools that is not a list",
+      { docs: { url: "https://a.example/mcp", allowedTools: "search" } },
+    ],
+    ["a blank allowed tool name", { docs: { url: "https://a.example/mcp", allowedTools: [""] } }],
+    ["headers on the wire", { docs: { url: "https://a.example/mcp", headers: { a: "b" } } }],
+  ])("rejects %s", (_label, mcpServers) => {
+    expect(AgentConfigSchema.safeParse({ ...VALID, mcpServers }).success).toBe(false);
   });
 });

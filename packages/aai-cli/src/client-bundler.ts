@@ -27,8 +27,10 @@ import path from "node:path";
 // zod and five other modules into the graph for one pure string helper.
 import { isTextAssetPath } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { build, type PluginOption } from "vite";
+import { build, mergeConfig, type PluginOption } from "vite";
+import { defaultClientPlugins } from "./_client-plugins.ts";
 import { writeTempHtml } from "./_default-html.ts";
+import { devSourceViteConfig } from "./_dev-source.ts";
 import { errorMessage, fileExists } from "./_utils.ts";
 import { DEDUPED_PEERS, withPreservedNodeEnv } from "./_vite-env.ts";
 
@@ -41,7 +43,9 @@ import { DEDUPED_PEERS, withPreservedNodeEnv } from "./_vite-env.ts";
 export type BuildClientOptions = {
   /**
    * Plugins to inject instead of relying on the project's `vite.config.ts`
-   * (React + Tailwind for the studio, whose workspace has neither).
+   * (React + Tailwind for the studio, whose workspace has neither). Omitted in
+   * a project with no `vite.config.*`, the same pair is loaded from the
+   * project's own `node_modules` — see `_client-plugins.ts`.
    */
   plugins?: PluginOption[];
   /**
@@ -72,6 +76,11 @@ export async function buildClient(
     return {}; // No client.tsx — skip client build
   }
 
+  // A project with no `vite.config.*` gets the React + Tailwind pair the
+  // scaffold's config used to declare (`_client-plugins.ts`). The studio passes
+  // its own plugins and `configFile: false`, so it never reaches the lookup.
+  const plugins =
+    options.plugins ?? (options.configFile === false ? undefined : await defaultClientPlugins(cwd));
   const outDir = options.outDir ?? DEFAULT_OUT_DIR;
   const clientDir = path.join(cwd, outDir);
   // Assigned inside the try so cleanup runs even if writeTempHtml itself
@@ -82,18 +91,20 @@ export async function buildClient(
   try {
     cleanupHtml = writeTempHtml(cwd);
     await withPreservedNodeEnv(() =>
-      build({
-        root: cwd,
-        base: "./",
-        logLevel: "silent",
-        ...(options.configFile === false && { configFile: false }),
-        ...omitUndefined({ plugins: options.plugins }),
-        resolve: { dedupe: DEDUPED_PEERS },
-        build: {
-          outDir,
-          emptyOutDir: true,
-        },
-      }),
+      build(
+        mergeConfig(devSourceViteConfig(), {
+          root: cwd,
+          base: "./",
+          logLevel: "silent",
+          ...(options.configFile === false && { configFile: false }),
+          ...omitUndefined({ plugins }),
+          resolve: { dedupe: DEDUPED_PEERS },
+          build: {
+            outDir,
+            emptyOutDir: true,
+          },
+        }),
+      ),
     );
   } finally {
     cleanupHtml();

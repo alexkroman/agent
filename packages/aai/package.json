@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "AGENT_GUIDE.md",
-    "skills"
+    "skills",
+    "presets"
   ],
   "exports": {
     ".": {
@@ -142,7 +143,8 @@
       "@dev/source": "./src/host-internal.ts",
       "types": "./dist/host-internal.d.ts",
       "import": "./dist/host-internal.js"
-    }
+    },
+    "./tsconfig": "./presets/tsconfig.agent.json"
   },
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",

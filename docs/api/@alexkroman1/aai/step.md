@@ -885,6 +885,49 @@ export async function fetchReport(id: string): Promise<string> {
 
 ***
 
+### stepEnvContext()
+
+```ts
+function stepEnvContext(): EnvContext;
+```
+
+The whole agent env, plus the running step's cancel signal, as an
+[EnvContext](#envcontext) — what a helper shared with tools is handed inside a step.
+
+`env` is the same record [stepEnv](#stepenv) reads key by key, so the parity rule
+is the same: exactly what `.env` and `aai secret put` declare once a host has
+published it, `process.env` in a process where nothing has (a spec, a
+script). It is a frozen SNAPSHOT: a copy of `process.env` in the fallback
+case, so a helper cannot write back through it.
+
+`signal` is present inside a step of a running workflow, and aborts when the
+run is cancelled; outside one (a spec calling the step directly) it is
+absent.
+
+#### Returns
+
+[`EnvContext`](#envcontext)
+
+#### Example
+
+```ts
+import { type EnvContext, stepEnvContext } from "@alexkroman1/aai/step";
+
+// Shared with tools, which pass their own `ctx`.
+async function readProfile(ctx: EnvContext, id: string): Promise<unknown> {
+  const res = await fetch(`${ctx.env.PROFILE_API ?? ""}/profiles/${id}`, {
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  });
+  return await res.json();
+}
+
+export async function loadProfile(id: string): Promise<unknown> {
+  return await readProfile(stepEnvContext(), id);
+}
+```
+
+***
+
 ### stepFetch()
 
 ```ts
@@ -1230,6 +1273,55 @@ On every failure — see the module doc.
 
 ***
 
+### stepPollUntil()
+
+```ts
+function stepPollUntil<T>(check: () => T | Promise<T>, options: StepPollUntilOptions<T>): Promise<PollResult<T>>;
+```
+
+Check `check()` every `everyMs` until `done(value)` holds or `maxMs` has
+passed, inside a step, and resolve the last value.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### check
+
+() => `T` \| `Promise`\<`T`\>
+
+##### options
+
+[`StepPollUntilOptions`](#steppolluntiloptions)\<`T`\>
+
+#### Returns
+
+`Promise`\<[`PollResult`](index.md#pollresult)\<`T`\>\>
+
+#### Example
+
+```ts
+import { stepPollUntil } from "@alexkroman1/aai/step";
+
+declare function jobStatus(id: string): Promise<"PENDING" | "SUCCEEDED" | "FAILED">;
+
+export async function waitForExtraction(id: string): Promise<string> {
+  const polled = await stepPollUntil(() => jobStatus(id), {
+    everyMs: 3_000,
+    maxMs: 60_000,
+    done: (status) => status !== "PENDING",
+  });
+  if (polled.value === "FAILED") throw new Error(`extraction ${id} failed`);
+  return polled.value;
+}
+```
+
+***
+
 ### stepReadUpload()
 
 ```ts
@@ -1365,6 +1457,69 @@ when the id names no upload, exactly as [stepUploadInfo](#stepuploadinfo) does.
 
 ***
 
+### stepSayOnClient()
+
+```ts
+function stepSayOnClient(clientId: string, options: StepSayOnClientOptions): Promise<string>;
+```
+
+Say `text` on the device connected to `WS /inbox` as `clientId`: synthesize
+it, push the audio with `data.said = text`, and resolve with the text once
+the device acks.
+
+Throws `ClientUnreachableError` (retryable) when the device is offline, busy
+or slow to ack — call it from ONE step and let the step's retries redeliver;
+`DEFAULT_CLIENT_DELIVERY_ATTEMPTS` as that step's `maxAttempts` rides out an
+hour. A retry re-uses the audio it already synthesized.
+
+#### Parameters
+
+##### clientId
+
+`string`
+
+The device's `?client=` id.
+
+##### options
+
+[`StepSayOnClientOptions`](#stepsayonclientoptions)
+
+The notice (`id`, `event`, `text`, `data`) and how to speak it.
+
+#### Returns
+
+`Promise`\<`string`\>
+
+The text that was said.
+
+#### Example
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { DEFAULT_CLIENT_DELIVERY_ATTEMPTS, stepSayOnClient } from "@alexkroman1/aai/step";
+
+export async function remindFlow(
+  input: { clientId: string; text: string; dueAt: number },
+  ctx: WorkflowContext,
+) {
+  await ctx.sleep("due", new Date(input.dueAt));
+  const { runId } = ctx;
+  await ctx.step(
+    "deliver",
+    () =>
+      stepSayOnClient(input.clientId, {
+        id: runId,
+        event: "reminder",
+        text: `Reminder: ${input.text}`,
+        data: { text: input.text },
+      }),
+    { maxAttempts: DEFAULT_CLIENT_DELIVERY_ATTEMPTS },
+  );
+}
+```
+
+***
+
 ### stepSpeak()
 
 ```ts
@@ -1400,7 +1555,8 @@ when no synthesizer is published — the message names both
 #### Throws
 
 when the credential named by `apiKeyEnv` is not in the
-  agent's env, which `requireStepEnv` reports by name.
+  agent's env, which `requireStepEnv` reports by name. (`stubSpeech`'s fake
+  needs none unless told to — see `StubSpeechOptions.requireApiKey`.)
 
 #### Example
 
@@ -2801,6 +2957,46 @@ Why a notice was not taken.
 
 ***
 
+### EnvContext
+
+```ts
+type EnvContext = {
+  env: Readonly<Partial<Record<string, string>>>;
+  signal?: AbortSignal;
+};
+```
+
+The part of a context a helper needs to reach an outside service: the agent's
+env, and a signal to stop on.
+
+**What a helper shared between a TOOL and a STEP should take.** A
+`ToolContext` and a `RouteContext` both satisfy it as they are, and
+[stepEnvContext](#stepenvcontext) builds one inside a step — so a `supabase.ts` or an
+`apps.ts` written against this runs unchanged in all three, instead of every
+app hand-building `{ env: { KEY: stepEnv("KEY"), … } }` per workflow and
+forgetting a key the helper later grew.
+
+#### Properties
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's env — `ctx.env` in a tool, the published agent env in a step.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Aborted when the caller goes away — the tool call, the request, or (in a
+step) the run being cancelled. Absent where nothing can cancel.
+
+***
+
 ### MultipartBody
 
 ```ts
@@ -3578,6 +3774,7 @@ type StepInfo = {
   key: string;
   maxAttempts: number;
   name: string;
+  signal?: AbortSignal;
 };
 ```
 
@@ -3638,6 +3835,16 @@ readonly name: string;
 
 The step's own name, as `ctx.step` was given it.
 
+##### signal?
+
+```ts
+readonly optional signal?: AbortSignal;
+```
+
+Aborted when this delivery stops — the run was cancelled, or the delivery
+was abandoned. Pass it to whatever the step waits on; `stepFetch` already
+reads it. Absent from a reader that has none (an eval's).
+
 ***
 
 ### StepNotifyClientOptions
@@ -3678,6 +3885,181 @@ When the next attempt runs after the client was unreachable. Default
 ```ts
 optional signal?: AbortSignal;
 ```
+
+***
+
+### StepPollUntilOptions
+
+```ts
+type StepPollUntilOptions<T> = {
+  done: (value: T) => boolean;
+  everyMs: number;
+  maxMs: number;
+  signal?: AbortSignal;
+};
+```
+
+Options for [stepPollUntil](#steppolluntil).
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### done
+
+```ts
+done: (value: T) => boolean;
+```
+
+Is this check's value the answer?
+
+###### Parameters
+
+###### value
+
+`T`
+
+###### Returns
+
+`boolean`
+
+##### everyMs
+
+```ts
+everyMs: number;
+```
+
+Milliseconds to wait between two checks. At least 1.
+
+##### maxMs
+
+```ts
+maxMs: number;
+```
+
+Wall-clock budget in milliseconds, measured from the first check. No wait
+starts that would end past it, so the poll returns `done: false` at or
+before `maxMs` (plus the last check's own time).
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Stop waiting when this aborts — the abort's reason is thrown. Defaults to
+the running step's own signal, so a cancelled run stops polling.
+
+***
+
+### StepSayOnClientOptions
+
+```ts
+type StepSayOnClientOptions = {
+  ackTimeoutMs?: number;
+  data?: Record<string, unknown>;
+  event: string;
+  id: string;
+  language?: string;
+  retryAfterMs?: number;
+  sampleRate?: number;
+  signal?: AbortSignal;
+  text: string;
+  voice?: string;
+};
+```
+
+Options for [stepSayOnClient](#stepsayonclient).
+
+#### Properties
+
+##### ackTimeoutMs?
+
+```ts
+optional ackTimeoutMs?: number;
+```
+
+How long to wait for the device's ack — see `stepNotifyClient`.
+
+##### data?
+
+```ts
+optional data?: Record<string, unknown>;
+```
+
+Anything JSON-serializable the device reads alongside `event`. `said` is
+set to `text` on top of it.
+
+##### event
+
+```ts
+event: string;
+```
+
+What the device should do with it, e.g. `"reminder"`.
+
+##### id
+
+```ts
+id: string;
+```
+
+Identifies the DELIVERY, so the device drops a repeat — the run id for a
+run's one announcement, `${runId}:failed` for its failure. 1 to 128
+characters.
+
+##### language?
+
+```ts
+optional language?: string;
+```
+
+Spoken language, as `stepSpeak` takes it.
+
+##### retryAfterMs?
+
+```ts
+optional retryAfterMs?: number;
+```
+
+When the step's next attempt runs after the device was unreachable.
+
+##### sampleRate?
+
+```ts
+optional sampleRate?: number;
+```
+
+Samples per second to synthesize at. Defaults to the agent's
+`clientInbox.sampleRate`, then to `stepSpeak`'s own default.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Abort the synthesis and the delivery.
+
+##### text
+
+```ts
+text: string;
+```
+
+What to say. Also sent as `data.said`.
+
+##### voice?
+
+```ts
+optional voice?: string;
+```
+
+Voice id, as `stepSpeak` takes it.
 
 ***
 
@@ -4226,6 +4608,17 @@ Default [StepNotifyClientOptions.ackTimeoutMs](#acktimeoutms).
 
 ***
 
+### DEFAULT\_CLIENT\_DELIVERY\_ATTEMPTS
+
+```ts
+const DEFAULT_CLIENT_DELIVERY_ATTEMPTS: number;
+```
+
+A step `maxAttempts` that rides out an hour-long device outage: 120 attempts
+at `stepNotifyClient`'s 30-second retry.
+
+***
+
 ### DEFAULT\_CLIENT\_RETRY\_MS
 
 ```ts
@@ -4392,3 +4785,9 @@ const WAV_HEADER_BYTES: 44 = 44;
 ```
 
 Bytes of WAV header [encodeWav](#encodewav) writes — `RIFF`, `fmt `, and `data`.
+
+## References
+
+### PollResult
+
+Re-exports [PollResult](index.md#pollresult)

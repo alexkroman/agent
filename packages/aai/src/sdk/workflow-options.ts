@@ -7,6 +7,8 @@
  * serves it — and re-exported from it, so an author's import path is unchanged.
  */
 
+import type { WorkflowRunStatus } from "./workflow-run.ts";
+
 /**
  * Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a
  * TOOL. A caller OUTSIDE the agent (a page, a script) starts a run through
@@ -31,9 +33,27 @@ export type StartOptions = {
    * it brought.
    *
    * Not unique: starting twice with one key is legal and `find` returns the
-   * newest first. Deduplicating is a decision only the caller can make.
+   * newest first. To make a second start a no-op, pass {@link StartOptions.dedupeKey}.
    */
   key?: string;
+  /**
+   * Start at most ONE run of this workflow per `dedupeKey`: when a run started
+   * with it already exists — in any status, finished or not — `start` resolves
+   * THAT run's id and starts nothing.
+   *
+   * For the start that can be asked twice for one piece of work: a webhook the
+   * sender redelivers (key it by the event id), a hook that fires again for the
+   * same thing (`${sessionId}:${watermark}`). Without it each app kept a table
+   * of seen ids beside the runs, or double-ran on the retry nobody expected.
+   *
+   * Scoped to the workflow, and as long-lived as the run: the run's id is derived
+   * from the workflow and this key, so two racing starts create one run, and the
+   * key is free again only once that run has expired from the journal. The
+   * input of a deduplicated start is not compared or stored — the first start's
+   * is what ran. Independent of {@link StartOptions.key}; pass both to find the
+   * run later.
+   */
+  dedupeKey?: string;
   /**
    * What this run IS, in a line a person reads — `"call the plumber, due 5 PM"`.
    *
@@ -84,6 +104,22 @@ export type FindOptions = {
    * Most runs to return, newest first. Defaults to
    * `DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to
    * `MAX_WORKFLOW_FIND_LIMIT`.
+   */
+  limit?: number;
+};
+
+/** Options for `WorkflowClient.findByKey`. */
+export type FindByKeyOptions = {
+  /**
+   * Only runs created at or after this instant (epoch milliseconds or a `Date`).
+   */
+  since?: number | Date;
+  /** Only runs in one of these statuses. Omitted, every status. */
+  statuses?: readonly WorkflowRunStatus[];
+  /**
+   * Most runs to return, newest first ACROSS workflows. Defaults to
+   * `DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to `MAX_WORKFLOW_FIND_LIMIT`;
+   * each workflow is read to the same limit before the merge.
    */
   limit?: number;
 };

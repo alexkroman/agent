@@ -10,27 +10,32 @@
  * so "both halves import the declaration" needs the declaration to have a home
  * that is neither half.
  *
- * The BODY stays in `workflows/research.ts` by CONVENTION rather than by
- * mechanism — nothing scans that directory any more, and a body reached with a
- * `ctx` is durable wherever it is written. Keeping it there is what makes the
- * declaration, the tools and the body findable from one another.
+ * `deepResearchWorkflow()` returns an ordinary `workflow()` definition — the
+ * whole brief → angles → researchers → gaps → report pass, durable and
+ * narrated — so what is written here is only what this desk decides: who the
+ * brief and summary are for (`workflows/prompts.ts`) and what happens to the
+ * report once it is written (`workflows/research.ts`: a review wait, then
+ * filing). The researcher keeps the keyless `web_search`/`visit_webpage`
+ * default and the default budget.
  */
 
-import { workflow } from "@alexkroman1/aai";
+import { deepResearchWorkflow } from "@alexkroman1/aai/experimental";
 import { z } from "zod";
-import { researchFlow } from "./workflows/research.ts";
+import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./workflows/prompts.ts";
+import { deliverResearch } from "./workflows/research.ts";
 
 /**
- * The declaration: schema, description, and the directive body.
+ * The declaration: schema, description, the two prompt overrides and delivery.
  *
  * Exported so a client page could derive its output type with `WorkflowOutputOf`.
  */
-export const research = workflow({
+export const research = deepResearchWorkflow({
   description:
     "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
   input: z.object({
     topic: z.string().min(3).describe("What to research"),
     requestedBy: z.string().describe("Who asked — used when filing the result"),
   }),
-  run: researchFlow,
+  prompts: { brief: BRIEF_SYSTEM, summary: BRIEF_SUMMARY_SYSTEM },
+  deliver: deliverResearch,
 });

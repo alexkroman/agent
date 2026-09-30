@@ -59,6 +59,8 @@ web server — and each of those has a published fake on
 | `installStubTranscribe` | transcription |
 | `installStubSpeech` | speech synthesis |
 | `installStubStepFetch` | a step's outbound `fetch` |
+| `installFetchRoutes` | the global `fetch` and a step's, through one URL/method table |
+| `installStubClientInbox` | the device `stepNotifyClient` pushes to |
 
 `installStubUploads` takes a map of upload id to bytes. The bare form is the
 common case; the object form adds a filename and content type:

@@ -213,6 +213,20 @@ describe("createStepInfoReader", () => {
     );
   });
 
+  test("carries the walk's signal, so `stepEnvContext` can hand it to a helper", async () => {
+    const read = createStepInfoReader();
+    const controller = new AbortController();
+    await withRunContext({ runId: "wrun_1", workflow: "digest", write: async () => 1 }, async () =>
+      withStepContext(
+        { name: "fetch", key: "fetch#0", attempt: 1, maxAttempts: 3, signal: controller.signal },
+        () => {
+          expect(read()?.signal).toBe(controller.signal);
+          return Promise.resolve();
+        },
+      ),
+    );
+  });
+
   test("carries the KEY, so a loop's rounds are distinguishable", async () => {
     const read = createStepInfoReader();
     await withRunContext({ runId: "wrun_1", workflow: "digest", write: async () => 1 }, async () =>

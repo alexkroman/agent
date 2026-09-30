@@ -1,0 +1,35 @@
+{
+  // `"extends": "@alexkroman1/aai/tsconfig"` — the compiler options an aai agent
+  // project type-checks under, so a project's own tsconfig.json is one line.
+  //
+  // `${configDir}` is the EXTENDING project's directory: `include`/`exclude`
+  // written here would otherwise resolve against this file, inside
+  // node_modules. `files` is resolved against THIS directory on purpose — it is
+  // how `agent-env.d.ts` (the `virtual:aai/agent` module and Vite's
+  // `import.meta.glob`/`?raw` types) reaches every project without a
+  // `global.d.ts` of its own. A project that sets its own `include` or `files`
+  // replaces both and must list `@alexkroman1/aai/presets/agent-env.d.ts` itself.
+  //
+  // JSX and the DOM lib are on for every project: a headless agent has no
+  // `.tsx` to compile, and a `client.tsx` needs both.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": false,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["vitest/globals", "vite/client"],
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "files": ["./agent-env.d.ts"],
+  "include": ["${configDir}/**/*"],
+  "exclude": ["${configDir}/node_modules", "${configDir}/.aai", "${configDir}/dist"]
+}

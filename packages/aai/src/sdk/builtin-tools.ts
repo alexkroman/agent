@@ -34,6 +34,8 @@
  * - `"text_me"` — Text the owner something too long to say, through Textbelt.
  *   Reads `TEXTBELT_KEY` and `SMS_TO_PHONE`; the recipient is never the
  *   model's choice (see `allowedSmsRecipient` in `@alexkroman1/aai/channels`).
+ *   `TEXTBELT_LINKS=strip` leaves links out, for a key Textbelt has not yet
+ *   allowed to send them.
  *
  * The three keyed builtins read their key from `ctx.env` on each
  * call and answer the model with an error naming the variable when it is

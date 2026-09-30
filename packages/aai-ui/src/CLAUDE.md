@@ -148,6 +148,25 @@ arms per `open`, disarms on `config` or close, re-dials on expiry, and after
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
   `turnDetection: "manual"` agent; its module doc lists the ways a hand-written
   button leaves a turn open.
+- **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
+  are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`
+  region whose `active` children own the hang-up clocks); the hook only feeds
+  it `SESSION` on every snapshot activity and runs its effects. Hang-up is
+  `disconnect()` (resumable), never `end()`; the mute is an ENTRY action of
+  `live`, so no path forgets it; a clock hangs up only while not live.
+- **`sendText(text, { connect: true })`** queues in the session core (not in a
+  hook) and flushes on the next `config` frame; `updateState` empties the queue
+  on any `running: false`, so a message typed into a call that failed is never
+  answered by a later one.
+- **`useConversationLog`** opens NO inbox: a second socket from one tab under
+  the same (client, holder) replaces the first, so it hands back `mirror` for
+  the page's one `useInbox({ onEvent })`. A resume replays history, so the live
+  list is never appended as it stands — the rules are `conversation-log.ts`'s
+  module doc, and its property test holds them. A capped `messages` window
+  sliding (a very long call) reads as a new `run`.
+- **`routeFetch`** resolves `api/…` against the page's DIRECTORY (an agent at
+  `/:slug/` reaches `/:slug/api`); `useRoute`'s default `?client=` is the
+  session identity's, read per request, and none under `mountPage()`.
 
 ## Client identity and the inbox
 

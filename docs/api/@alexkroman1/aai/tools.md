@@ -21,18 +21,31 @@ suppression the escape-hatch ratchet only lets move down.
 function fetchJson<T = UntypedJsonBody>(url: 
   | string
   | {
-  headers?: Record<string, string>;
   url: string;
-} & CallOptions, options?: {
+} & {
+  body?: unknown;
   headers?: Record<string, string>;
-} & CallOptions): Promise<ToolFailure | T>;
+  method?: string;
+} & CallOptions, options?: FetchJsonOptions): Promise<ToolFailure | T>;
 ```
 
-GET a URL and return its parsed JSON.
+Request a URL (GET unless told otherwise) and return its parsed JSON.
 
 Answers `{ error, url }` rather than throwing on an HTTP failure or an
 oversized body, matching what the model-facing builtin returns. Narrow it with
 `isToolFailure` — see the module doc for why the union is in the type.
+
+```ts
+import { fetchJson } from "@alexkroman1/aai/tools";
+
+export async function airQuality(key: string, latitude: number, longitude: number) {
+  return await fetchJson("https://airquality.googleapis.com/v1/currentConditions:lookup", {
+    method: "POST",
+    headers: { "x-goog-api-key": key },
+    body: { location: { latitude, longitude } },
+  });
+}
+```
 
 #### Type Parameters
 
@@ -46,15 +59,28 @@ oversized body, matching what the model-facing builtin returns. Narrow it with
 
   \| `string`
   \| \{
-  `headers?`: `Record`\<`string`, `string`\>;
   `url`: `string`;
+\} & \{
+  `body?`: `unknown`;
+  `headers?`: `Record`\<`string`, `string`\>;
+  `method?`: `string`;
+\} & [`CallOptions`](#calloptions)
+
+`string`
+
+***
+
+\{
+  `url`: `string`;
+\} & \{
+  `body?`: `unknown`;
+  `headers?`: `Record`\<`string`, `string`\>;
+  `method?`: `string`;
 \} & [`CallOptions`](#calloptions)
 
 ##### options?
 
-\{
-  `headers?`: `Record`\<`string`, `string`\>;
-\} & [`CallOptions`](#calloptions)
+[`FetchJsonOptions`](#fetchjsonoptions)
 
 #### Returns
 
@@ -187,6 +213,48 @@ An abort REJECTS (fetch's own `AbortError`) rather than answering
 MODEL something useful, and a cancelled turn has no model left to tell —
 the tool's own `await` is being unwound. Same shape as the existing
 per-request timeout, which has always thrown.
+
+***
+
+### FetchJsonOptions
+
+```ts
+type FetchJsonOptions = {
+  body?: unknown;
+  headers?: Record<string, string>;
+  method?: string;
+} & CallOptions;
+```
+
+What [fetchJson](#fetchjson) takes beside the URL.
+
+#### Type Declaration
+
+##### body?
+
+```ts
+optional body?: unknown;
+```
+
+A request body, sent as JSON (`content-type: application/json`).
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string>;
+```
+
+Extra headers. Credential and routing headers (`authorization`, `cookie`, `host`…) are dropped, as the builtin drops them.
+
+##### method?
+
+```ts
+optional method?: string;
+```
+
+The HTTP method, e.g. `"POST"`. Defaults to GET, or POST when a `body` is
+given. Only a direct caller can pick one: the model-facing `fetch_json`
+builtin is GET-only.
 
 ***
 

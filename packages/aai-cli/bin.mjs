@@ -35,7 +35,24 @@ nodeModule.enableCompileCache?.();
 // running `cli.ts`, or `pnpm link --global` would silently serve a stale
 // `dist/` instead of the working tree.
 const source = new URL("./src/cli.ts", import.meta.url);
-const entry = existsSync(fileURLToPath(source))
-  ? source
-  : new URL("./dist/cli.mjs", import.meta.url);
+const fromSource = existsSync(fileURLToPath(source));
+const entry = fromSource ? source : new URL("./dist/cli.mjs", import.meta.url);
+
+// `AAI_DEV_SOURCE=1`: resolve every SDK package through its `@dev/source`
+// export (`./src/…`) instead of `dist/`, so a project `link:`ed to a checkout
+// runs the checkout's source with no build step. Node honours a custom
+// condition only when told, so it is added here, BEFORE `cli.ts` and its
+// imports resolve. Only a source checkout has the `src/` those exports name,
+// so an installed CLI ignores the switch. `src/_dev-source.ts` has the rest,
+// including the Vite half.
+if (fromSource && /^(1|true|yes|on)$/i.test(process.env.AAI_DEV_SOURCE?.trim() ?? "")) {
+  nodeModule.registerHooks?.({
+    resolve(specifier, context, nextResolve) {
+      const conditions = context.conditions ?? [];
+      return conditions.includes("@dev/source")
+        ? nextResolve(specifier, context)
+        : nextResolve(specifier, { ...context, conditions: [...conditions, "@dev/source"] });
+    },
+  });
+}
 await import(entry.href);

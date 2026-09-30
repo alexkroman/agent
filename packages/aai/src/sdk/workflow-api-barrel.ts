@@ -106,6 +106,8 @@ export type {
   // own methods' option bags, so all four travel with it under the rule the
   // comment below states: a type a public signature names must be reachable
   // from this entry point.
+  PollOptions,
+  PollResult,
   SleepOptions,
   StepOptions,
   StepSchemaOptions,
@@ -119,6 +121,11 @@ export type {
   // type a public signature's documentation names must be reachable from the
   // entry point or the docs build fails.
   WorkflowDef,
+  // `WorkflowDef.onFailure`'s vocabulary, reachable for the reason the body's
+  // own option bags are: `WorkflowDef` is linked from this entry point.
+  WorkflowFailureContext,
+  WorkflowFailureHandler,
+  WorkflowFailureHook,
   // The three `…Of<typeof def>` helpers travel together: a body names the
   // input, a page names the output, and a tool reporting on a run names the
   // snapshot the two compose into. The first and third of those readers are
@@ -160,6 +167,7 @@ export {
 } from "./workflow-api-client.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
 export type {
+  FindByKeyOptions,
   FindOptions,
   StartOptions,
   StreamOptions,

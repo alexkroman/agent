@@ -1,4 +1,9 @@
 {
+  "agent-routes": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "client": {
     "current": 1,
     "supported": [1],
@@ -9,7 +14,17 @@
     "supported": [1],
     "dropped": {}
   },
+  "client-storage": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "components": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "conversation-log": {
     "current": 1,
     "supported": [1],
     "dropped": {}
@@ -47,6 +62,11 @@
       "2": "BrowserSession is SEALED (a type-only browserSessionBrand only createBrowserSession mints), its three push-to-talk methods became the session.userTurn sub-handle (start/commit/clear), SessionActions is declared on its own without them, and usePushToTalk moved to the push-to-talk capability. An epoch-2 hand-written session double, or a caller of session.startUserTurn(), no longer compiles.",
       "3": "Session and SessionActions gain a required sendText; a hand-built Session (a test double written as a literal) no longer compiles"
     }
+  },
+  "tap-to-talk": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "theme": {
     "current": 1,

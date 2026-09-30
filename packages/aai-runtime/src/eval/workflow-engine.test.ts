@@ -222,6 +222,45 @@ async function drain(stream: ReadableStream<unknown>): Promise<unknown[]> {
   return chunks;
 }
 
+describe("the device-workflow additions, in an eval", () => {
+  test("a dedupeKey answers the first run", async () => {
+    const active = open({ thrower });
+    const first = await active.adapter.start("thrower", [{}], { dedupeKey: "evt_1" });
+    expect(await active.adapter.start("thrower", [{}], { dedupeKey: "evt_1" })).toBe(first);
+    expect(await active.adapter.start("thrower", [{}], { dedupeKey: "evt_2" })).not.toBe(first);
+  });
+
+  test("onFailure is called with the error and the run, and the run still fails", async () => {
+    const hook = vi.fn();
+    const active = open({ failing: workflow({ ...thrower, onFailure: hook }) });
+    const runId = await active.adapter.start("failing", [{ why: "test" }]);
+    const record = active.record(runId);
+    await record?.settled;
+    expect(record?.status).toBe("failed");
+    expect(hook).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("no readable text") }),
+      {
+        runId,
+        workflow: "failing",
+        input: { why: "test" },
+      },
+    );
+  });
+
+  test("ctx.poll records each wait as a sleep under the poll's name", async () => {
+    let n = 0;
+    const poller = workflow({
+      run: async (_input: Record<string, unknown>, ctx) =>
+        await ctx.poll("check", () => ++n, { everyMs: 5, maxMs: 100, done: (v) => v === 2 }),
+    });
+    const active = open({ poller });
+    const record = active.record(await active.adapter.start("poller", [{}]));
+    await record?.settled;
+    expect(record?.output).toEqual({ value: 2, done: true, checks: 2 });
+    expect(record?.slept).toEqual([{ label: "check", duration: 5 }]);
+  });
+});
+
 describe("stepAttempt", () => {
   /** A body that reports which branch `isLastAttempt` sent it down. */
   const branching = workflow({

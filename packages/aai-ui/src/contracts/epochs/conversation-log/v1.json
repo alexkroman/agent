@@ -1,0 +1,15 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "conversation-log",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "a0ab22e2c232eb794efedc89929ee3a7d6c2a9157d4cb51a9c85d97c3e6dad8c",
+  "exports": [
+    "ConversationLogEntry",
+    "UseConversationLogOptions",
+    "UseConversationLogResult",
+    "inboxEventToItem",
+    "useConversationLog"
+  ],
+  "rollup": "ee175696a86470df2c46f50db240853f680b25b07321b6b44189f6ad824c4f6c"
+}

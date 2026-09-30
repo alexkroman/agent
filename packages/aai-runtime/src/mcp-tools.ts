@@ -75,29 +75,29 @@
 import type { McpServerConfig, McpServers, ToolDef } from "@alexkroman1/aai";
 import { mcpToolName } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
-import { errorMessage, toolFailure } from "@alexkroman1/aai/utils";
-import type { Tool, ToolSet } from "ai";
-import type { JSONSchema7 } from "json-schema";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
+import { type DiscoveredTool, discover, mcpTool } from "./mcp-adapt.ts";
 import {
   MCP_CONNECT_TIMEOUT_MS,
-  type McpCallResult,
   type McpConnectOptions,
   type McpSession,
   type McpSessionOpener,
   openMcpSession,
-  type ResolvedMcpServer,
-  toCallResult,
 } from "./mcp-connect.ts";
 import { assessTools, driftMessages, type McpDrift, type McpTrust } from "./mcp-drift.ts";
-import { mcpInputSchema, toolInputJsonSchema } from "./mcp-schema.ts";
+import { allowTools, displayUrl, resolveServer } from "./mcp-resolve.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** What one declared server ended up contributing, and why when the answer is nothing. */
 export type McpServerStatus = {
   /** The author's key for the server. */
   key: string;
-  /** The endpoint, as declared. Never the token. */
+  /**
+   * The endpoint: as declared when it is a literal, and only its ORIGIN when a
+   * resolver computed it (a per-user URL is not a log line's business). Never
+   * the token, never a header.
+   */
   url: string;
   /** The tool names it contributed, after namespacing and collision resolution. */
   tools: readonly string[];
@@ -155,99 +155,6 @@ export type McpToolsOptions = McpConnectOptions & {
 };
 
 /**
- * Read one declared server's endpoint and credential out of the agent env.
- *
- * A `tokenEnv` naming a variable that is not set FAILS this server by name,
- * rather than connecting unauthenticated and meeting a 401 per session: the
- * author said the server needs a credential, so the absence is a
- * misconfiguration and the message is the only useful thing to produce.
- */
-function resolveServer(
-  key: string,
-  config: McpServerConfig,
-  env: Readonly<Partial<Record<string, string>>>,
-): { server: ResolvedMcpServer } | { unavailable: string } {
-  if (config.tokenEnv === undefined) return { server: { key, url: config.url } };
-  const token = env[config.tokenEnv];
-  if (!token) {
-    return {
-      unavailable: `${config.tokenEnv} is not set. The "${key}" MCP server declares tokenEnv: "${config.tokenEnv}", so set that variable (and list it in the agent's requiredEnv so a deploy checks it) or drop tokenEnv for a server that needs no credential.`,
-    };
-  }
-  return { server: { key, url: config.url, token } };
-}
-
-/**
- * Turn one `tools/call` reply into the value the model sees.
- *
- * Four outcomes, and the ordering between them is the decision: the server's
- * own `isError` wins over everything (it means the tool RAN and went wrong, so
- * the model should recover rather than read a half-answer), then structured
- * output when the server published a schema for it, then text — with any
- * non-text parts NAMED rather than dropped, because a server answering with an
- * image only would otherwise look like a tool that returned nothing.
- */
-function toToolResult(call: McpCallResult, toolName: string): unknown {
-  if (call.isError) {
-    return toolFailure(call.text || `${toolName} failed and the server sent no message`);
-  }
-  if (call.structured) return call.structured;
-  if (call.otherParts.length > 0) {
-    return { text: call.text, unsupportedContent: call.otherParts };
-  }
-  return call.text;
-}
-
-/** One discovered tool, as {@link registerTools} reads it. */
-type DiscoveredTool = {
-  /** The name the SERVER published — the key of the `ToolSet`. */
-  remote: string;
-  /** The AI SDK tool, whose `execute` this delegates to. */
-  tool: Tool;
-  /** The tool's resolved input JSON Schema, already awaited. */
-  parameters: JSONSchema7;
-  /** The tool's `execute`, narrowed once so the `ToolDef` body need not re-check. */
-  call: NonNullable<Tool["execute"]>;
-};
-
-/** Build the `ToolDef` for one discovered tool. */
-function mcpTool(found: DiscoveredTool, serverKey: string, name: string): ToolDef {
-  const described = found.tool.description ?? `The "${found.remote}" tool`;
-  return {
-    // The origin is in the description as well as in the name. The name already
-    // carries it, but the description is what the model reasons over, and
-    // "which of these tools is a third party's" is exactly the distinction an
-    // author wants a model to be able to make.
-    description: `${described} (via the "${serverKey}" MCP server)`,
-    inputSchema: mcpInputSchema(found.parameters, name),
-    async execute(args, ctx) {
-      try {
-        // `toolCallId`, `messages` and `context` are required by the AI SDK's
-        // options type and read by nothing on this path — an MCP tool's
-        // `execute` uses the abort signal and nothing else. They are filled
-        // honestly rather than from our own `ctx.messages`, which is a
-        // different message type and would be a lie about what the model saw.
-        const result = await found.call(args, {
-          toolCallId: crypto.randomUUID(),
-          messages: [],
-          context: {},
-          abortSignal: ctx.signal,
-        });
-        return toToolResult(toCallResult(result), name);
-      } catch (cause) {
-        // A transport failure is the MODEL's problem to route around, not the
-        // turn's to fail on: the session is live, every other tool still works,
-        // and a voice agent can say it could not reach the thing. Returned
-        // rather than rethrown for the reason every builtin returns `{ error }`.
-        return toolFailure(
-          `${name} could not reach the "${serverKey}" MCP server: ${errorMessage(cause)}`,
-        );
-      }
-    },
-  };
-}
-
-/**
  * One declared server after the connect attempt: either its live session and
  * what it publishes, or the reason it contributed nothing.
  *
@@ -268,26 +175,11 @@ type OpenedServer =
 /** What {@link openDeclared} needs that is not the server's own declaration. */
 type OpenDeps = {
   env: Readonly<Partial<Record<string, string>>>;
+  clientId: string | undefined;
   open: McpSessionOpener;
   budget: number;
+  logger: Logger | undefined;
 };
-
-/**
- * Read one connected server's listing into the shape the registry walks.
- *
- * A tool with no `execute` is skipped: `ToolSet` types it optional (a
- * provider-executed tool has none), and an MCP tool without one is a tool this
- * runtime could declare to the model and then be unable to call.
- */
-async function discover(tools: ToolSet): Promise<DiscoveredTool[]> {
-  const found: DiscoveredTool[] = [];
-  for (const [remote, tool] of Object.entries(tools)) {
-    const call = tool.execute;
-    if (typeof call !== "function") continue;
-    found.push({ remote, tool, call, parameters: await toolInputJsonSchema(tool) });
-  }
-  return found;
-}
 
 /**
  * Resolve, connect, list and assess one server, converting every failure into
@@ -301,25 +193,36 @@ async function openDeclared(
   config: McpServerConfig,
   deps: OpenDeps,
 ): Promise<OpenedServer> {
-  const resolved = resolveServer(key, config, deps.env);
-  if ("unavailable" in resolved) {
-    return { key, url: config.url, unavailable: resolved.unavailable };
-  }
+  let url = displayUrl(config);
   try {
+    // The resolvers run under the same budget as the handshake: a resolver that
+    // creates a vendor session is a network round trip too, and "this server's
+    // tools are unavailable" has to arrive within one budget either way.
+    const signal = AbortSignal.timeout(deps.budget);
+    const resolved = await pTimeout(
+      resolveServer(key, config, { env: deps.env, clientId: deps.clientId, signal }),
+      {
+        milliseconds: deps.budget,
+        message: `MCP server "${key}"'s url/headers resolvers did not finish within ${deps.budget}ms`,
+      },
+    );
+    if ("unavailable" in resolved) return { key, url, unavailable: resolved.unavailable };
+    url = displayUrl(config, resolved.server.url);
     const session = await deps.open(resolved.server);
     try {
-      const tools = await pTimeout(session.tools(), {
+      const listed = await pTimeout(session.tools(), {
         milliseconds: deps.budget,
         message: `MCP server "${key}" did not answer tools/list within ${deps.budget}ms`,
       });
+      const tools = allowTools(key, listed, config.allowedTools, deps.logger);
       const trust = await assessTools(tools, config.pinnedTools);
-      return { key, url: config.url, session, found: await discover(tools), trust };
+      return { key, url, session, found: await discover(tools), trust };
     } catch (cause) {
       await session.close().catch(() => undefined);
       throw cause;
     }
   } catch (cause) {
-    return { key, url: config.url, unavailable: errorMessage(cause) };
+    return { key, url, unavailable: errorMessage(cause) };
   }
 }
 
@@ -413,23 +316,72 @@ export async function withMcpTools<
   D extends { readonly tools: ToolRegistry; readonly mcpServers?: McpServers | undefined },
 >(def: D, options: McpToolsOptions = {}): Promise<McpToolSurface<D>> {
   const declared = def.mcpServers ?? {};
+  if (Object.keys(declared).length === 0) {
+    return { agent: def, servers: [], close: async () => undefined };
+  }
+  // No `clientId`: nobody is calling yet. A server whose resolvers need one
+  // throws, and costs its own tools here and nothing else.
+  const connected = await connectMcpServers(declared, {
+    ...options,
+    taken: new Set(Object.keys(def.tools)),
+  });
+
+  return {
+    agent: withTools(def, connected.tools),
+    servers: connected.servers,
+    close: connected.close,
+  };
+}
+
+/**
+ * What {@link connectMcpServers} hands back: the tools every reachable server
+ * contributed, one status per declared server, and the one close.
+ *
+ * @internal
+ */
+export type McpConnection = {
+  /** Namespaced tool name → `ToolDef`, collisions already resolved. */
+  tools: Record<string, ToolDef>;
+  /** One entry per DECLARED server, in sorted key order, reachable or not. */
+  servers: McpServerStatus[];
+  /** Close every session that opened. Never rejects. */
+  close(): Promise<void>;
+};
+
+/**
+ * Connect a set of declared servers for ONE caller and adapt what they publish
+ * — the core both {@link withMcpTools} (host start, no client) and the step
+ * runner behind `stepMcp` (one client per call) are built on, so a server
+ * behaves identically whichever of them reached it.
+ *
+ * Never rejects; an unreachable server is a status with `unavailable`.
+ *
+ * @internal
+ */
+export async function connectMcpServers(
+  declared: McpServers,
+  options: McpToolsOptions & {
+    /** Names already claimed — the agent's own tools, so a server cannot shadow one. */
+    taken?: Set<string> | undefined;
+    /** The client this connection acts for, handed to every resolver. */
+    clientId?: string | undefined;
+  } = {},
+): Promise<McpConnection> {
   // Sorted, so which server wins a collision does not depend on the order the
   // keys were typed in — or on the order a JSON round trip preserved them in.
   const keys = Object.keys(declared).sort();
-  if (keys.length === 0) {
-    return { agent: def, servers: [], close: async () => undefined };
-  }
-
   const logger = options.logger;
   const deps: OpenDeps = {
     env: options.env ?? {},
+    clientId: options.clientId,
     open: options.openSession ?? ((server) => openMcpSession(server, options)),
     budget: options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS,
+    logger,
   };
 
   const sessions: McpSession[] = [];
   const registry: Record<string, ToolDef> = {};
-  const taken = new Set(Object.keys(def.tools));
+  const taken = options.taken ?? new Set<string>();
   const statuses: McpServerStatus[] = [];
 
   // Connected concurrently — a second slow server must not be charged the first
@@ -463,7 +415,7 @@ export async function withMcpTools<
   }
 
   return {
-    agent: withTools(def, registry),
+    tools: registry,
     servers: statuses,
     close: async () => {
       // `allSettled`, and each close already swallows: one server refusing to

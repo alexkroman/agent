@@ -78,7 +78,7 @@ import { invariant } from "../sdk/invariant.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { DefaultToolResult } from "../sdk/types.ts";
 import type { ToolFailure } from "../sdk/utils.ts";
-import { resolveBuiltin } from "./builtin-tools.ts";
+import { requestJson, resolveBuiltin } from "./builtin-tools.ts";
 import { builtinFetch } from "./ssrf.ts";
 
 /** The builtins carry a Zod schema, but a direct caller has typed arguments. */
@@ -187,22 +187,62 @@ async function callBuiltin(
 }
 
 /**
- * GET a URL and return its parsed JSON.
+ * What {@link fetchJson} takes beside the URL.
+ *
+ * @public
+ */
+export type FetchJsonOptions = {
+  /** Extra headers. Credential and routing headers (`authorization`, `cookie`, `host`…) are dropped, as the builtin drops them. */
+  headers?: Record<string, string>;
+  /**
+   * The HTTP method, e.g. `"POST"`. Defaults to GET, or POST when a `body` is
+   * given. Only a direct caller can pick one: the model-facing `fetch_json`
+   * builtin is GET-only.
+   */
+  method?: string;
+  /** A request body, sent as JSON (`content-type: application/json`). */
+  body?: unknown;
+} & CallOptions;
+
+/**
+ * Request a URL (GET unless told otherwise) and return its parsed JSON.
  *
  * Answers `{ error, url }` rather than throwing on an HTTP failure or an
  * oversized body, matching what the model-facing builtin returns. Narrow it with
  * `isToolFailure` — see the module doc for why the union is in the type.
+ *
+ * ```ts
+ * import { fetchJson } from "@alexkroman1/aai/tools";
+ *
+ * export async function airQuality(key: string, latitude: number, longitude: number) {
+ *   return await fetchJson("https://airquality.googleapis.com/v1/currentConditions:lookup", {
+ *     method: "POST",
+ *     headers: { "x-goog-api-key": key },
+ *     body: { location: { latitude, longitude } },
+ *   });
+ * }
+ * ```
  */
 export async function fetchJson<T = UntypedJsonBody>(
-  url: string | ({ url: string; headers?: Record<string, string> } & CallOptions),
-  options?: { headers?: Record<string, string> } & CallOptions,
+  url: string | ({ url: string } & FetchJsonOptions),
+  options?: FetchJsonOptions,
 ): Promise<T | ToolFailure> {
   const spec = normalizeSpec("url", url, options);
-  return (await callBuiltin(
-    "fetch_json",
-    { url: spec.url, ...omitUndefined({ headers: spec.headers }) },
-    spec,
-  )) as T;
+  if (spec.method === undefined && spec.body === undefined) {
+    return (await callBuiltin(
+      "fetch_json",
+      { url: spec.url, ...omitUndefined({ headers: spec.headers }) },
+      spec,
+    )) as T;
+  }
+  // Not through the builtin, whose schema (what the model reads) is GET-only;
+  // the same request function and the same screened fetch, though.
+  const base = spec.fetch ?? builtinFetch();
+  const fetchImpl = spec.signal ? withSignal(base, spec.signal) : base;
+  return (await requestJson(fetchImpl, spec.url, {
+    headers: spec.headers,
+    ...omitUndefined({ method: spec.method, body: spec.body }),
+  })) as T;
 }
 
 /**

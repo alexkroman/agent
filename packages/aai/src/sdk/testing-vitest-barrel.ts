@@ -17,6 +17,8 @@
  */
 
 export {
+  installFetchRoutes,
+  installStubClientInbox,
   installStubGateway,
   installStubReporter,
   installStubSpeech,

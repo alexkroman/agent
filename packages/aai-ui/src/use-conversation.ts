@@ -95,7 +95,7 @@ export type UseConversationResult = {
  * or that were inserted before any message existed — come first, since there is
  * nothing left for them to follow.
  */
-function interleave(
+export function interleave(
   messages: readonly ChatMessage[],
   toolCalls: readonly ToolCallInfo[],
 ): ConversationItem[] {

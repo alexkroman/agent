@@ -686,9 +686,12 @@ and repeat), else the engine's `workflows.client`, else
 `undefined` for an agent that declares no workflows and was given none.
 
 Typed by what the suite passed, in the body a case hands
-[EvalTest](#evaltest): a suite whose factory returns a recording client with
-its log attached (`Object.assign(createStubWorkflows({...}), { started })`)
-reads `workflowClient.started`, typed, with no module-level log to reset.
+[EvalTest](#evaltest): a suite whose factory returns a recording client —
+`() => createRecordingWorkflows({ workflows: agentDef.workflows })` from
+`@alexkroman1/aai/testing`, which records every start and runs nothing —
+reads `workflowClient.started("remind")` and seeds the runs `find`
+answers with `workflowClient.seed(...)`, typed, with no module-level log
+to reset.
 
 ##### workflows
 

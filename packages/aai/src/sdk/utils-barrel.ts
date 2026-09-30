@@ -16,6 +16,18 @@
  * @module utils
  */
 
+export { type FitToolResultOptions, fitToolResult } from "./fit-tool-result.ts";
+export {
+  HttpError,
+  type JsonClient,
+  type JsonClientContext,
+  type JsonClientOptions,
+  type JsonRequestInit,
+  jsonClient,
+} from "./json-client.ts";
+export { type NormalizePhoneOptions, normalizePhone } from "./phone.ts";
+// A failure as a reason a person can HEAR — its own module for its own test.
+export { type SpokenErrorReasonOptions, spokenErrorReason } from "./spoken-error-reason.ts";
 // The forwarding half of the `T | ToolFailure` union above. Joined HERE rather
 // than re-exported from `utils.ts`: that module declares `isToolFailure`, which
 // `tool-failure-flow.ts` imports, so a re-export there would close a cycle.

@@ -4,7 +4,7 @@
  * handler a request reaches, and what each way of answering comes back as.
  */
 
-import { type RouteHandler, routeResponse } from "@alexkroman1/aai";
+import { type RouteHandler, routeError, routeResponse } from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
@@ -139,6 +139,19 @@ describe("compileAgentRoutes", () => {
       route: "GET /broken",
       error: "memory service is down",
     });
+  });
+
+  test("a thrown routeError answers its own status and sentence, and is not logged as a failure", async () => {
+    const { serve, logger } = compile({
+      "GET /apps/:app": () => {
+        throw routeError(400, "not an app name");
+      },
+    });
+    expect(await serve?.(call({ path: "/apps/x" }))).toEqual({
+      status: 400,
+      body: { error: "not an app name" },
+    });
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   test("the context carries the workflow client and the caller's signal", async () => {

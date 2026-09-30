@@ -73,6 +73,17 @@ export * from "./sdk/calendar.ts";
 // `agent.ts` names. Tool code reaches no database at all; the `Db` it bounds is
 // the runtime's own.
 
+/** `agent({ clientInbox })` defaults for `WS /inbox`. See `sdk/agent-client-inbox.ts`. */
+export type { AgentClientInbox, ClientInboxOptions } from "./sdk/agent-client-inbox.ts";
+/** `route({ body, requireClient, handler })` and `routeError(400, "…")`, answered with
+ * that status instead of a 500. See `sdk/agent-route-helpers.ts`. */
+export {
+  type RouteDef,
+  RouteError,
+  route,
+  routeError,
+  type ValidatedRouteRequest,
+} from "./sdk/agent-route-helpers.ts";
 /**
  * `agent({ routes })` — the app's own JSON endpoints under `/api`, as open as the
  * server serving them. See `sdk/agent-routes.ts`.
@@ -118,6 +129,8 @@ export {
   MCP_SERVER_KEY_RE,
   MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
+  type McpResolvable,
+  type McpResolveContext,
   type McpServerConfig,
   type McpServers,
   mcpToolName,
@@ -328,7 +341,7 @@ export { type SessionCall, sessionCall } from "./sdk/session-call.ts";
  * Which device a session belongs to, read from `ctx.sessionId` — how a tool hands
  * a run the id `stepNotifyClient` reaches that device by after the call.
  */
-export { sessionClientId } from "./sdk/session-client.ts";
+export { requireSessionClient, sessionClientId } from "./sdk/session-client.ts";
 /** End this session from a tool, after the current reply is spoken — `end_call`. */
 export { type EndSessionOptions, endSession } from "./sdk/session-end.ts";
 export {
@@ -381,6 +394,11 @@ export * from "./sdk/spoken.ts";
  * and `format.ts`'s four are for a page and a progress line.
  */
 export * from "./sdk/spoken-render.ts";
+/**
+ * A signed webhook verified the Standard Webhooks way, or a route that only runs
+ * for one. Every export is public. See `sdk/standard-webhook.ts`.
+ */
+export * from "./sdk/standard-webhook.ts";
 /**
  * `subagent()` and the `ctx.delegate` contract — the third machine, and the one
  * that spends a MODEL rather than a turn: a second tool loop with its own
@@ -452,6 +470,9 @@ export {
   // never settles, so a suspension cannot reach a `catch` at all and there is
   // nothing left for an author to remember. See
   // `aai-runtime/workflow-replay-suspend.ts`.
+  // `ctx.poll`'s option bag and what it resolves with: named in `WorkflowContext`.
+  type PollOptions,
+  type PollResult,
   type SleepOptions,
   type StepOptions,
   // The schema-bearing halves of the two option bags above. A type a public
@@ -465,6 +486,10 @@ export {
   // parameter with it, which is the membership test this barrel applies.
   type WorkflowContext,
   type WorkflowDef,
+  // `workflow({ onFailure })` — written in the same literal as `run`.
+  type WorkflowFailureContext,
+  type WorkflowFailureHandler,
+  type WorkflowFailureHook,
   // Two of the three `…Of<typeof def>` readings of a declaration — see above.
   // Also on `/workflow-api`, which owns the capability; these are the copies a
   // `workflows/*.ts` body and a `*_status` tool reach for. `WorkflowOutputOf`

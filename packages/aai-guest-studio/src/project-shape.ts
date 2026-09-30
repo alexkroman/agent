@@ -4,9 +4,11 @@
  * in shape to what `aai init` scaffolds, because the guest is a plain Node
  * sandbox and every tool that runs here (`tsc`, Vite, the aai CLI) expects
  * a project: `package.json` for module semantics and agent-installed deps,
- * `tsconfig.json` so builds and publishes are type-checked, `global.d.ts`
- * for Vite's client types, and `vite.config.ts` for the client build's
- * React/Tailwind plugins.
+ * `tsconfig.json` (extending `@alexkroman1/aai/tsconfig`, which carries Vite's
+ * client types and the `virtual:aai/agent` declaration) so builds and
+ * publishes are type-checked, and `vitest.config.ts` for `test_agent`. There
+ * is no `vite.config.ts`: the build passes the React/Tailwind plugins itself
+ * (`build.ts`), exactly as the CLI does for a project without one.
  *
  * Files the workspace already has always win — the coding agent may edit
  * any of these, exactly as a CLI user would.
@@ -68,9 +70,11 @@ async function readScaffoldFile(root: string | null, rel: string): Promise<strin
 /**
  * The scaffold tsconfig with this workspace's two deltas applied.
  *
- * `types` becomes `["node"]` — the guest builds and typechecks server-side
- * agent code, and vitest's globals are not what a build gate should assert
- * against — and test files leave the typecheck.
+ * `types` becomes `["node", "vite/client"]` — the guest builds and typechecks
+ * server-side agent code, and vitest's globals are not what a build gate should
+ * assert against, while Vite's client ambients (`?raw`, `import.meta.glob`) are
+ * part of the code itself — and test files leave the typecheck. Everything
+ * else, `extends` included, is the scaffold's.
  *
  * Tests DO run here (the toolchain carries vitest, and the coding agent is
  * told to write an `agent.test.ts`) — they are kept out of the *typecheck*
@@ -114,7 +118,7 @@ export function workspaceTsconfig(scaffoldTsconfig: string): string {
   return `${JSON.stringify(
     {
       ...parsed,
-      compilerOptions: { ...parsed.compilerOptions, types: ["node"] },
+      compilerOptions: { ...parsed.compilerOptions, types: ["node", "vite/client"] },
       exclude: ["node_modules", "dist", ".aai", "**/*.test.ts"],
     },
     null,
@@ -181,10 +185,8 @@ export function workspacePackageJson(): string {
 export async function ensureProjectShape(dir: string): Promise<void> {
   const scaffold = scaffoldDir();
   // The scaffold reads are independent; so is every write below.
-  const [tsconfig, globalDts, viteConfig, vitestConfig] = await Promise.all([
+  const [tsconfig, vitestConfig] = await Promise.all([
     readScaffoldFile(scaffold, "tsconfig.json"),
-    readScaffoldFile(scaffold, "global.d.ts"),
-    readScaffoldFile(scaffold, "vite.config.ts"),
     readScaffoldFile(scaffold, "vitest.config.ts"),
   ]);
   // COPIED verbatim, except where a delta is documented. A file the scaffold
@@ -193,8 +195,6 @@ export async function ensureProjectShape(dir: string): Promise<void> {
   const shapeFiles: Record<string, string | null> = {
     "package.json": workspacePackageJson(),
     "tsconfig.json": tsconfig === null ? null : workspaceTsconfig(tsconfig),
-    "global.d.ts": globalDts,
-    "vite.config.ts": viteConfig,
     "vitest.config.ts": vitestConfig,
   };
   await Promise.all(

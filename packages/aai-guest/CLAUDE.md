@@ -164,7 +164,9 @@ model at an internal endpoint inside a container with nothing internal.
   (`::ffff:127.0.0.1`); blocks `.internal`, `.local`, cloud-metadata hostnames
   and non-HTTP(S).
 - Re-validates every redirect hop; strips credential headers once a redirect
-  leaves the origin.
+  leaves the origin. A caller whose credential header has a vendor name
+  (`x-api-key` on an MCP server) names it via `credentialSafeFetch`, which
+  strips those too.
 - **Pins the IP via an undici dispatcher `lookup`, never by rewriting the URL
   hostname** (breaks SNI/cert verification). Keep the URL intact.
 - **Dispatcher and `fetch` must come from the same undici**: `safeFetch` routes

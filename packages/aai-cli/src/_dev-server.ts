@@ -29,6 +29,7 @@ import {
 import {
   createMemoryJournal,
   handleWorkflowRequest,
+  publishClientInboxDefaults,
   publishStepEnv,
   requiredProviderEnvVars,
   WORKFLOW_DATA_DIR_ENV,
@@ -39,6 +40,7 @@ import { watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator } from "./_bundler.ts";
+import { defaultClientPlugins } from "./_client-plugins.ts";
 import { ensureApiKey } from "./_config.ts";
 import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
@@ -316,6 +318,9 @@ export async function startDevServer(
     // `aai secret put` declare, or a shell-exported key would make a workflow
     // work here and fail after a deploy with nothing having said so.
     publishStepEnv(env);
+    // `stepSayOnClient`'s default rate, from `agent({ clientInbox })`, beside the
+    // env and for its reason: the step reads it in the bundle's copy of the SDK.
+    publishClientInboxDefaults(agentDef.clientInbox ?? {});
 
     // Self-hosted only: let provider credentials exported in the shell reach
     // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
@@ -450,7 +455,10 @@ export async function startDevServer(
 
     if (hasClient) {
       const { createServer: createViteServer } = await import("vite");
-      viteServer = await createViteServer(viteDevConfig(cwd, vitePort, backendPort));
+      // No `vite.config.*` in the project: the React + Tailwind pair the
+      // scaffold's config used to declare, from the project's own deps.
+      const clientPlugins = (await defaultClientPlugins(cwd)) ?? [];
+      viteServer = await createViteServer(viteDevConfig(cwd, vitePort, backendPort, clientPlugins));
       await viteServer.listen();
       // Post-listen socket errors would otherwise be an unhandled 'error'
       // event. (The backend AgentServer keeps its own 'error' listener from

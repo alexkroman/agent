@@ -448,6 +448,7 @@ export type ResolvedMcpServer = {
     key: string;
     url: string;
     token?: string;
+    headers?: Readonly<Record<string, string>>;
 };
 
 // @public

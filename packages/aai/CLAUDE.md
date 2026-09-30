@@ -57,7 +57,13 @@ ESM bundle directly; the Modal sandbox is the security boundary.
 
 ## Package exports
 
-Twenty-three subpaths, twenty mapped below.
+Twenty-three code subpaths, twenty mapped below, plus one CONFIG export:
+`@alexkroman1/aai/tsconfig` → `presets/tsconfig.agent.json`, the compiler
+options every agent project extends. Its `files` entry loads
+`presets/agent-env.d.ts` (the `virtual:aai/agent` declaration) and its `types`
+names `vite/client` — the scaffold's old `global.d.ts`, now versioned with the
+SDK. `presets/` is a PRODUCT tree (`_package-layout-scope.mjs`), shipped via
+`files`. Its test-side twin is `defineAgentTestConfig()` on `/testing/vite`.
 
 ### The root barrel is CURATED, and `export *` is what broke it
 
@@ -113,10 +119,10 @@ reset to epoch 1 with nothing retained; see "Every capability restarts at epoch
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `src/index.ts` | The AUTHORING surface only: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, their types, `assemblyAIPipeline()`/`assemblyAIS2s()`, `DEFAULT_SYSTEM_PROMPT` |
+| `@alexkroman1/aai` | `src/index.ts` | The AUTHORING surface only: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, their types, `assemblyAIPipeline()`/`assemblyAIS2s()`, `DEFAULT_SYSTEM_PROMPT`, and the route helpers written inside `agent({ routes })` (`route`, `routeError`, `webhookRoute`/`verifyStandardWebhook` — `sdk/agent-route-helpers.ts`, `sdk/standard-webhook.ts`) |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` | Test helpers for an author's OWN project (`createToolContext`, `deployedAgent`, `runTool`, the stubs). Inventory and rules: "`/testing` helpers" in `src/sdk/CLAUDE.md`. May not import `vitest` (`published-testing-split`) |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` | `installStubGateway` and every other `install*`/`restore`-returning helper. A helper belongs here only when its remaining content is the INSTALLATION; the fake stays framework-agnostic in `testing.ts` |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` | Zero-dependency helpers a TOOL body reaches for (`errorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, …). **`formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`) and `decodeHtmlEntities` are reachable only here** — read by a step AND a `client.tsx` without zod's graph. Non-localized (no `Intl`), pinned in `format.test.ts`. `plural` returns the WORD. `createKeyedLock`'s `p-timeout` is the one dependency |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` | Zero-dependency helpers a TOOL body reaches for (`errorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, `createKeyedLock`/`withLock`, `jsonClient`/`HttpError` for an author's own vendor API, `fitToolResult`, `normalizePhone`, …). **`formatBytes`/`formatDuration`/`countWords`/`plural` (`sdk/format.ts`) and `decodeHtmlEntities` are reachable only here** — read by a step AND a `client.tsx` without zod's graph. Non-localized (no `Intl`), pinned in `format.test.ts`. `plural` returns the WORD. `createKeyedLock`'s `p-timeout` is the one dependency |
 | `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a workflow step is written against: `mapConcurrent`/`mapSettled`, `stepEnv`, `stepDelegate`, `stepFetch` (HTTP/1.1-pinned), `stepReport`/`stepEmit`, `stepGenerate`/`stepGenerateJson`, upload read/write, `stepSpeak`, `stepTranscribe*`, `isTransientStatus`/`retryAfter`. The module doc owns the rest |
 | `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` | `toStepError`/`throwStepError`/`throwFatalStepError`, `FatalError`/`RetryableError`, the seven `*OrFail` callers, and `throwFfmpegStepError` — whose default is INVERTED (unrecognised = fatal). Importing from here is the opt-in to burning a step's retries. The ffmpeg guard is STRUCTURAL, not `instanceof`, because `sdk/` may not name a Node type |
 | `@alexkroman1/aai/channels` | `sdk/channels-barrel.ts` | `slackChannel({ webhookUrl })` + `sendToChannel`. Descriptor is `{ kind, options }`; `text` is required; `isSlackWebhookUrl` is a SECURITY boundary |
@@ -126,7 +132,7 @@ reset to epoch 1 with nothing retained; see "Every capability restarts at epoch
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` | Wire Zod schemas, `lenientParse()`, `SessionCommand`, the event envelope. The event VOCABULARY (`SessionEvent<K>`, `SessionEventMap`) is on the ROOT, owned by `aai:events` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + schemas, config-rule asserts (name is historical) |
 | `@alexkroman1/aai/stt` · `/llm` · `/tts` · `/s2s` | `sdk/providers/*-barrel.ts` | Provider descriptors — see `src/sdk/providers/CLAUDE.md` |
-| `@alexkroman1/aai/experimental` | `experimental.ts` | Unmeasured features before promotion; uncontracted and undocumented by deny-list entry |
+| `@alexkroman1/aai/experimental` | `experimental.ts` | Unmeasured features before promotion; uncontracted and undocumented by deny-list entry. Holds `deepResearchWorkflow` (`sdk/deep-research.ts`): `research-handoff-agent`'s pass as a `workflow()` factory whose options are prompts, researcher, budget, `deliver` and `onFailure` — its step names are journal keys |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` | `fetchJson`, `visitWebpage`, `webSearch`. All ANSWER `T \| ToolFailure` — narrow with `isToolFailure`; a bare `T` turns a 403 into "the web has nothing" |
 | `@alexkroman1/aai/coding-tools` | `host/coding-tools-barrel.ts` | `createCodingTools({ dir })` — nine workspace tools for an agent that edits code. See `src/host/CLAUDE.md` |
 | `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` | `runFfmpeg`/`probeMedia`/`transcodeToWav`/`describeMedia`; why, in `packages/aai-guest/CLAUDE.md` |

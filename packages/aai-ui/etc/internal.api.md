@@ -39,7 +39,7 @@ type BrowserSession = {
     cancel(): void;
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
-    sendText(text: string): void;
+    sendText(text: string, options?: SendTextOptions): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -85,6 +85,11 @@ export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThi
 
 // @public
 export const MAX_MISSING_READS = 3;
+
+// @public
+type SendTextOptions = {
+    connect?: boolean | undefined;
+};
 
 // @public
 type SessionError = {

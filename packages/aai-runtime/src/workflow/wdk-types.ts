@@ -97,6 +97,11 @@ export type WdkAdapter = {
 export type WdkStartOptions = {
   /** `StartOptions.label`, normalized; absent for none. */
   label?: string | undefined;
+  /**
+   * `StartOptions.dedupeKey`: derive the run id from it and, when that run
+   * already exists, resolve its id without creating anything.
+   */
+  dedupeKey?: string | undefined;
 };
 
 /** What {@link WdkAdapter.readStream} passes through to WDK. */

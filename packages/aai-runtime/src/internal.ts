@@ -77,6 +77,7 @@ import type { JournalArm } from "./workflow/journal/conformance-cases.ts";
 
 export {
   CONTAINED_ENV,
+  publishClientInboxDefaults,
   publishStepEnv,
   resolveAllBuiltins,
   safeFetch,
@@ -131,7 +132,8 @@ export { parseBearer } from "./bearer.ts";
 // `publishStepEnv` is the publisher half of the step env — the READER (`stepEnv`)
 // is authoring API on `@alexkroman1/aai/utils`, and lives in `sdk/` because the
 // step bundle bundles it. Only a host calls this: the guest at bundle load,
-// `aai dev` on every rebuild.
+// `aai dev` on every rebuild. `publishClientInboxDefaults` rides beside it for
+// `stepSayOnClient`'s default rate, published at the same two sites.
 // The five paths the PLATFORM serves a guest on, plus the credential pair every
 // client here takes. Declared on this side because the dependency runs one way —
 // `aai-server` imports this package and never the reverse — so the five handlers

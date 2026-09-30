@@ -24,8 +24,13 @@
  */
 
 import { agent, workflow, workflowApp } from "@alexkroman1/aai";
-import { publishStepEnv } from "@alexkroman1/aai/host-internal";
-import { stepEnv } from "@alexkroman1/aai/step";
+import {
+  publishClientInboxDefaults,
+  publishClientNotifier,
+  publishSpeechSynthesizer,
+  publishStepEnv,
+} from "@alexkroman1/aai/host-internal";
+import { stepEnv, stepSayOnClient } from "@alexkroman1/aai/step";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
 import { z } from "zod";
@@ -241,6 +246,33 @@ describe("createAgentServer", () => {
     } finally {
       await server.close();
       publishStepEnv(undefined);
+    }
+  });
+
+  test("publishes the agent's clientInbox rate for stepSayOnClient, beside the step env", async () => {
+    const myAgent = workflowApp({
+      name: "Speaker",
+      clientInbox: { sampleRate: 16_000 },
+      workflows: { echo: workflow({ run: () => "said" }) },
+    });
+    const server = createAgentServer({ agent: myAgent, env: ENV, logger: silentLogger });
+    // The server's own slots are published at construction; these stand in for
+    // the device and the TTS so the rate the step asked for is observable.
+    const rates: number[] = [];
+    publishSpeechSynthesizer(async ({ sampleRate }) => {
+      rates.push(sampleRate);
+      return new Uint8Array(2);
+    });
+    publishClientNotifier(async () => "acked");
+    try {
+      await stepSayOnClient("speaker", { id: "r", event: "reminder", text: "Hello" });
+      expect(rates).toEqual([16_000]);
+    } finally {
+      await server.close();
+      publishStepEnv(undefined);
+      publishClientInboxDefaults(undefined);
+      publishSpeechSynthesizer(undefined);
+      publishClientNotifier(undefined);
     }
   });
 

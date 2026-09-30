@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
-import { compareCodeUnits, isEexist, readJson, writeJson } from "./_utils.ts";
+import { compareCodeUnits, fileExists, isEexist, readJson, writeJson } from "./_utils.ts";
 
 /**
  * The package managers `aai init` can install a project with, in PREFERENCE
@@ -318,11 +318,61 @@ async function stampPackageManager(targetDir: string, pm: PackageManagerInfo): P
   await writeJson(pkgPath, pkgJson);
 }
 
+/**
+ * The scaffold's dependencies that exist only to build a `client.tsx`: the UI
+ * kit, React, and the two Vite plugins the CLI loads from the project when it
+ * has no `vite.config.*` (`_client-plugins.ts`).
+ *
+ * `vite` itself is NOT here: it is the test runner's base and the source of the
+ * `vite/client` types `@alexkroman1/aai/tsconfig` names, so a headless project
+ * needs it too.
+ */
+export const CLIENT_ONLY_DEPENDENCIES = [
+  "@alexkroman1/aai-ui",
+  "@tailwindcss/vite",
+  "@types/react",
+  "@types/react-dom",
+  "@vitejs/plugin-react",
+  "react",
+  "react-dom",
+  "tailwindcss",
+] as const;
+
+/**
+ * Drop {@link CLIENT_ONLY_DEPENDENCIES} from a project with no `client.tsx`.
+ *
+ * A headless agent — a phone line, a webhook worker, a workflow runner — is
+ * served the prebuilt default UI by the CLI and bundles no React of its own,
+ * so installing a UI toolchain it never builds only costs install time and
+ * `node_modules`. Adding a `client.tsx` later means adding these back; the
+ * CLI's `client_plugins_missing` failure names the two it needs.
+ */
+export async function stripClientDependencies(targetDir: string): Promise<void> {
+  if (await fileExists(path.join(targetDir, "client.tsx"))) return;
+  const pkgPath = path.join(targetDir, "package.json");
+  const pkgJson = (await readJson(pkgPath)) as Record<string, unknown> | null;
+  if (!pkgJson) return;
+  let changed = false;
+  for (const field of ["dependencies", "devDependencies"] as const) {
+    const deps = pkgJson[field] as Record<string, string> | undefined;
+    if (!deps) continue;
+    for (const name of CLIENT_ONLY_DEPENDENCIES) {
+      if (name in deps) {
+        delete deps[name];
+        changed = true;
+      }
+    }
+  }
+  if (changed) await writeJson(pkgPath, pkgJson);
+}
+
 export async function runInit(opts: InitOptions): Promise<void> {
   const { targetDir, template } = opts;
   const pm: PackageManagerInfo = opts.packageManager ?? { name: "npm" };
 
   await downloadAndMergeTemplate(template, targetDir);
+  // Before the dev-mode link below, so it pins nothing a headless project dropped.
+  await stripClientDependencies(targetDir);
 
   if (isDevMode()) {
     // `patchPackageJsonForWorkspace` drops `packageManager` outright rather

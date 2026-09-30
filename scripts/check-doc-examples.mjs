@@ -41,7 +41,7 @@ import { parseScriptArgs } from "./_args.mjs";
 import { stripReferenceDirectives } from "./_doc-example-ambients.mjs";
 import { assertEveryDocsPageListed } from "./_docs-site-pages.mjs";
 import { enforceNoCheckBudget } from "./_no-check-ratchet.mjs";
-import { REPO_ROOT as repo, runScaffoldTsc } from "./_scaffold-tsc.mjs";
+import { REPO_ROOT as repo, runScaffoldTsc, VITE_CLIENT_TYPES } from "./_scaffold-tsc.mjs";
 
 const { values: FLAGS } = parseScriptArgs({
   script: import.meta.url,
@@ -351,7 +351,8 @@ const examples = fences.filter((fence) => fence.checked);
  *
  * **MEASURED 2026-09-01: 205 compiled, of 310 ts/tsx fences (105 `no-check`).**
  * 193 before eleven `no-check` fences that already compiled were retired.
- * 181 before `scaffold/global.d.ts` joined the `include` below: seven fences
+ * 181 before the scaffold's ambients (then `scaffold/global.d.ts`, now the
+ * `@alexkroman1/aai/tsconfig` preset) joined the program below: seven fences
  * were `no-check` only because the harness gave the program no ambient
  * declarations, and five more were debt that already compiled. The note here
  * read `160` against an actual of 181 for long enough that the floor sat 24
@@ -407,7 +408,7 @@ examples.forEach((ex, i) => {
 
 console.log(
   `check-doc-examples: ${directivesStripped} inline \`/// <reference\` directive(s) ` +
-    "stripped — a fence's ambients come from scaffold/global.d.ts, never a sibling fence.",
+    "stripped — a fence's ambients come from the scaffold's tsconfig preset, never a sibling fence.",
 );
 
 let result;
@@ -423,43 +424,29 @@ try {
       // SELF-CONTAINED — the rule this whole gate is built on. Widening `types`
       // here would let an example rely on an ambient a reader cannot see in the
       // snippet, so the missing import is a finding, not a false positive.
-      types: ["node"],
+      //
+      // `vite/client` is the other half of what a scaffolded project's
+      // `@alexkroman1/aai/tsconfig` puts in `types`, and it is an AMBIENT the
+      // project ships, not a test global: without it `import.meta.glob` fails
+      // TS2339 and `import "@alexkroman1/aai-ui/styles.css"` TS2882. The third
+      // ambient, the `virtual:aai/agent` module, needs no line here: the
+      // generated config EXTENDS the preset (`_scaffold-tsc.mjs`), whose `files`
+      // entry (`presets/agent-env.d.ts`) survives this call's `include`.
+      //
+      // These are now the ONLY source of those ambients, and a property of the
+      // HARNESS: the triple-slash references some fences carry are stripped
+      // above (`_doc-example-ambients.mjs`), because every fence compiles as ONE
+      // program and a reference in one fence used to augment `ImportMeta` for
+      // every other — a fence staying green because of a sibling in another
+      // package. Dropping `vite/client` here reddens the scaffold/CLAUDE.md
+      // `client.tsx` fences that were carrying it.
+      types: ["node", VITE_CLIENT_TYPES],
       // Examples routinely end on an import or a declaration the prose picks
       // up — unused-symbol strictness would fight the medium.
       noUnusedLocals: false,
       noUnusedParameters: false,
     },
-    include: [
-      path.join(scratch, "*.ts"),
-      path.join(scratch, "*.tsx"),
-      // The AMBIENTS a scaffolded project ships. Without this the program has
-      // none, so the harness asked a STRICTER question than a reader's project
-      // poses and correct examples needed `no-check` to pass: measured, a fence
-      // doing `import agentDef from "virtual:aai/agent"` failed TS2307 (the
-      // module is declared here, served by `@alexkroman1/aai/testing/vite`),
-      // `import.meta.glob` failed TS2339, and
-      // `import "@alexkroman1/aai-ui/styles.css"` failed TS2882 — the last two
-      // because that file carries a triple-slash reference to Vite's client
-      // types. Named in prose rather than spelled: knip reads a quoted
-      // reference directive as a real one and reports the types package as an
-      // unlisted dependency of this script, the same trap that made the
-      // lint-suppression mention above describe itself without spelling it
-      // (the hatch gate counts a suppression named in prose, deliberately).
-      // All three compile clean with it in the program.
-      //
-      // It also makes those ambients a property of the HARNESS. They used to
-      // arrive by leakage: every fence is compiled as ONE program, so a
-      // triple-slash reference to Vite's client types written inside four
-      // scaffold/CLAUDE.md fences augmented `ImportMeta` for every other
-      // fence in the corpus — a fence in one package staying green because of
-      // a sibling in another, and breaking when that sibling is edited.
-      //
-      // This line is now the ONLY source of those ambients: the directives are
-      // stripped out of every fence above (`_doc-example-ambients.mjs`), so
-      // removing it does not merely restore the leak — it reddens the four
-      // scaffold/CLAUDE.md `client.tsx` fences that were carrying it.
-      path.join(repo, "packages/aai-templates/scaffold/global.d.ts"),
-    ],
+    include: [path.join(scratch, "*.ts"), path.join(scratch, "*.tsx")],
   });
 } finally {
   rmSync(scratch, { recursive: true, force: true });

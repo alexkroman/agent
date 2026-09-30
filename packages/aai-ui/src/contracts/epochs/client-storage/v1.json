@@ -1,0 +1,19 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "client-storage",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "ab3968a83e8ffc6036a697f066199f4caddaf5e355fa5e9865ab9c73a2bc0662",
+  "exports": [
+    "LinkedClient",
+    "LinkedClientOptions",
+    "PhoneE164Options",
+    "StoredValue",
+    "StoredValueOptions",
+    "createLinkedClient",
+    "createStoredValue",
+    "phoneE164",
+    "useStoredValue"
+  ],
+  "rollup": "e5a3e25018274041b7fe4d052a50f09cb00baac6062f6ddc47f8512df7128a1c"
+}

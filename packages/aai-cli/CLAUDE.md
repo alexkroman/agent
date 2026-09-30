@@ -235,29 +235,39 @@ production comes from Publish.
   "ffmpeg is not installed…", `ffmpegVersion()` answers `undefined` so a step
   can preflight, and the CLI never installs or requires one.
 
-## `aai dev` must not FAST-REFRESH a prebuilt `dist/`
+## The client build's default plugins, and Fast Refresh
 
-The fix lives in the project's `vite.config.ts`
-(`packages/aai-templates/scaffold/vite.config.ts`), not in
-`_dev-vite-config.ts`: this package cannot set it.
+A project with a `client.tsx` and no `vite.config.*` gets `react({ exclude })` +
+`tailwindcss()` from `_client-plugins.ts`, loaded from the PROJECT's
+`node_modules` (walked by hand: `createRequire` also reads pnpm's `NODE_PATH`);
+missing ones fail `client_plugins_missing`. A project `vite.config.*` wins
+whole. `aai init` drops the UI deps (`CLIENT_ONLY_DEPENDENCIES`, `_init.ts`)
+from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
-- **Trigger: a LINKED SDK.** `@vitejs/plugin-react` excludes
-  `/\/node_modules\//`, but a symlinked `aai-ui` resolves to
-  `packages/aai-ui/dist/…`, so the plugin treats bundled library chunks as
-  project source. A rebuild then hot-updates them, re-executing `context.js` and
-  throwing `Session hooks must be used within <SessionProvider>`. npm installs
-  never hit it.
-- **The library cannot fix it**: a bundled chunk mixes components and
-  constants, so every file is an invalid refresh boundary.
-- **`client.tsx` must not be a boundary either** — it exports nothing, so a
-  refresh re-runs `mountClient()` on an existing root before reloading anyway. A
-  component in its own file does refresh.
-- **Do not** use `optimizeDeps.include: ["@alexkroman1/aai-ui"]` (a rebuild
-  then produces no dev-server event: silent staleness) or
-  `resolve.preserveSymlinks` (same staleness plus duplicate React).
-- This package cannot set the exclusion: `vite:react:refresh-wrapper` reads
-  `include`/`exclude` from the `react()` closure, so only the call site can.
-  Don't add a reload debounce; the browser coalesces reloads.
+- **`REACT_REFRESH_EXCLUDE` must keep `dist/` and `client.tsx`.** A LINKED
+  `aai-ui` resolves outside `node_modules`, so its bundled chunks became
+  refresh boundaries and a rebuild threw `Session hooks must be used within
+  <SessionProvider>`; `client.tsx` exports nothing and re-running it
+  double-mounts. `exclude` REPLACES the plugin's `node_modules` default.
+- **Do not** use `optimizeDeps.include: ["@alexkroman1/aai-ui"]` or
+  `resolve.preserveSymlinks` (silent staleness; the latter also two Reacts).
+
+## `aai dev --tunnel`, `AAI_DEV_SOURCE`, `secret put --local`
+
+- **`--tunnel`** (`_dev-tunnel.ts`): cloudflared quick tunnel (binary
+  `AAI_CLOUDFLARED_PATH` or `PATH`, never installed) to the PRINTED port; its URL
+  becomes `PUBLIC_URL` before the first build. `--on-public-url <cmd>` runs
+  with the URL once up and with it EMPTY on exit; a failing hook warns. The
+  tunnel dying exits 1. The scrape excludes `api.trycloudflare.com` (a failed
+  request logs it).
+- **`AAI_DEV_SOURCE=1`** (`_dev-source.ts`): a `link:`ed SDK runs from `src/`.
+  `bin.mjs` adds `@dev/source` to Node's conditions (source CLI only);
+  `devSourceViteConfig` adds it to every Vite build, beside Vite's defaults
+  (`conditions` replaces them). Opt-in: in-repo suites spawn the source CLI and
+  assert the BUILT shape. The default UI still comes from `aai-ui/dist`.
+- **`--local`** on `secret put`/`delete` edits `<cwd>/.env` via
+  `_dotenv-file.ts`, round-tripped through `parseEnv` (last assignment wins,
+  multi-line values, mode kept, new file 0600, atomic rename).
 
 ## Running the SDK's own server (`aai dev` and host mode)
 

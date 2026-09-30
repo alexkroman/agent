@@ -51,6 +51,11 @@ export type FetchCappedOptions = {
    * one — the Places API (New) text search has no GET form.
    */
   body?: string | undefined;
+  /**
+   * The HTTP method. Defaults to POST when there is a `body` and GET when
+   * there is none — `fetchJson`'s direct callers are the only ones to name it.
+   */
+  method?: string | undefined;
 };
 
 /**
@@ -113,7 +118,7 @@ export async function fetchCappedText(url: string, opts: FetchCappedOptions): Pr
     url,
     omitUndefined({
       headers: { ...preamble, ...opts.headers },
-      method: opts.body === undefined ? undefined : "POST",
+      method: opts.method ?? (opts.body === undefined ? undefined : "POST"),
       body: opts.body,
       // A fresh {@link FETCH_TIMEOUT_MS} deadline over headers AND body, always.
       // There used to be a caller-supplied `signal` here that REPLACED it, which

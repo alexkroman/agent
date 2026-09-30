@@ -68,12 +68,14 @@ import {
   type StepOptions,
   type WorkflowContext,
 } from "@alexkroman1/aai";
+import { pollWorkflow, type ResolvedFailureHandler } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "../runtime-config.ts";
 import { describeCodeChange } from "./code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./journal/bound.ts";
 import type { JournalStore, SleepEntry, SleepRecord, StepEntry } from "./journal/types.ts";
 import { createDeterminismReads } from "./replay/determinism.ts";
 import { watchDivergence } from "./replay/divergence.ts";
+import { afterRunFailed } from "./replay/failure-hook.ts";
 import { watchJournalFailure } from "./replay/journal-failure.ts";
 import { classifyThrow, type ReplayOutcome } from "./replay/outcome.ts";
 import { journaledStepOutput } from "./replay/schema.ts";
@@ -108,6 +110,8 @@ export type ReplayOptions = {
   input: Record<string, unknown>;
   /** The body. Looked up by the caller, which owns the registry. */
   run: (input: Record<string, unknown>, ctx: WorkflowContext) => Promise<unknown> | unknown;
+  /** `workflow({ onFailure })`, normalized — run by `replay/failure-hook.ts`. */
+  onFailure?: ResolvedFailureHandler | undefined;
   /**
    * The run record's `codeVersion` — which bundle the run was STARTED against.
    *
@@ -337,6 +341,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // `workflow/replay/waits.ts`, which also carries what naming the waits
     // closed and the one residual it did not.
     ...createWaitMethods({ runId, workflow, journal, sleeps, suspend, refuse: setRefused }),
+    // Composed of `step` and `sleep` on this same object, so a poll journals
+    // exactly the keys a hand-written loop did — see `sdk/workflow-poll.ts`.
+    poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowContext` in the
       // SDK for why it is a name plus an occurrence count.
@@ -467,6 +474,12 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     });
     // `undefined` is the abort arm: the caller's signal, re-thrown.
     if (outcome === undefined) throw err;
+    const hook = { handler: options.onFailure, error: err, runId, workflow, input, signal };
+    await afterRunFailed(outcome, refused, journalWatch.failure, {
+      ...hook,
+      host: ctx,
+      logger: options.logger,
+    });
     return outcome;
   }
   // Resolved NORMALLY after a journal failure is the same quiet half, and for a
@@ -476,14 +489,10 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // Re-thrown as it arrived, so the delivery is retried.
   const journalFailure = journalWatch.failure();
   if (journalFailure !== undefined) throw journalFailure;
-  // Resolved NORMALLY after a refusal is the quieter half of the same bug, and
-  // the one the measured reproduction actually took: the body caught the refusal
-  // and carried on to an answer, so a run whose walk had already lost its place
-  // reported `completed`.
+  // Resolved NORMALLY after a refusal is the quieter half of the same bug: the
+  // body caught the refusal and answered, so a lost walk reported `completed`.
   if (refused !== undefined) return { kind: "failed", error: { message: refused } };
-  // There is no companion check for a suspension any more, and its absence is
-  // the whole point: a body cannot resolve THROUGH a wait, because a parked wait
-  // hands it a promise that never settles. What used to need a post-hoc "did the
-  // body swallow it" test is now unrepresentable.
+  // No companion check for a suspension: a body cannot resolve THROUGH a wait,
+  // because a parked wait hands it a promise that never settles.
   return completed;
 }

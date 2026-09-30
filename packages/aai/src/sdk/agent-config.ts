@@ -24,7 +24,7 @@ import {
   assertSamplingScope,
   assertSilencePolicy,
 } from "./config-rules.ts";
-import { MCP_SERVER_KEY_RE } from "./mcp-config.ts";
+import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
@@ -122,21 +122,31 @@ const EnvVarName = z.string().refine((name) => name.trim() !== "" && !/[\s=]/.te
  */
 const McpServerConfigSchema = z
   .object({
-    url: z.url().refine(
-      (value) => {
-        // `URL.parse` rather than `new URL`: zod runs every check and collects
-        // the issues, so a refinement here still sees a value `z.url()` already
-        // rejected — and a constructor THROWS out of the parse, turning a
-        // "that is not a URL" into an unhandled TypeError several layers up.
-        const protocol = URL.parse(value)?.protocol;
-        return protocol === "http:" || protocol === "https:";
-      },
-      {
-        error:
-          "an MCP server URL must be http(s) — stdio and other transports are not supported (see sdk/mcp-config.ts)",
-      },
-    ),
+    // OPTIONAL on the wire, never in `agent.ts`: `McpServerConfig.url` is
+    // required, and absent here means the author wrote a RESOLVER, which
+    // `toAgentConfig` drops because only the runtime holding the agent's own
+    // module can call it (see `wireMcpServers`).
+    url: z
+      .url()
+      .refine(
+        (value) => {
+          // `URL.parse` rather than `new URL`: zod runs every check and collects
+          // the issues, so a refinement here still sees a value `z.url()` already
+          // rejected — and a constructor THROWS out of the parse, turning a
+          // "that is not a URL" into an unhandled TypeError several layers up.
+          const protocol = URL.parse(value)?.protocol;
+          return protocol === "http:" || protocol === "https:";
+        },
+        {
+          error:
+            "an MCP server URL must be http(s) — stdio and other transports are not supported (see sdk/mcp-config.ts)",
+        },
+      )
+      .optional(),
     tokenEnv: EnvVarName.optional(),
+    // Remote tool names, so opaque beyond "not blank": the server owns its
+    // spelling, and `mcpToolName` is what maps it onto a legal model name.
+    allowedTools: z.array(z.string().min(1)).readonly().optional(),
     // The reviewed tool baseline: remote tool name → fingerprint. Opaque here
     // on purpose — the digest is `fingerprintTools`' to define, and a shape
     // rule restated in this schema is one that can disagree with it.
@@ -258,6 +268,14 @@ export const AgentConfigSchema = z.object({
    * does. The `mcp-config.ts` doc carries what the shape is and is not.
    */
   mcpServers: McpServersSchema.optional(),
+  /**
+   * Defaults for audio pushed to a device over `WS /inbox` — see
+   * `AgentDef.clientInbox`. Serializable because the host that publishes the
+   * default to `stepSayOnClient` may be a guest sandbox.
+   */
+  clientInbox: z
+    .object({ sampleRate: z.number().int().min(8000).max(48_000).optional() })
+    .optional(),
   // Serializable rather than host-only: it is a DECLARATION about the agent's
   // surface, exactly like `name` and `greeting`, and every consumer of a
   // serialized config wants it — the browser (does this page open a mic?), the
@@ -357,7 +375,7 @@ export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
  * spread call sites (`{...agent, stt: maybeUndefined}`) legal under
  * `exactOptionalPropertyTypes`.
  */
-export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
   /**
    * Wider than the config's own `string`, because `AgentDef.systemPrompt`
    * may be a RESOLVER — a function this layer cannot serialize and must not
@@ -368,9 +386,33 @@ export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt"> & {
    * the function per request.
    */
   systemPrompt?: AgentSystemPrompt;
+  /**
+   * Wider than the wire's record for the same reason: an `McpServerConfig` may
+   * carry a `url` RESOLVER and `headers`, both host-only. `toAgentConfig`
+   * strips them (see `wireMcpServers`).
+   */
+  mcpServers?: McpServers | undefined;
 } & {
   [K in HostOnlyAgentField]?: unknown;
 };
+
+/**
+ * The `mcpServers` record as it may cross the wire: a `url` resolver and every
+ * `headers` value dropped, everything else kept.
+ *
+ * `headers` goes in BOTH spellings, a literal record included, because a
+ * header is where a credential lives (`x-api-key`), and a stored config is
+ * read by more than the runtime that needs it. The runtime holds the agent's
+ * own module, so it reads both from the definition rather than the wire.
+ */
+function wireMcpServers(servers: McpServers): Record<string, unknown> {
+  const wire: Record<string, unknown> = {};
+  for (const [key, server] of Object.entries(servers)) {
+    const { url, headers: _headers, ...rest } = server;
+    wire[key] = typeof url === "string" ? { url, ...rest } : rest;
+  }
+  return wire;
+}
 
 /**
  * Convert an agent definition into its serializable {@link AgentConfig},
@@ -422,6 +464,9 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // `z.string()` a function, and the sentence an author gets names a field they
   // set correctly.
   if (staticSystemPrompt(src.systemPrompt) === undefined) delete wire.systemPrompt;
+  // The same shape of problem one level down: an MCP server is serializable
+  // except for its `url` resolver and its `headers`.
+  if (src.mcpServers) wire.mcpServers = wireMcpServers(src.mcpServers);
   // AFTER the copy, never before it. `mode` is DERIVED — `AgentConfigSource`
   // omits it precisely so a typed caller cannot supply one — but the copy is a
   // deny-list over `Object.entries`, so a `mode` on a raw object (a hand-written

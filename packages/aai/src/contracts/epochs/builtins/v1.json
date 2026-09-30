@@ -3,7 +3,29 @@
   "capability": "builtins",
   "epoch": 1,
   "rule": 2,
-  "sha256": "e98627421e63d1df3fc2e2ffdf2be967a5920795c6f85984b6387469624fb29a",
-  "exports": ["CallOptions", "UntypedJsonBody", "fetchJson", "visitWebpage", "webSearch"],
-  "rollup": "a443d1ea9daba447628acda38e9fb76cef52fd7379c5dcdb4789db8c81781a4f"
+  "sha256": "0435d5baf9be1159c3fed58261fead23083669e66b9a1d89e69db2762a0aed18",
+  "exports": [
+    "CallOptions",
+    "FetchJsonOptions",
+    "UntypedJsonBody",
+    "fetchJson",
+    "visitWebpage",
+    "webSearch"
+  ],
+  "rollup": "a443d1ea9daba447628acda38e9fb76cef52fd7379c5dcdb4789db8c81781a4f",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "e98627421e63d1df3fc2e2ffdf2be967a5920795c6f85984b6387469624fb29a",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "0435d5baf9be1159c3fed58261fead23083669e66b9a1d89e69db2762a0aed18",
+      "reason": "additive (checked): +FetchJsonOptions"
+    }
+  ]
 }

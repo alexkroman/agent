@@ -489,3 +489,113 @@ test("close() closes every session that opened, and survives one that refuses", 
   await expect(surface.close()).resolves.toBeUndefined();
   expect(good.closed).toBe(1);
 });
+
+describe("resolvers, headers and allowedTools", () => {
+  test("a url and headers RESOLVER run with the env, and what they return reaches the opener", async () => {
+    const seen: ResolvedMcpServer[] = [];
+    const surface = await withMcpTools(
+      agent({
+        name: "Apps",
+        mcpServers: {
+          apps: {
+            url: async ({ env }) => `https://mcp.example.com/session/${env.SESSION}`,
+            headers: ({ env }) => ({ "x-api-key": env.APPS_KEY ?? "" }),
+          },
+        },
+      }),
+      {
+        env: { SESSION: "s-1", APPS_KEY: "k-1" },
+        openSession: async (server) => {
+          seen.push(server);
+          return fakeServer();
+        },
+      },
+    );
+    expect(seen).toEqual([
+      {
+        key: "apps",
+        url: "https://mcp.example.com/session/s-1",
+        headers: { "x-api-key": "k-1" },
+      },
+    ]);
+    // A resolved URL is reported by its ORIGIN: a per-user session path is not
+    // a status's, or a log line's, business.
+    expect(surface.servers[0]?.url).toBe("https://mcp.example.com");
+    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_apps_search"]);
+  });
+
+  test("at host start a resolver gets no clientId, and one that needs it costs its own tools", async () => {
+    const logger = makeLogger();
+    const clientIds: (string | undefined)[] = [];
+    const surface = await withMcpTools(
+      agent({
+        name: "Apps",
+        mcpServers: {
+          apps: {
+            url: ({ clientId }) => {
+              clientIds.push(clientId);
+              if (!clientId) throw new Error("apps is per user");
+              return `https://mcp.example.com/${clientId}`;
+            },
+          },
+          docs: { url: "https://docs.example/mcp" },
+        },
+      }),
+      { logger, openSession: async () => fakeServer() },
+    );
+    expect(clientIds).toEqual([undefined]);
+    const apps = surface.servers.find((s) => s.key === "apps");
+    expect(apps?.unavailable).toBe("apps is per user");
+    expect(apps?.url).toBe("(resolved per connection)");
+    expect(Object.keys(surface.agent.tools)).toEqual(["mcp_docs_search"]);
+  });
+
+  test("a resolver answering a non-http(s) URL is refused before anything is opened", async () => {
+    const opener = vi.fn();
+    const surface = await withMcpTools(
+      agent({ name: "Apps", mcpServers: { apps: { url: () => "file:///tmp/mcp.sock" } } }),
+      { openSession: opener },
+    );
+    expect(opener).not.toHaveBeenCalled();
+    expect(surface.servers[0]?.unavailable).toContain("http(s)");
+  });
+
+  test("a resolver that never settles costs one budget, not the host", async () => {
+    const surface = await withMcpTools(
+      agent({
+        name: "Apps",
+        mcpServers: { apps: { url: () => new Promise<string>(() => undefined) } },
+      }),
+      { connectTimeoutMs: 20, openSession: async () => fakeServer() },
+    );
+    expect(surface.servers[0]?.unavailable).toContain("resolvers did not finish");
+  });
+
+  test("allowedTools scopes what a server offers, and names an allowed tool it does not publish", async () => {
+    const logger = makeLogger();
+    const tools: ToolSet = {
+      search: remoteTool({ description: "Search" }),
+      manage_connections: remoteTool({ description: "Connect an account" }),
+      execute: remoteTool({ description: "Run an action" }),
+    };
+    const surface = await withMcpTools(
+      agent({
+        name: "Apps",
+        mcpServers: {
+          apps: { url: "https://a.example/mcp", allowedTools: ["search", "execute", "serach"] },
+        },
+      }),
+      { logger, openSession: async () => fakeServer(tools) },
+    );
+    expect(Object.keys(surface.agent.tools).sort()).toEqual([
+      "mcp_apps_execute",
+      "mcp_apps_search",
+    ]);
+    // Fingerprints cover only what was allowed: a pin is about what the agent sees.
+    expect(Object.keys(surface.servers[0]?.fingerprints ?? {}).sort()).toEqual([
+      "execute",
+      "search",
+    ]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"serach"'));
+  });
+});

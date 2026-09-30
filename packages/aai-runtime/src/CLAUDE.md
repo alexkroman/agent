@@ -269,7 +269,8 @@ bug; `ToolDef.onError` says which kind. `tool-error-policy.ts` decides
   boot) and is `runtime.serveRoute`; `agent-routes-http.ts` is the server's
   half (the prefix, `MAX_ROUTE_BODY_BYTES`, JSON plus its exact `rawBody` for
   webhook signatures, headers as strings, `?client=`). A `routeResponse` is
-  read by brand. No auth: as open as the server. On the
+  read by brand, and so is a thrown `routeError` (its status, not a
+  500). No auth: as open as the server. On the
   platform it is `direct-dial`, so self-hosted only for now
   (`aai-server/src/guest/routes.ts` says why).
 - **`/inbox` keeps one socket per (client, `?holder=`)**: the same pair
@@ -317,8 +318,12 @@ Rules:
 - **What crosses back is the answer plus a cost report, never a transcript** —
   `DelegateResult.toolCalls` carries calls, not results.
 - A step delegates too (`step-delegate.ts` fills an SDK `Symbol.for` slot,
-  sessionless). A `subagents` roster is lowered to one ordinary `delegate` tool
-  in `agent()` (`sdk/subagent-roster.ts`) — no branch here.
+  sessionless). A step's subagent gets MCP tools from `stepMcp` (`step-mcp.ts`,
+  the same kind of slot), which calls `connectMcpServers` — the core
+  `withMcpTools` runs at host start — with the step's `clientId`, and rejects
+  instead of degrading when a server is unavailable. A `subagents` roster is
+  lowered to one ordinary `delegate` tool in `agent()`
+  (`sdk/subagent-roster.ts`) — no branch here.
 - Wired in `setupSubagents` (`runtime-tools.ts`, sandbox and self-hosted) and
   `createTextAgent`; `createSubagentRunner` memoizes models per descriptor
   object.

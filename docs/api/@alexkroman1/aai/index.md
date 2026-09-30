@@ -10,7 +10,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
-| work that outlives the call | [workflow](#workflow-1) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
+| work that outlives the call | [workflow](#workflow-2) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
 | who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
@@ -37,7 +37,7 @@ to swap a stage; the rest keep the default.
 **Three primitives here run a defined process, and they are not
 interchangeable.** A [dialog](#dialog-1) gates a CONVERSATION — what the agent may
 say or do next, across turns. A [procedure](#procedure-2) runs ONE UNIT OF WORK inside
-a single tool call. A [workflow](#workflow-1) runs DURABLY, outliving the session.
+a single tool call. A [workflow](#workflow-2) runs DURABLY, outliving the session.
 
 ## Everything else is on a subpath, chosen by WHO READS IT
 
@@ -541,7 +541,7 @@ export const claim = dialog("claim", {
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
 DURABLY, outliving the session.
 
 #### Call Signature
@@ -1394,7 +1394,7 @@ export default tool({
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
 DURABLY, outliving the session.
 
 ***
@@ -1506,7 +1506,7 @@ function requireEnv(ctx: {
 }, name: string): string;
 ```
 
-Read a variable off [ToolContext.env](#env-5), failing by NAME when it is not set.
+Read a variable off [ToolContext.env](#env-6), failing by NAME when it is not set.
 
 The `ToolContext` twin of `requireStepEnv`, and there for the same reason: a
 missing credential is not transient, so it should say which key and how to
@@ -1542,6 +1542,50 @@ export default tool({
 #### Returns
 
 `string`
+
+***
+
+### requireSessionClient()
+
+```ts
+function requireSessionClient(ctx: Pick<ToolContext, "sessionId">, message?: string): string | ToolFailure;
+```
+
+This session's client id ([sessionClientId](#sessionclientid)), or a `ToolFailure`
+saying why the tool cannot run without one — the guard every tool that keys
+work by device opens with.
+
+```ts
+import { requireSessionClient, tool } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
+import { z } from "zod";
+
+export default tool({
+  description: "Email them the last answer.",
+  inputSchema: z.object({ body: z.string() }),
+  async execute({ body }, ctx) {
+    const clientId = requireSessionClient(ctx, "Email works on a speaker only.");
+    if (isToolFailure(clientId)) return clientId;
+    return { queued: body.length, for: clientId };
+  },
+});
+```
+
+#### Parameters
+
+##### ctx
+
+`Pick`\<[`ToolContext`](#toolcontext), `"sessionId"`\>
+
+##### message?
+
+`string`
+
+The sentence the model reads when there is no client id.
+
+#### Returns
+
+`string` \| [`ToolFailure`](#toolfailure)
 
 ***
 
@@ -1678,6 +1722,94 @@ async function startRun(url: string): Promise<string> {
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error(await responseErrorMessage(res, "Workflow API"));
   return ((await res.json()) as { runId: string }).runId;
+}
+```
+
+***
+
+### route()
+
+```ts
+function route<S extends StandardSchemaV1<unknown, unknown> = StandardSchemaV1<unknown, unknown>, Client extends boolean = false>(def: RouteDef<S, Client>): RouteHandler;
+```
+
+A route handler with its checks at the door: `body` validated against a
+Standard Schema and `?client=` required, each refused with a 400 and the
+reason. A [RouteError](#routeerror) thrown inside answers its own status.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\> = [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
+
+##### Client
+
+`Client` *extends* `boolean` = `false`
+
+#### Parameters
+
+##### def
+
+[`RouteDef`](#routedef)\<`S`, `Client`\>
+
+#### Returns
+
+[`RouteHandler`](#routehandler)
+
+#### Example
+
+```ts
+import { agent, route } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default agent({
+  name: "Kitchen speaker",
+  routes: {
+    "PUT /profile": route({
+      body: z.object({ name: z.string().max(80) }),
+      requireClient: true,
+      handler: async (req) => ({ saved: req.body.name, for: req.clientId }),
+    }),
+  },
+});
+```
+
+***
+
+### routeError()
+
+```ts
+function routeError(status: number, message: string): RouteError;
+```
+
+A [RouteError](#routeerror) to throw from anywhere under a route handler:
+`throw routeError(400, "name: text up to 80 characters")`. The route answers
+that status with `{ error: message }` rather than a 500.
+
+#### Parameters
+
+##### status
+
+`number`
+
+##### message
+
+`string`
+
+#### Returns
+
+[`RouteError`](#routeerror)
+
+#### Example
+
+```ts
+import { type RouteRequest, routeError } from "@alexkroman1/aai";
+
+function appSlug(req: RouteRequest): string {
+  const slug = req.params.app ?? "";
+  if (!/^[a-z0-9_-]{1,64}$/.test(slug)) throw routeError(400, "not an app name");
+  return slug;
 }
 ```
 
@@ -2485,6 +2617,100 @@ export const orderTotal = tool({
 
 ***
 
+### verifyStandardWebhook()
+
+```ts
+function verifyStandardWebhook(
+   req: Pick<RouteRequest, "headers" | "rawBody">, 
+   secret: string, 
+   options?: StandardWebhookOptions
+): Promise<boolean>;
+```
+
+Whether a route request is a genuine Standard Webhooks delivery signed with
+`secret`: its `webhook-signature` carries a `v1` HMAC-SHA256 of
+`${webhook-id}.${webhook-timestamp}.${rawBody}`, and the timestamp is within
+`toleranceS` of now. Any of several space-separated signatures may match (a
+secret rotation). Compared in constant time; never throws.
+
+`false` for a missing header, an empty secret, a request with no `rawBody`,
+or a stale timestamp.
+
+#### Parameters
+
+##### req
+
+`Pick`\<[`RouteRequest`](#routerequest), `"headers"` \| `"rawBody"`\>
+
+##### secret
+
+`string`
+
+##### options?
+
+[`StandardWebhookOptions`](#standardwebhookoptions)
+
+#### Returns
+
+`Promise`\<`boolean`\>
+
+#### Example
+
+```ts
+import { routeResponse, type RouteHandler, verifyStandardWebhook } from "@alexkroman1/aai";
+
+export const onEvent: RouteHandler = async (req, { env }) => {
+  if (!(await verifyStandardWebhook(req, env.WEBHOOK_SECRET ?? ""))) {
+    return routeResponse(401, { error: "bad signature" });
+  }
+  return { ok: true };
+};
+```
+
+***
+
+### webhookRoute()
+
+```ts
+function webhookRoute(options: WebhookRouteOptions, handler: RouteHandler): RouteHandler;
+```
+
+A route handler that runs `handler` only for a delivery
+[verifyStandardWebhook](#verifystandardwebhook) accepts under the secret in `env[secretEnv]`.
+A bad or missing signature answers `401 { error }`; an unset secret answers
+`500` naming the variable, and the handler never runs.
+
+#### Parameters
+
+##### options
+
+[`WebhookRouteOptions`](#webhookrouteoptions)
+
+##### handler
+
+[`RouteHandler`](#routehandler)
+
+#### Returns
+
+[`RouteHandler`](#routehandler)
+
+#### Example
+
+```ts
+import { agent, webhookRoute } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Kitchen speaker",
+  routes: {
+    "POST /composio/webhook": webhookRoute({ secretEnv: "COMPOSIO_WEBHOOK_SECRET" }, (req) => {
+      return { received: req.headers["webhook-id"] };
+    }),
+  },
+});
+```
+
+***
+
 ### workflow()
 
 #### Call Signature
@@ -2528,7 +2754,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -2622,7 +2848,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-1) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -2846,7 +3072,86 @@ readonly procedure: string;
 
 The machine's id, so a log names which procedure stopped.
 
+***
+
+### RouteError
+
+A route's refusal, THROWN: the route answers `status` with
+`{ error: message }`. Build one with [routeError](#routeerror-1).
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new RouteError(status: number, message: string): RouteError;
+```
+
+Throws a `RangeError` for a status that is not 4xx or 5xx.
+
+###### Parameters
+
+###### status
+
+`number`
+
+###### message
+
+`string`
+
+###### Returns
+
+[`RouteError`](#routeerror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Properties
+
+##### status
+
+```ts
+readonly status: number;
+```
+
+The HTTP status the route answers: 4xx or 5xx.
+
 ## Interfaces
+
+### AgentClientInbox
+
+The device-inbox half of an agent declaration — see this module's header.
+
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
+#### Properties
+
+##### clientInbox?
+
+```ts
+optional clientInbox?: ClientInboxOptions;
+```
+
+Defaults for what a workflow pushes to a device over `WS /inbox`: today the
+`sampleRate` `stepSayOnClient` speaks at. Serializable, and read by the
+host that serves the inbox, so it holds for every run in the deployment.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
+```
+
+***
 
 ### AgentDef
 
@@ -2863,19 +3168,19 @@ are resolved to their final values with defaults applied. Optional fields
 (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
 optional — `undefined` means "not configured."
 
-Seven groups of fields live on interfaces this extends, each sharing ONE rule
+Eight groups of fields live on interfaces this extends, each sharing ONE rule
 derived from the declaration rather than restated beside it:
 [PipelineVoiceTuning](#pipelinevoicetuning) (pipeline transport or nothing), [AgentModelTuning](#agentmodeltuning)
 (this runtime assembles the request, so S2S refuses them), [AgentGuardrails](#agentguardrails)
 (the only declarations that may stop a turn), [AgentObservation](#agentobservation) (the two
 that deliberately may not), [AgentVoicePresets](#agentvoicepresets) (paid for on every model
-request), [AgentSessionLifecycle](#agentsessionlifecycle) (once per session) and [AgentRoutes](#agentroutes)
-(no session at all). `agent()` and the deploy-time config check derive their
-field lists from those, so no field skips either gate.
+request), [AgentSessionLifecycle](#agentsessionlifecycle) (once per session), [AgentRoutes](#agentroutes)
+and [AgentClientInbox](#agentclientinbox) (no session at all). `agent()` and the deploy-time
+config check derive their field lists from those, so no field skips either gate.
 
 #### Extends
 
-- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes)
+- [`PipelineVoiceTuning`](#pipelinevoicetuning).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox)
 
 #### Properties
 
@@ -2894,6 +3199,26 @@ the field REPLACES the default — include `"think"` to keep it, and pass
 ###### Default Value
 
 `["think"]` (`DEFAULT_BUILTIN_TOOLS`)
+
+##### clientInbox?
+
+```ts
+optional clientInbox?: ClientInboxOptions;
+```
+
+Defaults for what a workflow pushes to a device over `WS /inbox`: today the
+`sampleRate` `stepSayOnClient` speaks at. Serializable, and read by the
+host that serves the inbox, so it holds for every run in the deployment.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
+```
+
+###### Inherited from
+
+[`AgentClientInbox`](#agentclientinbox).[`clientInbox`](#clientinbox)
 
 ##### deadAirCoverMs?
 
@@ -3431,7 +3756,7 @@ Deploys check that every listed name is present in the agent's stored env,
 so a missing key surfaces at deploy time instead of as a runtime failure on
 the first tool call.
 
-A tool reads them from [ToolContext.env](#env-5); a step has no
+A tool reads them from [ToolContext.env](#env-6); a step has no
 tool context and reads them with `stepEnv` / `requireStepEnv` from
 `@alexkroman1/aai/step`, which resolve the same record.
 
@@ -7411,6 +7736,63 @@ The same client a tool's `ctx.workflows` is: start runs, and read them back
 
 ***
 
+### RouteDef
+
+What [route](#route) takes.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* [`StandardSchemaV1`](#standardschemav1) = [`StandardSchemaV1`](#standardschemav1)\<`unknown`, `unknown`\>
+
+##### Client
+
+`Client` *extends* `boolean` = `false`
+
+#### Properties
+
+##### body?
+
+```ts
+optional body?: S;
+```
+
+A Standard Schema the JSON body must satisfy; the handler gets its output.
+A refused body (or none) is a 400 naming the issues.
+
+##### handler
+
+```ts
+handler: (req: ValidatedRouteRequest<InferSchemaOutput<S>, Client>, ctx: RouteContext) => unknown;
+```
+
+The handler, with what the checks above guarantee typed in.
+
+###### Parameters
+
+###### req
+
+[`ValidatedRouteRequest`](#validatedrouterequest)\<[`InferSchemaOutput`](#inferschemaoutput)\<`S`\>, `Client`\>
+
+###### ctx
+
+[`RouteContext`](#routecontext)
+
+###### Returns
+
+`unknown`
+
+##### requireClient?
+
+```ts
+optional requireClient?: Client;
+```
+
+`true`: a request without a well-formed `?client=` is a 400.
+
+***
+
 ### RouteRequest
 
 **`Sealed`**
@@ -9686,6 +10068,31 @@ The version of the standard implemented (always 1).
 
 ***
 
+### StandardWebhookOptions
+
+What [verifyStandardWebhook](#verifystandardwebhook) takes beside the request and secret.
+
+#### Properties
+
+##### nowS?
+
+```ts
+optional nowS?: number;
+```
+
+For TESTS: "now", in seconds since the epoch.
+
+##### toleranceS?
+
+```ts
+optional toleranceS?: number;
+```
+
+How far `webhook-timestamp` may be from now, in seconds, before the
+delivery is refused as a replay. Default 300 (five minutes), the spec's.
+
+***
+
 ### StateProjection()
 
 One slot's contribution to the `agent_state` frame — what
@@ -10753,6 +11160,30 @@ End the caller's turn once this many words have been heard in it. A
 positive integer; counted on the transcriber's interim transcript, so it
 is what the transcriber HEARD, exactly as `minBargeInWords` is.
 
+***
+
+### WebhookRouteOptions
+
+What [webhookRoute](#webhookroute) takes.
+
+#### Properties
+
+##### secretEnv
+
+```ts
+secretEnv: string;
+```
+
+The agent-env variable holding the signing secret, e.g. `"COMPOSIO_WEBHOOK_SECRET"`.
+
+##### toleranceS?
+
+```ts
+optional toleranceS?: number;
+```
+
+As [StandardWebhookOptions.toleranceS](#tolerances).
+
 ## Type Aliases
 
 ### AgentGuardrail
@@ -11083,6 +11514,8 @@ and provide capabilities like web search, code execution, and API access.
 - `"text_me"` — Text the owner something too long to say, through Textbelt.
   Reads `TEXTBELT_KEY` and `SMS_TO_PHONE`; the recipient is never the
   model's choice (see `allowedSmsRecipient` in `@alexkroman1/aai/channels`).
+  `TEXTBELT_LINKS=strip` leaves links out, for a key Textbelt has not yet
+  allowed to send them.
 
 The three keyed builtins read their key from `ctx.env` on each
 call and answer the model with an error naming the variable when it is
@@ -11144,6 +11577,34 @@ is how the runtime and the test doubles implement it.
 #### Returns
 
 `void`
+
+***
+
+### ClientInboxOptions
+
+```ts
+type ClientInboxOptions = {
+  sampleRate?: number;
+};
+```
+
+What an agent declares about the audio it pushes to devices over `WS /inbox`.
+
+#### Properties
+
+##### sampleRate?
+
+```ts
+optional sampleRate?: number;
+```
+
+Samples per second the devices play pushed audio at — the default
+`stepSayOnClient` synthesizes at when a call names none. An integer from
+8000 to 48000. Omitted, speech is synthesized at `stepSpeak`'s own default
+(24 kHz).
+
+Match the device's own output rate so it needs no resampler (an ESP32
+speaker playing at 16 kHz declares `16_000`).
 
 ***
 
@@ -11901,19 +12362,123 @@ all) were what it replaced.
 
 ***
 
+### McpResolvable
+
+```ts
+type McpResolvable<T> = 
+  | T
+  | ((context: McpResolveContext) => T | Promise<T>);
+```
+
+A value an author may write literally, or compute per connection from
+[McpResolveContext](#mcpresolvecontext).
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+***
+
+### McpResolveContext
+
+```ts
+type McpResolveContext = {
+  clientId: string | undefined;
+  env: Readonly<Partial<Record<string, string>>>;
+  signal: AbortSignal;
+};
+```
+
+What a RESOLVER is handed when a server's `url` or `headers` is a function.
+
+A resolver runs on the host, once per CONNECTION — once when a host connects
+the agent's servers (`withMcpTools`, where there is no caller yet, so
+`clientId` is `undefined`), and once per `stepMcp` call from a workflow step,
+with the `clientId` that step passed. The value is held for that connection
+and never re-asked, so a resolver that creates something remote (a per-user
+session URL) creates it once per connection, not per tool call.
+
+#### Properties
+
+##### clientId
+
+```ts
+readonly clientId: string | undefined;
+```
+
+The client the connection acts for — `stepMcp`'s `clientId` option, which a
+run usually carries from `sessionClientId(ctx)` in the tool that started
+it. `undefined` at host start, where nobody is calling yet: a server that
+only makes sense per user should THROW here, which costs that server's
+tools at host start and nothing else.
+
+##### env
+
+```ts
+readonly env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's env — the same record `tokenEnv` is read from. Never `process.env`.
+
+##### signal
+
+```ts
+readonly signal: AbortSignal;
+```
+
+Aborted when the connect budget runs out; pass it to any `fetch` the resolver makes.
+
+***
+
 ### McpServerConfig
 
 ```ts
 type McpServerConfig = {
+  allowedTools?: readonly string[];
+  headers?: McpResolvable<Readonly<Record<string, string>>>;
   pinnedTools?: Readonly<Record<string, string>>;
   tokenEnv?: string;
-  url: string;
+  url: McpResolvable<string>;
 };
 ```
 
 One MCP server an agent may take tools from.
 
 #### Properties
+
+##### allowedTools?
+
+```ts
+optional allowedTools?: readonly string[];
+```
+
+The REMOTE tool names this agent takes from the server; every other tool
+it publishes is not offered. Omitted, every tool is offered.
+
+The scope knob for a server that publishes more than one agent should see
+(a connection manager the agent must not drive, a write tool a read-only
+agent has no use for). Applied before namespacing and before the pin, and
+a name listed here that the server does not publish is logged, since it is
+usually a typo or a renamed tool.
+
+##### headers?
+
+```ts
+optional headers?: McpResolvable<Readonly<Record<string, string>>>;
+```
+
+Extra request headers for this server, e.g. an `x-api-key` a vendor wants
+instead of a bearer token.
+
+**HOST-ONLY in both spellings**: `toAgentConfig` never serializes it, so a
+header value never reaches a stored config, the browser or a log line.
+Prefer the function form and read the value from `env` — a literal secret
+in `agent.ts` is a secret in version control. Every header named here is
+treated as a credential: it is dropped when a redirect leaves the server's
+origin, like `authorization` is. A `tokenEnv` bearer wins over an
+`authorization` set here.
 
 ##### pinnedTools?
 
@@ -11962,12 +12527,18 @@ the NAME, never the token. Omit it for a server that needs no credential.
 ##### url
 
 ```ts
-url: string;
+url: McpResolvable<string>;
 ```
 
 The server's streamable-HTTP endpoint, e.g.
 `https://mcp.example.com/mcp`. Screened for SSRF before the first request
 and on every redirect hop, like every other URL this framework dials.
+
+A FUNCTION computes it per connection — a per-user session URL, say —
+and what it returns is screened exactly as a literal is. A resolver is
+host-only: `toAgentConfig` drops it from the serialized config, the way it
+drops a `systemPrompt` resolver, so the wire records only that the server
+exists.
 
 ***
 
@@ -12177,6 +12748,152 @@ rule and what to do about it. Never pass one as a string.
 
 ***
 
+### PollOptions
+
+```ts
+type PollOptions<T> = {
+  done: (value: T) => boolean;
+  everyMs: number;
+  maxAttempts?: number;
+  maxMs: number;
+};
+```
+
+Options for `ctx.poll` — check something, and wait between checks, until it
+is done or the budget runs out.
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+
+declare function callStatus(sid: string): Promise<{ over: boolean; outcome?: string }>;
+
+export async function followCall(input: { sid: string }, ctx: WorkflowContext) {
+  const call = await ctx.poll("check", () => callStatus(input.sid), {
+    everyMs: 10_000,
+    maxMs: 15 * 60_000,
+    done: (status) => status.over,
+  });
+  return call.done ? call.value.outcome : "still going";
+}
+```
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+
+declare function callStatus(sid: string): Promise<{ over: boolean; outcome?: string }>;
+
+export async function followCall(input: { sid: string }, ctx: WorkflowContext) {
+  const call = await ctx.poll("check", () => callStatus(input.sid), {
+    everyMs: 10_000,
+    maxMs: 15 * 60_000,
+    done: (status) => status.over,
+  });
+  return call.done ? call.value.outcome : "still going";
+}
+```
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### done
+
+```ts
+done: (value: T) => boolean;
+```
+
+Is this check's value the answer? Called on the JOURNALED value, so it must
+be a pure function of it — the same verdict on every replay.
+
+###### Parameters
+
+###### value
+
+`T`
+
+###### Returns
+
+`boolean`
+
+##### everyMs
+
+```ts
+everyMs: number;
+```
+
+The durable wait between two checks, in milliseconds. At least 1.
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+Each check's `StepOptions.maxAttempts`.
+
+##### maxMs
+
+```ts
+maxMs: number;
+```
+
+The waiting budget, in milliseconds: the poll sleeps at most
+`floor(maxMs / everyMs)` times, so it makes at most one more check than
+that. A COUNT rather than a clock, so a replay walks the same number of
+checks however long each one took.
+
+***
+
+### PollResult
+
+```ts
+type PollResult<T> = {
+  checks: number;
+  done: boolean;
+  value: T;
+};
+```
+
+What `ctx.poll` (and `stepPollUntil`) resolve with.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### checks
+
+```ts
+checks: number;
+```
+
+How many checks ran.
+
+##### done
+
+```ts
+done: boolean;
+```
+
+`true` when `done(value)` held; `false` when the budget ran out first.
+
+##### value
+
+```ts
+value: T;
+```
+
+The last check's value — the answer when `done`, the latest reading when not.
+
+***
+
 ### RandomSource
 
 ```ts
@@ -12200,8 +12917,9 @@ type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 
 One `agent({ routes })` handler. Its return value is the response body, sent
 as JSON with status 200 (`undefined` is sent as `null`); return
-[routeResponse](#routeresponse-1) for any other status. A throw is a 500 whose body is
-`{ error: <the message> }` — never the stack.
+[routeResponse](#routeresponse-1) for any other status. A thrown `routeError(status,
+message)` answers that status with `{ error: message }`; any other throw is a
+500 whose body is `{ error: <the message> }` — never the stack.
 
 #### Parameters
 
@@ -13523,7 +14241,7 @@ deadlineAt: number;
 ```
 
 When THIS call's deadline expires, as epoch milliseconds — the instant the
-runtime will abort [ToolContext.signal](#signal-3) and hand the model a timeout.
+runtime will abort [ToolContext.signal](#signal-4) and hand the model a timeout.
 
 Read it to budget under the deadline rather than to be cut off by it: a
 tool that can answer partially (a search that has some results, a graph that
@@ -14430,6 +15148,41 @@ closed union that grows is not assignable back to the one it grew from.
 
 ***
 
+### ValidatedRouteRequest
+
+```ts
+type ValidatedRouteRequest<Body, Client extends boolean> = Omit<RouteRequest, "body" | "clientId"> & {
+  body: Body;
+} & Client extends true ? {
+  clientId: string;
+} : {
+  clientId?: string;
+};
+```
+
+The request a [route](#route) handler receives: `body` already validated (the
+schema's OUTPUT), and `clientId` a `string` when `requireClient` is set.
+
+#### Type Declaration
+
+##### body
+
+```ts
+body: Body;
+```
+
+#### Type Parameters
+
+##### Body
+
+`Body`
+
+##### Client
+
+`Client` *extends* `boolean`
+
+***
+
 ### VoicePresetName
 
 ```ts
@@ -14600,7 +15353,9 @@ The shape the payload must have — see [WaitForOptions.schema](#schema-4).
 ```ts
 type WorkflowClient = {
   cancel: Promise<boolean>;
+  cancelAll: Promise<number>;
   find: Promise<WorkflowRunSnapshot<R>[]>;
+  findByKey: Promise<WorkflowRunSnapshot[]>;
   get: Promise<
      | WorkflowRunSnapshot<R>
     | undefined>;
@@ -14652,6 +15407,65 @@ so what it did before stopping stays readable.
 ###### Returns
 
 `Promise`\<`boolean`\>
+
+##### cancelAll()
+
+###### Call Signature
+
+```ts
+cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
+```
+
+Cancel every run of `workflow` started with this correlation key that has
+not finished yet, and resolve how many THIS call ended.
+
+`find` plus a `cancel` per pending or running run — "cancel my reminders".
+A run that finished between the two is not counted, and `0` is an answer
+rather than an error. Reads at most `MAX_WORKFLOW_FIND_LIMIT` runs.
+
+###### Type Parameters
+
+###### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema)
+
+###### R
+
+`R`
+
+###### Parameters
+
+###### workflow
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+###### key
+
+`string`
+
+###### Returns
+
+`Promise`\<`number`\>
+
+###### Call Signature
+
+```ts
+cancelAll(workflow: string, key: string): Promise<number>;
+```
+
+###### Parameters
+
+###### workflow
+
+`string`
+
+###### key
+
+`string`
+
+###### Returns
+
+`Promise`\<`number`\>
 
 ##### find()
 
@@ -14721,6 +15535,34 @@ find(
 ###### options?
 
 [`FindOptions`](workflow-api.md#findoptions)
+
+###### Returns
+
+`Promise`\<[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)[]\>
+
+##### findByKey()
+
+```ts
+findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
+```
+
+Runs started with this correlation key across EVERY workflow this agent
+declares, newest first — `find` for each, merged.
+
+What a page listing "everything running for this caller" wants, where one
+`find` per workflow was six lookups and a hand-written merge that had to be
+edited whenever a workflow was added. `since` and `statuses` filter the
+merged list; `limit` caps it.
+
+###### Parameters
+
+###### key
+
+`string`
+
+###### options?
+
+[`FindByKeyOptions`](workflow-api.md#findbykeyoptions)
 
 ###### Returns
 
@@ -14874,7 +15716,7 @@ that has self-exited by the time the callback comes. Treat `hook.url` as
 guest-local and use this for anything leaving the system.
 
 Synchronous, and it THROWS when no public URL is configured, naming the
-option. The token is the CALLER's, exactly as [signal](#signal-4) takes it. See
+option. The token is the CALLER's, exactly as [signal](#signal-5) takes it. See
 "A callback URL comes from `publicWebhookUrl`" in
 `packages/aai/src/sdk/CLAUDE.md`.
 
@@ -15196,6 +16038,7 @@ type WorkflowContext = {
   runId: string;
   workflow: string;
   now: Promise<number>;
+  poll: Promise<PollResult<T>>;
   random: Promise<number>;
   sleep: Promise<void>;
   step: Promise<InferSchemaOutput<S>>;
@@ -15262,6 +16105,50 @@ the message names the fix. A step's internals are not replayed, so a plain
 `Promise`\<`number`\>
 
 Epoch milliseconds, as `Date.now()` answers them.
+
+##### poll()
+
+```ts
+poll<T, Name extends string>(
+   name: Name & Literal<Name>, 
+   check: () => T | Promise<T>, 
+   options: PollOptions<T>
+): Promise<PollResult<T>>;
+```
+
+Check something until it is done, sleeping DURABLY between checks: each check
+is `ctx.step(name, check)`, each wait `ctx.sleep(name, everyMs)`, so the loop
+journals exactly what the hand-written one did. Resolves `{ value, done,
+checks }` — `done: false` with the latest reading once `floor(maxMs / everyMs)`
+sleeps are spent. `name` is a string LITERAL, as a step's is. See [PollOptions](#polloptions).
+
+###### Type Parameters
+
+###### T
+
+`T`
+
+###### Name
+
+`Name` *extends* `string`
+
+###### Parameters
+
+###### name
+
+`Name` & `Literal`\<`Name`\>
+
+###### check
+
+() => `T` \| `Promise`\<`T`\>
+
+###### options
+
+[`PollOptions`](#polloptions)\<`T`\>
+
+###### Returns
+
+`Promise`\<[`PollResult`](#pollresult)\<`T`\>\>
 
 ##### random()
 
@@ -15735,6 +16622,7 @@ Key the workflow is declared under in `agent({ workflows })`.
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
   description?: string;
   input?: P;
+  onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>>;
   output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<InferSchemaOutput<P>, R>;
   uploads?: readonly string[];
@@ -15781,6 +16669,44 @@ optional input?: P;
 ```
 
 Schema for the run input, validated at `start()` so a bad payload fails at the call site.
+
+##### onFailure?
+
+```ts
+optional onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>>;
+```
+
+What to do when a run FAILS for good — say so on the channel its result
+would have used — before the failure is recorded.
+
+Runs as one journaled step named `onFailure`, with the error the body
+threw, only when the engine has classified the throw as the run failing:
+never for a suspension, a cancel, a journal outage it will retry, or a
+divergence refusal. So it replaces the body-wide `try`/`catch` that
+announced and re-threw, which could announce a run that then resumed and
+succeeded. Pass `{ run, maxAttempts }` to give the step a retry budget. A
+hook that fails is logged; the run's own failure is still what is recorded.
+
+```ts
+import { workflow } from "@alexkroman1/aai";
+import { DEFAULT_CLIENT_DELIVERY_ATTEMPTS, stepSayOnClient } from "@alexkroman1/aai/step";
+import { spokenErrorReason } from "@alexkroman1/aai/utils";
+import { z } from "zod";
+
+declare function research(topic: string): Promise<string>;
+
+export const digest = workflow({
+  input: z.object({ clientId: z.string(), topic: z.string() }),
+  run: async ({ topic }) => ({ summary: await research(topic) }),
+  onFailure: {
+    run: async (err, { runId, input }) => {
+      const text = `Sorry, I couldn't finish that: ${spokenErrorReason(err)}`;
+      await stepSayOnClient(input.clientId, { id: `${runId}:failed`, event: "research", text });
+    },
+    maxAttempts: DEFAULT_CLIENT_DELIVERY_ATTEMPTS,
+  },
+});
+```
 
 ##### output?
 
@@ -15848,6 +16774,137 @@ Declared on the workflow rather than in the schema because the schema may be
 any Standard Schema, and a marker inside one would only work for the library
 that happened to carry it. The property itself stays an ordinary
 `z.string()` — an upload id is what the run really receives.
+
+***
+
+### WorkflowFailureContext
+
+```ts
+type WorkflowFailureContext<I = unknown> = {
+  input: I;
+  runId: string;
+  workflow: string;
+};
+```
+
+What an `onFailure` hook is told about the run that failed.
+
+#### Type Parameters
+
+##### I
+
+`I` = `unknown`
+
+#### Properties
+
+##### input
+
+```ts
+readonly input: I;
+```
+
+The run's validated input.
+
+##### runId
+
+```ts
+readonly runId: string;
+```
+
+The failed run's id — the same value `ctx.runId` had.
+
+##### workflow
+
+```ts
+readonly workflow: string;
+```
+
+Key the workflow is declared under in `agent({ workflows })`.
+
+***
+
+### WorkflowFailureHandler
+
+```ts
+type WorkflowFailureHandler<I = unknown> = 
+  | WorkflowFailureHook<I>
+  | {
+  maxAttempts?: number;
+  run: WorkflowFailureHook<I>;
+};
+```
+
+`WorkflowDef.onFailure`: the hook alone, or the hook with the step's
+`maxAttempts` (a device announcement wants `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`).
+
+#### Type Parameters
+
+##### I
+
+`I` = `unknown`
+
+#### Union Members
+
+[`WorkflowFailureHook`](#workflowfailurehook)\<`I`\>
+
+***
+
+##### Type Literal
+
+```ts
+{
+  maxAttempts?: number;
+  run: WorkflowFailureHook<I>;
+}
+```
+
+###### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+The hook step's `maxAttempts`. Defaults to `DEFAULT_STEP_MAX_ATTEMPTS`.
+
+###### run
+
+```ts
+run: WorkflowFailureHook<I>;
+```
+
+The hook.
+
+***
+
+### WorkflowFailureHook
+
+```ts
+type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
+```
+
+A workflow's failure hook: runs as ONE step, with the error the body threw.
+Whatever it returns is discarded; if it throws past its retries the hook's
+failure is logged and the RUN's failure is still what is recorded.
+
+#### Type Parameters
+
+##### I
+
+`I` = `unknown`
+
+#### Parameters
+
+##### error
+
+`Error`
+
+##### context
+
+[`WorkflowFailureContext`](#workflowfailurecontext)\<`I`\>
+
+#### Returns
+
+`Promise`\<`void`\> \| `void`
 
 ***
 
@@ -16037,7 +17094,7 @@ only reader is one field is documented by sitting next to it.
 const DEFAULT_STEP_MAX_ATTEMPTS: number;
 ```
 
-Attempts a step gets when [StepOptions.maxAttempts](#maxattempts) says nothing.
+Attempts a step gets when [StepOptions.maxAttempts](#maxattempts-1) says nothing.
 
 Three, which is what the DevKit's queue hardcoded — kept deliberately so the
 migration changes no retry behaviour it does not have to. Note attempts ARE

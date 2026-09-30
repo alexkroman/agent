@@ -17,6 +17,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import type { OwnedMap } from '@alexkroman1/aai/internal';
+import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
 import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
@@ -414,6 +415,8 @@ export type ProviderEnvVarsQuery = {
     s2s?: object | undefined;
     page?: AgentDef["page"] | undefined;
 };
+
+export { publishClientInboxDefaults }
 
 export { publishStepEnv }
 

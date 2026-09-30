@@ -106,12 +106,28 @@ const dev = defineExec({
       type: "boolean",
       description: "Restart on file changes (default at a terminal; AAI_DEV_WATCH=0 disables)",
     },
+    tunnel: {
+      type: "boolean",
+      description: "Expose the server on a cloudflared quick tunnel; its URL becomes PUBLIC_URL",
+    },
+    "on-public-url": {
+      type: "string",
+      valueHint: "cmd",
+      description:
+        "Shell command run with PUBLIC_URL set once the server is up, and with it empty on exit",
+    },
     json: sharedArgs.json,
   },
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeDev } = await import("./dev.ts");
-    return executeDev({ cwd, port: args.port, watch: args.watch });
+    return executeDev({
+      cwd,
+      port: args.port,
+      watch: args.watch,
+      tunnel: args.tunnel,
+      onPublicUrl: args["on-public-url"],
+    });
   },
 });
 

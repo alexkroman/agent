@@ -99,6 +99,47 @@ decodeHtmlEntities("&amp;lt;b&amp;gt;"); // "&lt;b&gt;"
 
 ***
 
+### fitToolResult()
+
+```ts
+function fitToolResult(value: unknown, options?: FitToolResultOptions): unknown;
+```
+
+`value` made to fit a tool result of `maxChars` characters of JSON without
+cutting through its structure — nulls and empties dropped, long strings
+clipped, the longest lists shortened from the end — plus a `note` saying so
+when anything was trimmed from a list. See the module doc for the order.
+
+Answers `value` compacted when that alone fits; `{ result, note }` when
+lists were shortened; `{ result_start, note }` (the start of the JSON text)
+when nothing structural could make it fit. Never mutates `value`.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+##### options?
+
+[`FitToolResultOptions`](#fittoolresultoptions)
+
+#### Returns
+
+`unknown`
+
+#### Example
+
+```ts
+import { fitToolResult } from "@alexkroman1/aai/utils";
+
+export function emailsForModel(emails: unknown[]): unknown {
+  return fitToolResult({ emails }, { maxChars: 12_000, maxString: 800 });
+}
+```
+
+***
+
 ### formatBytes()
 
 ```ts
@@ -242,6 +283,86 @@ formatMoney(1_234, "€"); // "€1,234.00"
 
 ***
 
+### jsonClient()
+
+```ts
+function jsonClient(options: JsonClientOptions): JsonClient;
+```
+
+Declare a JSON REST API once, and call it from tools, routes and steps.
+
+#### Parameters
+
+##### options
+
+[`JsonClientOptions`](#jsonclientoptions)
+
+#### Returns
+
+[`JsonClient`](#jsonclient)
+
+#### Example
+
+```ts
+import { requireEnv } from "@alexkroman1/aai";
+import { HttpError, jsonClient } from "@alexkroman1/aai/utils";
+
+const mem0 = jsonClient({
+  baseUrl: "https://api.mem0.ai/v1",
+  headers: (env) => ({ authorization: `Token ${requireEnv({ env }, "MEM0_API_KEY")}` }),
+  label: "mem0",
+});
+
+export async function forget(ctx: { env: Record<string, string> }, id: string) {
+  try {
+    await mem0(ctx, "DELETE", `/memories/${encodeURIComponent(id)}/`);
+    return true;
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) return false;
+    throw err;
+  }
+}
+```
+
+***
+
+### normalizePhone()
+
+```ts
+function normalizePhone(raw: string, options?: NormalizePhoneOptions): string | undefined;
+```
+
+`raw` as an E.164 number (`"+15125550123"`), or `undefined` when it is not
+one. Spaces, dashes, dots and parentheses are formatting and are stripped.
+With `defaultCountry`, a number said without its country code is read in
+that country's plan.
+
+#### Parameters
+
+##### raw
+
+`string`
+
+##### options?
+
+[`NormalizePhoneOptions`](#normalizephoneoptions)
+
+#### Returns
+
+`string` \| `undefined`
+
+#### Example
+
+```ts
+import { normalizePhone } from "@alexkroman1/aai/utils";
+
+normalizePhone("+44 20 7946 0958"); // "+442079460958"
+normalizePhone("(512) 555-0123"); // undefined — no country code, no guess
+normalizePhone("(512) 555-0123", { defaultCountry: "US" }); // "+15125550123"
+```
+
+***
+
 ### plural()
 
 ```ts
@@ -353,6 +474,402 @@ import { roundMoney } from "@alexkroman1/aai/utils";
 roundMoney(0.1 + 0.2); // 0.3
 roundMoney(19.995); // 20
 ```
+
+***
+
+### spokenErrorReason()
+
+```ts
+function spokenErrorReason(err: unknown, options?: SpokenErrorReasonOptions): string;
+```
+
+Turn a failure into a short reason a person can hear: its FIRST sentence,
+with credentials redacted and URLs removed, capped at about one spoken
+sentence.
+
+What a workflow's failure announcement says after "Sorry, I couldn't finish
+that:". Redacts `key=`/`token=`/`secret=`/`password=`/`sig=` values (in a
+query string or bare), `Bearer`/`Basic` credentials and vendor-shaped keys
+(`sk-…`), drops URLs entirely, and answers `"something went wrong"` when
+nothing sayable is left. Never throws, whatever it is handed.
+
+#### Parameters
+
+##### err
+
+`unknown`
+
+Anything thrown — an `Error`, a string, an object.
+
+##### options?
+
+[`SpokenErrorReasonOptions`](#spokenerrorreasonoptions)
+
+`max` caps the length (default 160).
+
+#### Returns
+
+`string`
+
+A trimmed, non-empty reason.
+
+#### Example
+
+```ts
+import { spokenErrorReason } from "@alexkroman1/aai/utils";
+
+const why = spokenErrorReason(
+  new Error("Request to https://api.example.com/v1?key=abc123 failed with 403. Retry later."),
+);
+// "Request to failed with 403."
+void why;
+```
+
+## Classes
+
+### HttpError
+
+A refused request from a [jsonClient](#jsonclient-1): the HTTP `status`, a `message`
+of the form `"<label> <status>: <what the service said>"`, and the parsed
+`body` (the raw text when it was not JSON; absent when empty).
+
+Branch on `status` (`err instanceof HttpError && err.status === 404`), never
+on the message's wording.
+
+#### Extends
+
+- `Error`
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new HttpError(
+   status: number, 
+   message: string, 
+   body?: unknown
+): HttpError;
+```
+
+###### Parameters
+
+###### status
+
+`number`
+
+###### message
+
+`string`
+
+###### body?
+
+`unknown`
+
+###### Returns
+
+[`HttpError`](#httperror)
+
+###### Overrides
+
+```ts
+Error.constructor
+```
+
+#### Properties
+
+##### body?
+
+```ts
+readonly optional body?: unknown;
+```
+
+The response body — parsed JSON, else the raw text; absent when empty.
+
+##### status
+
+```ts
+readonly status: number;
+```
+
+The HTTP status the service answered.
+
+## Interfaces
+
+### FitToolResultOptions
+
+What [fitToolResult](#fittoolresult) takes.
+
+#### Properties
+
+##### hint?
+
+```ts
+optional hint?: string;
+```
+
+Appended to the note on a trimmed answer — where the rest can be had:
+`"Use the workbench to go through all of them."`.
+
+##### maxChars?
+
+```ts
+optional maxChars?: number;
+```
+
+Longest the serialized answer may be, in characters. Default `MAX_TOOL_RESULT_CHARS`.
+
+##### maxString?
+
+```ts
+optional maxString?: number;
+```
+
+Longest any one string may be; longer ones are clipped with `…`. Default: no clip.
+
+***
+
+### JsonClientContext
+
+The context a [JsonClient](#jsonclient) call reads: a tool's `ctx`, a route's
+`ctx`, or `{ env: … }` built from `stepEnv` in a workflow step.
+
+#### Properties
+
+##### env
+
+```ts
+env: Readonly<Partial<Record<string, string>>>;
+```
+
+The agent's environment — what `headers` and `baseUrl` read.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Cancels the request: pass the tool's or route's own signal.
+
+***
+
+### JsonClientOptions
+
+What [jsonClient](#jsonclient-1) takes.
+
+#### Properties
+
+##### baseUrl
+
+```ts
+baseUrl: 
+  | string
+  | ((env: Readonly<Partial<Record<string, string>>>) => string);
+```
+
+The API's base URL, e.g. `"https://api.mem0.ai/v1"`; a request's `path` is
+appended to it. A FUNCTION reads it from the env on each call (a
+self-hosted service's URL is configuration). Trailing slashes are dropped.
+
+##### errorMessage?
+
+```ts
+optional errorMessage?: (body: unknown) => string | undefined;
+```
+
+The service's own sentence from a refused body — parsed JSON when it
+parsed, else the raw text. Answer `undefined` to fall back to a preview of
+the raw body. E.g. `(body) => isRecord(body) && isRecord(body.error) ?
+String(body.error.message) : undefined`.
+
+###### Parameters
+
+###### body
+
+`unknown`
+
+###### Returns
+
+`string` \| `undefined`
+
+##### fetch?
+
+```ts
+optional fetch?: {
+  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
+};
+```
+
+For TESTS: the `fetch` to call. Defaults to the global one.
+
+###### Call Signature
+
+```ts
+(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`RequestInfo` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+###### Call Signature
+
+```ts
+(input: string | Request | URL, init?: RequestInit): Promise<Response>;
+```
+
+[MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch)
+
+###### Parameters
+
+###### input
+
+`string` \| `Request` \| `URL`
+
+###### init?
+
+`RequestInit`
+
+###### Returns
+
+`Promise`\<`Response`\>
+
+##### headers?
+
+```ts
+optional headers?: 
+  | Record<string, string>
+  | ((env: Readonly<Partial<Record<string, string>>>) => Record<string, string>);
+```
+
+Headers for every request, typically the credential:
+`(env) => ({ authorization: \`Token ${requireEnv({ env }, "MEM0_API_KEY")}\` })`.
+Read per call, so a secret set after start is picked up and a missing one
+throws where the call is made. Merged over the JSON defaults
+(`content-type`/`accept: application/json`).
+
+##### label
+
+```ts
+label: string;
+```
+
+Names the service in every failure message: `"mem0"` → `"mem0 404: …"`.
+
+***
+
+### JsonRequestInit
+
+Per-call extras for a [JsonClient](#jsonclient) request.
+
+#### Properties
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string>;
+```
+
+Headers for this request only, merged over the client's.
+
+***
+
+### NormalizePhoneOptions
+
+What [normalizePhone](#normalizephone) takes.
+
+#### Properties
+
+##### defaultCountry?
+
+```ts
+optional defaultCountry?: "US" | "CA";
+```
+
+The country a number WITHOUT a `+` is assumed to be in. `"US"` and `"CA"`
+(North America, `+1`): ten digits, or eleven starting with `1`. Unset, a
+number without its `+` is refused rather than guessed at.
+
+## Type Aliases
+
+### JsonClient
+
+```ts
+type JsonClient = <T>(ctx: JsonClientContext, method: string, path: string, body?: unknown, init?: JsonRequestInit) => Promise<T>;
+```
+
+One call to the API a [jsonClient](#jsonclient-1) describes. Resolves to the parsed
+JSON body, or `{}` for an empty one (a `204`); rejects with an
+[HttpError](#httperror) for a non-2xx, or a 2xx whose body is not JSON.
+
+#### Type Parameters
+
+##### T
+
+`T` = `unknown`
+
+#### Parameters
+
+##### ctx
+
+[`JsonClientContext`](#jsonclientcontext)
+
+##### method
+
+`string`
+
+##### path
+
+`string`
+
+##### body?
+
+`unknown`
+
+##### init?
+
+[`JsonRequestInit`](#jsonrequestinit)
+
+#### Returns
+
+`Promise`\<`T`\>
+
+***
+
+### SpokenErrorReasonOptions
+
+```ts
+type SpokenErrorReasonOptions = {
+  max?: number;
+};
+```
+
+Options for [spokenErrorReason](#spokenerrorreason).
+
+#### Properties
+
+##### max?
+
+```ts
+optional max?: number;
+```
+
+The most characters the reason may run to, cut on a word boundary where
+there is one. Defaults to 160 — about one spoken sentence.
 
 ## References
 
