@@ -10,17 +10,18 @@
  */
 
 import type { AgentDef, SessionEvent, ToolContext } from "@alexkroman1/aai";
-import { clientTool, sessionSlot } from "@alexkroman1/aai";
+import { clientTool, sessionSlot, subagent, tool } from "@alexkroman1/aai";
 import {
   createOwnedMap,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
   type OwnedMap,
 } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
-import { makeAgent, makeUsageMeter } from "./_test-utils.ts";
+import { makeAgent, makeUsageMeter, tick } from "./_test-utils.ts";
 import { createClientToolBroker } from "./client-tool-broker.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
@@ -360,7 +361,7 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
     clientTool({
       description: "the caller's location",
       inputSchema: z.object({ precise: z.boolean() }),
-      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...omitUndefined({ timeoutMs }),
     });
 
   function clientToolRuntime(timeoutMs?: number, tools?: AgentDef["tools"]) {
@@ -385,7 +386,7 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
   test("the page's answer is the call's result", async () => {
     const { executeTool, clientTools } = clientToolRuntime();
     const call = executeTool("get_location", { precise: true }, SID, [], { toolCallId: "tc-1" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     clientTools.answer(SID, { toolCallId: "tc-1", result: JSON.stringify({ lat: 1, lon: 2 }) });
     expect(JSON.parse(await call)).toEqual({ lat: 1, lon: 2 });
   });
@@ -418,10 +419,10 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
   test("a wrapper that gates the tool runs BEFORE the wait, the way a persona gate does", async () => {
     const inner = getLocation();
     let open = false;
-    const gated: AgentDef["tools"][string] = {
+    const gated = tool({
       ...inner,
       execute: (args, ctx) => (open ? inner.execute(args, ctx) : { error: "not your turn" }),
-    };
+    });
     const { executeTool, clientTools } = clientToolRuntime(undefined, { get_location: gated });
 
     // Closed: the gate answers at once, and nothing waits on the page.
@@ -446,10 +447,11 @@ test("ctx.delegate does not carry the parent call's clientTool wait into a subag
     "parent",
     {},
     {
+      env: {},
       tool: {
         description: "delegates",
         execute: (_args: unknown, ctx: ToolContext) =>
-          ctx.delegate({ name: "helper", instructions: "help" }, { task: "t" }),
+          ctx.delegate(subagent({ name: "helper", systemPrompt: "Help." }), { task: "t" }),
       },
       clientCall: () => Promise.resolve("never"),
       subagents: (_def, _opts, defaults) => {
