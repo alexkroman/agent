@@ -153,9 +153,14 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
       expect(DEFAULT_TTS_SAMPLE_RATE).toBe(fixture.constants.DEFAULT_TTS_SAMPLE_RATE);
     });
 
-    test("MAX_TOOL_RESULT_CHARS unchanged", () => {
-      expect(MAX_TOOL_RESULT_CHARS).toBe(fixture.constants.MAX_TOOL_RESULT_CHARS);
-    });
+    // Pinned to the newest fixture only. v3 raised the cap from 4000 to 16000;
+    // an older fixture's value is the cap its clients validated against, not
+    // one the current schemas must still equal.
+    if (filename === fixtureFiles.at(-1)) {
+      test("MAX_TOOL_RESULT_CHARS unchanged", () => {
+        expect(MAX_TOOL_RESULT_CHARS).toBe(fixture.constants.MAX_TOOL_RESULT_CHARS);
+      });
+    }
 
     test("SessionErrorCodes is superset of fixture", () => {
       const currentCodes = new Set<string>(SessionErrorCodeSchema.options);

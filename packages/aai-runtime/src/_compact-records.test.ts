@@ -204,7 +204,7 @@ describe("compactRecordsForModel", () => {
   });
 
   test("a result over MAX_TOOL_RESULT_CHARS is left as it was", () => {
-    const rows = Array.from({ length: 400 }, (_, i) => ({ id: String(i), color: "red" }));
+    const rows = Array.from({ length: 1600 }, (_, i) => ({ id: String(i), color: "red" }));
     const text = asText(rows);
     expect(text.length).toBeGreaterThan(MAX_TOOL_RESULT_CHARS);
     expect(compactRecordsForModel(text)).toBe(text);

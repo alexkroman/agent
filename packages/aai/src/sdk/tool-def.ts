@@ -94,7 +94,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
    * the LLM and the client.
    *
    * **The model gets it WHOLE; only the client's copy is capped.**
-   * `MAX_TOOL_RESULT_CHARS` (4000) bounds the `tool.completed` frame — a longer
+   * `MAX_TOOL_RESULT_CHARS` (16000) bounds the `tool.completed` frame — a longer
    * result is trimmed there and ends with a `[truncated]` marker — and bounds
    * nothing on the provider side, where the full string is appended to the
    * conversation and re-sent on every later turn of the call. This doc used to

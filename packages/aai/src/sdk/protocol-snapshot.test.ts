@@ -7,7 +7,7 @@
  * signals a potentially breaking protocol change.
  */
 import { describe, expect, test } from "vitest";
-import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
+import { MAX_TOOL_RESULT_CHARS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import type { SessionCommand } from "./protocol.ts";
 import { EVENT_ID_PREFIX, SessionCommandSchema } from "./protocol.ts";
 import { SessionEventSchema } from "./protocol-events.ts";
@@ -160,7 +160,7 @@ describe("server→client event wire format", () => {
         type: "tool.completed",
         meta: META,
         toolCallId: "tc1",
-        result: "x".repeat(4001),
+        result: "x".repeat(MAX_TOOL_RESULT_CHARS + 1),
       }).success,
     ).toBe(false);
   });
