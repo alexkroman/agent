@@ -75,8 +75,7 @@ export * from "./sdk/calendar.ts";
 
 /** `agent({ clientInbox })` defaults for `WS /inbox`. See `sdk/agent-client-inbox.ts`. */
 export type { AgentClientInbox, ClientInboxOptions } from "./sdk/agent-client-inbox.ts";
-/** `route({ body, requireClient, handler })` and `routeError(400, "…")`, answered with
- * that status instead of a 500. See `sdk/agent-route-helpers.ts`. */
+/** `route()`'s door checks and a thrown `routeError(400, "…")`: `sdk/agent-route-helpers.ts`. */
 export {
   type RouteDef,
   RouteError,
@@ -86,7 +85,7 @@ export {
 } from "./sdk/agent-route-helpers.ts";
 /**
  * `agent({ routes })` — the app's own JSON endpoints under `/api`, as open as the
- * server serving them. See `sdk/agent-routes.ts`.
+ * server serving them (`sdk/agent-routes.ts`); `clientRunsRoutes()` is a ready-made pair.
  */
 export {
   type AgentRoutes,
@@ -108,6 +107,7 @@ export type {
   SessionContextArgs,
   SessionEndContext,
 } from "./sdk/agent-session-lifecycle.ts";
+export * from "./sdk/client-runs-routes.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**

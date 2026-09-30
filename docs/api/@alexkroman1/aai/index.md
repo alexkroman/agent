@@ -10,7 +10,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
 | conversation order | [dialog](#dialog-1) — a tool declared `when` simply does not run outside those states |
-| work that outlives the call | [workflow](#workflow-2) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
+| work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [subagent](#subagent), reached with `ctx.delegate` |
 | who is speaking | [personas](#personas-2) — a roster the session hands the caller between, with `handoff` |
 | the default pipeline, spelled out | [assemblyAIPipeline](#assemblyaipipeline); [assemblyAIS2s](#assemblyais2s) opts into speech-to-speech instead |
@@ -37,7 +37,7 @@ to swap a stage; the rest keep the default.
 **Three primitives here run a defined process, and they are not
 interchangeable.** A [dialog](#dialog-1) gates a CONVERSATION — what the agent may
 say or do next, across turns. A [procedure](#procedure-2) runs ONE UNIT OF WORK inside
-a single tool call. A [workflow](#workflow-2) runs DURABLY, outliving the session.
+a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the session.
 
 ## Everything else is on a subpath, chosen by WHO READS IT
 
@@ -253,6 +253,65 @@ export default agent({
 Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
 top-level `voice` convenience is a compile error alongside it — an S2S
 voice rides on the descriptor, because the service synthesizes.
+
+***
+
+### clientRunsRoutes()
+
+```ts
+function clientRunsRoutes(options?: ClientRunsRoutesOptions): Record<string, RouteHandler>;
+```
+
+The pair of routes a page's "Running" panel reads and cancels through —
+`GET <path>` answering [ClientRunsResponse](#clientrunsresponse), `DELETE <path>/:runId`
+answering `{ cancelled }` — to spread into `agent({ routes })`. See this
+module's doc.
+
+Both require `?client=` (a 400 without it). The cancel answers a 404 unless
+the run's correlation key is that client, and `{ cancelled: false }` for a
+run that had already finished.
+
+#### Parameters
+
+##### options?
+
+[`ClientRunsRoutesOptions`](#clientrunsroutesoptions)
+
+The path, the window and the three per-run choices; see
+  [ClientRunsRoutesOptions](#clientrunsroutesoptions).
+
+#### Returns
+
+`Record`\<`string`, [`RouteHandler`](#routehandler)\>
+
+The two handlers, keyed `"GET <path>"` and `"DELETE <path>/:runId"`.
+
+#### Example
+
+**A speaker's running jobs, without the appEvent runs that told nobody**
+
+```ts
+import { agent, clientRunsRoutes } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Kitchen speaker",
+  routes: {
+    ...clientRunsRoutes({
+      include: (r) =>
+        !(r.workflow === "appEvent" && r.status === "completed" &&
+          (r.output as { told?: unknown } | undefined)?.told !== true),
+      progressFor: (r) => r.workflow === "research",
+      // A call completes whether or not anyone answered: what it said is the result.
+      detail: (r) => {
+        const said = r.status === "completed" && r.workflow === "call"
+          ? (r.output as { said?: unknown } | undefined)?.said
+          : undefined;
+        return typeof said === "string" ? said : undefined;
+      },
+    }),
+  },
+});
+```
 
 ***
 
@@ -584,7 +643,7 @@ export const claim = dialog("claim", {
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 #### Call Signature
@@ -1510,7 +1569,7 @@ export default tool({
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 ***
@@ -2870,7 +2929,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -2964,7 +3023,7 @@ under, so this takes no `name`.
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
-OF WORK inside a single tool call, never stored. A [workflow](#workflow-2) runs
+OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
 
 It validates nothing at declaration time, and there is nothing left to
@@ -5211,6 +5270,178 @@ export default tool({
 
 The payload is typed on the SENDING side only: on the wire it is still a
 `custom.emitted` frame whose `data` the schema admits as any JSON value.
+
+***
+
+### ClientRun
+
+One row of the list [clientRunsRoutes](#clientrunsroutes) answers — plain JSON, what a
+page renders a run from.
+
+#### Properties
+
+##### createdAt
+
+```ts
+createdAt: number;
+```
+
+When the run was created, as epoch ms — the list is in this order, oldest first.
+
+##### detail?
+
+```ts
+optional detail?: string;
+```
+
+One line about it, when there is one: `options.detail`'s answer; else, for
+a failed run, its error as `spokenErrorReason` says it (short, no URL, no
+credential); else, for a running one, its newest progress line when that
+is a string.
+
+##### runId
+
+```ts
+runId: string;
+```
+
+The run's id — what the cancel route takes.
+
+##### status
+
+```ts
+status: ClientRunStatus;
+```
+
+Where it has got to; see [ClientRunStatus](#clientrunstatus).
+
+##### title
+
+```ts
+title: string;
+```
+
+The run's `label` (`StartOptions.label`), else its workflow's key.
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's key in `agent({ workflows })`.
+
+***
+
+### ClientRunsResponse
+
+The body the list route answers.
+
+#### Properties
+
+##### runs
+
+```ts
+runs: ClientRun[];
+```
+
+The client's runs, oldest first.
+
+***
+
+### ClientRunsRoutesOptions
+
+Options for [clientRunsRoutes](#clientrunsroutes).
+
+#### Properties
+
+##### detail?
+
+```ts
+optional detail?: (run: WorkflowRunSnapshot) => string | undefined;
+```
+
+The run's `detail`, when you have a better one — a completed call's own
+summary of what happened, say. `undefined` falls back to the defaults
+[ClientRun.detail](#detail) lists.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`string` \| `undefined`
+
+##### include?
+
+```ts
+optional include?: (run: WorkflowRunSnapshot) => boolean;
+```
+
+Whether to list this run at all, before the recent-window rule. Default:
+every run. What drops a run that finished having decided to do nothing —
+an event judged not worth telling anyone about.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`boolean`
+
+##### limit?
+
+```ts
+optional limit?: number;
+```
+
+Most runs read per request, newest first, before filtering. Default 100 (the ceiling).
+
+##### path?
+
+```ts
+optional path?: string;
+```
+
+The routes' path, as an `agent({ routes })` key spells it: the list is
+`GET <path>`, the cancel `DELETE <path>/:runId`. Default `"/tasks"`.
+
+##### progressFor?
+
+```ts
+optional progressFor?: (run: WorkflowRunSnapshot) => boolean;
+```
+
+Whether to read this RUNNING run's newest progress line
+(`ctx.workflows.lastLine`) for its `detail`. Default: every running run.
+Each is one stream read per request, so narrow it to the workflows that
+narrate. A line that cannot be read is simply not shown.
+
+###### Parameters
+
+###### run
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
+
+###### Returns
+
+`boolean`
+
+##### recentMs?
+
+```ts
+optional recentMs?: number;
+```
+
+A finished run is listed while it was created less than this long ago
+(see the module doc for why creation). Pending and running runs are always
+listed. Default 10 minutes.
 
 ***
 
@@ -11721,6 +11952,17 @@ Samples per second the devices play pushed audio at — the default
 
 Match the device's own output rate so it needs no resampler (an ESP32
 speaker playing at 16 kHz declares `16_000`).
+
+***
+
+### ClientRunStatus
+
+```ts
+type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+```
+
+A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
+`waiting` — the word a person reads for "queued, not started".
 
 ***
 

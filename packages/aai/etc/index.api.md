@@ -184,6 +184,37 @@ export type ClientInboxOptions = {
 };
 
 // @public
+export interface ClientRun {
+    createdAt: number;
+    detail?: string;
+    runId: string;
+    status: ClientRunStatus;
+    title: string;
+    workflow: string;
+}
+
+// @public
+export interface ClientRunsResponse {
+    runs: ClientRun[];
+}
+
+// @public
+export function clientRunsRoutes(options?: ClientRunsRoutesOptions): Record<string, RouteHandler>;
+
+// @public
+export interface ClientRunsRoutesOptions {
+    detail?: (run: WorkflowRunSnapshot) => string | undefined;
+    include?: (run: WorkflowRunSnapshot) => boolean;
+    limit?: number;
+    path?: string;
+    progressFor?: (run: WorkflowRunSnapshot) => boolean;
+    recentMs?: number;
+}
+
+// @public
+export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };

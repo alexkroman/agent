@@ -3632,6 +3632,37 @@ export type ClientInboxOptions = {
 };
 
 // @public
+export interface ClientRun {
+    createdAt: number;
+    detail?: string;
+    runId: string;
+    status: ClientRunStatus;
+    title: string;
+    workflow: string;
+}
+
+// @public
+export interface ClientRunsResponse {
+    runs: ClientRun[];
+}
+
+// @public
+export function clientRunsRoutes(options?: ClientRunsRoutesOptions): Record<string, RouteHandler>;
+
+// @public
+export interface ClientRunsRoutesOptions {
+    detail?: (run: WorkflowRunSnapshot) => string | undefined;
+    include?: (run: WorkflowRunSnapshot) => boolean;
+    limit?: number;
+    path?: string;
+    progressFor?: (run: WorkflowRunSnapshot) => boolean;
+    recentMs?: number;
+}
+
+// @public
+export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
@@ -15418,9 +15449,13 @@ import { AgentClient } from '@alexkroman1/aai/workflow-api';
 import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { ClientRun } from '@alexkroman1/aai';
+import { ClientRunsResponse } from '@alexkroman1/aai';
+import { ClientRunStatus } from '@alexkroman1/aai';
 import { ComponentType } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
+import { errorMessage } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
 import type { InputHTMLAttributes } from 'react';
@@ -15586,6 +15621,12 @@ export type ClientHandle = {
     [Symbol.dispose](): void;
 };
 
+export { ClientRun }
+
+export { ClientRunsResponse }
+
+export { ClientRunStatus }
+
 // @public
 export type ClientTheme = {
     bg?: string;
@@ -15697,6 +15738,8 @@ export function createStoredValue(key: string, options?: StoredValueOptions): St
 
 // @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
+
+export { errorMessage }
 
 // @public
 export function Facts(input: FactsProps): ReactNode;
@@ -15877,6 +15920,11 @@ export type RouteFetchOptions = {
 
 // @public
 export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+// @public
+export type RouteMutationRunOptions = {
+    key?: string | undefined;
+};
 
 // @public
 export function SelectField(input: FieldShell & {
@@ -16111,6 +16159,24 @@ export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 export function useClientId(): string | undefined;
 
 // @public
+export function useClientRuns(path?: string, options?: UseClientRunsOptions): UseClientRunsResult;
+
+// @public
+export type UseClientRunsOptions = {
+    pollMs?: number | undefined;
+    client?: string | undefined;
+};
+
+// @public
+export type UseClientRunsResult = {
+    runs: ClientRun[] | undefined;
+    error: string | undefined;
+    reload: () => void;
+    cancel: (runId: string) => Promise<boolean>;
+    cancelling: string | undefined;
+};
+
+// @public
 export function useConversation(): UseConversationResult;
 
 // @public
@@ -16235,6 +16301,23 @@ export type UsePushToTalkResult = {
 
 // @public
 export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+
+// @public
+export function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
+
+// @public
+export type UseRouteMutationOptions = {
+    client?: string | undefined;
+    onSettled?: (() => void) | undefined;
+};
+
+// @public
+export type UseRouteMutationResult = {
+    run: <T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
+    busy: string | undefined;
+    error: string | undefined;
+    clearError: () => void;
+};
 
 // @public
 export type UseRouteOptions = {
