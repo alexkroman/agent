@@ -12,8 +12,8 @@ import { statSync } from "node:fs";
 import path from "node:path";
 import { requestPath } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
-import { isPathInside, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
+import { DEFAULT_LISTEN_HOST } from "@alexkroman1/aai-runtime";
+import { isPathInside, SERVER_ROUTES, type ServerRoute } from "@alexkroman1/aai-runtime/internal";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost } from "./_dev-env.ts";
 import { devSourceViteConfig } from "./_dev-source.ts";
@@ -96,6 +96,41 @@ function fileServedByVite(base: string, rawUrl: string | undefined): string | un
   // Unchanged, so Vite sees the request it would have seen with no proxy at all
   // — query included, which its transform pipeline reads.
   return rawUrl;
+}
+
+/**
+ * The proxy table, DERIVED from `SERVER_ROUTES` — every route
+ * `createRuntimeServer` answers on its own, forwarded to the backend.
+ *
+ * A hand list drifts silently: it lost `/inbox` (a device's idle socket,
+ * derived from the voice URL's host and so arriving on THIS port — Vite held
+ * the upgrade open unanswered), then `/phone` (a carrier's media stream through
+ * a tunnel pointed at the port `aai dev` prints — Vite answered the upgrade
+ * itself and the call connected to nothing), then `/session-events`. Each
+ * route's own row decides its entry:
+ *
+ * - `transport: "ws"` → `ws: true`, or the upgrade never reaches the backend;
+ * - a PREFIX-matched HTTP route (`/workflows`, `/api`, `/session-events`) →
+ *   the {@link fileServedByVite} `bypass`, because a prefix key also claims a
+ *   same-named source directory (`workflows/` is where the SDK tells authors to
+ *   put bodies, and `api/` is as plausible);
+ * - an EXACT HTTP route → a bare target string;
+ * - `root` is skipped: a `/` key would prefix-match every request, and the
+ *   page there is Vite's to serve.
+ */
+function devProxyTable(
+  target: string,
+  viteRoot: string,
+): Record<string, string | import("vite").ProxyOptions> {
+  const table: Record<string, string | import("vite").ProxyOptions> = {};
+  for (const [name, route] of Object.entries(SERVER_ROUTES) as [string, ServerRoute][]) {
+    if (name === "root") continue;
+    if (route.transport === "ws") table[route.path] = { target, ws: true };
+    else if (route.match === "prefix") {
+      table[route.path] = { target, bypass: (req) => fileServedByVite(viteRoot, req.url) };
+    } else table[route.path] = target;
+  }
+  return table;
 }
 
 /**
@@ -216,38 +251,7 @@ export function viteDevConfig(
       // IPv6 note above. Vite's own default is the HOSTNAME `localhost`,
       // which resolves to `::1` first on macOS.
       host: devBindHost() ?? DEFAULT_LISTEN_HOST,
-      proxy: {
-        "/health": target,
-        "/client-config": target,
-        "/websocket": { target, ws: true },
-        // A device's idle socket (`WS /inbox?client=`, client-inbox.ts). It is derived
-        // from the voice URL's host, so it arrives on THIS port too: unlisted, Vite
-        // held the upgrade open unanswered and a reminder never reached the device.
-        "/inbox": { target, ws: true },
-        // A carrier's media stream (`WS /phone`, `agent({ telephony })`). No page
-        // opens it: a TUNNEL does, and a tunnel points at the port `aai dev` prints
-        // — this one, whenever there is a `client.tsx`. The backend sits on a free
-        // port picked at start, so pointing a tunnel past Vite is not an option,
-        // and unlisted Vite answered the carrier's upgrade itself and the call
-        // connected to nothing.
-        "/phone": { target, ws: true },
-        // `agent({ routes })` — the app's own JSON endpoints, which a page on THIS
-        // port fetches same-origin. The same `bypass` as the workflow API below, for
-        // its reason: `api/` is as plausible a source directory as `workflows/`, and
-        // a file Vite can serve there must not be swallowed by the prefix.
-        [SERVER_ROUTES.api.path]: {
-          target,
-          bypass: (req) => fileServedByVite(viteRoot, req.url),
-        },
-        // The workflow HTTP API. See the doc comment above: this is the entire
-        // front door of a `page: "static"` app, not an extra. `bypass` is what
-        // keeps the project's own `workflows/` SOURCE out of the prefix's
-        // reach — see `fileServedByVite`.
-        [WORKFLOW_API_PREFIX]: {
-          target,
-          bypass: (req) => fileServedByVite(viteRoot, req.url),
-        },
-      },
+      proxy: devProxyTable(target, viteRoot),
     },
   };
 }

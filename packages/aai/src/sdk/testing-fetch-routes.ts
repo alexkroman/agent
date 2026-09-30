@@ -12,7 +12,8 @@
  * answered it `200 {}`, which a tool reads as success.
  *
  * This is that function, written once: routes keyed by where they answer (the
- * key vocabulary `evalNetwork` uses, plus an optional METHOD), an unmatched
+ * key vocabulary `evalNetwork` uses, METHOD prefix included — one matcher,
+ * `_route-keys.ts`, serves both), an unmatched
  * request that THROWS by default (the finding `routeStepFetch` argues for), and
  * every request recorded with its URL and body already parsed.
  *
@@ -22,6 +23,13 @@
  * @module testing-fetch-routes
  */
 
+import {
+  parseJsonText,
+  parseRouteKey,
+  recordFetchRequest,
+  routeKeyMatches,
+  routeTable,
+} from "./_route-keys.ts";
 import {
   recordRequest,
   type StubStepAnswer,
@@ -141,69 +149,25 @@ export type StubFetchRoutes = {
   restore(): void;
 };
 
-/** A route key, split into the optional method and where it answers. */
-type ParsedKey = { key: string; method: string | undefined; where: string };
-
-const METHOD_KEY = /^([A-Z]+)\s+(\S.*)$/;
-
-function parseKey(key: string): ParsedKey {
-  const match = METHOD_KEY.exec(key.trim());
-  return match
-    ? { key, method: match[1], where: match[2] ?? "" }
-    : { key, method: undefined, where: key.trim() };
-}
-
-function whereMatches(where: string, url: URL): boolean {
-  if (where.includes("://")) return url.href.startsWith(where);
-  if (where.startsWith("*.")) return url.hostname.endsWith(where.slice(1));
-  return url.hostname === where;
-}
-
-function keyMatches(parsed: ParsedKey, method: string, url: URL): boolean {
-  return (
-    (parsed.method === undefined || parsed.method === method) && whereMatches(parsed.where, url)
-  );
-}
-
-/** How specific a matching key is — higher answers first. */
-function specificity({ method, where }: ParsedKey): number {
-  const methodBonus = method === undefined ? 0 : 0.5;
-  if (where.includes("://")) return 2_000_000 + where.length + methodBonus;
-  if (where.startsWith("*.")) return where.length + methodBonus;
-  return 1_000_000 + methodBonus;
-}
-
-function parseJson(body: Uint8Array | string | undefined): unknown {
-  if (body === undefined) return;
-  const text = typeof body === "string" ? body : new TextDecoder().decode(body);
-  if (text === "") return;
-  try {
-    return JSON.parse(text);
-  } catch {
-    // A form body or plain text: `json` stays undefined, `body` has it.
-  }
-}
-
 function toRouteRequest(recorded: StubStepRequest): FetchRouteRequest {
   const url = new URL(recorded.url);
+  const { body } = recorded;
+  const text =
+    body === undefined || typeof body === "string" ? body : new TextDecoder().decode(body);
   return {
     ...recorded,
     host: url.hostname,
     pathname: url.pathname,
     searchParams: url.searchParams,
-    json: parseJson(recorded.body),
+    // A form body or plain text: `json` stays undefined, `body` has it.
+    json: parseJsonText(text)?.json,
   };
 }
 
 /** Record a GLOBAL fetch call the way `recordRequest` records a step's. */
 async function recordGlobal(request: Request): Promise<StubStepRequest> {
-  const text = request.body === null ? undefined : await request.clone().text();
-  return {
-    url: request.url,
-    method: request.method.toUpperCase(),
-    headers: Object.fromEntries(request.headers),
-    body: text,
-  };
+  const { url, method, headers, text } = await recordFetchRequest(request);
+  return { url, method, headers, body: text };
 }
 
 /** A fixed table answer, fresh per request — a `Response` body is read once. */
@@ -219,21 +183,12 @@ function resolverFor(routes: FetchRouteTable | readonly FetchRouteHandler[]): Re
     const list = routes as readonly FetchRouteHandler[];
     return () => list.map((handler) => ({ handler }));
   }
-  const table = routes as FetchRouteTable;
-  const parsed = Object.keys(table).map(parseKey);
-  return (request) => {
-    const url = new URL(request.url);
-    return parsed
-      .filter((key) => keyMatches(key, request.method, url))
-      .sort((a, b) => specificity(b) - specificity(a))
-      .map((key) => {
-        const value = table[key.key];
-        return {
-          route: key.key,
-          handler: typeof value === "function" ? value : fixed(value as StubStepAnswer),
-        };
-      });
-  };
+  const table = routeTable(routes as FetchRouteTable);
+  return (request) =>
+    table.match(request.method, new URL(request.url)).map(({ key, value }) => ({
+      route: key,
+      handler: typeof value === "function" ? value : fixed(value),
+    }));
 }
 
 /**
@@ -324,8 +279,8 @@ export function stubFetchRoutes(
     hits,
     to(filter) {
       if (typeof filter !== "string") return hits.filter((hit) => filter.test(hit.url));
-      const key = parseKey(filter);
-      return hits.filter((hit) => keyMatches(key, hit.method, new URL(hit.url)));
+      const key = parseRouteKey(filter);
+      return hits.filter((hit) => routeKeyMatches(key, hit.method, new URL(hit.url)));
     },
     fetch: routed,
     restore() {

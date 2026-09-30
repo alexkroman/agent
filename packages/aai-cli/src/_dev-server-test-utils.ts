@@ -89,6 +89,23 @@ export const mockCreateMemoryJournal = vi.fn(() => ({ journal: "memory" }));
 export const WORKFLOW_DATA_DIR_ENV_LITERAL = "AAI_WORKFLOW_DATA_DIR";
 
 /**
+ * `SERVER_ROUTES` as `viteDevConfig` reads it — path, transport and match per
+ * row (methods are not read), spelled out for the same reason. Pinned to the
+ * real table in `_dev-server-serve.test.ts`.
+ */
+export const SERVER_ROUTES_LITERAL = {
+  health: { transport: "http", path: "/health", match: "exact" },
+  clientConfig: { transport: "http", path: "/client-config", match: "exact" },
+  root: { transport: "http", path: "/", match: "exact" },
+  workflows: { transport: "http", path: "/workflows", match: "prefix" },
+  sessionEvents: { transport: "http", path: "/session-events", match: "prefix" },
+  session: { transport: "ws", path: "/websocket", match: "prefix" },
+  phone: { transport: "ws", path: "/phone", match: "prefix" },
+  inbox: { transport: "ws", path: "/inbox", match: "exact" },
+  api: { transport: "http", path: "/api", match: "prefix" },
+} as const;
+
+/**
  * The default implementations, in ONE place.
  *
  * They used to be written twice — once as `vi.fn().mockResolvedValue(…)`
@@ -268,10 +285,12 @@ export function aaiRuntimeInternalModule(): Record<string, unknown> {
     // directory is declared under.
     createMemoryJournal: mockCreateMemoryJournal,
     WORKFLOW_DATA_DIR_ENV: WORKFLOW_DATA_DIR_ENV_LITERAL,
-    // `viteDevConfig` keys the `/api` proxy (`agent({ routes })`) off the route
-    // table, read when the config is BUILT — unlike `isPathInside`, which only a
-    // proxied request reaches.
-    SERVER_ROUTES: { api: { path: "/api" } },
+    // `viteDevConfig` DERIVES its whole proxy table from the route table, read
+    // when the config is BUILT — unlike `isPathInside`, which only a proxied
+    // request reaches. A literal because a mock may not import the module it
+    // mocks; `_dev-server-serve.test.ts` (which mocks nothing) pins it to the
+    // real table, since a missing row here would silently narrow the proxy.
+    SERVER_ROUTES: SERVER_ROUTES_LITERAL,
   };
 }
 

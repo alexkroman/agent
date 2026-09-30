@@ -215,9 +215,11 @@ production comes from Publish.
   notifier (`aai dev | head`) must not tear down a bound server.
 - **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent
   API as the browser sees it** — with a `client.tsx`, Vite owns the port and
-  answers anything unlisted with a bare 404. **A route added to
-  `createRuntimeServer` that a page fetches must be added there too.**
-  `/workflows` is one prefix entry covering runs, run reads and the SSE stream
+  answers anything unlisted with a bare 404. **It is DERIVED from
+  `SERVER_ROUTES`** (`ws: true` per ws row, the `fileServedByVite` bypass per
+  prefix HTTP row, `root` skipped), so a route belongs in that table, never in
+  a hand-added proxy key; `_dev-server-serve.test.ts` asserts every row but
+  `root` is proxied. `/workflows` is one prefix entry covering runs, run reads and the SSE stream
   (workflow apps are dead without it). `/.well-known/workflow/v1/*` stays out
   (platform/third-party callers, never a browser), which is why `aai dev` hands
   `createRuntime` the BACKEND origin as `publicUrl`.

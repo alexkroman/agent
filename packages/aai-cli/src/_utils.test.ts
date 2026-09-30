@@ -3,7 +3,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
-import { errorCode, errorDetail, fileExists, readJson, resolveCwd, writeJson } from "./_utils.ts";
+import {
+  errorCode,
+  errorDetail,
+  fileExists,
+  readJson,
+  readTextIfPresent,
+  resolveCwd,
+  writeFileAtomic,
+  writeJson,
+} from "./_utils.ts";
 
 describe("resolveCwd", () => {
   test("returns INIT_CWD when set", () => {
@@ -146,6 +155,54 @@ describe("writeJson", () => {
       vi.spyOn(fs, "rename").mockRejectedValue(new Error("EXDEV"));
       await expect(writeJson(file, { a: 1 })).rejects.toThrow("EXDEV");
       expect(await fs.readdir(dir)).toEqual([]);
+    });
+  });
+});
+
+describe("writeFileAtomic", () => {
+  test("applies the mode exactly, umask notwithstanding, and tightens an existing file", async () => {
+    await withTempDir(async (dir) => {
+      const file = path.join(dir, ".env");
+      await fs.writeFile(file, "OLD=1\n", { mode: 0o644 });
+      await writeFileAtomic(file, "NEW=1\n", { mode: 0o600 });
+      expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
+      expect(await fs.readFile(file, "utf-8")).toBe("NEW=1\n");
+      expect(await fs.readdir(dir)).toEqual([".env"]);
+    });
+  });
+
+  test("two concurrent writes in one process never share a temp file", async () => {
+    await withTempDir(async (dir) => {
+      const file = path.join(dir, "f.txt");
+      const writeSpy = vi.spyOn(fs, "writeFile");
+      await Promise.all([writeFileAtomic(file, "a"), writeFileAtomic(file, "b")]);
+      const temps = writeSpy.mock.calls.map(([p]) => String(p));
+      expect(new Set(temps).size).toBe(2);
+      expect(["a", "b"]).toContain(await fs.readFile(file, "utf-8"));
+      expect(await fs.readdir(dir)).toEqual(["f.txt"]);
+    });
+  });
+
+  test("removes the temp file when the rename fails", async () => {
+    await withTempDir(async (dir) => {
+      vi.spyOn(fs, "rename").mockRejectedValue(new Error("EXDEV"));
+      await expect(writeFileAtomic(path.join(dir, "f.txt"), "x", { mode: 0o600 })).rejects.toThrow(
+        "EXDEV",
+      );
+      expect(await fs.readdir(dir)).toEqual([]);
+    });
+  });
+});
+
+describe("readTextIfPresent", () => {
+  test("reads a file, and answers undefined only for a missing one", async () => {
+    await withTempDir(async (dir) => {
+      const file = path.join(dir, "f.txt");
+      expect(await readTextIfPresent(file)).toBeUndefined();
+      await fs.writeFile(file, "hi");
+      expect(await readTextIfPresent(file)).toBe("hi");
+      // A directory is unreadable, not absent.
+      await expect(readTextIfPresent(dir)).rejects.toThrow();
     });
   });
 });

@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 179 names
 - [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
-- [Framework internals](#framework-internals) — 368 names
+- [Framework internals](#framework-internals) — 378 names
 
 ## Agent authoring
 
@@ -1351,8 +1351,12 @@ trace or a type error can be traced back to something.
 | `RIME_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Synthesis model used when the descriptor names none. |
 | `RIME_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `RUN_CODE_REFUSAL` | const | `@alexkroman1/aai/host-internal` |  | What `run_code` answers when no executor was supplied — the sentence the model reads off-platform. |
+| `RequestRecord` | type | `@alexkroman1/aai/host-internal` |  | A `Request` as both fakes record it: method upper-cased, headers flattened. |
 | `ResolvedBuiltins` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtins with defs, schemas, and guidance computed in a single pass. |
 | `ResolvedFailureHandler` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `RouteKey` | type | `@alexkroman1/aai/host-internal` |  | A route key, split into its optional method and where it answers. |
+| `RouteMatch` | type | `@alexkroman1/aai/host-internal` |  | One table entry a request matched. |
+| `RouteTable` | type | `@alexkroman1/aai/host-internal` |  | A keyed table, parsed once. |
 | `S2S_MAX_RESUME_ATTEMPTS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SANDBOX_ONLY_BUILTINS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `SERVER_ROUTES` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1497,7 +1501,9 @@ trace or a type error can be traced back to something.
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
 | `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
 | `parseBearer` | function | `@alexkroman1/aai-runtime/internal` |  | Token from an `Authorization: Bearer <token>` header value. |
+| `parseJsonText` | function | `@alexkroman1/aai/host-internal` |  | `text` parsed as JSON, boxed so a body of `null` is told apart from one that is not JSON — `undefined` for an empty body or one that does not parse (a form … |
 | `parsePlatformFrame` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `parseRouteKey` | function | `@alexkroman1/aai/host-internal` |  | Split `key` into its optional method and where it answers. |
 | `parseTraceparent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `parseWsUpgradeParams` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `partKey` | function | `@alexkroman1/aai-runtime/internal` |  | Where one upload's objects live, under a prefix the deployment owns. |
@@ -1525,6 +1531,7 @@ trace or a type error can be traced back to something.
 | `readAssemblyAILlmProviderOptions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteError` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `readRouteResponse` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `recordFetchRequest` | function | `@alexkroman1/aai/host-internal` |  | Record `request` without consuming its body. |
 | `rejectingWorkflows` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `requestQuery` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1540,6 +1547,9 @@ trace or a type error can be traced back to something.
 | `resolveLocalSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveRimeTtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveSonioxSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
+| `routeKeyMatches` | function | `@alexkroman1/aai/host-internal` |  | Does `key` (parsed or as written) answer a `method` request for `url`? |
+| `routeKeySpecificity` | function | `@alexkroman1/aai/host-internal` |  | How specific a key is — among matching keys, higher answers first. |
+| `routeTable` | function | `@alexkroman1/aai/host-internal` |  | Parse a table's keys once, for repeated matching. |
 | `runAgentGuardrails` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `runCapped`, `RunCappedOptions` | function | `@alexkroman1/aai/host-internal` |  | Run one child process, capturing capped output tails. |
 | `safeFetch` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | `globalThis.fetch` wrapped in SSRF validation — the default for every network builtin. |
