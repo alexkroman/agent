@@ -31,6 +31,32 @@ import { omitUndefined } from "./sdk/omit-undefined.ts";
 import { llm } from "./sdk/providers/llm/llm.ts";
 import type { LlmProvider } from "./sdk/providers.ts";
 
+export { composio } from "./sdk/composio.ts";
+export {
+  COMPOSIO_API_KEY_ENV,
+  COMPOSIO_BASE_URL,
+  COMPOSIO_MCP_TOOLS,
+  type ComposioApp,
+  type ComposioClient,
+  type ComposioExecuteResult,
+  type ComposioListAppsOptions,
+  type ComposioMcpServerOptions,
+  type ComposioOptions,
+  type ComposioSessionConfig,
+  type ComposioSessionStore,
+  type ComposioTriggerType,
+  composioErrorMessage,
+} from "./sdk/composio-api.ts";
+export {
+  COMPOSIO_TRIGGER_MESSAGE,
+  COMPOSIO_WEBHOOK_SECRET_ENV,
+  type ComposioTriggerEvent,
+  type ComposioWebhookRouteOptions,
+  composioTriggerText,
+  composioWebhookRoute,
+  type EnsureComposioWebhookOptions,
+  ensureComposioWebhook,
+} from "./sdk/composio-webhook.ts";
 export {
   DEFAULT_DEEP_RESEARCH_BUDGET,
   type DeepResearchOptions,

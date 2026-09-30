@@ -294,6 +294,32 @@ stays for non-file registries (the studio's coding agent).
   `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable
   server (a step can retry), where host start degrades (a session cannot wait).
 
+## Composio (`composio.ts`, `composio-api.ts`, `composio-webhook.ts`, on `/experimental`)
+
+`composio({ sessions, sessionStore })` is the Composio Platform client over
+`jsonClient`; the webhook half is `composioWebhookRoute` (over `webhookRoute`)
+and `ensureComposioWebhook` (a setup script's, not an agent's).
+
+- **The `user` is always the AUTHOR's id**, never a model argument, and
+  `disconnect` resolves the account among that user's own; `listApps`
+  re-filters `connected_accounts` to the user and `ACTIVE` because a filter
+  Composio ignores must not leak another user's account.
+- **Sessions: one promise per `(kind, user)` in a `createOwnedMap`, then the
+  store; made WITHOUT the caller's signal** (a barge-in must not kill the
+  create others wait on). A 404 whose message names the session is remade
+  ONCE, and only by the caller still owning the lost id — so concurrent callers
+  do not delete a successor. A failed create is not remembered.
+- **`execute`'s refusal split is the contract**: a 4xx other than 401/403/429 is
+  `{ ok: false }`; those three and 5xx THROW (key, project, rate — not the
+  request's fault).
+- **No error may carry the key**: `composioApi` rebuilds an `HttpError` that
+  echoes it WITHOUT a `cause` (the cause is the unredacted original). The base
+  URL is an author literal, `https://` only, so it is not SSRF-screened; the
+  session's MCP url is screened by the MCP client like any other.
+- App policy (tables, connect hints, watch limits, what an event means) stays
+  in the app. `composio.test.ts` / `composio-webhook.test.ts` pin all of it
+  with `stubFetchRoutes`.
+
 ## `ToolDef.messages` — what a tool SAYS
 
 `tool-messages.ts` declares, `tool-messages-select.ts` chooses (both pure);
