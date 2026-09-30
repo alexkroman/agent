@@ -40,7 +40,7 @@ import {
 } from "./_tap-to-talk-state.ts";
 import { isTypingTarget } from "./_utils.ts";
 import { useSessionCore, useSessionSelector } from "./context.ts";
-import type { SessionSnapshot } from "./session-core-types.ts";
+import type { BrowserSession, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, SessionError } from "./types.ts";
 
 /**
@@ -117,16 +117,42 @@ const DEFAULT_TIMING: TapToTalkTiming = {
 const IDLE_VIEW: TapToTalkView = { live: false, failed: false };
 const NO_SUBSCRIPTION = (): (() => void) => () => undefined;
 
-// Module scope for stable selection identities — see `use-user-transcript.ts`.
-const selectRunning = (s: SessionSnapshot): boolean => s.running;
-const selectState = (s: SessionSnapshot): AgentState => s.state;
-const selectContent = (s: SessionSnapshot): number => s.contentVersion;
-const selectError = (s: SessionSnapshot): SessionError | null => s.error;
-
 /** The published phase: not meant to run, connecting, or up. */
 function phaseOf(running: boolean, agent: AgentState): TapToTalkPhase {
   if (!running) return "idle";
   return agent === "connecting" ? "connecting" : "active";
+}
+
+// Module scope for a stable selection identity — see `use-user-transcript.ts`.
+const selectPhase = (s: SessionSnapshot): TapToTalkPhase => phaseOf(s.running, s.state);
+
+/**
+ * Feed `store` what the session does, out of band of React: a `SESSION` event
+ * when the phase, the agent's state or the conversation content moved (every
+ * one is activity, which restarts the hang-up clocks), and an `ERROR` when a
+ * new error appears. The content half changes on every STT partial and TTS
+ * text delta; routed through a component it re-rendered the host many times a
+ * second, so only the store sees it.
+ */
+function feedSession(store: TapToTalkStore, session: BrowserSession): () => void {
+  let last:
+    | { phase: TapToTalkPhase; agent: AgentState; content: number; error: SessionError | null }
+    | undefined;
+  const read = (): void => {
+    const s = session.getSnapshot();
+    const phase = phaseOf(s.running, s.state);
+    const moved =
+      last === undefined ||
+      last.phase !== phase ||
+      last.agent !== s.state ||
+      last.content !== s.contentVersion;
+    const newError = s.error !== null && s.error !== last?.error;
+    last = { phase, agent: s.state, content: s.contentVersion, error: s.error };
+    if (moved) store.send({ type: "SESSION", phase, agent: s.state });
+    if (newError) store.send({ type: "ERROR" });
+  };
+  read();
+  return session.subscribe(read);
 }
 
 /**
@@ -169,11 +195,9 @@ function phaseOf(running: boolean, agent: AgentState): TapToTalkPhase {
  */
 export function useTapToTalk(options: UseTapToTalkOptions = {}): UseTapToTalkResult {
   const session = useSessionCore();
-  const running = useSessionSelector(selectRunning);
-  const agent = useSessionSelector(selectState);
-  const content = useSessionSelector(selectContent);
-  const error = useSessionSelector(selectError);
-  const phase = phaseOf(running, agent);
+  // The one session fact the view shows. Activity and errors reach the machine
+  // through `feedSession`, never through a render.
+  const phase = useSessionSelector(selectPhase);
 
   // Read per use by the machine's clocks, so new options need no restart.
   const timing = useRef(DEFAULT_TIMING);
@@ -199,8 +223,10 @@ export function useTapToTalk(options: UseTapToTalkOptions = {}): UseTapToTalkRes
       },
       () => timing.current,
     );
+    const unfeed = feedSession(next, session);
     setStore(next);
     return () => {
+      unfeed();
       next.stop();
       setStore(null);
     };
@@ -210,15 +236,6 @@ export function useTapToTalk(options: UseTapToTalkOptions = {}): UseTapToTalkRes
     store?.subscribe ?? NO_SUBSCRIPTION,
     store ? store.getView : () => IDLE_VIEW,
   );
-
-  // Every activity, not only a phase change: it is what restarts the clocks.
-  useEffect(() => {
-    store?.send({ type: "SESSION", phase, agent, activity: content });
-  }, [store, phase, agent, content]);
-
-  useEffect(() => {
-    if (error) store?.send({ type: "ERROR" });
-  }, [store, error]);
 
   const toggle = useCallback(() => store?.send({ type: "TAP" }), [store]);
   const hangUp = useCallback(() => store?.send({ type: "HANG_UP" }), [store]);
