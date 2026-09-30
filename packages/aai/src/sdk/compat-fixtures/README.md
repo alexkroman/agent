@@ -45,3 +45,10 @@ What it would have protected is real, though, and is the reason this directory
 survived the change rather than being deleted with the fixture: the moment there
 IS a deployed client, a rename like that one has to arrive as a new `v{N}.json`
 beside the old, with the old still passing.
+
+## v3 raised `MAX_TOOL_RESULT_CHARS` from 4000 to 16000
+
+The schemas and messages are v2's; only the cap on a `tool.completed` result
+(and an inbound `tool_result`) grew. A client still validating against 4000
+rejects a longer frame, so the constant is checked against the newest fixture
+only, while v2's messages must still parse.

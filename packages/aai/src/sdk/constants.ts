@@ -175,7 +175,7 @@ export const DEFAULT_BUILTIN_TOOLS = ["think"] as const satisfies readonly Built
  * an author may be relying on, so the framework WARNS instead — once per tool,
  * naming the size (`warnOversizedResult`, `aai-runtime/src/tool-executor.ts`).
  */
-export const MAX_TOOL_RESULT_CHARS = 4000;
+export const MAX_TOOL_RESULT_CHARS = 16_000;
 
 /**
  * Appended to a tool result the framework trimmed at

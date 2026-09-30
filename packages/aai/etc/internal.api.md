@@ -210,7 +210,7 @@ export const MAX_SLUG_LENGTH = 64;
 export const MAX_START_SPEAKING_FLOOR_MS = 5000;
 
 // @public
-export const MAX_TOOL_RESULT_CHARS = 4000;
+export const MAX_TOOL_RESULT_CHARS = 16000;
 
 // @public
 export const MAX_WORKFLOW_WAIT_MS = 60000;

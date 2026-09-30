@@ -77,7 +77,7 @@ pushing events to the browser, starting background runs — is in the
 Whatever you return is serialized into the conversation and re-sent to the
 model on every later turn of the call. So `return await res.json()` leaves an
 entire API response in the prompt for the rest of the call: slower, more
-expensive, and more for the model to misread. A result over 4000 characters is
+expensive, and more for the model to misread. A result over 16000 characters is
 warned about once per tool in the server log.
 
 ## When a tool fails
