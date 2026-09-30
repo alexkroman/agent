@@ -321,8 +321,9 @@ Rules:
   sessionless). A step's subagent gets MCP tools from `stepMcp` (`step-mcp.ts`,
   the same kind of slot), which calls `connectMcpServers` — the core
   `withMcpTools` runs at host start — with the step's `clientId`, and rejects
-  instead of degrading when a server is unavailable. A `subagents` roster is lowered to one ordinary `delegate` tool
-  in `agent()` (`sdk/subagent-roster.ts`) — no branch here.
+  instead of degrading when a server is unavailable. A `subagents` roster is
+  lowered to one ordinary `delegate` tool in `agent()`
+  (`sdk/subagent-roster.ts`) — no branch here.
 - Wired in `setupSubagents` (`runtime-tools.ts`, sandbox and self-hosted) and
   `createTextAgent`; `createSubagentRunner` memoizes models per descriptor
   object.
