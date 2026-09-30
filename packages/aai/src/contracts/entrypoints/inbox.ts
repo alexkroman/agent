@@ -32,9 +32,13 @@ export {
   DEFAULT_CLIENT_ACK_TIMEOUT_MS,
   DEFAULT_CLIENT_DELIVERY_ATTEMPTS,
   DEFAULT_CLIENT_RETRY_MS,
+  // A failed run said on the device: the same delivery, with the failure's id
+  // and `data.failed`, as a `workflow({ onFailure })` handler.
+  type SayFailureOnClientOptions,
   type StepClientTranscriptOptions,
   type StepNotifyClientOptions,
   type StepSayOnClientOptions,
+  sayFailureOnClient,
   stepClientTranscript,
   stepNotifyClient,
   stepSayOnClient,

@@ -5462,7 +5462,7 @@ See [ToolContext.sessionId](index.md#sessionid-5). Defaults to a fresh id per ca
 optional signal?: ToolContext["signal"];
 ```
 
-See [ToolContext.signal](index.md#signal-4). Defaults to a signal that never aborts.
+See [ToolContext.signal](index.md#signal-5). Defaults to a signal that never aborts.
 
 ##### slots?
 

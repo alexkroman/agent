@@ -67,3 +67,10 @@ export {
   type TextbeltChannelOptions,
   textbeltChannel,
 } from "../../sdk/channels-barrel.ts";
+// `text_me`'s rule from a step, on `@alexkroman1/aai/step`: it is
+// `allowedSmsRecipient` plus a Textbelt send, so it changes with them.
+export {
+  type StepTextOwnerOptions,
+  type StepTextOwnerResult,
+  stepTextOwner,
+} from "../../sdk/step-barrel.ts";

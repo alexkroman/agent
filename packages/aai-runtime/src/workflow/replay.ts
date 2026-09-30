@@ -68,7 +68,11 @@ import {
   type StepOptions,
   type WorkflowContext,
 } from "@alexkroman1/aai";
-import { pollWorkflow, type ResolvedFailureHandler } from "@alexkroman1/aai/host-internal";
+import {
+  pollWorkflow,
+  type ResolvedFailureHandler,
+  sayOnClientWorkflow,
+} from "@alexkroman1/aai/host-internal";
 import type { Logger } from "../runtime-config.ts";
 import { describeCodeChange } from "./code-version.ts";
 import { journalBound, WORKFLOW_JOURNAL_MAX_STEPS } from "./journal/bound.ts";
@@ -306,10 +310,8 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
    * which is a body the engine cannot execute correctly at all — see
    * `workflow/replay/wait.ts`.
    *
-   * Held rather than merely thrown, because JavaScript `catch` catches
-   * everything and one shipped template wraps its whole body in a `try`/`catch`
-   * — so a refusal a body swallows would come back out as `completed`, which is
-   * the exact silence this check exists to end. A REFUSAL still travels as a
+   * Held rather than merely thrown, because a body's `try`/`catch` would
+   * swallow it and the run come back `completed`. A REFUSAL still travels as a
    * throw, unlike a suspension: it is a verdict the body may usefully see
    * (`stepFailure` is the same channel), and this field is what stops the body
    * having the last word on it.
@@ -336,14 +338,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
       refuse: setRefused,
       hold: suspend.hold,
     }),
-    // `ctx.sleep`/`ctx.waitFor`, each keyed by NAME under its own `!` space.
-    // Split out for the reason the reads above are — see
-    // `workflow/replay/waits.ts`, which also carries what naming the waits
-    // closed and the one residual it did not.
+    // `ctx.sleep`/`ctx.waitFor`, each keyed by NAME under its own `!` space —
+    // `workflow/replay/waits.ts`, with what naming them closed and did not.
     ...createWaitMethods({ runId, workflow, journal, sleeps, suspend, refuse: setRefused }),
-    // Composed of `step` and `sleep` on this same object, so a poll journals
-    // exactly the keys a hand-written loop did — see `sdk/workflow-poll.ts`.
+    // Composed of `step` (and `sleep`) on this same object, so each journals
+    // exactly the keys the hand-written code did — `sdk/workflow-poll.ts`.
     poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
+    sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowContext` in the
       // SDK for why it is a name plus an occurrence count.

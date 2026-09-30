@@ -1243,6 +1243,30 @@ export const safeFetch: typeof globalThis.fetch;
 // @internal
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string>;
 
+// @internal
+export type SayOnClientHost = {
+    readonly runId: string;
+    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+};
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @internal
+export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientId: string, notice: SayOnClientNotice): Promise<string>;
+
 // @public
 export function selectToolMessage<T extends ToolMessageBase>(list: readonly T[] | undefined, args: Readonly<Record<string, unknown>>, random?: RandomSource): T | undefined;
 
@@ -1770,6 +1794,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;

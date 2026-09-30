@@ -136,6 +136,7 @@ export {
   mcpToolName,
 } from "./sdk/mcp-config.ts";
 export * from "./sdk/metrics-collector.ts";
+export { codeMatches, hashCode, mintDigitCode } from "./sdk/one-time-code.ts";
 /**
  * `persona()`/`personas()` and the `handoff` contract — the fourth machine, and
  * the one that changes WHO IS SPEAKING: a roster the session hands the caller
@@ -388,10 +389,9 @@ export type { SlotHolder, SlotStore, StateProjection } from "./sdk/session-state
 // beside `toolFailure`, which it returns.
 export * from "./sdk/spoken.ts";
 /**
- * The OUTBOUND half of the same boundary: data as the words a TTS voice reads
- * correctly. Beside `spoken.ts` rather than on `/utils` because the reason these
- * exist is speech, not formatting — a caller mishearing a total is the failure,
- * and `format.ts`'s four are for a page and a progress line.
+ * The OUTBOUND half: data as the words a TTS voice reads correctly — speech,
+ * not formatting (`format.ts`'s four are for a page) — then one-time codes a
+ * caller reads back, whose read-back is `spokenDigits` (`sdk/one-time-code.ts`).
  */
 export * from "./sdk/spoken-render.ts";
 /**
@@ -463,16 +463,13 @@ export {
 } from "./sdk/utils.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
-  // There is deliberately no `isWorkflowSuspend` here any more. A body's `catch`
-  // used to have to test it and re-throw, which is advice — and one shipped
-  // template forgot, deleted the transcript its run was waiting for, and
-  // journaled the deletion as successful. A wait now hands back a promise that
-  // never settles, so a suspension cannot reach a `catch` at all and there is
-  // nothing left for an author to remember. See
-  // `aai-runtime/workflow-replay-suspend.ts`.
+  // Deliberately no `isWorkflowSuspend`: a wait hands back a promise that never
+  // settles, so a suspension cannot reach a `catch` (`workflow-replay-suspend.ts`).
   // `ctx.poll`'s option bag and what it resolves with: named in `WorkflowContext`.
   type PollOptions,
   type PollResult,
+  // `ctx.sayOnClient`'s notice, likewise named in `WorkflowContext`.
+  type SayOnClientNotice,
   type SleepOptions,
   type StepOptions,
   // The schema-bearing halves of the two option bags above. A type a public

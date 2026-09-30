@@ -151,6 +151,23 @@ A value the renderers cannot read is returned UNCHANGED rather than throwing —
 degrade, like every formatter in `format.ts`. Declare the argument with
 `isoDate()` and a caller never reaches that path.
 
+### One-time codes: `mintDigitCode`, `hashCode`, `codeMatches`
+
+A code a caller reads back (a device link, a phone verification) is minted,
+stored as a HASH, and checked against what STT heard (`sdk/one-time-code.ts`).
+
+- **`mintDigitCode(digits = 6)` draws each digit by REJECTION** (a byte ≥ 250 is
+  re-drawn), because `getRandomValues(...)[0] % 10 ** n` favours the low codes.
+  It takes no `random` source, unlike `mintCode`: a code that proves who is on
+  the line must not be a journaled, replayable value.
+- **`hashCode(code)` hashes EXACTLY the string given** (SHA-256, lower-case
+  hex); the read-back is normalized by `codeMatches`, never by `hashCode`.
+- **`codeMatches(said, hash)` normalizes with `spokenDigits` and compares in
+  constant time** (`_timing-safe-equal.ts`, shared with `verifyStandardWebhook`).
+  A read-back with no digits never matches.
+- **The attempt cap and the expiry are the app's**, and they are the defence: a
+  six-digit code's hash is brute-forced in a millisecond by whoever holds it.
+
 ## The argument shapes both directions meet at
 
 `sdk/calendar.ts` and `sdk/tool-fields.ts`. A date reaches a tool as

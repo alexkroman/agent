@@ -24,9 +24,17 @@
  * other end. An agent relies on `spokenMoney(1)` saying "1 dollar" and on
  * `mintCode` never drawing an `O`, and both are things a signature cannot say.
  */
+/*
+ * `mintDigitCode`/`hashCode`/`codeMatches` join for the same reason: the promise
+ * is behavioural (an unbiased draw, a read-back normalized by `spokenDigits`, a
+ * constant-time compare), and the read-back is this capability's inbound half.
+ */
 export {
+  codeMatches,
+  hashCode,
   type MintCodeOptions,
   mintCode,
+  mintDigitCode,
   type ResolveOneOptions,
   resolveOne,
   spokenAlphanumeric,

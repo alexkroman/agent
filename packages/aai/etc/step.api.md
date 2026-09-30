@@ -26,6 +26,9 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
+export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus>;
+
+// @public
 export type CallStatusOptions = {
     carrier: "twilio";
     callId: string;
@@ -180,6 +183,9 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isCallOver(status: string): boolean;
 
 // @public
 export function isTransientStatus(status: number): boolean;
@@ -367,6 +373,35 @@ type RetryableErrorOptions = {
 export function retryAfter(from: {
     headers: Headers;
 } | Headers): Date | undefined;
+
+// @public
+export function sayFailureOnClient<I>(options: SayFailureOnClientOptions<I>): {
+    run: WorkflowFailureHook<I>;
+    maxAttempts: number;
+};
+
+// @public
+export type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions, "event" | "sampleRate" | "voice" | "language" | "ackTimeoutMs" | "retryAfterMs"> & {
+    clientId: (input: I) => string | undefined;
+    text: (error: Error, input: I, reason: string) => string;
+    data?: Record<string, unknown> | ((input: I) => Record<string, unknown>) | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export type Settled<T, R> = {
@@ -605,6 +640,24 @@ type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOpti
 
 // @public
 export function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenAudio>;
+
+// @public
+export function stepTextOwner(text: string, options?: StepTextOwnerOptions): Promise<StepTextOwnerResult>;
+
+// @public
+export type StepTextOwnerOptions = {
+    phone?: string | undefined;
+    links?: "keep" | "strip" | undefined;
+};
+
+// @public
+export type StepTextOwnerResult = {
+    sent: true;
+    to: string;
+} | {
+    sent: false;
+    why?: string;
+};
 
 // @public
 export function stepTranscribePoll(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
@@ -955,6 +1008,7 @@ type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;

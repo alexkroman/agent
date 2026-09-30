@@ -216,6 +216,9 @@ type ClientTranscriptTool = {
 export function clockTime(what?: string): z.ZodString;
 
 // @public
+export function codeMatches(said: string, hash: string): Promise<boolean>;
+
+// @public
 export function createKeyedLock(): KeyedLock;
 
 // @public
@@ -481,6 +484,9 @@ export interface HandoffResult {
 }
 
 // @public
+export function hashCode(code: string): Promise<string>;
+
+// @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
@@ -649,6 +655,9 @@ export interface MintCodeOptions {
     random?: () => number;
     taken?: ReadonlySet<string>;
 }
+
+// @public
+export function mintDigitCode(digits?: number): string;
 
 // @public
 export interface ModelTuning {
@@ -909,6 +918,21 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 // @public
 export function safeJsonParse(text: string): unknown;
+
+// @public
+export type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
 
 // @public
 export const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timed-out", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
@@ -1705,6 +1729,7 @@ export type WorkflowContext = {
     uuid(): Promise<string>;
     sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
     poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;

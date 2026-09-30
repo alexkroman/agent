@@ -3,8 +3,9 @@
   "capability": "step",
   "epoch": 3,
   "rule": 2,
-  "sha256": "89d43dd3900ab824d83947b87ecc74bbc75d3d8296dea1f2304cd977b7ed29b3",
+  "sha256": "4ab196f02cd85821c003f8795ea796c81de9f7946b96555056b9bf08a38a1ae3",
   "exports": [
+    "CALL_OVER_STATUSES",
     "CallStatusOptions",
     "DEFAULT_CALL_RING_TIMEOUT_S",
     "DEFAULT_CALL_TIME_LIMIT_S",
@@ -37,6 +38,7 @@
     "blockAlign",
     "bytesPerSecond",
     "encodeWav",
+    "isCallOver",
     "isTransientStatus",
     "mapConcurrent",
     "mapSettled",
@@ -65,7 +67,7 @@
     "wavHeader"
   ],
   "rollup": "1bb057fe2910d54ed1499ad709b7524c1211789e40abc636ef031697cd5e25fd",
-  "revision": 4,
+  "revision": 5,
   "revisions": [
     {
       "revision": 0,
@@ -96,6 +98,12 @@
       "rule": 2,
       "sha256": "89d43dd3900ab824d83947b87ecc74bbc75d3d8296dea1f2304cd977b7ed29b3",
       "reason": "additive (checked): +CallStatusOptions, +DEFAULT_CALL_RING_TIMEOUT_S, +DEFAULT_CALL_TIME_LIMIT_S, +EnvContext, +PlaceCallCredentials, +PlaceCallError, +PlaceCallOptions, +PlacedCall, +PlacedCallStatus, +StepPollUntilOptions, +TWILIO_ACCOUNT_SID_ENV, +TWILIO_AUTH_TOKEN_ENV, +stepCallStatus, +stepEnvContext, +stepPlaceCall, +stepPollUntil"
+    },
+    {
+      "revision": 5,
+      "rule": 2,
+      "sha256": "4ab196f02cd85821c003f8795ea796c81de9f7946b96555056b9bf08a38a1ae3",
+      "reason": "additive (checked): +CALL_OVER_STATUSES, +CallStatusOptions, +DEFAULT_CALL_RING_TIMEOUT_S, +DEFAULT_CALL_TIME_LIMIT_S, +EnvContext, +PlaceCallCredentials, +PlaceCallError, +PlaceCallOptions, +PlacedCall, +PlacedCallStatus, +StepPollUntilOptions, +TWILIO_ACCOUNT_SID_ENV, +TWILIO_AUTH_TOKEN_ENV, +isCallOver, +stepCallStatus, +stepEnvContext, +stepPlaceCall, +stepPollUntil"
     }
   ]
 }

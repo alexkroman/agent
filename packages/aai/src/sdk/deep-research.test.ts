@@ -118,6 +118,27 @@ describe("the body", () => {
     expect(ctx.steps.map((step) => step.name)).toContain("announceFailure");
   });
 
+  test("a { run, maxAttempts } onFailure goes to the ENGINE, not the body's catch", async () => {
+    const boom = new Error("research failed");
+    const hook = vi.fn(async () => undefined);
+    const def = deepResearchWorkflow({
+      input,
+      deliver: () => {
+        throw boom;
+      },
+      onFailure: { run: hook, maxAttempts: 7 },
+    });
+    expect(def.onFailure).toEqual({ run: hook, maxAttempts: 7 });
+    const ctx = createWorkflowContext({ runSteps: false, results: skeleton });
+    await expect(def.run({ topic: "t", who: "Ada" }, ctx)).rejects.toBe(boom);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  test("a function onFailure leaves the workflow's own onFailure unset", () => {
+    const def = deepResearchWorkflow({ input, onFailure: () => undefined });
+    expect(def.onFailure).toBeUndefined();
+  });
+
   test("an onFailure that throws does not replace the run's reason", async () => {
     const boom = new Error("research failed");
     const def = deepResearchWorkflow({
