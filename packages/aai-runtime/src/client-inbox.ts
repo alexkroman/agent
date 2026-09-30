@@ -207,8 +207,10 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     socket.on("close", () => {
       holder.pending?.settle("disconnected");
       release();
+      // A client's set is only ever dropped once empty, so `own` is still the
+      // one indexed under it: nothing to guard against a successor here.
       own.delete(holder);
-      if (own.size === 0 && byClient.get(clientId) === own) byClient.delete(clientId);
+      if (own.size === 0) byClient.delete(clientId);
       logger.info(`inbox: ${label} disconnected`);
     });
     socket.on("error", () => socket.terminate());
