@@ -147,7 +147,7 @@ function fakeTunnelDeps({
       return hookCode;
     },
   );
-  const deps = { startQuickTunnel, runPublicUrlHook } as unknown as DevTunnelDeps;
+  const deps: DevTunnelDeps = { startQuickTunnel, runPublicUrlHook };
   return { deps, tunnel, exited, events, startQuickTunnel, runPublicUrlHook };
 }
 

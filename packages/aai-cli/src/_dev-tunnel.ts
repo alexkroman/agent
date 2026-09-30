@@ -30,7 +30,7 @@
  *   caller.
  */
 
-import { type ChildProcess, spawn as nodeSpawn } from "node:child_process";
+import { type ChildProcess, spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
 import pTimeout from "p-timeout";
 import { CliError } from "./_output.ts";
 
@@ -62,7 +62,19 @@ export function cloudflaredBinary(env: Record<string, string | undefined> = proc
  * How a child is started — `node:child_process`'s `spawn` unless a spec hands
  * in a fake, so the process handling is unit-testable without a subprocess.
  */
-export type SpawnFn = typeof nodeSpawn;
+export type SpawnFn = {
+  (command: string, args: readonly string[], options: SpawnOptions): TunnelChild;
+  (command: string, options: SpawnOptions): TunnelChild;
+};
+
+/** The part of a `ChildProcess` this module touches — all a fake has to be. */
+export type TunnelChild = Pick<
+  ChildProcess,
+  "stdout" | "stderr" | "exitCode" | "signalCode" | "kill"
+> & {
+  once(event: "exit", listener: (code: number | null) => void): unknown;
+  once(event: "error", listener: (err: NodeJS.ErrnoException) => void): unknown;
+};
 
 /** A running quick tunnel. */
 export type QuickTunnel = {
@@ -103,7 +115,7 @@ export async function startQuickTunnel(opts: {
 }): Promise<QuickTunnel> {
   const binary = opts.binary ?? cloudflaredBinary();
   const spawn = opts.spawn ?? nodeSpawn;
-  const child: ChildProcess = spawn(binary, ["tunnel", "--no-autoupdate", "--url", opts.origin], {
+  const child: TunnelChild = spawn(binary, ["tunnel", "--no-autoupdate", "--url", opts.origin], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";

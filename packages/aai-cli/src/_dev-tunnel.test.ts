@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -63,7 +63,8 @@ class FakeChild extends EventEmitter {
 
 function fakeSpawn(child: FakeChild) {
   const spawn = vi.fn(() => child);
-  return { spawn, asSpawn: spawn as unknown as SpawnFn };
+  const asSpawn: SpawnFn = spawn;
+  return { spawn, asSpawn };
 }
 
 describe("startQuickTunnel (fake child)", () => {
@@ -117,8 +118,10 @@ describe("startQuickTunnel (fake child)", () => {
       binary: "cf",
       spawn: fakeSpawn(dies).asSpawn,
     });
+    // Wait until the chunk is delivered (the module's listener runs first).
+    const delivered = once(dies.stdout, "data");
     dies.stdout.write("ERR failed to request quick Tunnel\n");
-    await new Promise((r) => setImmediate(r));
+    await delivered;
     dies.exit(1);
     await expect(started).rejects.toMatchObject({
       code: "tunnel_failed",
