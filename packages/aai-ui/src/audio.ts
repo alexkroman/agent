@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { assertGranted, releaseStreamOnFailure, workletCrash } from "./audio-capture.ts";
+import { type PreConnectCapture, startCapture } from "./audio-preconnect.ts";
 import {
-  CAPTURE_STOP_ACK_TIMEOUT_MS,
   PLAYBACK_DONE_MAX_WAIT_MS,
   PLAYBACK_DONE_POLL_MS,
   VOICE_CAPTURE_CONSTRAINTS,
@@ -69,6 +70,20 @@ export type VoiceIOOptions = {
    * device, which otherwise looks exactly like a user who hasn't spoken.
    */
   onMicSilent?: (() => void) | undefined;
+  /**
+   * A microphone already opened by {@link openPreConnectCapture}, whose buffered
+   * audio is the start of this path's capture. Ownership passes to the
+   * returned {@link VoiceIO}: its `close()` stops the stream.
+   */
+  preConnect?: PreConnectCapture | undefined;
+  /**
+   * Called once, before any live frame reaches `onMicData`, with the audio
+   * {@link VoiceIOOptions.preConnect} held — already at `sttSampleRate`, in
+   * order. Separate from `onMicData` because it is a deliberate burst the
+   * sender's backpressure check must not drop. Unwired, it goes to
+   * `onMicData` chunk by chunk.
+   */
+  onPreConnectAudio?: ((chunks: ArrayBuffer[]) => void) | undefined;
 };
 
 /**
@@ -89,112 +104,6 @@ export type VoiceIO = AsyncDisposable & {
   /** Release all audio resources (microphone, AudioContext, worklets). */
   close(): Promise<void>;
 };
-
-/**
- * Throw unless the browser honored a requested context sample rate. The
- * requested rates are never advisory: captured audio is tagged with the
- * requested rate on the wire, so a context running at some other rate ships
- * audio that only sounds like speech to the wrong decoder. Every capture
- * path must call this after context creation.
- */
-function assertGranted(granted: number, requested: number, side: string): void {
-  if (granted === requested) return;
-  throw new Error(
-    `Browser refused the ${side} sample rate: asked for ${requested} Hz, got ${granted} Hz`,
-  );
-}
-
-/**
- * The error a dead worklet processor reports.
- *
- * A processor exception permanently kills the node — no further messages or
- * audio will ever arrive — so both sides log it and hand it on. One spelling of
- * that, because the pair differed only in the word "capture"/"playback" and in
- * what the playback side has to settle afterwards.
- */
-function workletCrash(side: "capture" | "playback"): Error {
-  const err = new Error(`Audio ${side} worklet crashed`);
-  console.error("[aai-ui]", err.message);
-  return err;
-}
-
-/**
- * Release a microphone that was (or later gets) granted while another init
- * step failed; if `getUserMedia` itself rejected, this is a no-op. Without
- * it, a mic granted after a failed init keeps the browser's recording
- * indicator lit with no way to turn it off.
- */
-function releaseStreamOnFailure(streamPromise: Promise<MediaStream>): void {
-  void streamPromise
-    .then((s) => {
-      for (const t of s.getTracks()) t.stop();
-    })
-    .catch(() => {
-      /* rejected with the same error */
-    });
-}
-
-/** Handle to one capture worklet node (`worklets/capture-processor.ts`). */
-export type CaptureNode = {
-  node: AudioWorkletNode;
-  /** Begin accumulating — the worklet gates capture on its start/stop protocol. */
-  start(): void;
-  /**
-   * Stop accumulating and wait (bounded by {@link CAPTURE_STOP_ACK_TIMEOUT_MS})
-   * for the 'stopped' ack that follows the worklet's final flush, so the tail
-   * of speech reaches `onChunk` before the node is torn down.
-   */
-  stop(): Promise<void>;
-};
-
-/**
- * Wire one capture worklet node: node construction, the chunk/silent/stopped
- * port protocol, and the stop→ack handshake. No `processorOptions`: the
- * worklet reads the context rate from its global scope (callers assert the
- * granted rate first) and owns its own batching default — re-spelling
- * defaults caller-side is drift.
- */
-function createCaptureNode(
-  ctx: AudioContext,
-  onChunk: (pcm16: ArrayBuffer) => void,
-  onSilent?: () => void,
-): CaptureNode {
-  const node = new AudioWorkletNode(ctx, "capture-processor", {
-    channelCount: 1,
-    channelCountMode: "explicit",
-  });
-  let onStopped: (() => void) | null = null;
-  node.port.onmessage = (e: MessageEvent) => {
-    const d = e.data as { event?: string; buffer?: ArrayBuffer };
-    if (d.event === "chunk" && d.buffer) {
-      onChunk(d.buffer);
-    } else if (d.event === "silent") {
-      onSilent?.();
-    } else if (d.event === "stopped") {
-      onStopped?.();
-      onStopped = null;
-    }
-  };
-  return {
-    node,
-    start() {
-      node.port.postMessage({ event: "start" });
-    },
-    stop() {
-      // `Promise.withResolvers` rather than an executor: the resolver has to
-      // outlive the constructor call — it is stored on `onStopped` for the port
-      // handler above — so an executor only exists to hoist it back out.
-      const { promise, resolve } = Promise.withResolvers<void>();
-      const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
-      onStopped = () => {
-        clearTimeout(cap);
-        resolve();
-      };
-      node.port.postMessage({ event: "stop" });
-      return promise;
-    },
-  };
-}
 
 /**
  * Create a {@link VoiceIO} instance that captures microphone audio and
@@ -222,7 +131,20 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     onPlaybackStats,
     onPlaybackProgress,
     onMicSilent,
+    preConnect,
   } = opts;
+  const onPreConnectAudio =
+    opts.onPreConnectAudio ??
+    ((chunks: ArrayBuffer[]) => {
+      for (const chunk of chunks) onMicData(chunk);
+    });
+
+  // A pre-connect capture already running at the STT rate IS this path's
+  // capture: adopting its context and node keeps the stream seamless — no
+  // gap, no overlap. At any other rate it hands over only the stream (the
+  // grant) and its buffer, which is resampled below.
+  const adopted = preConnect?.sampleRate === sttSampleRate ? preConnect : null;
+  const detached = preConnect && !adopted ? await preConnect.detach() : null;
 
   const ctx = new AudioContext({
     sampleRate: ttsSampleRate,
@@ -232,10 +154,12 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   // needs a different one — the point being to let the browser resample the
   // mic stream, since its resampler is band-limited. `latencyHint:
   // "interactive"` because this side is barge-in sensitive, unlike playback.
-  const sharesContext = sttSampleRate === ttsSampleRate;
-  const capCtx = sharesContext
-    ? ctx
-    : new AudioContext({ sampleRate: sttSampleRate, latencyHint: "interactive" });
+  const sharesContext = !adopted && sttSampleRate === ttsSampleRate;
+  const capCtx =
+    adopted?.ctx ??
+    (sharesContext
+      ? ctx
+      : new AudioContext({ sampleRate: sttSampleRate, latencyHint: "interactive" }));
 
   // Release every context this call created, whether one or two.
   async function closeContexts(): Promise<void> {
@@ -251,9 +175,11 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   // Mic permission, context resume, and worklet registration are independent —
   // run them concurrently so a slow permission prompt doesn't serialize setup.
-  const streamPromise = navigator.mediaDevices.getUserMedia({
-    audio: { deviceId: { ideal: "default" }, ...VOICE_CAPTURE_CONSTRAINTS },
-  });
+  const streamPromise = preConnect
+    ? Promise.resolve(preConnect.stream)
+    : navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { ideal: "default" }, ...VOICE_CAPTURE_CONSTRAINTS },
+      });
 
   // A single Promise.all so the first rejection (typically getUserMedia
   // permission denial) fails the whole init immediately instead of waiting
@@ -264,7 +190,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       streamPromise,
       ctx.resume(),
       capCtx.resume(),
-      capCtx.audioWorklet.addModule(captureWorkletSrc),
+      // An adopted context registered the capture processor already.
+      adopted ? undefined : capCtx.audioWorklet.addModule(captureWorkletSrc),
       ctx.audioWorklet.addModule(playbackWorkletSrc),
     ]);
     // The requested rates are not advisory: capture audio is sent to a socket
@@ -281,15 +208,21 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     throw err;
   }
 
-  const mic = capCtx.createMediaStreamSource(stream);
-  const capture = createCaptureNode(capCtx, onMicData, onMicSilent);
-  mic.connect(capture.node);
+  const { mic, capture } = adopted
+    ? // Synchronous from the buffer's flush to the sink swap, so no live frame
+      // can land between the two and reach the wire ahead of older audio.
+      adopted.handOff({ onBuffered: onPreConnectAudio, onChunk: onMicData, onSilent: onMicSilent })
+    : await startCapture(capCtx, stream, {
+        onMicData,
+        onMicSilent,
+        // Resampled and flushed before `start()`, for the same ordering reason.
+        buffered: detached,
+        onBuffered: onPreConnectAudio,
+      });
 
   // No further mic chunks will ever arrive — surface it rather than staying
   // silently deaf.
   capture.node.onprocessorerror = () => onError?.(workletCrash("capture"));
-
-  capture.start();
 
   let playNode: AudioWorkletNode | null = null;
   /**

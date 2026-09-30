@@ -289,6 +289,18 @@ export type VoiceSessionOptions = {
    */
   client?: string | (() => string | undefined) | undefined;
   /**
+   * Open the microphone when the session connects, rather than once the
+   * server has configured it, and send what the caller said in between ahead
+   * of the live audio — so an opener spoken while the agent is still joining
+   * (a handshake, or a sandbox boot on the platform) reaches it instead of
+   * being lost. The latest 10 seconds are kept.
+   *
+   * Default `true`. `false` asks for the microphone only after the server's
+   * `config` frame, as before; a UI that wants the permission prompt to
+   * follow its own greeting might.
+   */
+  preConnectAudio?: boolean | undefined;
+  /**
    * WebSocket constructor override. Primarily useful for testing with a mock
    * WebSocket. When omitted, the session uses a reconnecting WebSocket
    * (partysocket) that retries with exponential backoff after an unexpected

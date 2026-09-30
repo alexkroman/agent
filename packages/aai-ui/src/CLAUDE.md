@@ -55,6 +55,22 @@ entering `down`.
   `session-core-audio-effects.ts`, setup is `session-core-audio-setup.ts`, so
   `session-core-audio-state.test.ts` specs it without a browser.
 
+### Pre-connect audio (`session-core-preconnect.ts`)
+
+The mic opens on `connect()`, not on `config`, so an opener spoken while the
+agent joins is buffered (latest `PRE_CONNECT_MAX_SECONDS`) and sent ahead of
+live audio. Opt out with `preConnectAudio: false`.
+
+- **It captures at a GUESSED rate (16 kHz)**: `createVoiceIO({ preConnect })`
+  adopts the context and node whole on a match, else keeps only the grant and
+  resamples the buffer with `OfflineAudioContext` (`audio-preconnect.ts`).
+- **The buffer reaches the wire before any live frame**: the flush and the sink
+  swap are synchronous, and the burst bypasses the mic's backpressure drop
+  (`sendBuffered`) while still honouring mute.
+- **Ownership**: the holder until the bring-up `take()`s it, then the bring-up
+  (every rejection in `openAudioPath` closes it). A reconnect BEFORE `config`
+  keeps it buffering; only terminal paths `release()` it.
+
 ### Drain completion outlives the turn
 
 `done()` resolves when the worklet drains, which also happens when the

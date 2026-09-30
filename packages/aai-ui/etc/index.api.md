@@ -1102,6 +1102,7 @@ export type VoiceSessionOptions = {
     location?: string | (() => string | undefined) | undefined;
     phone?: string | (() => string | undefined) | undefined;
     client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
     WebSocket?: WebSocketConstructor | undefined;
 };
 

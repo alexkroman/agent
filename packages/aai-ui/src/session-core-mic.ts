@@ -56,6 +56,13 @@ export type MicDeps = {
 export type MicSender = {
   /** Send one captured PCM16 frame — as silence while muted. */
   sendAudio(bytes: ArrayBuffer): void;
+  /**
+   * Send the pre-connect burst (`session-core-preconnect.ts`) — muted like
+   * any frame, but past the backpressure drop: those frames are the audio the
+   * burst exists to deliver, bounded by `PRE_CONNECT_MAX_SECONDS`, and a
+   * dropped one would splice the caller's opener mid-word.
+   */
+  sendBuffered(chunks: ArrayBuffer[]): void;
   /** Mute or unmute the caller. Idempotent, local, and connection-independent. */
   setMicMuted(muted: boolean): void;
 };
@@ -80,6 +87,12 @@ export function createMicSender(deps: MicDeps): MicSender {
       // and flushes stale speech into STT once the connection recovers.
       if (ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
       ws.send(deps.snapshot().micMuted ? silent(bytes.byteLength) : bytes);
+    },
+    sendBuffered(chunks: ArrayBuffer[]): void {
+      const ws = deps.conn.ws;
+      if (ws?.readyState !== WS_OPEN) return;
+      const muted = deps.snapshot().micMuted;
+      for (const bytes of chunks) ws.send(muted ? silent(bytes.byteLength) : bytes);
     },
     setMicMuted(muted: boolean): void {
       deps.updateState({ micMuted: muted });

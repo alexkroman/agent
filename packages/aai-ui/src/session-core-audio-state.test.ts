@@ -48,6 +48,7 @@ function harness() {
       });
     }),
     sendMicAudio: vi.fn(),
+    sendPreConnectAudio: vi.fn(),
     reportProgress: vi.fn(),
     announceReady: vi.fn(),
     micLive: vi.fn(),
