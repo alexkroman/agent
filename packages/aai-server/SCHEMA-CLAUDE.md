@@ -25,10 +25,12 @@ serving a SWEEP rather than a caller's query:
 
 - `workflow_runs_listing_idx` `(slug, workflow, created_at desc, run_id desc)` —
   the one `listRuns` reads;
-- `workflow_runs_stalled_idx` `(created_at) where status in ('pending',
-  'running')` — the reconcile pass (`20260901020000`);
-- `workflow_runs_terminal_idx` `(created_at) where status in ('completed',
-  'failed', 'cancelled')` — the retention sweep (`20260902120000`).
+- `workflow_runs_stalled_idx`
+  `(created_at) where status in ('pending', 'running')` — the reconcile pass
+  (`20260901020000`);
+- `workflow_runs_terminal_idx`
+  `(created_at) where status in ('completed', 'failed', 'cancelled')` — the
+  retention sweep (`20260902120000`).
 
 Two of the three are PARTIAL on `status`, so the run's one terminal transition
 already moves the row out of one index and into the other. That is the floor,
@@ -104,14 +106,14 @@ land without one and a deleted sweep fails the verdict that names it. Read the
 verdicts there rather than here — this section is the summary and the argument
 for the five exceptions.
 
-| Pruned by | Tables | Window |
-| --- | --- | --- |
-| `aai-sweep-rate-limits` | `studio_rate_limits` | `reset_at` |
-| `aai-sweep-studio-sessions` | `studio_sessions` | `expires_at` |
-| `aai-sweep-session-state` | `session_slots`, `session_events` | `SESSION_STATE_RETENTION` (2 days) |
-| `aai-sweep-upload-records` | `workflow_uploads` | `UPLOAD_RECORD_RETENTION` (7 days) |
-| `aai-sweep-workflow-runs` | `workflow_runs` + `workflow_steps`, `workflow_attempts`, `workflow_attempt_leases`, `workflow_sleeps`, `workflow_hooks` | 30 days after the run started, once terminal |
-| `aai-sweep-workflow-run-keys` | `workflow_run_keys` | when the run it names is gone |
+| Pruned by                     | Tables                                                                                                                  | Window                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `aai-sweep-rate-limits`       | `studio_rate_limits`                                                                                                    | `reset_at`                                   |
+| `aai-sweep-studio-sessions`   | `studio_sessions`                                                                                                       | `expires_at`                                 |
+| `aai-sweep-session-state`     | `session_slots`, `session_events`                                                                                       | `SESSION_STATE_RETENTION` (2 days)           |
+| `aai-sweep-upload-records`    | `workflow_uploads`                                                                                                      | `UPLOAD_RECORD_RETENTION` (7 days)           |
+| `aai-sweep-workflow-runs`     | `workflow_runs` + `workflow_steps`, `workflow_attempts`, `workflow_attempt_leases`, `workflow_sleeps`, `workflow_hooks` | 30 days after the run started, once terminal |
+| `aai-sweep-workflow-run-keys` | `workflow_run_keys`                                                                                                     | when the run it names is gone                |
 
 Outside `aai_platform`, `aai-sweep-cron-history` prunes
 `cron.job_run_details` and `aai-sweep-preview-archive` prunes

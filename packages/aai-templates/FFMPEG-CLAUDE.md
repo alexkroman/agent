@@ -27,15 +27,15 @@ keeping. `transcription-workflow` cuts by arithmetic because with no decoder tha
 is all it can do, and it pays for that three times over. Normalizing first, to a
 format the desk itself chose, deletes all three:
 
-| | `transcription-workflow` | `call-audit-workflow` |
-| --- | --- | --- |
-| intermediate | linear-PCM WAV | headerless raw PCM |
-| header | parsed — `parseWav`, ~180 lines | **none: byte 0 is second 0** |
-| cut at | every 90s, wherever that lands | **the middle of a pause** |
-| overlap | 2s per segment, transcribed twice | **none** |
-| stitching | seam matching over 40 words | **ordered concatenation** |
-| caps to plan against | 120s AND 40 MB, whichever binds | **120s** |
-| fan-out width | derived per recording from a byte budget | **a constant** |
+|                      | `transcription-workflow`                 | `call-audit-workflow`        |
+| -------------------- | ---------------------------------------- | ---------------------------- |
+| intermediate         | linear-PCM WAV                           | headerless raw PCM           |
+| header               | parsed — `parseWav`, ~180 lines          | **none: byte 0 is second 0** |
+| cut at               | every 90s, wherever that lands           | **the middle of a pause**    |
+| overlap              | 2s per segment, transcribed twice        | **none**                     |
+| stitching            | seam matching over 40 words              | **ordered concatenation**    |
+| caps to plan against | 120s AND 40 MB, whichever binds          | **120s**                     |
+| fan-out width        | derived per recording from a byte budget | **a constant**               |
 
 Four rules came out of building it, each of which a first draft gets wrong:
 

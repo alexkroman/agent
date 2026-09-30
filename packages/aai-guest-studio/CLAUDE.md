@@ -63,8 +63,9 @@ here — every piece of that is `agent()` plus `createTextAgent`
   schema validation, coercion, `ctx`, the per-call deadline, and a throw shaped
   into `{"error": …}`. Specs call `runTool` (`aai-guest-core/test-utils`), never
   `execute` — several depend on that shaping.
-- **Web builtins are NAMED** (`builtinTools: ["visit_webpage",
-  "get_page_design", "web_search"]`), not adapted.
+- **Web builtins are NAMED**
+  (`builtinTools: ["visit_webpage", "get_page_design", "web_search"]`), not
+  adapted.
 - **`generate_design_inspiration` uses `ctx.generate`**, so the brief and the
   reply use the same model.
 - **The 120s tool deadline is `toolTimeoutMs`** on `createTextAgent` (the SDK
@@ -142,7 +143,8 @@ toolchain is missing. Anything else written for the CLI belongs in that subpath.
 without it `new URL("agent.md", …)` replaces the last segment. Path-rewriting
 sweeps drop it.
 
-Testing: [`packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`](../aai-guest/CODING-AGENT-TESTS-CLAUDE.md)
+Testing:
+[`packages/aai-guest/CODING-AGENT-TESTS-CLAUDE.md`](../aai-guest/CODING-AGENT-TESTS-CLAUDE.md)
 — the agent-level spec through `runTextAgent` and the agent's own eval.
 
 ## One claim on the workspace at a time — turns AND re-installs
@@ -164,11 +166,12 @@ taken by a chat turn AND by `initStudioSession`.
 ## A workspace's own package.json is REIFIED, not just read
 
 `workspace-deps.ts` runs `npm install --omit=dev` when anything in
-`dependencies` is missing, wherever a workspace is prepared: `initStudioSession`,
-`deployWorkspaceDir` (Publish), `buildWorkspaceDir` (`test_agent`). Needed
-because `node_modules` survives neither a re-install (`rm -rf`) nor Publish's
-fresh `withBuildDir`, nor an `aai push`, and the worker bundle is
-`ssr: { noExternal: true }` — a missing package is a hard resolve failure.
+`dependencies` is missing, wherever a workspace is prepared:
+`initStudioSession`, `deployWorkspaceDir` (Publish), `buildWorkspaceDir`
+(`test_agent`). Needed because `node_modules` survives neither a re-install
+(`rm -rf`) nor Publish's fresh `withBuildDir`, nor an `aai push`, and the worker
+bundle is `ssr: { noExternal: true }` — a missing package is a hard resolve
+failure.
 
 **The workspace manifest declares only the workspace's own packages.** The
 platform's six (`WORKSPACE_DEPENDENCIES` in `project-shape.ts`) resolve from the

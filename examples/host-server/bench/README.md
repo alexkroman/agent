@@ -19,7 +19,7 @@ The two AssemblyAI providers are replaced by local fakes, reached through the
 documented staging overrides (`assemblyAIStt({ streamingUrl })`,
 `assemblyAITts({ host })`). Both speak TLS, because the vendor STT SDK refuses a
 `ws://` endpoint outright and the TTS adapter hardcodes `wss://`. The fakes run
-in the *driver* process, so their cost never lands in the measurement — which
+in the _driver_ process, so their cost never lands in the measurement — which
 also matches production, where the providers are somebody else's machines.
 
 ## Results — 4 vCPU, 16 GB, Node 22

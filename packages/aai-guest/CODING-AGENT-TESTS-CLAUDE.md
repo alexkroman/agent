@@ -31,13 +31,13 @@ which is the gap `studio/agent-turns.test.ts` closes with the SDK's own
 framework — `runTextAgent` + `scriptedTextModel`
 (`@alexkroman1/aai-runtime/testing`):
 
-| | what it drives |
-| --- | --- |
-| `studio/agent.test.ts` | what the DEFINITION declares |
-| `studio/tools.test.ts` | the studio's own half of the tool set through `runTool` — the syntax gate, the post-write diagnostics, the scrubbed `bash` env, `test_agent`. The nine workspace tools are the SDK's and are covered there (`coding-tools.test.ts`) |
-| `studio/chat.scenario.test.ts` | the HTTP SURFACE, over a real port and real disk |
-| **`studio/agent-turns.test.ts`** | **one TURN of `createTextAgent` over the real definition** |
-| `studio/agent.eval.test.ts` | a LIVE model over a real workspace |
+|                                  | what it drives                                                                                                                                                                                                                      |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `studio/agent.test.ts`           | what the DEFINITION declares                                                                                                                                                                                                        |
+| `studio/tools.test.ts`           | the studio's own half of the tool set through `runTool` — the syntax gate, the post-write diagnostics, the scrubbed `bash` env, `test_agent`. The nine workspace tools are the SDK's and are covered there (`coding-tools.test.ts`) |
+| `studio/chat.scenario.test.ts`   | the HTTP SURFACE, over a real port and real disk                                                                                                                                                                                    |
+| **`studio/agent-turns.test.ts`** | **one TURN of `createTextAgent` over the real definition**                                                                                                                                                                          |
+| `studio/agent.eval.test.ts`      | a LIVE model over a real workspace                                                                                                                                                                                                  |
 
 **`runTextAgent` had no caller in the repo before this**, and the coding agent
 is the only text agent there is — its own doc says it "builds a fresh text agent
@@ -52,7 +52,7 @@ them could not be made anywhere else:
   it for this definition: with `maxSteps: 1` and a script that would keep
   calling tools, the turn runs TWO steps and the second one speaks. Before, a
   capped turn ended wherever the budget ran out — including straight after a
-  tool result with nothing said — and it ended *successfully*, so the user saw
+  tool result with nothing said — and it ended _successfully_, so the user saw
   the agent simply stop.
 - **A turn is a `SessionEvent` stream the eval readers take unchanged**
   (`toolCallsInEvents`, `saidIn`, one terminator). That bridge is what makes
@@ -152,10 +152,10 @@ holds the copies current, and a case that passes `studioPrompt` runs the shipped
 text as DATA — which is what it is in production too, since the host puts it in
 the session-init payload and the guest only ever runs it. So:
 
-| A case with… | runs on | and therefore grades |
-| --- | --- | --- |
-| no `studioPrompt` (the default) | `STUDIO_EVAL_PROMPT` | the tool set, the tool DESCRIPTIONS, each tool's own result prose, and the model |
-| `studioPrompt: "agent"` \| `"workflow"` | the shipped text | the studio's PROMPT, plus all of the above |
+| A case with…                            | runs on              | and therefore grades                                                             |
+| --------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
+| no `studioPrompt` (the default)         | `STUDIO_EVAL_PROMPT` | the tool set, the tool DESCRIPTIONS, each tool's own result prose, and the model |
+| `studioPrompt: "agent"` \| `"workflow"` | the shipped text     | the studio's PROMPT, plus all of the above                                       |
 
 Either way the real, guest-owned `toolchainPromptSection()` that
 `initStudioSession` appends is present, exactly as in production.
@@ -290,14 +290,14 @@ validation this paragraph used to say they were waiting for.** All six pass.
 Two consecutive runs, whole file **88s at five cases** and **117s at six**, per
 case:
 
-| case | run 1 | run 2 |
-| --- | --- | --- |
-| adds what it was asked for | 16.8s | 22.2s |
-| repairs the type error it is handed | 25.0s | 18.6s |
+| case                                 | run 1 | run 2 |
+| ------------------------------------ | ----- | ----- |
+| adds what it was asked for           | 16.8s | 22.2s |
+| repairs the type error it is handed  | 25.0s | 18.6s |
 | starts from a template by COPYING it | 10.5s | 16.0s |
-| makes a failing spec pass | 22.1s | 31.4s |
+| makes a failing spec pass            | 22.1s | 31.4s |
 | looks at a file before it changes it | 13.4s | 14.6s |
-| builds the studio's own starter | — | 13.8s |
+| builds the studio's own starter      | —     | 13.8s |
 
 **Read that spread before drawing anything from a single run.** Identical code,
 ±40% per case on wall clock — which is what the starter eval's own guide warns

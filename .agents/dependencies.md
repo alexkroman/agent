@@ -27,6 +27,7 @@ things stay OUT:
   `z.object(…)` must be the type `tool()` accepts — they declare zod a peer.
   `aai-cli` is an executable whose one zod-typed subpath has a single internal
   consumer, so it keeps zod as a dependency.
+
 - **`docs`'s TypeScript**, pinned to 6.x via the named `typedoc` catalog because
   TypeDoc needs the JS compiler API TS 7 lacks. The same catalog's
   `typescript-6: npm:typescript@~6.0.0` gives the root the 6.x API for

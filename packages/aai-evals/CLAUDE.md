@@ -188,11 +188,11 @@ judged case under `AAI_EVAL_REPEAT` through the spread above.
 4 level-1 cases × 5 repeats × 3 runs = 60 passes, one small support agent on the
 default AssemblyAI pipeline LLM:
 
-| | |
-| --- | --- |
-| score | **100% in all 60 passes**, per-case spread **±0%**, `unstable` empty |
-| wall clock | **46s / 93s / 70s** per 20-pass run — 2.0x between the fastest and slowest |
-| one repeat of all four cases | ~6s |
+|                              |                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| score                        | **100% in all 60 passes**, per-case spread **±0%**, `unstable` empty       |
+| wall clock                   | **46s / 93s / 70s** per 20-pass run — 2.0x between the fastest and slowest |
+| one repeat of all four cases | ~6s                                                                        |
 
 The finding is the asymmetry: at this scope the SCORE is not the noisy thing,
 LATENCY is. Read the 100% carefully — it says these four cases do not
@@ -328,7 +328,7 @@ of bug that would have made a report LIE rather than error:
   harmless; the pipeline estimates playback open-loop from forwarded audio plus
   a grace, so for several hundred ms after a reply the agent is modelled as holding
   the floor — and a harness that commits its next utterance in the same tick
-  commits it *during* speech, i.e. as a barge-in. Every case after the greeting
+  commits it _during_ speech, i.e. as a barge-in. Every case after the greeting
   recorded a spurious `reply.cancelled`.
 - **`say()` waits for the reply to THIS utterance.** Waiting for "a reply
   terminator" settled on the previous reply's cancel, so `say()` returned before
@@ -356,13 +356,13 @@ path too.
 It is importable — five subpath exports, `@dev/source` only, since nothing here
 builds:
 
-| Subpath | What a consumer takes from it |
-| --- | --- |
-| `aai-evals/runner` | `runEval`, `createRecorder`, `EvalRecorder`, the report types |
-| `aai-evals/report` | `formatEvalReport`, `evalShortfalls`, `condense` |
-| `aai-evals/gate` | `describeEvalTier`, `describeEvalTierWhen`, `evalApiKey`, `evalKeyEnv`, `sayFromHarness` |
-| `aai-evals/register` | `registerEvalCases`, `evalOnlySelects` |
-| `aai-evals/env` | `envValue`, `envFlag`, `envInt` |
+| Subpath              | What a consumer takes from it                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `aai-evals/runner`   | `runEval`, `createRecorder`, `EvalRecorder`, the report types                            |
+| `aai-evals/report`   | `formatEvalReport`, `evalShortfalls`, `condense`                                         |
+| `aai-evals/gate`     | `describeEvalTier`, `describeEvalTierWhen`, `evalApiKey`, `evalKeyEnv`, `sayFromHarness` |
+| `aai-evals/register` | `registerEvalCases`, `evalOnlySelects`                                                   |
+| `aai-evals/env`      | `envValue`, `envFlag`, `envInt`                                                          |
 
 **Five and not seven.** `assertions.ts` and `tool-assertions.ts` are the natural
 next entries and are deliberately NOT exported: no consumer imports them today,
@@ -435,6 +435,7 @@ so the edge cannot acquire a reverse. `turbo.json`'s `build` is
    mostly-correct agent. It returns a scope that fails EVERY assertion now, each
    under its own label, because "nothing was measured" is not "nothing was
    wrong".
+
 4. Reach for `eventsSatisfy(label, predicate)` for a claim the vocabulary does
    not carry — a ratio between two event types is the shape the guides' own
    findings take.

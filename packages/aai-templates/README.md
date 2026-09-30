@@ -24,12 +24,12 @@ the CLI build's `inputs` so editing a template invalidates that build.
 
 ## Layout
 
-| Path | What it is |
-| --- | --- |
-| `templates/<name>/` | 28 complete agent projects, each self-contained |
-| `scaffold/` | the base project files layered under any template — `package.json`, `tsconfig.json` (one `extends` line), `vitest.config.ts` (one `defineAgentTestConfig()` call), `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
-| `src/` | this package's suites: the template gates, plus the gates that guard the repo's gates |
-| `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises |
+| Path                          | What it is                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `templates/<name>/`           | 28 complete agent projects, each self-contained                                                                                                                                                                                                                                          |
+| `scaffold/`                   | the base project files layered under any template — `package.json`, `tsconfig.json` (one `extends` line), `vitest.config.ts` (one `defineAgentTestConfig()` call), `pnpm-workspace.yaml`, `.gitignore`, `.env.example` — plus `CLAUDE.md`, which is the guide rather than a project file |
+| `src/`                        | this package's suites: the template gates, plus the gates that guard the repo's gates                                                                                                                                                                                                    |
+| `template-api-allowlist.json` | the coverage ratchet's baseline — published exports no template exercises                                                                                                                                                                                                                |
 
 `scaffold/CLAUDE.md` is a **product artifact**, not repo documentation: it is
 embedded in the studio system prompt and materialized as
@@ -53,16 +53,16 @@ now, and only the `deno` build target still emits a file by that name.
 
 ## Anatomy of a template
 
-| File | Role | Count |
-| --- | --- | --- |
-| `agent.ts` | the entry, default-exporting `agent()` or `workflowApp()` | 28 |
+| File                   | Role                                                                                                       | Count        |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------------ |
+| `agent.ts`             | the entry, default-exporting `agent()` or `workflowApp()`                                                  | 28           |
 | `tools/<tool_name>.ts` | **one file IS one tool** — it default-exports it, nothing imports it, and `agent()` takes no `tools` field | 18 templates |
-| `workflows/` | durable workflow bodies | 8 templates |
-| `client.tsx` | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app) | 19 templates |
-| `system-prompt.md` | imported with Vite's `?raw`; **it IS the system prompt** | 18 templates |
-| `shared.ts` | the session slot, its projection, and anything both ends need | most |
-| `agent.test.ts` | unit tests, run by `pnpm test` | 28 templates |
-| `agent.eval.test.ts` | a behaviour eval, live or against a scripted model | 28 templates |
+| `workflows/`           | durable workflow bodies                                                                                    | 8 templates  |
+| `client.tsx`           | the browser half; mounts with `mountClient()` (voice) or `mountPage()` (workflow app)                      | 19 templates |
+| `system-prompt.md`     | imported with Vite's `?raw`; **it IS the system prompt**                                                   | 18 templates |
+| `shared.ts`            | the session slot, its projection, and anything both ends need                                              | most         |
+| `agent.test.ts`        | unit tests, run by `pnpm test`                                                                             | 28 templates |
+| `agent.eval.test.ts`   | a behaviour eval, live or against a scripted model                                                         | 28 templates |
 
 Tool discovery happens where the bundle is assembled — the guest sandbox is
 handed one ESM string and has no directory to scan — so `tools/` is enumerated
@@ -75,37 +75,37 @@ Six are **workflow apps** (`workflowApp()`, a form rather than a microphone, no
 session and no voice pipeline); the rest are voice agents, two of which hand
 work off to a durable workflow.
 
-| Template | Kind | What it is |
-| --- | --- | --- |
-| `quickstart-agent` | voice | a bare voice agent on the default AssemblyAI pipeline — nine lines, and where to start |
-| `custom-pipeline-agent` | voice | the same agent with one pipeline stage swapped — an Anthropic LLM between AssemblyAI's STT and TTS |
-| `web-research-agent` | voice | a researcher that answers from the open web — `web_search` + `visit_webpage`, the smallest builtin-tool agent |
-| `code-interpreter-agent` | voice | a problem solver that answers by writing and running code — the `run_code` builtin |
-| `medication-safety-agent` | voice | a drug-interaction checker over openFDA — the smallest custom tool on a live REST API, beside `web_search`, `run_code` and `fetch_json` |
-| `entertainment-picks-agent` | voice | a late-night picker for movies, music and books — a slot beside `useEvent`, with a synced recommendation log |
-| `push-to-talk-agent` | voice | a hold-to-talk notebook — `turnDetection: "manual"` plus `usePushToTalk()`: the caller ends each turn by letting go, so a note can span pauses and nothing said with the button up is heard |
-| `pizza-ordering-agent` | voice | a pizza counter that keeps a real cart — the smallest stateful agent: one `sessionSlot`, six tools, one projection |
-| `text-adventure-agent` | voice | a spoken text adventure — the world lives in a slot, custom chrome renders it |
-| `tabletop-rpg-agent` | voice | a solo tabletop narrator — game state in a slot, a nested dialog and a final one |
-| `emergency-dispatch-agent` | voice | a 911-style dispatch desk — incidents, units, and a live board projection that keeps caller PII server-side |
-| `retail-orders-agent` | voice | a retail support line that manages real orders — the largest: fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state |
-| `travel-concierge-agent` | voice | a phone travel concierge (LangGraph's customer-support tutorial) — a dialog stack and a confirmation gate |
-| `executive-inbox-agent` | voice | an assistant you phone about your inbox (LangChain's EAIA) — triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections |
-| `roadside-assistance-agent` | voice | a roadside assistance desk — the dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, per-phase LLM knobs |
-| `technical-support-agent` | voice | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) — and the reference for a knowledge base bundled as a JSON asset import |
-| `research-planner-agent` | voice | a planning desk that really searches (LangGraph's plan-and-execute) — the execute→replan loop, driven one step per tool call by the caller |
-| `topic-briefing-agent` | voice | a briefing desk that puts several researchers on one topic at once — the `ctx.delegate` example |
-| `applicant-screening-agent` | voice | a hiring desk that screens a stack of applicants (CrewAI's `lead-score-flow`) — one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
-| `hotel-reception-agent` | voice | a hotel front desk (LiveKit Agents' `hotel_receptionist`) — a seeded hotel in one slot, verification the TOOLS run, a booking dialog whose read-back is owed until the caller's next turn, a dispute engine, and the walk procedure: forty-one tools |
-| `word-game-agent` | voice | a three-way phone word game (Pipecat's) — the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout` |
-| `research-handoff-agent` | voice + workflow | a research desk that hands off — a tool starts a durable run, answers the turn, and the finished run speaks back |
-| `meeting-recap-agent` | voice + workflow | a recap desk that transcribes and writes up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call |
-| `link-digest-workflow` | workflow app | a URL in, a digest out — the smallest one; read it before the other five |
-| `transcription-workflow` | workflow app | a transcription desk for an uploaded recording — split it, transcribe each piece in its own step, stitch |
-| `spoken-summary-workflow` | workflow app | a recording summarized and read back aloud — audio in, audio out |
-| `call-audit-workflow` | workflow app | an audit of a recorded call — ffmpeg on both sides of the model |
-| `document-redline-workflow` | workflow app | a document redliner you submit work to (LangGraph's reflection agent) — write, critique, revise |
-| `podcast-digest-workflow` | workflow app | a podcast digest posted to a channel — a **scheduled** run that sleeps for days, wakes, and posts |
+| Template                    | Kind             | What it is                                                                                                                                                                                                                                                         |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `quickstart-agent`          | voice            | a bare voice agent on the default AssemblyAI pipeline — nine lines, and where to start                                                                                                                                                                             |
+| `custom-pipeline-agent`     | voice            | the same agent with one pipeline stage swapped — an Anthropic LLM between AssemblyAI's STT and TTS                                                                                                                                                                 |
+| `web-research-agent`        | voice            | a researcher that answers from the open web — `web_search` + `visit_webpage`, the smallest builtin-tool agent                                                                                                                                                      |
+| `code-interpreter-agent`    | voice            | a problem solver that answers by writing and running code — the `run_code` builtin                                                                                                                                                                                 |
+| `medication-safety-agent`   | voice            | a drug-interaction checker over openFDA — the smallest custom tool on a live REST API, beside `web_search`, `run_code` and `fetch_json`                                                                                                                            |
+| `entertainment-picks-agent` | voice            | a late-night picker for movies, music and books — a slot beside `useEvent`, with a synced recommendation log                                                                                                                                                       |
+| `push-to-talk-agent`        | voice            | a hold-to-talk notebook — `turnDetection: "manual"` plus `usePushToTalk()`: the caller ends each turn by letting go, so a note can span pauses and nothing said with the button up is heard                                                                        |
+| `pizza-ordering-agent`      | voice            | a pizza counter that keeps a real cart — the smallest stateful agent: one `sessionSlot`, six tools, one projection                                                                                                                                                 |
+| `text-adventure-agent`      | voice            | a spoken text adventure — the world lives in a slot, custom chrome renders it                                                                                                                                                                                      |
+| `tabletop-rpg-agent`        | voice            | a solo tabletop narrator — game state in a slot, a nested dialog and a final one                                                                                                                                                                                   |
+| `emergency-dispatch-agent`  | voice            | a 911-style dispatch desk — incidents, units, and a live board projection that keeps caller PII server-side                                                                                                                                                        |
+| `retail-orders-agent`       | voice            | a retail support line that manages real orders — the largest: fifteen tools over a seeded catalog, an auth gate, and a call's dialog ending in a terminal state                                                                                                    |
+| `travel-concierge-agent`    | voice            | a phone travel concierge (LangGraph's customer-support tutorial) — a dialog stack and a confirmation gate                                                                                                                                                          |
+| `executive-inbox-agent`     | voice            | an assistant you phone about your inbox (LangChain's EAIA) — triage, drafts in your voice, a calendar subagent, the Agent Inbox's four answers as gated tools, and a memory that rewrites its own prompts from your corrections                                    |
+| `roadside-assistance-agent` | voice            | a roadside assistance desk — the dialog that describes a CALL rather than a form: a silence ladder, an uninterruptible fee disclosure, per-phase LLM knobs                                                                                                         |
+| `technical-support-agent`   | voice            | a support line that grades its own retrieval before it speaks (self-RAG / CRAG) — and the reference for a knowledge base bundled as a JSON asset import                                                                                                            |
+| `research-planner-agent`    | voice            | a planning desk that really searches (LangGraph's plan-and-execute) — the execute→replan loop, driven one step per tool call by the caller                                                                                                                         |
+| `topic-briefing-agent`      | voice            | a briefing desk that puts several researchers on one topic at once — the `ctx.delegate` example                                                                                                                                                                    |
+| `applicant-screening-agent` | voice            | a hiring desk that screens a stack of applicants (CrewAI's `lead-score-flow`) — one crew scores them through `ctx.generate`, a human-in-the-loop router becomes a dialog with a bounded feedback loop, and the other crew writes every email as a guarded subagent |
+| `hotel-reception-agent`     | voice            | a hotel front desk (LiveKit Agents' `hotel_receptionist`) — a seeded hotel in one slot, verification the TOOLS run, a booking dialog whose read-back is owed until the caller's next turn, a dispute engine, and the walk procedure: forty-one tools               |
+| `word-game-agent`           | voice            | a three-way phone word game (Pipecat's) — the host is the agent, the A.I. player is `ctx.generate` on its own context, the referee is a function, and the two-minute clock is a dialog `timeout`                                                                   |
+| `research-handoff-agent`    | voice + workflow | a research desk that hands off — a tool starts a durable run, answers the turn, and the finished run speaks back                                                                                                                                                   |
+| `meeting-recap-agent`       | voice + workflow | a recap desk that transcribes and writes up a recording — the Temporal patterns (cancel, signal, compensate) over a phone call                                                                                                                                     |
+| `link-digest-workflow`      | workflow app     | a URL in, a digest out — the smallest one; read it before the other five                                                                                                                                                                                           |
+| `transcription-workflow`    | workflow app     | a transcription desk for an uploaded recording — split it, transcribe each piece in its own step, stitch                                                                                                                                                           |
+| `spoken-summary-workflow`   | workflow app     | a recording summarized and read back aloud — audio in, audio out                                                                                                                                                                                                   |
+| `call-audit-workflow`       | workflow app     | an audit of a recorded call — ffmpeg on both sides of the model                                                                                                                                                                                                    |
+| `document-redline-workflow` | workflow app     | a document redliner you submit work to (LangGraph's reflection agent) — write, critique, revise                                                                                                                                                                    |
+| `podcast-digest-workflow`   | workflow app     | a podcast digest posted to a channel — a **scheduled** run that sleeps for days, wakes, and posts                                                                                                                                                                  |
 
 ## Running things
 
@@ -128,12 +128,12 @@ pnpm --filter aai-templates test:eval
 Four repo-level gates read this package and are worth knowing about before
 touching the scaffold:
 
-| Gate | What it holds |
-| --- | --- |
+| Gate                        | What it holds                                                                                                                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm check:template-types` | every template type-checks under the **scaffold's** tsconfig — the one a user actually gets — not the repo's stricter one — then again with `exactOptionalPropertyTypes` on, the flag a stricter consumer may enable |
-| `pnpm check:scaffold` | `scaffold/package.json` still matches the workspace's dependency versions (`pnpm sync:scaffold` fixes it) |
-| `pnpm check:agent-guide` | `packages/aai/AGENT_GUIDE.md` is the current copy of `scaffold/CLAUDE.md` (`pnpm sync:agent-guide` fixes it) |
-| `pnpm check:konsistent` | the `agent-templates` convention: an `agent.ts` with a default export, and a `client.tsx` that imports the stylesheet |
+| `pnpm check:scaffold`       | `scaffold/package.json` still matches the workspace's dependency versions (`pnpm sync:scaffold` fixes it)                                                                                                            |
+| `pnpm check:agent-guide`    | `packages/aai/AGENT_GUIDE.md` is the current copy of `scaffold/CLAUDE.md` (`pnpm sync:agent-guide` fixes it)                                                                                                         |
+| `pnpm check:konsistent`     | the `agent-templates` convention: an `agent.ts` with a default export, and a `client.tsx` that imports the stylesheet                                                                                                |
 
 ## `src/` is also where the repo's gates are guarded
 

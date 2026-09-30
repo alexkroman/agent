@@ -17,13 +17,13 @@ hook (`lefthook.yml`, `changeset-status`) and `check.yml` run
 
 ## 1. Decide what the change ships through
 
-| The branch changes | The changeset must name |
-| --- | --- |
-| `aai`, `aai-ui`, `aai-cli`, `aai-runtime` | any ONE of them — they are a fixed group (`.changeset/config.json` `fixed`), so all four bump to the same version |
-| `aai-server` or `aai-studio-server` source, or `supabase/migrations/**` | `aai-server` and/or `aai-studio-server` itself — a dependent bump from an SDK changeset does not count |
-| `aai-studio-client` or `aai-guest` | a carrier: `aai-server` or `aai-studio-server` (`SHIPS_VIA` in `scripts/guard-invariants-changesets.mjs`) |
-| `aai-templates` | one of the fixed four — the templates ship inside the CLI tarball |
-| docs, tests, config only | an empty changeset |
+| The branch changes                                                      | The changeset must name                                                                                           |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `aai`, `aai-ui`, `aai-cli`, `aai-runtime`                               | any ONE of them — they are a fixed group (`.changeset/config.json` `fixed`), so all four bump to the same version |
+| `aai-server` or `aai-studio-server` source, or `supabase/migrations/**` | `aai-server` and/or `aai-studio-server` itself — a dependent bump from an SDK changeset does not count            |
+| `aai-studio-client` or `aai-guest`                                      | a carrier: `aai-server` or `aai-studio-server` (`SHIPS_VIA` in `scripts/guard-invariants-changesets.mjs`)         |
+| `aai-templates`                                                         | one of the fixed four — the templates ship inside the CLI tarball                                                 |
+| docs, tests, config only                                                | an empty changeset                                                                                                |
 
 Private packages ARE versioned (`privatePackages: { version: true }`), so a
 changeset may name them, and naming a server package is how a server-only

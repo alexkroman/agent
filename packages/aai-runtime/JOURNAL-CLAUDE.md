@@ -420,6 +420,7 @@ The claims are of four different kinds, which is why there are four files:
   Same reason
   every counting gate in this repo carries a floor: the success output of a
   hand-kept table is indistinguishable from a complete one.
+
 - **`aai-server/platform-workflow-journal.scenario.test.ts`** — the only place
   TENANCY is testable, that being a claim about column values in a shared table.
   Two tenants' rows, and every cross-tenant read comes back empty.
@@ -442,12 +443,12 @@ the JSON, found only by a real server.
 registers the backends. Three arms run it from this package; the fourth cannot,
 and it is the one that finds platform bugs:
 
-| Arm | Tier | What it can see |
-| --- | --- | --- |
-| memory | unit | the reference |
-| platform over a FAKE transport | unit | THIS side of the wire — the codec, `toRun`/`toStep` |
-| postgres, real database | scenario | `on conflict`, a row count, a unique index |
-| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements |
+| Arm                                                  | Tier                      | What it can see                                     |
+| ---------------------------------------------------- | ------------------------- | --------------------------------------------------- |
+| memory                                               | unit                      | the reference                                       |
+| platform over a FAKE transport                       | unit                      | THIS side of the wire — the codec, `toRun`/`toStep` |
+| postgres, real database                              | scenario                  | `on conflict`, a row count, a unique index          |
+| **platform over the REAL route and a real Postgres** | scenario, in `aai-server` | the platform's own statements                       |
 
 The unit platform arm delegates every SEMANTIC to the memory reference (its own
 header says so), so a divergence in the platform's SQL is invisible to it. One

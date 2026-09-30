@@ -4,7 +4,7 @@ description: A test settles what your code does. An eval drives a real session a
 ---
 
 A [test](/agent/build/testing/) settles what your code does. An eval settles
-what the agent did: whether the *model* reached for the right tool, with the
+what the agent did: whether the _model_ reached for the right tool, with the
 arguments the caller actually said, and answered with what came back.
 
 ```sh
@@ -50,7 +50,7 @@ the agent as `aai build` lowers it, with `tools/` discovered and
 
 ## Asserting the agent used a tool
 
-The reply is half of it. The other half is what the agent *did* before it
+The reply is half of it. The other half is what the agent _did_ before it
 spoke:
 
 ```ts
@@ -82,13 +82,13 @@ listing the tools it does declare.
 
 ## What a turn hands back
 
-| | |
-| --- | --- |
-| `turn.text` | The committed reply, joined — what the caller was told |
-| `turn.toolCalls` | This turn's calls, in call order, each with its result |
+|                  |                                                              |
+| ---------------- | ------------------------------------------------------------ |
+| `turn.text`      | The committed reply, joined — what the caller was told       |
+| `turn.toolCalls` | This turn's calls, in call order, each with its result       |
 | `turn.completed` | The reply ended on its own terms rather than being cancelled |
-| `turn.events` | This turn's events, from the utterance to the terminator |
-| `turn.errors` | The `error.reported` events this turn carried |
+| `turn.events`    | This turn's events, from the utterance to the terminator     |
+| `turn.errors`    | The `error.reported` events this turn carried                |
 
 The session answers the same questions over the whole conversation:
 `session.events()`, `session.toolCalls()`, and `session.said()` — which includes
@@ -102,16 +102,16 @@ of a different one.
 
 `describeEval` picks the model for you, and prints which it picked on every run.
 
-| | Live | Scripted |
-| --- | --- | --- |
-| **You get it when** | a provider key is in the environment | there is no key |
-| **Replies come from** | the real model | the case's `stubReply` |
-| **A case costs** | tokens, and a few seconds | nothing |
+|                        | Live                                                               | Scripted                                                                    |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| **You get it when**    | a provider key is in the environment                               | there is no key                                                             |
+| **Replies come from**  | the real model                                                     | the case's `stubReply`                                                      |
+| **A case costs**       | tokens, and a few seconds                                          | nothing                                                                     |
 | **A green run proves** | the agent chose the right tool and said the right thing, this once | the agent boots, `tools/` resolves, and a tool the script names really runs |
 
 A scripted run is a wiring check. The agent is real, so a green one proves it
 still starts and still has its tools — and it says nothing about what the agent
-*chose*, because you wrote the choice.
+_chose_, because you wrote the choice.
 
 A live run does speak to the choice, but it is a noisy instrument. One failure
 is a question, not a verdict.
@@ -127,10 +127,10 @@ against measures nothing.
 
 ### Cases that only make sense in one mode
 
-| Marker | Skipped when | Reach for it when |
-| --- | --- | --- |
-| `{ live: true }` | scripted | no script can satisfy the claim: a tool the model has to choose for itself, a refusal, a judgement |
-| `{ scripted: true }` | live | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
+| Marker               | Skipped when | Reach for it when                                                                                                                                   |
+| -------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{ live: true }`     | scripted     | no script can satisfy the claim: a tool the model has to choose for itself, a refusal, a judgement                                                  |
+| `{ scripted: true }` | live         | a competent model will not take the path — usually watching a guard refuse, since something has to call the gated tool before you can see it say no |
 
 ```ts
 import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
@@ -171,15 +171,15 @@ over a hand-written `find`, because **they throw when they have nothing to
 read**, and name what actually happened. A `find` that misses answers
 `undefined`, and a case asserting against `undefined` passes quietly.
 
-| Reader | Answers |
-| --- | --- |
-| `toolNames(calls)` | The names called, in call order |
-| `toolArgsIn(calls, name, schema)` | What one call was given |
-| `toolResultIn(calls, name, schema)` | What one call answered — `toolResultsIn` for several |
-| `saidIn(events)` / `errorsIn(events)` | The replies / what the runtime said went wrong |
-| `lastStateIn(events, schema)` / `statesIn` | What `syncState` pushed to the page |
-| `expectToolBeforeSpeech(turn)` | It acted before it spoke |
-| `describeTurn(turn)` / `describeToolCalls(calls)` | A message for an assertion that fails |
+| Reader                                            | Answers                                              |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| `toolNames(calls)`                                | The names called, in call order                      |
+| `toolArgsIn(calls, name, schema)`                 | What one call was given                              |
+| `toolResultIn(calls, name, schema)`               | What one call answered — `toolResultsIn` for several |
+| `saidIn(events)` / `errorsIn(events)`             | The replies / what the runtime said went wrong       |
+| `lastStateIn(events, schema)` / `statesIn`        | What `syncState` pushed to the page                  |
+| `expectToolBeforeSpeech(turn)`                    | It acted before it spoke                             |
+| `describeTurn(turn)` / `describeToolCalls(calls)` | A message for an assertion that fails                |
 
 A realistic case using three of them:
 

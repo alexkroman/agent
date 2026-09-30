@@ -32,19 +32,19 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
 
 - **`<ConversationView>` is the structure over `useConversation()`, every bubble
   a render slot**: pinned `AutoScroll`, empty-state guard, the interleave with
-  prefixed keys (`m<id>` / `t<callId>` — a message id and a call id with the same
-  digits must not collide), the streaming row (default: `renderMessage` over a
-  synthetic assistant message, `id: -1`), a `role="status"` thinking row, and the
-  transcript inline or `transcriptPosition="below"`.
+  prefixed keys (`m<id>` / `t<callId>` — a message id and a call id with the
+  same digits must not collide), the streaming row (default: `renderMessage`
+  over a synthetic assistant message, `id: -1`), a `role="status"` thinking row,
+  and the transcript inline or `transcriptPosition="below"`.
 - **`log` (`useConversationLog().entries`) REPLACES the live items**, not
   adds to them — the log's newest session entry already is the live
   conversation. Log rows are keyed by the entry's identity plus a repeat count,
   never its index (the log is trimmed from the front); `spoken` renders through
   `renderMessage` with id `-2`.
 - **`<MessageList>` is `<ConversationView>` with stock bubbles**
-  (`useCallback`-hoisted renderers so per-row memo holds; default `renderTool` is
-  `<ToolCallRow variant="compact">`). It must stay rebuildable from the public
-  hook — that is the test that the hook has no holes.
+  (`useCallback`-hoisted renderers so per-row memo holds; default `renderTool`
+  is `<ToolCallRow variant="compact">`). It must stay rebuildable from the
+  public hook — that is the test that the hook has no holes.
 - **Subscribe per field** (`useSessionSelector`, `useSessionStatus`,
   `useSessionError`), never whole `useSession()`, in anything that renders at
   STT-partial rate. `use-conversation.test.tsx` pins that unrelated snapshot
@@ -56,10 +56,10 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   frame. Use `ConsoleShell` when the conversation is yours and the frame is not;
   `ChatView` when both are ours. No template adopts `ConsoleShell` (it is a
   whole centred frame) — an open question for the coverage gate.
-- **`<SessionStateDot colors>`**: the palette (`satisfies Record<AgentState,
-  string>`) is the PROP; the component owns the exhaustive lookup, the
-  `AGENT_STATE_LABELS` fallback and the pulse. `ConsoleShell`'s dot is the same
-  `StateDot` coloured from the theme.
+- **`<SessionStateDot colors>`**: the palette
+  (`satisfies Record<AgentState, string>`) is the PROP; the component owns the
+  exhaustive lookup, the `AGENT_STATE_LABELS` fallback and the pulse.
+  `ConsoleShell`'s dot is the same `StateDot` coloured from the theme.
 - **`<SessionControls>`** decides which buttons exist and what each presses
   (New Conversation is `end(); start()`, not `reset()`); `renderButton` decides
   the look. `useSessionControls()` underneath is for chromes too unusual for the
@@ -72,8 +72,8 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
 `auto-scroll.tsx` wraps `use-stick-to-bottom`; everything pins through it
 (exported for custom chromes). Never hand-roll a `scrollIntoView()` effect: it
 fights a reader scrolled up, misses growth that is not a new message, and needs
-a synthetic dependency to fire. The outer container **must have a bounded height**
-(`flex-1 min-h-0`, `h-full`, fixed) or nothing pins.
+a synthetic dependency to fire. The outer container **must have a bounded
+height** (`flex-1 min-h-0`, `h-full`, fixed) or nothing pins.
 
 ## Theme in components
 
@@ -97,8 +97,8 @@ theme rules are in `../CLAUDE.md`.
   (number → number, checkbox → boolean, empty optional → omitted), which
   `FormData` cannot do and a zod input schema needs.
 - **Every element kind in `collectValues` owes the same two checks** (disabled →
-  skip; multi-value → list). `<SelectField multiple>` reads `selectedOptions` and
-  contributes `[]` when nothing is chosen.
+  skip; multi-value → list). `<SelectField multiple>` reads `selectedOptions`
+  and contributes `[]` when nothing is chosen.
 - **A `<FileField>` describes a file; it does not upload by default** —
   `{ name, size, type, lastModified }`, plus `content` with `read="text"` /
   `"dataUrl"` for genuinely small files. Run input is journaled and replayed, so
@@ -120,11 +120,11 @@ theme rules are in `../CLAUDE.md`.
 
 ## Workflow-page components
 
-- **`<WorkflowProgress runId>`** renders nothing until the agent has a stream AND
-  the run has written (`supported` separates the two); renders lines as joined
-  TEXT (append-only, legitimately repeating — no stable key); lets them replay.
-  `className` REPLACES the default. `lines={n}`: `undefined` = all, `1` =
-  newest, `0` = placeholder — slice BEFORE the emptiness test so `0` cannot
+- **`<WorkflowProgress runId>`** renders nothing until the agent has a stream
+  AND the run has written (`supported` separates the two); renders lines as
+  joined TEXT (append-only, legitimately repeating — no stable key); lets them
+  replay. `className` REPLACES the default. `lines={n}`: `undefined` = all, `1`
+  = newest, `0` = placeholder — slice BEFORE the emptiness test so `0` cannot
   invert into "everything".
 - **`WORKFLOW_STATUS_LABELS`** is a complete `Record<WorkflowRunStatus, string>`
   (`running: "Working…"`); override by spreading.

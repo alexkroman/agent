@@ -63,9 +63,10 @@ its own:
 - **The scaffold stays linted**: no negated scaffold glob in `biome.json`'s
   `files.includes`, and `packages/**` still present. The scaffold is the one
   tree that lands in someone else's project.
-- **`scaffold/pnpm-workspace.yaml`** keeps `minimumReleaseAgeExclude:
-  ["@alexkroman1/*"]` and the `onlyBuiltDependencies`/`allowBuilds` pair —
-  pnpm ignores unknown keys silently.
+- **`scaffold/pnpm-workspace.yaml`** keeps
+  `minimumReleaseAgeExclude: ["@alexkroman1/*"]` and the
+  `onlyBuiltDependencies`/`allowBuilds` pair — pnpm ignores unknown keys
+  silently.
 - **The scaffold guide's voice catalog and SDK defaults** match the SDK in both
   directions.
 - **Every template's prompt and tools resolve** through `_discovery.ts`, so an

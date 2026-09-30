@@ -20,13 +20,13 @@ Providers have their own guide in `providers/CLAUDE.md`.
 interface that `AgentDef` extends; each rule is DERIVED from the declaration,
 so a new field cannot skip it.
 
-| Interface | Module | The rule |
-| --- | --- | --- |
-| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing |
-| `AgentModelTuning` | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
-| `AgentGuardrails` | `agent-guardrails.ts` | the only declarations that may STOP a turn |
-| `AgentObservation` | `agent-observation.ts` | the two that deliberately may not |
-| `AgentRoutes` | `agent-routes.ts` | no session: `/api` handlers, data both ways across the bundle |
+| Interface             | Module                  | The rule                                                        |
+| --------------------- | ----------------------- | --------------------------------------------------------------- |
+| `PipelineVoiceTuning` | `agent-voice-tuning.ts` | pipeline transport or nothing                                   |
+| `AgentModelTuning`    | `agent-model-tuning.ts` | THIS runtime assembles the request, so **s2s refuses all five** |
+| `AgentGuardrails`     | `agent-guardrails.ts`   | the only declarations that may STOP a turn                      |
+| `AgentObservation`    | `agent-observation.ts`  | the two that deliberately may not                               |
+| `AgentRoutes`         | `agent-routes.ts`       | no session: `/api` handlers, data both ways across the bundle   |
 
 - `assertSamplingScope` reads `MODEL_TUNING_FIELDS`, whose `satisfies` makes it
   total over `AgentModelTuning` — a knob missing from the table fails to
@@ -112,8 +112,12 @@ Each helper's doc carries the detail; the rules:
   status (`{ status: 204 }` threw in the `Response` constructor).
 - **`createRecordingWorkflows`** records starts and runs nothing; a start is
   readable back as `running`, seeded runs answer `find`/`get`/`recent`. The
-  eval's recording client: `describeEval(…, { workflows: () =>
-  createRecordingWorkflows({ workflows: def.workflows }) })`.
+  eval's recording client:
+
+  ```text
+  describeEval(…, { workflows: () => createRecordingWorkflows({ workflows: def.workflows }) })
+  ```
+
 - **`commandedBuiltins`/`expectPromptBuiltinsDeclared`**
   (`testing-prompt-builtins.ts`) — a single-word builtin (`think`,
   `calculate`) counts only where the prose NAMES it: backticks, "the X tool",
@@ -239,8 +243,8 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   `temperature`, read deepest-first, riding in `meta`. **`after` is REFUSED**
   — the actor is stopped inside its window, so a delay never fires.
 - **`tool()`, `dialog.tool`, `slot.tool`, `slot.updateTool` all thread `R`
-  out** (`ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>`, `ToolDef<P,
-  R>`), still assignable to the registry.
+  out** (`ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>`,
+  `ToolDef<P, R>`), still assignable to the registry.
 - **`sendFrom` takes `Exclude<NoInfer<R>, ToolFailure>`**; `NoInfer` stops a
   `sendFrom` above `execute` inferring `unknown`. An inline-arrow `execute`
   still needs `sendFrom` declared BELOW it (else `TS18046`) — see "A `sendFrom`
@@ -366,8 +370,8 @@ use. Author-facing half: "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 - **A body takes `WorkflowInputOf<typeof def>`; a `*_status` tool holds
   `WorkflowRunOf<typeof def>`.** A body declaring a wider input compiles
   silently (contravariance). The obvious spelling hits `TS7022`; name the schema
-  const and ANNOTATE the def (`packages/aai-templates/FFMPEG-CLAUDE.md`). A declared
-  `output` schema is what `WorkflowOutputOf` reads (`workflow.ts`).
+  const and ANNOTATE the def (`packages/aai-templates/FFMPEG-CLAUDE.md`). A
+  declared `output` schema is what `WorkflowOutputOf` reads (`workflow.ts`).
 
 ### A callback URL comes from `publicWebhookUrl`
 
@@ -391,11 +395,12 @@ pipeline only).
   (`workflow/client-keyed.ts`) — the key index is `(workflow, key)` in all three
   backends, the platform's table included, so a cross-workflow read is N
   lookups merged once, not a new query.
-- **`ctx.poll` is `ctx.step` + `ctx.sleep` under one name** (`workflow-poll.ts`),
-  so it journals exactly the hand-written loop's keys; its budget is a COUNT
-  (`floor(maxMs / everyMs)` sleeps), replay-safe without a `ctx.now` per round.
-  Every `WorkflowContext` (engine, `/testing` recorder, eval) delegates to it.
-  `stepPollUntil` is the in-step, wall-clock, non-durable sibling.
+- **`ctx.poll` is `ctx.step` + `ctx.sleep` under one name**
+  (`workflow-poll.ts`), so it journals exactly the hand-written loop's keys; its
+  budget is a COUNT (`floor(maxMs / everyMs)` sleeps), replay-safe without a
+  `ctx.now` per round. Every `WorkflowContext` (engine, `/testing` recorder,
+  eval) delegates to it. `stepPollUntil` is the in-step, wall-clock, non-durable
+  sibling.
 - **`workflow({ onFailure })` runs in the ENGINE, not a body `catch`**
   (`workflow-failure.ts`, runtime `replay/failure-hook.ts`): only for a throw
   classified as the run failing (never a suspend, cancel, journal failure or
@@ -413,9 +418,9 @@ pipeline only).
 The store and why record and bytes pair off one `DATABASE_URL` are in
 `packages/aai-runtime/src/CLAUDE.md`, "An upload's bytes are OBJECTS".
 
-- **`POST /workflows/uploads`** answers once every byte is stored. **`PUT
-  /workflows/uploads/:id`** lets the caller name the id first; the record exists
-  from the first byte with `complete: false` and a growing `size`.
+- **`POST /workflows/uploads`** answers once every byte is stored.
+  **`PUT /workflows/uploads/:id`** lets the caller name the id first; the record
+  exists from the first byte with `complete: false` and a growing `size`.
   **`complete` is the only field a body may exit on** (a stalled `size` is a
   slow link or a dead client). Reader: `step-uploads.ts`.
 - **Parts** (`POST …/parts?total=`, `PUT …/parts?offset=`) are the DEFAULT for

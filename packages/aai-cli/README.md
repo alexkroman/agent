@@ -9,24 +9,24 @@ npm i -g @alexkroman1/aai-cli
 
 ## Commands
 
-| Command | What it does |
-| --- | --- |
-| `aai init [dir]` | Scaffold a new agent project (`--template <name>`, `--yes`) |
-| `aai templates` | List the shipped project templates |
-| `aai dev` | Local dev server: loads `agent.ts`, rebuilds on change, serves the browser client (`--port`) |
-| `aai test` | Run the project's vitest suite |
-| `aai eval` | Run the project's behaviour evals (`agent.eval.test.ts`) — a real session, a live model with a key, a scripted one without |
-| `aai build` | Bundle without deploying (type-checks first; `--skipTypecheck` opts out) |
-| `aai list` | List your studio projects |
-| `aai pull <project>` | Pull a studio project into a local directory, ready for `aai dev` |
-| `aai push` | Sync this project's source to its studio workspace (fast-forward-checked; `--force` overwrites) |
-| `aai publish` | Push, then deploy to production — the studio's Publish button from the terminal (`.env` syncs as agent secrets) |
-| `aai start` | Serve the built agent from a plain Node process — no platform account |
-| `aai delete` | Remove a deployed agent |
-| `aai login` | Link the account the CLI acts as |
-| `aai secret put\|delete\|list` | Manage a deployed agent's secrets |
-| `aai logs` | Read the deployed agent's log ring (`--follow` polls it) |
-| `aai workflow list\|runs\|show\|cancel` | Inspect the deployed agent's durable workflow runs |
+| Command                                 | What it does                                                                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `aai init [dir]`                        | Scaffold a new agent project (`--template <name>`, `--yes`)                                                                |
+| `aai templates`                         | List the shipped project templates                                                                                         |
+| `aai dev`                               | Local dev server: loads `agent.ts`, rebuilds on change, serves the browser client (`--port`)                               |
+| `aai test`                              | Run the project's vitest suite                                                                                             |
+| `aai eval`                              | Run the project's behaviour evals (`agent.eval.test.ts`) — a real session, a live model with a key, a scripted one without |
+| `aai build`                             | Bundle without deploying (type-checks first; `--skipTypecheck` opts out)                                                   |
+| `aai list`                              | List your studio projects                                                                                                  |
+| `aai pull <project>`                    | Pull a studio project into a local directory, ready for `aai dev`                                                          |
+| `aai push`                              | Sync this project's source to its studio workspace (fast-forward-checked; `--force` overwrites)                            |
+| `aai publish`                           | Push, then deploy to production — the studio's Publish button from the terminal (`.env` syncs as agent secrets)            |
+| `aai start`                             | Serve the built agent from a plain Node process — no platform account                                                      |
+| `aai delete`                            | Remove a deployed agent                                                                                                    |
+| `aai login`                             | Link the account the CLI acts as                                                                                           |
+| `aai secret put\|delete\|list`          | Manage a deployed agent's secrets                                                                                          |
+| `aai logs`                              | Read the deployed agent's log ring (`--follow` polls it)                                                                   |
+| `aai workflow list\|runs\|show\|cancel` | Inspect the deployed agent's durable workflow runs                                                                         |
 
 Every command accepts `--json` for machine-readable output (auto-detected
 when stdout is not a TTY). `aai <command> --help` shows flags.

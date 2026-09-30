@@ -45,10 +45,11 @@ read_when: >-
   `restoreMocks` never resets it, so its call history accumulates across the
   file and "was not called" assertions depend on test order. Such a file needs
   `beforeEach(() => vi.clearAllMocks())`, with a comment saying why.
-- **Prefer the tool's bookkeeping to a local variable**: `Promise.withResolvers()`
-  over `let resolve!` or a local `deferred()`; `vi.fn()` over a `settled` flag;
-  `test.each` over a `for` loop of cases (a loop is fine when cases share
-  expensive setup or label themselves via `expect.soft(value, label)`).
+- **Prefer the tool's bookkeeping to a local variable**:
+  `Promise.withResolvers()` over `let resolve!` or a local `deferred()`;
+  `vi.fn()` over a `settled` flag; `test.each` over a `for` loop of cases (a
+  loop is fine when cases share expensive setup or label themselves via
+  `expect.soft(value, label)`).
 - **The slow tiers share ONE config, `vitest.slow.config.ts`**, selected by
   `VITEST_PROFILE` (`integration` 30s / `scenario` 120s / `e2e` 300s) with
   `VITEST_INCLUDE` choosing files. `integration` is the default when unset, so a
@@ -60,9 +61,9 @@ read_when: >-
   `integration.test.ts` / `integration-edge-cases.test.ts`, and `aai-server`'s
   `agent-server-integration.test.ts` — which boots a real harness and is the
   only coverage of `subprocess-sandbox.ts` / `warm-harness.ts` /
-  `sandbox/vm.ts`; promote it only after restoring that coverage elsewhere, never
-  by lowering aai-server's floor. A package with no files in a tier declares no
-  script for it (vitest fails a run matching nothing).
+  `sandbox/vm.ts`; promote it only after restoring that coverage elsewhere,
+  never by lowering aai-server's floor. A package with no files in a tier
+  declares no script for it (vitest fails a run matching nothing).
 - **Yielding**: `flush()` from `_test-utils.ts` for microtasks, `tick()` for a
   macrotask, never `await new Promise(r => setTimeout(r, 0))` or a local
   `flush`. `sleep(ms)` is a published SDK export, not a test helper. Poll with
@@ -110,22 +111,22 @@ read_when: >-
 
 `pnpm test:mutate:sdk` mutates the schema core; read the score from
 `reports/mutation/sdk/index.html`. It carries no threshold, because one nothing
-enforces reads as a gate. It cannot become a gate: `inPlace: true` (forced by TS
-7) mutates the real tree — read `stryker.base.config.mjs` for the `bin.mjs` mode
-hazard before committing after a run. `check:test-assertions` is complementary:
+enforces reads as a gate. It cannot become a gate: `inPlace: true` (forced by
+TS 7) mutates the real tree — read `stryker.base.config.mjs` for the `bin.mjs`
+mode hazard before committing after a run. `check:test-assertions` is complementary:
 it catches a test with NO assertion; mutation catches one that does not
 discriminate.
 
 ## Package-specific suites
 
-| Suite | Guide |
-| --- | --- |
-| Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
-| Template mount correlation (`template-page-mount.test.ts`) | `packages/aai-templates/STEP-IO-CLAUDE.md` |
-| Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/src/CLAUDE.md` |
-| Studio starter evals (what they measure), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
-| The eval runner, its assertion vocabulary, and both eval targets | `packages/aai-evals/CLAUDE.md` |
-| Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |
+| Suite                                                                                                                                                             | Guide                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`)                                                                                           | `packages/aai/CLAUDE.md`                                 |
+| Template mount correlation (`template-page-mount.test.ts`)                                                                                                        | `packages/aai-templates/STEP-IO-CLAUDE.md`               |
+| Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress)                                                                                         | `packages/aai-ui/src/CLAUDE.md`                          |
+| Studio starter evals (what they measure), studio concurrency fuzz                                                                                                 | `packages/aai-studio-server/CLAUDE.md`                   |
+| The eval runner, its assertion vocabulary, and both eval targets                                                                                                  | `packages/aai-evals/CLAUDE.md`                           |
+| Sandbox/SSRF boundary tests, and why there is no load or chaos tier                                                                                               | `packages/aai-server/CLAUDE.md`                          |
 | Workflow durability harnesses (`workflow/journal/_log.ts`, `_invariants.ts`, `workflow/_engine-harness.ts`, `workflow-interleavings/`, `testing/run-workflow.ts`) | each module's doc comment in `packages/aai-runtime/src/` |
 
 ## A provider's HTTP path is tested against `@copilotkit/aimock`
@@ -144,14 +145,14 @@ an aimock server via `llm({ baseUrl })` and asserts what went over the wire.
 
 ## Vitest config differences per package
 
-| Package | Pool | Environment | Special setup | Notes |
-| --- | --- | --- | --- | --- |
-| aai | threads (default) | node | — | Excludes pentest, sandbox, integration tests |
-| aai-ui | threads | **node**, jsdom per file | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true`. No config `environment`; a file opts into jsdom with `// @vitest-environment jsdom` |
-| aai-cli | threads | node | — | — |
-| aai-server | **forks** | node | — | Forks for process isolation; excludes integration tests |
-| aai-studio-client | threads | **node**, jsdom per file | — | jsdom by per-file pragma on line 1. `testTimeout: 20_000` so the source's 10s async ceiling is reachable |
-| aai-templates | threads | node | — | Also matches `templates.test.ts` + `template-api-coverage.test.ts` |
+| Package           | Pool              | Environment              | Special setup                              | Notes                                                                                                    |
+| ----------------- | ----------------- | ------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| aai               | threads (default) | node                     | —                                          | Excludes pentest, sandbox, integration tests                                                             |
+| aai-ui            | threads           | **node**, jsdom per file | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true`. No config `environment`; a file opts into jsdom with `// @vitest-environment jsdom`     |
+| aai-cli           | threads           | node                     | —                                          | —                                                                                                        |
+| aai-server        | **forks**         | node                     | —                                          | Forks for process isolation; excludes integration tests                                                  |
+| aai-studio-client | threads           | **node**, jsdom per file | —                                          | jsdom by per-file pragma on line 1. `testTimeout: 20_000` so the source's 10s async ceiling is reachable |
+| aai-templates     | threads           | node                     | —                                          | Also matches `templates.test.ts` + `template-api-coverage.test.ts`                                       |
 
 ## Test environment variables
 

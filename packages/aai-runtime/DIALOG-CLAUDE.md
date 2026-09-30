@@ -20,13 +20,13 @@ owns the authoring half; `sdk/dialog.ts` owns the gate.
 than a formality. Everything `dialog()` promises beyond the tool gate happens
 when no tool is running, which is why none of it could work from inside one:
 
-| Promise | Where | Reaches |
-| --- | --- | --- |
-| session events move it (`@`-prefixed transitions) | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport |
-| the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix` | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
-| a per-state `timeout` is armed and fired | `createRestartableTimer` per dialog | every transport |
-| `bargeIn` / `toolChoice` / `temperature` per state | `PipelineTransportOptions.dialogTurn` | **pipeline only** |
-| `voice` per state | nothing | **nothing — warned at the first session** |
+| Promise                                                | Where                                                    | Reaches                                                                   |
+| ------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| session events move it (`@`-prefixed transitions)      | `SessionDialogs.observe`, called by `session-emitter.ts` | every transport                                                           |
+| the active instruction reaches the model on EVERY turn | `SessionSystemPrompt.setSuffix`                          | pipeline, OpenAI Realtime (see the package guide's per-turn prompt table) |
+| a per-state `timeout` is armed and fired               | `createRestartableTimer` per dialog                      | every transport                                                           |
+| `bargeIn` / `toolChoice` / `temperature` per state     | `PipelineTransportOptions.dialogTurn`                    | **pipeline only**                                                         |
+| `voice` per state                                      | nothing                                                  | **nothing — warned at the first session**                                 |
 
 An UNDECLARED dialog is unchanged: its tool gate, `send`, `position` and
 `projection` all work exactly as they did, and an author can still drive one by

@@ -20,6 +20,7 @@ containing `agent.ts`. The CLI bundles and deploys them to the managed platform.
 demand. `pnpm docs:list` prints every guide with one line on what it covers and
 one on when to read it. Repo-wide reference lives in `.agents/`:
 
+<!-- prettier-ignore-start -->
 <!-- guide-index:references -->
 | Reference | Covers |
 | --- | --- |
@@ -29,6 +30,7 @@ one on when to read it. Repo-wide reference lives in `.agents/`:
 | [`.agents/releases.md`](.agents/releases.md) | The fixed release group, what arms a deploy, and how to write a changeset. |
 | [`.agents/testing.md`](.agents/testing.md) | Vitest conventions, harness declaration, snapshots, teardown, virtual time, coverage, the per-package configs, test env vars, and the property-test rules. The TIER table stays in AGENTS.md — it is needed on every task; this is the detail behind it. |
 <!-- /guide-index:references -->
+<!-- prettier-ignore-end -->
 
 Procedures live in skills under `.claude/skills/` and load when their
 description matches the task: `pr-workflow`, `changeset-release`,
@@ -58,15 +60,15 @@ budget. A longer timeout is never the fix for contention.
 **Tiers are cut by what a test may TOUCH: pick the tightest one that can express
 the assertion.**
 
-| Tier | Command | Membership rule | Timeout |
-| --- | --- | --- | --- |
-| Unit | `pnpm test` | no filesystem writes, subprocess, or real network | 5s |
-| Integration | `pnpm test:integration` | multiple modules **in memory** | 30s |
-| Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, Postgres, or NETWORK | 120s |
-| Scenario + real Postgres | `pnpm test:pg` | the above, `AAI_TEST_PG_URL` resolved | 120s |
-| E2E | `pnpm test:e2e` | full process spawn + Playwright browser | 300s |
-| Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
-| Templates | `pnpm test:templates` | template agent example tests | 5s |
+| Tier                     | Command                 | Membership rule                                        | Timeout |
+| ------------------------ | ----------------------- | ------------------------------------------------------ | ------- |
+| Unit                     | `pnpm test`             | no filesystem writes, subprocess, or real network      | 5s      |
+| Integration              | `pnpm test:integration` | multiple modules **in memory**                         | 30s     |
+| Scenario                 | `pnpm test:scenario`    | a real subprocess, port, bundler, Postgres, or NETWORK | 120s    |
+| Scenario + real Postgres | `pnpm test:pg`          | the above, `AAI_TEST_PG_URL` resolved                  | 120s    |
+| E2E                      | `pnpm test:e2e`         | full process spawn + Playwright browser                | 300s    |
+| Eval                     | `pnpm test:eval`        | a live model on a real key, `*.eval.test.ts`           | 1800s   |
+| Templates                | `pnpm test:templates`   | template agent example tests                           | 5s      |
 
 - **Membership is a NAMING CONVENTION** (`*.integration.test.ts`,
   `*.scenario.test.ts`, `*.eval.test.ts`), so a new test needs no config edit;
@@ -108,21 +110,21 @@ pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 
 Thirteen workspace packages under `packages/`:
 
-| Package | npm name | Purpose |
-| --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
-| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
-| `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime (`createRuntime`/`createAgentServer`, session core, transports, providers, workflow API): what runs an `agent.ts`, which imports none of it |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, console, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is pinned to the registry in `cli.test.ts` |
-| `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): runs the agent inside each Modal Sandbox, built into one `dist/harness.mjs`; holds the guest image's `toolchain/` |
-| `packages/aai-guest-core/` | `aai-guest-core` | The modules both guest modes need (private): `rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` (the `run_code`/tool executor) and `limits` |
-| `packages/aai-guest-studio/` | `aai-guest-studio` | The studio coding agent as it runs in a guest (private), plus the generated `studio-prompts/` copies |
-| `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
-| `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
-| `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
-| `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
-| `packages/aai-gates/` | `aai-gates` | Meta-gate suite (private): specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts |
-| `packages/aai-evals/` | `aai-evals` | Behaviour eval LIBRARY (private): recording runner, spread report, assertion vocabulary |
+| Package                       | npm name                   | Purpose                                                                                                                                                                                                                                                    |
+| ----------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/aai/`               | `@alexkroman1/aai`         | Shared core: agent config, types, protocol, S2S, session, Db                                                                                                                                                                                               |
+| `packages/aai-ui/`            | `@alexkroman1/aai-ui`      | Browser client (React 19): session, audio, UI components                                                                                                                                                                                                   |
+| `packages/aai-runtime/`       | `@alexkroman1/aai-runtime` | The HOST runtime (`createRuntime`/`createAgentServer`, session core, transports, providers, workflow API): what runs an `agent.ts`, which imports none of it                                                                                               |
+| `packages/aai-cli/`           | `@alexkroman1/aai-cli`     | The `aai` CLI: init, dev, console, test, eval, build, list, pull, push, publish, delete, login, secret, logs, workflow, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs). The list is pinned to the registry in `cli.test.ts` |
+| `packages/aai-guest/`         | `aai-guest`                | Guest sandbox harness (private): runs the agent inside each Modal Sandbox, built into one `dist/harness.mjs`; holds the guest image's `toolchain/`                                                                                                         |
+| `packages/aai-guest-core/`    | `aai-guest-core`           | The modules both guest modes need (private): `rpc`, `types`, `bundle`, `auth`, `http`, plus `trial` (the `run_code`/tool executor) and `limits`                                                                                                            |
+| `packages/aai-guest-studio/`  | `aai-guest-studio`         | The studio coding agent as it runs in a guest (private), plus the generated `studio-prompts/` copies                                                                                                                                                       |
+| `packages/aai-server/`        | `aai-server`               | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks                                                                                                                                                                         |
+| `packages/aai-studio-server/` | `aai-studio-server`        | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs                                                                                                                   |
+| `packages/aai-studio-client/` | `aai-studio-client`        | The studio's browser front-end (private): Vite React app served by aai-server                                                                                                                                                                              |
+| `packages/aai-templates/`     | `aai-templates`            | Agent templates + scaffold (private): starter templates                                                                                                                                                                                                    |
+| `packages/aai-gates/`         | `aai-gates`                | Meta-gate suite (private): specs holding `scripts/check-*.mjs`, `konsistent.json`, `turbo.json`, `lefthook.yml` and the workflows to their contracts                                                                                                       |
+| `packages/aai-evals/`         | `aai-evals`                | Behaviour eval LIBRARY (private): recording runner, spread report, assertion vocabulary                                                                                                                                                                    |
 
 **Dependency flow:**
 
@@ -155,6 +157,7 @@ Thirteen workspace packages under `packages/`:
 package's `CLAUDE.md` and area rules in the governed directory's `CLAUDE.md`;
 Claude Code loads both when you work there:
 
+<!-- prettier-ignore-start -->
 <!-- guide-index:packages -->
 | Guide | Covers |
 | --- | --- |
@@ -172,9 +175,11 @@ Claude Code loads both when you work there:
 | `packages/aai-ui/CLAUDE.md` | Browser client package: exports and subpaths, the public-vs-internal surface rule, key files, and pointers to the directory guides for the session core, hooks, workflow apps, components, worklets and contracts. |
 | `packages/aai/CLAUDE.md` | SDK package-wide rules: the `sdk/` vs `host/` boundary, the subpath exports and what decides membership, session modes, the canonical agent-config schema, data flow, and pointers to the runtime-side rules |
 <!-- /guide-index:packages -->
+<!-- prettier-ignore-end -->
 
 Directory guides govern one area of a package and load when you work in it:
 
+<!-- prettier-ignore-start -->
 <!-- guide-index:directories -->
 | Guide | Covers |
 | --- | --- |
@@ -200,6 +205,7 @@ Directory guides govern one area of a package and load when you work in it:
 | `packages/aai/src/sdk/CLAUDE.md` | The SDK's authoring primitives: `AgentDef` field groups, the `/testing` helpers, concurrency primitives, session slots, dialogs, `procedure()`, `ctx.generate`/`messages`/`delegate`, personas, tool `messages`, voice presets, persistence, workflow apps and the upload client |
 | `packages/aai/src/sdk/providers/CLAUDE.md` | STT/LLM/TTS/S2S provider descriptors: the shipped providers and their rules, the AssemblyAI gateway default model and its measurement, voices, adding a provider, the stage registries, and the "Session mode resolved" settings log |
 <!-- /guide-index:directories -->
+<!-- prettier-ignore-end -->
 
 One guide sits outside `packages/`: [`docs/CLAUDE.md`](docs/CLAUDE.md), for the
 `aai-docs` workspace (the Astro + Starlight site, both TypeDoc renderings, the
@@ -209,6 +215,7 @@ capability epochs.
 Siblings are reference files beside a package guide, read on demand (Claude Code
 auto-loads only `CLAUDE.md`):
 
+<!-- prettier-ignore-start -->
 <!-- guide-index:siblings -->
 | Sibling | Covers |
 | --- | --- |
@@ -233,6 +240,7 @@ auto-loads only `CLAUDE.md`):
 | `packages/aai/DEFAULTS-CLAUDE.md` | Every numeric default an `agent()` field carries — the value, where it is applied, and the measurement behind it |
 | `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
 <!-- /guide-index:siblings -->
+<!-- prettier-ignore-end -->
 
 **All three tables are GENERATED** from each guide's `summary` / `read_when`
 frontmatter by `pnpm sync:guide-index` (`check:guide-index` fails when stale).
@@ -248,8 +256,8 @@ frontmatter by `pnpm sync:guide-index` (`check:guide-index` fails when stale).
   `^2.5.12` is a FLOOR, exempt from the release-age quarantine
   (`pnpm-workspace.yaml`) — do not lower it.
 - **Every tracked extension has a linter AND a formatter**: Biome for
-  TS/JS/JSON/CSS/HTML, markdownlint (`--fix` formats) for Markdown/MDX,
-  Prettier + yamllint/ShellCheck/hadolint for YAML/shell/Dockerfiles, ruff,
+  TS/JS/JSON/CSS/HTML; Prettier formats Markdown/MDX, YAML, shell and
+  Dockerfiles, linted by markdownlint, yamllint, ShellCheck, hadolint; ruff,
   sqlfluff and taplo for Python/SQL/TOML. `pnpm format` runs every fixer, and
   `check:polyglot` fails on an extension with neither
   ([`.agents/ratchets.md`](.agents/ratchets.md)).
@@ -265,13 +273,13 @@ Enforced by `check:package-layout`.
 
 ### File naming conventions
 
-| Pattern | Meaning | Example |
-| --- | --- | --- |
-| `_foo.ts` | **Internal module** — not part of the public API. Never import cross-package. Biome's `noPrivateImports` rule enforces this at lint time. | `_utils.ts`, `_bundler.ts`, `_internal-types.ts` |
-| `foo-barrel.ts` | **Barrel re-export file** — aggregates exports from multiple modules into one subpath export. Has `biome-ignore` for `noReExportAll`. | `runtime-barrel.ts`, `manifest-barrel.ts` |
-| `foo.test.ts` | **Unit test** — co-located with source. Runs via `pnpm test`. | `session.test.ts` |
-| `foo.test-d.ts` | **Type-level test** — checked by tsc, never executed at runtime. Uses `expectTypeOf`. | `types.test-d.ts` |
-| `_test-utils.ts` | **Test helpers** — each package has its own with different utilities (see below). | `host/_test-utils.ts` |
+| Pattern          | Meaning                                                                                                                                   | Example                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `_foo.ts`        | **Internal module** — not part of the public API. Never import cross-package. Biome's `noPrivateImports` rule enforces this at lint time. | `_utils.ts`, `_bundler.ts`, `_internal-types.ts` |
+| `foo-barrel.ts`  | **Barrel re-export file** — aggregates exports from multiple modules into one subpath export. Has `biome-ignore` for `noReExportAll`.     | `runtime-barrel.ts`, `manifest-barrel.ts`        |
+| `foo.test.ts`    | **Unit test** — co-located with source. Runs via `pnpm test`.                                                                             | `session.test.ts`                                |
+| `foo.test-d.ts`  | **Type-level test** — checked by tsc, never executed at runtime. Uses `expectTypeOf`.                                                     | `types.test-d.ts`                                |
+| `_test-utils.ts` | **Test helpers** — each package has its own with different utilities (see below).                                                         | `host/_test-utils.ts`                            |
 
 ### `_test-utils.ts` per package (not interchangeable)
 
@@ -324,11 +332,11 @@ repo-wide:
 
 ### The published surface is described by three committed artifacts
 
-| Artifact | Gate | Question it answers |
-| --- | --- | --- |
-| `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md` | `pnpm check:api-report` | did a SIGNATURE move, is a name in or out, and where is it imported FROM |
-| `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` + `.../contracts/compatibility/**` | `pnpm check:api-contracts` | is that move BREAKING, and for whom |
-| `docs/api/**`, `docs/dist/**` | `pnpm check:docs-md`, the turbo `docs` task | what does it MEAN (the doc comments) |
+| Artifact                                                                                        | Gate                                        | Question it answers                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md`                         | `pnpm check:api-report`                     | did a SIGNATURE move, is a name in or out, and where is it imported FROM |
+| `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` + `.../contracts/compatibility/**` | `pnpm check:api-contracts`                  | is that move BREAKING, and for whom                                      |
+| `docs/api/**`, `docs/dist/**`                                                                   | `pnpm check:docs-md`, the turbo `docs` task | what does it MEAN (the doc comments)                                     |
 
 All three are derived: regenerate, never hand-edit. **A moved capability hash
 must be RECORDED before it can land**, and a new subpath export defaults INTO
@@ -352,15 +360,15 @@ committed markdown reference an agent can `cat` (`docs/api/**`). See
 
 **Put a rule where an agent will be when it needs it:**
 
-| Where | What belongs there |
-| --- | --- |
-| `AGENTS.md` | what every task needs before acting: tiers, package map, naming and import conventions, workflow pointers |
-| `.agents/*.md` | repo-wide reference read once you are in an area (a gate's detail, a config's shape) |
-| `packages/<pkg>/CLAUDE.md` | rules for the whole package |
-| `<dir>/CLAUDE.md` | rules for the files in that directory — the deepest directory that still covers them all |
-| `<PKG>/<NAME>-CLAUDE.md` sibling | on-demand reference when no directory owns it |
-| `.claude/skills/<name>/SKILL.md` | a step-by-step procedure; the guide keeps a one-line pointer |
-| a guard (`guard-invariants`, konsistent, a gate spec) | anything mechanically checkable — prose is the fallback |
+| Where                                                 | What belongs there                                                                                        |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md`                                           | what every task needs before acting: tiers, package map, naming and import conventions, workflow pointers |
+| `.agents/*.md`                                        | repo-wide reference read once you are in an area (a gate's detail, a config's shape)                      |
+| `packages/<pkg>/CLAUDE.md`                            | rules for the whole package                                                                               |
+| `<dir>/CLAUDE.md`                                     | rules for the files in that directory — the deepest directory that still covers them all                  |
+| `<PKG>/<NAME>-CLAUDE.md` sibling                      | on-demand reference when no directory owns it                                                             |
+| `.claude/skills/<name>/SKILL.md`                      | a step-by-step procedure; the guide keeps a one-line pointer                                              |
+| a guard (`guard-invariants`, konsistent, a gate spec) | anything mechanically checkable — prose is the fallback                                                   |
 
 **Write each rule as: the rule, one sentence of why when it is not obvious, and
 a link** to what enforces it; if a guard enforces it, say so in one line.
@@ -372,7 +380,7 @@ A guide documents code that EXISTS; designs belong on their issue.
 Auto-loaded guides (this file, package and directory `CLAUDE.md`,
 `docs/CLAUDE.md`) are capped at 40,000 characters, with a shrink-only baseline
 for files still over it; reference files (`.agents/`, siblings, the scaffold
-guide) at 120,000. Both are enforced by `check:claude-md`, which also prints a
+guide) at 130,000. Both are enforced by `check:claude-md`, which also prints a
 nearly-full guide's largest sections.
 
 ## PR workflow

@@ -475,12 +475,12 @@
     "//#check:markdown": {
       "inputs": ["**/*.md", "**/*.mdx", ".markdownlint.yaml", ".markdownlint-cli2.jsonc"]
     },
-    // The formatter for YAML, shell scripts and Dockerfiles, which Biome does not
-    // read. Markdown is formatted by `markdownlint-cli2 --fix` instead: Prettier
-    // pads every table to aligned columns, which the generated guide tables and
-    // the guides' character caps cannot absorb.
+    // The formatter for Markdown, MDX, YAML, shell scripts and Dockerfiles,
+    // which Biome does not read.
     "//#check:prettier": {
       "inputs": [
+        "**/*.md",
+        "**/*.mdx",
         "**/*.yml",
         "**/*.yaml",
         "**/*.sh",

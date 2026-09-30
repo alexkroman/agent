@@ -13,7 +13,7 @@
  *   every task in that directory pays for all of them before reading code.
  * - **Reference** files — `*-CLAUDE.md` siblings, `.agents/*.md`, and the
  *   scaffold and template `CLAUDE.md`s (product artifacts, not auto-loaded repo
- *   docs) — keep {@link MAX_REFERENCE_CHARS}, 20% under the ~150k point past
+ *   docs) — keep {@link MAX_REFERENCE_CHARS}, ~13% under the ~150k point past
  *   which an agent's read silently drops the rest.
  *
  * An auto-loaded guide still over its cap is listed in
@@ -42,8 +42,12 @@ const BASELINE = "scripts/claude-md-baseline.json";
 
 /** Cap for a guide Claude Code loads unasked. */
 const MAX_AUTO_CHARS = 40_000;
-/** Cap for a file read on demand: 20% under the ~150k truncation point. */
-const MAX_REFERENCE_CHARS = 120_000;
+/**
+ * Cap for a file read on demand: ~13% under the ~150k truncation point. Raised
+ * from 120k when Prettier took over Markdown and padded every table to aligned
+ * columns.
+ */
+const MAX_REFERENCE_CHARS = 130_000;
 /** A file at or past this fraction of its cap is reported as nearly full. */
 const WARN_RATIO = 0.9;
 

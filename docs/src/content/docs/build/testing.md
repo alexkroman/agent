@@ -40,7 +40,7 @@ spec names — see [Tools](/agent/build/tools/).
 
 ## Import the agent from `virtual:aai/agent`
 
-A tool is a *file*, so `agent.ts`'s own default export carries no tools at all.
+A tool is a _file_, so `agent.ts`'s own default export carries no tools at all.
 `tools/get_weather.ts` becomes the tool `get_weather` when `aai build` lowers
 the project, and `virtual:aai/agent` is that lowered agent — your `tools/`
 directory discovered, your `system-prompt.md` applied.
@@ -111,12 +111,12 @@ const ctx = createToolContext({ generate: { reply: "A short summary." } });
 A script names its shape — one `reply` for every call, or `routes` keyed by
 system prompt:
 
-| Pass | For |
-| --- | --- |
-| `{ reply: "…" }` | a text answer |
-| `{ reply: { object: … } }` | structured output. Add `text` when the tool reads both |
-| `{ reply: (call) => … }` | an answer computed from the call — a queue, say |
-| `{ routes: { [system]: … } }` | a tool that plays more than one model role |
+| Pass                          | For                                                    |
+| ----------------------------- | ------------------------------------------------------ |
+| `{ reply: "…" }`              | a text answer                                          |
+| `{ reply: { object: … } }`    | structured output. Add `text` when the tool reads both |
+| `{ reply: (call) => … }`      | an answer computed from the call — a queue, say        |
+| `{ routes: { [system]: … } }` | a tool that plays more than one model role             |
 
 `delegate` takes the same two shapes, with `routes` keyed by subagent name.
 

@@ -28,13 +28,13 @@ export default agent({
 });
 ```
 
-| Field | What it does |
-| --- | --- |
-| `name` | Display name — the only required field |
-| `greeting` | The first thing the agent says |
-| `voice` | Which voice speaks, e.g. `"michael"`, `"paul"` |
-| `llm` | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
-| `requiredEnv` | Keys your tools read; a deploy checks they are all set |
+| Field         | What it does                                                     |
+| ------------- | ---------------------------------------------------------------- |
+| `name`        | Display name — the only required field                           |
+| `greeting`    | The first thing the agent says                                   |
+| `voice`       | Which voice speaks, e.g. `"michael"`, `"paul"`                   |
+| `llm`         | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
+| `requiredEnv` | Keys your tools read; a deploy checks they are all set           |
 
 Every other field is in the [SDK reference](/agent/reference/). You do not
 need any of them to build something good.
@@ -109,7 +109,7 @@ console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 A prompt computed once — a menu, a catalog — is still just a string: build it
 in `agent.ts` and pass it as `systemPrompt`. Today's date is already in every
 prompt, so that is not a reason to compute one. What this section is about is
-a prompt that has to change *during* a call.
+a prompt that has to change _during_ a call.
 
 Pass a function instead of a string. It is called as each model request is
 assembled, so what the agent is told can move with the conversation:

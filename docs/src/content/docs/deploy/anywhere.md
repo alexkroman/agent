@@ -14,12 +14,12 @@ aai build --target modal
 aai build --target node     # the default
 ```
 
-| Target | What it emits | Deployed with |
-| --- | --- | --- |
-| `node` | nothing extra — just the worker | `aai start`, in any container |
-| `vercel` | a prebuilt deployment in `.vercel/output/` | `vercel deploy --prebuilt` |
-| `deno` | a self-contained `.aai/deno/` | `cd .aai/deno && deno deploy --prod` (plus `--org`/`--app`) |
-| `modal` | a self-contained `.aai/modal/` with an `app.py` | `modal deploy .aai/modal/app.py` |
+| Target   | What it emits                                   | Deployed with                                               |
+| -------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| `node`   | nothing extra — just the worker                 | `aai start`, in any container                               |
+| `vercel` | a prebuilt deployment in `.vercel/output/`      | `vercel deploy --prebuilt`                                  |
+| `deno`   | a self-contained `.aai/deno/`                   | `cd .aai/deno && deno deploy --prod` (plus `--org`/`--app`) |
+| `modal`  | a self-contained `.aai/modal/` with an `app.py` | `modal deploy .aai/modal/app.py`                            |
 
 ## The build prints the sequence
 

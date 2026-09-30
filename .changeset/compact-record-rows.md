@@ -7,7 +7,7 @@ An array of three or more objects, or an object whose three or more values are
 objects (an id-keyed map), whose records share one key set and hold only scalar
 values (nested objects of scalars flatten to dotted keys such as
 `options.color`) is rendered as a header line plus one line per record, fields
-separated by ` | `, every value verbatim and in the original order. Models
+separated by `|`, every value verbatim and in the original order. Models
 misread a field against its neighbours in long nested JSON — picking a minimum
 from records flagged unavailable, or swapping a flag between two records — and a
 row keeps each record's fields on one line.

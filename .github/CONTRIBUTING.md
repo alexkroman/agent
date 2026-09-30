@@ -29,16 +29,17 @@ pnpm check
    ```
 
    Or run everything at once: `pnpm check`
+
 4. **Push and open a PR** against `main`. CI will run automatically.
 
 ## Monorepo structure
 
-| Package | Description |
-| ------- | ----------- |
-| `packages/aai` | Core SDK (`defineAgent`, `createRuntime`, `createServer`, types) |
-| `packages/aai-ui` | Browser client (React 19) |
-| `packages/aai-cli` | The `aai` CLI tool |
-| `packages/aai-server` | Managed platform server (private) |
+| Package               | Description                                                      |
+| --------------------- | ---------------------------------------------------------------- |
+| `packages/aai`        | Core SDK (`defineAgent`, `createRuntime`, `createServer`, types) |
+| `packages/aai-ui`     | Browser client (React 19)                                        |
+| `packages/aai-cli`    | The `aai` CLI tool                                               |
+| `packages/aai-server` | Managed platform server (private)                                |
 
 Packages depend on `aai` via `workspace:*` but never on each other.
 

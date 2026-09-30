@@ -18,9 +18,9 @@ has to be resident in every agent's context. It moved when the guide crossed the
 `@alexkroman1/aai-runtime/eval` and `/eval/vitest` are how an agent is measured
 rather than merely tested: `openEvalSession` stands up a REAL session — this
 runtime, the pipeline transport, the LLM on a live key, the tool executor, `ctx`
-and its slots, history trimming, the step budget, the event stream — with the two
-speech stages replaced by fakes, and hands back a `say()` that returns the TURN
-it provoked.
+and its slots, history trimming, the step budget, the event stream — with the
+two speech stages replaced by fakes, and hands back a `say()` that returns the
+TURN it provoked.
 
 **It was `aai-evals/session-target.ts` + `stub-speech.ts`, and publishing it is
 what the templates forced.** That harness could answer the one question nothing
@@ -41,11 +41,11 @@ Four decisions worth not relitigating:
   `said()` already has an entry before a case has spoken. The first draft's own
   unit test caught that.
 - **The assertion VOCABULARY is not published, and the READERS are.** `saidIn`,
-  `toolCallsInEvents` and `TURN_ENDS` are facts about an event list; `aai-evals`'
-  matcher surface (`calledTool`, `toolOrder`, `saidSomething`, the recording
-  runner behind them) is a promise about a NOISY instrument and stays private
-  until the variance work in that package's guide exists to measure it with. A
-  vitest `expect` over a turn is what a template needs, and it is what a
+  `toolCallsInEvents` and `TURN_ENDS` are facts about an event list;
+  `aai-evals`' matcher surface (`calledTool`, `toolOrder`, `saidSomething`, the
+  recording runner behind them) is a promise about a NOISY instrument and stays
+  private until the variance work in that package's guide exists to measure it
+  with. A vitest `expect` over a turn is what a template needs, and it is what a
   template gets.
 - **`TURN_ENDS` crossed the boundary with the session**, because the two must
   agree by construction: it is what `say()` waits for AND what partitions a run
@@ -248,43 +248,45 @@ a template reach past it for a type.
 ### A workflow app is evaluated by RUNNING it
 
 `describeWorkflowEval` / `openEvalWorkflows` are the other half, and they exist
-because a `workflowApp()` template — six of the shipped ones — has no session for
-`openEvalSession` to open, no microphone and no model in its config. Its whole
-product is a durable run, and nothing in the SDK could evaluate one: a page
-starts a run over HTTP against a DEPLOYED agent, and a spec drove the exported
-steps one at a time. `app.run(def, input)` answers an `EvalWorkflowRun` — status,
-output, error, plus what the run NARRATED (`reported`), emitted, and slept.
+because a `workflowApp()` template — six of the shipped ones — has no session
+for `openEvalSession` to open, no microphone and no model in its config. Its
+whole product is a durable run, and nothing in the SDK could evaluate one: a
+page starts a run over HTTP against a DEPLOYED agent, and a spec drove the
+exported steps one at a time. `app.run(def, input)` answers an `EvalWorkflowRun`
+— status, output, error, plus what the run NARRATED (`reported`), emitted, and
+slept.
 
-**The engine is the real client over a real key store.** `eval/workflow-engine.ts`
-implements the existing `WdkAdapter` seam in memory and `openEvalWorkflows` hands
-it to `createWorkflowClient` over `createMemoryKeyStore()` — so the schema
-validation, the def→name mapping, the correlation-key index, the snapshot union
-and `lastLine`'s tail-first rule are all production code rather than a fake's
-approximation of it.
+**The engine is the real client over a real key store.**
+`eval/workflow-engine.ts` implements the existing `WdkAdapter` seam in memory
+and `openEvalWorkflows` hands it to `createWorkflowClient` over
+`createMemoryKeyStore()` — so the schema validation, the def→name mapping, the
+correlation-key index, the snapshot union and `lastLine`'s tail-first rule are
+all production code rather than a fake's approximation of it.
 
 **It is NOT a durability test, and that sentence is load-bearing.** A
 `"use workflow"` body is durable only after the DevKit's builder has transformed
-it, and an eval imports it through a test runner with no bundler in the path — so
-the body runs as an ordinary async function. No journal, no replay, no
-suspension, and a step's `maxRetries` is INERT, which has a measured consequence:
-a provider 429 that a deployed run would ride out FAILS an eval run (it happened,
-on a sixth live run inside three minutes). `sleep()` is RECORDED rather than
-taken, which is what lets a case assert `podcast-digest-workflow`'s schedule without
-waiting a day. Four `WorkflowClient` methods have no honest answer here and say
-so. Do not describe a case written on this as covering replay, resume or retry —
-`aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that does.
+it, and an eval imports it through a test runner with no bundler in the path —
+so the body runs as an ordinary async function. No journal, no replay, no
+suspension, and a step's `maxRetries` is INERT, which has a measured
+consequence: a provider 429 that a deployed run would ride out FAILS an eval run
+(it happened, on a sixth live run inside three minutes). `sleep()` is RECORDED
+rather than taken, which is what lets a case assert `podcast-digest-workflow`'s
+schedule without waiting a day. Four `WorkflowClient` methods have no honest
+answer here and say so. Do not describe a case written on this as covering
+replay, resume or retry — `aai-cli`'s `dev-workflow.scenario.test.ts` is the
+tier that does.
 
 **Three things a workflow eval CANNOT reach, each costing a real case.**
 `createHook()` throws untransformed and — unlike `sleep()`, whose slot the
 engine publishes into — offers no seam to fill (`@workflow/core`'s
-`create-hook.js` throws unconditionally), so `meeting-recap-agent`'s retention gate,
-its headline port of Temporal's `expense`, is unevaluable and its eval says so
-rather than asserting around it. `wakeUp` answers `0`, so a "send it now" tool
-can only ever report that nothing was waiting. And because `sleep` is recorded
-rather than taken, an in-flight run is observable only by HOLDING a provider
-response — a `Promise.race` against a durable sleep resolves instantly here, so
-a case that wants to see a run mid-flight scripts a slow step instead of
-sleeping. A `vi.mock("workflow", …)` factory owned by this package, and an
+`create-hook.js` throws unconditionally), so `meeting-recap-agent`'s retention
+gate, its headline port of Temporal's `expense`, is unevaluable and its eval
+says so rather than asserting around it. `wakeUp` answers `0`, so a "send it
+now" tool can only ever report that nothing was waiting. And because `sleep` is
+recorded rather than taken, an in-flight run is observable only by HOLDING a
+provider response — a `Promise.race` against a durable sleep resolves instantly
+here, so a case that wants to see a run mid-flight scripts a slow step instead
+of sleeping. A `vi.mock("workflow", …)` factory owned by this package, and an
 `openEvalWorkflows({ sleeps: "block" })`, are the two shapes that would close
 the first and third; neither is built.
 
@@ -292,7 +294,8 @@ the first and third; neither is built.
 `evalWorkflowCredentials`: `requiredProviderEnvVars` returns `[]` for a
 `page: "static"` agent, so asked alone it reports every workflow app "ready" and
 a keyless run goes live and 401s three layers down inside a step. It reads
-`requiredEnv` too, which is the only place a workflow app declares what it needs.
+`requiredEnv` too, which is the only place a workflow app declares what it
+needs.
 
 **And in stub mode a declared key nobody has is a PLACEHOLDER, by both doors.**
 A step reads its key with `requireStepEnv`, which throws by name, so a scripted
@@ -311,10 +314,10 @@ turn a real call into a 401 that reads as the provider's fault.
 `describeEval` (on `/eval/vitest`, which is what pulls the optional `vitest`
 peer) resolves one of two modes and ANNOUNCES it on every run:
 
-| | model | what it proves |
-| --- | --- | --- |
-| credential present | live | the agent's BEHAVIOUR — a noisy measurement (see `packages/aai-evals/CLAUDE.md`: identical code has scored 0.56 and 0.60) |
-| none, or `AAI_EVAL_STUB` | scripted (`eval/stub-llm.ts`) | the WIRING — `agent.ts` boots, tools resolve, the session reaches a reply, the eval file drives something |
+|                          | model                         | what it proves                                                                                                            |
+| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| credential present       | live                          | the agent's BEHAVIOUR — a noisy measurement (see `packages/aai-evals/CLAUDE.md`: identical code has scored 0.56 and 0.60) |
+| none, or `AAI_EVAL_STUB` | scripted (`eval/stub-llm.ts`) | the WIRING — `agent.ts` boots, tools resolve, the session reaches a reply, the eval file drives something                 |
 
 The third state is the interesting one, because the two obvious states leave a
 skipped suite indistinguishable from a BROKEN one. A stub run is deterministic,
@@ -359,9 +362,9 @@ refuses exactly as it does off-platform — correct, and it meant the three tuto
 templates' headline feature (the arithmetic the builtin owns) could be asserted
 as a CALL and never as an answer. `fetch` keeps a case off the network, because
 a scripted `visit_webpage` really visits. `toolTimeoutMs` reaches the session's
-per-call deadline, which was unreachable from any caller: a graded retrieval loop
-measured at 22-30s against ~10x gateway variance times out at 30s and the case
-then measures the deadline instead of the agent. `workflows` supplies
+per-call deadline, which was unreachable from any caller: a graded retrieval
+loop measured at 22-30s against ~10x gateway variance times out at 30s and the
+case then measures the deadline instead of the agent. `workflows` supplies
 `ctx.workflows`, without which a tool that starts a run cannot execute at all.
 
 **Who is calling is recorded where a connection records it.** `clientId`,
@@ -468,12 +471,12 @@ rewriter, i.e. the central tool of two shipped templates — answered "doGenerat
 not implemented" in a scripted run and read as the agent being broken.
 
 Two things in `describeEval`'s SIGNATURE are decided by a linter rather than by
-taste, both A/B'd against Biome 2.5 and both invisible until a user's own project
-reddens on a file this SDK told them to write: the callback parameter is named
-`test` (`noMisplacedAssertion` matches the CALLEE IDENTIFIER, so an `expect`
-inside `evalTest(…)` is an error), and a case body takes a DESTRUCTURED context
-(`noDoneCallback` reads the first positional parameter of an async test callback
-as jest's `done`, so `async (session) => …` is an error where
+taste, both A/B'd against Biome 2.5 and both invisible until a user's own
+project reddens on a file this SDK told them to write: the callback parameter is
+named `test` (`noMisplacedAssertion` matches the CALLEE IDENTIFIER, so an
+`expect` inside `evalTest(…)` is an error), and a case body takes a DESTRUCTURED
+context (`noDoneCallback` reads the first positional parameter of an async test
+callback as jest's `done`, so `async (session) => …` is an error where
 `async ({ session }) => …` is vitest's own fixture shape). Do not "tidy" either.
 
 ### A simulated caller, and a judge
@@ -485,11 +488,11 @@ play the user — a `persona` and a `goal` — against an `EvalSession` or an
 criterion over the result. Both are on `@alexkroman1/aai-runtime/eval/simulate`
 — their own subpath and their own `eval-simulate` capability — and a
 `describeEval`/`describeTextEval` case builds the pair with
-`evalSimulation({ agent, mode, target: session })` (`eval/simulation-context.ts`)
-rather than finding it on its context. They used to be intersected into
-`EvalTestContext` and the suite/case options, which made every change to a
-simulation an epoch of the harness a case runs in. Five decisions worth not
-undoing:
+`evalSimulation({ agent, mode, target: session })`
+(`eval/simulation-context.ts`) rather than finding it on its context. They used
+to be intersected into `EvalTestContext` and the suite/case options, which made
+every change to a simulation an epoch of the harness a case runs in. Five
+decisions worth not undoing:
 
 - **The caller drives the same `say()`/`send()` a scripted case does.** A
   simulated call is a list of ordinary `EvalTurn`s, so `turnCalling`,
@@ -581,8 +584,9 @@ the pieces to make it for free.
   live model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then
   speaks, so "it announced and stopped" is how most cases fail — and it arrived
   as four different sentences (`expected [] to deeply equal [ 'recommend' ]`,
-  `expected undefined to be defined`, `expected -1 to be greater than or equal
-  to 0`, `expected [ 'open_email' ] to include 'draft_reply'`), none naming the
+  `expected undefined to be defined`,
+  `expected -1 to be greater than or equal to 0`,
+  `expected [ 'open_email' ] to include 'draft_reply'`), none naming the
   sentence said in place of the tool. It is the sibling of
   `expectToolBeforeSpeech`, which reads the ORDER of a turn that did both.
 

@@ -60,10 +60,8 @@ const COVERAGE = {
   jsonc: ["biome", "biome"],
   css: ["biome", "biome"],
   html: ["biome", "biome"],
-  // markdownlint pins the layout rules (list markers, emphasis, table pipes) in
-  // `.markdownlint.yaml`, and `markdownlint-cli2 --fix` applies them.
-  md: ["markdownlint", "markdownlint --fix"],
-  mdx: ["markdownlint", "markdownlint --fix"],
+  md: ["markdownlint", "prettier"],
+  mdx: ["markdownlint", "prettier"],
   yml: ["yamllint", "prettier"],
   yaml: ["yamllint", "prettier"],
   sh: ["shellcheck", "prettier"],

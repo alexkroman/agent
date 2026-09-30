@@ -25,8 +25,8 @@ pnpm dev:aai-server     # resolves DB_URL/API_URL/keys + AAI_LOCAL_DEV=1
 every platform store is Supabase's — the agents table, deploy blobs, Vault
 secrets, studio workspaces, per-app databases, Realtime. Without it, all of them
 are in this process's heap and **a restart erases every deployed agent**, so a
-published URL 404s and a browser session cannot resume onto it. The boot log says
-which tier it is; there is no third state.
+published URL 404s and a browser session cannot resume onto it. The boot log
+says which tier it is; there is no third state.
 
 **A repo-root `.env` is read by BOTH**, which is the property that makes the
 setup below one file: Node's `process.loadEnvFile` for the dev server, and the
@@ -48,17 +48,18 @@ local stack needs the provider really enabled, or GoTrue answers:
 That message means the RUNNING stack has no GitHub provider, which is two
 separate causes and usually both:
 
-1. **Create the OAuth app** — <https://github.com/settings/developers> → *New
-   OAuth App*:
+1. **Create the OAuth app** — <https://github.com/settings/developers> → _New
+   OAuth App_:
    - Homepage URL: `http://localhost:8080`
    - Authorization callback URL: `http://127.0.0.1:54321/auth/v1/callback`
 
    The callback is **GoTrue's, not the studio's**. GitHub redirects to Supabase,
    which then redirects to `redirect_to`; pointing it at `:8080` fails on
    GitHub's own opaque error page.
-2. **Put the pair in `.env`** and **restart the stack**, because `config.toml` is
-   applied at `supabase start` and interpolated from the environment as it starts
-   — editing either one changes nothing about a stack already running:
+
+2. **Put the pair in `.env`** and **restart the stack**, because `config.toml`
+   is applied at `supabase start` and interpolated from the environment as it
+   starts — editing either one changes nothing about a stack already running:
 
    ```sh
    cat >> .env <<'EOF'
@@ -68,9 +69,10 @@ separate causes and usually both:
    supabase stop && supabase start     # data volumes survive; --no-backup deletes them
    ```
 
-   `supabase status` WARNS by name (`environment variable is unset:
-   AAI_LOCAL_GITHUB_CLIENT_ID`) when the pair is missing, which is the cheapest
-   way to tell "I forgot the file" from "I forgot the restart".
+   `supabase status` WARNS by name
+   (`environment variable is unset: AAI_LOCAL_GITHUB_CLIENT_ID`) when the pair
+   is missing, which is the cheapest way to tell "I forgot the file" from "I
+   forgot the restart".
 
 `site_url` / `additional_redirect_urls` in `config.toml` are the allow-list
 GoTrue validates `redirect_to` against, and `signInWithOAuth` sends
@@ -117,9 +119,10 @@ grants). Three places differ, each a decision rather than an oversight:
   no notion of publications and emits every column regardless (measured on
   realtime v2.112.6 / PG 17.6). The lists were written, measured and reverted;
   `platform/schema.test.ts` guards AGAINST them, because the cost of the attempt
-  is the comment explaining a mechanism that isn't there. Bringing the decode cost
-  down takes a different mechanism — Broadcast from Database, or a skinny signal
-  table that does not carry `doc`.
+  is the comment explaining a mechanism that isn't there. Bringing the decode
+  cost down takes a different mechanism — Broadcast from Database, or a skinny
+  signal table that does not carry `doc`.
+
 - **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
   Access is really controlled by the grant: `anon`/`authenticated` hold no
   privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
@@ -145,7 +148,7 @@ grants). Three places differ, each a decision rather than an oversight:
 - **Migrations are hand-written, NOT generated from a declarative schema.**
   `supabase/schemas/*.sql` with migrations produced by `supabase db diff` (and
   now a `--use-pg-delta` export path) is Supabase's newer recommended
-  *authoring* model, so it deserves a stated answer rather than silence. The
+  _authoring_ model, so it deserves a stated answer rather than silence. The
   answer is no, for this tree: it carries data migrations
   (`20260809120000_normalize_double_encoded_jsonb.sql`), pg_cron job bodies,
   extension installs, explicit per-role grants, deny-all RLS, and six
@@ -286,7 +289,7 @@ into a jsonb column from inside Postgres — an arrow operator, `-`, `jsonb_set`
 a predicate in a pg_cron body — needs a test against a real database.
 
 **Those are both the FORWARD direction, and the reverse one cost us three
-tables.** A table queried nowhere *and* declared nowhere satisfies every check
+tables.** A table queried nowhere _and_ declared nowhere satisfies every check
 above trivially, and production held exactly that: `sandbox_registry`,
 `slug_epochs` and `slug_locks`, created at runtime by `pg-ensure.ts` before the
 schema was declared, replaced by #950, and never dropped — because a declared

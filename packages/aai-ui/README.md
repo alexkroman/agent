@@ -244,10 +244,10 @@ rendered halves. `WorkflowRun`, `WorkflowSummary`, `WorkflowInputOf`,
 The root export is the whole client API. Two subpaths sit beside it, neither
 of them something a `client.tsx` reaches for:
 
-| Subpath | Reach for it when |
-| --- | --- |
-| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createRuntimeServer({ clientDir })` wants |
-| `/internal` | never, from application code: the plumbing `mountClient()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
+| Subpath       | Reach for it when                                                                                                                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createRuntimeServer({ clientDir })` wants                                                                                                            |
+| `/internal`   | never, from application code: the plumbing `mountClient()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
 
 ## Documentation
 

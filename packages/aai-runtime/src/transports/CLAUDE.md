@@ -46,11 +46,11 @@ A plain string resolves to itself. This is a transport seam, NOT the authoring
 `AgentSystemPrompt`, which needs the session and is resolved in
 `runtime-system-prompt.ts`.
 
-| Transport | Resolves | Why there |
-| --- | --- | --- |
-| pipeline | at each `startLlmStream` | the one place a `streamText` request is assembled |
-| OpenAI Realtime | at open, then on `refreshSystemPrompt()` | `instructions` is service state; sends an `instructions`-only `session.update`, only on a change |
-| AssemblyAI S2S | **once, at construction** (`buildAssemblyS2sTransport`) | the service runs the tool loop; the host has no moment between turns |
+| Transport       | Resolves                                                | Why there                                                                                        |
+| --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| pipeline        | at each `startLlmStream`                                | the one place a `streamText` request is assembled                                                |
+| OpenAI Realtime | at open, then on `refreshSystemPrompt()`                | `instructions` is service state; sends an `instructions`-only `session.update`, only on a change |
+| AssemblyAI S2S  | **once, at construction** (`buildAssemblyS2sTransport`) | the service runs the tool loop; the host has no moment between turns                             |
 
 So an S2S agent learns about a `dialog()` phase through tool results alone.
 

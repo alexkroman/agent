@@ -141,8 +141,8 @@ all measured:
   agent env to a host alias and opens exactly the ports that rewrite needed — a
   policy opening the `host` GROUP would pass every "can it reach the database"
   test while handing tenant code the whole machine.
-- **`isInstalled()` lies** (false where microVMs boot fine), so the scenario gate
-  asks the runtime a real question. That tier SKIPS without hardware
+- **`isInstalled()` lies** (false where microVMs boot fine), so the scenario
+  gate asks the runtime a real question. That tier SKIPS without hardware
   virtualization — GitHub's standard runners do not reliably provide it — and
   `AAI_REQUIRE_MICROSANDBOX=1` makes the skip a failure where they do.
 - **A name is NOT released when the sandbox dies** — Modal's property, which
@@ -318,7 +318,7 @@ no-op'd over a broken publisher for three green deploys.
 ## Rolling back: `modal app rollback` first, a dispatch second
 
 `ship.yml`'s header calls `workflow_dispatch` "the escape hatch for shipping,
-or rolling back to, a commit that is not a release", and as a *rollback* that
+or rolling back to, a commit that is not a release", and as a _rollback_ that
 is the slow half of the answer: it re-checks out, re-packs the SDK, rebuilds
 the guest image, rebuilds the service image and re-runs `migrate` — the whole
 ~20 minutes, during which production is still serving the bad version.
@@ -373,14 +373,15 @@ Four things to know before reaching for it:
   That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
   exists for — see "Two questions, two sentinels" in `CLAUDE.md`,
   which owns the account.
+
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox/errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
-  message: the message stays the backend's technical one (`Modal sandbox spawn
-  failed: Sandbox operation timed out`), and `createErrorHandler` turns the
-  class into a **retryable 503** carrying one authored sentence
-  (`SANDBOX_UNAVAILABLE_MESSAGE`), logged at `warn` with the full `cause`
-  chain. Keeping the two apart is what lets the log stay specific while the
-  wire body leaks nothing.
+  message: the message stays the backend's technical one
+  (`Modal sandbox spawn failed: Sandbox operation timed out`), and
+  `createErrorHandler` turns the class into a **retryable 503** carrying one
+  authored sentence (`SANDBOX_UNAVAILABLE_MESSAGE`), logged at `warn` with the
+  full `cause` chain. Keeping the two apart is what lets the log stay specific
+  while the wire body leaks nothing.
 
   The agent path always had this taxonomy — `brokerSessionUrl` answers 503 for
   any spawn failure — but the STUDIO path had none, so a Modal capacity
@@ -392,6 +393,7 @@ Four things to know before reaching for it:
   "try again in a minute" from "this project is broken". `SandboxNameTakenError`
   is deliberately NOT one of these — it is a routing signal the broker
   catches, never an answer to a client.
+
 - **There IS a middle tier now, and the three objections it had to answer are
   in `sandbox/backend.ts`'s module doc** — including the one that INVERTED (one
   image recipe, so no second toolchain delivery mechanism). A stale
@@ -399,7 +401,7 @@ Four things to know before reaching for it:
 - **`subprocess` is opt-in now, not the local default.** It has **no isolation
   at all** — tenant agent code and the studio agent's `bash`/`run_code` run with
   the server's uid, filesystem and network — and boot says so unconditionally
-  (`assertSandboxBackendOrWarn`). It keeps the *shape* that catches integration
+  (`assertSandboxBackendOrWarn`). It keeps the _shape_ that catches integration
   bugs and has no prerequisites, which is why it stays; `subprocess-sandbox.ts`
   carries what it does and does not reproduce. The shared harness lifecycle
   (exit fan-out, memoized cleanup, dial retry, stdio draining, port allocation)
@@ -411,13 +413,14 @@ Four things to know before reaching for it:
   which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
   "The snapshot image" in
   `packages/aai-guest/CLAUDE.md`.
-- **Modal reports a `skopeo` manifest miss as `Image build for im-<id> failed
-  with the exception:` and then NOTHING** — no tag, no registry, no remedy — one
-  outage per image path so far, and the PINNED and CURRENT paths each failed a
-  different way. `resolvePinAcrossSources` probes Modal first and logs the ref;
-  a create escaping `SandboxUnavailableError` is a 500 where the taxonomy owes a
-  503 (see `translateSpawnFailure`). Both accounts, and the gate that no-op'd
-  over a broken publisher for three green deploys, are in
+- **Modal reports a `skopeo` manifest miss as
+  `Image build for im-<id> failed with the exception:` and then NOTHING** — no
+  tag, no registry, no remedy — one outage per image path so far, and the PINNED
+  and CURRENT paths each failed a different way. `resolvePinAcrossSources`
+  probes Modal first and logs the ref; a create escaping
+  `SandboxUnavailableError` is a 500 where the taxonomy owes a 503 (see
+  `translateSpawnFailure`). Both accounts, and the gate that no-op'd over a
+  broken publisher for three green deploys, are in
   [`MODAL-CLAUDE.md`](MODAL-CLAUDE.md).
 - **The harness, the build toolchain, and the V8 compile cache are baked into
   a snapshot image**, not written per spawn — with the toolchain LOCKED by a
@@ -445,8 +448,8 @@ Four things to know before reaching for it:
   `preview`, `studio`, `studio-publish`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
   a production voice agent from a preview deploy or a studio coding-agent
-  session. Every spawn knows its identity at creation. Observability only: nothing
-  may gate on these tags, and the `preview` role is inferred from the
+  session. Every spawn knows its identity at creation. Observability only:
+  nothing may gate on these tags, and the `preview` role is inferred from the
   `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, defined once in the SDK's
   slug contract — `aai/sdk/slug.ts`, reachable as `@alexkroman1/aai/utils` —
   because three independent things key off it and a disagreement is silent
@@ -496,6 +499,7 @@ Four things to know before reaching for it:
   because the probe's RESULT still crosses Modal's control plane to reach the
   host, and below ~100ms that propagation is what dominates. Was 250ms
   (~125ms average waste).
+
 - **An agent spawn's steps are ordered by what they actually depend on**, not
   by the order they read in. Two of them are only incidentally sequential and
   must not be re-serialized (`modal/agent-sandbox.ts`):
@@ -514,6 +518,7 @@ Four things to know before reaching for it:
   have to be: the calls are ISSUED in the same order either way, so a
   `write, write, exec` transcript reads identically whether or not anything
   waited. The concurrency test asserts on writes in flight, not on sequence.
+
 - **Transport**: STUDIO guests get a WebSocket control channel the
   host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
   JSON-RPC on `/ws`) once the probe reports ready — the dial's retry

@@ -202,8 +202,9 @@ compile error, not silence: delete absorbing guards (`"x" in result &&`,
 
 - **A per-agent wrapper copies the SDK's signature, not its `Exclude`:**
   declare `execute: (…) => R | ToolFailure` and let union inference subtract
-  the failure arm; `summary` takes `NoInfer<R>`. `Exclude<NoInfer<R>,
-  ToolFailure>` does not distribute over a non-naked type parameter.
+  the failure arm; `summary` takes `NoInfer<R>`.
+  `Exclude<NoInfer<R>, ToolFailure>` does not distribute over a non-naked type
+  parameter.
 - **Every arm of the result union must have the field `sendFrom` reads.** A
   return through a declared type or an inner union gains no `?: never` keys;
   add `field: undefined` at that return.
@@ -350,14 +351,14 @@ prose to READ, a `workflowApp()` page, or a voice agent that hands off to a run.
 
 ### Six templates are ports of LangChain/LangGraph agents
 
-| Source | Template | Front door | What the port changed |
-| --- | --- | --- | --- |
-| `open_deep_research` | `research-handoff-agent` | voice, handing off to a run | a durable workflow — too many model calls for the line |
-| customer-support tutorial | `travel-concierge-agent` | voice | specialist prompt becomes a tool RESULT; `interrupt_before` becomes a spoken confirmation |
-| self-RAG + CRAG | `technical-support-agent` | voice | lexical retrieval; the graders make that fine |
-| plan-and-execute | `research-planner-agent` | voice | the CALLER drives execute→replan, one step per tool call |
-| reflection | `document-redline-workflow` | `workflowApp()` | the loop's exit is a step's journaled VERDICT |
-| Executive AI Assistant | `executive-inbox-agent` | voice | drafting tools become agent tools; the inbox interrupt becomes four gated tools |
+| Source                    | Template                    | Front door                  | What the port changed                                                                     |
+| ------------------------- | --------------------------- | --------------------------- | ----------------------------------------------------------------------------------------- |
+| `open_deep_research`      | `research-handoff-agent`    | voice, handing off to a run | a durable workflow — too many model calls for the line                                    |
+| customer-support tutorial | `travel-concierge-agent`    | voice                       | specialist prompt becomes a tool RESULT; `interrupt_before` becomes a spoken confirmation |
+| self-RAG + CRAG           | `technical-support-agent`   | voice                       | lexical retrieval; the graders make that fine                                             |
+| plan-and-execute          | `research-planner-agent`    | voice                       | the CALLER drives execute→replan, one step per tool call                                  |
+| reflection                | `document-redline-workflow` | `workflowApp()`             | the loop's exit is a step's journaled VERDICT                                             |
+| Executive AI Assistant    | `executive-inbox-agent`     | voice                       | drafting tools become agent tools; the inbox interrupt becomes four gated tools           |
 
 ### One template is a port of a CrewAI flow
 
@@ -370,10 +371,10 @@ asked about, not the id the model echoed.
 
 ### Two templates are ports of the other voice frameworks' largest samples
 
-| Source | Template | What the port changed |
-| --- | --- | --- |
+| Source                                | Template                | What the port changed                                                                                                                                                                  |
+| ------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | LiveKit `examples/hotel_receptionist` | `hotel-reception-agent` | `AgentTask` sub-agents become `when` gates on one `booking` dialog; speech-owed counter becomes two states left on `@user-transcript.committed`; the DB becomes a seeded `sessionSlot` |
-| Pipecat `word-wrangler-gemini-live` | `word-game-agent` | the second model becomes `ctx.generate` in one tool; the timer becomes `playing`'s `timeout`; filters become a referee function |
+| Pipecat `word-wrangler-gemini-live`   | `word-game-agent`       | the second model becomes `ctx.generate` in one tool; the timer becomes `playing`'s `timeout`; filters become a referee function                                                        |
 
 A sub-agent is a dialog state (instructions) plus a gate (tool set); a model
 that must not hear the first is a tool boundary. Neither needs a second session.

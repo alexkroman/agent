@@ -85,7 +85,7 @@ default, each with a named field on `agent()` when you disagree:
 - An interruption that never becomes a real turn resumes the reply from the
   last words the caller actually heard.
 - A slow tool chain speaks a short filler instead of leaving dead air.
-- An interrupted reply is recorded as what the caller *heard*, so the model
+- An interrupted reply is recorded as what the caller _heard_, so the model
   doesn't think it delivered information that never arrived.
 - A provider error is handed back out loud rather than dying silently.
 
@@ -97,26 +97,26 @@ carries the run behind it. See
 
 Each of these is one page in the docs:
 
-| | |
-| --- | --- |
-| [Tools](https://alexkroman.github.io/agent/build/tools/) | Ordinary async functions, plus `resolveOne` for matching what a caller *said* |
-| [Remembering things](https://alexkroman.github.io/agent/build/state/) | `sessionSlot()` — session state, durable across a crash or a redeploy |
-| [Testing](https://alexkroman.github.io/agent/build/testing/) | `aai test` is vitest; `@alexkroman1/aai/testing` supplies the collaborators |
+|                                                                                 |                                                                                 |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [Tools](https://alexkroman.github.io/agent/build/tools/)                        | Ordinary async functions, plus `resolveOne` for matching what a caller _said_   |
+| [Remembering things](https://alexkroman.github.io/agent/build/state/)           | `sessionSlot()` — session state, durable across a crash or a redeploy           |
+| [Testing](https://alexkroman.github.io/agent/build/testing/)                    | `aai test` is vitest; `@alexkroman1/aai/testing` supplies the collaborators     |
 | [Voices and models](https://alexkroman.github.io/agent/more/voices-and-models/) | Swap speech-to-text, the model, or text-to-speech — or all three for one socket |
-| [Phone calls](https://alexkroman.github.io/agent/deploy/phone/) | Twilio and Telnyx; nothing below the bridge knows it's a phone call |
-| [Background jobs](https://alexkroman.github.io/agent/more/background-jobs/) | Durable, journaled workflows for work that outlives a turn |
-| [Your own UI](https://alexkroman.github.io/agent/more/custom-ui/) | React hooks and components, or a framework-agnostic session |
-| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/) | `aai build --target node\|vercel\|deno\|modal`, and the commands to ship it |
-| [Self-hosting](https://alexkroman.github.io/agent/more/self-hosting/) | The same runtime in your own Node process |
+| [Phone calls](https://alexkroman.github.io/agent/deploy/phone/)                 | Twilio and Telnyx; nothing below the bridge knows it's a phone call             |
+| [Background jobs](https://alexkroman.github.io/agent/more/background-jobs/)     | Durable, journaled workflows for work that outlives a turn                      |
+| [Your own UI](https://alexkroman.github.io/agent/more/custom-ui/)               | React hooks and components, or a framework-agnostic session                     |
+| [Deploy anywhere](https://alexkroman.github.io/agent/deploy/anywhere/)          | `aai build --target node\|vercel\|deno\|modal`, and the commands to ship it     |
+| [Self-hosting](https://alexkroman.github.io/agent/more/self-hosting/)           | The same runtime in your own Node process                                       |
 
 ## Packages
 
-| Package | What it is |
-| --- | --- |
-| [`@alexkroman1/aai`](./packages/aai/README.md) | The SDK: `agent()`, `tool()`, `sessionSlot()`, provider factories |
-| [`@alexkroman1/aai-ui`](./packages/aai-ui/README.md) | Browser client: React components, hooks, and the session core |
-| [`@alexkroman1/aai-runtime`](./packages/aai-runtime/README.md) | The host runtime — the thing that runs an `agent.ts` |
-| [`@alexkroman1/aai-cli`](./packages/aai-cli/README.md) | The `aai` CLI: init, dev, test, build, publish, secret, logs |
+| Package                                                        | What it is                                                        |
+| -------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`@alexkroman1/aai`](./packages/aai/README.md)                 | The SDK: `agent()`, `tool()`, `sessionSlot()`, provider factories |
+| [`@alexkroman1/aai-ui`](./packages/aai-ui/README.md)           | Browser client: React components, hooks, and the session core     |
+| [`@alexkroman1/aai-runtime`](./packages/aai-runtime/README.md) | The host runtime — the thing that runs an `agent.ts`              |
+| [`@alexkroman1/aai-cli`](./packages/aai-cli/README.md)         | The `aai` CLI: init, dev, test, build, publish, secret, logs      |
 
 ## Contributing
 

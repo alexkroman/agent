@@ -1,7 +1,7 @@
 # Multi-tenant host server
 
 A self-hosted **streaming voice agent API**, in the shape of AssemblyAI's own:
-open a WebSocket, send a config frame, and that connection *is* a full voice
+open a WebSocket, send a config frame, and that connection _is_ a full voice
 agent. The server ships with no agent of its own — the caller brings the
 prompt, the tools, and the provider key.
 
@@ -57,9 +57,9 @@ Then it is an ordinary session: send PCM16 audio as binary frames, receive the
 agent's audio back as binary frames and its events as JSON. Two events matter
 to a host caller specifically:
 
-| Direction | Frame | Meaning |
-| --- | --- | --- |
-| server → caller | `{ type: "tool_call", toolCallId, toolName, args }` | Execute this and reply. |
+| Direction       | Frame                                                 | Meaning                                      |
+| --------------- | ----------------------------------------------------- | -------------------------------------------- |
+| server → caller | `{ type: "tool_call", toolCallId, toolName, args }`   | Execute this and reply.                      |
 | caller → server | `{ type: "tool_result", toolCallId, result, error? }` | The answer. Unanswered calls reject at 120s. |
 
 Everything else is the standard protocol — `agent_transcript`,
@@ -82,7 +82,7 @@ provider keys: unbounded, a caller could set `DATABASE_URL` and have the server
 open `ctx.db` against a Postgres it controls. An unlisted name rejects the
 handshake and names itself, rather than being dropped silently.
 
-**No tenant code runs here.** Callers send tool *schemas*; the server relays
+**No tenant code runs here.** Callers send tool _schemas_; the server relays
 each call back over the socket and waits. That is why this needs no sandbox.
 
 **Each connection is isolated.** A single-use runtime is built when the
@@ -113,7 +113,7 @@ Four things follow, if you need more on the same hardware:
    coalesces to 100ms anyway. 40–60ms client frames cut that overhead
    proportionally and change nothing else.
 4. **Do not set `DATABASE_URL` on a host server.** `createRuntime` opens its own
-   Postgres pool per runtime, and here that means *per connection* — 1000 pools.
+   Postgres pool per runtime, and here that means _per connection_ — 1000 pools.
    Tenant tools are relayed and never touch `ctx.db`, so a host server has no
    use for it anyway.
 

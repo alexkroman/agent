@@ -30,20 +30,20 @@ export default agent({
 Everything below is what becomes available when your own code runs alongside
 it. Nothing here is required to get a working agent.
 
-| Capability | What it is | Where |
-| --- | --- | --- |
-| Tools | a file in `tools/` the model may call | [`tool()`](#tools-a-tool-is-a-file) |
-| Builtins & code execution | opt-in model-callable tools, up to running real JS | [`builtinTools`](#built-in-tools-and-code-execution) |
-| Typed session state | named, typed state tools read and write across turns | [`sessionSlot()`](#typed-session-state) |
-| Turn-level durability | a dropped call resumes where it was | [resume](#every-session-can-resume) |
-| Dialogs | conversation order enforced in code, not suggested in the prompt | [`dialog()`](#conversation-order-as-a-guarantee) |
-| In-tool intelligence | a one-shot LLM call inside a tool, returning an exact shape | [`ctx.generate()`](#understanding-mid-turn) |
-| Subagents | a second tool loop with its own tools and context window | [`ctx.delegate()`](#subagents) |
-| Durable workflows | journaled runs that outlive the call | [`workflow()`](#work-that-outlives-the-call) |
-| A custom product surface | a web UI over the session, showing only what you project | [`syncState`](#voice-in-screen-out) |
-| Transports | the same agent on browser WebSocket, Twilio and Telnyx | [phone](#one-agent-every-line) |
-| Engineering lifecycle | isolated tool tests, build-time checks, deploy or self-host | [testing](#testing-a-tool) |
-| Behavioral evals | drive a real session and assert what the agent did | [`describeEval`](#behavioral-evals) |
+| Capability                | What it is                                                       | Where                                                |
+| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| Tools                     | a file in `tools/` the model may call                            | [`tool()`](#tools-a-tool-is-a-file)                  |
+| Builtins & code execution | opt-in model-callable tools, up to running real JS               | [`builtinTools`](#built-in-tools-and-code-execution) |
+| Typed session state       | named, typed state tools read and write across turns             | [`sessionSlot()`](#typed-session-state)              |
+| Turn-level durability     | a dropped call resumes where it was                              | [resume](#every-session-can-resume)                  |
+| Dialogs                   | conversation order enforced in code, not suggested in the prompt | [`dialog()`](#conversation-order-as-a-guarantee)     |
+| In-tool intelligence      | a one-shot LLM call inside a tool, returning an exact shape      | [`ctx.generate()`](#understanding-mid-turn)          |
+| Subagents                 | a second tool loop with its own tools and context window         | [`ctx.delegate()`](#subagents)                       |
+| Durable workflows         | journaled runs that outlive the call                             | [`workflow()`](#work-that-outlives-the-call)         |
+| A custom product surface  | a web UI over the session, showing only what you project         | [`syncState`](#voice-in-screen-out)                  |
+| Transports                | the same agent on browser WebSocket, Twilio and Telnyx           | [phone](#one-agent-every-line)                       |
+| Engineering lifecycle     | isolated tool tests, build-time checks, deploy or self-host      | [testing](#testing-a-tool)                           |
+| Behavioral evals          | drive a real session and assert what the agent did               | [`describeEval`](#behavioral-evals)                  |
 
 ## Defining an agent
 
@@ -492,11 +492,11 @@ loop and speaks the reply through a TTS provider. Swap any stage with a
 factory from the provider subpaths — set any subset of `stt`, `llm`, `tts`;
 the unset stages keep the AssemblyAI default:
 
-| Subpath | Factories |
-| --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt` |
+| Subpath                | Factories                                                                                                                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgramStt`, `elevenLabsStt`, `sonioxStt`                                                                                                                                                                                   |
 | `@alexkroman1/aai/llm` | `llm({ provider, model })` — one factory; `provider` is `"assemblyai"`, `"anthropic"`, `"openai"`, `"google"`, `"mistral"`, `"xai"`, `"groq"`, `"cerebras"`, `"openrouter"`, `"gateway"`, or any OpenAI-compatible endpoint named by `baseUrl` |
-| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts` |
+| `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesiaTts`, `rimeTts`                                                                                                                                                                                                      |
 
 Factories return pure descriptors — serializable data, not SDK clients.
 Credentials are resolved server-side from the agent's env (each factory's
@@ -579,18 +579,18 @@ scripted, so it is free and deterministic in CI.
 Each subpath is named by WHO READS IT — reach for one when the right-hand
 column describes what you are doing.
 
-| Subpath | Reach for it when |
-| --- | --- |
-| `/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
-| `/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage (the table above) |
-| `/step`, `/step-errors`, `/step-files` | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate`, `readUploadToFile` |
-| `/workflow-api` | calling a deployed agent from a page, a script or a cron job — `createAgentClient` |
-| `/tools` | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code |
-| `/channels` | posting a result somewhere — `slackChannel`, `sendToChannel` |
-| `/html` | reading a page or a feed — `htmlToText`, `pageMetadata`, `parseFeed` |
-| `/utils` | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock` |
-| `/ffmpeg` | running ffmpeg from a step — `runFfmpeg`, `probeMedia`, `transcodeToWav` |
-| `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` | framework internals used by the CLI and the platform; not a public API and not covered by semver |
+| Subpath                                                               | Reach for it when                                                                                              |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `/testing`, `/testing/vitest`                                         | testing your own tools — `createToolContext`, `deployedAgent`, `runTool`                                       |
+| `/stt`, `/llm`, `/tts`, `/s2s`                                        | picking a provider for a pipeline stage (the table above)                                                      |
+| `/step`, `/step-errors`, `/step-files`                                | writing a step inside a workflow — `stepFetch`, `stepEnv`, `mapConcurrent`, `stepGenerate`, `readUploadToFile` |
+| `/workflow-api`                                                       | calling a deployed agent from a page, a script or a cron job — `createAgentClient`                             |
+| `/tools`                                                              | calling `fetchJson`, `visitWebpage` or `webSearch` from your own tool code                                     |
+| `/channels`                                                           | posting a result somewhere — `slackChannel`, `sendToChannel`                                                   |
+| `/html`                                                               | reading a page or a feed — `htmlToText`, `pageMetadata`, `parseFeed`                                           |
+| `/utils`                                                              | small helpers written inside a tool body — `toolFailure`, `errorMessage`, `pushCapped`, `withLock`             |
+| `/ffmpeg`                                                             | running ffmpeg from a step — `runFfmpeg`, `probeMedia`, `transcodeToWav`                                       |
+| `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` | framework internals used by the CLI and the platform; not a public API and not covered by semver               |
 
 ## Documentation
 

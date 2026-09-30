@@ -75,23 +75,23 @@ export default agent({
 
 Each factory reads one key from the environment:
 
-| Factory | Import from | Key it reads |
-| --- | --- | --- |
-| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY` |
-| `deepgramStt` | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY` |
-| `elevenLabsStt` | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY` |
-| `sonioxStt` | `@alexkroman1/aai/stt` | `SONIOX_API_KEY` |
-| `cartesiaTts` | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY` |
-| `rimeTts` | `@alexkroman1/aai/tts` | `RIME_API_KEY` |
-| `llm({ provider: "anthropic" })` | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY` |
-| `llm({ provider: "openai" })` | `@alexkroman1/aai/llm` | `OPENAI_API_KEY` |
-| `llm({ provider: "google" })` | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
-| `llm({ provider: "mistral" })` | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY` |
-| `llm({ provider: "xai" })` | `@alexkroman1/aai/llm` | `XAI_API_KEY` |
-| `llm({ provider: "groq" })` | `@alexkroman1/aai/llm` | `GROQ_API_KEY` |
-| `llm({ provider: "cerebras" })` | `@alexkroman1/aai/llm` | `CEREBRAS_API_KEY` |
-| `llm({ provider: "openrouter" })` | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY` |
-| `llm({ provider: "gateway" })` | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY` |
+| Factory                                                             | Import from            | Key it reads                   |
+| ------------------------------------------------------------------- | ---------------------- | ------------------------------ |
+| `assemblyAIStt`, `assemblyAITts`, `llm({ provider: "assemblyai" })` | `/stt`, `/tts`, `/llm` | `ASSEMBLYAI_API_KEY`           |
+| `deepgramStt`                                                       | `@alexkroman1/aai/stt` | `DEEPGRAM_API_KEY`             |
+| `elevenLabsStt`                                                     | `@alexkroman1/aai/stt` | `ELEVENLABS_API_KEY`           |
+| `sonioxStt`                                                         | `@alexkroman1/aai/stt` | `SONIOX_API_KEY`               |
+| `cartesiaTts`                                                       | `@alexkroman1/aai/tts` | `CARTESIA_API_KEY`             |
+| `rimeTts`                                                           | `@alexkroman1/aai/tts` | `RIME_API_KEY`                 |
+| `llm({ provider: "anthropic" })`                                    | `@alexkroman1/aai/llm` | `ANTHROPIC_API_KEY`            |
+| `llm({ provider: "openai" })`                                       | `@alexkroman1/aai/llm` | `OPENAI_API_KEY`               |
+| `llm({ provider: "google" })`                                       | `@alexkroman1/aai/llm` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `llm({ provider: "mistral" })`                                      | `@alexkroman1/aai/llm` | `MISTRAL_API_KEY`              |
+| `llm({ provider: "xai" })`                                          | `@alexkroman1/aai/llm` | `XAI_API_KEY`                  |
+| `llm({ provider: "groq" })`                                         | `@alexkroman1/aai/llm` | `GROQ_API_KEY`                 |
+| `llm({ provider: "cerebras" })`                                     | `@alexkroman1/aai/llm` | `CEREBRAS_API_KEY`             |
+| `llm({ provider: "openrouter" })`                                   | `@alexkroman1/aai/llm` | `OPENROUTER_API_KEY`           |
+| `llm({ provider: "gateway" })`                                      | `@alexkroman1/aai/llm` | `AI_GATEWAY_API_KEY`           |
 
 The LLM stage is one factory: `llm({ provider, model })`, where `provider` is a
 string. Any other provider name also compiles — give it a `baseUrl` (and an
@@ -132,14 +132,14 @@ Five fields on `agent()` decide how a pipeline agent handles pauses,
 interruptions and monologues. Reach for them once you have heard a specific
 problem, not before.
 
-| Field | What it decides | Default |
-| --- | --- | --- |
-| `maxTurnSilenceMs` | How long a caller may pause mid-sentence before the turn is force-ended. Raise it for callers who dictate addresses or confirmation numbers. | `3000` |
-| `minBargeInWords` | How many words of caller speech interrupt the agent's reply. `1` interrupts on any word; the default lets "yeah" and "mm-hmm" through. | `2` |
-| `interruptionMinDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate. | `500` |
-| `deadAirCoverMs` | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables. | `2400` |
-| `userTurnLimit` | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `user-turn.exceeded` event. | unset (no cap) |
-| `turnDetection` | Who ends a caller turn. `"manual"` is push-to-talk: the client opens and closes each turn (`usePushToTalk()` in `@alexkroman1/aai-ui`), audio outside a held turn is never transcribed, everything said while held is answered as one turn on release, and pressing is what interrupts the agent. | `"auto"` (the transcriber ends a turn on a pause) |
+| Field                       | What it decides                                                                                                                                                                                                                                                                                   | Default                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `maxTurnSilenceMs`          | How long a caller may pause mid-sentence before the turn is force-ended. Raise it for callers who dictate addresses or confirmation numbers.                                                                                                                                                      | `3000`                                            |
+| `minBargeInWords`           | How many words of caller speech interrupt the agent's reply. `1` interrupts on any word; the default lets "yeah" and "mm-hmm" through.                                                                                                                                                            | `2`                                               |
+| `interruptionMinDurationMs` | How long that speech must be sustained before it counts as an interruption. `0` disables the gate.                                                                                                                                                                                                | `500`                                             |
+| `deadAirCoverMs`            | How long a turn may send nothing before the agent speaks a short filler, so a long tool chain does not sound like a dropped call. `0` disables.                                                                                                                                                   | `2400`                                            |
+| `userTurnLimit`             | A cap on one caller turn, `{ maxWords, maxDurationMs }` — either or both. A caller who never pauses never ends a turn; past the cap the transcriber ends it as a pause would, the agent answers what it heard, and the rest opens the next turn. Each cut is a `user-turn.exceeded` event.        | unset (no cap)                                    |
+| `turnDetection`             | Who ends a caller turn. `"manual"` is push-to-talk: the client opens and closes each turn (`usePushToTalk()` in `@alexkroman1/aai-ui`), audio outside a held turn is never transcribed, everything said while held is answered as one turn on release, and pressing is what interrupts the agent. | `"auto"` (the transcriber ends a turn on a pause) |
 
 The rest, including the phrases spoken on a provider failure, are in the
 [SDK reference](/agent/reference/).

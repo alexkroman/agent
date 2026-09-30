@@ -1,9 +1,10 @@
 ---
 summary: >-
   The browser session core (statecharts, fatal latch, handshake guard,
-  client-config lookup), client identity and the inbox, the public hooks, the fuzz harnesses, and the
-  workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads,
-  reload recovery) over the workflow HTTP API.
+  client-config lookup), client identity and the inbox, the public hooks, the
+  fuzz harnesses, and the workflow-app hooks
+  (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads, reload recovery) over
+  the workflow HTTP API.
 read_when: >-
   editing `session-core*.ts`, `client-config.ts`, `client-identity.ts`, the
   inbox (`inbox*.ts`, `notice-player.ts`), `context.ts`, a `use-*.ts` hook, a
@@ -21,17 +22,18 @@ capability contracts in `contracts/CLAUDE.md`.
 
 The host's fatal paths `terminate()`, which emits `cancelled` — so the frame
 announcing death must not wipe the banner. The fatal branch of
-`handleErrorEvent` latches; every recovery path is declined while latched; **only
-the next `config` frame clears it** (a completed handshake, per CONNECTION, so a
-retry reaching a healthy peer is not pinned to the old banner). A NON-fatal error
-(`fatal: false`) is still retired by later activity.
+`handleErrorEvent` latches; every recovery path is declined while latched;
+**only the next `config` frame clears it** (a completed handshake, per
+CONNECTION, so a retry reaching a healthy peer is not pinned to the old banner).
+A NON-fatal error (`fatal: false`) is still retired by later activity.
 
 - **`session-core-state.ts` owns `state` and `error`.** The seven `AgentState`
-  names are one region; the fatal latch is a SECOND region (`stateIn({ fatal:
-  "yes" })`), because it outlives the `error` phase (`error → connecting →
-  ready`). Callers send what HAPPENED (`LISTEN`, `ACTIVITY`, `SPEAK`, `THINK`)
-  and fold the projection into one `updateState`. Never write `state`/`error`
-  directly or guard a write by reading the snapshot back.
+  names are one region; the fatal latch is a SECOND region
+  (`stateIn({ fatal: "yes" })`), because it outlives the `error` phase
+  (`error → connecting → ready`). Callers send what HAPPENED (`LISTEN`,
+  `ACTIVITY`, `SPEAK`, `THINK`) and fold the projection into one `updateState`.
+  Never write `state`/`error` directly or guard a write by reading the snapshot
+  back.
 - **XState falls through to an ancestor's handler when a child's guard fails**,
   so every handler that clears the banner carries the fatal guard.
 - A declined transition returns the position unchanged; `updateState` drops
@@ -73,14 +75,14 @@ queued BEHIND held audio; `cancelled`/`reset` DISCARD held audio.
 
 An open socket proves only a `101`; the server sends `config` at zero RTT, and
 partysocket's `connectionTimeout` stops at `open`. Without a guard a wedged peer
-leaves the session on `"ready"` (painted as live) forever. `createHandshakeGuard`
-arms per `open`, disarms on `config` or close, re-dials on expiry, and after
-`MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
+leaves the session on `"ready"` (painted as live) forever.
+`createHandshakeGuard` arms per `open`, disarms on `config` or close, re-dials
+on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
 
 - **Its budget is its own** — `reconnect()` resets partysocket's retry count, so
   `RECONNECT_OPTIONS.maxRetries` cannot bound this.
-- **The budget is CONSECUTIVE**: `succeeded()` (a completed handshake) resets it;
-  `disarm()` (a socket closing) must NOT, or a wedged peer re-dials forever.
+- **The budget is CONSECUTIVE**: `succeeded()` (a completed handshake) resets
+  it; `disarm()` (a socket closing) must NOT, or a wedged peer re-dials forever.
 - **The timer is a bare `setTimeout`**: disarm on `abort` explicitly, or a user
   disconnect gets re-dialled.
 
@@ -92,8 +94,8 @@ arms per `open`, disarms on `config` or close, re-dials on expiry, and after
   `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` (10 s) makes a hang degrade like a failure.
 - **The session's per-attempt lookup uses `loadClientConfig`** (`null` = no
   answer), never `fetchClientConfig` (`{}`). Only an ANSWERED lookup with no
-  `sessionUrl` may latch `serverIsBroker = false`; latching on a failure pins the
-  client to `/:slug/websocket`, whose redirect browsers do not follow.
+  `sessionUrl` may latch `serverIsBroker = false`; latching on a failure pins
+  the client to `/:slug/websocket`, whose redirect browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
   `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
@@ -113,13 +115,14 @@ arms per `open`, disarms on `config` or close, re-dials on expiry, and after
   (`session.userTurn`), and `SessionActions` is DECLARED, not `Pick`ed.
 - **`useConversation()`** returns `{ items, streaming, transcript, thinking }`
   (`items`: `{ kind: "message" }` | `{ kind: "tool" }`) and owns the interleave
-  (tool after its `afterMessageId` anchor; an orphan leads), the streaming bubble,
-  the transcript row and the thinking-suppression rule. It subscribes per field.
-- **`useSessionActions()`** is `useSessionCore` narrowed to the eight methods, no
-  subscription. Pair it with one-field selectors, `useSessionStatus()` or
+  (tool after its `afterMessageId` anchor; an orphan leads), the streaming
+  bubble, the transcript row and the thinking-suppression rule. It subscribes
+  per field.
+- **`useSessionActions()`** is `useSessionCore` narrowed to the eight methods,
+  no subscription. Pair it with one-field selectors, `useSessionStatus()` or
   `useSessionError()` — never whole `useSession()` in a chrome.
-- **`useUserTranscript()`**: `null` is silence, `""` is speech with no words yet.
-  Render on `speaking`; `text` carries the placeholder; `partial` is raw.
+- **`useUserTranscript()`**: `null` is silence, `""` is speech with no words
+  yet. Render on `speaking`; `text` carries the placeholder; `partial` is raw.
 - **`useAgentState(projection)`** is the overload to use: typed and defaulted by
   the projection, memoized on its identity. Export the projection once from the
   module declaring the slot and import it in both `agent.ts` and `client.tsx`.
@@ -204,9 +207,9 @@ tool-call/event delivery), `fuzz-reconnect` (broker latch, resume ids, history
 replay); `worklets/audio-stress.test.ts` for the processors. They assert
 INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
 
-- **Check sensitivity** — revert the fix and confirm the harness fails. The audio
-  mocks accumulate nodes across a test, so a harness can silently drive a DEAD
-  worklet node.
+- **Check sensitivity** — revert the fix and confirm the harness fails. The
+  audio mocks accumulate nodes across a test, so a harness can silently drive a
+  DEAD worklet node.
 - **Stay faithful to the protocol** — one `config` per connection, a drain-stop
   only after a `done`, timers advanced 1 ms per op — or the violations are the
   model's own.
@@ -262,11 +265,12 @@ GET    /workflows/uploads/:id/info → { id, name, type, size, complete, ranges 
 ```
 
 - **`events` is the run's STATE; `stream` is what the run WROTE** via
-  `getWritable()`. Stream chunks are RETAINED, so a stream read is also a replay.
+  `getWritable()`. Stream chunks are RETAINED, so a stream read is also a
+  replay.
 - `api.watch` / `api.streamOutput` return the raw `Response` because a 404 (an
   older agent) is a normal path this package's hooks fall back from;
-  `follow`/`followOutput` are the SDK iterators (not used here). `readEventStream`
-  is the one SSE parser — never add a second.
+  `follow`/`followOutput` are the SDK iterators (not used here).
+  `readEventStream` is the one SSE parser — never add a second.
 - **`wake`**: `woken: 0` is an answer, like `cancelled: false`.
 - **`wait`** (`POST` body / `?wait=`): answers at terminal or budget expiry;
   expiry answers the RUNNING snapshot at 202, never an error.
@@ -295,8 +299,8 @@ saves brokered reads). Every stream failure degrades to polling, and
 - **Read `polling`, never re-derive it** from the snapshot — a gave-up watch
   leaves `run` undefined. `useWorkflowSubmit`'s `pending` is
   `starting || tracked.polling` for this reason.
-- **Every stream ending is named** (`done`, `missing`, `idle`); only `idle` hands
-  back to the poll.
+- **Every stream ending is named** (`done`, `missing`, `idle`); only `idle`
+  hands back to the poll.
 - `WorkflowOutputOf<typeof wf>` narrows `run.output` on `"completed"` via a
   type-only import of `agent.ts`.
 
@@ -304,10 +308,10 @@ saves brokered reads). Every stream failure degrades to polling, and
 
 Reports what the run WROTE (`useWorkflowRun` reports its state).
 
-- **Reads are BOUNDED and re-opened**: a progress stream is never closed (no step
-  knows it is last), so the route bounds each read by `streamTail()` and `done`
-  carries `complete`; the hook re-opens from where it left off until `complete`.
-  Only `dev-workflow.scenario.test.ts` can see a regression here.
+- **Reads are BOUNDED and re-opened**: a progress stream is never closed (no
+  step knows it is last), so the route bounds each read by `streamTail()` and
+  `done` carries `complete`; the hook re-opens from where it left off until
+  `complete`. Only `dev-workflow.scenario.test.ts` can see a regression here.
 - **`supported`** separates "deploy predates streams" (hide) from "nothing
   written yet" (wait). Dropped reads and thrown fetches are retried.
 - **Chunks replay from index 0 by default.** A negative `startIndex` is resolved
@@ -337,13 +341,14 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   drops on the last byte. Byte progress uses `XMLHttpRequest` where available
   (`fetch` cannot observe a request body) — the SDK owns that swap.
 - **`useWorkflowStream`**: same surface, but the run starts BEFORE the upload
-  finishes (`PUT` under a minted id; the store exposes a growing `size`). It puts
-  the id where `uploads` says, WAKES the run when the upload lands, and CANCELS
-  the run if the upload fails. Nothing here knows the file is audio.
-- **Parallel parts by default** (`parallel: { partBytes, concurrency } | false`).
-  The store's `size` is the contiguous prefix; outage resume is the SDK's
-  (`aai/sdk/_upload-resume.ts`); a form's files stay sequential; it degrades to
-  one request for small files or older agents.
+  finishes (`PUT` under a minted id; the store exposes a growing `size`). It
+  puts the id where `uploads` says, WAKES the run when the upload lands, and
+  CANCELS the run if the upload fails. Nothing here knows the file is audio.
+- **Parallel parts by default**
+  (`parallel: { partBytes, concurrency } | false`). The store's `size` is the
+  contiguous prefix; outage resume is the SDK's (`aai/sdk/_upload-resume.ts`); a
+  form's files stay sequential; it degrades to one request for small files or
+  older agents.
 - **Pause/resume** (`pauseUpload`/`resumeUpload`, `UploadStatus.paused`) is an
   abort plus the minted id — no new storage. `submit()` stays unresolved
   across a pause; the run is untouched (its idle bound applies); `reset()`
@@ -353,11 +358,11 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
 ### Reload recovery
 
 - **Upload recall** (`_upload-recall.ts`, `sessionStorage`): keyed on a
-  FINGERPRINT (size, lastModified, type, name) and written BEFORE the first byte.
-  A recalled id is a candidate: `claimId` (`_upload-files.ts`) reads `uploadInfo`
-  first — complete → skip the transfer; unfinished WITH windows → resume
-  (`resume: true`); anything else, including unfinished with NO windows (a
-  second `PUT` gets 409) → fresh id. Specs that want a second transfer need a
+  FINGERPRINT (size, lastModified, type, name) and written BEFORE the first
+  byte. A recalled id is a candidate: `claimId` (`_upload-files.ts`) reads
+  `uploadInfo` first — complete → skip the transfer; unfinished WITH windows →
+  resume (`resume: true`); anything else, including unfinished with NO windows
+  (a second `PUT` gets 409) → fresh id. Specs that want a second transfer need a
   second file and clear `sessionStorage` between specs.
   `useWorkflowStream` does NOT recall (it would start a second run on the first
   run's upload).

@@ -67,9 +67,9 @@ and build-dependent ones after `build`.
   `check.yml`).
 - `typecheck` must keep `**/*.test.ts` in its `inputs`, since every tsconfig
   includes tests.
-- To prove a file is hashed: capture `turbo run <task> --filter <pkg>
-  --dry=json`'s hash, touch the file, capture again. An identical hash is the
-  bug.
+- To prove a file is hashed: capture the hash from
+  `turbo run <task> --filter <pkg> --dry=json`, touch the file, capture again.
+  An identical hash is the bug.
 
 **Caches must point at the directory that is written, in the job that writes
 it.**
