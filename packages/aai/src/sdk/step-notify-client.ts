@@ -26,6 +26,10 @@
  *
  * ## The wire, for whoever writes the client
  *
+ * The frames are declared once, as `InboxServerFrame` and `InboxClientFrame`
+ * (with their Zod schemas) on `@alexkroman1/aai/protocol`; both the server and
+ * `aai-ui`'s client are typed against them. In outline:
+ *
  * ```text
  * server -> client  text    {"type":"notice","id","event","data"?,"bytes":N}
  *                   binary  N bytes of `audio`, in frames of at most 4 KiB

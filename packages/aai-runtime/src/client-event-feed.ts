@@ -42,6 +42,7 @@
 
 import { type SessionEvent, sessionClientId } from "@alexkroman1/aai";
 import { globalSlot } from "@alexkroman1/aai/internal";
+import type { InboxServerFrame } from "@alexkroman1/aai/protocol";
 
 const FEED_SLOT = globalSlot<ClientEventFeed>("@alexkroman1/aai-runtime.clientEventFeed");
 
@@ -61,13 +62,14 @@ export const CLIENT_FEED_EVENT_TYPES: ReadonlySet<SessionEvent["type"]> = new Se
 ]);
 
 /**
- * One frame on an `?events=1` inbox socket.
+ * One frame on an `?events=1` inbox socket: the two live arms of the wire's
+ * {@link InboxServerFrame}, with the event narrowed to what a session emits.
  *
  * @internal
  */
 export type ClientEventFrame =
-  | { type: "session_event"; sessionId: string; event: SessionEvent }
-  | { type: "session_ended"; sessionId: string };
+  | (Extract<InboxServerFrame, { type: "session_event" }> & { event: SessionEvent })
+  | Extract<InboxServerFrame, { type: "session_ended" }>;
 
 /**
  * Where a client's frames go.

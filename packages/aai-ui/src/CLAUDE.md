@@ -154,7 +154,10 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
 - **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
   are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`
   region whose `active` children own the hang-up clocks); the hook only feeds
-  it `SESSION` on every snapshot activity and runs its effects. Hang-up is
+  it `SESSION` on every snapshot activity and runs its effects. **The feed
+  subscribes to the session core OUT OF BAND of React** (`feedSession`), so a
+  transcript delta restarts a clock without re-rendering the host; React
+  subscribes to the phase alone. Hang-up is
   `disconnect()` (resumable), never `end()`; the mute is an ENTRY action of
   `live`, so no path forgets it; a clock hangs up only while not live.
 - **`sendText(text, { connect: true })`** queues in the session core (not in a

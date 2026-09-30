@@ -61,11 +61,10 @@ export type TapToTalkEvent =
   /** A typed turn: it clears a previous failure like a tap does. */
   | { type: "TEXT" }
   /**
-   * The session moved or did something — sent on every activity, not only a
-   * phase change. `activity` is the snapshot's `contentVersion`: informational,
-   * since every SESSION event already counts as activity.
+   * The session moved or did something — sent on every activity (a content
+   * change too), not only a phase change; every one restarts the active clock.
    */
-  | { type: "SESSION"; phase: TapToTalkPhase; agent: AgentState; activity?: number }
+  | { type: "SESSION"; phase: TapToTalkPhase; agent: AgentState }
   /** The session reported an error. */
   | { type: "ERROR" };
 

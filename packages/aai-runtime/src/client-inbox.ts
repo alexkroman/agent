@@ -68,7 +68,8 @@ import {
   publishClientNotifier,
 } from "@alexkroman1/aai/host-internal";
 import { createOwnedMap, requestQuery } from "@alexkroman1/aai/internal";
-import { createKeyedLock, omitUndefined, withLock } from "@alexkroman1/aai/utils";
+import { InboxClientFrameSchema, type InboxServerFrame } from "@alexkroman1/aai/protocol";
+import { createKeyedLock, omitUndefined, safeJsonParse, withLock } from "@alexkroman1/aai/utils";
 import type { RawData, WebSocket } from "ws";
 import { type ClientEventFrame, publishClientEventFeed } from "./client-event-feed.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -162,16 +163,12 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
   }
 
   function onMessage(holder: Holder, data: RawData): void {
-    let msg: { type?: unknown; id?: unknown };
-    try {
-      msg = JSON.parse(data.toString());
-    } catch {
-      return;
-    }
+    const parsed = InboxClientFrameSchema.safeParse(safeJsonParse(data.toString()));
+    if (!parsed.success) return;
+    const msg = parsed.data;
     const pending = holder.pending;
     if (!pending || msg.id !== pending.id) return; // a late answer to a settled send
-    if (msg.type === "ack") pending.settle("acked");
-    else if (msg.type === "busy") pending.settle("busy");
+    pending.settle(msg.type === "ack" ? "acked" : "busy");
   }
 
   function attach(socket: WebSocket, rawUrl: string | undefined): void {
@@ -238,7 +235,7 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     const pending: Pending = { id: notice.id, settle };
     holder.pending = pending;
     const audio = notice.audio ?? new Uint8Array(0);
-    const header = {
+    const header: InboxServerFrame = {
       type: "notice",
       id: notice.id,
       event: notice.event,
@@ -299,7 +296,9 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     });
   };
 
-  function feed(clientId: string, frame: ClientEventFrame): void {
+  function feed(clientId: string, event: ClientEventFrame): void {
+    // Typed as the wire's own union, so a feed frame cannot drift from it.
+    const frame: InboxServerFrame = event;
     let json: string | undefined;
     for (const holder of openHolders(clientId)) {
       if (!holder.events || holder.socket.bufferedAmount > INBOX_EVENT_BUFFER_LIMIT_BYTES) continue;

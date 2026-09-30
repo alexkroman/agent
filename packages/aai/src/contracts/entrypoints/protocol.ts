@@ -3,7 +3,8 @@
  * Capability contract: `protocol`.
  *
  * The session wire format — the commands a client sends, the events and ready
- * config a server answers with, and the `/client-config` handshake — that
+ * config a server answers with, the `/client-config` handshake, and the frames
+ * of the second socket on the same server (`WS /inbox`) — that
  * `@alexkroman1/aai-ui` in a browser and `@alexkroman1/aai-runtime` in a
  * guest both derive from.
  *
@@ -39,6 +40,10 @@ export {
   type HostConfig,
   HostConfigMessageSchema,
   HostConfigSchema,
+  type InboxClientFrame,
+  InboxClientFrameSchema,
+  type InboxServerFrame,
+  InboxServerFrameSchema,
   lenientParse,
   type ReadyConfig,
   ReadyConfigSchema,

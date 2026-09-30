@@ -23,6 +23,10 @@ fixture stays to protect any stragglers.
 - `SessionCommand` — all client-to-server WebSocket JSON messages
 - `constants` — wire-format constants (audio format, sample rates, error codes)
 
+The `WS /inbox` frames have their own series, `inbox-v{N}.json`
+(`InboxServerFrame` and `InboxClientFrame`), under the same rules: that socket's
+clients include firmware, which updates on no schedule of ours.
+
 `KvRequest` was covered until KV support was removed from the SDK (a
 deliberate breaking change — the guest RPC no longer has KV operations).
 

@@ -42,3 +42,11 @@ export {
   type SessionEventMeta,
   SessionEventMetaSchema,
 } from "./protocol.ts";
+// The `WS /inbox` frames — the other socket on the same server. From their own
+// module, since `protocol.ts` is at the file-length cap.
+export {
+  type InboxClientFrame,
+  InboxClientFrameSchema,
+  type InboxServerFrame,
+  InboxServerFrameSchema,
+} from "./protocol-inbox.ts";

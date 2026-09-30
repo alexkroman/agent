@@ -82,6 +82,187 @@ function compact(value: unknown, maxString: number | undefined): unknown {
   return value;
 }
 
+/**
+ * One list or object of the compacted copy, with the length of its JSON text.
+ * Built once; a trim updates `chars` on the trimmed list and its ancestors, so
+ * no pass re-serializes anything.
+ */
+interface Branch {
+  chars: number;
+  parent: Branch | undefined;
+  /** Inside an item a trim removed: no longer a candidate. */
+  dead: boolean;
+  /** The branches directly below this one, so a removed item can mark its own dead. */
+  kids: Branch[];
+  /** Set on a list only: the list itself. */
+  list?: unknown[];
+  /** Set on a list only: each item's JSON length. */
+  itemChars?: number[];
+  /** Set on a list only: each item's branch, when the item is a list or object. */
+  itemBranches?: (Branch | undefined)[];
+}
+
+/** Every list of the tree, in the pre-order `longestList` walks, and the tree's JSON length. */
+interface Measured {
+  lists: Branch[];
+  rootChars: number;
+}
+
+/** Length of `{"result":` + `,"note":` + `}` around the result's and the note's JSON. */
+const WRAP_CHARS = '{"result":,"note":}'.length;
+
+/** True for a value `JSON.stringify` would hand to its `toJSON`. */
+function hasToJson(v: unknown): boolean {
+  return v !== null && v !== undefined && typeof (v as { toJSON?: unknown }).toJSON === "function";
+}
+
+/**
+ * Measure `root`'s JSON text node by node, the way `JSON.stringify` writes it:
+ * a list item that serializes to nothing is `null`, an object key whose value
+ * serializes to nothing is omitted. Answers `undefined` for a tree holding a
+ * `toJSON` method — its text can depend on the key it is written under, which
+ * a trim moves — so the caller measures that one the slow way.
+ */
+function measure(root: unknown): Measured | undefined {
+  const lists: Branch[] = [];
+  let exotic = false;
+  const walkList = (v: unknown[], parent: Branch | undefined): number => {
+    const itemChars: number[] = [];
+    const itemBranches: (Branch | undefined)[] = [];
+    const branch: Branch = { chars: 0, parent, dead: false, kids: [], list: v };
+    branch.itemChars = itemChars;
+    branch.itemBranches = itemBranches;
+    parent?.kids.push(branch);
+    lists.push(branch);
+    let chars = 2 + Math.max(0, v.length - 1);
+    for (const item of v) {
+      const kidsBefore = branch.kids.length;
+      const c = walk(item, branch) ?? "null".length;
+      itemChars.push(c);
+      itemBranches.push(branch.kids.length > kidsBefore ? branch.kids.at(-1) : undefined);
+      chars += c;
+    }
+    branch.chars = chars;
+    return chars;
+  };
+  const walkRecord = (v: Record<string, unknown>, parent: Branch | undefined): number => {
+    const branch: Branch = { chars: 0, parent, dead: false, kids: [] };
+    parent?.kids.push(branch);
+    let chars = 2;
+    let written = 0;
+    for (const key of Object.keys(v)) {
+      const c = walk(v[key], branch);
+      if (c === undefined) continue;
+      chars += JSON.stringify(key).length + 1 + c;
+      written++;
+    }
+    chars += Math.max(0, written - 1);
+    branch.chars = chars;
+    return chars;
+  };
+  function walk(v: unknown, parent: Branch | undefined): number | undefined {
+    if (exotic) return 0;
+    if (hasToJson(v)) {
+      exotic = true;
+      return 0;
+    }
+    if (Array.isArray(v)) return walkList(v, parent);
+    if (isRecord(v)) return walkRecord(v, parent);
+    return JSON.stringify(v)?.length;
+  }
+  const rootChars = walk(root, undefined);
+  return exotic ? undefined : { lists, rootChars: rootChars ?? 0 };
+}
+
+function markDead(branch: Branch): void {
+  branch.dead = true;
+  for (const kid of branch.kids) markDead(kid);
+}
+
+/**
+ * The live list whose JSON is longest, among lists with more than one item;
+ * the first in walk order wins a tie, as `longestList`'s pre-order scan does.
+ */
+function longestBranch(lists: Branch[]): Branch | undefined {
+  let best: Branch | undefined;
+  for (const branch of lists) {
+    if (branch.dead || (branch.list?.length ?? 0) < 2) continue;
+    if (best === undefined || branch.chars > best.chars) best = branch;
+  }
+  return best;
+}
+
+/**
+ * Shorten lists in `copy` (in place) until `copy`, wrapped with its note, fits
+ * `max` or no list can be shortened, recording each cut in `dropped`: the
+ * longest list loses a quarter from its end, per pass. Every node is measured
+ * once; a cut subtracts the removed items' lengths from the list and its
+ * ancestors, so a pass costs a scan of the lists, not a serialization.
+ */
+function trimLists(
+  copy: unknown,
+  max: number,
+  dropped: Map<unknown[], number>,
+  hint: string | undefined,
+): void {
+  const measured = measure(copy);
+  if (measured === undefined) {
+    trimListsByReserializing(copy, max, dropped, hint);
+    return;
+  }
+  const { lists } = measured;
+  let chars = measured.rootChars;
+  const wrappedChars = (): number =>
+    dropped.size === 0
+      ? chars
+      : WRAP_CHARS + chars + JSON.stringify(trimNote(dropped, hint)).length;
+  for (let pass = 0; pass < MAX_TRIM_PASSES && wrappedChars() > max; pass++) {
+    const branch = longestBranch(lists);
+    const list = branch?.list;
+    if (branch === undefined || list === undefined) break;
+    const cut = Math.max(1, Math.floor(list.length / 4));
+    chars -= cutFromEnd(branch, list, cut);
+    dropped.set(list, (dropped.get(list) ?? 0) + cut);
+  }
+}
+
+/**
+ * Remove the last `cut` items of `list` (the list `branch` measures), take
+ * their length off `branch` and every ancestor, and answer that length.
+ */
+function cutFromEnd(branch: Branch, list: unknown[], cut: number): number {
+  list.splice(list.length - cut, cut);
+  // n items carry n - 1 commas and at least one item stays, so `cut` commas go too.
+  let removed = cut;
+  for (const c of branch.itemChars?.splice(-cut, cut) ?? []) removed += c;
+  for (const b of branch.itemBranches?.splice(-cut, cut) ?? []) if (b) markDead(b);
+  for (let b: Branch | undefined = branch; b; b = b.parent) b.chars -= removed;
+  return removed;
+}
+
+/**
+ * {@link trimLists} for a tree holding a `toJSON` method, which only
+ * `JSON.stringify` can measure: every pass re-serializes each list and the
+ * whole answer. A compacted API answer never holds one.
+ */
+function trimListsByReserializing(
+  copy: unknown,
+  max: number,
+  dropped: Map<unknown[], number>,
+  hint: string | undefined,
+): void {
+  const size = (): number =>
+    JSON.stringify(dropped.size === 0 ? copy : { result: copy, note: trimNote(dropped, hint) })
+      .length;
+  for (let pass = 0; pass < MAX_TRIM_PASSES && size() > max; pass++) {
+    const list = longestList(copy);
+    if (list === undefined) break;
+    const cut = Math.max(1, Math.floor(list.length / 4));
+    list.splice(list.length - cut, cut);
+    dropped.set(list, (dropped.get(list) ?? 0) + cut);
+  }
+}
+
 /** The list in `value` whose JSON is longest, among lists with more than one item. */
 function longestList(value: unknown): unknown[] | undefined {
   let best: { list: unknown[]; chars: number } | undefined;
@@ -138,13 +319,7 @@ export function fitToolResult(value: unknown, options: FitToolResultOptions = {}
   const dropped = new Map<unknown[], number>();
   const wrapped = (): unknown =>
     dropped.size === 0 ? copy : { result: copy, note: trimNote(dropped, options.hint) };
-  for (let pass = 0; pass < MAX_TRIM_PASSES && size(wrapped()) > max; pass++) {
-    const list = longestList(copy);
-    if (list === undefined) break;
-    const cut = Math.max(1, Math.floor(list.length / 4));
-    list.splice(list.length - cut, cut);
-    dropped.set(list, (dropped.get(list) ?? 0) + cut);
-  }
+  trimLists(copy, max, dropped, options.hint);
   if (size(wrapped()) <= max) return wrapped();
 
   const note = `Trimmed to fit: too long to hand over whole, so this is only the start.${
