@@ -23,6 +23,15 @@
 
 import { z } from "zod";
 import { missingEnvMessage } from "../sdk/_missing-env.ts";
+// The env contract `stepTextOwner` reads too, so a tool and a step agree on it.
+// With `TEXTBELT_LINKS=strip`, `text_me` leaves out the `url` argument and any
+// link in the message, and says so in its result.
+import {
+  SMS_TO_PHONE_ENV,
+  TEXTBELT_KEY_ENV,
+  TEXTBELT_LINKS_ENV,
+  textbeltLinksFromEnv,
+} from "../sdk/_owner-text-env.ts";
 import { postToChannel } from "../sdk/channels/shared/send.ts";
 import {
   stripLinks,
@@ -35,20 +44,6 @@ import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { builtinCover } from "./_builtin-cover.ts";
 import { builtinFetch } from "./ssrf.ts";
-
-/** The agent-env variable `text_me` reads its Textbelt key from. */
-export const TEXTBELT_KEY_ENV = "TEXTBELT_KEY";
-/** The owner's own number: the default recipient. */
-export const SMS_TO_PHONE_ENV = "SMS_TO_PHONE";
-
-/**
- * Set to `strip` for a Textbelt key not yet allowed to send links
- * (https://textbelt.com/whitelist): `text_me` then leaves every link out —
- * the `url` argument and any link in the message — and says so in its result,
- * rather than sending a text Textbelt will refuse. Read per call, like the key:
- * whether a key may send links is a property of the KEY.
- */
-export const TEXTBELT_LINKS_ENV = "TEXTBELT_LINKS";
 
 /** Longest link `text_me` takes; the message is cut to leave it room. */
 const MAX_URL_CHARS = 500;
@@ -91,7 +86,7 @@ function outgoingText(
   args: { message: string; url?: string | undefined },
   links: string | undefined,
 ): { text: string; leftOut: boolean } {
-  if (links?.trim().toLowerCase() !== "strip") {
+  if (textbeltLinksFromEnv(links) !== "strip") {
     return { text: smsBody(args.message, args.url), leftOut: false };
   }
   const text = stripLinks(args.message);

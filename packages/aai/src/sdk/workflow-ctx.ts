@@ -34,16 +34,9 @@
  * unreachable on that delivery. The engine suspends the run on a channel the
  * body holds no reference to (`aai-runtime/workflow-replay-suspend.ts`).
  *
- * It used to be a throw a `catch` had to re-throw by hand, and a template that
- * forgot deleted the transcript its run was waiting on. So `try`/`catch` in a
- * body is now ordinary: it sees step failures and nothing else.
+ * So `try`/`catch` in a body is ordinary: it sees step failures and nothing else.
  *
- * **THREE layers check this now, and none is a substitute for another.** For a
- * long time nothing did — the build scan that used to try went with the DevKit,
- * having read the BUILT flow bundle on the assumption that the builder had
- * stripped step bodies out of it, so against an ordinary Vite build it warned
- * about a `Date.now()` INSIDE a step callback (legal) while blind to the
- * boundary it existed to police. What replaced it:
+ * **THREE layers check this, and none is a substitute for another:**
  *
  * - **`Literal`, at the call site.** A name widened to `string` is a compile
  *   error; a union of literals is the gap its own doc carries.
@@ -91,11 +84,7 @@
  * {@link WorkflowContext.now}, {@link WorkflowContext.random} and
  * {@link WorkflowContext.uuid}. Each reads its source ONCE, journals the value, and
  * answers every later walk from the journal — which is exactly what an author
- * was already hand-rolling. Two shipped templates had written the clock half of
- * it (`transcription-workflow`'s `startClock`, `call-audit-workflow`'s two `now` reads),
- * each as an exported one-line function reached through a `ctx.step` and each
- * carrying its own paragraph explaining why. A hazard that needs the same
- * comment at every call site is a missing affordance.
+ * was already hand-rolling (`aai-runtime/workflow/replay/determinism.ts`).
  *
  * **They are keyed in their own POSITIONAL space** — `now!0`, `random!0`,
  * `uuid!0`, per kind. These three take no argument at all, so unlike
@@ -147,11 +136,8 @@
  * two DIFFERENT call sites sharing a literal name alias onto one counter and read
  * each other's results.
  *
- * **Today that is a convention to remember, and nothing enforces it.** An earlier
- * draft of this doc said it was "not a convention to remember, it is a build
- * failure" — describing a duplicate-literal check that has never existed and has
- * no scan left to live in. Until one does, give two call sites two names; a single
- * site in a loop or a fan-out is exactly what the scheme is for and needs none.
+ * **That is a convention to remember; nothing enforces it.** Give two call sites
+ * two names; a single site in a loop or a fan-out is what the scheme is for.
  * The shipped templates follow that (`research-handoff-agent` names its two
  * `investigate` waves separately, `call-audit-workflow` its two clock reads), which is the
  * pattern to copy.
@@ -170,6 +156,7 @@ import type {
   WaitForOptions,
   WaitForSchemaOptions,
 } from "./workflow-ctx-options.ts";
+import type { SayOnClientNotice } from "./workflow-say-on-client.ts";
 
 // Re-exported so `workflow-ctx.ts` stays the one module an author (or a reader
 // following a `{@link}`) needs for the whole authoring surface — the split is a
@@ -410,6 +397,18 @@ export type WorkflowContext = {
     check: () => Promise<T> | T,
     options: PollOptions<T>,
   ): Promise<PollResult<T>>;
+  /**
+   * Say `notice.text` on device `clientId` as ONE step `name` (a string LITERAL):
+   * `ctx.step(name, () => stepSayOnClient(clientId, …))` with the delivery `id`
+   * defaulting to the run id and `maxAttempts` to `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`,
+   * journaled as that step was. Resolves the text said. A run's FAILURE is
+   * `sayFailureOnClient` (`/step`) in `workflow({ onFailure })`.
+   */
+  sayOnClient<const Name extends string>(
+    name: Name & Literal<Name>,
+    clientId: string,
+    notice: SayOnClientNotice,
+  ): Promise<string>;
   /**
    * Wait for somebody OUTSIDE the run to answer, and resolve what they sent.
    *

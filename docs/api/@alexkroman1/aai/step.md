@@ -43,7 +43,11 @@ it:
 - **Phone calls, outbound** — [stepPlaceCall](#stepplacecall) dials through Twilio and
   streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
   the answering session reads as `call.parameters`; [stepCallStatus](#stepcallstatus)
-  follows it to one of the statuses that are over.
+  follows it to one of the statuses that are over ([isCallOver](#iscallover)).
+- **The device and the owner** — [stepSayOnClient](#stepsayonclient) says a sentence on a
+  device ([sayFailureOnClient](#sayfailureonclient) is a run's failure, as
+  `workflow({ onFailure })`), and [stepTextOwner](#steptextowner) texts the owner by the
+  `text_me` builtin's rule.
 - **Retry classification** — [isTransientStatus](#istransientstatus) / [retryAfter](#retryafter-4),
   for a body deciding whether a failure is worth another round, and
   [stepInfo](#stepinfo-1), which says which ATTEMPT this is and whether it is the
@@ -165,6 +169,30 @@ A complete `.wav` file: [WAV\_HEADER\_BYTES](#wav_header_bytes) of header follow
 for a format no header can describe — a non-integer or
   non-positive rate or channel count, or a bit depth that is not a positive
   multiple of 8.
+
+***
+
+### isCallOver()
+
+```ts
+function isCallOver(status: string): boolean;
+```
+
+Whether a call in `status` is over — one of [CALL\_OVER\_STATUSES](#call_over_statuses).
+
+Takes a `string` rather than a [PlacedCallStatus](#placedcallstatus) so a loop can start
+from a status it made up (`"queued"`) or read back from its own store without
+a cast; anything unknown is not over.
+
+#### Parameters
+
+##### status
+
+`string`
+
+#### Returns
+
+`boolean`
 
 ***
 
@@ -667,6 +695,87 @@ A `Response`, or its headers. Both spellings are accepted
 #### Returns
 
 `Date` \| `undefined`
+
+***
+
+### sayFailureOnClient()
+
+```ts
+function sayFailureOnClient<I>(options: SayFailureOnClientOptions<I>): {
+  maxAttempts: number;
+  run: WorkflowFailureHook<I>;
+};
+```
+
+A `workflow({ onFailure })` handler that says a failed run's reason on the
+device its input names: delivery id `${runId}:failed`, `data.failed: true`,
+the step's budget `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`. A no-op when
+`clientId` resolves `undefined` or `""`.
+
+**Write the input type as the type argument** (`sayFailureOnClient<Input>`):
+tsc cannot infer it through `workflow({ … })`, whose own inference of the
+schema is still open when this call is checked, so the callbacks would see
+`unknown`.
+
+Also accepted as `deepResearchWorkflow({ onFailure })`
+(`@alexkroman1/aai/experimental`), where it is handed to the engine the same
+way.
+
+#### Type Parameters
+
+##### I
+
+`I`
+
+#### Parameters
+
+##### options
+
+[`SayFailureOnClientOptions`](#sayfailureonclientoptions)\<`I`\>
+
+#### Returns
+
+```ts
+{
+  maxAttempts: number;
+  run: WorkflowFailureHook<I>;
+}
+```
+
+##### maxAttempts
+
+```ts
+maxAttempts: number;
+```
+
+##### run
+
+```ts
+run: WorkflowFailureHook<I>;
+```
+
+#### Example
+
+```ts
+import { workflow } from "@alexkroman1/aai";
+import { sayFailureOnClient } from "@alexkroman1/aai/step";
+import { z } from "zod";
+
+declare function research(topic: string): Promise<string>;
+
+type DigestInput = { clientId?: string | undefined; topic: string };
+
+export const digest = workflow({
+  input: z.object({ clientId: z.string().optional(), topic: z.string() }),
+  run: async ({ topic }) => ({ summary: await research(topic) }),
+  onFailure: sayFailureOnClient<DigestInput>({
+    clientId: (input) => input.clientId,
+    event: "research",
+    text: (_err, input, reason) => `Sorry, the research on ${input.topic} didn't finish. ${reason}`,
+    data: (input) => ({ topic: input.topic }),
+  }),
+});
+```
 
 ***
 
@@ -1241,9 +1350,7 @@ request — the phone may not have rung yet; [stepCallStatus](#stepcallstatus) f
 
 ```ts
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { requireStepEnv, stepCallStatus, stepPlaceCall } from "@alexkroman1/aai/step";
-
-const OVER = ["completed", "busy", "no-answer", "failed", "canceled"];
+import { isCallOver, requireStepEnv, stepCallStatus, stepPlaceCall } from "@alexkroman1/aai/step";
 
 export async function callFlow(input: { to: string; callRef: string }, ctx: WorkflowContext) {
   const { callId } = await ctx.step(
@@ -1259,7 +1366,7 @@ export async function callFlow(input: { to: string; callRef: string }, ctx: Work
     { maxAttempts: 2 },
   );
   let status = "queued";
-  for (let i = 0; i < 60 && !OVER.includes(status); i++) {
+  for (let i = 0; i < 60 && !isCallOver(status); i++) {
     await ctx.sleep("poll", new Date((await ctx.now()) + 10_000));
     status = await ctx.step("status", () => stepCallStatus({ carrier: "twilio", callId }));
   }
@@ -1573,6 +1680,57 @@ export async function narrate(summary: string): Promise<string> {
     type: "audio/wav",
   });
   return stored.id;
+}
+```
+
+***
+
+### stepTextOwner()
+
+```ts
+function stepTextOwner(text: string, options?: StepTextOwnerOptions): Promise<StepTextOwnerResult>;
+```
+
+Text the owner `text`, choosing the number exactly as the `text_me` builtin
+does, from the step env (`TEXTBELT_KEY`, `SMS_TO_PHONE`,
+`SMS_ALLOWED_PHONES`, `TEXTBELT_LINKS`).
+
+- No recipient (no `SMS_TO_PHONE`, no listed claim): `{ sent: false }`.
+- A refusal that will refuse again (a bad number, no credit, a link on a key
+  not allowed links), or a text that was only links on such a key:
+  `{ sent: false, why }`.
+- A transient failure (a 5xx, a 429, no answer): thrown, classified for the
+  step's retry as `throwStepError` classifies it.
+- A recipient but no `TEXTBELT_KEY`: thrown FATAL, naming the key — the
+  owner asked for texts and a retry cannot set it.
+
+#### Parameters
+
+##### text
+
+`string`
+
+##### options?
+
+[`StepTextOwnerOptions`](#steptextowneroptions)
+
+#### Returns
+
+`Promise`\<[`StepTextOwnerResult`](#steptextownerresult)\>
+
+#### Example
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepTextOwner } from "@alexkroman1/aai/step";
+
+export async function reportFlow(input: { phone?: string; report: string }, ctx: WorkflowContext) {
+  const texted = await ctx.step(
+    "text",
+    () => stepTextOwner(input.report, { phone: input.phone }),
+    { maxAttempts: 3 },
+  );
+  return { texted: texted.sent };
 }
 ```
 
@@ -3356,6 +3514,77 @@ First byte to read. Defaults to 0.
 
 ***
 
+### SayFailureOnClientOptions
+
+```ts
+type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions, 
+  | "event"
+  | "sampleRate"
+  | "voice"
+  | "language"
+  | "ackTimeoutMs"
+  | "retryAfterMs"> & {
+  clientId: (input: I) => string | undefined;
+  data?:   | Record<string, unknown>
+     | ((input: I) => Record<string, unknown>);
+  maxAttempts?: number;
+  text: (error: Error, input: I, reason: string) => string;
+};
+```
+
+Options for [sayFailureOnClient](#sayfailureonclient).
+
+#### Type Declaration
+
+##### clientId
+
+```ts
+(input: I) => string | undefined
+```
+
+The device to say it on, from the run's input — `undefined` (or `""`) says nothing,
+for a run started without one (a page, not a speaker).
+
+##### data?
+
+```ts
+optional data?: 
+  | Record<string, unknown>
+  | ((input: I) => Record<string, unknown>);
+```
+
+What the device reads beside the text. `failed: true` is set on top of it,
+and `said` on top of that (by `stepSayOnClient`).
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+The hook step's attempt budget. Defaults to
+`DEFAULT_CLIENT_DELIVERY_ATTEMPTS`, an hour's outage.
+
+##### text
+
+```ts
+(error: Error, input: I, reason: string) => string
+```
+
+What to say. `reason` is `spokenErrorReason(error)` — the first sentence,
+credentials redacted, URLs out — which is what to put in a sentence a
+person hears; `error` is there for a branch on its type.
+
+#### Type Parameters
+
+##### I
+
+`I`
+
+The workflow's parsed input.
+
+***
+
 ### Settled
 
 ```ts
@@ -4063,6 +4292,64 @@ Voice id, as `stepSpeak` takes it.
 
 ***
 
+### StepTextOwnerOptions
+
+```ts
+type StepTextOwnerOptions = {
+  links?: "keep" | "strip";
+  phone?: string;
+};
+```
+
+Options for [stepTextOwner](#steptextowner).
+
+#### Properties
+
+##### links?
+
+```ts
+optional links?: "keep" | "strip";
+```
+
+`"strip"` leaves every link out, for a key Textbelt has not yet allowed
+links. Defaults to the agent env's `TEXTBELT_LINKS`, as `text_me` reads it.
+
+##### phone?
+
+```ts
+optional phone?: string;
+```
+
+The number the client CLAIMED (`sessionClientPhone(ctx)`, carried in the
+run's input). Used only when the owner listed it (`SMS_TO_PHONE` or
+`SMS_ALLOWED_PHONES`); otherwise the text goes to `SMS_TO_PHONE`.
+
+***
+
+### StepTextOwnerResult
+
+```ts
+type StepTextOwnerResult = 
+  | {
+  sent: true;
+  to: string;
+}
+  | {
+  sent: false;
+  why?: string;
+};
+```
+
+What [stepTextOwner](#steptextowner) resolves: sent, to whom — or not, and when there is
+one, a reason a person can hear. `why` is absent when texting is simply not
+set up (no `SMS_TO_PHONE`).
+
+`to` is personal data, and a step's result is JOURNALED: return what the
+body needs from it rather than the whole result when the run's output is
+shown to anyone but the owner.
+
+***
+
 ### TranscribeProgress
 
 ```ts
@@ -4574,6 +4861,22 @@ browser given an upload with none downloads a file it will not play
 inline. There is no sniffing anywhere in the store, by design.
 
 ## Variables
+
+### CALL\_OVER\_STATUSES
+
+```ts
+const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus>;
+```
+
+The [PlacedCallStatus](#placedcallstatus) values nothing moves off — `completed`, `busy`,
+`no-answer`, `failed`, `canceled`. What a loop following a call with
+[stepCallStatus](#stepcallstatus) stops on.
+
+Published because every body that dialled wrote its own copy of the list, and
+a copy missing `canceled` polls a call the API already hung up until its
+budget runs out.
+
+***
 
 ### DEFAULT\_CALL\_RING\_TIMEOUT\_S
 

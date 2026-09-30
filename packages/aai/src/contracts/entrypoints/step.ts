@@ -54,11 +54,13 @@
 export {
   blockAlign,
   bytesPerSecond,
+  CALL_OVER_STATUSES,
   type CallStatusOptions,
   DEFAULT_CALL_RING_TIMEOUT_S,
   DEFAULT_CALL_TIME_LIMIT_S,
   type EnvContext,
   encodeWav,
+  isCallOver,
   isTransientStatus,
   type MultipartBody,
   type MultipartPart,

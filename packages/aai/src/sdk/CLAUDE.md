@@ -329,8 +329,10 @@ wired to a SESSION here" in `packages/aai-runtime/src/CLAUDE.md`.
 
 `spoken*.ts`, `calendar.ts`, `tool-fields.ts`: inbound `resolveOne` (ambiguity
 is an ANSWER, never a guess), outbound `spokenMoney`/`spokenDate`/`spokenTime`/
-`mintCode`. [`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md)
-owns all of it.
+`mintCode`, and one-time codes (`one-time-code.ts`: `mintDigitCode`/`hashCode`/
+`codeMatches`, Web Crypto only, the compare shared with `standard-webhook.ts`
+via `_timing-safe-equal.ts`).
+[`AUTHORING-HELPERS-CLAUDE.md`](../../AUTHORING-HELPERS-CLAUDE.md) owns all of it.
 
 **`agent({ voicePresets: [...] })`** (`voice-presets.ts`) — `echoVerification`,
 `speechNormalization`, `natoAlphabet`, composed after `## TOOLS` and before the
@@ -412,6 +414,23 @@ pipeline only).
   Audio for an undelivered utterance is held across the step's retries.
   **`stepEnvContext()`** is the whole step env plus the step's signal
   (`StepInfo.signal`) as an `EnvContext`, which a `ToolContext` also satisfies.
+- **`ctx.sayOnClient(name, clientId, notice)` is ONE `ctx.step` around
+  `stepSayOnClient`** (`workflow-say-on-client.ts`), `id` defaulting to the run
+  id and `maxAttempts` to `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`; like `ctx.poll`,
+  every `WorkflowContext` delegates to `sayOnClientWorkflow` (`/host-internal`).
+  Its failure half is **`sayFailureOnClient({ clientId, event, text })`**
+  (`say-failure-on-client.ts`, `/step`), a `workflow({ onFailure })` handler
+  (`${runId}:failed`, `data.failed: true`, `spokenErrorReason` handed to
+  `text`); `deepResearchWorkflow` takes the same `{ run, maxAttempts }` object
+  and hands it to the engine, where a FUNCTION `onFailure` still runs in its
+  body `catch`.
+- **`stepTextOwner(text, { phone?, links? })`** (`step-text-owner.ts`, `/step`)
+  is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env,
+  a non-retryable refusal as `{ sent: false, why }`, a transient one thrown
+  through `throwStepError`, a missing key FATAL. The env names are
+  `_owner-text-env.ts`, which `host/text-me.ts` imports too.
+- **`isCallOver(status)`/`CALL_OVER_STATUSES`** (`step-place-call.ts`) are the
+  five terminal `PlacedCallStatus`es a dial-and-follow loop stops on.
 
 ## Uploads (the client half)
 

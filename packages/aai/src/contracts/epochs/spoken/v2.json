@@ -3,11 +3,14 @@
   "capability": "spoken",
   "epoch": 2,
   "rule": 2,
-  "sha256": "9d1b28cf552d8a88fc5678d64fbc8fa1e372f3e0551fa0e0a39cd553258c0048",
+  "sha256": "9a5d2a437ba6c92b995ed3d5b25e75bd035634adb075b39558420be36dc50999",
   "exports": [
     "MintCodeOptions",
     "ResolveOneOptions",
+    "codeMatches",
+    "hashCode",
     "mintCode",
+    "mintDigitCode",
     "resolveOne",
     "spokenAlphanumeric",
     "spokenDate",
@@ -16,5 +19,20 @@
     "spokenOrdinal",
     "spokenTime"
   ],
-  "rollup": "46027b15b3d8b45f881aced1e3b76e13148c76ee18352072be1d70420c1e3b42"
+  "rollup": "46027b15b3d8b45f881aced1e3b76e13148c76ee18352072be1d70420c1e3b42",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "9d1b28cf552d8a88fc5678d64fbc8fa1e372f3e0551fa0e0a39cd553258c0048",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "9a5d2a437ba6c92b995ed3d5b25e75bd035634adb075b39558420be36dc50999",
+      "reason": "additive (checked): +codeMatches, +hashCode, +mintDigitCode"
+    }
+  ]
 }

@@ -167,6 +167,38 @@ export type PlacedCallStatus =
   | "canceled";
 
 /**
+ * The {@link PlacedCallStatus} values nothing moves off — `completed`, `busy`,
+ * `no-answer`, `failed`, `canceled`. What a loop following a call with
+ * {@link stepCallStatus} stops on.
+ *
+ * Published because every body that dialled wrote its own copy of the list, and
+ * a copy missing `canceled` polls a call the API already hung up until its
+ * budget runs out.
+ *
+ * @public
+ */
+export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus> = new Set<PlacedCallStatus>([
+  "completed",
+  "busy",
+  "no-answer",
+  "failed",
+  "canceled",
+]);
+
+/**
+ * Whether a call in `status` is over — one of {@link CALL_OVER_STATUSES}.
+ *
+ * Takes a `string` rather than a {@link PlacedCallStatus} so a loop can start
+ * from a status it made up (`"queued"`) or read back from its own store without
+ * a cast; anything unknown is not over.
+ *
+ * @public
+ */
+export function isCallOver(status: string): boolean {
+  return (CALL_OVER_STATUSES as ReadonlySet<string>).has(status);
+}
+
+/**
  * The carrier refused, or never answered. `message` is a sentence a person can
  * act on and never quotes a credential; branch on `retryable`, which
  * `throwStepError` also reads.
@@ -215,9 +247,7 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  * @example Dial, then follow the call until it is over
  * ```ts
  * import type { WorkflowContext } from "@alexkroman1/aai";
- * import { requireStepEnv, stepCallStatus, stepPlaceCall } from "@alexkroman1/aai/step";
- *
- * const OVER = ["completed", "busy", "no-answer", "failed", "canceled"];
+ * import { isCallOver, requireStepEnv, stepCallStatus, stepPlaceCall } from "@alexkroman1/aai/step";
  *
  * export async function callFlow(input: { to: string; callRef: string }, ctx: WorkflowContext) {
  *   const { callId } = await ctx.step(
@@ -233,7 +263,7 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  *     { maxAttempts: 2 },
  *   );
  *   let status = "queued";
- *   for (let i = 0; i < 60 && !OVER.includes(status); i++) {
+ *   for (let i = 0; i < 60 && !isCallOver(status); i++) {
  *     await ctx.sleep("poll", new Date((await ctx.now()) + 10_000));
  *     status = await ctx.step("status", () => stepCallStatus({ carrier: "twilio", callId }));
  *   }

@@ -356,4 +356,6 @@ export {
 // The one implementation of `ctx.poll`, which every `WorkflowContext` a host
 // builds (the replay engine's, an eval's) delegates to.
 export { type PollHost, pollWorkflow } from "./sdk/workflow-poll.ts";
+// `ctx.sayOnClient`'s one implementation, delegated to the same way.
+export { type SayOnClientHost, sayOnClientWorkflow } from "./sdk/workflow-say-on-client.ts";
 export { PUBLIC_URL_UNCONFIGURED_MESSAGE } from "./sdk/workflow-unavailable.ts";

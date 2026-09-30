@@ -101,6 +101,7 @@ import {
   publishStepInfoReader,
   publishStepReporter,
   resolveFailureHandler,
+  sayOnClientWorkflow,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -263,6 +264,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // Composed of `step` and `sleep` above, as every context's is — so a case
       // records each wait of the poll the way it records a hand-written loop's.
       poll: (name, check, options) => pollWorkflow(ctx, name, check, options),
+      sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
       // REFUSED, and named. A hook is the one thing on `WorkflowContext` this engine
       // cannot fake: a sleep can be skipped because the body continues either
       // way, but a `waitFor` is defined by what the SIGNALLER sends, and

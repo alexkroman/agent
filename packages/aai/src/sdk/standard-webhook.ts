@@ -27,6 +27,7 @@
  * @module
  */
 
+import { timingSafeEqual } from "./_timing-safe-equal.ts";
 import { type RouteHandler, type RouteRequest, routeResponse } from "./agent-routes.ts";
 
 /** Oldest (and furthest-future) delivery accepted, in seconds: older is a replay. */
@@ -63,15 +64,6 @@ function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
-}
-
-/** Compare two strings without an early exit, so timing does not leak the prefix matched. */
-function timingSafeEqual(a: string, b: string): boolean {
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ (i < b.length ? b.charCodeAt(i) : 0);
-  }
-  return diff === 0;
 }
 
 async function sign(key: Uint8Array, payload: string): Promise<string> {

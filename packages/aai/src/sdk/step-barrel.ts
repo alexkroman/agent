@@ -43,7 +43,11 @@
  * - **Phone calls, outbound** — {@link stepPlaceCall} dials through Twilio and
  *   streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
  *   the answering session reads as `call.parameters`; {@link stepCallStatus}
- *   follows it to one of the statuses that are over.
+ *   follows it to one of the statuses that are over ({@link isCallOver}).
+ * - **The device and the owner** — {@link stepSayOnClient} says a sentence on a
+ *   device ({@link sayFailureOnClient} is a run's failure, as
+ *   `workflow({ onFailure })`), and {@link stepTextOwner} texts the owner by the
+ *   `text_me` builtin's rule.
  * - **Retry classification** — {@link isTransientStatus} / {@link retryAfter},
  *   for a body deciding whether a failure is worth another round, and
  *   {@link stepInfo}, which says which ATTEMPT this is and whether it is the
@@ -84,6 +88,9 @@ export { mapConcurrent } from "./map-concurrent.ts";
 // rejection — for a tool on a live call, where one failed item is a name to
 // apologize for rather than the end of the run.
 export { mapSettled, partitionSettled, type Settled } from "./map-settled.ts";
+// A failed run said on the device, as `workflow({ onFailure })` — the failure
+// half of `ctx.sayOnClient`.
+export { type SayFailureOnClientOptions, sayFailureOnClient } from "./say-failure-on-client.ts";
 export { type StepInfo, stepInfo } from "./step-attempt.ts";
 export {
   type ClientTranscript,
@@ -120,9 +127,11 @@ export {
 } from "./step-notify-client.ts";
 // The outbound half of telephony: dial through Twilio, and follow the call.
 export {
+  CALL_OVER_STATUSES,
   type CallStatusOptions,
   DEFAULT_CALL_RING_TIMEOUT_S,
   DEFAULT_CALL_TIME_LIMIT_S,
+  isCallOver,
   type PlaceCallCredentials,
   PlaceCallError,
   type PlaceCallOptions,
@@ -148,6 +157,12 @@ export {
   STEP_SPEAK_TIMEOUT_MS,
   stepSpeak,
 } from "./step-speak.ts";
+// The `text_me` builtin's rule, from a step: which number, and which refusals are answers.
+export {
+  type StepTextOwnerOptions,
+  type StepTextOwnerResult,
+  stepTextOwner,
+} from "./step-text-owner.ts";
 export {
   stepTranscribePoll,
   stepTranscribeSubmit,

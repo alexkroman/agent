@@ -71,6 +71,7 @@ import type {
   WorkflowContext,
 } from "./workflow-ctx.ts";
 import { pollWorkflow } from "./workflow-poll.ts";
+import { sayOnClientWorkflow } from "./workflow-say-on-client.ts";
 
 /**
  * The value a `schema` option passed, or a throw naming what it rejected.
@@ -276,6 +277,8 @@ export function createWorkflowContext(
     // a recorded step and each wait a recorded sleep — and a `results` entry for
     // the poll's name answers every check.
     poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
+    // The same composition over `step`: recorded as the one step it journals.
+    sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
 
     // The three journaled reads, answered from the options above. NOT recorded
     // the way `steps`/`slept`/`waited` are, and the asymmetry is deliberate: a

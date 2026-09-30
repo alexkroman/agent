@@ -3,7 +3,7 @@
   "capability": "channels",
   "epoch": 1,
   "rule": 2,
-  "sha256": "c756e376b6e8b70c37eff3b44c39a74405b2eb472030c5781f66ad183d3ff17c",
+  "sha256": "830d3d7712af258a1711c28c00f15ccd60f85a6f9c067e41c20120d028d9effa",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
@@ -18,6 +18,8 @@
     "SlackChannel",
     "SlackChannelOptions",
     "SmsRecipientEnv",
+    "StepTextOwnerOptions",
+    "StepTextOwnerResult",
     "TEXTBELT_CHANNEL_HANDLER",
     "TEXTBELT_CHANNEL_KIND",
     "TEXTBELT_MAX_MESSAGE_CHARS",
@@ -39,10 +41,11 @@
     "sendToChannel",
     "sessionClientPhone",
     "slackChannel",
+    "stepTextOwner",
     "textbeltChannel"
   ],
   "rollup": "52c28e342cc7e893e0d79d5aa0573d78ccfed8706be81c715e26355241b88aba",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -67,6 +70,12 @@
       "rule": 2,
       "sha256": "c756e376b6e8b70c37eff3b44c39a74405b2eb472030c5781f66ad183d3ff17c",
       "reason": "additive (checked): +SmsRecipientEnv, +TEXTBELT_CHANNEL_HANDLER, +TEXTBELT_CHANNEL_KIND, +TEXTBELT_MAX_MESSAGE_CHARS, +TextbeltChannel, +TextbeltChannelOptions, +allowedSmsRecipient, +explainTextbeltChannelFailure, +renderTextbeltText, +sessionClientPhone, +textbeltChannel"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "830d3d7712af258a1711c28c00f15ccd60f85a6f9c067e41c20120d028d9effa",
+      "reason": "additive (checked): +SmsRecipientEnv, +StepTextOwnerOptions, +StepTextOwnerResult, +TEXTBELT_CHANNEL_HANDLER, +TEXTBELT_CHANNEL_KIND, +TEXTBELT_MAX_MESSAGE_CHARS, +TextbeltChannel, +TextbeltChannelOptions, +allowedSmsRecipient, +explainTextbeltChannelFailure, +renderTextbeltText, +sessionClientPhone, +stepTextOwner, +textbeltChannel"
     }
   ]
 }
