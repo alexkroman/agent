@@ -2590,6 +2590,74 @@ function Running() {
 
 ***
 
+### useClientTool()
+
+```ts
+function useClientTool<A = Record<string, any>>(toolName: string, handler: (args: A, toolCall: ToolCallInfo) => unknown): void;
+```
+
+Run a `clientTool` in this page and answer the agent with its result.
+
+When the model calls the tool named `toolName`, `handler` runs with the
+call's arguments. What it returns (or resolves to) is JSON-serialized and
+becomes the tool's result — the value the model reads. A handler that throws
+or rejects fails the call, and the model is told the error's message, as it
+would be for a server tool.
+
+The server waits only as long as the tool's `timeoutMs` (default 30 s); an
+answer after that, or while disconnected, is dropped. Mount the hook once per
+tool: two mounted handlers both run, and only the first answer counts.
+
+#### Type Parameters
+
+##### A
+
+`A` = `Record`\<`string`, `any`\>
+
+The tool's argument shape. Name it, or derive it with a
+  TYPE-ONLY import of the server tool: `useClientTool<InferToolInput<typeof
+  getLocation>>(…)`.
+
+#### Parameters
+
+##### toolName
+
+`string`
+
+The name of the `clientTool` — its `tools/<name>.ts` file.
+
+##### handler
+
+(`args`: `A`, `toolCall`: [`ToolCallInfo`](#toolcallinfo)) => `unknown`
+
+Runs the call; its return value is the result.
+
+#### Returns
+
+`void`
+
+#### Example
+
+**Let the agent ask for the caller's location**
+
+```tsx
+import { useClientTool } from "@alexkroman1/aai-ui";
+
+function LocationTool() {
+  useClientTool("get_location", () =>
+    new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        (err) => reject(new Error(err.message)),
+      ),
+    ),
+  );
+  return null;
+}
+```
+
+***
+
 ### useConversation()
 
 ```ts
@@ -5071,6 +5139,7 @@ type BrowserSession = {
   restart: void;
   resume: void;
   sendText: void;
+  sendToolResult: void;
   setMicMuted: void;
   start: void;
   subscribe: () => void;
@@ -5324,6 +5393,33 @@ logs a warning once and the message is ignored.
 declare const session: import("@alexkroman1/aai-ui").Session;
 session.sendText("What's the weather tomorrow?");
 ```
+
+##### sendToolResult()
+
+```ts
+sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
+```
+
+Answer a pending tool call the agent asked THIS PAGE to run — a
+`clientTool` on the server. `result` is JSON-serialized and becomes the
+value the model reads; `error` fails the call with that message. A no-op
+while disconnected, and ignored by the server for a call nothing waits on.
+
+Most pages use `useClientTool(name, handler)`, which calls this for them.
+
+###### Parameters
+
+###### toolCallId
+
+`string`
+
+###### outcome
+
+[`ToolCallOutcome`](#toolcalloutcome)
+
+###### Returns
+
+`void`
 
 ##### setMicMuted()
 
@@ -8447,6 +8543,22 @@ Tool calls in a snapshot are always sorted ascending by `seq`.
 ```ts
 status: "pending" | "done";
 ```
+
+***
+
+### ToolCallOutcome
+
+```ts
+type ToolCallOutcome = 
+  | {
+  result: unknown;
+}
+  | {
+  error: string;
+};
+```
+
+How a page answers a tool call it ran — see [BrowserSession.sendToolResult](#sendtoolresult).
 
 ***
 

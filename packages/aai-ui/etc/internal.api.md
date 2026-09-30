@@ -40,6 +40,7 @@ type BrowserSession = {
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
     sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -150,6 +151,13 @@ type ToolCallInfo = {
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
+};
+
+// @public
+type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
 };
 
 // @internal

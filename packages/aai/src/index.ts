@@ -108,6 +108,8 @@ export type {
   SessionEndContext,
 } from "./sdk/agent-session-lifecycle.ts";
 export * from "./sdk/client-runs-routes.ts";
+// A tool the connected browser page answers — `useClientTool` in `aai-ui`.
+export { type ClientToolDef, clientTool } from "./sdk/client-tool.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**

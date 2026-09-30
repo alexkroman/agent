@@ -98,6 +98,7 @@ export type BrowserSession = {
     readonly userTurn: UserTurnControls;
     readonly identity: SessionIdentity;
     sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
     setMicMuted(muted: boolean): void;
     resetState(): void;
     reset(): void;
@@ -667,6 +668,13 @@ export type ToolCallInfo = {
 };
 
 // @public
+export type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
+};
+
+// @public
 export function ToolCallRow(input: ToolCallRowProps): ReactNode;
 
 // @public
@@ -734,6 +742,9 @@ export type UseClientRunsResult = {
     cancel: (runId: string) => Promise<boolean>;
     cancelling: string | undefined;
 };
+
+// @public
+export function useClientTool<A = ToolCallInfo["args"]>(toolName: string, handler: (args: A, toolCall: ToolCallInfo) => unknown): void;
 
 // @public
 export function useConversation(): UseConversationResult;

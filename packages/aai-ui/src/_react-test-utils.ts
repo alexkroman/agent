@@ -88,6 +88,9 @@ export function createMockSessionCore(
     sendText() {
       /* noop */
     },
+    sendToolResult() {
+      /* noop */
+    },
     setMicMuted(muted: boolean) {
       snapshot = { ...snapshot, micMuted: muted };
       notify();

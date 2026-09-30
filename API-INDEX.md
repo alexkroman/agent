@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 581 names
-- [Browser client](#browser-client) — 179 names
+- [Agent authoring](#agent-authoring) — 583 names
+- [Browser client](#browser-client) — 181 names
 - [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 236 names
-- [Framework internals](#framework-internals) — 380 names
+- [Framework internals](#framework-internals) — 384 names
 
 ## Agent authoring
 
@@ -88,6 +88,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ClientRun` | interface | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | One row of the list `clientRunsRoutes` answers — plain JSON, what a page renders a run from. |
 | `ClientRunStatus` | type | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | A `ClientRun`'s status: a run's own, with `pending` said as `waiting` — the word a person reads for "queued, not started". |
 | `ClientRunsResponse` | interface | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | The body the list route answers. |
+| `ClientToolDef` | type | `@alexkroman1/aai` | `aai:tool` | What `clientTool` takes: a `ToolDef` without `execute`, because the page is the execute. |
 | `ClientTranscript` | type | `@alexkroman1/aai/step` |  | What `stepClientTranscript` returns. |
 | `ClientTranscriptMessage` | type | `@alexkroman1/aai/step` |  | One committed line of a client's conversation. |
 | `ClientTranscriptSession` | type | `@alexkroman1/aai/step` |  | One of a client's sessions, as `stepClientTranscript` reads it. |
@@ -390,6 +391,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `cartesiaTts`, `CartesiaTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Cartesia TTS descriptor for pipeline mode. |
 | `citedSources` | function | `@alexkroman1/aai/experimental` |  | The sources a report actually cites, each with the number it was cited under, in source order — so a consumer can append real URLs rather than trust ones a … |
 | `clientRunsRoutes`, `ClientRunsRoutesOptions` | function | `@alexkroman1/aai` | `aai:agent` | The pair of routes a page's "Running" panel reads and cancels through — `GET <path>` answering `ClientRunsResponse`, `DELETE <path>/:runId` answering … |
+| `clientTool` | function | `@alexkroman1/aai` | `aai:tool` | Define a tool the connected browser executes. |
 | `clockTime` | function | `@alexkroman1/aai` | `aai:calendar` | A time-of-day argument: 24-hour `HH:MM`, zero-padded. |
 | `codeMatches` | function | `@alexkroman1/aai` | `aai:spoken` | Whether what a caller SAID is the code whose `hashCode` is `hash`. |
 | `composio`, `ComposioOptions` | function | `@alexkroman1/aai/experimental` |  | A Composio Platform client for an agent's tools, routes and steps. |
@@ -634,6 +636,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `TextAreaField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A multi-line text input. |
 | `TextField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A single-line text input. |
 | `ToolCallInfo` | type | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Info about a tool call for display in the UI. |
+| `ToolCallOutcome` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | How a page answers a tool call it ran — see `BrowserSession.sendToolResult`. |
 | `ToolCallRow`, `ToolCallRowProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design system's console row for one tool invocation: a small outlined "TOOL" chip (or a custom `icon`), the tool title in mono, a truncated detail preview, … |
 | `ToolCallRowVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for `ToolCallRow`: `"default"` is the deployed agent UI's scale, `"compact"` the studio transcript's denser one. |
 | `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI. |
@@ -688,6 +691,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
 | `useClientId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The client id this session sends as `?client=` — the id a tool reads with `sessionClientId(ctx)` and the inbox socket is held under. |
 | `useClientRuns`, `UseClientRunsOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The runs going on for this client, from a `clientRunsRoutes()` pair — see this module's doc. |
+| `useClientTool` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Run a `clientTool` in this page and answer the agent with its result. |
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
 | `useConversationLog`, `UseConversationLogOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | A transcript that outlives the session — see this module's doc. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
@@ -1237,6 +1241,8 @@ trace or a type error can be traced back to something.
 | `ClientNotifier` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ClientSessionLog` | type | `@alexkroman1/aai-runtime/internal` |  | The client half of a `SessionStateBackend` (`store.ts`). |
 | `ClientSessionRecord` | type | `@alexkroman1/aai-runtime/internal` |  | One session's binding to a client, as `ClientSessionLog.clientSessions` lists it. |
+| `ClientToolBrand` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `ClientToolCall` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ClientTranscriptReader` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `CoalescingRunner` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `DEAD_AIR_COVER_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1454,12 +1460,14 @@ trace or a type error can be traced back to something.
 | `assemblyAITtsLanguageCodes` | function | `@alexkroman1/aai/host-internal` |  | The codes `resolveAssemblyAITtsLanguage` accepts, for error messages. |
 | `assertProviderTriple` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `assertUploadToken` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `bindClientToolCall` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `buildAgentUrl` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `buildSystemPrompt` | function | `@alexkroman1/aai/host-internal` |  | Build the system prompt sent to the LLM from the agent configuration. |
 | `capToolResult` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `claimSessionEnder` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `clampWorkflowWait` | function | `@alexkroman1/aai/internal` |  | Clamp a requested wait to what the API will actually hold a socket open for. |
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `clientToolBrand` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

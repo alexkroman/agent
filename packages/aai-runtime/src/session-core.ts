@@ -24,6 +24,7 @@
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { ClientToolAnswer } from "./client-tool-broker.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 // Imported as well as re-exported below: a re-export does not bring the names
@@ -169,6 +170,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   // The client half of the inbound surface — see `session-commands.ts`, which
   // owns the five commands and the two that deliberately do less than they look
   // like they should.
+  const answerClientTool = (answer: ClientToolAnswer): void =>
+    opts.clientTools?.answer(opts.id, answer);
   const handleCommand = createCommandDispatcher({
     sessionId: opts.id,
     emit,
@@ -179,7 +182,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     clearHistory: () => {
       history = [];
     },
-    ...omitUndefined({ onToolResult: opts.onToolResult }),
+    // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
+    ...omitUndefined({ onToolResult: opts.onToolResult ?? answerClientTool }),
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
