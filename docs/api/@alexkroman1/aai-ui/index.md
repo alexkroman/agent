@@ -29,7 +29,7 @@ exists so a component re-renders on its own slice rather than on every frame:
 | a run reaching the page later | [useInbox](#useinbox) (a reminder, a finished job — played when it lands) |
 | what was said | [useConversation](#useconversation), [useUserTranscript](#useusertranscript), [useConversationLog](#useconversationlog) (across sessions, persisted) |
 | the talk button | [useTapToTalk](#usetaptotalk) (tap on, tap off), [usePushToTalk](#usepushtotalk) (hold, for `turnDetection: "manual"`) |
-| the agent's own `/api` routes | [useRoute](#useroute), [routeFetch](#routefetch) |
+| the agent's own `/api` routes | [useRoute](#useroute), [useRouteMutation](#useroutemutation), [routeFetch](#routefetch), [useClientRuns](#useclientruns) (a `clientRunsRoutes()` pair) |
 | what this browser remembers | [useStoredValue](#usestoredvalue) / [createStoredValue](#createstoredvalue), [phoneE164](#phonee164) |
 | what the agent projects | [useAgentState](#useagentstate) — pass the `slot.projected` the agent declared as `syncState`, and it types the state AND supplies the frame rendered before the first push |
 | tools, as they run | [useToolCallStart](#usetoolcallstart), [useToolResult](#usetoolresult), [useEvent](#useevent) |
@@ -862,6 +862,61 @@ function StartDigest() {
   );
 }
 ```
+
+***
+
+### errorMessage()
+
+```ts
+function errorMessage(err: unknown): string;
+```
+
+Extract an error message from an unknown thrown value.
+
+**It never answers with an empty string.** That is the contract, and it is
+worth stating as one: `SessionError.message` is rendered directly by a
+browser client, so `""` paints a banner that says an error occurred and
+refuses to say what — strictly worse than a generic sentence, because an
+absent message reads as absence rather than as a problem.
+
+The shape that produced one is not exotic, it is the FIRST failure a new
+project hits. The AI SDK builds an `APICallError` whose `message` is
+`response.statusText` whenever the provider's error body does not match the
+schema it expected (`createJsonErrorResponseHandler`), and a reason phrase is
+optional in HTTP/1.1 and does not exist at all in HTTP/2 — so a rejected API
+key arrived as `{"code":"llm","message":"","fatal":false}` with the status,
+the URL, and the provider's own explanation all sitting unread on the error
+object.
+
+So a value that says nothing on its own is read one level down, in this
+order: the HTTP fields an `APICallError`-shaped failure carries (the status,
+the host that answered, the sentence in the response body), then `cause`,
+then an `AggregateError`'s members. Detection is STRUCTURAL for the same
+reason the schema-issue reading below it is — this module is published,
+zod-free, and may not import `ai` to ask `APICallError.isInstance` — and it
+costs nothing: a numeric `statusCode` beside a `responseBody` is the shape,
+whoever built it.
+
+An error that DOES state something keeps its own words — an HTTP failure has
+the status appended to them, since `Unauthorized` alone answers neither "which
+provider" nor "refused or fell over", and everything else is returned
+verbatim. One message is replaced outright, and it has precedent:
+`fetch failed` (and the browser's `failed to fetch`) is
+Node's own placeholder, with the reason — `ECONNREFUSED`, a DNS failure, a
+certificate rejection — one level down in `cause`. The AI SDK makes exactly
+this substitution for its own calls (`handleFetchError`, which rewrites the
+pair as "Cannot connect to API: …"); this extends the same reading to every
+direct `fetch` in the SDK.
+
+#### Parameters
+
+##### err
+
+`unknown`
+
+#### Returns
+
+`string`
 
 ***
 
@@ -2474,6 +2529,67 @@ The client id, or `undefined`.
 
 ***
 
+### useClientRuns()
+
+```ts
+function useClientRuns(path?: string, options?: UseClientRunsOptions): UseClientRunsResult;
+```
+
+The runs going on for this client, from a `clientRunsRoutes()` pair — see
+this module's doc.
+
+#### Parameters
+
+##### path?
+
+`string`
+
+The `path` the routes were declared with, without `/api`.
+  Default `"/tasks"`, `clientRunsRoutes()`' own default.
+
+##### options?
+
+[`UseClientRunsOptions`](#useclientrunsoptions)
+
+`pollMs` and `client`; see [UseClientRunsOptions](#useclientrunsoptions).
+
+#### Returns
+
+[`UseClientRunsResult`](#useclientrunsresult)
+
+The rows, the last error, `reload`, `cancel` and the id being
+  cancelled; see [UseClientRunsResult](#useclientrunsresult).
+
+#### Example
+
+**A "Running" panel with a Cancel on each live reminder**
+
+```tsx
+import { useClientRuns } from "@alexkroman1/aai-ui";
+
+function Running() {
+  const { runs, error, cancel, cancelling } = useClientRuns();
+  if (!runs) return error ? <p role="alert">{error}</p> : null;
+  return (
+    <ul>
+      {runs.map((r) => (
+        <li key={r.runId}>
+          {r.title} — {r.status}
+          {r.detail && <small>{r.detail}</small>}
+          {r.status === "running" && (
+            <button type="button" disabled={cancelling === r.runId} onClick={() => void cancel(r.runId)}>
+              Cancel
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+***
+
 ### useConversation()
 
 ```ts
@@ -2928,6 +3044,57 @@ function Memories() {
         </li>
       ))}
     </ul>
+  );
+}
+```
+
+***
+
+### useRouteMutation()
+
+```ts
+function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
+```
+
+Write to the agent's own routes, with a busy key, the last error and a
+re-read after — see this module's doc.
+
+#### Parameters
+
+##### options?
+
+[`UseRouteMutationOptions`](#useroutemutationoptions)
+
+`client` and `onSettled`; see [UseRouteMutationOptions](#useroutemutationoptions).
+
+#### Returns
+
+[`UseRouteMutationResult`](#useroutemutationresult)
+
+`run`, the busy key, the last error and `clearError`; see
+  [UseRouteMutationResult](#useroutemutationresult).
+
+#### Example
+
+**A profile field that saves, then re-reads**
+
+```tsx
+import { useRoute, useRouteMutation } from "@alexkroman1/aai-ui";
+
+function Name() {
+  const { data, reload } = useRoute<{ name: string }>("/profile");
+  const { run, busy, error } = useRouteMutation({ onSettled: reload });
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const name = new FormData(e.currentTarget).get("name");
+        void run("PUT", "/profile", { name }, { key: "name" });
+      }}
+    >
+      <input name="name" defaultValue={data?.name} disabled={busy === "name"} />
+      {error && <p role="alert">{error}</p>}
+    </form>
   );
 }
 ```
@@ -4415,6 +4582,82 @@ function Panel({ runId, onClear }: { runId: string; onClear: () => void }) {
 
 ## Interfaces
 
+### ClientRun
+
+One row of the list [clientRunsRoutes](../aai/index.md#clientrunsroutes) answers — plain JSON, what a
+page renders a run from.
+
+#### Properties
+
+##### createdAt
+
+```ts
+createdAt: number;
+```
+
+When the run was created, as epoch ms — the list is in this order, oldest first.
+
+##### detail?
+
+```ts
+optional detail?: string;
+```
+
+One line about it, when there is one: `options.detail`'s answer; else, for
+a failed run, its error as `spokenErrorReason` says it (short, no URL, no
+credential); else, for a running one, its newest progress line when that
+is a string.
+
+##### runId
+
+```ts
+runId: string;
+```
+
+The run's id — what the cancel route takes.
+
+##### status
+
+```ts
+status: ClientRunStatus;
+```
+
+Where it has got to; see [ClientRunStatus](#clientrunstatus).
+
+##### title
+
+```ts
+title: string;
+```
+
+The run's `label` (`StartOptions.label`), else its workflow's key.
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's key in `agent({ workflows })`.
+
+***
+
+### ClientRunsResponse
+
+The body the list route answers.
+
+#### Properties
+
+##### runs
+
+```ts
+runs: ClientRun[];
+```
+
+The client's runs, oldest first.
+
+***
+
 ### ToolCallRowProps
 
 Props for [ToolCallRow](#toolcallrow).
@@ -5576,6 +5819,17 @@ session: BrowserSession;
 ```
 
 The underlying session core.
+
+***
+
+### ClientRunStatus
+
+```ts
+type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+```
+
+A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
+`waiting` — the word a person reads for "queued, not started".
 
 ***
 
@@ -7065,6 +7319,30 @@ The HTTP methods an `agent({ routes })` key can declare.
 
 ***
 
+### RouteMutationRunOptions
+
+```ts
+type RouteMutationRunOptions = {
+  key?: string;
+};
+```
+
+Options for one [UseRouteMutationResult.run](#run) call.
+
+#### Properties
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+What [UseRouteMutationResult.busy](#busy-2) names while this write is in
+flight — the field being saved, the row being deleted. Default:
+`"<METHOD> <path>"`.
+
+***
+
 ### SendTextOptions
 
 ```ts
@@ -8255,6 +8533,112 @@ stopped moving, the same ambiguity `complete` exists to remove on the run side.
 
 ***
 
+### UseClientRunsOptions
+
+```ts
+type UseClientRunsOptions = {
+  client?: string;
+  pollMs?: number;
+};
+```
+
+Options for [useClientRuns](#useclientruns).
+
+#### Properties
+
+##### client?
+
+```ts
+optional client?: string;
+```
+
+The `?client=` to send. Default: the session's client inside
+`mountClient()`, none on a page with no session.
+
+##### pollMs?
+
+```ts
+optional pollMs?: number;
+```
+
+Read the list again every this many ms, while mounted. Default 5000; `0` never.
+
+***
+
+### UseClientRunsResult
+
+```ts
+type UseClientRunsResult = {
+  cancel: (runId: string) => Promise<boolean>;
+  cancelling: string | undefined;
+  error: string | undefined;
+  reload: () => void;
+  runs: ClientRun[] | undefined;
+};
+```
+
+What [useClientRuns](#useclientruns) returns.
+
+#### Properties
+
+##### cancel
+
+```ts
+cancel: (runId: string) => Promise<boolean>;
+```
+
+Cancel one run, then re-read the list. Resolves `true` when this call
+ended it, `false` when it had already finished or the cancel failed (the
+reason is in `error`). Never rejects.
+
+###### Parameters
+
+###### runId
+
+`string`
+
+###### Returns
+
+`Promise`\<`boolean`\>
+
+##### cancelling
+
+```ts
+cancelling: string | undefined;
+```
+
+The run id whose cancel is in flight, or `undefined` — to disable its button.
+
+##### error
+
+```ts
+error: string | undefined;
+```
+
+Why the last read or cancel failed — the route's `{ error }` when it said — or `undefined`.
+
+##### reload
+
+```ts
+reload: () => void;
+```
+
+Read the list again now.
+
+###### Returns
+
+`void`
+
+##### runs
+
+```ts
+runs: ClientRun[] | undefined;
+```
+
+The client's runs, oldest first — `undefined` until the first read lands.
+
+***
+
 ### UseConversationLogOptions
 
 ```ts
@@ -8980,6 +9364,130 @@ talking: boolean;
 ```
 
 Whether a turn is being held open right now — the button is DOWN.
+
+***
+
+### UseRouteMutationOptions
+
+```ts
+type UseRouteMutationOptions = {
+  client?: string;
+  onSettled?: () => void;
+};
+```
+
+Options for [useRouteMutation](#useroutemutation).
+
+#### Properties
+
+##### client?
+
+```ts
+optional client?: string;
+```
+
+The `?client=` to send. Default: the session's client
+(`session.identity.clientId()`, read per write) inside `mountClient()`,
+none on a page with no session.
+
+##### onSettled?
+
+```ts
+optional onSettled?: () => void;
+```
+
+Called after every write settles, success or failure — a `useRoute`'s
+`reload`, so the list shows what the write did. Not called after unmount.
+Read at settle time, so an inline arrow is fine.
+
+###### Returns
+
+`void`
+
+***
+
+### UseRouteMutationResult
+
+```ts
+type UseRouteMutationResult = {
+  busy: string | undefined;
+  clearError: () => void;
+  error: string | undefined;
+  run: <T>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
+};
+```
+
+What [useRouteMutation](#useroutemutation) returns.
+
+#### Properties
+
+##### busy
+
+```ts
+busy: string | undefined;
+```
+
+The key of the newest write still in flight (see
+[RouteMutationRunOptions.key](#key-1)), or `undefined` when none is —
+`busy === "email"` for one field, `busy !== undefined` for any.
+
+##### clearError
+
+```ts
+clearError: () => void;
+```
+
+Forget `error` — when the reader dismissed it, or edited the field again.
+
+###### Returns
+
+`void`
+
+##### error
+
+```ts
+error: string | undefined;
+```
+
+Why the newest settled write failed — the route's `{ error }` when it said — or `undefined`.
+
+##### run
+
+```ts
+run: <T>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
+```
+
+Send one write: `routeFetch(method, path, body, { client })`. Resolves the
+route's answer, or `undefined` when it failed (the reason is in `error`) —
+never rejects.
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+###### Parameters
+
+###### method
+
+[`RouteMethod`](#routemethod)
+
+###### path
+
+`string`
+
+###### body?
+
+`unknown`
+
+###### options?
+
+[`RouteMutationRunOptions`](#routemutationrunoptions)
+
+###### Returns
+
+`Promise`\<`T` \| `undefined`\>
 
 ***
 
@@ -10544,7 +11052,7 @@ End a run's `sleep()` early, resolving how many pending sleeps were
 interrupted.
 
 `0` is an answer, not a failure — the run finished, was never sleeping, or is
-gone. Same shape as [WorkflowApi.cancel](#cancel-3) answering false, and for the
+gone. Same shape as [WorkflowApi.cancel](#cancel-4) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
 [WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with

@@ -167,6 +167,10 @@ arms per `open`, disarms on `config` or close, re-dials on expiry, and after
 - **`routeFetch`** resolves `api/…` against the page's DIRECTORY (an agent at
   `/:slug/` reaches `/:slug/api`); `useRoute`'s default `?client=` is the
   session identity's, read per request, and none under `mountPage()`.
+  `useRouteMutation` is the write half with the same default: `run` never
+  rejects, the error shown is the highest-numbered SETTLED write's, and nothing
+  runs after unmount. `useClientRuns` is those two over a `clientRunsRoutes()`
+  pair — its row type is the SDK's, re-exported, never restated.
 
 ## Client identity and the inbox
 

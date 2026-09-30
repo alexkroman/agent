@@ -3,14 +3,40 @@
   "capability": "agent-routes",
   "epoch": 1,
   "rule": 2,
-  "sha256": "ddab11942d7248506b76df1dcb80fc596e24c689c27578f84f0da217e7b15173",
+  "sha256": "095504f2e51004814e6f497750d8dcc92b4ad49b34db900b615c619382964bb2",
   "exports": [
+    "ClientRun",
+    "ClientRunStatus",
+    "ClientRunsResponse",
     "RouteFetchOptions",
     "RouteMethod",
+    "RouteMutationRunOptions",
+    "UseClientRunsOptions",
+    "UseClientRunsResult",
+    "UseRouteMutationOptions",
+    "UseRouteMutationResult",
     "UseRouteOptions",
     "UseRouteResult",
+    "errorMessage",
     "routeFetch",
-    "useRoute"
+    "useClientRuns",
+    "useRoute",
+    "useRouteMutation"
   ],
-  "rollup": "48ca3a88aeaab67fa96018ca4d8fee5a95a5a990bd7a7feb707c5f98864d8243"
+  "rollup": "48ca3a88aeaab67fa96018ca4d8fee5a95a5a990bd7a7feb707c5f98864d8243",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "ddab11942d7248506b76df1dcb80fc596e24c689c27578f84f0da217e7b15173",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "095504f2e51004814e6f497750d8dcc92b4ad49b34db900b615c619382964bb2",
+      "reason": "additive (checked): +ClientRun, +ClientRunStatus, +ClientRunsResponse, +RouteMutationRunOptions, +UseClientRunsOptions, +UseClientRunsResult, +UseRouteMutationOptions, +UseRouteMutationResult, +errorMessage, +useClientRuns, +useRouteMutation"
+    }
+  ]
 }
