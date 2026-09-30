@@ -12,6 +12,7 @@ import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   clientEventDropMessage,
+  clientToolBrand,
   DEFAULT_BUILTIN_TOOLS,
   decideClientEvent,
   type OwnedMap,
@@ -21,6 +22,7 @@ import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest"
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
+import type { ClientToolBroker } from "./client-tool-broker.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
@@ -175,6 +177,8 @@ type ToolSetupDeps = {
    * than refused — see `usage-meter.ts`.
    */
   meters: OwnedMap<string, UsageMeter>;
+  /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
+  clientTools: ClientToolBroker;
   /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
@@ -279,6 +283,7 @@ function setupSandboxTools(
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
   const { agent, options, env, workflows, notifier, logger, emitters, meters, stateStore } = deps;
+  const { clientTools } = deps;
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -372,9 +377,20 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
      * reconnected client stays stale with no further push coming.
      */
     const liveEmitter = (): SessionEmitter | undefined => emitters.get(sid);
+    // A `clientTool` is answered by the page. The wait for this call's
+    // `tool_result` rides the CONTEXT, so a wrapper that gates the tool (a
+    // persona, a dialog) still runs before it; the brand only sets the deadline.
+    const brand = clientToolBrand(tool);
+    const callId = call.options?.toolCallId;
     const run = () =>
       executeToolCall(name, args, {
         tool,
+        ...omitUndefined({
+          clientCall:
+            callId === undefined
+              ? undefined
+              : (signal: AbortSignal) => clientTools.wait(sid, callId, signal),
+        }),
         env: frozenEnv,
         slots: stateStore.viewFor(sid),
         sessionId: sid,
@@ -390,7 +406,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // there means the SESSION is over, which neither of its two arms is.
         onUncaught: (message) =>
           liveEmitter()?.emit({ type: "error.reported", code: "tool", message, fatal: false }),
-        timeoutMs: options.toolTimeoutMs,
+        timeoutMs: brand?.timeoutMs ?? options.toolTimeoutMs,
         // Always defined: `ctx.send` is a no-op when no socket holds the id
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.

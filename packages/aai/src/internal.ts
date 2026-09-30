@@ -103,6 +103,12 @@ export {
   decideClientEvent,
 } from "./sdk/client-event.ts";
 export {
+  bindClientToolCall,
+  type ClientToolBrand,
+  type ClientToolCall,
+  clientToolBrand,
+} from "./sdk/client-tool.ts";
+export {
   type CoalescingRunner,
   createCoalescingRunner,
 } from "./sdk/coalescing-runner.ts";

@@ -30,6 +30,7 @@ export {
   type SessionErrorCode,
   type SessionIdentity,
   type SessionSnapshot,
+  type ToolCallOutcome,
   type UseConversationResult,
   type UseSessionControlsResult,
   type UseUserTranscriptResult,

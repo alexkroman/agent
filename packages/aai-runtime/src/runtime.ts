@@ -15,6 +15,7 @@ import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { compileAgentRoutes } from "./agent-routes.ts";
 import { openAppDb } from "./app-db.ts";
+import { createClientToolBroker } from "./client-tool-broker.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { registerConnector } from "./runtime-connect.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
@@ -154,12 +155,9 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // otherwise, plus its grace-window sweeps — see `runtime-session-state.ts`.
   // The platform's session-state endpoint, when this guest was spawned by one. Read
   // from the same pair the platform world uses, so a deployment cannot end up with
-  // durable runs and memory-only turns — or the reverse.
-  //
-  // `platformGuestOptions`, never `resolvePlatformQueue(providerEnv)`: that is the
-  // AGENT's environment and the platform puts these two keys in the PROCESS's, so
-  // the line above described an invariant it was breaking. Every deployed agent
-  // ran on the memory backend. Its own doc has the measurement.
+  // durable runs and memory-only turns — or the reverse. `platformGuestOptions`,
+  // never `resolvePlatformQueue(providerEnv)`: the platform sets these two keys in
+  // the PROCESS's environment, not the agent's (its own doc has the measurement).
   const platformState = platformGuestOptions();
   const sessionState = createRuntimeSessionState({
     db: resolvedDb,
@@ -178,10 +176,10 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // What `ctx.send` and a `syncState` push resolve through, for the same resume
   // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
   const emitters = createOwnedMap<string, SessionEmitter>();
-  // And the same for the token meter: `ctx.generate` and `ctx.delegate` are
-  // dispatched by a per-RUNTIME executor and spend on a per-SESSION budget, so
-  // the tool path resolves this by id exactly as it resolves the emitter above.
+  // And the token meter: a per-RUNTIME executor spends on a per-SESSION budget.
   const meters = createOwnedMap<string, UsageMeter>();
+  // Where a `clientTool` call waits for the page's `tool_result`.
+  const clientTools = createClientToolBroker();
   // The Voice Agent API accepts exactly one sample rate and honours no declaration
   // to the contrary, so its rates are pinned, not negotiated — BEFORE the ready
   // config is built, because that frame tells the client what to capture and play
@@ -226,6 +224,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       logger,
       emitters,
       meters,
+      clientTools,
       stateStore: sessionState.store,
     });
 
@@ -353,6 +352,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       transport,
       logger,
       ...omitUndefined({ onToolResult: options.onToolResult }),
+      clientTools,
     });
 
     // Hydration in, reclamation out — `attachSessionState` owns both orderings

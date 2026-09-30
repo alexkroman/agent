@@ -23,7 +23,6 @@
 
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
-import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 // Imported as well as re-exported below: a re-export does not bring the names
@@ -179,7 +178,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     clearHistory: () => {
       history = [];
     },
-    ...omitUndefined({ onToolResult: opts.onToolResult }),
+    // A relay owns every `tool_result`; otherwise they answer `clientTool` calls.
+    onToolResult: opts.onToolResult ?? ((answer) => opts.clientTools?.answer(opts.id, answer)),
   });
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */

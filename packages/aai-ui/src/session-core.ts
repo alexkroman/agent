@@ -392,8 +392,8 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     sendJson({ type: "cancel" });
   }
 
-  // Push-to-talk's three edges and the typed turn — see `session-core-user-turn.ts`.
-  const { userTurn, sendText, flushQueued } = createUserInput({
+  // Push-to-talk, typed turns, tool answers — see `session-core-user-turn.ts`.
+  const { userTurn, sendText, flushQueued, sendToolResult } = createUserInput({
     snapshot: () => currentSnapshot,
     connected: () => openSocket() !== null,
     queued: queuedText,
@@ -473,8 +473,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
   }
 
   // Built WITHOUT the seal and cast once: the brand is type-only (see
-  // `browserSessionBrand`), which is what makes this the one place a
-  // `BrowserSession` exists.
+  // `browserSessionBrand`), so this is the one place a `BrowserSession` exists.
   const session: Omit<BrowserSession, typeof browserSessionBrand> = {
     getSnapshot,
     subscribe,
@@ -483,6 +482,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
     userTurn: Object.freeze(userTurn),
     identity,
     sendText,
+    sendToolResult,
     setMicMuted: mic.setMicMuted,
     resetState,
     reset,

@@ -315,6 +315,73 @@ export default agent({
 
 ***
 
+### clientTool()
+
+```ts
+function clientTool<P extends ToolInputSchema = ToolInputSchema>(def: ClientToolDef<P>): ToolDef<P>;
+```
+
+Define a tool the connected browser executes.
+
+The model sees an ordinary tool. When it calls one, the page's
+`useClientTool(name, handler)` (from `@alexkroman1/aai-ui`) runs with the
+validated arguments, and whatever the handler returns — JSON-serialized — is
+the result the model reads. A handler that throws is a failed call the model
+is told about, exactly as a server tool's throw is. The call fails the same
+way when no page answers within `timeoutMs`, or when the turn is cancelled.
+
+Only a voice/browser session can answer one. A text agent, a subagent, or a
+spec calling `execute` directly gets a failure naming the tool.
+
+#### Type Parameters
+
+##### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+#### Parameters
+
+##### def
+
+[`ClientToolDef`](#clienttooldef)\<`P`\>
+
+#### Returns
+
+[`ToolDef`](#tooldef)\<`P`\>
+
+#### Example
+
+**\`tools/get\_location.ts\`, answered by the page**
+
+```ts
+import { clientTool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default clientTool({
+  description: "Get the caller's current location from their browser",
+  inputSchema: z.object({}),
+  timeoutMs: 20_000,
+});
+```
+```tsx
+// client.tsx
+import { useClientTool } from "@alexkroman1/aai-ui";
+
+function Location() {
+  useClientTool("get_location", () =>
+    new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        (err) => reject(new Error(err.message)),
+      ),
+    ),
+  );
+  return null;
+}
+```
+
+***
+
 ### clockTime()
 
 ```ts
@@ -11963,6 +12030,40 @@ type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancell
 
 A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
 `waiting` — the word a person reads for "queued, not started".
+
+***
+
+### ClientToolDef
+
+```ts
+type ClientToolDef<P extends ToolInputSchema = ToolInputSchema> = Omit<ToolDef<P>, "execute"> & {
+  timeoutMs?: number;
+};
+```
+
+What [clientTool](#clienttool) takes: a [ToolDef](#tooldef) without `execute`, because the
+page is the execute.
+
+#### Type Declaration
+
+##### timeoutMs?
+
+```ts
+optional timeoutMs?: number;
+```
+
+How long the call waits for the page to answer before it fails, in ms.
+Defaults to the agent's ordinary tool deadline (`TOOL_EXECUTION_TIMEOUT_MS`,
+30 000). Raise it for a handler that waits on the PERSON — a confirmation
+dialog, a file picker — rather than on the browser.
+
+#### Type Parameters
+
+##### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+The tool's input schema — what the page's handler receives.
 
 ***
 

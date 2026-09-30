@@ -6,6 +6,7 @@
 
 import type { AgentDef } from '@alexkroman1/aai';
 import { ClientSink } from '@alexkroman1/aai/protocol';
+import { ClientToolCall } from '@alexkroman1/aai/internal';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -187,6 +188,7 @@ type ExecuteToolCallOptions = {
         readonly fatal: boolean;
     }) => void) | undefined;
     send?: ((event: string, data: unknown) => void) | undefined;
+    clientCall?: ClientToolCall | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
     timeoutMs?: number | undefined;

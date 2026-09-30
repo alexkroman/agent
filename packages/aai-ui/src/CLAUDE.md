@@ -134,6 +134,10 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
   replays). `entertainment-picks-agent` shows both.
+- **`useClientTool(name, handler)`** is the one hook that answers BACK: built
+  on `useToolCallStart` (one run per call id; a call still pending at mount is
+  run, a completed one is not) and `session.sendToolResult`, which encodes the
+  result and turns an unencodable one into an `error` rather than a throw.
 - **Theme tokens are CSS variables** (`--aai-bg`, `--aai-surface`, `--aai-text`,
   `--aai-border`, `--aai-primary`, written by `ThemeProvider`, mapped in
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
