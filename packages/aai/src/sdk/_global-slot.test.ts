@@ -11,7 +11,7 @@ describe("globalSlot", () => {
   test("two handles on one key share the value, as two bundle copies must", () => {
     globalSlot<number>(KEY).set(7);
     expect(globalSlot<number>(KEY).get()).toBe(7);
-    expect((globalThis as unknown as Record<symbol, unknown>)[Symbol.for(KEY)]).toBe(7);
+    expect(Reflect.get(globalThis, Symbol.for(KEY))).toBe(7);
   });
 
   test("set(undefined) deletes the property rather than storing undefined", () => {

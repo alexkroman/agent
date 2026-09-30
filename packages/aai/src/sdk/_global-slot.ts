@@ -31,12 +31,11 @@ export type GlobalSlot<T> = {
  */
 export function globalSlot<T>(key: string): GlobalSlot<T> {
   const symbol = Symbol.for(key);
-  const holder = globalThis as unknown as Record<symbol, T | undefined>;
   return {
-    get: () => holder[symbol],
+    get: () => Reflect.get(globalThis, symbol) as T | undefined,
     set: (value) => {
-      if (value === undefined) delete holder[symbol];
-      else holder[symbol] = value;
+      if (value === undefined) Reflect.deleteProperty(globalThis, symbol);
+      else Reflect.set(globalThis, symbol, value);
     },
   };
 }

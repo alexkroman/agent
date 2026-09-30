@@ -246,7 +246,7 @@ describe("ctx.workflows over a real engine", () => {
     const workflows = createWorkflowClient({
       workflows: { remind, research },
       keys,
-      wdk: { getRun, readOutput } as unknown as WdkAdapter,
+      wdk: { getRun, readOutput } as Partial<WdkAdapter> as WdkAdapter,
       logger: silentLogger,
     });
     const full = await workflows.findByKey("speaker-1");

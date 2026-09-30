@@ -144,10 +144,11 @@ export function registerChannelHandler<O>(
   const options = typeof optionsOrRegistration === "function" ? optionsOrRegistration : undefined;
   const registration =
     typeof optionsOrRegistration === "function" ? maybeRegistration : optionsOrRegistration;
+  // The first overload: `O` is the raw record, so the handler is stored as is.
+  const raw: unknown = handler;
   const stored: ChannelHandler =
     options === undefined
-      ? // The first overload: `O` is the raw record, so the handler is stored as is.
-        (handler as unknown as ChannelHandler)
+      ? (raw as ChannelHandler)
       : {
           kind: handler.kind,
           render: (message, raw) => handler.render(message, options(raw)),
