@@ -30,10 +30,13 @@
  * @module
  */
 
+import { globalSlot } from "./_global-slot.ts";
 import { FatalError } from "./step-error-classes.ts";
 import { CLIENT_ID_RE } from "./step-notify-client.ts";
 
-const CLIENT_TRANSCRIPT_SLOT = Symbol.for("@alexkroman1/aai.clientTranscriptReader");
+const CLIENT_TRANSCRIPT_SLOT = globalSlot<ClientTranscriptReader>(
+  "@alexkroman1/aai.clientTranscriptReader",
+);
 
 /** One committed line of a client's conversation. */
 export type ClientTranscriptMessage = {
@@ -98,8 +101,6 @@ export type ClientTranscriptReader = (
   options: StepClientTranscriptOptions,
 ) => Promise<ClientTranscript>;
 
-type ReaderSlot = { [CLIENT_TRANSCRIPT_SLOT]?: ClientTranscriptReader };
-
 /**
  * What {@link stepClientTranscript} throws when no runtime published a reader.
  *
@@ -116,8 +117,7 @@ export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE =
  * @internal — a host concern. A step author calls {@link stepClientTranscript}.
  */
 export function publishClientTranscriptReader(reader: ClientTranscriptReader | undefined): void {
-  if (reader === undefined) delete (globalThis as ReaderSlot)[CLIENT_TRANSCRIPT_SLOT];
-  else (globalThis as ReaderSlot)[CLIENT_TRANSCRIPT_SLOT] = reader;
+  CLIENT_TRANSCRIPT_SLOT.set(reader);
 }
 
 /**
@@ -126,7 +126,7 @@ export function publishClientTranscriptReader(reader: ClientTranscriptReader | u
  * @internal
  */
 export function publishedClientTranscriptReader(): ClientTranscriptReader | undefined {
-  return (globalThis as ReaderSlot)[CLIENT_TRANSCRIPT_SLOT];
+  return CLIENT_TRANSCRIPT_SLOT.get();
 }
 
 /**

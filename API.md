@@ -2876,6 +2876,9 @@ export function readRouteError(err: unknown): {
 // @internal
 export function readRouteResponse(value: unknown): RouteResponse | undefined;
 
+// @internal
+export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
+
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
@@ -3067,6 +3070,14 @@ type SessionCall = {
 export type SessionEnder = (options: {
     afterReply: boolean;
 }) => void;
+
+// @internal
+export type SessionIdentity = {
+    clientId?: string | undefined;
+    location?: string | undefined;
+    phone?: string | undefined;
+    call?: SessionCall | undefined;
+};
 
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
@@ -5688,6 +5699,15 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @internal
+export type GlobalSlot<T> = {
+    get(): T | undefined;
+    set(value: T | undefined): void;
+};
+
+// @internal
+export function globalSlot<T>(key: string): GlobalSlot<T>;
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;

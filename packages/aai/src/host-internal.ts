@@ -50,6 +50,14 @@ export { getSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
+// The one writer behind `sessionClientId`, `sessionClientLocation`,
+// `sessionClientPhone` and `sessionCall`: every field recorded, and normalized,
+// in one call where the session id is decided. The four `setSession*` below are
+// its one-field wrappers.
+export {
+  recordSessionIdentity,
+  type SessionIdentity,
+} from "./sdk/_session-identity-store.ts";
 export { serializeToolFailure } from "./sdk/_tool-failure-wire.ts";
 export { RETRYABLE_STATUS } from "./sdk/_upload-retry.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./sdk/agent-config.ts";

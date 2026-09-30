@@ -67,4 +67,11 @@ describe("sessionClientPhone", () => {
     );
     expect(sessionClientPhone(createToolContext())).toBeUndefined();
   });
+
+  test("createToolContext({ clientPhone }) stores E.164, as the upgrade does", () => {
+    expect(sessionClientPhone(createToolContext({ clientPhone: "+1 (503) 555-0123" }))).toBe(
+      "+15035550123",
+    );
+    expect(sessionClientPhone(createToolContext({ clientPhone: "5035550123" }))).toBeUndefined();
+  });
 });

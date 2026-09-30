@@ -25,12 +25,17 @@
  *
  * Stored like `session-phone.ts` and for its reason — the runtime records it
  * and a tool in the agent bundle reads it, two copies of this module — so the
- * map hangs off `globalThis` under a `Symbol.for` key, with a TTL and a cap.
+ * map hangs off `globalThis` under a `Symbol.for` key, with a TTL and a cap —
+ * the map and its one writer are `_session-identity-store.ts`.
  *
  * @module
  */
 
-import { liveSessionEntry } from "./session-client.ts";
+import {
+  liveSessionEntry,
+  recordSessionIdentity,
+  sessionCallEntries,
+} from "./_session-identity-store.ts";
 import type { ToolContext } from "./tool-context.ts";
 
 /**
@@ -56,42 +61,15 @@ export type SessionCall = {
   readonly parameters: Readonly<Record<string, string>>;
 };
 
-const SESSION_CALLS_SLOT = Symbol.for("@alexkroman1/aai.sessionCalls");
-
-/** Longer than any call; this only reaps abandoned entries. */
-const SESSION_CALL_TTL_MS = 86_400_000;
-const MAX_SESSION_CALLS = 10_000;
-
-type Entry = { call: SessionCall; expiresAt: number };
-type Slot = { [SESSION_CALLS_SLOT]?: Map<string, Entry> };
-
-function entries(): Map<string, Entry> {
-  const slot = globalThis as Slot;
-  slot[SESSION_CALLS_SLOT] ??= new Map();
-  return slot[SESSION_CALLS_SLOT];
-}
-
 /**
  * Record the call a phone session's stream reported. Frozen, parameters too, so
  * the object `sessionContext`, `onSessionEnd` and every tool see is one value no
  * reader can change under another.
  *
- * @internal — the runtime's half, called where the session id is decided.
+ * @internal — the runtime's half; `recordSessionIdentity` records every field at once.
  */
 export function setSessionCall(sessionId: string, call: SessionCall): void {
-  const map = entries();
-  const frozen: SessionCall = Object.freeze({
-    ...call,
-    parameters: Object.freeze({ ...call.parameters }),
-  });
-  // Delete-then-set keeps insertion order = least-recently-written first.
-  map.delete(sessionId);
-  map.set(sessionId, { call: frozen, expiresAt: Date.now() + SESSION_CALL_TTL_MS });
-  while (map.size > MAX_SESSION_CALLS) {
-    const oldest = map.keys().next().value;
-    if (oldest === undefined) break;
-    map.delete(oldest);
-  }
+  recordSessionIdentity(sessionId, { call });
 }
 
 /**
@@ -121,5 +99,5 @@ export function setSessionCall(sessionId: string, call: SessionCall): void {
  * ```
  */
 export function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined {
-  return liveSessionEntry(entries(), ctx.sessionId)?.call;
+  return liveSessionEntry(sessionCallEntries(), ctx.sessionId)?.call;
 }

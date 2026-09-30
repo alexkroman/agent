@@ -48,9 +48,10 @@
  * @module
  */
 
+import { globalSlot } from "./_global-slot.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 
-const STEP_NOTIFY_CLIENT_SLOT = Symbol.for("@alexkroman1/aai.stepNotifyClient");
+const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("@alexkroman1/aai.stepNotifyClient");
 
 /**
  * What a client id may look like: it is a map key on a public endpoint and a
@@ -141,8 +142,6 @@ export type ClientNotifier = (
   options: { ackTimeoutMs: number; signal?: AbortSignal | undefined },
 ) => Promise<"acked" | ClientUnreachableReason>;
 
-type NotifierSlot = { [STEP_NOTIFY_CLIENT_SLOT]?: ClientNotifier };
-
 /**
  * What {@link stepNotifyClient} throws when no server published an inbox.
  *
@@ -159,8 +158,7 @@ export const CLIENT_INBOX_UNAVAILABLE_MESSAGE =
  * @internal — a host concern. A step author calls {@link stepNotifyClient}.
  */
 export function publishClientNotifier(notify: ClientNotifier | undefined): void {
-  if (notify === undefined) delete (globalThis as NotifierSlot)[STEP_NOTIFY_CLIENT_SLOT];
-  else (globalThis as NotifierSlot)[STEP_NOTIFY_CLIENT_SLOT] = notify;
+  STEP_NOTIFY_CLIENT_SLOT.set(notify);
 }
 
 /**
@@ -203,7 +201,7 @@ export async function stepNotifyClient(
   if (notice.id.length === 0 || notice.id.length > 128) {
     throw new FatalError("stepNotifyClient: `notice.id` must be 1 to 128 characters");
   }
-  const notify = (globalThis as NotifierSlot)[STEP_NOTIFY_CLIENT_SLOT];
+  const notify = STEP_NOTIFY_CLIENT_SLOT.get();
   if (!notify) throw new FatalError(CLIENT_INBOX_UNAVAILABLE_MESSAGE);
   const retryAfterMs = options.retryAfterMs ?? DEFAULT_CLIENT_RETRY_MS;
   const outcome = await notify(clientId, notice, {

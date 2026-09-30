@@ -14,11 +14,8 @@
 import type { SessionCall } from "@alexkroman1/aai";
 import {
   LOG_PREVIEW_CHARS,
+  recordSessionIdentity,
   SESSION_KEEPALIVE_INTERVAL_MS,
-  setSessionCall,
-  setSessionClient,
-  setSessionLocation,
-  setSessionPhone,
 } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
@@ -185,10 +182,12 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
       // Recorded before the session exists, so its first tool call sees them. A
       // resume without `?location=`, `?client=` or `?phone=` keeps what it reported before.
       createSession: (sid, sessionClient) => {
-        if (clientLocation !== undefined) setSessionLocation(sid, clientLocation);
-        if (clientId !== undefined) setSessionClient(sid, clientId);
-        if (clientPhone !== undefined) setSessionPhone(sid, clientPhone);
-        if (call !== undefined) setSessionCall(sid, call);
+        recordSessionIdentity(sid, {
+          location: clientLocation,
+          clientId,
+          phone: clientPhone,
+          call,
+        });
         return createSession(sid, sessionClient);
       },
       logger: log,

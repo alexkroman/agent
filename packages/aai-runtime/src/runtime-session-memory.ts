@@ -38,7 +38,7 @@ import {
   sessionCall,
   sessionClientId,
 } from "@alexkroman1/aai";
-import { setSessionLocation } from "@alexkroman1/aai/host-internal";
+import { recordSessionIdentity } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
@@ -136,7 +136,7 @@ export function openSessionMemory(deps: {
       greeting = context?.greeting;
       // AFTER the socket's `?location=` (recorded before the session was built),
       // so the app's answer is the one the builtins and `sessionClientLocation` read.
-      if (context?.location) setSessionLocation(sessionId, context.location);
+      if (context?.location) recordSessionIdentity(sessionId, { location: context.location });
       if (clientId === undefined) return [];
       return await loadClientHistory(deps.history, {
         clientId,

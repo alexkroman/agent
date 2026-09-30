@@ -5342,8 +5342,8 @@ optional clientLocation?: string;
 ```
 
 Where this session's client is, as `sessionClientLocation(ctx)` — and the
-`google_places` / `open_meteo` builtins — will read it. Omitted, it answers
-`undefined`.
+`google_places` / `open_meteo` builtins — will read it, cleaned by the
+`?location=` rule. Omitted, or refused by it, it answers `undefined`.
 
 ##### clientPhone?
 
@@ -5352,8 +5352,9 @@ optional clientPhone?: string;
 ```
 
 The phone number this session's client reported, as `sessionClientPhone(ctx)`
-will read it — recorded as given (no E.164 check: that is the upgrade's job).
-Omitted, `sessionClientPhone` answers `undefined`.
+will read it — recorded the way the runtime records `?phone=`, in E.164
+(`"+1 (503) 555-0123"` reads back `"+15035550123"`). Omitted, or not an
+E.164 number at all, `sessionClientPhone` answers `undefined`.
 
 ##### deadlineAt?
 

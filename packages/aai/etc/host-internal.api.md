@@ -1096,6 +1096,9 @@ export function readRouteError(err: unknown): {
 // @internal
 export function readRouteResponse(value: unknown): RouteResponse | undefined;
 
+// @internal
+export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
+
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
@@ -1287,6 +1290,14 @@ type SessionCall = {
 export type SessionEnder = (options: {
     afterReply: boolean;
 }) => void;
+
+// @internal
+export type SessionIdentity = {
+    clientId?: string | undefined;
+    location?: string | undefined;
+    phone?: string | undefined;
+    call?: SessionCall | undefined;
+};
 
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
