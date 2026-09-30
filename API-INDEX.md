@@ -18,8 +18,8 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 547 names
-- [Browser client](#browser-client) — 179 names
+- [Agent authoring](#agent-authoring) — 564 names
+- [Browser client](#browser-client) — 172 names
 - [Testing and evals](#testing-and-evals) — 253 names
 - [Hosting and tooling](#hosting-and-tooling) — 232 names
 - [Framework internals](#framework-internals) — 366 names
@@ -63,6 +63,11 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `CARTESIA_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice used when callers invoke `cartesiaTts()` with no `voice`. |
 | `CHANNEL_POST_TIMEOUT_MS` | const | `@alexkroman1/aai/channels` | `aai:channels` | A platform is not slow. |
 | `CODING_TOOL_DESCRIPTIONS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
+| `COMPOSIO_API_KEY_ENV` | const | `@alexkroman1/aai/experimental` |  | The env var the project key is read from by default. |
+| `COMPOSIO_BASE_URL` | const | `@alexkroman1/aai/experimental` |  | Composio's REST v3.1 base URL — the default `ComposioOptions.baseUrl`. |
+| `COMPOSIO_MCP_TOOLS` | const | `@alexkroman1/aai/experimental` |  | Composio's meta tools `ComposioClient.mcpServer` offers by default: search, schemas, execute, and the Python workbench. |
+| `COMPOSIO_TRIGGER_MESSAGE` | const | `@alexkroman1/aai/experimental` |  | The webhook event type a trigger's event arrives as. |
+| `COMPOSIO_WEBHOOK_SECRET_ENV` | const | `@alexkroman1/aai/experimental` |  | The env var `composioWebhookRoute` reads the signing secret from by default. |
 | `CallOptions` | type | `@alexkroman1/aai/tools` | `aai:builtins` |  |
 | `CallStatusOptions` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepCallStatus` takes. |
 | `Channel` | type | `@alexkroman1/aai/channels` | `aai:channels` | Any channel descriptor — what `sendToChannel` takes. |
@@ -78,9 +83,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ClientEventSender` | type | `@alexkroman1/aai` | `aai:events` | What `ctx.send` is: push one custom event to the connected browser client, typed by `ClientEventMap`. |
 | `ClientInboxOptions` | type | `@alexkroman1/aai` | `aai:agent` | What an agent declares about the audio it pushes to devices over `WS /inbox`. |
 | `ClientNotice` | type | `@alexkroman1/aai/step` | `aai:inbox` | One thing to tell a client. |
-| `ClientRun` | interface | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | One row of the list `clientRunsRoutes` answers — plain JSON, what a page renders a run from. |
-| `ClientRunStatus` | type | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | A `ClientRun`'s status: a run's own, with `pending` said as `waiting` — the word a person reads for "queued, not started". |
-| `ClientRunsResponse` | interface | `@alexkroman1/aai` (also `@alexkroman1/aai-ui`) | `aai:agent` | The body the list route answers. |
 | `ClientTranscript` | type | `@alexkroman1/aai/step` | `aai:inbox` | What `stepClientTranscript` returns. |
 | `ClientTranscriptMessage` | type | `@alexkroman1/aai/step` | `aai:inbox` | One committed line of a client's conversation. |
 | `ClientTranscriptSession` | type | `@alexkroman1/aai/step` | `aai:inbox` | One of a client's sessions, as `stepClientTranscript` reads it. |
@@ -89,6 +91,15 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ClientUnreachableReason` | type | `@alexkroman1/aai/step` | `aai:inbox` | Why a notice was not taken. |
 | `CodingToolName` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | Every tool `createCodingTools` can build, by the name the model calls. |
 | `CodingToolsOptions` | type | `@alexkroman1/aai/coding-tools` | `aai:coding` | What `createCodingTools` takes. |
+| `ComposioApp` | interface | `@alexkroman1/aai/experimental` |  | An app as `ComposioClient.listApps` answers it. |
+| `ComposioClient` | interface | `@alexkroman1/aai/experimental` |  | What `composio()` returns. |
+| `ComposioExecuteResult` | type | `@alexkroman1/aai/experimental` |  | One action's outcome. |
+| `ComposioListAppsOptions` | interface | `@alexkroman1/aai/experimental` |  | What `ComposioClient.listApps` lists. |
+| `ComposioMcpServerOptions` | interface | `@alexkroman1/aai/experimental` |  | What `ComposioClient.mcpServer` takes. |
+| `ComposioSessionConfig` | interface | `@alexkroman1/aai/experimental` |  | How one session kind is made. |
+| `ComposioSessionStore` | interface | `@alexkroman1/aai/experimental` |  | Where session ids outlive the process — a database table, typically. |
+| `ComposioTriggerEvent` | type | `@alexkroman1/aai/experimental` |  | A trigger event as Composio's V3 webhook payload carries it. |
+| `ComposioTriggerType` | interface | `@alexkroman1/aai/experimental` |  | A trigger type an app offers, as `ComposioClient.findTriggers` answers it. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/stt` | `aai:stt` | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
 | `DEFAULT_CALL_RING_TIMEOUT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.ringTimeoutS`: thirty seconds of ringing, then `no-answer` — about five rings, short of most voicemail pickups. |
 | `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/step` | `aai:step` | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
@@ -371,8 +382,11 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `bytesPerSecond` | function | `@alexkroman1/aai/step` | `aai:step` | Bytes of audio per second of wall clock — the constant that converts a byte offset into a timestamp, and a duration into a request size. |
 | `cartesiaTts`, `CartesiaTtsOptions` | function | `@alexkroman1/aai/tts` | `aai:tts` | Build a Cartesia TTS descriptor for pipeline mode. |
 | `citedSources` | function | `@alexkroman1/aai/experimental` |  | The sources a report actually cites, each with the number it was cited under, in source order — so a consumer can append real URLs rather than trust ones a … |
-| `clientRunsRoutes`, `ClientRunsRoutesOptions` | function | `@alexkroman1/aai` | `aai:agent` | The pair of routes a page's "Running" panel reads and cancels through — `GET <path>` answering `ClientRunsResponse`, `DELETE <path>/:runId` answering … |
 | `clockTime` | function | `@alexkroman1/aai` | `aai:calendar` | A time-of-day argument: 24-hour `HH:MM`, zero-padded. |
+| `composio`, `ComposioOptions` | function | `@alexkroman1/aai/experimental` |  | A Composio Platform client for an agent's tools, routes and steps. |
+| `composioErrorMessage` | function | `@alexkroman1/aai/experimental` |  | Composio's error sentence: `message`, then `: ` and each of `errors[]`, then ` (request <id>)`. |
+| `composioTriggerText` | function | `@alexkroman1/aai/experimental` |  | An event's `data` as compact JSON text a model can read: empty fields dropped, long strings clipped (`maxString`, default 800), and the whole at most … |
+| `composioWebhookRoute`, `ComposioWebhookRouteOptions` | function | `@alexkroman1/aai/experimental` |  | An `agent({ routes })` handler for Composio's webhook: verified as `webhookRoute` verifies (401 on a bad signature, 500 when the secret is unset), then … |
 | `countWords` | function | `@alexkroman1/aai/utils` | `aai:utils` | How many words a string holds — whitespace-separated runs, after trimming. |
 | `createAgentClient` | function | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Create a client for one agent. |
 | `createCodingTools` | function | `@alexkroman1/aai/coding-tools` | `aai:coding` | Build a coding agent's tool set over one directory. |
@@ -389,8 +403,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `elevenLabsStt`, `ElevenLabsSttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build an ElevenLabs Scribe STT descriptor. |
 | `encodeWav` | function | `@alexkroman1/aai/step` | `aai:step` | Wrap raw linear-PCM samples in a WAV container. |
 | `endSession`, `EndSessionOptions` | function | `@alexkroman1/aai` | `aai:agent` | End this session — a phone agent's `end_call`. |
+| `ensureComposioWebhook`, `EnsureComposioWebhookOptions` | function | `@alexkroman1/aai/experimental` |  | Point the Composio project's webhook at `url` — for a SETUP script, not an agent. |
 | `errorDetail` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract a detailed error string (message + stack) for diagnostic logging. |
-| `errorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:utils` | Extract an error message from an unknown thrown value. |
+| `errorMessage` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Extract an error message from an unknown thrown value. |
 | `escapeSlackMrkdwn` | function | `@alexkroman1/aai/channels` | `aai:channels` | The three characters Slack's mrkdwn reserves. |
 | `explainChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on for a refusal this channel understands. |
 | `explainSlackChannelFailure` | function | `@alexkroman1/aai/channels` | `aai:channels` | The sentence a person can act on, chosen from what the URL and the body say. |
@@ -584,7 +599,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `PageConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Configuration for `mountPage`. |
 | `PageHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Handle returned by `mountPage`. |
 | `RouteMethod` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The HTTP methods an `agent({ routes })` key can declare. |
-| `RouteMutationRunOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Options for one `UseRouteMutationResult.run` call. |
 | `SelectField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A dropdown. |
 | `SendTextOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Options for `BrowserSession.sendText`. |
 | `Session` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSession` returns: the live `SessionSnapshot` fields (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`, `apiUrl`, … |
@@ -610,7 +624,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI. |
 | `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | How far a form's files have got, rendered as a bar. |
 | `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `WorkflowSubmission.upload` reports while the bytes are going. |
-| `UseClientRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useClientRuns` returns. |
 | `UseConversationLogResult` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | What `useConversationLog` returns. |
 | `UseConversationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useConversation` returns. |
 | `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
@@ -618,7 +631,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
 | `UseInboxResult` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | What `useInbox` returns. |
 | `UsePushToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | What `usePushToTalk` returns. |
-| `UseRouteMutationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useRouteMutation` returns. |
 | `UseRouteResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useRoute` returns. |
 | `UseSessionControlsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSessionControls` returns. |
 | `UseTapToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:tap-to-talk` | What `useTapToTalk` returns. |
@@ -658,7 +670,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `routeFetch`, `RouteFetchOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Call one of the agent's own routes and return its JSON — see this module's doc for what it handles. |
 | `useAgentState` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected session state, or `null` before the first push. |
 | `useClientId` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The client id this session sends as `?client=` — the id a tool reads with `sessionClientId(ctx)` and the inbox socket is held under. |
-| `useClientRuns`, `UseClientRunsOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The runs going on for this client, from a `clientRunsRoutes()` pair — see this module's doc. |
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
 | `useConversationLog`, `UseConversationLogOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | A transcript that outlives the session — see this module's doc. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
@@ -668,7 +679,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `useInbox`, `UseInboxOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold this session's `WS /inbox` socket open for the life of the component, and play what arrives — see the module doc. |
 | `usePushToTalk`, `UsePushToTalkOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Hold-to-speak over the session's push-to-talk methods, with the four ways a turn gets stuck open handled — see this module's doc. |
 | `useRoute`, `UseRouteOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | `GET` one of the agent's own routes, on mount, on `reload()` and every `pollMs` — see this module's doc. |
-| `useRouteMutation`, `UseRouteMutationOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Write to the agent's own routes, with a busy key, the last error and a re-read after — see this module's doc. |
 | `useRunKey` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A lookup key for `useWorkflowSubmit({ key })`, stable across reloads. |
 | `useSession` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Return the live `Session`: the current snapshot fields plus the control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`, `cancel`, `end`). |
 | `useSessionActions` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods — `start`, `cancel`, `sendText`, `setMicMuted`, `resetState`, `reset`, `restart`, `resume`, `disconnect`, `toggle`, `end` — with … |

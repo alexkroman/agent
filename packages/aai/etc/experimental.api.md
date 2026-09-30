@@ -32,6 +32,177 @@ interface ClientEventMap {
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
 // @public
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public
+type ClientTranscriptMessage = {
+    role: "user" | "assistant";
+    text: string;
+    at: number;
+};
+
+// @public
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+export function composio<K extends string = "default">(options?: ComposioOptions<K>): ComposioClient<K>;
+
+// @public
+export const COMPOSIO_API_KEY_ENV: string;
+
+// @public
+export const COMPOSIO_BASE_URL: string;
+
+// @public
+export const COMPOSIO_MCP_TOOLS: readonly string[];
+
+// @public
+export const COMPOSIO_TRIGGER_MESSAGE = "composio.trigger.message";
+
+// @public
+export const COMPOSIO_WEBHOOK_SECRET_ENV: string;
+
+// @public
+export interface ComposioApp {
+    connected: boolean;
+    description: string;
+    logo: string;
+    name: string;
+    slug: string;
+}
+
+// @public
+export interface ComposioClient<K extends string> {
+    api: JsonClient;
+    connectLink(ctx: EnvContext, user: string, app: string, callbackUrl: string, options?: {
+        kind?: K;
+    }): Promise<string>;
+    deleteTrigger(ctx: EnvContext, triggerId: string): Promise<boolean>;
+    disconnect(ctx: EnvContext, user: string, app: string): Promise<boolean>;
+    execute(ctx: EnvContext, user: string, toolSlug: string, args: Readonly<Record<string, unknown>>, options?: {
+        kind?: K;
+    }): Promise<ComposioExecuteResult>;
+    findTriggers(ctx: EnvContext, app: string, options?: {
+        limit?: number;
+    }): Promise<ComposioTriggerType[]>;
+    listApps(ctx: EnvContext, user: string, options?: ComposioListAppsOptions): Promise<ComposioApp[]>;
+    mcpServer(options: ComposioMcpServerOptions<K>): McpServerConfig;
+    upsertTrigger(ctx: EnvContext, user: string, slug: string, config: Readonly<Record<string, unknown>>): Promise<string>;
+}
+
+// @public
+export function composioErrorMessage(body: unknown): string | undefined;
+
+// @public
+export type ComposioExecuteResult = {
+    ok: true;
+    data: unknown;
+    logId: string;
+} | {
+    ok: false;
+    error: string;
+    logId?: string;
+};
+
+// @public
+export interface ComposioListAppsOptions {
+    connectedOnly?: boolean;
+    limit?: number;
+    search?: string;
+}
+
+// @public
+export interface ComposioMcpServerOptions<K extends string> {
+    allowedTools?: readonly string[];
+    kind: K;
+}
+
+// @public
+export interface ComposioOptions<K extends string> {
+    apiKeyEnv?: string;
+    baseUrl?: string;
+    sessions?: Readonly<Record<K, ComposioSessionConfig>>;
+    sessionStore?: ComposioSessionStore;
+}
+
+// @public
+export interface ComposioSessionConfig {
+    manageConnections?: boolean;
+    workbench?: boolean;
+}
+
+// @public
+export interface ComposioSessionStore {
+    // (undocumented)
+    delete(user: string, kind: string, ctx: EnvContext): Promise<void> | void;
+    // (undocumented)
+    get(user: string, kind: string, ctx: EnvContext): Promise<string | undefined> | string | undefined;
+    // (undocumented)
+    set(user: string, kind: string, id: string, ctx: EnvContext): Promise<void> | void;
+}
+
+// @public
+export type ComposioTriggerEvent = {
+    id: string;
+    type: string;
+    timestamp?: string;
+    metadata?: {
+        trigger_id?: string;
+        trigger_slug?: string;
+        user_id?: string;
+        connected_account_id?: string;
+        auth_config_id?: string;
+        log_id?: string;
+    };
+    data?: unknown;
+};
+
+// @public
+export function composioTriggerText(data: unknown, options: {
+    maxChars: number;
+    maxString?: number;
+}): string;
+
+// @public
+export interface ComposioTriggerType {
+    config: {
+        name: string;
+        type: string;
+        required: boolean;
+        description?: string;
+    }[];
+    description: string;
+    name: string;
+    polled: boolean;
+    slug: string;
+}
+
+// @public
+export function composioWebhookRoute(options: ComposioWebhookRouteOptions, onTrigger: (event: ComposioTriggerEvent, ctx: RouteContext, req: RouteRequest) => unknown): RouteHandler;
+
+// @public
+export interface ComposioWebhookRouteOptions {
+    secretEnv?: string;
+    toleranceS?: number;
+}
+
+// @public
 export interface DeepResearchBrief {
     // (undocumented)
     readonly brief: string;
@@ -144,6 +315,24 @@ interface DelegateResult extends SubagentAnswer {
 }
 
 // @public
+export function ensureComposioWebhook(ctx: EnvContext, url: string, options?: EnsureComposioWebhookOptions): Promise<{
+    id: string;
+    secret: string;
+}>;
+
+// @public
+export interface EnsureComposioWebhookOptions {
+    apiKeyEnv?: string;
+    baseUrl?: string;
+}
+
+// @public
+type EnvContext = {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal;
+};
+
+// @public
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -190,6 +379,20 @@ type GuardrailVerdict = true | string;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+type JsonClient = <T = unknown>(ctx: JsonClientContext, method: string, path: string, body?: unknown, init?: JsonRequestInit) => Promise<T>;
+
+// @public
+interface JsonClientContext {
+    env: Readonly<Partial<Record<string, string>>>;
+    signal?: AbortSignal | undefined;
+}
+
+// @public
+interface JsonRequestInit {
+    headers?: Record<string, string>;
+}
 
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
@@ -301,6 +504,29 @@ interface ProviderDescriptor<Kind extends string, Options> {
 // @public
 type RandomSource = () => number;
 
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    signal: AbortSignal;
+    workflows: WorkflowClient;
+}
+
+// @public
+type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
+
+// @public @sealed
+interface RouteRequest {
+    body: unknown;
+    clientId?: string;
+    headers: Record<string, string>;
+    method: string;
+    params: Record<string, string>;
+    path: string;
+    query: Record<string, string>;
+    rawBody?: string;
+}
+
 // @public
 type SayOnClientNotice = {
     id?: string | undefined;
@@ -366,6 +592,15 @@ type StartOptions = {
     dedupeKey?: string;
     label?: string;
     notify?: boolean | string;
+};
+
+// @public
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
 };
 
 // @public
