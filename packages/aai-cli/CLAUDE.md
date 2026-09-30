@@ -219,8 +219,8 @@ production comes from Publish.
   `SERVER_ROUTES`** (`ws: true` per ws row, the `fileServedByVite` bypass per
   prefix HTTP row, `root` skipped), so a route belongs in that table, never in
   a hand-added proxy key; `_dev-server-serve.test.ts` asserts every row but
-  `root` is proxied. `/workflows` is one prefix entry covering runs, run reads and the SSE stream
-  (workflow apps are dead without it). `/.well-known/workflow/v1/*` stays out
+  `root` is proxied. `/workflows` is one prefix entry covering runs, run reads
+  and the SSE stream (workflow apps are dead without it). `/.well-known/workflow/v1/*` stays out
   (platform/third-party callers, never a browser), which is why `aai dev` hands
   `createRuntime` the BACKEND origin as `publicUrl`.
 - **Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`).
