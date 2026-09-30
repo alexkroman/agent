@@ -47,7 +47,7 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../runtime-config.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
-import { cancelAllByKey, findByKeyAcross } from "./client-keyed.ts";
+import { cancelAllByKey, findByKeyAcross, keyedFind } from "./client-keyed.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
 import { normalizeRunLabel } from "./run-label.ts";
 import { workflowWebhookUrl } from "./serve.ts";
@@ -220,6 +220,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   async function toSnapshot(
     record: WdkRunRecord,
     key: string | undefined,
+    withOutput = true,
   ): Promise<WorkflowRunSnapshot> {
     const base = {
       runId: record.runId,
@@ -237,7 +238,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         return {
           ...base,
           status: "completed",
-          output: "output" in record ? record.output : await wdk.readOutput(record.runId),
+          output: withOutput ? await outputOf(record) : undefined,
         };
       case "failed":
         // A run can be recorded `failed` with no message — a killed container,
@@ -251,6 +252,11 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     }
   }
 
+  /** A completed record's output: on the record when the adapter carried it, else read. */
+  async function outputOf(record: WdkRunRecord): Promise<unknown> {
+    return "output" in record ? record.output : await wdk.readOutput(record.runId);
+  }
+
   /** Snapshot a run id, resolving undefined for one that does not exist. */
   async function snapshotById(runId: string): Promise<WorkflowRunSnapshot | undefined> {
     const record = await wdk.getRun(runId);
@@ -258,18 +264,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   }
 
   /** `find` for one declared name — shared with `findByKey` and `cancelAll`. */
-  async function findOne(name: string, key: string, limit: number): Promise<WorkflowRunSnapshot[]> {
-    const runIds = await keys.lookup(name, key, limit);
-    const records = await mapConcurrent(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
-    // A recorded id whose run is gone is dropped rather than reported: runs
-    // expire, and a `find` that threw because one of five results had aged out
-    // would be useless exactly when history matters. The key stays indexed.
-    return await mapConcurrent(
-      records.filter((r): r is WdkRunRecord => r !== undefined),
-      RUN_READ_CONCURRENCY,
-      (r) => toSnapshot(r, key),
-    );
-  }
+  const findOne = keyedFind({ keys, wdk, toSnapshot, concurrency: RUN_READ_CONCURRENCY });
 
   return {
     async start(

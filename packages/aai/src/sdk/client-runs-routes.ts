@@ -197,7 +197,10 @@ export function clientRunsRoutes(
     requireClient: true,
     handler: async (req, ctx): Promise<ClientRunsResponse> => {
       const now = Date.now();
-      const listed = (await ctx.workflows.findByKey(req.clientId, { limit }))
+      // Nothing here reads `output` unless the app's own `include`/`detail` might,
+      // so the default route skips the per-run output read on every poll.
+      const withOutput = options.include !== undefined || options.detail !== undefined;
+      const listed = (await ctx.workflows.findByKey(req.clientId, { limit, withOutput }))
         .filter(include)
         .filter(
           (r) => r.status === "pending" || r.status === "running" || now - r.createdAt < recentMs,

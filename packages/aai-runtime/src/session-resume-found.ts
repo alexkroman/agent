@@ -29,6 +29,7 @@
  * `false` every time and the whole thing silently does nothing.
  */
 
+import type { SessionGreeting } from "./runtime-transport.ts";
 import { type SkipGreetingOption, shouldSkipGreeting } from "./transports/types.ts";
 
 /** What a resume recovered, written by the lookups and read by the greeting. */
@@ -94,4 +95,32 @@ export function resolveSkipGreeting(
   // find anything") are combined, and a wider parameter would let the next
   // reader think it had the whole session to work with.
   return () => shouldSkipGreeting(claimed) && (resumed !== true || findings.any());
+}
+
+/**
+ * Compose a session's {@link SessionGreeting} — THE one place the greeting is
+ * decided, from the resume claim (through {@link resolveSkipGreeting}),
+ * `sessionContext`'s answer and the agent's own line.
+ *
+ * Both halves are thunks, resolved when the greeting fires: by then
+ * `sessionContext` has answered (`memory.greeting`) and the resume lookups have
+ * run (`findings`). `??` rather than `||`, because `""` is an answer — "no
+ * greeting this session" — and must not fall back to the agent's line.
+ *
+ * @internal
+ */
+export function composeSessionGreeting(args: {
+  /** What the socket claimed — `?sessionId=` or `resume=1`. */
+  skipGreeting: SkipGreetingOption | undefined;
+  /** Whether an ID was presented, i.e. whether there is a claim to CHECK. */
+  resumed: boolean | undefined;
+  findings: ResumeFindings;
+  /** Where `sessionContext`'s greeting lands once it has answered. */
+  memory: { readonly greeting: string | undefined };
+  agentConfig: { readonly greeting?: string | undefined };
+}): SessionGreeting {
+  const { memory, agentConfig } = args;
+  const skip = resolveSkipGreeting(args.skipGreeting, args.resumed, args.findings);
+  const line = (): string | undefined => memory.greeting ?? agentConfig.greeting;
+  return { line, opening: () => (skip() ? "" : line()) };
 }

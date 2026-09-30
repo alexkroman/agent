@@ -223,6 +223,22 @@ describe("session event stream — persistence", () => {
     await expect(stream.flush(SID)).resolves.toBeUndefined();
   });
 
+  test("only a FINAL flush settles the backend, and a failed settle does not reject", async () => {
+    const settle = vi.fn(() => Promise.reject(new Error("no database")));
+    const { stream, logger } = makeStream({ settle });
+    stream.append(SID, { type: "speech.started" });
+    await stream.flush(SID);
+    expect(settle).not.toHaveBeenCalled();
+    // The session's stop: whatever the backend deferred (Postgres' throttled
+    // client-log touch) is written now, and a failure is logged, not thrown.
+    await expect(stream.flush(SID, { final: true })).resolves.toBeUndefined();
+    expect(settle).toHaveBeenCalledWith(SID);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Session client log not settled",
+      expect.objectContaining({ sessionId: SID }),
+    );
+  });
+
   test("past the retention cap the index still advances and the log stops growing", async () => {
     const { stream, logger } = makeStream();
     const entry = { type: "speech.started" } as const;

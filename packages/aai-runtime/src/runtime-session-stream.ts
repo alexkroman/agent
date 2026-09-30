@@ -141,8 +141,9 @@ export function attachSessionStream(
     } finally {
       // In a `finally`, so a session that stopped by failing still writes out
       // what it recorded — the events leading up to a failure are the ones most
-      // worth having. `flush` never rejects.
-      await stream.flush(sessionId);
+      // worth having. `flush` never rejects. `final`, so a throttled client-log
+      // touch is written now rather than never (`backends/postgres.ts`).
+      await stream.flush(sessionId, { final: true });
       // `tail` is one past the last index assigned, so an empty log answers -1.
       memory?.ended(stream.tail(sessionId) - 1);
     }

@@ -52,6 +52,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
 import { createPostgresDb } from "../../postgres-db.ts";
 import type { Logger } from "../../runtime-config.ts";
+import { createClientTouchThrottle } from "../client-touch.ts";
 import type { SessionStateBackend } from "../store.ts";
 
 /**
@@ -193,8 +194,8 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * `session_id` is the key because a session belongs to ONE client (a re-bind
  * moves it); `(client_id, started_at desc)` is the index the one read path
  * walks, newest first. `last_event_at` is maintained by the backend while a
- * bound session appends, so `historySince` can skip a whole session without
- * reading its log.
+ * bound session appends (throttled while it is live — `../client-touch.ts`), so
+ * `historySince` can skip a whole session without reading its log.
  */
 const CREATE_CLIENT_TABLE_SQL = (table: string) => `create table if not exists ${table} (
   session_id text primary key,
@@ -363,7 +364,7 @@ on conflict (session_id) do update set client_id = excluded.client_id`;
  * rather than a CTE on {@link APPEND_EVENTS_SQL}, and issued only for sessions
  * this process bound, so an UNBOUND session's write path never names the
  * client table — a self-hosted schema whose migration predates it keeps storing
- * events.
+ * events. THROTTLED, and why that is safe: `../client-touch.ts`.
  */
 const TOUCH_CLIENT_SQL = `update ${SESSION_CLIENT_TABLE} set last_event_at = now() where session_id = $1`;
 
@@ -387,7 +388,7 @@ limit $3`;
 export function createPostgresStateBackend(options: { db: Db }): SessionStateBackend {
   const { db } = options;
   /** Sessions THIS process bound — the only ones whose appends touch the client table. */
-  const bound = new Set<string>();
+  const touches = createClientTouchThrottle();
   // No DDL here, deliberately: the tables come with the schema
   // (`sessionStateDdl`, applied by the platform when an app's database is
   // provisioned). This backend used to `create table if not exists` on both the
@@ -433,7 +434,7 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
       await db.query(DISCARD_SQL, [sessionId]);
       // The touch set is bounded by the sessions still inside their grace
       // window: a resume after this re-binds, which puts it back.
-      bound.delete(sessionId);
+      touches.forget(sessionId);
     },
     async appendEvents(sessionId, pending) {
       await db.query(APPEND_EVENTS_SQL, [
@@ -441,7 +442,10 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
         pending.map((event) => event.index),
         pending.map((event) => event.json),
       ]);
-      if (bound.has(sessionId)) await db.query(TOUCH_CLIENT_SQL, [sessionId]);
+      if (touches.onAppend(sessionId)) await db.query(TOUCH_CLIENT_SQL, [sessionId]);
+    },
+    async settle(sessionId) {
+      if (touches.onSettle(sessionId)) await db.query(TOUCH_CLIENT_SQL, [sessionId]);
     },
     async readEvents(sessionId, startIndex, limit) {
       const rows = await db.query<{ event_index: number; event: string }>(READ_EVENTS_SQL, [
@@ -457,7 +461,7 @@ export function createPostgresStateBackend(options: { db: Db }): SessionStateBac
     },
     async bindClient(sessionId, clientId) {
       await db.query(BIND_CLIENT_SQL, [sessionId, clientId]);
-      bound.add(sessionId);
+      touches.bind(sessionId);
     },
     async clientSessions(clientId, { since, limit }) {
       const rows = await db.query<{

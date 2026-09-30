@@ -129,6 +129,8 @@ export type SessionStateBackend = {
   bindClient?: ClientSessionLog["bindClient"];
   /** A client's sessions, newest first (`clients.ts`). Absent with `bindClient`. */
   clientSessions?: ClientSessionLog["clientSessions"];
+  /** The session stopped: write what was deferred (Postgres' throttled touch). Absent: none. */
+  settle?(sessionId: string): Promise<void>;
   /**
    * Append these events at the indices they already carry.
    *

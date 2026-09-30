@@ -164,8 +164,11 @@ export type SessionEventStream = {
   tail(sessionId: string): number;
   /** Read a page from `startIndex`. Flushes first, so a read sees everything recorded. */
   read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-  /** Write out what is pending. Never rejects; a failure is logged and retried. */
-  flush(sessionId: string): Promise<void>;
+  /**
+   * Write out what is pending. Never rejects; a failure is logged and retried.
+   * `final` is the session's stop: the backend also settles what it deferred.
+   */
+  flush(sessionId: string, options?: { final?: boolean }): Promise<void>;
   /** Learn this session's stored length, so a resume continues its log. */
   hydrate(sessionId: string): Promise<void>;
   /** Forget a session: its position, its pending events, and its stored rows. */
@@ -229,10 +232,16 @@ export function createSessionEventStream(options: {
   /** The log's length: the index the next event will take. */
   const tail = (sessionId: string): number => sessions.get(sessionId)?.next ?? 0;
 
-  async function flush(sessionId: string): Promise<void> {
+  async function flush(sessionId: string, options?: { final?: boolean }): Promise<void> {
     const entry = sessions.get(sessionId);
     if (!entry) return;
     await writePending(sessionId, entry);
+    if (options?.final !== true || !backend.settle) return;
+    try {
+      await backend.settle(sessionId);
+    } catch (err: unknown) {
+      logger?.warn?.("Session client log not settled", { sessionId, error: errorMessage(err) });
+    }
   }
 
   function append(sessionId: string, body: SessionEventBody): SessionEvent {

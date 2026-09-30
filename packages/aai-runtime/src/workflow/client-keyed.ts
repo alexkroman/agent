@@ -14,13 +14,68 @@
 
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import type { FindByKeyOptions, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import { MAX_WORKFLOW_FIND_LIMIT, resolveFindLimit } from "./keys.ts";
+import { MAX_WORKFLOW_FIND_LIMIT, resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
+import type { WdkAdapter, WdkRunRecord } from "./wdk-types.ts";
 
 /** How many workflows' key lookups run at once — each is itself a bounded read. */
 const WORKFLOW_LOOKUP_CONCURRENCY = 4;
 
+/**
+ * What a keyed read may narrow BEFORE a record becomes a snapshot.
+ *
+ * Applied to the raw WDK record, which already carries `createdAt` and
+ * `status`, so a run the caller's filters would discard never costs the
+ * `readOutput` its snapshot would otherwise pay — and a caller that never reads
+ * `output` (`withOutput: false`) pays it for no run at all. The set of run ids
+ * read is unchanged: `lookup` is still asked for `limit` of them.
+ *
+ * @internal
+ */
+export type KeyedReadScope = {
+  /** Keep this record. Omitted, every record is kept. */
+  keep?: (record: WdkRunRecord) => boolean;
+  /** Read a completed run's output. Default true. */
+  withOutput?: boolean;
+};
+
 /** `find` over one workflow, as `findByKey` and `cancelAll` call it. */
-type FindOne = (workflow: string, key: string, limit: number) => Promise<WorkflowRunSnapshot[]>;
+type FindOne = (
+  workflow: string,
+  key: string,
+  limit: number,
+  scope?: KeyedReadScope,
+) => Promise<WorkflowRunSnapshot[]>;
+
+/**
+ * Build the one-workflow keyed `find` over the key index and the WDK adapter —
+ * `WorkflowClient.find`, and the unit {@link findByKeyAcross} and
+ * {@link cancelAllByKey} are composed of.
+ *
+ * @internal
+ */
+export function keyedFind(deps: {
+  keys: WorkflowKeyStore;
+  wdk: Pick<WdkAdapter, "getRun">;
+  toSnapshot: (
+    record: WdkRunRecord,
+    key: string,
+    withOutput?: boolean,
+  ) => Promise<WorkflowRunSnapshot>;
+  concurrency: number;
+}): FindOne {
+  const { keys, wdk, toSnapshot, concurrency } = deps;
+  return async (name, key, limit, scope = {}) => {
+    const runIds = await keys.lookup(name, key, limit);
+    const records = await mapConcurrent(runIds, concurrency, (id) => wdk.getRun(id));
+    // A recorded id whose run is gone is dropped rather than reported: runs
+    // expire, and a `find` that threw because one of five results had aged out
+    // would be useless exactly when history matters. The key stays indexed.
+    const kept = records.filter(
+      (r): r is WdkRunRecord => r !== undefined && (scope.keep?.(r) ?? true),
+    );
+    return await mapConcurrent(kept, concurrency, (r) => toSnapshot(r, key, scope.withOutput));
+  };
+}
 
 /**
  * Newest first by creation time, the run id breaking a tie — the order `find`
@@ -51,13 +106,20 @@ export async function findByKeyAcross(
   const limit = resolveFindLimit(options.limit);
   const since = options.since instanceof Date ? options.since.getTime() : options.since;
   const statuses = options.statuses === undefined ? undefined : new Set(options.statuses);
+  const kept = (createdAt: number, status: WorkflowRunSnapshot["status"]): boolean =>
+    (since === undefined || createdAt >= since) && (statuses === undefined || statuses.has(status));
+  // The filters run on the raw record first (see `KeyedReadScope`) and again on
+  // the snapshot, which is what holds them for a `find` that ignores `scope`.
+  const scope: KeyedReadScope = {
+    keep: (r) => kept(new Date(r.createdAt).getTime(), r.status),
+    withOutput: options.withOutput !== false,
+  };
   const perWorkflow = await mapConcurrent(workflows, WORKFLOW_LOOKUP_CONCURRENCY, (name) =>
-    find(name, key, limit),
+    find(name, key, limit, scope),
   );
   return perWorkflow
     .flat()
-    .filter((run) => since === undefined || run.createdAt >= since)
-    .filter((run) => statuses === undefined || statuses.has(run.status))
+    .filter((run) => kept(run.createdAt, run.status))
     .sort(newestFirst)
     .slice(0, limit);
 }

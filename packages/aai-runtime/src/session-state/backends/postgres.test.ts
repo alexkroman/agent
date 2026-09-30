@@ -13,7 +13,8 @@
  */
 
 import type { Db } from "@alexkroman1/aai/internal";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { CLIENT_TOUCH_INTERVAL_MS } from "../client-touch.ts";
 import {
   applySessionStateDdl,
   createPostgresStateBackend,
@@ -124,6 +125,46 @@ describe("client sessions", () => {
     calls.length = 0;
     await backend.appendEvents("bound", [{ index: 1, json: "{}" }]);
     expect(calls).toHaveLength(1);
+  });
+
+  test("a bound session's touch is THROTTLED, and a stop settles the one it skipped", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { db, calls } = recordingDb();
+      const backend = backendOn(db);
+      const touches = () => calls.filter((c) => c.sql.includes("set last_event_at")).length;
+      await backend.bindClient?.("s", "kitchen");
+
+      // The first append after a bind touches at once, so `since` sees a new session.
+      await backend.appendEvents("s", [{ index: 0, json: "{}" }]);
+      expect(touches()).toBe(1);
+      // Inside the window: the append is ONE statement, the touch is owed.
+      calls.length = 0;
+      await backend.appendEvents("s", [{ index: 1, json: "{}" }]);
+      expect(calls).toHaveLength(1);
+      // The stop pays what was owed, once.
+      await backend.settle?.("s");
+      await backend.settle?.("s");
+      expect(touches()).toBe(1);
+
+      // Past the window, an append touches again.
+      vi.advanceTimersByTime(CLIENT_TOUCH_INTERVAL_MS);
+      calls.length = 0;
+      await backend.appendEvents("s", [{ index: 2, json: "{}" }]);
+      expect(touches()).toBe(1);
+      // Nothing owed, so a stop costs nothing.
+      calls.length = 0;
+      await backend.settle?.("s");
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("settle on a session this process never bound issues nothing", async () => {
+    const { db, calls } = recordingDb();
+    await backendOn(db).settle?.("free");
+    expect(calls).toHaveLength(0);
   });
 
   test("list answers epoch-ms numbers, newest first, with `since` as a parameter", async () => {
