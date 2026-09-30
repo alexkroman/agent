@@ -279,21 +279,77 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
   return asDispatcher(agent);
 }
 
-/** Headers that must never be replayed to a different origin across a redirect. */
-const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+/**
+ * The only caller-set headers a redirect may carry OFF the original origin.
+ *
+ * **Every other header the caller set is dropped once a hop leaves the
+ * original origin** — not just `authorization`/`cookie`/`proxy-authorization`,
+ * which is all the fetch spec strips. A credential can ride in a header this
+ * module cannot know the name of (`x-goog-api-key` on a `fetchJson` call,
+ * `x-api-key` on an MCP server), and an open redirect on an allowed host would
+ * otherwise replay it to wherever it pointed. A deny-list of names is the bug
+ * shape (every vendor invents one); an ALLOW-list of the few headers that
+ * describe the request rather than authorize it is not.
+ *
+ * The four: content negotiation (`accept`, `accept-language`), the body's own
+ * type (`content-type`, which a redirected POST still needs), and
+ * `user-agent` (some hosts refuse a request without one). None carries a
+ * secret. The same-origin hops keep every header.
+ */
+const CROSS_ORIGIN_SAFE_HEADERS: ReadonlySet<string> = new Set([
+  "accept",
+  "accept-language",
+  "content-type",
+  "user-agent",
+]);
 
-/** One hop's headers: the caller's, minus every credential once off-origin. */
-function hopHeaders(
-  init: RequestInit["headers"],
-  offOrigin: boolean,
-  extraCredentialHeaders: readonly string[],
-): Headers {
+/** One hop's headers: the caller's, cut to the safelist once off-origin. */
+function hopHeaders(init: RequestInit["headers"], offOrigin: boolean): Headers {
   const headers = new Headers(init);
   if (offOrigin) {
-    for (const h of CREDENTIAL_HEADERS) headers.delete(h);
-    for (const h of extraCredentialHeaders) headers.delete(h);
+    // Collected first: deleting while iterating a `Headers` skips entries.
+    // `keys()` yields lowercased names, so the safelist compares directly.
+    for (const name of [...headers.keys()]) {
+      if (!CROSS_ORIGIN_SAFE_HEADERS.has(name)) headers.delete(name);
+    }
   }
   return headers;
+}
+
+/**
+ * The redirect loop both fetches below share: every hop issued with
+ * `redirect: "manual"` so it comes back HERE, its headers cut by
+ * {@link hopHeaders} once it has left the original origin, and — when
+ * `screen` is set — its target re-validated and its socket pinned to the
+ * screened address.
+ */
+async function followRedirects(
+  url: string,
+  init: RequestInit,
+  fetchFn: typeof globalThis.fetch,
+  screen: boolean,
+): Promise<Response> {
+  const originalOrigin = new URL(url).origin;
+  let resolvedIp = screen ? await resolveAndAssertPublic(url) : null;
+  let currentUrl = url;
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
+    // Cut the caller's headers once the request has left its original origin
+    // so an open redirect on an allowed host can't exfiltrate a credential.
+    const headers = hopHeaders(init.headers, new URL(currentUrl).origin !== originalOrigin);
+    const reqInit: PinnedRequestInit = { ...init, headers, redirect: "manual" };
+    // resolvedIp is null when the URL already names a literal IP — it was
+    // validated directly, so there is no DNS step to pin — or when unscreened.
+    if (resolvedIp !== null) reqInit.dispatcher = pinnedDispatcher(resolvedIp);
+    const resp = await fetchFn(currentUrl, reqInit);
+    if (resp.status < 300 || resp.status >= 400) return resp;
+    const location = resp.headers.get("location");
+    if (!location) return resp;
+    // Release the redirect response's socket before following the hop.
+    await resp.body?.cancel().catch(() => undefined);
+    currentUrl = new URL(location, currentUrl).href;
+    if (screen) resolvedIp = await resolveAndAssertPublic(currentUrl);
+  }
+  throw new Error("Too many redirects");
 }
 
 /**
@@ -308,33 +364,8 @@ export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
-  extraCredentialHeaders: readonly string[] = [],
 ): Promise<Response> {
-  const originalOrigin = new URL(url).origin;
-  let resolvedIp = await resolveAndAssertPublic(url);
-  let currentUrl = url;
-  for (let i = 0; i < MAX_REDIRECTS; i++) {
-    // Drop credentials once the request has left its original origin so an
-    // open redirect on an allowed host can't exfiltrate the agent's token.
-    const headers = hopHeaders(
-      init.headers,
-      new URL(currentUrl).origin !== originalOrigin,
-      extraCredentialHeaders,
-    );
-    const reqInit: PinnedRequestInit = { ...init, headers, redirect: "manual" };
-    // resolvedIp is null when the URL already names a literal IP — it was
-    // validated directly, so there is no DNS step to pin.
-    if (resolvedIp !== null) reqInit.dispatcher = pinnedDispatcher(resolvedIp);
-    const resp = await fetchFn(currentUrl, reqInit);
-    if (resp.status < 300 || resp.status >= 400) return resp;
-    const location = resp.headers.get("location");
-    if (!location) return resp;
-    // Release the redirect response's socket before following the hop.
-    await resp.body?.cancel().catch(() => undefined);
-    currentUrl = new URL(location, currentUrl).href;
-    resolvedIp = await resolveAndAssertPublic(currentUrl);
-  }
-  throw new Error("Too many redirects");
+  return await followRedirects(url, init, fetchFn, true);
 }
 
 function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
@@ -347,24 +378,40 @@ function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
  * `globalThis.fetch` wrapped in SSRF validation — the default for every
  * network builtin. Private/reserved addresses, non-HTTP(S) protocols, and
  * reserved hostnames are rejected, each redirect hop is re-validated, and
- * credentials are stripped when a redirect leaves the original origin.
+ * every caller-set header outside a four-name safelist (see
+ * `CROSS_ORIGIN_SAFE_HEADERS`) is stripped when a redirect leaves the
+ * original origin.
  */
 export const safeFetch: typeof globalThis.fetch = (input, init) =>
   ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch);
 
 /**
- * {@link safeFetch}, with more header names treated as credentials — dropped,
- * like `authorization`, once a redirect leaves the original origin.
+ * `pinnedFetch` with {@link safeFetch}'s redirect rule and NO address screen —
+ * what the builtins use inside a real container ({@link builtinFetch}).
  *
- * For a caller that sends a credential in a header this module cannot know the
- * name of: an MCP server authenticated with `x-api-key` would otherwise have
- * that key replayed to wherever an open redirect on its host pointed.
+ * The container makes the address screen pointless, but not the header rule:
+ * a credential a `fetchJson` caller put in a header (`x-goog-api-key`) is
+ * the caller's, and an open redirect must not hand it to another origin on
+ * any deployment. Left to follow redirects itself, undici strips only the
+ * three headers the fetch spec names.
  *
  * @internal
  */
-export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch {
-  const names = credentialHeaders.map((name) => name.toLowerCase());
-  return (input, init) => ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch, names);
+export const redirectSafeFetch: typeof globalThis.fetch = (input, init) =>
+  redirectSafeRequest(requestUrl(input), init ?? {}, pinnedFetch);
+
+/**
+ * The engine under {@link redirectSafeFetch}, over a caller's `fetchFn` (a
+ * spec's fake) — {@link ssrfSafeFetch}'s loop without the address screen.
+ *
+ * @internal
+ */
+export async function redirectSafeRequest(
+  url: string,
+  init: RequestInit,
+  fetchFn: typeof globalThis.fetch,
+): Promise<Response> {
+  return await followRedirects(url, init, fetchFn, false);
 }
 
 /**
@@ -384,7 +431,9 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
  * Inside a real sandbox the screen protects nothing a tenant cannot bypass in
  * one line — their own tool code has open egress by design, so a guard on
  * `visit_webpage` constrains the model, not the author. The container is the
- * boundary and it holds no platform credentials.
+ * boundary and it holds no platform credentials. The redirect header rule
+ * still applies there ({@link redirectSafeFetch}): it protects the CALLER's
+ * credential, which a container does nothing for.
  *
  * Everywhere else the host IS someone's machine — `aai dev` runs these same
  * builtins in the developer's own process, where a model-controlled URL can
@@ -394,5 +443,5 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
  * @internal
  */
 export function builtinFetch(env: NodeJS.ProcessEnv = process.env): typeof globalThis.fetch {
-  return env[CONTAINED_ENV] === "1" ? pinnedFetch : safeFetch;
+  return env[CONTAINED_ENV] === "1" ? redirectSafeFetch : safeFetch;
 }

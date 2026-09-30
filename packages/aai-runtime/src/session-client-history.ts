@@ -44,10 +44,11 @@ import {
   publishClientTranscriptReader,
   publishedClientTranscriptReader,
 } from "@alexkroman1/aai/host-internal";
-import type {
-  ClientTranscript,
-  ClientTranscriptSession,
-  StepClientTranscriptOptions,
+import {
+  type ClientTranscript,
+  type ClientTranscriptSession,
+  mapConcurrent,
+  type StepClientTranscriptOptions,
 } from "@alexkroman1/aai/step";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "./runtime-config.ts";
@@ -71,6 +72,9 @@ export const MAX_CLIENT_HISTORY_SESSIONS = 50;
 
 /** How many sessions one `stepClientTranscript` may list. */
 export const MAX_CLIENT_TRANSCRIPT_SESSIONS = 500;
+
+/** How many of a transcript's sessions are read at once. */
+const TRANSCRIPT_READ_CONCURRENCY = 4;
 
 /** The backend and stream a client's log is read through. */
 export type ClientHistoryDeps = {
@@ -269,15 +273,20 @@ export async function readClientTranscript(
   ].reverse();
   // Everything from the cursor's session on; an unknown cursor reads it all.
   const at = cursor ? records.findIndex((r) => r.sessionId === cursor.sessionId) : -1;
-  const sessions: ClientTranscriptSession[] = [];
-  for (const record of at >= 0 ? records.slice(at) : records) {
-    const events = (await readIndexed(deps, record.sessionId)).filter(
-      (e) =>
-        (since === undefined || e.event.meta.at >= since) &&
-        !(cursor && at >= 0 && record.sessionId === cursor.sessionId && e.index <= cursor.index),
-    );
-    if (events.length > 0) sessions.push(transcriptOf(record, events));
-  }
+  // Each session's read is independent, so a few run at once; order is kept.
+  const read = await mapConcurrent(
+    at >= 0 ? records.slice(at) : records,
+    TRANSCRIPT_READ_CONCURRENCY,
+    async (record) => {
+      const events = (await readIndexed(deps, record.sessionId)).filter(
+        (e) =>
+          (since === undefined || e.event.meta.at >= since) &&
+          !(cursor && at >= 0 && record.sessionId === cursor.sessionId && e.index <= cursor.index),
+      );
+      return events.length > 0 ? transcriptOf(record, events) : undefined;
+    },
+  );
+  const sessions = read.filter((s): s is ClientTranscriptSession => s !== undefined);
   return { sessions };
 }
 

@@ -68,7 +68,8 @@ import {
   publishClientNotifier,
 } from "@alexkroman1/aai/host-internal";
 import { createOwnedMap, requestQuery } from "@alexkroman1/aai/internal";
-import { createKeyedLock, omitUndefined, withLock } from "@alexkroman1/aai/utils";
+import { InboxClientFrameSchema, type InboxServerFrame } from "@alexkroman1/aai/protocol";
+import { createKeyedLock, omitUndefined, safeJsonParse, withLock } from "@alexkroman1/aai/utils";
 import type { RawData, WebSocket } from "ws";
 import { type ClientEventFrame, publishClientEventFeed } from "./client-event-feed.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -137,6 +138,8 @@ function settled(outcomes: readonly Outcome[]): Outcome {
 export function createClientInbox(options: { logger: Logger; pingMs?: number }): ClientInbox {
   const { logger } = options;
   const holders = createOwnedMap<string, Holder>();
+  /** The same holders indexed by client, so a send touches only that client's. */
+  const byClient = new Map<string, Set<Holder>>();
   /** Each client's send chain: one notice in flight per client, across its holders. */
   const queues = createKeyedLock();
 
@@ -154,22 +157,18 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
 
   /** The open holders of `clientId`. */
   function openHolders(clientId: string): Holder[] {
-    return [...holders.values()].filter(
-      (holder) => holder.clientId === clientId && holder.socket.readyState === holder.socket.OPEN,
-    );
+    const own = byClient.get(clientId);
+    if (!own) return [];
+    return [...own].filter((holder) => holder.socket.readyState === holder.socket.OPEN);
   }
 
   function onMessage(holder: Holder, data: RawData): void {
-    let msg: { type?: unknown; id?: unknown };
-    try {
-      msg = JSON.parse(data.toString());
-    } catch {
-      return;
-    }
+    const parsed = InboxClientFrameSchema.safeParse(safeJsonParse(data.toString()));
+    if (!parsed.success) return;
+    const msg = parsed.data;
     const pending = holder.pending;
     if (!pending || msg.id !== pending.id) return; // a late answer to a settled send
-    if (msg.type === "ack") pending.settle("acked");
-    else if (msg.type === "busy") pending.settle("busy");
+    pending.settle(msg.type === "ack" ? "acked" : "busy");
   }
 
   function attach(socket: WebSocket, rawUrl: string | undefined): void {
@@ -191,6 +190,8 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     const holder: Holder = { clientId, socket, alive: true, events: query.get("events") === "1" };
     // The claim's own release, so this socket's close can never evict a successor.
     const release = holders.claim(key, holder);
+    const own = byClient.get(clientId) ?? new Set<Holder>();
+    byClient.set(clientId, own.add(holder));
     const label = holderId === DEFAULT_HOLDER ? clientId : `${clientId}/${holderId}`;
     logger.info(`inbox: ${label} connected${holder.events ? " (events)" : ""}`);
     socket.on("pong", () => {
@@ -203,6 +204,10 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     socket.on("close", () => {
       holder.pending?.settle("disconnected");
       release();
+      // A client's set is only ever dropped once empty, so `own` is still the
+      // one indexed under it: nothing to guard against a successor here.
+      own.delete(holder);
+      if (own.size === 0) byClient.delete(clientId);
       logger.info(`inbox: ${label} disconnected`);
     });
     socket.on("error", () => socket.terminate());
@@ -230,7 +235,7 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     const pending: Pending = { id: notice.id, settle };
     holder.pending = pending;
     const audio = notice.audio ?? new Uint8Array(0);
-    const header = {
+    const header: InboxServerFrame = {
       type: "notice",
       id: notice.id,
       event: notice.event,
@@ -291,7 +296,9 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     });
   };
 
-  function feed(clientId: string, frame: ClientEventFrame): void {
+  function feed(clientId: string, event: ClientEventFrame): void {
+    // Typed as the wire's own union, so a feed frame cannot drift from it.
+    const frame: InboxServerFrame = event;
     let json: string | undefined;
     for (const holder of openHolders(clientId)) {
       if (!holder.events || holder.socket.bufferedAmount > INBOX_EVENT_BUFFER_LIMIT_BYTES) continue;
@@ -303,12 +310,13 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
   return {
     attach,
     notify,
-    connected: () => [...new Set([...holders.values()].map((h) => h.clientId))],
+    connected: () => [...byClient.keys()],
     feed,
     close() {
       clearInterval(pinger);
       for (const holder of holders.values()) holder.socket.terminate();
       holders.clear();
+      byClient.clear();
     },
   };
 }

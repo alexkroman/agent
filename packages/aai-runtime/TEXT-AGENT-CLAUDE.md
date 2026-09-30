@@ -369,9 +369,10 @@ case then measures the deadline instead of the agent. `workflows` supplies
 
 **Who is calling is recorded where a connection records it.** `clientId`,
 `phone` and `call` (on `EvalSessionOptions`, so per suite, and on
-`EvalCaseOptions` per case) go through `setSessionClient`/`setSessionPhone`/
-`setSessionCall` under the session id before the session is built — the point
-`ws-handler.ts` and `telephony-server.ts` record them — so `sessionClientId`,
+`EvalCaseOptions` per case) go through `recordSessionIdentity` (the
+runtime's one identity writer) under the session id before the session is
+built — the point `ws-handler.ts` and `telephony-server.ts` record them — so
+`sessionClientId`,
 `sessionCall`, `sessionContext`'s args, `onSessionEnd` and the client binding
 all read the same values (`eval/_session-identity.ts`). A downstream suite had
 wrapped `sessionContext` to hand it a fake `call`, which reached the hook and

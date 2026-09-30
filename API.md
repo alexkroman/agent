@@ -120,6 +120,12 @@ export interface ChannelPayload {
 }
 
 // @public
+export interface ChannelRegistration {
+    readonly credentialFields?: readonly string[];
+    readonly refusal?: (body: string) => string | undefined;
+}
+
+// @public
 export interface ChannelSection {
     readonly body?: string;
     readonly bullets?: readonly string[];
@@ -147,10 +153,10 @@ export function isSlackWebhookUrl(value: string): boolean;
 export function isSlackWorkflowTriggerUrl(url: string): boolean;
 
 // @public
-export function registerChannelHandler(handler: ChannelHandler): void;
+export function registerChannelHandler(handler: ChannelHandler, registration?: ChannelRegistration): void;
 
 // @public
-export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
+export function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O, registration?: ChannelRegistration): void;
 
 // @public
 export function registeredChannelKindNames(): readonly string[];
@@ -298,6 +304,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -1075,6 +1082,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -2380,9 +2388,6 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 export function createDetachedSlotStore(): SlotStore;
 
 // @internal
-export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch;
-
-// @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 // @internal
@@ -2518,6 +2523,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -2745,6 +2751,14 @@ export type OpenUpload = {
 // @public
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
 
+// @public
+export function parseJsonText(text: string | undefined): {
+    readonly json: unknown;
+} | undefined;
+
+// @public
+export function parseRouteKey(key: string): RouteKey;
+
 // @internal
 export const pinnedFetch: typeof globalThis.fetch;
 
@@ -2874,6 +2888,20 @@ export function readRouteError(err: unknown): {
 export function readRouteResponse(value: unknown): RouteResponse | undefined;
 
 // @public
+export function recordFetchRequest(request: Request): Promise<RequestRecord>;
+
+// @internal
+export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
+
+// @public
+export type RequestRecord = {
+    readonly url: string;
+    readonly method: string;
+    readonly headers: Record<string, string>;
+    readonly text: string | undefined;
+};
+
+// @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @public
@@ -2979,11 +3007,39 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @public
+export type RouteKey = {
+    readonly key: string;
+    readonly method: string | undefined;
+    readonly where: string;
+};
+
+// @public
+export function routeKeyMatches(key: RouteKey | string, method: string, url: URL): boolean;
+
+// @public
+export function routeKeySpecificity(input: RouteKey): number;
+
+// @public
+export type RouteMatch<V> = {
+    readonly key: string;
+    readonly value: V;
+};
+
 // @public @sealed
 interface RouteResponse {
     readonly body: unknown;
     readonly status: number;
 }
+
+// @public
+export type RouteTable<V> = {
+    match(method: string, url: URL): RouteMatch<V>[];
+    best(method: string, url: URL): RouteMatch<V> | undefined;
+};
+
+// @public
+export function routeTable<V>(table: Readonly<Record<string, V>>): RouteTable<V>;
 
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
@@ -3065,6 +3121,14 @@ export type SessionEnder = (options: {
     afterReply: boolean;
 }) => void;
 
+// @internal
+export type SessionIdentity = {
+    clientId?: string | undefined;
+    location?: string | undefined;
+    phone?: string | undefined;
+    call?: SessionCall | undefined;
+};
+
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
 
@@ -3123,7 +3187,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 // @internal
-export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch, extraCredentialHeaders?: readonly string[]): Promise<Response>;
+export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
 export interface StandardSchemaIssue {
@@ -4137,6 +4201,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -5676,6 +5741,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -5685,6 +5751,15 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @internal
+export type GlobalSlot<T> = {
+    get(): T | undefined;
+    set(value: T | undefined): void;
+};
+
+// @internal
+export function globalSlot<T>(key: string): GlobalSlot<T>;
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;
@@ -6519,6 +6594,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -7809,6 +7885,39 @@ export const HostConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export type InboxClientFrame = z.infer<typeof InboxClientFrameSchema>;
+
+// @public
+export const InboxClientFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"ack">;
+    id: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"busy">;
+    id: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
+export type InboxServerFrame = z.infer<typeof InboxServerFrameSchema>;
+
+// @public
+export const InboxServerFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"notice">;
+    id: z.ZodString;
+    event: z.ZodString;
+    data: z.ZodOptional<z.ZodUnknown>;
+    bytes: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_event">;
+    sessionId: z.ZodString;
+    event: z.ZodObject<{
+        type: z.ZodString;
+    }, z.core.$loose>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_ended">;
+    sessionId: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
 export function lenientParse<T>(schema: z.ZodType<T>, json: unknown, knownTypes?: ReadonlySet<string>): {
     ok: true;
     data: T;
@@ -8325,6 +8434,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -9851,6 +9961,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -10965,6 +11076,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -11968,6 +12080,7 @@ export type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -14194,7 +14307,9 @@ export type SessionEventStream = {
     append(sessionId: string, body: SessionEventBody): SessionEvent;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string): Promise<void>;
+    flush(sessionId: string, options?: {
+        final?: boolean;
+    }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
     discard(sessionId: string): void;
     clear(): void;
@@ -15055,7 +15170,9 @@ type SessionEventStream = {
     append(sessionId: string, body: SessionEventBody): SessionEvent;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string): Promise<void>;
+    flush(sessionId: string, options?: {
+        final?: boolean;
+    }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
     discard(sessionId: string): void;
     clear(): void;
@@ -15079,6 +15196,7 @@ export type SessionStateBackend = {
     discard(sessionId: string): Promise<void>;
     bindClient?: ClientSessionLog["bindClient"];
     clientSessions?: ClientSessionLog["clientSessions"];
+    settle?(sessionId: string): Promise<void>;
     appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
     readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
     countEvents(sessionId: string): Promise<number>;

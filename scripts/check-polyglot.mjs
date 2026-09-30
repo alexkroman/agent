@@ -31,12 +31,13 @@
  * that silently matched nothing would otherwise report every file clean.
  */
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { basename, join } from "node:path";
 import process from "node:process";
 
 import { parseScriptArgs } from "./_args.mjs";
 import { repoRoot } from "./_fs.mjs";
+import { git } from "./_ratchet.mjs";
 
 const GATE = "check:polyglot";
 const ROOT = repoRoot(import.meta.url);
@@ -170,9 +171,7 @@ function extensionOf(file) {
   return name.slice(dot + 1);
 }
 
-const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8" })
-  .split("\0")
-  .filter(Boolean);
+const tracked = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter(Boolean);
 
 let failed = false;
 

@@ -163,10 +163,11 @@ model at an internal endpoint inside a container with nothing internal.
 - `resolveAndAssertPublic()` uses `bogon`; handles IPv4-mapped IPv6
   (`::ffff:127.0.0.1`); blocks `.internal`, `.local`, cloud-metadata hostnames
   and non-HTTP(S).
-- Re-validates every redirect hop; strips credential headers once a redirect
-  leaves the origin. A caller whose credential header has a vendor name
-  (`x-api-key` on an MCP server) names it via `credentialSafeFetch`, which
-  strips those too.
+- Re-validates every redirect hop; once a redirect leaves the origin, drops
+  EVERY caller header except `accept`, `accept-language`, `content-type` and
+  `user-agent` — a vendor credential header (`x-api-key`, `x-goog-api-key`)
+  has no name the screen could list. See "Redirects" in
+  `packages/aai/src/host/CLAUDE.md`.
 - **Pins the IP via an undici dispatcher `lookup`, never by rewriting the URL
   hostname** (breaks SNI/cert verification). Keep the URL intact.
 - **Dispatcher and `fetch` must come from the same undici**: `safeFetch` routes

@@ -10,7 +10,7 @@ import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import { createWorkflowClient } from "./client.ts";
-import { cancelAllByKey, findByKeyAcross } from "./client-keyed.ts";
+import { cancelAllByKey, findByKeyAcross, type KeyedReadScope, keyedFind } from "./client-keyed.ts";
 import { createWorkflowEngine } from "./engine.ts";
 import { createMemoryJournal } from "./journal/backends/memory.ts";
 import {
@@ -19,6 +19,7 @@ import {
   MAX_WORKFLOW_FIND_LIMIT,
 } from "./keys.ts";
 import { createMemoryStreams } from "./streams.ts";
+import type { WdkAdapter, WdkRunRecord } from "./wdk-types.ts";
 
 const runs: Record<string, WorkflowRunSnapshot[]> = {
   remind: [
@@ -45,7 +46,12 @@ describe("findByKeyAcross", () => {
   test("merges every workflow's runs for the key, newest first", async () => {
     const merged = await findByKeyAcross(Object.keys(runs), find, "speaker-1");
     expect(merged.map((r) => r.runId)).toEqual(["r2", "s1", "r1"]);
-    expect(find).toHaveBeenCalledWith("remind", "speaker-1", DEFAULT_WORKFLOW_FIND_LIMIT);
+    expect(find).toHaveBeenCalledWith(
+      "remind",
+      "speaker-1",
+      DEFAULT_WORKFLOW_FIND_LIMIT,
+      expect.objectContaining({ withOutput: true }),
+    );
   });
 
   test("filters by since (number or Date) and by statuses", async () => {
@@ -68,7 +74,12 @@ describe("findByKeyAcross", () => {
     const merged = await findByKeyAcross(Object.keys(runs), find, "k", { limit: 2 });
     expect(merged.map((r) => r.runId)).toEqual(["r2", "s1"]);
     await findByKeyAcross(["remind"], find, "k", { limit: 10_000 });
-    expect(find).toHaveBeenLastCalledWith("remind", "k", MAX_WORKFLOW_FIND_LIMIT);
+    expect(find).toHaveBeenLastCalledWith(
+      "remind",
+      "k",
+      MAX_WORKFLOW_FIND_LIMIT,
+      expect.anything(),
+    );
   });
 
   test("breaks a createdAt tie by run id, newest id first", async () => {
@@ -77,6 +88,87 @@ describe("findByKeyAcross", () => {
       createRunSnapshot({ runId: "b", createdAt: 1 }),
     ]);
     expect((await findByKeyAcross(["w"], tie, "k")).map((r) => r.runId)).toEqual(["b", "a"]);
+  });
+});
+
+describe("findByKeyAcross's read scope", () => {
+  const raw = (over: Partial<WdkRunRecord>): WdkRunRecord => ({
+    runId: "r",
+    workflowName: "remind",
+    status: "completed",
+    createdAt: 0,
+    ...over,
+  });
+
+  test("hands find the since/statuses filters as a RAW-record predicate", async () => {
+    let scope: KeyedReadScope | undefined;
+    const spy = vi.fn(async (_w: string, _k: string, _l: number, s?: KeyedReadScope) => {
+      scope = s;
+      return [];
+    });
+    await findByKeyAcross(["remind"], spy, "k", { since: new Date(200), statuses: ["running"] });
+    const keep = scope?.keep ?? (() => true);
+    expect(keep(raw({ status: "running", createdAt: new Date(250) }))).toBe(true);
+    expect(keep(raw({ status: "running", createdAt: 150 }))).toBe(false);
+    expect(keep(raw({ status: "completed", createdAt: 300 }))).toBe(false);
+  });
+
+  test("withOutput: false reaches find; omitted, output is read", async () => {
+    await findByKeyAcross(["remind"], find, "k", { withOutput: false });
+    expect(find).toHaveBeenLastCalledWith(
+      "remind",
+      "k",
+      DEFAULT_WORKFLOW_FIND_LIMIT,
+      expect.objectContaining({ withOutput: false }),
+    );
+  });
+});
+
+describe("keyedFind", () => {
+  const records: Record<string, WdkRunRecord> = {
+    old: { runId: "old", workflowName: "remind", status: "completed", createdAt: 100 },
+    now: { runId: "now", workflowName: "remind", status: "completed", createdAt: 300 },
+  };
+
+  function build() {
+    const keys = createMemoryKeyStore();
+    const getRun = vi.fn(async (id: string) => records[id]);
+    const toSnapshot = vi.fn(async (r: WdkRunRecord, key: string, withOutput?: boolean) =>
+      createRunSnapshot({
+        runId: r.runId,
+        key,
+        status: "completed",
+        output: withOutput === false ? undefined : "read",
+      }),
+    );
+    return {
+      keys,
+      getRun,
+      toSnapshot,
+      find: keyedFind({ keys, wdk: { getRun }, toSnapshot, concurrency: 2 }),
+    };
+  }
+
+  test("drops a record the scope rejects BEFORE it is snapshotted", async () => {
+    const { keys, toSnapshot, find: findOne } = build();
+    await keys.record("remind", "k", "old");
+    await keys.record("remind", "k", "now");
+    await keys.record("remind", "k", "gone");
+    const found = await findOne("remind", "k", 10, {
+      keep: (r) => Number(r.createdAt) >= 200,
+      withOutput: false,
+    });
+    expect(found.map((r) => r.runId)).toEqual(["now"]);
+    expect(toSnapshot).toHaveBeenCalledTimes(1);
+    expect(toSnapshot).toHaveBeenCalledWith(records.now, "k", false);
+  });
+
+  test("with no scope, every record that exists is snapshotted with its output", async () => {
+    const { keys, toSnapshot, find: findOne } = build();
+    await keys.record("remind", "k", "old");
+    await keys.record("remind", "k", "gone");
+    expect((await findOne("remind", "k", 10)).map((r) => r.runId)).toEqual(["old"]);
+    expect(toSnapshot).toHaveBeenCalledWith(records.old, "k", undefined);
   });
 });
 
@@ -134,6 +226,41 @@ describe("ctx.workflows over a real engine", () => {
     expect(new Set(found.map((r) => r.runId))).toEqual(new Set([a, b]));
     expect(found.every((r) => r.key === "speaker-1")).toBe(true);
     expect(await workflows.findByKey("speaker-1", { statuses: ["completed"] })).toEqual([]);
+  });
+
+  test("findByKey withOutput: false leaves a completed run's output unread", async () => {
+    // An adapter whose record carries no `output`, so reading one is a
+    // `readOutput` round trip — the cost the option exists to skip.
+    const readOutput = vi.fn(async () => "said");
+    const getRun = vi.fn(
+      async (runId: string): Promise<WdkRunRecord> => ({
+        runId,
+        workflowName: "remind",
+        status: runId === "done" ? "completed" : "running",
+        createdAt: runId === "done" ? 100 : 200,
+      }),
+    );
+    const keys = createMemoryKeyStore();
+    await keys.record("remind", "speaker-1", "done");
+    await keys.record("remind", "speaker-1", "live");
+    const workflows = createWorkflowClient({
+      workflows: { remind, research },
+      keys,
+      wdk: { getRun, readOutput } as Partial<WdkAdapter> as WdkAdapter,
+      logger: silentLogger,
+    });
+    const full = await workflows.findByKey("speaker-1");
+    expect(readOutput).toHaveBeenCalledOnce();
+    const lean = await workflows.findByKey("speaker-1", { withOutput: false });
+    expect(readOutput).toHaveBeenCalledOnce();
+    expect(lean).toEqual(
+      full.map((r) => (r.status === "completed" ? { ...r, output: undefined } : r)),
+    );
+    // A filter that rejects the completed run keeps its output unread even by default.
+    readOutput.mockClear();
+    const running = await workflows.findByKey("speaker-1", { statuses: ["running"] });
+    expect(running.map((r) => r.runId)).toEqual(["live"]);
+    expect(readOutput).not.toHaveBeenCalled();
   });
 
   test("cancelAll cancels the key's unfinished runs of one workflow and counts them", async () => {

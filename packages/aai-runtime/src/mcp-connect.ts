@@ -62,7 +62,8 @@
  * option (`'error'` by default) never takes effect, because `ssrfSafeFetch`
  * rewrites the request to `redirect: "manual"` and walks the hops itself —
  * which is the stronger behaviour of the two, since it re-screens each target
- * and strips credentials at the origin boundary rather than refusing outright.
+ * and strips every non-safelisted header at the origin boundary rather than
+ * refusing outright.
  *
  * ## A failure here is one SERVER's failure
  *
@@ -73,7 +74,7 @@
  * going.
  */
 
-import { credentialSafeFetch, safeFetch } from "@alexkroman1/aai/host-internal";
+import { safeFetch } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { ToolSet } from "ai";
 import pTimeout from "p-timeout";
@@ -279,9 +280,8 @@ export async function openMcpSession(
     headers.authorization = `Bearer ${server.token}`;
   }
   // An author header may be a credential this client cannot recognise by name
-  // (`x-api-key`), so every one of them gets `authorization`'s redirect rule.
-  const authored = Object.keys(server.headers ?? {});
-  const screened = authored.length > 0 ? credentialSafeFetch(authored) : safeFetch;
+  // (`x-api-key`): `safeFetch` drops every caller header outside a short
+  // safelist once a redirect leaves the server's origin, so none is replayed.
   const budget = options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
   const createMCPClient = await loadCreateMcpClient();
   const connecting = createMCPClient({
@@ -289,7 +289,7 @@ export async function openMcpSession(
       type: "http",
       url: server.url,
       headers,
-      fetch: options.fetch ?? screened,
+      fetch: options.fetch ?? safeFetch,
     },
     clientName: MCP_CLIENT_NAME,
     version: MCP_CLIENT_VERSION,

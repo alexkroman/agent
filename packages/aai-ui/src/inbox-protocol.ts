@@ -3,11 +3,11 @@
  * The browser half of the `WS /inbox` wire, without the socket: frames in, what
  * to play and what to answer out.
  *
- * The server half is `aai-runtime`'s `client-inbox.ts`, and the wire is
- * documented once, in `stepNotifyClient`'s module doc (`@alexkroman1/aai/step`):
- * a notice is a JSON header `{type:"notice", id, event, data?, bytes}` followed
- * by `bytes` of audio in binary frames, and the client answers
- * `{type:"ack", id}` or `{type:"busy", id}`. What this module adds are the
+ * The server half is `aai-runtime`'s `client-inbox.ts`, and the frames are
+ * declared once, as `InboxServerFrame` / `InboxClientFrame` on
+ * `@alexkroman1/aai/protocol`, which both ends are typed against: a notice
+ * header followed by `bytes` of audio in binary frames, answered with an ack or
+ * a busy. What this module adds are the
  * CLIENT's rules, which the wire cannot state and which a firmware client
  * (`inbox.c` on an ESP32 speaker) worked out first:
  *
@@ -34,7 +34,12 @@
  * by {@link parseInboxEvent}.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import {
+  type InboxClientFrame,
+  type InboxServerFrame,
+  InboxServerFrameSchema,
+} from "@alexkroman1/aai/protocol";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /**
  * One notice from the agent — what a workflow step sent with
@@ -82,27 +87,25 @@ export const MAX_NOTICE_BYTES = 60 * 16_000 * 2;
 /** How many acked ids are remembered to drop a repeat — the firmware's `RECENT_IDS`. */
 export const RECENT_NOTICE_IDS = 8;
 
-/** A notice header this client can take. */
-export type NoticeHeader = {
-  id: string;
-  event: string;
-  data?: Record<string, unknown>;
-  bytes: number;
-};
+/** The wire's notice header, as the server sends it. */
+type NoticeFrame = Extract<InboxServerFrame, { type: "notice" }>;
 
-/** What the client answers. */
-export type NoticeReply = { type: "ack" | "busy"; id: string };
+/**
+ * A notice header this client can take: the wire's, minus its `type`, with
+ * `data` kept only when it is an object.
+ */
+export type NoticeHeader = Omit<NoticeFrame, "type" | "data"> & { data?: Record<string, unknown> };
+
+/** What the client answers — the wire's client→server frame. */
+export type NoticeReply = InboxClientFrame;
 
 /** What one frame produced: a notice to play (not for a repeat), and the reply. */
 export type AssemblerOutput = { notice?: InboxNotice; reply: NoticeReply };
 
-/** Parse a text frame as JSON, or undefined. */
-function parseJson(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return undefined;
-  }
+/** Parse a text frame as one of the wire's server frames, or undefined. */
+function parseServerFrame(json: string): InboxServerFrame | undefined {
+  const parsed = InboxServerFrameSchema.safeParse(safeJsonParse(json));
+  return parsed.success ? parsed.data : undefined;
 }
 
 /**
@@ -111,29 +114,22 @@ function parseJson(json: string): unknown {
  * than {@link MAX_NOTICE_BYTES}).
  */
 export function parseNoticeHeader(json: string): NoticeHeader | undefined {
-  const msg = parseJson(json);
-  if (!isRecord(msg)) return;
-  const { type, id, event, data, bytes } = msg;
-  if (type !== "notice" || typeof id !== "string" || !id || typeof event !== "string") return;
-  if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) return;
+  const frame = parseServerFrame(json);
+  if (frame?.type !== "notice") return;
+  const { id, event, data, bytes } = frame;
   if (bytes > MAX_NOTICE_BYTES || bytes % 2 !== 0) return;
   return isRecord(data) ? { id, event, bytes, data } : { id, event, bytes };
 }
 
-/** A live-event frame, or undefined for anything else (a notice header, say). */
+/**
+ * A live-event frame, or undefined for anything else (a notice header, say).
+ * The wire's live frames are returned as the published {@link InboxEvent}, so
+ * that view cannot drift from what the server sends without this failing to
+ * compile.
+ */
 export function parseInboxEvent(json: string): InboxEvent | undefined {
-  const msg = parseJson(json);
-  if (!isRecord(msg) || typeof msg.sessionId !== "string") return;
-  if (msg.type === "session_ended") return { type: "session_ended", sessionId: msg.sessionId };
-  const { event } = msg;
-  if (msg.type === "session_event" && isRecord(event) && typeof event.type === "string") {
-    return {
-      type: "session_event",
-      sessionId: msg.sessionId,
-      event: event as { type: string } & Record<string, unknown>,
-    };
-  }
-  return undefined;
+  const frame = parseServerFrame(json);
+  return frame === undefined || frame.type === "notice" ? undefined : frame;
 }
 
 /** The notice being received: its header, the chunks so far, and whether it plays. */

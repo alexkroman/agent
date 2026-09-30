@@ -7,10 +7,12 @@
  * @module composio-api
  */
 
+import { redactCredentials } from "./channels/shared/outbox.ts";
 import { isRecord } from "./is-record.ts";
 import { HttpError, type JsonClient, jsonClient } from "./json-client.ts";
 import type { McpServerConfig } from "./mcp-config.ts";
 import { requireEnv } from "./require-env.ts";
+import { safeJsonParse } from "./safe-json-parse.ts";
 import type { EnvContext } from "./step-env.ts";
 
 /** Composio's REST v3.1 base URL — the default {@link ComposioOptions.baseUrl}. @public */
@@ -223,20 +225,25 @@ export function composioErrorMessage(body: unknown): string | undefined {
 }
 
 /**
- * `err` with every occurrence of `key` replaced in its message and body — or
- * `err` itself when neither carries it. Rebuilt WITHOUT a `cause`: the cause
- * would carry the unredacted original.
+ * `err` with the key redacted from its message and body — or `err` itself when
+ * neither changes. Rebuilt WITHOUT a `cause`: the cause would carry the
+ * unredacted original.
+ *
+ * `redactCredentials` (the channel send path's scrub) rather than a split on
+ * the raw key: it also catches the key URL-encoded or trimmed, and a
+ * secret-named query parameter (`?api_key=`) in a URL Composio quotes back.
  */
 function redacted(err: unknown, key: string): unknown {
   if (!(err instanceof HttpError) || key === "") return err;
   const text = err.body === undefined ? undefined : JSON.stringify(err.body);
-  if (!(err.message.includes(key) || text?.includes(key))) return err;
-  const scrub = (t: string) => t.split(key).join("[redacted]");
-  return new HttpError(
-    err.status,
-    scrub(err.message),
-    text === undefined ? undefined : JSON.parse(scrub(text)),
-  );
+  const scrub = (t: string) => redactCredentials([key], t);
+  const message = scrub(err.message);
+  const body = text === undefined ? undefined : scrub(text);
+  if (message === err.message && body === text) return err;
+  // The query-parameter pass can cut a JSON escape (`?key=…\"`), so a body
+  // that no longer parses is kept as the scrubbed TEXT rather than thrown on.
+  const parsed = body === undefined || body === text ? err.body : (safeJsonParse(body) ?? body);
+  return new HttpError(err.status, message, parsed);
 }
 
 /**

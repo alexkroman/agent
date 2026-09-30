@@ -6,12 +6,21 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { slackChannel } from "../slack.ts";
 import { textbeltChannel } from "../textbelt.ts";
 import { type ChannelOutbox, publishChannelOutbox, publishedChannelOutbox } from "./outbox.ts";
-import { type ChannelFetch, postToChannel } from "./send.ts";
+import { type ChannelFetch, postToChannel, registerChannelHandler } from "./send.ts";
 
 afterEach(() => publishChannelOutbox(undefined));
 
 const textbelt = textbeltChannel({ key: "textbelt-test-key", to: "+15555550123" });
 const SLACK_WEBHOOK = "https://hooks.slack.com/services/T000/B000/secret-part";
+
+/** A channel whose body carries a field named `key` that is NOT a secret. */
+const keyBodyHandler = {
+  render: (message: { text: string }, options: Record<string, unknown>) => ({
+    url: "https://notify.test/post",
+    body: { key: "message-data", token: options.token, text: message.text },
+  }),
+  advice: (_options: Record<string, unknown>, detail: string) => detail,
+};
 
 function okFetch() {
   return vi.fn<ChannelFetch>(async () => new Response('{"success":true}', { status: 200 }));
@@ -57,6 +66,33 @@ describe("postToChannel with an outbox published", () => {
       throw new Error("disk full");
     });
     await expect(postToChannel(textbelt, { text: "hi" }, okFetch())).rejects.toThrow("disk full");
+  });
+
+  test("a third-party channel's declared secret is stripped; an undeclared `key` is kept", async () => {
+    registerChannelHandler(
+      { kind: "test-notify-secret", ...keyBodyHandler },
+      { credentialFields: ["token"] },
+    );
+    const sink = vi.fn<ChannelOutbox>();
+    publishChannelOutbox(sink);
+    await postToChannel(
+      { kind: "test-notify-secret", options: { token: "tok-123" } },
+      { text: "hi" },
+      okFetch(),
+    );
+    expect(sink.mock.calls[0]?.[0].body).toEqual({ key: "message-data", text: "hi" });
+  });
+
+  test("a kind that declares no credential field has nothing stripped", async () => {
+    registerChannelHandler({ kind: "test-notify-plain", ...keyBodyHandler });
+    const sink = vi.fn<ChannelOutbox>();
+    publishChannelOutbox(sink);
+    await postToChannel(
+      { kind: "test-notify-plain", options: { token: "t" } },
+      { text: "hi" },
+      okFetch(),
+    );
+    expect(sink.mock.calls[0]?.[0].body).toEqual({ key: "message-data", token: "t", text: "hi" });
   });
 
   test("unpublishing restores the real post", async () => {

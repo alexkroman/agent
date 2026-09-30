@@ -12,15 +12,13 @@
  * @module _testing-context
  */
 
+import { recordSessionIdentity } from "./_session-identity-store.ts";
 import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
-import { type SessionCall, setSessionCall } from "./session-call.ts";
-import { setSessionClient } from "./session-client.ts";
+import type { SessionCall } from "./session-call.ts";
 import { claimSessionEnder } from "./session-end.ts";
-import { setSessionLocation } from "./session-location.ts";
-import { setSessionPhone } from "./session-phone.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
 import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
@@ -204,14 +202,15 @@ export type ToolContextOverrides = {
   clientId?: string | undefined;
   /**
    * The phone number this session's client reported, as `sessionClientPhone(ctx)`
-   * will read it — recorded as given (no E.164 check: that is the upgrade's job).
-   * Omitted, `sessionClientPhone` answers `undefined`.
+   * will read it — recorded the way the runtime records `?phone=`, in E.164
+   * (`"+1 (503) 555-0123"` reads back `"+15035550123"`). Omitted, or not an
+   * E.164 number at all, `sessionClientPhone` answers `undefined`.
    */
   clientPhone?: string | undefined;
   /**
    * Where this session's client is, as `sessionClientLocation(ctx)` — and the
-   * `google_places` / `open_meteo` builtins — will read it. Omitted, it answers
-   * `undefined`.
+   * `google_places` / `open_meteo` builtins — will read it, cleaned by the
+   * `?location=` rule. Omitted, or refused by it, it answers `undefined`.
    */
   clientLocation?: string | undefined;
   /**
@@ -478,10 +477,9 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     desk: deskFake,
     ...omitUndefined(rest),
   };
-  if (clientId !== undefined) setSessionClient(ctx.sessionId, clientId);
-  if (clientPhone !== undefined) setSessionPhone(ctx.sessionId, clientPhone);
-  if (clientLocation !== undefined) setSessionLocation(ctx.sessionId, clientLocation);
-  if (call !== undefined) setSessionCall(ctx.sessionId, call);
+  // The runtime's own recorder, so each field is normalized as a socket's is.
+  const identity = { clientId, phone: clientPhone, location: clientLocation, call };
+  recordSessionIdentity(ctx.sessionId, identity);
   // Registered for EVERY context, so `endSession(ctx)` answers `true` here the
   // way it does on a live session and the spec reads what was asked with
   // `endSessionCalls(ctx)`. Never released: the context outlives nothing, and a

@@ -103,5 +103,24 @@ export function sessionStateClientConformance(arm: SessionStateArm): void {
       const since = await backend.clientSessions?.(client, { since: cutoff, limit: 10 });
       expect(since?.map((s) => s.sessionId)).toEqual([active]);
     });
+
+    test("a SETTLED session's `since` covers its last append, however soon after the first", async () => {
+      // The Postgres backend throttles the touch (`client-touch.ts`), so the
+      // second append here is skipped while live; `settle` is the stop that
+      // must write it. A backend without `settle` must be exact already.
+      const backend = arm.backend();
+      const client = clientOf(arm);
+      const sessionId = arm.uid();
+      await backend.bindClient?.(sessionId, client);
+      await backend.appendEvents(sessionId, [at(0)]);
+      await tick();
+      const cutoff = Date.now();
+      await tick();
+      await backend.appendEvents(sessionId, [at(1)]);
+      await backend.settle?.(sessionId);
+
+      const since = await backend.clientSessions?.(client, { since: cutoff, limit: 10 });
+      expect(since?.map((s) => s.sessionId)).toEqual([sessionId]);
+    });
   });
 }

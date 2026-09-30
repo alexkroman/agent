@@ -14,13 +14,14 @@
  * file is near the length cap, and this is one decision with its own test.
  */
 
+// The one spelling of a redacted credential, shared with the channel send
+// path's scrub (`redactCredentials`) so a spoken reason and a stored channel
+// error read the same.
+import { REDACTED } from "./channels/shared/outbox.ts";
 import { isRecord } from "./is-record.ts";
 
 /** The default {@link SpokenErrorReasonOptions.max}. */
 const DEFAULT_MAX_CHARS = 160;
-
-/** What a credential is replaced with. */
-const REDACTED = "[redacted]";
 
 /** What {@link spokenErrorReason} says when nothing sayable is left. */
 const FALLBACK_REASON = "something went wrong";

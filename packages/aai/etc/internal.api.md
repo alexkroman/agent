@@ -146,6 +146,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -155,6 +156,15 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @internal
+export type GlobalSlot<T> = {
+    get(): T | undefined;
+    set(value: T | undefined): void;
+};
+
+// @internal
+export function globalSlot<T>(key: string): GlobalSlot<T>;
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;

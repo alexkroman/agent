@@ -244,6 +244,39 @@ export const HostConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export type InboxClientFrame = z.infer<typeof InboxClientFrameSchema>;
+
+// @public
+export const InboxClientFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"ack">;
+    id: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"busy">;
+    id: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
+export type InboxServerFrame = z.infer<typeof InboxServerFrameSchema>;
+
+// @public
+export const InboxServerFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"notice">;
+    id: z.ZodString;
+    event: z.ZodString;
+    data: z.ZodOptional<z.ZodUnknown>;
+    bytes: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_event">;
+    sessionId: z.ZodString;
+    event: z.ZodObject<{
+        type: z.ZodString;
+    }, z.core.$loose>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_ended">;
+    sessionId: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
 export function lenientParse<T>(schema: z.ZodType<T>, json: unknown, knownTypes?: ReadonlySet<string>): {
     ok: true;
     data: T;

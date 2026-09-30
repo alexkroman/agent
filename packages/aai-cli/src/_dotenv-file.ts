@@ -24,7 +24,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CliError } from "./_output.ts";
-import { errorCode } from "./_utils.ts";
+import { readTextIfPresent, writeFileAtomic } from "./_utils.ts";
 
 /** A name `parseEnv` and a shell both accept. */
 export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -114,41 +114,27 @@ export function localEnvPath(cwd: string): string {
   return path.join(cwd, ".env");
 }
 
-async function readIfPresent(file: string): Promise<string | undefined> {
-  try {
-    return await fs.readFile(file, "utf-8");
-  } catch (err) {
-    if (errorCode(err) === "ENOENT") return undefined;
-    throw err;
-  }
-}
-
-/**
- * Write through a temp file and a rename, so a crash mid-write cannot leave a
- * truncated `.env` — the file is the only copy of a local credential.
- */
-async function writeKeepingMode(file: string, text: string, mode: number): Promise<void> {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, text, { mode });
-  await fs.chmod(tmp, mode);
-  await fs.rename(tmp, file);
-}
+// Writes go through `writeFileAtomic` (temp file + rename), so a crash
+// mid-write cannot leave a truncated `.env` — the file is the only copy of a
+// local credential.
 
 /** Set `name` in `<cwd>/.env`, creating the file (0600) if needed. */
 export async function putLocalSecret(cwd: string, name: string, value: string): Promise<string> {
   const file = localEnvPath(cwd);
-  const existing = await readIfPresent(file);
+  const existing = await readTextIfPresent(file);
   const mode = existing === undefined ? 0o600 : (await fs.stat(file)).mode & 0o777;
-  await writeKeepingMode(file, upsertEnv(existing ?? "", name, value), mode);
+  await writeFileAtomic(file, upsertEnv(existing ?? "", name, value), { mode });
   return file;
 }
 
 /** Remove `name` from `<cwd>/.env`; `false` when it was not there. */
 export async function deleteLocalSecret(cwd: string, name: string): Promise<boolean> {
   const file = localEnvPath(cwd);
-  const existing = await readIfPresent(file);
+  const existing = await readTextIfPresent(file);
   if (existing === undefined) return false;
   const { text, removed } = removeEnv(existing, name);
-  if (removed) await writeKeepingMode(file, text, (await fs.stat(file)).mode & 0o777);
+  if (removed) {
+    await writeFileAtomic(file, text, { mode: (await fs.stat(file)).mode & 0o777 });
+  }
   return removed;
 }

@@ -15,13 +15,6 @@ import type { ToolSet } from "ai";
 import type { ResolvedMcpServer } from "./mcp-connect.ts";
 import type { Logger } from "./runtime-config.ts";
 
-/** What resolving one server is handed that is not the server's own declaration. */
-export type ResolveDeps = {
-  env: Readonly<Partial<Record<string, string>>>;
-  clientId: string | undefined;
-  signal: AbortSignal;
-};
-
 /**
  * What the status and every log line say the server's endpoint is.
  *
@@ -61,13 +54,8 @@ async function resolveValue<T>(value: McpResolvable<T>, context: McpResolveConte
 export async function resolveServer(
   key: string,
   config: McpServerConfig,
-  deps: ResolveDeps,
+  context: McpResolveContext,
 ): Promise<{ server: ResolvedMcpServer } | { unavailable: string }> {
-  const context: McpResolveContext = {
-    clientId: deps.clientId,
-    env: deps.env,
-    signal: deps.signal,
-  };
   const url = await resolveValue(config.url, context);
   const protocol = typeof url === "string" ? URL.parse(url)?.protocol : undefined;
   if (protocol !== "http:" && protocol !== "https:") {
@@ -80,7 +68,7 @@ export async function resolveServer(
     server.headers = { ...(await resolveValue(config.headers, context)) };
   }
   if (config.tokenEnv === undefined) return { server };
-  const token = deps.env[config.tokenEnv];
+  const token = context.env[config.tokenEnv];
   if (!token) {
     return {
       unavailable: `${config.tokenEnv} is not set. The "${key}" MCP server declares tokenEnv: "${config.tokenEnv}", so set that variable (and list it in the agent's requiredEnv so a deploy checks it) or drop tokenEnv for a server that needs no credential.`,

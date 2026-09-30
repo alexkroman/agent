@@ -114,8 +114,13 @@ export function parseCallTwiml(twiml: string): {
   return { streamUrl: url === undefined ? undefined : unescapeXml(url), parameters };
 }
 
+/** The Basic credential Twilio's API authenticates with: `sid:token`, base64. */
+export function basicCredential(credentials: TwilioCredentials): string {
+  return btoa(`${credentials.accountSid}:${credentials.authToken}`);
+}
+
 function authorization(credentials: TwilioCredentials): string {
-  return `Basic ${btoa(`${credentials.accountSid}:${credentials.authToken}`)}`;
+  return `Basic ${basicCredential(credentials)}`;
 }
 
 function accountUrl(credentials: TwilioCredentials): string {

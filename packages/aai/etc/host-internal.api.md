@@ -606,9 +606,6 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 export function createDetachedSlotStore(): SlotStore;
 
 // @internal
-export function credentialSafeFetch(credentialHeaders: readonly string[]): typeof globalThis.fetch;
-
-// @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 // @internal
@@ -744,6 +741,7 @@ type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
     limit?: number;
+    withOutput?: boolean;
 };
 
 // @public
@@ -971,6 +969,14 @@ export type OpenUpload = {
 // @public
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
 
+// @public
+export function parseJsonText(text: string | undefined): {
+    readonly json: unknown;
+} | undefined;
+
+// @public
+export function parseRouteKey(key: string): RouteKey;
+
 // @internal
 export const pinnedFetch: typeof globalThis.fetch;
 
@@ -1100,6 +1106,20 @@ export function readRouteError(err: unknown): {
 export function readRouteResponse(value: unknown): RouteResponse | undefined;
 
 // @public
+export function recordFetchRequest(request: Request): Promise<RequestRecord>;
+
+// @internal
+export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
+
+// @public
+export type RequestRecord = {
+    readonly url: string;
+    readonly method: string;
+    readonly headers: Record<string, string>;
+    readonly text: string | undefined;
+};
+
+// @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @public
@@ -1205,11 +1225,39 @@ interface RimeTtsOptions extends ProviderCredentialOptions {
     voice?: string;
 }
 
+// @public
+export type RouteKey = {
+    readonly key: string;
+    readonly method: string | undefined;
+    readonly where: string;
+};
+
+// @public
+export function routeKeyMatches(key: RouteKey | string, method: string, url: URL): boolean;
+
+// @public
+export function routeKeySpecificity(input: RouteKey): number;
+
+// @public
+export type RouteMatch<V> = {
+    readonly key: string;
+    readonly value: V;
+};
+
 // @public @sealed
 interface RouteResponse {
     readonly body: unknown;
     readonly status: number;
 }
+
+// @public
+export type RouteTable<V> = {
+    match(method: string, url: URL): RouteMatch<V>[];
+    best(method: string, url: URL): RouteMatch<V> | undefined;
+};
+
+// @public
+export function routeTable<V>(table: Readonly<Record<string, V>>): RouteTable<V>;
 
 // @public
 export const RUN_CODE_REFUSAL = "run_code is only available in the sandboxed runtime and cannot run in this environment.";
@@ -1291,6 +1339,14 @@ export type SessionEnder = (options: {
     afterReply: boolean;
 }) => void;
 
+// @internal
+export type SessionIdentity = {
+    clientId?: string | undefined;
+    location?: string | undefined;
+    phone?: string | undefined;
+    call?: SessionCall | undefined;
+};
+
 // @public
 type SessionMode = "s2s" | "pipeline" | "text";
 
@@ -1349,7 +1405,7 @@ export type SpeechSynthesizer = (request: {
 }) => Promise<Uint8Array>;
 
 // @internal
-export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch, extraCredentialHeaders?: readonly string[]): Promise<Response>;
+export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
 export interface StandardSchemaIssue {

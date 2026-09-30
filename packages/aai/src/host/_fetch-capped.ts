@@ -47,8 +47,9 @@ export type FetchCappedOptions = {
   /** Extra headers, merged over (and able to replace) the pair above. */
   headers?: Record<string, string> | undefined;
   /**
-   * A request body, which makes the request a POST. Only `google_places` sends
-   * one — the Places API (New) text search has no GET form.
+   * A request body, which makes the request a POST unless `method` says
+   * otherwise. `google_places` sends one (the Places API (New) text search has
+   * no GET form), and so does a direct `fetchJson` caller that passes `body`.
    */
   body?: string | undefined;
   /**
@@ -155,12 +156,14 @@ export type CappedJson =
   | { ok: false; status?: number; error: string };
 
 /**
- * {@link fetchCappedText} for the builtins that call a fixed JSON API
- * (`open_meteo`, `brave_search`, `google_places`) — the read, the refusal of a
- * clipped body, and the parse, which each of them would otherwise restate.
+ * {@link fetchCappedText} for every builtin that reads a JSON body
+ * (`fetch_json` and `fetchJson` through `requestJson`, `open_meteo`,
+ * `brave_search`, `google_places`) — the read, the refusal of a clipped body,
+ * and the parse, which each of them would otherwise restate.
  *
- * Unlike its sibling it never throws: a network failure or SSRF rejection is an
- * `{ ok: false }` too, because all three answer the model with an `error` field
+ * Unlike its sibling it throws only an `AbortError` (a cancel from whoever owns
+ * the fetch): a network failure, timeout or SSRF rejection is an
+ * `{ ok: false }` too, because all of them answer the model with an `error` field
  * rather than a thrown turn. `status` is set only for an HTTP failure, so a
  * caller can name a rejected credential (401/403) apart from a flaky network.
  *
@@ -171,6 +174,9 @@ export async function fetchCappedJson(url: string, opts: FetchCappedOptions): Pr
   try {
     body = await fetchCappedText(url, opts);
   } catch (err) {
+    // A cancel from whoever owns the fetch (a run or session being torn down)
+    // still propagates; this module's own deadline is a `TimeoutError`, answered.
+    if (err instanceof Error && err.name === "AbortError") throw err;
     return { ok: false, error: errorMessage(err) };
   }
   if (!body.ok) return { ok: false, status: body.status, error: body.error };

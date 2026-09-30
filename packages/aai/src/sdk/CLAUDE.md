@@ -106,8 +106,9 @@ Each helper's doc carries the detail; the rules:
   `keylessSynthesizer` (`step-speak.ts`), so `stepSpeak` hands it `""` rather
   than refusing; `requireApiKey: true` restores the refusal.
 - **`stubFetchRoutes`/`installFetchRoutes`** — ONE table for the global fetch
-  AND the step fetch (published unless `stepFetch: false`), keys as
-  `evalNetwork`'s plus an optional METHOD; unmatched THROWS by default, for
+  AND the step fetch (published unless `stepFetch: false`), keys matched by
+  `_route-keys.ts` — the one matcher `evalNetwork` imports too (via
+  `/host-internal`), METHOD prefix included; unmatched THROWS by default, for
   `routeStepFetch`'s reason. `toStepResponse` drops the body of a null-body
   status (`{ status: 204 }` threw in the `Response` constructor).
 - **`createRecordingWorkflows`** records starts and runs nothing; a start is
@@ -292,7 +293,7 @@ stays for non-file registries (the studio's coding agent).
   every `headers` value** (`wireMcpServers`), so a header credential never
   reaches a stored config. A resolved URL gets the same http(s) check and SSRF
   screen as a literal, and every author header is stripped on a cross-origin
-  redirect (`credentialSafeFetch`, `host/ssrf.ts`).
+  redirect (`safeFetch`'s safelist, `host/ssrf.ts`).
 - **`stepMcp` (`step-mcp.ts`, on `/experimental`) is a published slot** like
   `stepDelegate`: the connector is `aai-runtime`'s `step-mcp.ts` over the same
   `connectMcpServers` core as `withMcpTools`. It REJECTS on an unavailable

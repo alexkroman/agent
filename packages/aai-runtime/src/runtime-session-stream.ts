@@ -107,7 +107,16 @@ export function attachSessionStream(
   const startCore = core.start.bind(core);
   core.start = async () => {
     await stream.hydrate(sessionId);
-    const prior = (await memory?.open()) ?? [];
+    // Only on a RESUME is the own log read. A fresh session's log is empty, so
+    // the read would be a round trip that can only answer nothing — and
+    // `resumed` is known from the socket's own `?sessionId=`, which is cheaper
+    // and more honest than inferring it from a count. It does not depend on
+    // `memory.open()`, so the two reads run together.
+    const [opened, own] = await Promise.all([
+      memory?.open(),
+      resumed ? readAllEvents(stream, sessionId) : [],
+    ]);
+    const prior = opened ?? [];
     // BEFORE the history restore and `startCore()`: the core's own start is what
     // connects the providers and, once the client is ready, speaks the greeting,
     // so a refused session reaches neither a model nor the caller's ear.
@@ -115,11 +124,6 @@ export function attachSessionStream(
     // refusal rather than as a failed start.
     const refused = memory?.refused;
     if (refused !== undefined) throw new SessionRefusedError(refused);
-    // Only on a RESUME. A fresh session's log is empty, so the read would be a
-    // round trip that can only answer nothing — and `resumed` is known from the
-    // socket's own `?sessionId=`, which is cheaper and more honest than
-    // inferring it from a count.
-    const own = resumed ? await readAllEvents(stream, sessionId) : [];
     // Recorded only when the session's OWN log had something to restore: an
     // EMPTY log is exactly the case that must fall through to a greeting.
     if (own.length > 0 && holdsConversation(own)) findings?.record();
@@ -137,8 +141,9 @@ export function attachSessionStream(
     } finally {
       // In a `finally`, so a session that stopped by failing still writes out
       // what it recorded — the events leading up to a failure are the ones most
-      // worth having. `flush` never rejects.
-      await stream.flush(sessionId);
+      // worth having. `flush` never rejects. `final`, so a throttled client-log
+      // touch is written now rather than never (`backends/postgres.ts`).
+      await stream.flush(sessionId, { final: true });
       // `tail` is one past the last index assigned, so an empty log answers -1.
       memory?.ended(stream.tail(sessionId) - 1);
     }

@@ -56,11 +56,13 @@
  * hand-rolled this helper; it is now the rule in one place.
  */
 
+import { globalSlot } from "./_global-slot.ts";
+
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process shares it rather than shadowing it.
  */
-const STEP_REPORTER_SLOT = Symbol.for("@alexkroman1/aai.stepReporter");
+const STEP_REPORTER_SLOT = globalSlot<StepReporter>("@alexkroman1/aai.stepReporter");
 
 /**
  * What a published reporter does with one chunk.
@@ -81,9 +83,6 @@ export type StepReporter = (
   options?: { namespace?: string | undefined; log?: boolean | undefined },
 ) => void | Promise<void>;
 
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
-
 /**
  * Publish the reporter for this process's steps.
  *
@@ -97,8 +96,7 @@ type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
  * author calls {@link stepReport}.
  */
 export function publishStepReporter(reporter: StepReporter | undefined): void {
-  if (reporter === undefined) delete (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
-  else (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT] = reporter;
+  STEP_REPORTER_SLOT.set(reporter);
 }
 
 /**
@@ -123,7 +121,7 @@ export function publishStepReporter(reporter: StepReporter | undefined): void {
  * @public
  */
 export async function stepReport(line: string): Promise<void> {
-  const reporter = (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
+  const reporter = STEP_REPORTER_SLOT.get();
   if (!reporter) {
     // No host in this process — a spec, or a script calling an exported step.
     // The console is the only channel there is, and silence would make a step
@@ -192,7 +190,7 @@ export async function stepReport(line: string): Promise<void> {
  * @public
  */
 export async function stepEmit<T>(namespace: string, chunk: T): Promise<void> {
-  const reporter = (globalThis as StepReporterSlot)[STEP_REPORTER_SLOT];
+  const reporter = STEP_REPORTER_SLOT.get();
   if (!reporter) {
     // No host in this process — a spec, or a script calling an exported step.
     // Named and summarized rather than dumped: this is the console, and a chunk

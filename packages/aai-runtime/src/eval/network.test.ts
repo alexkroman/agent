@@ -82,6 +82,26 @@ describe("evalNetwork — routes", () => {
     expect(await name("https://eu.crm.example/")).toBe("narrow wildcard");
     expect(await name("https://library.springfield.example/")).toBe("wildcard");
   });
+
+  test("a METHOD-qualified key answers only that method, and beats the bare key", async () => {
+    // The vocabulary `stubFetchRoutes` has always had — one matcher serves both.
+    const net = evalNetwork({
+      routes: {
+        "crm.example": () => ({ name: "any" }),
+        "POST crm.example": () => ({ name: "post" }),
+        "DELETE sms.example": () => undefined,
+      },
+    });
+    const name = async (url: string, method = "GET") =>
+      ((await (await net.fetch(url, { method })).json()) as { name: string }).name;
+    expect(await name("https://crm.example/rows", "POST")).toBe("post");
+    expect(await name("https://crm.example/rows")).toBe("any");
+    await expect(net.fetch("https://sms.example/1")).rejects.toThrow(/refused GET/);
+    expect((await net.fetch("https://sms.example/1", { method: "DELETE" })).status).toBe(204);
+    // A filter string reads the same way.
+    expect(net.requests("POST crm.example")).toHaveLength(1);
+    expect(net.calls("DELETE sms.example")).toHaveLength(1);
+  });
 });
 
 describe("evalNetwork — failing closed", () => {

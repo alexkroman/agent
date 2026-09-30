@@ -571,7 +571,9 @@ export type SessionEventStream = {
     append(sessionId: string, body: SessionEventBody): SessionEvent;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string): Promise<void>;
+    flush(sessionId: string, options?: {
+        final?: boolean;
+    }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
     discard(sessionId: string): void;
     clear(): void;

@@ -11,6 +11,12 @@ import { MAX_TOOL_RESULT_CHARS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts
 import type { SessionCommand } from "./protocol.ts";
 import { EVENT_ID_PREFIX, SessionCommandSchema } from "./protocol.ts";
 import { SessionEventSchema } from "./protocol-events.ts";
+import {
+  type InboxClientFrame,
+  InboxClientFrameSchema,
+  type InboxServerFrame,
+  InboxServerFrameSchema,
+} from "./protocol-inbox.ts";
 import type { SessionEvent, SessionEventBody } from "./session-event-map.ts";
 
 /**
@@ -208,6 +214,64 @@ describe("client→server command wire format", () => {
     const commands: string[] = SessionCommandSchema.options.map((o) => o.shape.type.value);
     const events: string[] = SessionEventSchema.options.map((o) => o.shape.type.value);
     expect(commands.filter((type) => events.includes(type))).toEqual([]);
+  });
+});
+
+describe("WS /inbox frame wire format", () => {
+  const server: InboxServerFrame[] = [
+    { type: "notice", id: "run-1", event: "reminder", bytes: 0 },
+    { type: "notice", id: "run-1", event: "reminder", data: { text: "call" }, bytes: 4096 },
+    {
+      type: "session_event",
+      sessionId: "s-1",
+      event: stamped({ type: "user-transcript.committed", text: "hi" }),
+    },
+    { type: "session_ended", sessionId: "s-1" },
+  ];
+  const client: InboxClientFrame[] = [
+    { type: "ack", id: "run-1" },
+    { type: "busy", id: "run-1" },
+  ];
+
+  test.each(server.map((msg) => [msg.type, msg] as const))(
+    "server %s parses unchanged",
+    (_type, msg) => {
+      expect(InboxServerFrameSchema.parse(msg)).toEqual(msg);
+    },
+  );
+
+  test.each(client.map((msg) => [msg.type, msg] as const))(
+    "client %s parses unchanged",
+    (_type, msg) => {
+      expect(InboxClientFrameSchema.parse(msg)).toEqual(msg);
+    },
+  );
+
+  test("a notice header needs an id and a whole, non-negative byte count", () => {
+    for (const bad of [
+      { type: "notice", id: "", event: "e", bytes: 0 },
+      { type: "notice", id: "a", event: "e", bytes: -2 },
+      { type: "notice", id: "a", event: "e", bytes: 1.5 },
+      { type: "notice", id: "a", bytes: 0 },
+    ]) {
+      expect(InboxServerFrameSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  test("the frame vocabularies", () => {
+    expect(InboxServerFrameSchema.options.map((o) => o.shape.type.value)).toMatchInlineSnapshot(`
+      [
+        "notice",
+        "session_event",
+        "session_ended",
+      ]
+    `);
+    expect(InboxClientFrameSchema.options.map((o) => o.shape.type.value)).toMatchInlineSnapshot(`
+      [
+        "ack",
+        "busy",
+      ]
+    `);
   });
 });
 

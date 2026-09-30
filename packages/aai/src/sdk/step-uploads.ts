@@ -101,6 +101,7 @@
  * platform a round trip through the broker for bytes that are already local.
  */
 
+import { globalSlot } from "./_global-slot.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 
 /** What a stored upload is, minus its bytes. */
@@ -298,10 +299,7 @@ export type UploadWriter = {
 export type UploadAccess = UploadReader & Partial<UploadWriter>;
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const UPLOAD_READER_SLOT = Symbol.for("@alexkroman1/aai.uploadReader");
-
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
+const UPLOAD_READER_SLOT = globalSlot<UploadAccess>("@alexkroman1/aai.uploadReader");
 
 /**
  * Publish the upload store for this process's steps.
@@ -313,8 +311,7 @@ type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
  * @internal — a host concern, exported from `@alexkroman1/aai-runtime`.
  */
 export function publishUploadReader(reader: UploadAccess | undefined): void {
-  if (reader === undefined) delete (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT];
-  else (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT] = reader;
+  UPLOAD_READER_SLOT.set(reader);
 }
 
 /**
@@ -341,7 +338,7 @@ export const UPLOADS_UNAVAILABLE_MESSAGE =
  * @internal
  */
 export function requireUploadAccess(): UploadAccess {
-  const reader = (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT];
+  const reader = UPLOAD_READER_SLOT.get();
   if (!reader) throw new Error(UPLOADS_UNAVAILABLE_MESSAGE);
   return reader;
 }

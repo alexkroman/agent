@@ -24,6 +24,8 @@
  * {@link DEFAULT_CLIENT_DELIVERY_ATTEMPTS} rides out an hour's outage.
  */
 
+import { globalSlot } from "./_global-slot.ts";
+import { writeSessionEntry } from "./_session-identity-store.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import {
   ClientUnreachableError,
@@ -87,9 +89,7 @@ export type StepSayOnClientOptions = {
  */
 export type ClientInboxDefaults = { sampleRate?: number | undefined };
 
-const CLIENT_INBOX_SLOT = Symbol.for("@alexkroman1/aai.clientInboxDefaults");
-
-type ClientInboxSlot = { [CLIENT_INBOX_SLOT]?: ClientInboxDefaults };
+const CLIENT_INBOX_SLOT = globalSlot<ClientInboxDefaults>("@alexkroman1/aai.clientInboxDefaults");
 
 /**
  * Publish the agent's `clientInbox` defaults for this process's steps.
@@ -102,8 +102,7 @@ type ClientInboxSlot = { [CLIENT_INBOX_SLOT]?: ClientInboxDefaults };
  * @internal — a host concern. A step author calls {@link stepSayOnClient}.
  */
 export function publishClientInboxDefaults(defaults: ClientInboxDefaults | undefined): void {
-  if (defaults === undefined) delete (globalThis as ClientInboxSlot)[CLIENT_INBOX_SLOT];
-  else (globalThis as ClientInboxSlot)[CLIENT_INBOX_SLOT] = Object.freeze({ ...defaults });
+  CLIENT_INBOX_SLOT.set(defaults === undefined ? undefined : Object.freeze({ ...defaults }));
 }
 
 /** Undelivered utterances held across a step's retries, oldest evicted first. */
@@ -118,13 +117,7 @@ function utteranceKey(text: string, sampleRate: number, voice?: string, language
 }
 
 function hold(key: string, pcm: Uint8Array): void {
-  held.delete(key);
-  held.set(key, pcm);
-  while (held.size > MAX_HELD_UTTERANCES) {
-    const oldest = held.keys().next().value;
-    if (oldest === undefined) break;
-    held.delete(oldest);
-  }
+  writeSessionEntry(held, key, pcm, MAX_HELD_UTTERANCES);
 }
 
 /**
@@ -173,9 +166,7 @@ export async function stepSayOnClient(
 ): Promise<string> {
   const { text, voice, language, signal } = options;
   const sampleRate =
-    options.sampleRate ??
-    (globalThis as ClientInboxSlot)[CLIENT_INBOX_SLOT]?.sampleRate ??
-    STEP_SPEAK_SAMPLE_RATE;
+    options.sampleRate ?? CLIENT_INBOX_SLOT.get()?.sampleRate ?? STEP_SPEAK_SAMPLE_RATE;
   const key = utteranceKey(text, sampleRate, voice, language);
   const pcm = held.get(key) ?? (await stepSpeak(text, { sampleRate, voice, language, signal })).pcm;
   try {

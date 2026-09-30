@@ -50,6 +50,12 @@
  * @module
  */
 
+import {
+  parseJsonText,
+  recordFetchRequest,
+  routeKeyMatches,
+  routeTable,
+} from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 
 /**
@@ -132,7 +138,7 @@ export type EvalNetworkOptions<State = undefined> = {
    */
   readonly state?: () => State;
   /**
-   * Handlers by where they answer. A key is one of:
+   * Handlers by where they answer. A key is an optional METHOD, then one of:
    *
    * - a HOST — `"api.mem0.ai"` — matching that hostname exactly;
    * - a WILDCARD host — `"*.example"` — matching any subdomain of it (and not
@@ -140,8 +146,10 @@ export type EvalNetworkOptions<State = undefined> = {
    * - a URL PREFIX — `"https://crm.example/rest/v1/calls"` — matching any URL
    *   that starts with it.
    *
-   * The most specific key answers: the longest matching URL prefix, then an
-   * exact host, then the longest matching wildcard.
+   * So `"POST crm.example"` answers only a POST. The most specific key
+   * answers: the longest matching URL prefix, then an exact host, then the
+   * longest matching wildcard; a METHOD-qualified key beats the same key
+   * without one. The vocabulary is `stubFetchRoutes`'s, from one matcher.
    */
   readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
   /**
@@ -240,38 +248,14 @@ export function evalPassthroughFetch(): typeof globalThis.fetch {
   return ambient;
 }
 
-/** Does a route/passthrough KEY match `url`? */
-export function keyMatches(key: string, url: URL): boolean {
-  if (key.includes("://")) return url.href.startsWith(key);
-  if (key.startsWith("*.")) return url.hostname.endsWith(key.slice(1));
-  return url.hostname === key;
-}
-
-/** How specific a matching key is — higher answers first. */
-function specificity(key: string): number {
-  if (key.includes("://")) return 2_000_000 + key.length;
-  if (key.startsWith("*.")) return key.length;
-  return 1_000_000;
-}
-
-/** The most specific key in `keys` matching `url`, if any. */
-function bestKey(keys: readonly string[], url: URL): string | undefined {
-  let best: string | undefined;
-  for (const key of keys) {
-    if (!keyMatches(key, url)) continue;
-    if (best === undefined || specificity(key) > specificity(best)) best = key;
-  }
-  return best;
-}
-
 function selects(filter: EvalRequestFilter, request: EvalRequest): boolean {
   if (typeof filter === "function") return filter(request);
-  if (typeof filter === "string") return keyMatches(filter, request.url);
+  if (typeof filter === "string") return routeKeyMatches(filter, request.method, request.url);
   return filter.test(request.url.href);
 }
 
 /** One line per request, for a failure message. */
-export function describeRequest(request: EvalRequest): string {
+function describeRequest(request: EvalRequest): string {
   const status = request.status === undefined ? "" : ` ${request.status}`;
   return `${request.method} ${request.url.href} (${request.outcome}${status})`;
 }
@@ -297,14 +281,11 @@ function asResponse(value: unknown): Response {
   return Response.json(value);
 }
 
+/** The body parsed as JSON when it parses; a form body or plain text stays a string. */
 function parsed(text: string): unknown {
   if (text === "") return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {
-    // A form body or plain text stays a string.
-    return text;
-  }
+  const json = parseJsonText(text);
+  return json === undefined ? text : json.json;
 }
 
 /**
@@ -314,9 +295,10 @@ function parsed(text: string): unknown {
 export function evalNetwork<State = undefined>(
   options: EvalNetworkOptions<State> = {},
 ): EvalNetwork<State> {
-  const routes = options.routes ?? {};
-  const routeKeys = Object.keys(routes);
-  const passthrough = options.passthrough ?? [];
+  const routes = routeTable(options.routes ?? {});
+  const passthrough = routeTable(
+    Object.fromEntries((options.passthrough ?? []).map((key) => [key, true])),
+  );
   let log: EvalRequest[] = [];
   // No factory means no state: `State` then defaults to `undefined`, which is
   // what this reads as. A route that annotated a state type without a factory
@@ -326,19 +308,20 @@ export function evalNetwork<State = undefined>(
 
   const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
-    const url = new URL(request.url);
-    const text = request.body === null ? "" : await request.clone().text();
+    const recorded = await recordFetchRequest(request);
+    const url = new URL(recorded.url);
+    const text = recorded.text ?? "";
     const base = {
-      method: request.method.toUpperCase(),
+      method: recorded.method,
       url,
       host: url.hostname,
-      headers: Object.fromEntries(request.headers),
+      headers: recorded.headers,
       text,
       body: parsed(text),
     };
-    const route = bestKey(routeKeys, url);
-    const handler = route === undefined ? undefined : routes[route];
-    if (route !== undefined && handler !== undefined) {
+    const matched = routes.best(base.method, url);
+    if (matched !== undefined) {
+      const { key: route, value: handler } = matched;
       const info: EvalRequest = { ...base, outcome: "routed", route };
       let response: Response;
       try {
@@ -354,7 +337,7 @@ export function evalNetwork<State = undefined>(
       log.push({ ...info, status: response.status });
       return response;
     }
-    if (bestKey(passthrough, url) !== undefined) {
+    if (passthrough.best(base.method, url) !== undefined) {
       const response = await evalPassthroughFetch()(request);
       log.push({ ...base, outcome: "passthrough", status: response.status });
       return response;
@@ -378,6 +361,7 @@ export function evalNetwork<State = undefined>(
   const requests = (filter?: EvalRequestFilter): readonly EvalRequest[] =>
     filter === undefined ? [...log] : log.filter((r) => selects(filter, r));
 
+  const refused = (): EvalRequest[] => log.filter((r) => r.outcome === "refused");
   return {
     fetch: fetchFn as typeof globalThis.fetch,
     get state() {
@@ -388,9 +372,9 @@ export function evalNetwork<State = undefined>(
       log.filter(
         (r) =>
           r.outcome !== "refused" &&
-          (typeof host === "string" ? keyMatches(host, r.url) : host.test(r.host)),
+          (typeof host === "string" ? routeKeyMatches(host, r.method, r.url) : host.test(r.host)),
       ),
-    refused: () => log.filter((r) => r.outcome === "refused"),
+    refused,
     expectNoOutbound(filter) {
       const tried = requests(filter);
       if (tried.length === 0) return;
@@ -402,11 +386,11 @@ export function evalNetwork<State = undefined>(
       );
     },
     expectNothingRefused() {
-      const refused = log.filter((r) => r.outcome === "refused");
-      if (refused.length === 0) return;
+      const denied = refused();
+      if (denied.length === 0) return;
       throw new Error(
-        `eval network: ${refused.length} request(s) were refused — each is a host the agent ` +
-          `reached for that no route answers:\n${describeRequests(refused)
+        `eval network: ${denied.length} request(s) were refused — each is a host the agent ` +
+          `reached for that no route answers:\n${describeRequests(denied)
             .map((line) => `  ${line}`)
             .join("\n")}`,
       );

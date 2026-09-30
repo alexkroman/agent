@@ -105,6 +105,37 @@ describe("useTapToTalk", () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
+  test("a transcript delta restarts the quiet clock without re-rendering the host", () => {
+    const core = createMockSessionCore({ running: false });
+    const disconnect = vi.spyOn(core, "disconnect");
+    let renders = 0;
+    renderHook(
+      () => {
+        renders++;
+        return useTapToTalk({ idleHangupMs: 1000 });
+      },
+      {
+        wrapper: ({ children }: { children: ReactNode }) =>
+          createElement(SessionProvider, { value: core }, children),
+      },
+    );
+    act(() => core.update({ running: true, state: "connecting" }));
+    act(() => core.update({ state: "listening" }));
+    const before = renders;
+    for (const text of ["S", "Su", "Sur", "Sure"]) {
+      act(() => {
+        vi.advanceTimersByTime(900);
+      });
+      act(() => core.update({ agentTranscript: text }));
+    }
+    expect(renders).toBe(before);
+    expect(disconnect).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
   test("a session error marks the attempt failed", () => {
     const { core, hook } = mount();
     act(() =>

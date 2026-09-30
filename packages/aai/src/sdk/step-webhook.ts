@@ -55,12 +55,14 @@
  * at the mint, with a message naming the configuration.
  */
 
+import { globalSlot } from "./_global-slot.ts";
+
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process (a linked workspace, a mismatched install) shares
  * it rather than shadowing it.
  */
-const STEP_WEBHOOK_SLOT = Symbol.for("@alexkroman1/aai.stepWebhookUrl");
+const STEP_WEBHOOK_SLOT = globalSlot<StepWebhookMinter>("@alexkroman1/aai.stepWebhookUrl");
 
 /**
  * What a published minter does with one token: answer the absolute URL a third
@@ -74,9 +76,6 @@ const STEP_WEBHOOK_SLOT = Symbol.for("@alexkroman1/aai.stepWebhookUrl");
  * @internal
  */
 export type StepWebhookMinter = (token: string) => string;
-
-/** The shape stored in the slot. `undefined` means nothing has published. */
-type StepWebhookSlot = { [STEP_WEBHOOK_SLOT]?: StepWebhookMinter };
 
 /**
  * What {@link stepWebhookUrl} throws when no host published a minter.
@@ -112,8 +111,7 @@ export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE =
  * author calls {@link stepWebhookUrl}.
  */
 export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void {
-  if (mint === undefined) delete (globalThis as StepWebhookSlot)[STEP_WEBHOOK_SLOT];
-  else (globalThis as StepWebhookSlot)[STEP_WEBHOOK_SLOT] = mint;
+  STEP_WEBHOOK_SLOT.set(mint);
 }
 
 /**
@@ -178,7 +176,7 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
  * @public
  */
 export function stepWebhookUrl(token: string): string {
-  const mint = (globalThis as StepWebhookSlot)[STEP_WEBHOOK_SLOT];
+  const mint = STEP_WEBHOOK_SLOT.get();
   if (!mint) throw new Error(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
   if (token === "") throw new Error("A webhook token cannot be empty.");
   return mint(token);

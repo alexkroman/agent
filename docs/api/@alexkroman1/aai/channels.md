@@ -277,7 +277,7 @@ A workflow trigger, which takes flat variables and not Block Kit.
 #### Call Signature
 
 ```ts
-function registerChannelHandler(handler: ChannelHandler): void;
+function registerChannelHandler(handler: ChannelHandler, registration?: ChannelRegistration): void;
 ```
 
 Register a channel kind, so `sendToChannel` can dispatch a descriptor
@@ -294,8 +294,13 @@ resumed in a fresh worker dispatches on a tag whose module that worker may
 never have imported. Register at module load in the agent's entry, not
 lazily beside the first call.
 
-Re-registering a kind REPLACES it, which is what makes a shipped channel
-overridable — and is why the tag is the identity rather than the value.
+Re-registering a kind REPLACES it — handler and registration together —
+which is what makes a shipped channel overridable, and is why the tag is the
+identity rather than the value.
+
+**A channel that carries a secret declares it** in `registration`'s
+`credentialFields`, so a refusal quoting it back is redacted and an outbox
+never records it; see [ChannelRegistration](#channelregistration).
 
 **A handler typed on its own options (`ChannelHandler<MyOptions>`) is
 registered WITH the function that narrows the raw record into them**, which
@@ -310,6 +315,10 @@ back is a `MyOptions`.
 
 [`ChannelHandler`](#channelhandler)
 
+###### registration?
+
+[`ChannelRegistration`](#channelregistration)
+
 ##### Returns
 
 `void`
@@ -317,7 +326,11 @@ back is a `MyOptions`.
 #### Call Signature
 
 ```ts
-function registerChannelHandler<O>(handler: ChannelHandler<O>, options: (raw: Record<string, unknown>) => O): void;
+function registerChannelHandler<O>(
+   handler: ChannelHandler<O>, 
+   options: (raw: Record<string, unknown>) => O, 
+   registration?: ChannelRegistration
+): void;
 ```
 
 Register a channel kind whose `render`/`advice` read their OWN options type,
@@ -339,6 +352,10 @@ naming the field that is wrong).
 ###### options
 
 (`raw`: `Record`\<`string`, `unknown`\>) => `O`
+
+###### registration?
+
+[`ChannelRegistration`](#channelregistration)
 
 ##### Returns
 
@@ -500,7 +517,8 @@ whatever the platform answered with, or `"ok"` when it sent no body.
 #### Throws
 
 on any non-2xx, and on a 2xx the channel reads
-  as a refusal (Textbelt's `{"success": false}`), which is never retryable.
+  as a refusal (a registration's `refusal` — Textbelt's `{"success": false}`),
+  which is never retryable.
 
 #### Example
 
@@ -914,6 +932,56 @@ readonly url: string;
 ```
 
 Absolute URL to POST to.
+
+***
+
+### ChannelRegistration
+
+What a registration carries BESIDE the handler: the two things only some
+platforms need, declared by the platform that needs them.
+
+Kept off [ChannelHandler](#channelhandler) rather than as fields on it: that interface
+is the shared, contract-hashed shape every channel implements
+(guard-invariants rule 25), and neither of these is something a new channel
+would have to INVENT to render at all. They ride on the registration, and
+the registry stores them with the handler for that kind.
+
+#### Properties
+
+##### credentialFields?
+
+```ts
+readonly optional credentialFields?: readonly string[];
+```
+
+Descriptor option and rendered-body fields that are CREDENTIALS: their
+values are redacted from every refusal the send path turns into an error,
+and a body field of that name never reaches a channel outbox
+(`publishChannelOutbox`). Textbelt declares `key` (its API key rides in
+the body); Slack declares `webhookUrl` (the URL is the credential, and an
+outbox entry never carries a URL anyway). A kind that declares none has
+only the secret-named query-parameter scrub, which applies to every kind.
+
+##### refusal?
+
+```ts
+readonly optional refusal?: (body: string) => string | undefined;
+```
+
+Reads a REFUSAL out of a 2xx body, for a platform that answers one with a
+200 — Textbelt says `200 {"success": false, "error": …}`. Returns the
+reason, or `undefined` when the body means delivered. Without it, every
+2xx is a delivery.
+
+###### Parameters
+
+###### body
+
+`string`
+
+###### Returns
+
+`string` \| `undefined`
 
 ***
 
