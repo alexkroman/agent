@@ -30,16 +30,11 @@
  * @module
  */
 
-import { publishStepFetch, type StepFetch } from "@alexkroman1/aai/host-internal";
+import { publishStepFetch, routeKeyMatches, type StepFetch } from "@alexkroman1/aai/host-internal";
 import type { EvalMode } from "./_announce.ts";
 import { modelHosts } from "./_model-hosts.ts";
 import type { EvalCaseOptions } from "./describe.ts";
-import {
-  type EvalNetwork,
-  evalPassthroughFetch,
-  keyMatches,
-  setEvalPassthroughFetch,
-} from "./network.ts";
+import { type EvalNetwork, evalPassthroughFetch, setEvalPassthroughFetch } from "./network.ts";
 
 /** What `describeEval` and each case may pass as `network`. */
 export type EvalNetworkSource = EvalNetwork | (() => EvalNetwork);
@@ -77,7 +72,10 @@ export function suiteNetwork(
 
   const dispatch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (passed.some((host) => keyMatches(host, url))) return evalPassthroughFetch()(input, init);
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    if (passed.some((host) => routeKeyMatches(host, method, url))) {
+      return evalPassthroughFetch()(input, init);
+    }
     const network = current ?? last;
     if (network !== undefined) return network.fetch(input, init);
     throw new TypeError(

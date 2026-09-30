@@ -89,6 +89,47 @@ export async function fileExists(p: string): Promise<boolean> {
 }
 
 /**
+ * Read a UTF-8 file, or `undefined` when it does not exist (ENOENT). Any other
+ * failure (EACCES, EISDIR, …) throws: an unreadable file is not an absent one.
+ */
+export async function readTextIfPresent(filePath: string): Promise<string | undefined> {
+  try {
+    return await fs.readFile(filePath, "utf-8");
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Write `text` to `filePath` through a temp file in the same directory and a
+ * rename, so a reader (or a crash) never sees a half-written file — rename on
+ * one filesystem is atomic. The temp name carries the pid AND a random suffix,
+ * so two writers in one process cannot collide on it, and it is removed when
+ * the rename fails rather than left beside the target.
+ *
+ * `mode` is applied to the temp file with an explicit `chmod` (a `writeFile`
+ * mode is narrowed by the umask), and the rename carries it to the target —
+ * so an existing file keeps, or is tightened to, exactly that mode. The parent
+ * directory must exist.
+ */
+export async function writeFileAtomic(
+  filePath: string,
+  text: string,
+  opts: { mode?: number | undefined } = {},
+): Promise<void> {
+  const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await fs.writeFile(tmpPath, text, omitUndefined({ mode: opts.mode }));
+    if (opts.mode !== undefined) await fs.chmod(tmpPath, opts.mode);
+    await fs.rename(tmpPath, filePath);
+  } catch (err) {
+    await fs.rm(tmpPath, { force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
+/**
  * Read and parse a JSON file. Returns null only when the file does not exist
  * (ENOENT — the "optional file" case). A file that exists but cannot be read
  * (EACCES, …) or parsed throws instead: treating a corrupted file as absent
@@ -96,13 +137,8 @@ export async function fileExists(p: string): Promise<boolean> {
  * deploy under a NEW slug, orphaning the live deployment.
  */
 export async function readJson(filePath: string): Promise<unknown> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath, "utf-8");
-  } catch (err) {
-    if (errorCode(err) === "ENOENT") return null;
-    throw err;
-  }
+  const raw = await readTextIfPresent(filePath);
+  if (raw === undefined) return null;
   try {
     return JSON.parse(raw);
   } catch (err) {
@@ -142,18 +178,7 @@ export async function writeJson(
   // private (0o700) parent, so the guard and the value differ on purpose.
   const dirMode = opts.mode === undefined ? undefined : 0o700;
   await fs.mkdir(path.dirname(filePath), { recursive: true, ...omitUndefined({ mode: dirMode }) });
-  const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  await fs.writeFile(
-    tmpPath,
-    `${JSON.stringify(data, null, 2)}\n`,
-    omitUndefined({ mode: opts.mode }),
-  );
-  try {
-    await fs.rename(tmpPath, filePath);
-  } catch (err) {
-    await fs.rm(tmpPath, { force: true }).catch(() => undefined);
-    throw err;
-  }
+  await writeFileAtomic(filePath, `${JSON.stringify(data, null, 2)}\n`, opts);
 }
 
 /**

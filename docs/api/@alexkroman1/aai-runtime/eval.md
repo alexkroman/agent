@@ -2977,7 +2977,7 @@ swallows network errors but reports statuses. Either way it is recorded.
 readonly optional routes?: Readonly<Record<string, EvalRoute<State>>>;
 ```
 
-Handlers by where they answer. A key is one of:
+Handlers by where they answer. A key is an optional METHOD, then one of:
 
 - a HOST — `"api.mem0.ai"` — matching that hostname exactly;
 - a WILDCARD host — `"*.example"` — matching any subdomain of it (and not
@@ -2985,8 +2985,10 @@ Handlers by where they answer. A key is one of:
 - a URL PREFIX — `"https://crm.example/rest/v1/calls"` — matching any URL
   that starts with it.
 
-The most specific key answers: the longest matching URL prefix, then an
-exact host, then the longest matching wildcard.
+So `"POST crm.example"` answers only a POST. The most specific key
+answers: the longest matching URL prefix, then an exact host, then the
+longest matching wildcard; a METHOD-qualified key beats the same key
+without one. The vocabulary is `stubFetchRoutes`'s, from one matcher.
 
 ##### state?
 

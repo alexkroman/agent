@@ -9,11 +9,15 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
-import { WORKFLOW_DATA_DIR_ENV } from "@alexkroman1/aai-runtime/internal";
+import { SERVER_ROUTES, WORKFLOW_DATA_DIR_ENV } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
 import { agentEnvWarnings, startDevServer } from "./_dev-server.ts";
-import { aaiRuntimeModule, WORKFLOW_DATA_DIR_ENV_LITERAL } from "./_dev-server-test-utils.ts";
+import {
+  aaiRuntimeModule,
+  SERVER_ROUTES_LITERAL,
+  WORKFLOW_DATA_DIR_ENV_LITERAL,
+} from "./_dev-server-test-utils.ts";
 import { viteDevConfig } from "./_dev-vite-config.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
@@ -88,6 +92,43 @@ describe("viteDevConfig", () => {
     // `agent({ routes })`: a page on the Vite port fetches `/api/*` same-origin.
     expect(proxy["/api"]).toMatchObject({ target: "http://127.0.0.1:3001" });
     expect(proxy["/health"]).toBe("http://127.0.0.1:3001");
+  });
+
+  test("every SERVER_ROUTES entry but root is proxied, shaped by its transport and match", () => {
+    // The table used to be a hand list, which lost `/inbox`, then `/phone`, then
+    // `/session-events` — each a route the backend served and Vite answered with
+    // its own bare 404 (or an upgrade held open unanswered).
+    const proxy = viteDevConfig("/proj", 3000, 3001).server?.proxy as Record<string, unknown>;
+    const target = "http://127.0.0.1:3001";
+    const rows = Object.entries(SERVER_ROUTES).filter(([name]) => name !== "root");
+    expect(rows.length).toBeGreaterThanOrEqual(8);
+    for (const [name, route] of rows) {
+      const entry = proxy[route.path];
+      if (route.transport === "ws") {
+        expect(entry, name).toEqual({ target, ws: true });
+      } else if (route.match === "prefix") {
+        expect(entry, name).toMatchObject({ target });
+        expect(typeof (entry as { bypass?: unknown }).bypass, name).toBe("function");
+      } else {
+        expect(entry, name).toBe(target);
+      }
+    }
+    // Root would prefix-match every request Vite is meant to serve itself.
+    expect(proxy[SERVER_ROUTES.root.path]).toBeUndefined();
+    expect(Object.keys(proxy)).toHaveLength(rows.length);
+  });
+
+  test("the dev-server mocks spell SERVER_ROUTES the way aai-runtime does", () => {
+    // The sibling suites mock `@alexkroman1/aai-runtime/internal` wholesale, and
+    // `viteDevConfig` derives its whole proxy table from this one name — so a
+    // row missing from the mock silently narrows what those specs see.
+    const real = Object.fromEntries(
+      Object.entries(SERVER_ROUTES).map(([name, { transport, path: p, match }]) => [
+        name,
+        { transport, path: p, match },
+      ]),
+    );
+    expect(SERVER_ROUTES_LITERAL).toEqual(real);
   });
 
   test("proxies /client-config to the backend", () => {

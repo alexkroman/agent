@@ -50,6 +50,21 @@ export { getSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
+// The route-key matcher `stubFetchRoutes` is built on, shared with the eval
+// harness's `evalNetwork` so both fake networks read one key vocabulary (host,
+// `*.suffix`, URL prefix, optional METHOD) with one specificity order.
+export {
+  parseJsonText,
+  parseRouteKey,
+  type RequestRecord,
+  type RouteKey,
+  type RouteMatch,
+  type RouteTable,
+  recordFetchRequest,
+  routeKeyMatches,
+  routeKeySpecificity,
+  routeTable,
+} from "./sdk/_route-keys.ts";
 // The one writer behind `sessionClientId`, `sessionClientLocation`,
 // `sessionClientPhone` and `sessionCall`: every field recorded, and normalized,
 // in one call where the session id is decided. The four `setSession*` below are
