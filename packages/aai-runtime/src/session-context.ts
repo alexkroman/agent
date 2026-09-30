@@ -34,6 +34,7 @@
 import type { AgentDef, SessionContext, SessionContextArgs } from "@alexkroman1/aai";
 import { normalizeClientLocation } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import pTimeout from "p-timeout";
 import { type Logger, silentLogger } from "./runtime-config.ts";
 
 /**
@@ -169,20 +170,19 @@ export async function resolveSessionContext(options: {
   const sid = args.sessionId.slice(0, 8);
   const timeoutMs = options.timeoutMs ?? SESSION_CONTEXT_TIMEOUT_MS;
   const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
-    timer = setTimeout(() => {
-      controller.abort(new Error(`sessionContext timed out after ${timeoutMs}ms`));
-      resolve(TIMED_OUT);
-    }, timeoutMs);
-  });
   try {
     // `async` wrapper so a SYNCHRONOUS throw lands in the same catch as a
     // rejection, and a plain-value answer is awaited like a promise.
-    const answer = await Promise.race([
+    const answer = await pTimeout(
       (async () => await hook({ ...args, signal: controller.signal }))(),
-      deadline,
-    ]);
+      {
+        milliseconds: timeoutMs,
+        fallback: () => {
+          controller.abort(new Error(`sessionContext timed out after ${timeoutMs}ms`));
+          return TIMED_OUT;
+        },
+      },
+    );
     if (answer === TIMED_OUT) {
       logger.warn("sessionContext timed out; session starting without it", { sid, timeoutMs });
       return undefined;
@@ -194,7 +194,5 @@ export async function resolveSessionContext(options: {
       error: errorMessage(err),
     });
     return undefined;
-  } finally {
-    clearTimeout(timer);
   }
 }

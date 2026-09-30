@@ -119,15 +119,9 @@ export function registerChannelHandler<O>(
  * interface is the shared, contract-hashed shape (guard-invariants rule 25),
  * and only the SDK's own Textbelt channel needs this today.
  */
-const CHANNEL_REFUSALS = new Map<string, (body: string) => string | undefined>();
-
-/** @internal Register a 2xx-refusal reader (`CHANNEL_REFUSALS`) for `kind`. */
-export function registerChannelRefusal(
-  kind: string,
-  refusal: (body: string) => string | undefined,
-): void {
-  CHANNEL_REFUSALS.set(kind, refusal);
-}
+const CHANNEL_REFUSALS = new Map<string, (body: string) => string | undefined>([
+  [TEXTBELT_CHANNEL_KIND, textbeltRefusal],
+]);
 
 /** The tags {@link sendToChannel} can dispatch, in registration order. */
 export function registeredChannelKindNames(): readonly string[] {
@@ -136,7 +130,6 @@ export function registeredChannelKindNames(): readonly string[] {
 
 registerChannelHandler(SLACK_CHANNEL_HANDLER);
 registerChannelHandler(TEXTBELT_CHANNEL_HANDLER, textbeltOptions);
-registerChannelRefusal(TEXTBELT_CHANNEL_KIND, textbeltRefusal);
 
 function handlerFor(channel: Channel): ChannelHandler {
   const handler = CHANNEL_KINDS.get(channel.kind);

@@ -63,9 +63,11 @@
  */
 
 import {
+  basicCredential,
   callStatusRequest,
   dialRequest,
   normalizeCallStatus,
+  type TwilioRequest,
   twilioAdvice,
 } from "./_twilio-calls.ts";
 import { redactCredentials } from "./channels/shared/outbox.ts";
@@ -357,14 +359,16 @@ function resolveCredentials(
 
 /** Everything a message may not quote: the token, the SID, and the Basic credential made of both. */
 function redact(credentials: PlaceCallCredentials, text: string): string {
-  const basic = btoa(`${credentials.accountSid}:${credentials.authToken}`);
-  return redactCredentials([credentials.authToken, basic, credentials.accountSid], text);
+  return redactCredentials(
+    [credentials.authToken, basicCredential(credentials), credentials.accountSid],
+    text,
+  );
 }
 
 /** One request to Twilio, its JSON answer on success and a {@link PlaceCallError} otherwise. */
 async function send(
   credentials: PlaceCallCredentials,
-  request: { url: string; method: string; headers: Record<string, string>; body?: string },
+  request: TwilioRequest,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> {
   const deadline = AbortSignal.timeout(CARRIER_REQUEST_TIMEOUT_MS);

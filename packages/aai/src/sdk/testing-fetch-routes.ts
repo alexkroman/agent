@@ -28,6 +28,7 @@ import {
   type StubStepRequest,
   toStepResponse,
 } from "./_testing-step-fetch.ts";
+import { safeJsonParse } from "./safe-json-parse.ts";
 import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 
 /**
@@ -176,12 +177,8 @@ function specificity({ method, where }: ParsedKey): number {
 function parseJson(body: Uint8Array | string | undefined): unknown {
   if (body === undefined) return;
   const text = typeof body === "string" ? body : new TextDecoder().decode(body);
-  if (text === "") return;
-  try {
-    return JSON.parse(text);
-  } catch {
-    // A form body or plain text: `json` stays undefined, `body` has it.
-  }
+  // A form body or plain text: `json` stays undefined, `body` has it.
+  return text === "" ? undefined : safeJsonParse(text);
 }
 
 function toRouteRequest(recorded: StubStepRequest): FetchRouteRequest {

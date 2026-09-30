@@ -32,6 +32,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { storageGet, storageRemove, storageSet } from "./_web-storage.ts";
 import { useSessionCore } from "./context.ts";
 import { createInbox } from "./inbox.ts";
 import type { InboxEvent, InboxNotice } from "./inbox-protocol.ts";
@@ -93,26 +94,15 @@ const playerKey = (clientId: string): string => `aai.inbox.player.${clientId}`;
  */
 const claims = {
   mine(clientId: string, holder: string): boolean {
-    try {
-      const owner = localStorage.getItem(playerKey(clientId));
-      return owner === null || owner === holder;
-    } catch {
-      return true;
-    }
+    const owner = storageGet("local", playerKey(clientId));
+    return owner === undefined || owner === holder;
   },
   claim(clientId: string, holder: string): void {
-    try {
-      localStorage.setItem(playerKey(clientId), holder);
-    } catch {
-      // No storage: nothing to claim, so every tab plays.
-    }
+    storageSet("local", playerKey(clientId), holder);
   },
   release(clientId: string, holder: string): void {
-    try {
-      if (localStorage.getItem(playerKey(clientId)) === holder)
-        localStorage.removeItem(playerKey(clientId));
-    } catch {
-      // No storage: nothing to claim, so every tab plays.
+    if (storageGet("local", playerKey(clientId)) === holder) {
+      storageRemove("local", playerKey(clientId));
     }
   },
 };

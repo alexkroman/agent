@@ -44,10 +44,8 @@ export type FailureHookRun = {
 /**
  * Run the hook as the `onFailure` step. Resolves once it settled either way;
  * re-throws only the walk's own abort.
- *
- * @internal
  */
-export async function runFailureHook(
+async function runFailureHook(
   run: FailureHookRun & { handler: ResolvedFailureHandler },
 ): Promise<void> {
   const { handler, runId, workflow, input } = run;

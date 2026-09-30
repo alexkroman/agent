@@ -271,7 +271,7 @@ function selects(filter: EvalRequestFilter, request: EvalRequest): boolean {
 }
 
 /** One line per request, for a failure message. */
-export function describeRequest(request: EvalRequest): string {
+function describeRequest(request: EvalRequest): string {
   const status = request.status === undefined ? "" : ` ${request.status}`;
   return `${request.method} ${request.url.href} (${request.outcome}${status})`;
 }
@@ -378,6 +378,7 @@ export function evalNetwork<State = undefined>(
   const requests = (filter?: EvalRequestFilter): readonly EvalRequest[] =>
     filter === undefined ? [...log] : log.filter((r) => selects(filter, r));
 
+  const refused = (): EvalRequest[] => log.filter((r) => r.outcome === "refused");
   return {
     fetch: fetchFn as typeof globalThis.fetch,
     get state() {
@@ -390,7 +391,7 @@ export function evalNetwork<State = undefined>(
           r.outcome !== "refused" &&
           (typeof host === "string" ? keyMatches(host, r.url) : host.test(r.host)),
       ),
-    refused: () => log.filter((r) => r.outcome === "refused"),
+    refused,
     expectNoOutbound(filter) {
       const tried = requests(filter);
       if (tried.length === 0) return;
@@ -402,11 +403,11 @@ export function evalNetwork<State = undefined>(
       );
     },
     expectNothingRefused() {
-      const refused = log.filter((r) => r.outcome === "refused");
-      if (refused.length === 0) return;
+      const denied = refused();
+      if (denied.length === 0) return;
       throw new Error(
-        `eval network: ${refused.length} request(s) were refused — each is a host the agent ` +
-          `reached for that no route answers:\n${describeRequests(refused)
+        `eval network: ${denied.length} request(s) were refused — each is a host the agent ` +
+          `reached for that no route answers:\n${describeRequests(denied)
             .map((line) => `  ${line}`)
             .join("\n")}`,
       );

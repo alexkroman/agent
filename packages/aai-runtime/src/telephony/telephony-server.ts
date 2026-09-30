@@ -130,10 +130,7 @@ export function startTelephonySession(
 ): void {
   const { carrier, startTimeoutMs = TELEPHONY_START_TIMEOUT_MS } = options;
   const log = options.logger ?? consoleLogger;
-  let settle: (start: CarrierStart | null) => void = () => undefined;
-  const started = new Promise<CarrierStart | null>((resolve) => {
-    settle = resolve;
-  });
+  const { promise: started, resolve: settle } = Promise.withResolvers<CarrierStart | null>();
   const bridge = createTelephonyBridge(carrierSocket, {
     carrier,
     logger: log,

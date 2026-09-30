@@ -34,7 +34,7 @@
  * by {@link parseInboxEvent}.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /**
  * One notice from the agent — what a workflow step sent with
@@ -96,22 +96,13 @@ export type NoticeReply = { type: "ack" | "busy"; id: string };
 /** What one frame produced: a notice to play (not for a repeat), and the reply. */
 export type AssemblerOutput = { notice?: InboxNotice; reply: NoticeReply };
 
-/** Parse a text frame as JSON, or undefined. */
-function parseJson(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * A notice header this client can take, or undefined — for anything that is
  * not one, and for a header it must refuse (odd byte count: not PCM16; more
  * than {@link MAX_NOTICE_BYTES}).
  */
 export function parseNoticeHeader(json: string): NoticeHeader | undefined {
-  const msg = parseJson(json);
+  const msg = safeJsonParse(json);
   if (!isRecord(msg)) return;
   const { type, id, event, data, bytes } = msg;
   if (type !== "notice" || typeof id !== "string" || !id || typeof event !== "string") return;
@@ -122,7 +113,7 @@ export function parseNoticeHeader(json: string): NoticeHeader | undefined {
 
 /** A live-event frame, or undefined for anything else (a notice header, say). */
 export function parseInboxEvent(json: string): InboxEvent | undefined {
-  const msg = parseJson(json);
+  const msg = safeJsonParse(json);
   if (!isRecord(msg) || typeof msg.sessionId !== "string") return;
   if (msg.type === "session_ended") return { type: "session_ended", sessionId: msg.sessionId };
   const { event } = msg;

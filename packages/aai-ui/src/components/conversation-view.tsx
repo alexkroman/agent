@@ -189,6 +189,8 @@ export function ConversationView({
   // Memoized on the renderers as well as the items: a caller that hoists or
   // `useCallback`s its renderers (as `MessageList` does) then pays for one row
   // per appended message, and one that writes them inline pays what it wrote.
+  // In log mode the live items are unused, so they are not a dependency there.
+  const liveItems = log ? undefined : items;
   const rows = useMemo(() => {
     const renderItem = (item: ConversationItem, key: string): ReactNode =>
       item.kind === "message"
@@ -196,9 +198,9 @@ export function ConversationView({
         : renderKeyed(`${key}t${item.toolCall.callId}`, renderTool(item.toolCall));
     // Prefixed, so a numeric message id and a tool call whose id happens to be
     // the same digits cannot share a key.
-    if (!log) return items.map((item) => renderItem(item, ""));
+    if (!log) return (liveItems ?? []).map((item) => renderItem(item, ""));
     return logRows(log, renderItem, renderMessage, renderNote, renderSessionHeader);
-  }, [items, log, renderMessage, renderTool, renderNote, renderSessionHeader]);
+  }, [liveItems, log, renderMessage, renderTool, renderNote, renderSessionHeader]);
 
   // A stable object per streaming text, so a memoized bubble handed the default
   // streaming message re-renders on a new delta and not on every list update.

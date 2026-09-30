@@ -137,6 +137,8 @@ function settled(outcomes: readonly Outcome[]): Outcome {
 export function createClientInbox(options: { logger: Logger; pingMs?: number }): ClientInbox {
   const { logger } = options;
   const holders = createOwnedMap<string, Holder>();
+  /** The same holders indexed by client, so a send touches only that client's. */
+  const byClient = new Map<string, Set<Holder>>();
   /** Each client's send chain: one notice in flight per client, across its holders. */
   const queues = createKeyedLock();
 
@@ -154,9 +156,9 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
 
   /** The open holders of `clientId`. */
   function openHolders(clientId: string): Holder[] {
-    return [...holders.values()].filter(
-      (holder) => holder.clientId === clientId && holder.socket.readyState === holder.socket.OPEN,
-    );
+    const own = byClient.get(clientId);
+    if (!own) return [];
+    return [...own].filter((holder) => holder.socket.readyState === holder.socket.OPEN);
   }
 
   function onMessage(holder: Holder, data: RawData): void {
@@ -191,6 +193,8 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     const holder: Holder = { clientId, socket, alive: true, events: query.get("events") === "1" };
     // The claim's own release, so this socket's close can never evict a successor.
     const release = holders.claim(key, holder);
+    const own = byClient.get(clientId) ?? new Set<Holder>();
+    byClient.set(clientId, own.add(holder));
     const label = holderId === DEFAULT_HOLDER ? clientId : `${clientId}/${holderId}`;
     logger.info(`inbox: ${label} connected${holder.events ? " (events)" : ""}`);
     socket.on("pong", () => {
@@ -203,6 +207,8 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
     socket.on("close", () => {
       holder.pending?.settle("disconnected");
       release();
+      own.delete(holder);
+      if (own.size === 0 && byClient.get(clientId) === own) byClient.delete(clientId);
       logger.info(`inbox: ${label} disconnected`);
     });
     socket.on("error", () => socket.terminate());
@@ -303,12 +309,13 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
   return {
     attach,
     notify,
-    connected: () => [...new Set([...holders.values()].map((h) => h.clientId))],
+    connected: () => [...byClient.keys()],
     feed,
     close() {
       clearInterval(pinger);
       for (const holder of holders.values()) holder.socket.terminate();
       holders.clear();
+      byClient.clear();
     },
   };
 }
