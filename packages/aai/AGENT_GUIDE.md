@@ -1513,7 +1513,7 @@ speaking on every one never stops. Speak from an event your line cannot produce
 (`tool.called`, a timer), or check the event's `text` first.
 
 `done` never rejects: `"played"` once playback ends, `"interrupted"`,
-`"dropped"` (call ended, or taken back), `"unsupported"` on S2S. **Never await
+`"dropped"` (call ended, taken back, or an S2S agent). **Never await
 `done` inside the reply it waits behind** (a tool's `execute`). **A session id
 is not authorization**: verify a webhook first. Specs: `createToolContext()`
 records into `ctx.said`.

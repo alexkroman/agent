@@ -20,6 +20,7 @@ import { createRelayExecuteTool } from "./host-relay.ts";
 import type { Runtime, runtimeBrand } from "./runtime.ts";
 import type { HostRuntimeOptions } from "./runtime-types.ts";
 import { createSessionCore } from "./session-core.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
@@ -58,6 +59,7 @@ function makeFakeRuntime(): {
 
 function makeFakeTransport(): Transport {
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     sendUserAudio: vi.fn(),

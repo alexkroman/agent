@@ -91,7 +91,8 @@ state there): a hook's write still lands in the store, without the commit.
 command (so a cut from code and one from the client report the same
 `reply.cancelled`), and answers `false` only when `Transport.isReplying` says
 the agent is silent. `say` goes to `Transport.speakLine`, or settles
-`"unsupported"` with one warning per session when the transport has none.
+`"dropped"` when the transport lacks the `say` capability (said once at session
+start — `transports/CLAUDE.md`, "What works on which transport").
 
 - **Every author-facing handle resolves the session per CALL**, through
   `speechDirectory(sessions)` built once in `runtime.ts`: `of(sid)` for a tool

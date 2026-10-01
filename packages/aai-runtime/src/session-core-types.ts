@@ -127,8 +127,8 @@ export type ServerSession = {
    * caller is still on the line, and the agent has the answer with no way to
    * offer it — so the caller has to think to ask.
    *
-   * Reports FALSE rather than throwing when the transport has no such verb
-   * (S2S has none) or the session is stopped, because the caller is a run
+   * Reports FALSE rather than throwing when the transport lacks the
+   * `announce` capability (S2S) or the session is stopped, because the caller is a run
    * completing in the background: there is nobody to raise to, and the answer
    * "this session cannot be spoken to" is what a notifier needs to stop trying.
    */
@@ -136,8 +136,8 @@ export type ServerSession = {
   /**
    * Speak `text` VERBATIM as a reply of its own, and hand back a handle to
    * await its playout or take it back: the SDK's `speech.say`. See
-   * `session-speech.ts`. Never throws; an S2S transport settles
-   * `"unsupported"`.
+   * `session-speech.ts`. Never throws; a transport without the `say`
+   * capability settles `"dropped"`.
    */
   say(text: string, options?: SayOptions): SpeechHandle;
   /**

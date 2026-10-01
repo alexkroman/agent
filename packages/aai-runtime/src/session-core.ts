@@ -190,9 +190,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   // `say`/`interrupt` for code that is not the model's turn — see
   // `session-speech.ts`. The interrupt IS the client's cancel.
   const speech = createSpeechVerbs({
-    sid: opts.id,
     transport: opts.transport,
-    log,
     stopped: () => stopped,
     cancel: () => handleCommand({ type: "cancel" }),
   });
@@ -350,7 +348,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
       // the check is the session's own flag rather than the transport's.
-      if (stopped || !opts.transport.injectTurn) return false;
+      if (stopped || !opts.transport.capabilities.announce || !opts.transport.injectTurn) {
+        return false;
+      }
       log.info("Session announcement", { sid: opts.id });
       opts.transport.injectTurn(instruction);
       return true;

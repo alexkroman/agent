@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
 import { flush, makeEmitter, makeLogger } from "./_test-utils.ts";
 import { createSessionCore, type ServerSession } from "./session-core.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport, TransportEventBody, TransportEventType } from "./transports/types.ts";
 
 describe("createSessionCore — lifecycle", () => {
@@ -31,6 +32,7 @@ describe("createSessionCore — lifecycle", () => {
     const stopGate = Promise.withResolvers<void>();
     const sink = makeSink();
     const transport: Transport = {
+      capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
       start: async () => undefined,
       stop: () => stopGate.promise,
       sendUserAudio: vi.fn(),
@@ -78,7 +80,10 @@ describe("createSessionCore — announce", () => {
   test("hands the instruction to the transport's injected turn", () => {
     const { core, transport } = makeCore();
     const injectTurn = vi.fn();
-    (transport as { injectTurn?: (text: string) => void }).injectTurn = injectTurn;
+    Object.assign(transport, {
+      injectTurn,
+      capabilities: { ...transport.capabilities, announce: true },
+    });
 
     expect(core.announce("The research you started has finished.")).toBe(true);
     expect(injectTurn).toHaveBeenCalledWith("The research you started has finished.");
@@ -96,7 +101,10 @@ describe("createSessionCore — announce", () => {
   test("reports false once the session has stopped", async () => {
     const { core, transport } = makeCore();
     const injectTurn = vi.fn();
-    (transport as { injectTurn?: (text: string) => void }).injectTurn = injectTurn;
+    Object.assign(transport, {
+      injectTurn,
+      capabilities: { ...transport.capabilities, announce: true },
+    });
     await core.stop();
 
     expect(core.announce("finished")).toBe(false);

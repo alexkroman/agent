@@ -24,12 +24,14 @@ import { setupTools } from "./runtime-tools.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
+import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 function makeFakeTransport(): Transport {
   return {
+    capabilities: ASSEMBLYAI_S2S_CAPABILITIES,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     sendUserAudio: vi.fn(),

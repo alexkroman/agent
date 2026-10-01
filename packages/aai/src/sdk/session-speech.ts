@@ -63,9 +63,10 @@
  * **Pipeline mode only.** Neither S2S service can speak host-supplied text
  * verbatim: AssemblyAI's builds every reply from its own session, and OpenAI
  * Realtime's `response.create` only takes an instruction the model may
- * paraphrase. On an S2S agent `done` settles `"unsupported"` at once rather
- * than throwing, for the reason `notify` is a no-op there: the caller is often
- * background code with nobody to raise to. `interrupt()` works in every mode.
+ * paraphrase. The runtime says so ONCE, when an S2S session starts, and every
+ * `say` there settles `"dropped"` at once rather than throwing, for the reason
+ * `notify` is a no-op there: the caller is often background code with nobody
+ * to raise to. `interrupt()` works in every mode.
  *
  * @module
  */
@@ -77,15 +78,15 @@
  * - `"interrupted"`: it started and was cut off: a barge-in, an
  *   `interrupt()`, or the session ending mid-line. History holds the heard
  *   prefix.
- * - `"dropped"`: it never started. The session ended, the line was empty, or an
+ * - `"dropped"`: it never started. The session ended, the line was empty, an
  *   interrupt stranded it in the queue (an interrupt, from the client or from
- *   code, discards EVERY queued reply, queued `say`s included).
- * - `"unsupported"`: the session's transport cannot speak verbatim text, which
- *   means an S2S agent. See this module's header.
+ *   code, discards EVERY queued reply, queued `say`s included), or the
+ *   session's transport cannot speak verbatim text — an S2S agent, said once
+ *   at session start. See this module's header.
  *
  * @public
  */
-export type SpeechOutcome = "played" | "interrupted" | "dropped" | "unsupported";
+export type SpeechOutcome = "played" | "interrupted" | "dropped";
 
 /**
  * Options for {@link SessionSpeech.say}.

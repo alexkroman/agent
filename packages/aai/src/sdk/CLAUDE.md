@@ -193,8 +193,9 @@ stream like any reply. The same `SessionSpeech` is `ToolContext.speech` (so a
 `createToolContext()` still stands in for a handler's context, recording into
 `ctx.said`) and `RouteContext.speech(sessionId)` for a webhook. Rules:
 
-- **Pipeline only.** On S2S `done` settles `"unsupported"`; neither service
-  speaks host text verbatim. `interrupt()` works in every mode.
+- **Pipeline only.** On S2S `done` settles `"dropped"` (said once at session
+  start); neither service speaks host text verbatim. `interrupt()` works in
+  every mode.
 - **Never throws**, and every "cannot" is an outcome on `done`: `"dropped"` for
   an ended session, blank text, a line taken back or stranded by an interrupt.
 - **Never await `done` inside the reply it queues behind** (a tool's
