@@ -216,7 +216,7 @@ if (typeof packageManager === "string" && scaffold.packageManager !== packageMan
 if (changed) {
   if (checkOnly) {
     console.error("sync-scaffold-versions: scaffold package.json is out of sync (see above).");
-    console.error("Run `node scripts/sync-scaffold-versions.mjs` to fix.");
+    console.error("Run `pnpm sync:scaffold` to fix.");
     process.exit(1);
   }
   try {

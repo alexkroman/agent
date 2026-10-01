@@ -2,9 +2,9 @@
 // Drive ONE voice session by hand and print everything the server did — the
 // diagnostic half of the load harness (`scripts/loadtest.mjs` is the load half).
 //
-//   pnpm loadtest:probe --port=4110              # handshake only
-//   pnpm loadtest:probe --port=4900 --speak      # one full turn (stub agent)
-//   pnpm loadtest:probe --url=ws://host/websocket --speak=3
+//   pnpm loadtest probe --port=4110              # handshake only
+//   pnpm loadtest probe --port=4900 --speak      # one full turn (stub agent)
+//   pnpm loadtest probe --url=ws://host/websocket --speak=3
 //
 // It exists because a load number is unreadable without knowing which frames a
 // session actually got. Two things it reports that no aggregate can:

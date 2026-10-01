@@ -2,8 +2,8 @@
 // What the PLATFORM costs, measured as the difference between two ways of
 // reaching the same guest route.
 //
-//   pnpm loadtest:platform --slug=bench --guest=http://127.0.0.1:4901
-//   pnpm loadtest:platform --slug=bench --guest=http://127.0.0.1:4901 --cold=20
+//   pnpm loadtest platform --slug=bench --guest=http://127.0.0.1:4901
+//   pnpm loadtest platform --slug=bench --guest=http://127.0.0.1:4901 --cold=20
 //
 // A guest route is served twice over: directly by the sandbox, and through the
 // platform, which authenticates the caller, resolves the deploy, and proxies. So

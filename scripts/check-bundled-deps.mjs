@@ -36,14 +36,24 @@
  * and buys a smaller graph at container cold start. This gate makes a 26th an
  * explicit decision instead of a discovery in production.
  *
- * ## Why it RUNS the build
+ * ## Why it reads the BUILD's own log
  *
  * The list is tsdown's own answer (its `Detected dependencies in bundle` hint),
  * not a re-derivation from manifests. A static walk of the lockfile would
  * over-approximate — rolldown inlines what is actually imported, not what is
  * declared — and a gate whose set disagrees with the real bundle is worse than
- * no gate. The build is ~1.5s and turbo has usually cached it already, which is
- * also why this sits in the `after-build` phase rather than with the ratchets.
+ * no gate.
+ *
+ * It asks TURBO for the build (`turbo run build --filter aai-studio-server`)
+ * and reads the task log turbo keeps beside the package
+ * (`.turbo/turbo-build.log`), rather than running an uncached
+ * `pnpm --filter … build`. On a cache hit turbo restores that log with the
+ * outputs, so the hint read is the one the build that produced the current
+ * `dist/` printed — the same inputs hash, so the same bundle — and the gate
+ * costs a cache lookup instead of a rebuild. On a miss turbo builds and writes
+ * it fresh. ANSI codes are stripped first: a replayed log keeps whatever colour
+ * the original run had. This sits in the `after-build` phase, where the build
+ * has already run.
  *
  * An ABSENT hint is a hard failure, never an empty set. tsdown prints it only
  * while `deps.alwaysBundle` is in use — set `deps.onlyBundle` instead and the
@@ -52,6 +62,11 @@
  * floor against, and `bundled-deps.test.ts` holds the config to `alwaysBundle`
  * from the other side.
  *
+ * `--update` (`pnpm bundled-deps:update`) is LOWER-ONLY, like every baseline
+ * ratchet here: it drops packages no longer inlined and refuses to add one, so
+ * a newly swallowed package is a hand edit to the baseline in a reviewable
+ * diff. A package dropped from the bundle but still in the baseline WARNS.
+ *
  * Usage: `node scripts/check-bundled-deps.mjs [--update]`
  */
 
@@ -59,6 +74,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
+
 import { parseScriptArgs } from "./_args.mjs";
 
 // Parsed STRICTLY, never scanned: `--update` REWRITES the committed baseline,
@@ -97,11 +114,8 @@ function parseSwallowed(output) {
   /** @type {string[]} */
   const names = [];
   for (const line of output.slice(start).split("\n").slice(1)) {
-    // No ANSI stripping: the build below runs with FORCE_COLOR=0, so the hint
-    // arrives plain (verified). If a future tsdown colourises it anyway, this
-    // matches nothing and the empty-set guard below FAILS — which is the right
-    // direction for a gate, and better than carrying an escape sequence in a
-    // pattern to make it silently keep working.
+    // The caller strips ANSI first. If a future tsdown changes the shape, this
+    // matches nothing and the empty-set guard below FAILS — the right direction.
     const m = /^-\s+(\S+)\s*$/.exec(line);
     // The block ends at the first line that is not a `- <name>` entry.
     if (!m) break;
@@ -110,19 +124,37 @@ function parseSwallowed(output) {
   return names.sort();
 }
 
-const build = spawnSync("pnpm", ["--filter", PACKAGE, "build"], {
-  cwd: REPO_ROOT,
-  encoding: "utf-8",
-  env: { ...process.env, FORCE_COLOR: "0" },
-});
+/**
+ * Build through turbo (a cache hit when nothing moved) and read the task log
+ * turbo keeps for it, which a hit restores alongside `dist/`.
+ */
+const LOG = path.join(REPO_ROOT, "packages", PACKAGE, ".turbo", "turbo-build.log");
+const build = spawnSync(
+  "pnpm",
+  ["exec", "turbo", "run", "build", `--filter=${PACKAGE}`, "--output-logs=errors-only"],
+  { cwd: REPO_ROOT, encoding: "utf-8", env: { ...process.env, FORCE_COLOR: "0" } },
+);
 if (build.status !== 0) {
-  console.error(`${RED}check-bundled-deps: \`pnpm --filter ${PACKAGE} build\` failed.${NC}`);
+  console.error(`${RED}check-bundled-deps: \`turbo run build --filter=${PACKAGE}\` failed.${NC}`);
   console.error(build.stdout ?? "");
   console.error(build.stderr ?? "");
   process.exit(1);
 }
 
-const swallowed = parseSwallowed(`${build.stdout ?? ""}\n${build.stderr ?? ""}`);
+let log = "";
+try {
+  // A log replayed from turbo's cache keeps whatever colour the original run had.
+  log = stripVTControlCharacters(readFileSync(LOG, "utf-8"));
+} catch (err) {
+  console.error(
+    `${RED}check-bundled-deps: turbo left no build log at ${path.relative(REPO_ROOT, LOG)}.${NC}\n` +
+      `${err instanceof Error ? err.message : String(err)}\n` +
+      "The hint is read from that log; without it this gate cannot see the bundle.",
+  );
+  process.exit(1);
+}
+
+const swallowed = parseSwallowed(log);
 if (swallowed === null || swallowed.length === 0) {
   console.error(
     `${RED}check-bundled-deps: tsdown printed no "Detected dependencies in bundle" hint.${NC}\n\n` +
@@ -139,15 +171,19 @@ if (swallowed === null || swallowed.length === 0) {
 const baseline = JSON.parse(readFileSync(BASELINE, "utf-8"));
 const expected = [...baseline.inlined].sort();
 
-if (FLAGS.update === true) {
-  const next = JSON.stringify({ ...baseline, inlined: swallowed }, null, 2);
-  writeFileSync(BASELINE, `${next}\n`);
-  console.log(`check-bundled-deps: baseline updated — ${swallowed.length} inlined package(s). ✓`);
-  process.exit(0);
-}
-
 const added = swallowed.filter((n) => !expected.includes(n));
 const removed = expected.filter((n) => !swallowed.includes(n));
+
+if (FLAGS.update === true && removed.length > 0) {
+  const next = JSON.stringify(
+    { ...baseline, inlined: expected.filter((n) => swallowed.includes(n)) },
+    null,
+    2,
+  );
+  writeFileSync(BASELINE, `${next}\n`);
+  console.log(`check-bundled-deps: baseline lowered — ${removed.length} package(s) removed. ✓`);
+  removed.length = 0;
+}
 
 if (added.length > 0) {
   console.error(
@@ -160,8 +196,9 @@ if (added.length > 0) {
       "production while the build, tsc and the test suite all stay green. That is how\n" +
       "every deployed agent page came to answer 500 for the default client UI.\n\n" +
       "Decide, rather than inherit:\n" +
-      "  • location-independent pure JS → run `node scripts/check-bundled-deps.mjs --update`\n" +
-      "    and say why in the commit.\n" +
+      "  • location-independent pure JS → add it to `inlined` in\n" +
+      "    scripts/bundled-deps-baseline.json BY HAND (--update never adds), and say why\n" +
+      "    in the commit.\n" +
       "  • reads anything off disk → add it, or its ROOT (which takes its whole tree with\n" +
       `    it), to \`external\` in packages/${PACKAGE}/tsdown.config.ts, and DECLARE it in that\n` +
       "    package so the specifier still resolves from `dist/`.",
@@ -170,14 +207,11 @@ if (added.length > 0) {
 }
 
 if (removed.length > 0) {
-  console.error(
-    `${RED}check-bundled-deps: the baseline is STALE — ${removed.length} package(s) ` +
-      `no longer inlined:${NC}\n\n` +
-      removed.map((n) => `  - ${n}`).join("\n") +
-      "\n\nGood news, and it has to be recorded or it creeps back unnoticed. Run\n" +
-      "`node scripts/check-bundled-deps.mjs --update`. This baseline only ever goes down.",
+  console.warn(
+    `check-bundled-deps: ${removed.length} baselined package(s) no longer inlined — ` +
+      "run `pnpm bundled-deps:update` to record it, or it creeps back unnoticed:\n" +
+      removed.map((n) => `  - ${n}`).join("\n"),
   );
-  process.exit(1);
 }
 
 console.log(

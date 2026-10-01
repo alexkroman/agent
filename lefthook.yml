@@ -12,11 +12,10 @@ pre-commit:
       glob: "**/package.json"
       run: pnpm run check:syncpack
     # Headroom nudge, not a gate: prints any staged file within 10% of its
-    # line cap and always exits 0 (`--staged`). The point is to say it while
-    # the file is still open — a cap discovered at push time turns the split
-    # into a detour inside whatever change forced it, which is how several
-    # branches ended up carrying an unrelated refactor. `pnpm check` at push
-    # time is what actually enforces the cap.
+    # code-line cap and always exits 0 (`--staged`). The point is to say it
+    # while the file is still open — a cap discovered at push time turns the
+    # split into a detour inside whatever change forced it. `pnpm check:local`
+    # at push time (and CI) is what actually enforces the cap.
     file-length-headroom:
       glob: "{packages,scripts}/**/*.{ts,tsx,mjs}"
       run: node scripts/check-file-length.mjs --staged
@@ -111,5 +110,9 @@ pre-push:
         echo "  Then commit the changeset file and push again."
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         exit 1
+    # The LOCAL subset, not full `pnpm check`: e2e, scenario, integration, the
+    # docs site, attw, dedupe, markdownlint and shellcheck stay with CI, which
+    # runs every one of them on the PR. `check:local` names what it skipped as
+    # it finishes; `pnpm check` runs everything when you want it before a push.
     check:
-      run: pnpm check
+      run: pnpm check:local
