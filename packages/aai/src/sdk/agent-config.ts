@@ -19,7 +19,12 @@ import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-s
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { type AgentSystemPrompt, staticSystemPrompt } from "./agent-instructions.ts";
 import { AGENT_MODES, type AgentMode } from "./agent-mode.ts";
-import { assertGuardrailScope, assertProviderTriple, assertSamplingScope } from "./config-rules.ts";
+import {
+  assertGuardrailScope,
+  assertProviderTriple,
+  assertSamplingScope,
+  type SessionMode,
+} from "./config-rules.ts";
 import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
@@ -390,15 +395,12 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // BEFORE the cross-field rules, so a misspelled field is reported as itself
   // rather than as whatever rule notices its absence three checks later.
   assertNoStrayFields(src, KNOWN_AGENT_FIELDS);
-  // After the fill, `assertProviderTriple` classifies the mode (and still
-  // rejects s2s combined with pipeline stages) so the server can trust it.
-  const mode = assertProviderTriple(
-    src.stt,
-    src.llm,
-    src.tts,
-    src.s2s,
-    src.mode === "text" ? true : undefined,
-  );
+  // A text agent is its resolved `mode` (whose stt/tts/s2s the normalization
+  // above refused). Any other mode is classified, after the fill, by
+  // `assertProviderTriple` (which still rejects s2s combined with pipeline
+  // stages) so the server can trust it.
+  const mode: SessionMode =
+    src.mode === "text" ? "text" : assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSamplingScope(mode, src);
   assertGuardrailScope(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent
