@@ -80,10 +80,22 @@ export function expectToolOk<R>(
   result: R,
 ): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
 /**
- * The CLAIMED form, for a result typed `unknown` (the name form): `T` is what
- * the spec says the tool answers. Unchecked at runtime.
+ * What a tool answered, minus the refusal — the CLAIMED form, for a result
+ * typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`).
  *
- * {@inheritDoc expectToolOk}
+ * `T` is what the spec says the tool answers, unchecked at runtime. Behaves as
+ * the inferred form does: a dialog envelope is unwrapped, a plain value passes
+ * through, a `ToolFailure` throws quoting the refusal.
+ *
+ * @typeParam T - The type the spec claims for the tool's own value.
+ *
+ * @example
+ * ```ts no-check
+ * import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
+ *
+ * const run = toolRunner(agentDef);
+ * const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+ * ```
  *
  * @public
  */

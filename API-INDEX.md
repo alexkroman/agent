@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 591 names
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
-- [Hosting and tooling](#hosting-and-tooling) — 234 names
+- [Hosting and tooling](#hosting-and-tooling) — 235 names
 - [Framework internals](#framework-internals) — 430 names
 
 ## Agent authoring
@@ -383,7 +383,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `WorkflowFollowOutputOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.followOutput`'s options: which channel, from which chunk. |
 | `WorkflowGetOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.get`'s options: an optional `wait` for the run to settle. |
 | `WorkflowInputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's INPUT type — what its declared schema parses to, which is exactly what the body's parameter should be. |
-| `WorkflowOutputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's OUTPUT type, for a page that polls its runs. |
+| `WorkflowOutputOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`, `@alexkroman1/aai-ui`) | `aai:workflow-api` | A workflow's OUTPUT type, for a page that polls its runs. |
 | `WorkflowRunBase` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | Fields every `WorkflowRunSnapshot` member carries, whatever its status. |
 | `WorkflowRunListOptions` | type | `@alexkroman1/aai/workflow-api` | `aai:workflow-api` | `WorkflowApi.find` and `WorkflowApi.recent`'s options: how many runs to answer. |
 | `WorkflowRunOf` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`) | `aai:workflow-api` | A run of `D`, with its output already typed — `WorkflowRunSnapshot` and `WorkflowOutputOf` composed. |
@@ -899,7 +899,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `dialogResultSchema` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai:testing` | The envelope a gated tool answers with, as a schema around the tool's own. |
 | `endSessionCalls` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every `endSession(ctx, …)` a tool made on a `createToolContext` context's session, in call order, with its options resolved (`afterReply` defaults to `true`). |
 | `errorsIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | Every `error.reported` in `events`, in order — what the RUNTIME reported, as opposed to what the agent said or called. |
-| `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | Can this machine run evals against `agent`? |
+| `evalCredentials` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | Can this machine run evals against `agent` — a VOICE agent, through `openEvalSession` / `describeEval`? |
 | `evalNetwork` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval-network` | Build a fake network: every request is answered by a route, passed through to a host named in `passthrough`, or refused and recorded. |
 | `evalSimulation`, `EvalSimulationOptions` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval-simulate` | Build the `simulate`/`judge` pair for one case. |
 | `evalTextCredentials` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | Can this machine run a TEXT agent's eval live, and if not, which key is missing? |
@@ -907,11 +907,11 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `eventsOf` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai:testing` | Every event in `events` named `type`, in order, typed as that member. |
 | `expectCalled` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval-assert` | Every name in `names` was called in this turn, and a throw naming what the agent did INSTEAD when one was not. |
 | `expectDeployable` | function | `@alexkroman1/aai/testing` | `aai:testing` | Run the invariants a deployable agent owes, and hand back the RESOLVED config so a spec can go on to assert its own specifics — a chosen model, a declared … |
-| `expectDialogOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The same unwrap as `expectToolOk`, keeping WHERE the dialog landed. |
+| `expectDialogOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The dialog envelope a gated tool answered, keeping WHERE the dialog landed. |
 | `expectDialogRefused` | function | `@alexkroman1/aai/testing` | `aai:testing` | The refusal a gated tool answered with, or a throw saying the gate did NOT hold. |
 | `expectPromptBuiltinsDeclared` | function | `@alexkroman1/aai/testing` | `aai:testing` | Every builtin the prompt commands is one `builtinTools` declares — or a throw naming the ones that are not. |
 | `expectToolBeforeSpeech` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | The agent ACTED before it spoke: this turn's first `tool.called` precedes its first committed reply. |
-| `expectToolOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | The value a gated tool's own `execute` returned, or a throw naming the refusal. |
+| `expectToolOk` | function | `@alexkroman1/aai/testing` | `aai:testing` | What a tool answered, minus the refusal — or a throw quoting the refusal. |
 | `installFetchRoutes` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Route the global `fetch` — and the step fetch — through one URL/method table, restored when this test finishes, and return the request log. |
 | `installStubClientInbox` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Publish a device inbox for `stepNotifyClient`, restored when this test finishes. |
 | `installStubGateway` | function | `@alexkroman1/aai/testing/vitest` | `aai:testing` | Install a fake LLM gateway as the global `fetch`, and return its call log. |
@@ -952,8 +952,8 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `stubClientTranscript` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a reader that answers every `stepClientTranscript` with `answer` — a fixed transcript, or one computed per call (e.g. honouring the cursor). |
 | `stubDelegate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.delegate` from a script: one reply, or routes keyed by subagent name. |
 | `stubFetchRoutes` | function | `@alexkroman1/aai/testing` | `aai:testing` | Install one router as the global `fetch` (and, by default, the published step fetch), and return its log. |
-| `stubGateway` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake LLM gateway answering `replies` in order. |
-| `stubGatewayRoute` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai:testing` | A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot rather than the global `fetch`. |
+| `stubGateway` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake LLM gateway answering `replies` in order, as a `fetch` for the caller to install on the GLOBAL `fetch`. |
+| `stubGatewayRoute` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai:testing` | A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot rather than the global `fetch` — a ROUTE to compose, not a fake to install. |
 | `stubGenerate` | function | `@alexkroman1/aai/testing` | `aai:testing` | Build a fake `ctx.generate` from a script: one reply, or routes keyed by system prompt. |
 | `stubPlaceCall` | function | `@alexkroman1/aai/testing` | `aai:testing` | Publish a Twilio whose Calls API records every dial and answers it. |
 | `stubReporter` | function | `@alexkroman1/aai/testing` | `aai:testing` | Capture what a step narrates and emits. |
@@ -969,7 +969,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolInputIssues` | function | `@alexkroman1/aai/testing` | `aai:testing` | The issues the tool `name`'s input schema found in `value`, or `undefined`. |
 | `toolNames` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | The names of `calls`, in call order — what the agent reached for. |
 | `toolOf` | function | `@alexkroman1/aai/testing` | `aai:testing` | The tool `name` is declared under, or a throw naming the ones that are. |
-| `toolResultIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | The result of the ONE call to `name` in `calls`, parsed. |
+| `toolResultIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | The result of the ONE call to `name` in `calls`, parsed — zero calls or two throw. |
 | `toolResultsIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | Every call to `name` in `calls`, with its RESULT parsed — what each answered, in call order. |
 | `toolRunner` | function | `@alexkroman1/aai/testing` | `aai:testing` | `runTool` bound to one agent — the `run(...)` a spec actually calls. |
 | `transcriptOf` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:eval` | The session as `User:`/`Agent:` lines with each tool call beneath the turn that made it, as `[tool(args) -> result]`, then any request the network REFUSED — … |
@@ -986,7 +986,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `AgentConfigSource` | type | `@alexkroman1/aai/manifest` |  | What `toAgentConfig` accepts: every serializable `AgentConfig` field plus the host-only fields the deny-list strips. |
 | `AgentEnv` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Tenant-owned env — the only kind allowed to become `ctx.env` (what agent tool code reads). |
 | `AgentRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Common interface for agent runtimes. |
-| `AgentServer`, `AgentServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Handle returned by `createRuntimeServer`. |
+| `AgentServer`, `AgentServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Handle returned by `createServerForRuntime`. |
 | `CARRIER_CODECS` | const | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Every carrier this build can serve, keyed by its `?carrier=` value. |
 | `CLIENT_ARTIFACT_REL` | const | `@alexkroman1/aai-cli/start` |  | Where `aai build` leaves the built browser client, relative to the root. |
 | `CLIENT_CONFIG_METHODS` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | The only method the endpoint answers — read by the host's route dispatch, so this is the value and not a description of it. |
@@ -1062,7 +1062,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `RestoredToolCallSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | One tool call as a RESUME reports it — see `history.restored`. |
 | `RunCodeExecutor` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:runtime` | Isolated executor backing the run_code builtin (see the module doc). |
 | `Runtime`, `RuntimeOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The agent runtime returned by `createRuntime`. |
-| `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createRuntimeServer`. |
+| `RuntimeServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Configuration for `createServerForRuntime`. |
 | `RuntimeTracing` | type | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | A started tracer. |
 | `S2sConfig` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Speech-to-Speech (S2S) endpoint configuration. |
 | `SESSION_AUTH_PROTOCOL_PREFIX` | const | `@alexkroman1/aai/protocol` (also `@alexkroman1/aai-runtime/auth`) | `aai:protocol` | `Sec-WebSocket-Protocol` entry prefix a session ticket travels under. |
@@ -1075,7 +1075,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SESSION_UNAUTHORIZED_CLOSE_CODE` | const | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | The close code a refused session ends with — HTTP 401 in the 4000-4999 application range, so a client can tell "not allowed" from a dropped network. |
 | `ServerRequestHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every HTTP request (after `/health`). |
 | `ServerUpgradeHook` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | First look at every WebSocket upgrade. |
-| `SessionAuth`, `SessionAuthOptions` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who may open a session on a server — `auth` on `createAgentServer`, `createRuntimeServer` and `createHostServer`. |
+| `SessionAuth`, `SessionAuthOptions` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Who may open a session on a server — `auth` on `createAgentServer`, `createServerForRuntime` and `createHostServer`. |
 | `SessionCommand` | type | `@alexkroman1/aai/protocol` | `aai:protocol` | **Client→server** text messages (binary frames carry raw PCM16 audio). |
 | `SessionCommandSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `SessionCommand`. |
 | `SessionConnectOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options for `connectSession`. |
@@ -1088,12 +1088,12 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SessionEventStream` | type | `@alexkroman1/aai-runtime` | `aai-runtime:session` | The runtime's view of every session's event stream. |
 | `SessionIdentity` | type | `@alexkroman1/aai-runtime/auth` (also `@alexkroman1/aai-ui`) | `aai-runtime:auth` | Who a verified ticket says the caller is. |
 | `SessionMode` | type | `@alexkroman1/aai/manifest` |  | Session mode derived from which provider fields are set. |
-| `SessionRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The session-facing slice of a runtime — all `createRuntimeServer` needs. |
+| `SessionRuntime` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | The session-facing slice of a runtime — all `createServerForRuntime` needs. |
 | `SessionStartOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Per-session options passed to `AgentRuntime.startSession`. |
 | `SessionTokenInput` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Input to `createSessionToken`. |
 | `SessionVerifier` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | A caller's own ticket check — a JWT from your IdP, an API key lookup. |
 | `SessionWebSocket` | type | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Minimal WebSocket interface accepted by `AgentRuntime.startSession`. |
-| `SharedServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The options every front door over `createRuntimeServer` passes straight through — a logger and the two request hooks. |
+| `SharedServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The options every front door over `createServerForRuntime` passes straight through — a logger and the two request hooks. |
 | `SkipGreetingOption` | type | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Whether to suppress a session's opening greeting: the answer, or a THUNK that knows it later. |
 | `StartResult` | interface | `@alexkroman1/aai-cli/start` |  | What `executeStart` answers, for `--json` and for tests. |
 | `SttError` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:providers` | Error raised by an STT provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
@@ -1146,14 +1146,15 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `carrierByName` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | The codec for a `?carrier=` value. |
 | `composeToolsets` | function | `@alexkroman1/aai/manifest` |  | Compose toolsets, FIRST WINS: a later set's tool of an already-taken name is dropped, and `onShadowed` hears about it — the precedence is the order. |
 | `connectSession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Run a session over your OWN audio I/O — anything that is not a WebSocket. |
-| `createAgentServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server running one agent — the self-hosting entry point, and the same server `aai dev` runs. |
+| `createAgentServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Serve ONE AGENT DEFINITION over HTTP + WebSocket — the self-hosting front door. |
 | `createHostServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create a multi-tenant host server: an HTTP + WebSocket server whose voice sessions run agents supplied by their callers. |
 | `createMemoryKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in this process's memory, for `aai dev`. |
 | `createPostgresDb`, `CreatePostgresDbOptions` | function | `@alexkroman1/aai-runtime` | `aai-runtime:db` | Create a `Db` backed by a Postgres connection pool. |
 | `createPostgresKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in the workflow database. |
 | `createProjectServer` | function | `@alexkroman1/aai-cli/start` |  | Build this project's `AgentServer` WITHOUT binding a socket. |
 | `createRuntime` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Create an agent runtime — the execution engine for a voice agent. |
-| `createRuntimeServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server for an agent — the self-hosting entry point, and the same server `aai dev` runs. |
+| `createRuntimeServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Serve a runtime you already have over HTTP + WebSocket. |
+| `createServerForRuntime` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Serve a RUNTIME YOU ALREADY HAVE over HTTP + WebSocket — a `createRuntime` result, or any `SessionRuntime`. |
 | `createSessionAuth` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Build the session gate a server applies to `WS /websocket`: a ticket check, an `Origin` allowlist, and resume bound to the identity that opened the session. |
 | `createSessionToken` | function | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | Mint a session ticket — call this from your own backend, after your own login check, and hand the result to the browser. |
 | `createTelephonyBridge` | function | `@alexkroman1/aai-runtime` | `aai-runtime:telephony` | Wrap a carrier's media-stream socket as a `SessionWebSocket`, ready to hand straight to `runtime.startSession`. |
@@ -1452,7 +1453,7 @@ trace or a type error can be traced back to something.
 | `SttKind` | type | `@alexkroman1/aai/host-internal` |  | A catalog kind at one stage — the key set an opener table must cover. |
 | `TAIL_RESUME_MIN_UNHEARD_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `TELEPHONY_CARRIERS` | const | `@alexkroman1/aai/internal` |  | The same names as a VALUE, for the two readers that need the list at run time: `AgentConfigSchema`, which validates them because the declaration crosses the … |
-| `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime/internal` |  | Path `createRuntimeServer` serves carrier media streams on. |
+| `TELEPHONY_PATH` | const | `@alexkroman1/aai-runtime/internal` |  | Path `createServerForRuntime` serves carrier media streams on. |
 | `TERMINAL_WORKFLOW_STATUSES` | const | `@alexkroman1/aai/internal` |  | Statuses nothing will change again. |
 | `TOOL_EXECUTION_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Wall-clock budget (ms) for one tool `execute` call before it is aborted. |
 | `TOOL_RESULT_TRUNCATION_MARKER` | const | `@alexkroman1/aai/internal` |  | Appended to a tool result the framework trimmed at `MAX_TOOL_RESULT_CHARS`, so a model reading it can tell the record is incomplete rather than answering from … |

@@ -1855,7 +1855,7 @@ export type WorkflowInputOf<D> = D extends {
 } ? I : never;
 
 // @public
-type WorkflowOutputOf<D> = D extends {
+export type WorkflowOutputOf<D> = D extends {
     readonly run: (input: never, ctx: never) => infer R;
     readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;

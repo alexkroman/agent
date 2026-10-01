@@ -791,7 +791,8 @@ function stubGatewayRoute(replies: string | readonly string[], options?: StubGat
 ```
 
 A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
-rather than the global `fetch`.
+rather than the global `fetch` — a ROUTE to compose, not a fake to install.
+[stubGateway](../../aai/testing.md#stubgateway-1) says which of the three gateway fakes fits which seam.
 
 [stubGateway](../../aai/testing.md#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
 whenever anything has published a `stepFetch`: publishing REPLACES, so a flow

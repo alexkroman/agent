@@ -246,8 +246,8 @@ Override any of them.
 **`generate` and `delegate` also take a SCRIPT**, which is the way in for a
 tool that calls a model: pass `stubGenerate`'s own argument and the fake is
 built here, installed, and handed back on `ctx.model` (`ctx.desk` for
-`delegate`). [scriptedToolContext](#scriptedtoolcontext-1) is the same thing under a name that
-says both seams are scripted, and returns the two fakes beside the context.
+`delegate`). It replaces the deprecated [scriptedToolContext](#scriptedtoolcontext-1), which
+returned the same two fakes beside the context.
 
 **Each call is a distinct session.** `sessionId` auto-increments, which is
 what makes the two-context isolation test — the same tool run against two
@@ -743,12 +743,14 @@ Naming the invariant that failed, and — for the validation one — the
 function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 ```
 
-The same unwrap as [expectToolOk](#expecttoolok), keeping WHERE the dialog landed.
+The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
 
 The half a spec needs when the assertion is about the conversation rather
 than about the tool's own value — that a call advanced the machine into
-`quote.pending`, that a final state reports `done`. `expectToolOk()` is this
-with `.result` taken off the end.
+`quote.pending`, that a final state reports `done`. Unlike
+[expectToolOk](#expecttoolok), which passes a plain tool's value through, this THROWS
+on anything that is not a dialog envelope: keeping a position claims there is
+one.
 
 #### Type Parameters
 
@@ -770,7 +772,12 @@ What the tool's `execute` returns, under `result`.
 
 #### Throws
 
-As [expectToolOk](#expecttoolok) does, and for the same reasons.
+When the tool refused, quoting the refusal, as [expectToolOk](#expecttoolok) does.
+
+#### Throws
+
+When the value is not a dialog envelope — a plain `tool()` has no
+  position to keep; use [expectToolOk](#expecttoolok) for it.
 
 #### Example
 
@@ -955,56 +962,113 @@ lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
 
 ### expectToolOk()
 
+#### Call Signature
+
 ```ts
-function expectToolOk<T>(result: unknown): T;
+function expectToolOk<R>(result: R): R extends DialogToolResult<V> ? V : Exclude<R, ToolFailure>;
 ```
 
-The value a gated tool's own `execute` returned, or a throw naming the refusal.
+What a tool answered, minus the refusal — or a throw quoting the refusal.
 
-#### Type Parameters
+Takes ANY tool's result. A `dialog()` tool's envelope ([DialogToolResult](index.md#dialogtoolresult))
+is unwrapped to the author's own value under `result`; a plain `tool()`'s
+value comes back as it is. Either way a `ToolFailure` throws HERE, naming it,
+rather than as an `undefined` read off the failure several assertions later.
 
-##### T
+**Typed by INFERENCE**: handed a typed result — `runTool(theTool, …)`, or
+`theTool.execute(…)` directly — it answers that type minus `ToolFailure`
+(for a dialog tool, the type under `result`), so no type argument is needed.
+The name form (`runTool(agent, "name", …)`, a `toolRunner`) answers
+`unknown`, because a name is a string; there, say the type you expect —
+`expectToolOk<Order>(…)` — which is unchecked at runtime, like any claim about
+a value crossing an `unknown` boundary.
 
-`T`
+Use [expectDialogOk](#expectdialogok) to keep WHERE a dialog landed, and
+[expectDialogRefused](#expectdialogrefused) when the refusal is the subject.
 
-What the tool's `execute` returns. Unchecked at runtime, like
-  any assertion about a value crossing a `unknown` boundary — this recovers
-  the type the lookup path cannot, it does not validate it.
+##### Type Parameters
 
-#### Parameters
+###### R
 
-##### result
+`R`
 
-`unknown`
+What was handed in, inferred — never written. The CLAIMED form
+  below takes the type a spec asserts instead.
 
-What `runTool` / `toolOf(...).execute(...)` answered.
+##### Parameters
 
-#### Returns
+###### result
 
-`T`
+`R`
 
-#### Throws
+What a tool's `execute`, `runTool` or a `toolRunner` answered.
+
+##### Returns
+
+`R` *extends* [`DialogToolResult`](index.md#dialogtoolresult)\<`V`\> ? `V` : `Exclude`\<`R`, [`ToolFailure`](index.md#toolfailure)\>
+
+##### Throws
 
 When the tool refused (`ToolFailure`), quoting the refusal —
   which for a `dialog()` tool is the sentence naming the state the
   conversation is actually in and what has to happen first.
 
-#### Throws
+##### Example
 
-When the value is not a tool result envelope at all, which is what a
-  plain `tool()` answers: use its return value directly, there is nothing to
-  unwrap.
+```ts
+import { tool } from "@alexkroman1/aai";
+import { expectToolOk, runTool } from "@alexkroman1/aai/testing";
+import { toolFailure } from "@alexkroman1/aai/utils";
+import { z } from "zod";
 
-#### Example
+// In a spec this is `import placeOrder from "./tools/place_order.ts"`.
+const placeOrder = tool({
+  description: "Place the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: async ({ item }) => (item ? { id: "ord_1" } : toolFailure("Name an item.")),
+});
+const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
+console.log(order.id); // typed: the failure arm is subtracted
+```
+
+#### Call Signature
+
+```ts
+function expectToolOk<T>(result: unknown): T;
+```
+
+What a tool answered, minus the refusal — the CLAIMED form, for a result
+typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`).
+
+`T` is what the spec says the tool answers, unchecked at runtime. Behaves as
+the inferred form does: a dialog envelope is unwrapped, a plain value passes
+through, a `ToolFailure` throws quoting the refusal.
+
+##### Type Parameters
+
+###### T
+
+`T`
+
+The type the spec claims for the tool's own value.
+
+##### Parameters
+
+###### result
+
+`unknown`
+
+##### Returns
+
+`T`
+
+##### Example
 
 ```ts no-check
-// `no-check`: the agent under test is in another file, which is the point.
-import { expectToolOk, runTool } from "@alexkroman1/aai/testing";
+import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
 
-const order = expectToolOk<{ id: string }>(
-  await runTool(agentDef, "place_order", {}, ctx),
-);
-expect(order.id).toBe("ord_1");
+const run = toolRunner(agentDef);
+const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
 ```
 
 ***
@@ -1530,7 +1594,7 @@ expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBe
 
 ***
 
-### scriptedToolContext()
+### ~~scriptedToolContext()~~
 
 ```ts
 function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedToolContext;
@@ -1538,17 +1602,6 @@ function scriptedToolContext(options?: ScriptedToolContextOptions): ScriptedTool
 
 Build a [TestToolContext](#testtoolcontext) whose `generate` and `delegate` are both
 scripted, and hand back the fakes beside it.
-
-**`createToolContext` is the way in now.** Its `generate` and `delegate` take
-the same scripts and expose the same fakes on the context (`ctx.model`,
-`ctx.desk`), so one call covers scripting either seam, both, or neither. This
-stays for the spec that reads the two fakes by name — `const { ctx, model,
-desk } = scriptedToolContext(…)`.
-
-Each call is a distinct session, as with `createToolContext`. A spec that
-wants two sessions sharing one script calls this twice with the same routes
-object — the routes are read at call time, so a function route with its own
-queue is shared and a fixed route is not affected either way.
 
 #### Parameters
 
@@ -1559,6 +1612,19 @@ queue is shared and a fixed route is not affected either way.
 #### Returns
 
 [`ScriptedToolContext`](#scriptedtoolcontext)
+
+#### Deprecated
+
+Use `createToolContext({ generate, delegate })` — it takes the
+same two scripts and exposes the same fakes as `ctx.model` and `ctx.desk`, so
+`const { model, desk } = scriptedToolContext(…)` is `const ctx =
+createToolContext(…)` read as `ctx.model` / `ctx.desk`. This predates it and
+stays working.
+
+Each call is a distinct session, as with `createToolContext`. A spec that
+wants two sessions sharing one script calls this twice with the same routes
+object — the routes are read at call time, so a function route with its own
+queue is shared and a fixed route is not affected either way.
 
 #### Example
 
@@ -1719,7 +1785,16 @@ net.restore();
 function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
 ```
 
-Build a fake LLM gateway answering `replies` in order.
+Build a fake LLM gateway answering `replies` in order, as a `fetch` for the
+caller to install on the GLOBAL `fetch`.
+
+Three names, one fake, picked by SEAM:
+
+| You need | Use |
+| --- | --- |
+| the global `fetch`, installed and undone for you (vitest) | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) |
+| the global `fetch`, installed by you (any runner) | `stubGateway` — this |
+| a published `stepFetch` that other fakes share (a page, a transcription) | [stubGatewayRoute](#stubgatewayroute-1), composed into `installStubStepFetch` |
 
 The LAST reply repeats once the list runs out, so a spec names only the turns
 it cares about — which is what makes this usable for a step whose model call
@@ -1770,7 +1845,8 @@ function stubGatewayRoute(replies: string | readonly string[], options?: StubGat
 ```
 
 A gateway reply for a step that goes through the PUBLISHED `stepFetch` slot
-rather than the global `fetch`.
+rather than the global `fetch` — a ROUTE to compose, not a fake to install.
+[stubGateway](#stubgateway-1) says which of the three gateway fakes fits which seam.
 
 [stubGateway](#stubgateway-1) answers over `globalThis.fetch`, which is the wrong seam
 whenever anything has published a `stepFetch`: publishing REPLACES, so a flow
@@ -2336,6 +2412,11 @@ function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>
 
 The tool `name` is declared under, or a throw naming the ones that are.
 
+Three names for three jobs: `toolOf` hands back the DEF, to assert on what
+the agent declares (its description, its schema); [runTool](#runtool) CALLS a
+tool, gated as the runtime gates it; [toolRunner](#toolrunner-1) is `runTool` with the
+agent bound, the `run(name, …)` a spec calls throughout.
+
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
 import the agent as DEPLOYED, exactly as this example does and as every
 shipped template's spec does: `virtual:aai/agent` under vitest, or
@@ -2646,14 +2727,19 @@ The text, exactly as passed.
 
 ***
 
-### ScriptedToolContext
+### ~~ScriptedToolContext~~
 
 What [scriptedToolContext](#scriptedtoolcontext-1) answers: the context to run tools against,
 and the two fakes it was built from, for asserting what each was asked.
 
+#### Deprecated
+
+`createToolContext` answers a `TestToolContext`, which carries
+both fakes itself (`ctx.model`, `ctx.desk`). See [scriptedToolContext](#scriptedtoolcontext-1).
+
 #### Properties
 
-##### ctx
+##### ~~ctx~~
 
 ```ts
 ctx: TestToolContext;
@@ -2661,7 +2747,7 @@ ctx: TestToolContext;
 
 Pass to `runTool`/`toolRunner`, or straight to a tool's `execute`.
 
-##### desk
+##### ~~desk~~
 
 ```ts
 desk: StubDelegate;
@@ -2669,7 +2755,7 @@ desk: StubDelegate;
 
 The `ctx.delegate` fake — `desk.calls` is every subagent run the tools asked for.
 
-##### model
+##### ~~model~~
 
 ```ts
 model: StubGenerate;
@@ -3535,7 +3621,7 @@ The workflow's return type, when the caller names it.
 
 ***
 
-### ScriptedToolContextOptions
+### ~~ScriptedToolContextOptions~~
 
 ```ts
 type ScriptedToolContextOptions = Omit<ToolContextOverrides, "generate" | "delegate"> & {
@@ -3560,7 +3646,7 @@ one, which failed the docs build as three unresolved links.
 
 #### Type Declaration
 
-##### delegate?
+##### ~~delegate?~~
 
 ```ts
 optional delegate?: StubDelegateScript;
@@ -3568,13 +3654,18 @@ optional delegate?: StubDelegateScript;
 
 The script `stubDelegate` takes — `{ reply }`, or `{ routes }` keyed by subagent name.
 
-##### generate?
+##### ~~generate?~~
 
 ```ts
 optional generate?: StubGenerateScript;
 ```
 
 The script `stubGenerate` takes — `{ reply }`, or `{ routes }` keyed by system prompt.
+
+#### Deprecated
+
+Pass these to `createToolContext` — `ToolContextOverrides`
+takes both scripts. See [scriptedToolContext](#scriptedtoolcontext-1).
 
 ***
 

@@ -42,7 +42,8 @@ a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the sessio
 
 | Subpath | Reach for it when |
 | --- | --- |
-| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool` |
+| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `deployedAgent`, `runTool`; the `install*` half is `/testing/vitest` |
+| `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/eval/vitest` | a spec on the REAL engine (`runWorkflow`); an eval file, whose one import that is |
 | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
 | `@alexkroman1/aai/step`, `/step-errors` | writing a step inside a workflow |
 | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
@@ -55,6 +56,28 @@ a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the sessio
 A `workflows/*.ts` body is the one file that reads from two of these: the
 declaration and its `…Of<typeof def>` readings are here, the step vocabulary
 is `/step`.
+
+## The membership rule
+
+A name is on the root when an `agent.ts`, a tool module or a `workflow()`
+body NAMES it. A name that a narrower subpath OWNS is re-exported here only
+when it is one of:
+
+1. **A type (or catalog) a root signature is spelled in** — the stage types
+   `AgentDef` names, `LlmSpec`, `AssemblyAIGatewayModel`, the voice catalog,
+   the three `…Of<typeof def>` readings, `ToolFailure` and the helpers a tool
+   body calls beside it — so an author never needs a second import to write
+   down what `agent()`, `tool()` or `workflow()` asked for.
+2. **A MODE preset** — `assemblyAIPipeline` and `assemblyAIS2s`, the two
+   configurations that pick a session mode. A factory that swaps ONE stage
+   (`assemblyAITts`, `assemblyAIStt`, `llm`, every vendor's) stays on its
+   stage subpath; `agent({ voice, llm: "<model id>" })` covers the
+   AssemblyAI stages without one.
+
+Nothing else crosses: `/utils`' formatters are read by a page or a step,
+`/step` by a step, `/workflow-api` by a caller outside the agent. The
+narrower subpath keeps every name it re-exports here and keeps owning its
+capability.
 
 ## Functions
 
@@ -17797,7 +17820,7 @@ and the two numbers disagree with nothing to report it.
 
 It reads the parameter `WorkflowDef.run` declares, which IS the schema's
 output (`InferSchemaOutput<P>`), by matching `run`'s shape — see
-[WorkflowOutputOf](workflow-api.md#workflowoutputof) for why a reading matches a shape.
+[WorkflowOutputOf](#workflowoutputof) for why a reading matches a shape.
 
 Two details a restated shape gets wrong by hand, both of which this gets
 right for free. A zod `.optional()` infers a property that may be PRESENT AND
@@ -17807,7 +17830,7 @@ that, which is a comment `z.infer` makes unnecessary. And a `.default()` makes
 the OUTPUT property required while the input stays optional, so a body reading
 it needs no fallback at all.
 
-Like [WorkflowOutputOf](workflow-api.md#workflowoutputof), it needs no build step: `import type` is
+Like [WorkflowOutputOf](#workflowoutputof), it needs no build step: `import type` is
 erased, so a body in `workflows/` naming `WorkflowInputOf<typeof theDef>`
 through a type-only import of `../agent.ts` drags no runtime cycle behind it.
 
@@ -17842,6 +17865,93 @@ The root is the one an author wants: this annotation lives in a
 
 ***
 
+### WorkflowOutputOf
+
+```ts
+type WorkflowOutputOf<D> = D extends {
+  output?: StandardSchemaV1<unknown, infer O>;
+  run: (input: never, ctx: never) => infer R;
+} ? Awaited<unknown extends O ? R : O> : never;
+```
+
+A workflow's OUTPUT type, for a page that polls its runs.
+
+This is the end-to-end typing a static page would otherwise be missing.
+`useWorkflowRun<R>` makes `run.status === "completed"` narrow to a typed
+`run.output`, and without this the page has to name `R` by hand — restating a
+shape the agent module already declares, with nothing checking the two agree.
+
+It needs no build step and no generated `.d.ts`, because the reason a page
+"cannot import the agent" does not survive contact with `import type`: a
+type-only import is ERASED, so it drags no server graph into the browser
+bundle.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+// agent.ts
+export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
+
+// client.tsx — `import type` is erased, so nothing server-side is bundled.
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { transcribe } from "./agent.ts";
+
+const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
+if (run?.status === "completed") console.log(run.output.text); // typed
+```
+
+## It reads the declared SCHEMA first, and that is what breaks a cycle
+
+The DECLARATION is the better source of this type, and the worse one used to
+be the only one. Deriving `R` from the body means `typeof theDef` needs the
+body's signature — while a body annotated `WorkflowInputOf<typeof theDef>`
+needs `typeof theDef`, which is `TS7022` reported against `agent.ts`. The
+documented way out is to ANNOTATE the declaration, and an annotation whose
+`R` comes from a schema (`WorkflowDef<typeof digestInput, z.infer<typeof
+digestOutput>>`) states the output type once, in the schema, rather than
+naming it a second time by hand.
+
+That annotated shape is also what the second reading gets WRONG, which is
+the other half of this rewrite. `D extends WorkflowDef<ToolInputSchema, infer
+R>` is an assignability test over the whole def, and `run`'s input is a
+function PARAMETER — so a def carrying an input schema is not assignable to
+one taking the open `Record<string, unknown>`, and the conditional silently
+fell to `never`. It is the same contravariance `AnyWorkflowDef` was
+written for, reached by the other route, and it is why the test below matches
+`run` as `(input: never, ctx: never) => infer R` — `never` is assignable to
+every parameter type.
+
+## It matches a SHAPE, not a named declaration
+
+Both readings test `run`'s signature structurally rather than naming
+`WorkflowDef`, `WorkflowBody` or `WorkflowContext`. A reading answers the
+same type either way — `WorkflowDef.run` IS `(input: InferSchemaOutput<P>,
+ctx: WorkflowContext) => …` — but a reading that names the declaration
+carries it (and everything `WorkflowContext` reaches) into the contract of
+every capability that publishes the reading, so a new member on the context
+a body receives moved a PAGE's type.
+
+`unknown extends O` is how "declared nothing" is told from "declared a
+schema": a def with no output schema still HAS the optional property in its
+type, carrying `R` — so the two readings agree, and the fallback only ever
+fires for a def-shaped object that names no output at all.
+
+`Awaited` because a body may be sync or async and the snapshot always holds
+the settled value.
+
+On `@alexkroman1/aai/workflow-api` only, unlike its two siblings: its reader
+is a page. Both templates that name it are a `client.tsx` parameterizing
+`useWorkflowRun<…>`, and a `*_status` tool wants `WorkflowRunOf`, which
+composes this in already.
+
+***
+
 ### WorkflowRunOf
 
 ```ts
@@ -17849,7 +17959,7 @@ type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 ```
 
 A run of `D`, with its output already typed — `WorkflowRunSnapshot` and
-[WorkflowOutputOf](workflow-api.md#workflowoutputof) composed.
+[WorkflowOutputOf](#workflowoutputof) composed.
 
 The composition is what a tool reporting on a run actually holds, and writing
 it out costs a three-name import (`WorkflowRunSnapshot`, `WorkflowOutputOf`,

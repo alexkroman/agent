@@ -14,6 +14,13 @@ import its `index.ts` only (`guard-invariants` rule 37).
 
 ## `createAgentServer` is the front door
 
+Three servers, picked by what the caller HAS: an agent definition →
+`createAgentServer`; no agent, callers bring theirs → `createHostServer`; a
+runtime built elsewhere or later (the guest harness, `aai dev`) →
+`createServerForRuntime`, the layer the other two wrap. `createRuntimeServer` is
+its deprecated old name — and stays the `GuestHost` FIELD name
+(`guest-host.ts`), which shipped harnesses read across SDK versions.
+
 ### Self-hosted durable workflows: there is no world to start
 
 The replay engine executes a run in THIS process off the agent's own
