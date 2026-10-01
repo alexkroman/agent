@@ -83,6 +83,7 @@
  * @module
  */
 
+import { classifiedCall } from "./_step-or-fail.ts";
 import { isToolFailure, type ToolFailure } from "./utils.ts";
 
 /**
@@ -103,14 +104,39 @@ class ToolFailureSignal extends Error {
 }
 
 /**
- * The value, or abandon the surrounding {@link failable} with the failure.
+ * The value, or abandon the surrounding {@link failable} with the failure —
+ * or, handed a FUNCTION, that function with its failure classified for the
+ * step engine.
  *
- * @throws A private sentinel, caught by the enclosing {@link failable}. Calling
- * it outside one is a programming error and behaves like one — the throw
- * escapes and the tool executor reports it — rather than being silently
- * swallowed.
+ * Two arms, one meaning — "this, or fail the way the caller is owed". In a
+ * tool, failing is answering a {@link ToolFailure}; in a step, it is throwing
+ * the verdict the engine retries on.
  *
- * @example
+ * - **A value** (`orFail(lookup())`): the value, unless it is a `ToolFailure`,
+ *   which abandons the enclosing {@link failable} with that exact failure.
+ * - **A function** (`orFail(stepGenerate)`): the same function, except that
+ *   what it throws — or a non-2xx `Response` it resolves to — leaves as a
+ *   `FatalError`, or a `RetryableError` carrying the far side's own
+ *   `Retry-After` (`toStepError` on `@alexkroman1/aai/step-errors` is the
+ *   verdict; anything it cannot classify is rethrown unchanged). This is how a
+ *   `workflows/` step calls a `/step` primitive — `orFail(stepFetch)`,
+ *   `orFail(stepGenerateJson)`, `orFail(stepTranscribeSubmit)`,
+ *   `orFail(sendToChannel)` — and it replaces the eight `*OrFail` twins, which
+ *   are deprecated spellings of it. A failure labelled by its request
+ *   (`GET https://…`) is the function arm's one special case: a call whose
+ *   first argument is a URL.
+ *
+ * A `ToolFailure` is never a function, so the arms cannot be confused at run
+ * time. A function VALUE passed only to be handed back — a helper answering
+ * `(() => X) | ToolFailure` — now comes back wrapped; the wrapper calls through
+ * and answers in kind (sync stays sync).
+ *
+ * @throws A private sentinel (value arm), caught by the enclosing
+ * {@link failable}. Calling it outside one is a programming error and behaves
+ * like one — the throw escapes and the tool executor reports it — rather than
+ * being silently swallowed.
+ *
+ * @example A tool helper
  * ```ts
  * import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
  *
@@ -121,14 +147,37 @@ class ToolFailureSignal extends Error {
  * // orderTotal("A1") is number | ToolFailure
  * ```
  *
+ * @example A step
+ * ```ts
+ * import { stepFetch, stepGenerate } from "@alexkroman1/aai/step";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function summarizeFeed(url: string): Promise<string> {
+ *   // A 404 stops the step; a 429 waits the Retry-After the server named.
+ *   const feed = await (await orFail(stepFetch)(url)).text();
+ *   return await orFail(stepGenerate)(feed, { system: "Summarize in two sentences." });
+ * }
+ * ```
+ *
  * @public
  */
-export function orFail<T>(value: T | ToolFailure): T {
+export function orFail<A extends readonly unknown[], R>(
+  call: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R>;
+/**
+ * The value arm of {@link orFail}: `value`, unless it is a {@link ToolFailure},
+ * which abandons the enclosing {@link failable} with that exact failure.
+ *
+ * @throws A private sentinel, caught by the enclosing {@link failable}.
+ * @public
+ */
+export function orFail<T>(value: T | ToolFailure): T;
+export function orFail(value: unknown): unknown {
+  if (typeof value === "function") {
+    return classifiedCall(value as (...args: readonly unknown[]) => unknown);
+  }
   if (isToolFailure(value)) throw new ToolFailureSignal(value);
-  // `value` is `T | ToolFailure` minus the ToolFailure branch, which TypeScript
-  // cannot subtract from an unresolved generic — negating a type predicate does
-  // not narrow one. The guard above is the proof.
-  return value as T;
+  return value;
 }
 
 /** Re-throw anything that is not our own sentinel, unchanged. */

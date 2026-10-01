@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { sendToChannelOrFail } from "../step-errors.ts";
 import { installStubStepFetch } from "../testing-vitest.ts";
+import { orFail } from "../tool-failure-flow.ts";
 import { ChannelDeliveryError } from "./shared/channel-types.ts";
 import { explainChannelFailure, renderChannelPayload, sendToChannel } from "./shared/send.ts";
 import {
@@ -140,8 +140,8 @@ describe("posting to Textbelt", () => {
     });
   });
 
-  test("sendToChannelOrFail makes the refusal a step's fatal error", async () => {
+  test("orFail(sendToChannel) makes the refusal a step's fatal error", async () => {
     installStubStepFetch(() => ({ body: { success: false, error: "Invalid phone number" } }));
-    await expect(sendToChannelOrFail(channel, { text: "hi" })).rejects.toThrow(/recipient/);
+    await expect(orFail(sendToChannel)(channel, { text: "hi" })).rejects.toThrow(/recipient/);
   });
 });

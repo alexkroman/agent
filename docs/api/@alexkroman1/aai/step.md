@@ -1097,8 +1097,8 @@ when the request never got an answer — a reset
   status, which is returned like any other: only the caller knows whether a
   `404` is fatal.
 
-**From a step, prefer `stepFetchOrFail`
-(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+**From a step, prefer `orFail(stepFetch)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
 
@@ -1112,7 +1112,8 @@ function stepGenerate(prompt: string, options?: StepGenerateOptions): Promise<st
 
 Ask the AssemblyAI LLM Gateway one question and return its reply.
 
-**From a step, prefer `stepGenerateOrFail` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `orFail(stepGenerate)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -1177,7 +1178,8 @@ Ask the model for JSON and return it validated.
 The reply is unfenced, parsed, and checked against `schema`; the validated
 value is what comes back, typed as the schema's output.
 
-**From a step, prefer `stepGenerateJsonOrFail` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `orFail(stepGenerateJson)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -1778,8 +1780,8 @@ forever.
   and the one that reads least like a failure: everything downstream would
   otherwise be handed no words and asked to work anyway.
 
-**From a step, prefer `stepTranscribePollOrFail`
-(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+**From a step, prefer `orFail(stepTranscribePoll)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
 
@@ -1853,8 +1855,8 @@ export async function checkJob(id: string): Promise<string | undefined> {
 }
 ```
 
-**From a step, prefer `stepTranscribeSubmitOrFail`
-(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+**From a step, prefer `orFail(stepTranscribeSubmit)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
 
@@ -1872,7 +1874,8 @@ function stepTranscribeSync(bytes:
 
 Transcribe one complete audio file.
 
-**From a step, prefer `stepTranscribeSyncOrFail` (`@alexkroman1/aai/step-errors`).**
+**From a step, prefer `orFail(stepTranscribeSync)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).**
 It is this call plus `throwStepError`, and the engine decides its retry policy
 from WHICH error a step throws: raw, a terminal failure burns every remaining
 attempt and a rate limit backs off for one second while the delay the far side
@@ -2001,8 +2004,8 @@ on a refusal, carrying the verdict `toStepError`
   reads. Give this step extra retries: it is the one call here worth another
   attempt, and the only one whose cost is the file.
 
-**From a step, prefer `stepTranscribeUploadOrFail`
-(`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+**From a step, prefer `orFail(stepTranscribeUpload)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
 error a step throws, and raw every failure looks alike to it — a bad API key is
 retried until the attempts run out.
 

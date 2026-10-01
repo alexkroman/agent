@@ -5,9 +5,9 @@
  * Its own module because `sdk/step-errors.ts` outgrew the 500-line cap, and the
  * seam is the one that file's doc already draws. Everything here answers one
  * question — fatal, retryable, or unclassifiable — and depends on nothing else
- * in the subpath. Everything that stayed CONSUMES an answer: `stepFetchOrFail` and
- * `throwFfmpegStepError` reach one from a shape they recognise, and the seven
- * `*OrFail` callers attach {@link throwStepError} to a call.
+ * in the subpath. Everything that stayed CONSUMES an answer: `orFail(call)`
+ * (`_step-or-fail.ts`) and `throwFfmpegStepError` reach one from a shape they
+ * recognise, and the deprecated `*OrFail` twins are `orFail` over one call.
  *
  * Cutting it the other way round — the classified callers out, the verdict in —
  * is the obvious split and does not work: those callers need
@@ -126,7 +126,7 @@ export function toStepError(cause: unknown, message?: string): Error {
  * carried verdict has `message`/`retryable` and no `ok`, and an `Error` has
  * neither `status` nor `ok`.
  */
-function isResponseLike(cause: unknown): cause is Response {
+export function isResponseLike(cause: unknown): cause is Response {
   return (
     isRecord(cause) &&
     typeof cause.status === "number" &&

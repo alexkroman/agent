@@ -19,6 +19,7 @@
 export {
   DEFAULT_RETRY_DELAY_MS,
   FatalError,
+  orFail,
   RetryableError,
   type RetryableErrorOptions,
   sendToChannelOrFail,

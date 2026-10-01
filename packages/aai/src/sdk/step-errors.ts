@@ -15,7 +15,7 @@
  * | {@link throwStepError} | you have caught something and want it classified |
  * | {@link toStepError} | same, as a value rather than a throw |
  * | {@link throwFatalStepError} | this one will never succeed — stop retrying |
- * | {@link stepFetchOrFail} | a `stepFetch` whose non-OK status should end the step |
+ * | {@link orFail} | a `/step` call whose failure should end or retry the step — `orFail(stepFetch)` |
  * | `FatalError` / `RetryableError` | constructing the verdict yourself |
  *
  * ```ts
@@ -32,12 +32,15 @@
  * }
  * ```
  *
- * The `*OrFail` callers on this subpath — the two `stepGenerate` halves, the
- * four transcription entry points and `sendToChannel` — are each the
- * underlying call plus `throwStepError` and nothing else. The raw calls stay
- * on `@alexkroman1/aai/step`: importing from HERE is the opt-in, because
- * whether a terminal failure burns a step's remaining attempts is the
- * caller's decision.
+ * {@link orFail} handed a function is that function plus {@link throwStepError}
+ * (and, for a call that resolves to a `Response`, the non-2xx branch). It is
+ * the one spelling for what eight `*OrFail` twins on this subpath used to
+ * spell one name each — `stepFetchOrFail`, the two `stepGenerate` halves, the
+ * four transcription entry points and `sendToChannelOrFail` — which stay, for
+ * one epoch, as `@deprecated` aliases of `orFail(stepX)`. The raw calls stay on
+ * `@alexkroman1/aai/step`: importing from HERE is the opt-in, because whether
+ * a terminal failure burns a step's remaining attempts is the caller's
+ * decision.
  *
  * ## Why this is not simply part of `@alexkroman1/aai/step`
  *
@@ -87,20 +90,26 @@
  * sites across eight templates** — every LLM and transcription call any of them
  * makes. Two had already wrapped it in a local `ask()` whose only content was
  * that `.catch`, each paying a doc block to say why, and the second one records
- * that two OTHER templates wrote the same mapping before it was extracted. So it
- * is hoisted one level further: {@link stepGenerateOrFail} and its
- * siblings are the `/step` call and {@link throwStepError}, nothing else.
+ * that two OTHER templates wrote the same mapping before it was extracted. It
+ * was hoisted into eight `*OrFail` twins, one per `/step` call — and then once
+ * more, into {@link orFail}, because eight names that each meant "this call
+ * plus `throwStepError`" were one combinator spelled eight times, and a ninth
+ * classifiable call would have owed a ninth.
  *
- * They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
- * `/step` names no verdict vocabulary at all, and whether a terminal failure should
- * burn a step's remaining attempts is the caller's decision — a `404` meaning
- * "already deleted" wants the raw call. The `OrFail` suffix keeps the `/step`
- * name intact, so a wrapper reads as the call it wraps.
+ * `orFail` is the SAME declaration the root barrel publishes for a tool's
+ * `T | ToolFailure` chains: handed a value it forwards a `ToolFailure`, handed a
+ * function it classifies that function's failure. One name, one meaning — "this,
+ * or fail the way the caller is owed" — rather than two names that read alike.
+ * It is on this subpath because IMPORTING FROM HERE IS THE OPT-IN: `/step` names
+ * no verdict vocabulary at all, and whether a terminal failure should burn a
+ * step's remaining attempts is the caller's decision — a `404` meaning "already
+ * deleted" wants the raw call. `orFail(stepX)` keeps the `/step` name intact,
+ * so the wrapped call reads as the call it wraps.
  *
  * @module step-errors
  */
 
-import { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
+import { throwFatalStepError, throwStepError } from "./_step-verdict.ts";
 import type { TranscribeRequestOptions } from "./_transcribe-shared.ts";
 import type { Channel, ChannelMessage } from "./channels/shared/channel-types.ts";
 import { sendToChannel } from "./channels/shared/send.ts";
@@ -117,14 +126,13 @@ import {
   type TranscribeSubmitOptions,
 } from "./step-transcribe.ts";
 import { stepTranscribeSync, type TranscribeSyncOptions } from "./step-transcribe-sync.ts";
-import { responseErrorMessage } from "./utils.ts";
+import { orFail } from "./tool-failure-flow.ts";
 
 // The verdict itself is one file over — see `_step-verdict.ts` for the seam and
 // why the dependency runs in that direction. The three names are part of THIS
 // subpath's surface, so they are re-exported rather than reached through a
-// second import path; they are imported above as well, because `stepFetchOrFail`,
-// the ffmpeg arm and the classified callers all CALL them and a
-// re-export brings nothing into this module's scope.
+// second import path; two are imported above as well, because the ffmpeg arm
+// CALLS them and a re-export brings nothing into this module's scope.
 export { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
 // The two classes the verdict RESOLVES TO. They were the DevKit's and are now
 // ours (`step-error-classes.ts` says why), and this subpath is where an author
@@ -138,6 +146,10 @@ export {
   RetryableError,
   type RetryableErrorOptions,
 } from "./step-error-classes.ts";
+// The combinator every classified call is written with — `orFail(stepFetch)`.
+// Declared once, in `tool-failure-flow.ts`, so this subpath and the root
+// publish one `orFail` rather than two; `_step-or-fail.ts` is its function arm.
+export { orFail } from "./tool-failure-flow.ts";
 
 /**
  * `stepFetch`, with the non-2xx branch every caller was writing by hand.
@@ -174,26 +186,21 @@ export {
  *
  * @example
  * ```ts
- * import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
+ * import { stepFetch } from "@alexkroman1/aai/step";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function readFeed(url: string): Promise<string> {
- *   return await (await stepFetchOrFail(url, { signal: AbortSignal.timeout(30_000) })).text();
+ *   return await (await orFail(stepFetch)(url, { signal: AbortSignal.timeout(30_000) })).text();
  * }
  * ```
  *
  * @throws {Error} a `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepFetch)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
-export async function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response> {
-  const response = await stepFetch(url, init);
-  if (response.ok) return response;
-  // The label is the REQUEST, because a run's log holds many of these and the
-  // status alone does not say which call answered. `responseErrorMessage`
-  // appends the status and the body preview.
-  throw toStepError(
-    response,
-    await responseErrorMessage(response, `${init?.method ?? "GET"} ${url}`),
-  );
+export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response> {
+  return orFail(stepFetch)(url, init);
 }
 
 /**
@@ -284,17 +291,20 @@ function ffmpegFailureKind(cause: unknown): string | undefined {
  *
  * @example
  * ```ts
- * import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
- *   return await stepGenerateOrFail(text, { system: "Summarize in two sentences." });
+ *   return await orFail(stepGenerate)(text, { system: "Summarize in two sentences." });
  * }
  * ```
  *
+ * @deprecated Use `orFail(stepGenerate)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string> {
-  return stepGenerate(prompt, options).catch(throwStepError);
+  return orFail(stepGenerate)(prompt, options);
 }
 
 /**
@@ -309,13 +319,15 @@ export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions
  * next attempt.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepGenerateJson)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
   prompt: string,
   options: StepGenerateJsonOptions<S>,
 ): Promise<InferSchemaOutput<S>> {
-  return stepGenerateJson(prompt, options).catch(throwStepError);
+  return orFail(stepGenerateJson)(prompt, options);
 }
 
 /**
@@ -329,13 +341,15 @@ export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
  * never going to transcribe.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepTranscribeSync)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepTranscribeSyncOrFail(
   bytes: Uint8Array | readonly Uint8Array[],
   options?: TranscribeSyncOptions,
 ): Promise<{ text: string }> {
-  return stepTranscribeSync(bytes, options).catch(throwStepError);
+  return orFail(stepTranscribeSync)(bytes, options);
 }
 
 /**
@@ -343,13 +357,15 @@ export function stepTranscribeSyncOrFail(
  * {@link stepTranscribeSyncOrFail} for what a transcription verdict carries.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepTranscribeUpload)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepTranscribeUploadOrFail(
   uploadId: string,
   options?: TranscribeRequestOptions,
 ): Promise<{ audioUrl: string }> {
-  return stepTranscribeUpload(uploadId, options).catch(throwStepError);
+  return orFail(stepTranscribeUpload)(uploadId, options);
 }
 
 /**
@@ -360,13 +376,15 @@ export function stepTranscribeUploadOrFail(
  * and not the other and the run gives up in one place and never in the other.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepTranscribeSubmit)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepTranscribeSubmitOrFail(
   audioUrl: string,
   options?: TranscribeSubmitOptions,
 ): Promise<{ id: string }> {
-  return stepTranscribeSubmit(audioUrl, options).catch(throwStepError);
+  return orFail(stepTranscribeSubmit)(audioUrl, options);
 }
 
 /**
@@ -377,13 +395,15 @@ export function stepTranscribeSubmitOrFail(
  * nothing about the job's own status.
  *
  * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @deprecated Use `orFail(stepTranscribePoll)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function stepTranscribePollOrFail(
   transcriptId: string,
   options?: TranscribeRequestOptions,
 ): Promise<TranscribeProgress> {
-  return stepTranscribePoll(transcriptId, options).catch(throwStepError);
+  return orFail(stepTranscribePoll)(transcriptId, options);
 }
 
 /**
@@ -406,16 +426,18 @@ export function stepTranscribePollOrFail(
  *
  * @example
  * ```ts
- * import { slackChannel } from "@alexkroman1/aai/channels";
- * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+ * import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
  *
  * export async function announce(webhookUrl: string, headline: string): Promise<string> {
- *   return await sendToChannelOrFail(slackChannel({ webhookUrl }), { text: headline });
+ *   return await orFail(sendToChannel)(slackChannel({ webhookUrl }), { text: headline });
  * }
  * ```
  *
+ * @deprecated Use `orFail(sendToChannel)` — the same call and the same verdict, spelled
+ * with the one combinator rather than a name per call. Kept for one epoch.
  * @public
  */
 export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string> {
-  return sendToChannel(channel, message).catch(throwStepError);
+  return orFail(sendToChannel)(channel, message);
 }

@@ -50,6 +50,12 @@ export class FatalError extends Error {
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
+export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
+
+// @public
+export function orFail<T>(value: T | ToolFailure): T;
+
+// @public
 export class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
@@ -62,7 +68,7 @@ export type RetryableErrorOptions = {
     cause?: unknown;
 };
 
-// @public
+// @public @deprecated
 export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
 
 // @public
@@ -106,7 +112,7 @@ type StepFetchInit = {
     signal?: AbortSignal | undefined;
 };
 
-// @public
+// @public @deprecated
 export function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
 
 // @public
@@ -114,7 +120,7 @@ type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions &
     schema: S;
 };
 
-// @public
+// @public @deprecated
 export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
 // @public
@@ -129,23 +135,23 @@ type StepGenerateOptions = {
     responseSchema?: Record<string, unknown>;
 };
 
-// @public
+// @public @deprecated
 export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
 
-// @public
+// @public @deprecated
 export function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
 
-// @public
+// @public @deprecated
 export function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
     id: string;
 }>;
 
-// @public
+// @public @deprecated
 export function stepTranscribeSyncOrFail(bytes: Uint8Array | readonly Uint8Array[], options?: TranscribeSyncOptions): Promise<{
     text: string;
 }>;
 
-// @public
+// @public @deprecated
 export function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
 }>;
@@ -158,6 +164,11 @@ export function throwFfmpegStepError(cause: unknown, message?: string): never;
 
 // @public
 export function throwStepError(cause: unknown, message?: string): never;
+
+// @public
+type ToolFailure = {
+    error: string;
+};
 
 // @public
 export function toStepError(cause: unknown, message?: string): Error;

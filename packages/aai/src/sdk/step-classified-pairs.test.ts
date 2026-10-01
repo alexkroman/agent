@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Every raw step primitive points at its `OrFail` twin, in its OWN doc.
+ * Every raw step primitive points at its classified spelling — `orFail(stepX)` —
+ * in its OWN doc.
  *
  * `guard-invariants` rule 26 already fails a raw call inside a shipped
  * `workflows/` body, and the shipped guide carries the translation table. What
@@ -9,26 +10,27 @@
  * function's own JSDoc and nothing else. Before this, one of seven raw
  * functions said anything there.
  *
- * The pairing cannot be inverted — putting the wrappers on `/step` would drag
- * the DevKit's `workflow` package into every tool body and spec that imports
- * it, which is why `/step-errors` exists at all (see its module doc). So the
- * discoverable name stays the wrong one inside a workflow, and the least this
- * surface can do is say so where it is read.
+ * The pairing cannot be inverted — putting the verdict vocabulary on `/step`
+ * would hand it to every tool body and spec that imports that subpath, which is
+ * why `/step-errors` exists at all (see its module doc). So the discoverable
+ * name stays the wrong one inside a workflow, and the least this surface can do
+ * is say so where it is read. (The `*OrFail` twins this used to name are
+ * deprecated aliases of the same `orFail(stepX)`.)
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-/** Raw primitive → the module that declares it, and the twin it must name. */
+/** Raw primitive → the module that declares it, and the spelling it must name. */
 const PAIRS: readonly (readonly [string, string, string])[] = [
-  ["stepFetch", "step-fetch.ts", "stepFetchOrFail"],
-  ["stepGenerate", "step-generate.ts", "stepGenerateOrFail"],
-  ["stepGenerateJson", "step-generate-json.ts", "stepGenerateJsonOrFail"],
-  ["stepTranscribeSync", "step-transcribe-sync.ts", "stepTranscribeSyncOrFail"],
-  ["stepTranscribeUpload", "step-transcribe.ts", "stepTranscribeUploadOrFail"],
-  ["stepTranscribePoll", "step-transcribe.ts", "stepTranscribePollOrFail"],
-  ["stepTranscribeSubmit", "step-transcribe.ts", "stepTranscribeSubmitOrFail"],
-  ["sendToChannel", "channels/shared/send.ts", "sendToChannelOrFail"],
+  ["stepFetch", "step-fetch.ts", "orFail(stepFetch)"],
+  ["stepGenerate", "step-generate.ts", "orFail(stepGenerate)"],
+  ["stepGenerateJson", "step-generate-json.ts", "orFail(stepGenerateJson)"],
+  ["stepTranscribeSync", "step-transcribe-sync.ts", "orFail(stepTranscribeSync)"],
+  ["stepTranscribeUpload", "step-transcribe.ts", "orFail(stepTranscribeUpload)"],
+  ["stepTranscribePoll", "step-transcribe.ts", "orFail(stepTranscribePoll)"],
+  ["stepTranscribeSubmit", "step-transcribe.ts", "orFail(stepTranscribeSubmit)"],
+  ["sendToChannel", "channels/shared/send.ts", "orFail(sendToChannel)"],
 ];
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -43,7 +45,7 @@ function docFor(source: string, name: string): string | undefined {
   return open === -1 ? undefined : source.slice(open, close);
 }
 
-describe("raw step primitives name their OrFail twin", () => {
+describe("raw step primitives name their orFail spelling", () => {
   // A floor, because this suite's whole output is a count over a hand-kept
   // list: a `docFor` that stopped matching would find nothing and pass.
   test("the pair list still resolves to real declarations", () => {

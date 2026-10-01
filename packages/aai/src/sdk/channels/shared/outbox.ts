@@ -5,7 +5,7 @@
  *
  * Every channel send ends in `postToChannel`: the `text_me` host builtin calls
  * it directly with its screened fetch, and a workflow step reaches it through
- * `sendToChannel` / `sendToChannelOrFail`. So one sink checked THERE is the
+ * `sendToChannel` / `orFail(sendToChannel)`. So one sink checked THERE is the
  * whole of "try the agent without texting anyone": a developer running
  * `aai dev` against a real Textbelt key, or a Slack webhook that posts to a
  * real channel, can watch what WOULD have gone out without a byte of it

@@ -139,7 +139,7 @@ describeWorkflowEval(agentDef, (test) => {
     //
     // The digest step asks its call site for six attempts precisely because a
     // model that answers with prose, or with JSON it truncated, may well obey
-    // the next time — `stepGenerateJsonOrFail` throws retryably for exactly
+    // the next time — `orFail(stepGenerateJson)` throws retryably for exactly
     // that. This harness has no retry to give it (`maxAttempts: 1`, and the eval
     // engine says so in as many words), so a live run here spends the step's
     // whole reliability budget on one draw and a single malformed reply failed

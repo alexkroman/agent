@@ -15,7 +15,7 @@ suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
-### sendToChannelOrFail()
+### ~~sendToChannelOrFail()~~
 
 ```ts
 function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string>;
@@ -57,17 +57,22 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 #### Example
 
 ```ts
-import { slackChannel } from "@alexkroman1/aai/channels";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(webhookUrl: string, headline: string): Promise<string> {
-  return await sendToChannelOrFail(slackChannel({ webhookUrl }), { text: headline });
+  return await orFail(sendToChannel)(slackChannel({ webhookUrl }), { text: headline });
 }
 ```
 
+#### Deprecated
+
+Use `orFail(sendToChannel)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepFetchOrFail()
+### ~~stepFetchOrFail()~~
 
 ```ts
 function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response>;
@@ -122,10 +127,11 @@ that second case.
 #### Example
 
 ```ts
-import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
+import { stepFetch } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function readFeed(url: string): Promise<string> {
-  return await (await stepFetchOrFail(url, { signal: AbortSignal.timeout(30_000) })).text();
+  return await (await orFail(stepFetch)(url, { signal: AbortSignal.timeout(30_000) })).text();
 }
 ```
 
@@ -133,9 +139,14 @@ export async function readFeed(url: string): Promise<string> {
 
 a `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
+#### Deprecated
+
+Use `orFail(stepFetch)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepGenerateJsonOrFail()
+### ~~stepGenerateJsonOrFail()~~
 
 ```ts
 function stepGenerateJsonOrFail<S extends StandardSchemaV1<unknown, unknown>>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
@@ -175,9 +186,14 @@ next attempt.
 
 A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
+#### Deprecated
+
+Use `orFail(stepGenerateJson)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepGenerateOrFail()
+### ~~stepGenerateOrFail()~~
 
 ```ts
 function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string>;
@@ -214,16 +230,22 @@ A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 #### Example
 
 ```ts
-import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
+import { stepGenerate } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {
-  return await stepGenerateOrFail(text, { system: "Summarize in two sentences." });
+  return await orFail(stepGenerate)(text, { system: "Summarize in two sentences." });
 }
 ```
 
+#### Deprecated
+
+Use `orFail(stepGenerate)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepTranscribePollOrFail()
+### ~~stepTranscribePollOrFail()~~
 
 ```ts
 function stepTranscribePollOrFail(transcriptId: string, options?: TranscribeRequestOptions): Promise<TranscribeProgress>;
@@ -253,9 +275,14 @@ nothing about the job's own status.
 
 A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
+#### Deprecated
+
+Use `orFail(stepTranscribePoll)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepTranscribeSubmitOrFail()
+### ~~stepTranscribeSubmitOrFail()~~
 
 ```ts
 function stepTranscribeSubmitOrFail(audioUrl: string, options?: TranscribeSubmitOptions): Promise<{
@@ -289,9 +316,14 @@ and not the other and the run gives up in one place and never in the other.
 
 A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
+#### Deprecated
+
+Use `orFail(stepTranscribeSubmit)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepTranscribeSyncOrFail()
+### ~~stepTranscribeSyncOrFail()~~
 
 ```ts
 function stepTranscribeSyncOrFail(bytes: 
@@ -331,9 +363,14 @@ never going to transcribe.
 
 A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
 
+#### Deprecated
+
+Use `orFail(stepTranscribeSync)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
+
 ***
 
-### stepTranscribeUploadOrFail()
+### ~~stepTranscribeUploadOrFail()~~
 
 ```ts
 function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeRequestOptions): Promise<{
@@ -363,6 +400,11 @@ function stepTranscribeUploadOrFail(uploadId: string, options?: TranscribeReques
 #### Throws
 
 A `FatalError` or `RetryableError` — see [toStepError](#tosteperror).
+
+#### Deprecated
+
+Use `orFail(stepTranscribeUpload)` — the same call and the same verdict, spelled
+with the one combinator rather than a name per call. Kept for one epoch.
 
 ***
 
@@ -807,3 +849,9 @@ migration changes no timing it does not have to. It is not a considered
 number, and a caller who has the far side's own `Retry-After` should pass it:
 this SDK encourages fan-out, so N segments meet a rate limit together and a
 second later all N ask again.
+
+## References
+
+### orFail
+
+Re-exports [orFail](index.md#orfail)

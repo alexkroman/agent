@@ -185,8 +185,8 @@ function isStreamingBody(body: StepFetchInit["body"]): boolean {
  *   `404` is fatal.
  * @public
  *
- * **From a step, prefer `stepFetchOrFail`
- * (`@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
+ * **From a step, prefer `orFail(stepFetch)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The engine's retry policy is decided by WHICH
  * error a step throws, and raw every failure looks alike to it — a bad API key is
  * retried until the attempts run out. It also turns a non-2xx into a throw, which `stepFetch` deliberately does not.
  */

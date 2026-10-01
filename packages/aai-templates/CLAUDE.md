@@ -299,8 +299,8 @@ and replayed. Declare `uploads: [...]` and read windows with `stepReadUpload`.
 
 ### A transcription step is the SDK's; the boundaries are the template's
 
-Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` via their
-`*OrFail` forms (which turn `TranscribeError`'s `retryable`/`retryAfter` into
+Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
+`orFail` (`orFail(stepTranscribeSubmit)`, which turns `TranscribeError`'s `retryable`/`retryAfter` into
 the engine's verdict). The SDK cannot ship a step — a step is what a body wraps
 in `ctx.step(name, fn)` — so the template owns which steps exist, i.e. what is
 journaled and what a retry repeats.

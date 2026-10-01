@@ -453,7 +453,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `omitUndefined` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Drop the `undefined`-valued entries of `obj`, typing every surviving key as optional-and-defined — exactly what `exactOptionalPropertyTypes` wants on the … |
 | `openAICompatibleLlm`, `OpenAICompatibleLlmOptions` | function | `@alexkroman1/aai/experimental` |  | An `llm()` descriptor for an OpenAI-compatible chat-completions endpoint the runtime has no built-in entry for — a self-hosted server, an inference host, a … |
 | `openAIS2s`, `OpenAIS2sOptions` | function | `@alexkroman1/aai/s2s` | `aai:s2s` | Build an OpenAI Realtime S2S descriptor — the explicit opt-in to speech-to-speech mode on OpenAI's Realtime API. |
-| `orFail` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | The value, or abandon the surrounding `failable` with the failure. |
+| `orFail` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/step-errors`, `@alexkroman1/aai/utils`) | `aai:tool` | The value, or abandon the surrounding `failable` with the failure — or, handed a FUNCTION, that function with its failure classified for the step engine. |
 | `pageMetadata` | function | `@alexkroman1/aai/html` | `aai:html` | Title, description, and any feed links a page advertises. |
 | `parseFeed` | function | `@alexkroman1/aai/html` | `aai:html` | An RSS, Atom or RDF feed as its channel title and entries. |
 | `parseWav` | function | `@alexkroman1/aai/step` | `aai:step` | Read a WAV header out of the first bytes of a recording. |

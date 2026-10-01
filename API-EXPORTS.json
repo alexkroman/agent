@@ -870,6 +870,7 @@
     "FatalError",
     "RetryableError",
     "RetryableErrorOptions",
+    "orFail",
     "sendToChannelOrFail",
     "stepFetchOrFail",
     "stepGenerateJsonOrFail",
