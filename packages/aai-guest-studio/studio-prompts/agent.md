@@ -1954,10 +1954,8 @@ unanswered nudges until the user speaks.
 
 **Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
 `minBargeInWords` is how many words interrupt a reply (default 1, so a lone
-"Hello?" is heard — a word count cannot tell it from a "yeah");
-`interruptionMinDurationMs` adds the sustained-speech gate that filters a short
-backchannel (default 500 ms; `0` disables; interims only — committed turns
-always land).
+"Hello?" counts); `interruptionMinDurationMs` is the sustained-speech gate
+filtering a short "yeah" (default 500 ms; `0` disables; interims only).
 How long a pause ends a turn belongs to the STT provider:
 `assemblyAIStt({ minTurnSilenceMs })` (default 1600 ms) /
 `deepgramStt({ endpointing })` (default 1500 ms).

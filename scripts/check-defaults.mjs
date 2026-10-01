@@ -88,13 +88,14 @@ function parseLiteral(text) {
   const quoted = /^"([\s\S]*)"$/.exec(raw);
   if (quoted) return { value: quoted[1] };
   if (!raw.startsWith("[")) return;
-  let value = null;
+  /** @type {{ value: unknown } | undefined} */
+  let value;
   try {
     value = { value: JSON.parse(raw) };
   } catch {
     // Not JSON (an expression or a type), so not a literal this gate reads.
   }
-  return value ?? undefined;
+  return value;
 }
 
 /** Strings compare whitespace-normalized, since a doc comment wraps them. */
@@ -114,7 +115,7 @@ const files = sourceFiles(SDK_DIR);
 const declaredIn = new Map();
 for (const file of files) {
   for (const match of readFileSync(file, "utf8").matchAll(/^export const ([A-Z][A-Z0-9_]+)\b/gm)) {
-    declaredIn.set(match[1], file);
+    declaredIn.set(match[1] ?? "", file);
   }
 }
 
@@ -126,7 +127,7 @@ async function constantValue(name) {
   if (file === undefined) return;
   if (!modules.has(file)) modules.set(file, await import(pathToFileURL(file).href));
   const mod = modules.get(file);
-  return Object.hasOwn(mod, name) ? { value: mod[name] } : undefined;
+  return mod !== undefined && Object.hasOwn(mod, name) ? { value: mod[name] } : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,17 +149,19 @@ for (const file of files) {
     const where = `${rel(file)}:${line}`;
     // The tag's paragraph: up to the next tag or blank comment line, with the
     // ` * ` gutters stripped so a wrapped literal reads as one string.
-    const paragraph = body
-      .slice(tagAt + "@defaultValue".length)
-      .split("\n")
-      .map((one) => one.replace(/^\s*\*\s?/, ""))
-      .join("\n")
-      .split(/\n\s*\n|\n\s*@/)[0]
+    const paragraph = (
+      body
+        .slice(tagAt + "@defaultValue".length)
+        .split("\n")
+        .map((one) => one.replace(/^\s*\*\s?/, ""))
+        .join("\n")
+        .split(/\n\s*\n|\n\s*@/)[0] ?? ""
+    )
       .replace(/\s*\n\s*/g, " ")
       .trim();
     const literalMatch = /^`([^`]+)`/.exec(paragraph);
     if (literalMatch === null) continue;
-    const literal = parseLiteral(literalMatch[1]);
+    const literal = parseLiteral(literalMatch[1] ?? "");
     if (literal === undefined) {
       problems.push(
         `${where}: \`@defaultValue \`${literalMatch[1]}\`\` is not a literal this gate can read.`,
@@ -205,7 +208,7 @@ for (const file of files) {
 }
 
 for (const [field, stated] of fieldDefaults) {
-  if (stated.some((one) => !same(one.value, stated[0].value))) {
+  if (stated.some((one) => !same(one.value, stated[0]?.value))) {
     problems.push(
       `\`${field}\` carries conflicting @defaultValue tags:\n` +
         stated.map((one) => `  ${one.where}: ${show(one.value)}`).join("\n"),
@@ -237,7 +240,7 @@ for (const row of section.matchAll(/^\|\s*`([\w.]+)`\s*\|.*\|\s*([^|]*?)\s*\|\s*
   const literalMatch = /^`([^`]+)`/.exec(cell);
   if (literalMatch === null) continue;
   tableRows += 1;
-  const stated = parseLiteral(literalMatch[1]);
+  const stated = parseLiteral(literalMatch[1] ?? "");
   const truth = defaultOf(field);
   if (truth === undefined) {
     problems.push(
