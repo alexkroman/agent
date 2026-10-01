@@ -146,7 +146,10 @@ export const CAPABILITY_ROWS = {
     feature:
       "the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning",
     verbs: [],
-    absent: "refused by `agent()` (`config-rules.ts`) — never reaches a session",
+    // The session core reads this row too: on a hosted turn a reported
+    // `tool.called` already ran (an observation); otherwise it is a request the
+    // session executes (`../session/core.ts`).
+    absent: "refused by `agent()` (`config-rules.ts`); the session runs reported tool calls",
   },
 } as const satisfies Record<string, CapabilityRow>;
 

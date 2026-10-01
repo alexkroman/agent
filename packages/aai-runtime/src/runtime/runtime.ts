@@ -24,13 +24,13 @@ import {
   wireSessionSocket,
 } from "../session/index.ts";
 import { createClientToolBroker } from "../tools/index.ts";
+import type { TransportCallbacks } from "../transports/types.ts";
 import { platformGuestOptions } from "../workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "../workflow/runtime.ts";
 import { compileAgentRoutes } from "./agent-routes.ts";
 import { registerConnector } from "./connect.ts";
 import { createPipelineProviderResolver } from "./pipeline-providers.ts";
 import { logResolvedRuntime, resolveEffectiveProviders } from "./providers.ts";
-import { buildSessionCallbacks } from "./session-callbacks.ts";
 import { openSessionWiring, stopSessionsWithin } from "./session-controls.ts";
 import { openSessionMemory } from "./session-memory.ts";
 import { attachSessionState, createRuntimeSessionState } from "./session-state.ts";
@@ -283,14 +283,6 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     const wiring = { sink: sessionOpts.client, emitter, meter: usage };
     const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
 
-    // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
-    // the function itself is always true and would route every S2S session down
-    // the pipeline branch. By here a session is being created, so resolving is
-    // exactly what a static agent's deferral was waiting for.
-    const isPipeline = pipelineProviders() !== null;
-    // Relay (host) mode: the relay `executeTool` emits the client-facing
-    // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
-    const isRelay = Boolean(options.onToolResult);
     // Late-bound: callbacks are built before the ServerSession, filled in below.
     let core: ServerSession | null = null;
     function bindCore(): ServerSession {
@@ -301,9 +293,14 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
       return core;
     }
 
-    // Everything a transport calls back into, including the one callback with
-    // three different right answers — see `session-callbacks.ts`.
-    const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
+    // A flat forward: what a report MEANS — a `tool.called` the transport
+    // already ran versus one it needs run — is the session core's decision,
+    // read off the transport's own `capabilities` (`../session/core.ts`).
+    const callbacks: TransportCallbacks = {
+      report: (event) => bindCore().report(event),
+      onAudioChunk: (bytes) => bindCore().onAudioChunk(bytes),
+      onReplyStarted: (replyId) => bindCore().onReplyStarted(replyId),
+    };
 
     // What this resume recovered; must exist BEFORE the transport, and
     // `session/resume-found.ts` owns the decision `skipGreeting` becomes.

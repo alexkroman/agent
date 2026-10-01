@@ -41,7 +41,7 @@ edit the rows there, then paste the output here:
 | `personaKnobs`     | a persona's `interruption` / `toolChoice` / `temperature`                                    | yes      | no              | no             | warned at session start; the prompt section and tool gate still hold                   |
 | `fatalTool`        | a tool's `onError` FATAL verdict stops the turn and speaks `errorPhrase`                     | yes      | no              | no             | warned at session start; a fatal verdict reaches the model as a failure result instead |
 | `turnMetrics`      | one `metrics.collected` frame per settled reply (S2S: round trip only)                       | yes      | yes             | yes            | no frame                                                                               |
-| `hostedTurn`       | the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning | yes      | no              | no             | refused by `agent()` (`config-rules.ts`) — never reaches a session                     |
+| `hostedTurn`       | the HOST runs the model turn: guardrails, `usageLimits`, model tuning, pipeline voice tuning | yes      | no              | no             | refused by `agent()` (`config-rules.ts`); the session runs reported tool calls         |
 
 <!-- capability-table:end -->
 
