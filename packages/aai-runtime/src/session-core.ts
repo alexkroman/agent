@@ -22,8 +22,13 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
+import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import {
+  estimateConversationTokens,
+  evictBeyondRetention,
+  HISTORY_RETAIN_TOKENS,
+} from "./_history-retention.ts";
 import type { ClientToolAnswer } from "./client-tool-broker.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
@@ -31,7 +36,7 @@ import { createCommandDispatcher } from "./session-commands.ts";
 // into scope, and `createSessionCore`'s signature needs both. Same trap the
 // root guide records for `ToolContext` in `sdk/types.ts`.
 import type { ServerSession, ServerSessionOptions } from "./session-core-types.ts";
-import { historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
+import { clientHistoryFrame, historyMessageOf, modelHistoryOf } from "./session-event-history.ts";
 import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
@@ -150,9 +155,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
-    if (history.length > DEFAULT_MAX_HISTORY) {
-      history.splice(0, history.length - DEFAULT_MAX_HISTORY);
-    }
+    // A MEMORY bound in tokens, never a message count — see `_history-retention.ts`.
+    evictBeyondRetention(history, HISTORY_RETAIN_TOKENS, estimateConversationTokens);
   }
 
   function beginReply(replyId: string): void {
@@ -373,19 +377,14 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       // Through the SINK with its own stamp, never `emit`: the emitter RECORDS
       // first, so emitting the history just read out of the log would append it
       // back — doubling the log on every resume.
-      const visible = messages.filter(
-        (m): m is Message & { role: "user" | "assistant" } => m.role !== "tool",
-      );
+      //
+      // The frame carries a DISPLAY window of it (`clientHistoryFrame`), the
+      // one bound left in message counts — see `MAX_CLIENT_MESSAGES`.
+      const frame = clientHistoryFrame(messages, toolCalls);
       // Sent when there is EITHER to show: a conversation that was only tool
       // calls (a turn that died mid-chain) still has rows to render.
-      if ((visible.length > 0 || toolCalls.length > 0) && opts.client.open) {
-        opts.client.event(
-          stampSessionEvent({
-            type: "history.restored",
-            messages: visible.map(({ role, content }) => ({ role, content })),
-            toolCalls: [...toolCalls],
-          }),
-        );
+      if ((frame.messages.length > 0 || frame.toolCalls.length > 0) && opts.client.open) {
+        opts.client.event(stampSessionEvent({ type: "history.restored", ...frame }));
       }
     },
 

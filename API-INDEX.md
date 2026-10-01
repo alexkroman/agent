@@ -1265,7 +1265,6 @@ trace or a type error can be traced back to something.
 | `DEFAULT_IDLE_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `idleTimeoutMs` (ms of user silence before the session is closed). |
 | `DEFAULT_INTERRUPTION_BACKOFF_MS` | const | `@alexkroman1/aai/internal` |  | How long agent audio stays blocked after a REAL interruption, in ms. |
 | `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | const | `@alexkroman1/aai/internal` |  |  |
-| `DEFAULT_MAX_HISTORY` | const | `@alexkroman1/aai/internal` |  | Sliding window of conversation messages retained per session. |
 | `DEFAULT_MAX_STEPS` | const | `@alexkroman1/aai/internal` |  | Max TOOL-CALLING steps per reply — bounds runaway tool loops. |
 | `DEFAULT_MAX_TURN_SILENCE_MS` | const | `@alexkroman1/aai/internal` |  | Maximum silence (ms) before AssemblyAI force-ends a turn regardless of content (`max_turn_silence`). |
 | `DEFAULT_MIN_BARGE_IN_WORDS` | const | `@alexkroman1/aai/internal` |  | Minimum number of words in an interim STT transcript before a barge-in aborts the agent's in-flight turn (pipeline mode). |
@@ -1310,6 +1309,7 @@ trace or a type error can be traced back to something.
 | `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents memory abuse via `ctx.send`. |
+| `MAX_CLIENT_MESSAGES` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `MAX_CLIENT_WS_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

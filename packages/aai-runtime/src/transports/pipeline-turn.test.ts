@@ -509,7 +509,7 @@ describe("PipelineTransport — a tool reads what an earlier tool answered", () 
   test("the result survives into the NEXT turn, and never reaches the model twice", async () => {
     // The LLM view already carries the step's own `tool` message; a second copy
     // seeded from the conversation view would be an orphan result — the shape
-    // both providers reject outright (`capLlm`).
+    // both providers reject outright (`evictLlm`).
     const seen: (readonly Message[])[] = [];
     const { opts, stt, callbacks } = makeOpts({
       llm: createFakeLanguageModel({

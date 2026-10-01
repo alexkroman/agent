@@ -541,9 +541,9 @@ describe("the context budget and forceFinalAnswer share the prepareStep slot", (
     expect(messages[0]?.content).toContain("turn 0");
   });
 
-  test("nothing is trimmed when the model's window is unknown", async () => {
-    // `createContextBudget` answers `undefined`, so `composePreparers` skips
-    // it and the request carries the whole history — the documented fallback.
+  test("an unknown model's request is trimmed too, against the smallest known window", async () => {
+    // There is no message cap behind the budget any more, so an unknown window
+    // is budgeted as the smallest the catalog carries rather than left alone.
     const llm = createFakeLanguageModel({ steps: [[{ type: "text", text: "ok" }]] });
     const messages = overflowingHistory();
     await consume({
@@ -552,7 +552,8 @@ describe("the context budget and forceFinalAnswer share the prepareStep slot", (
       messages,
       contextBudget: createContextBudget({ llm, log: silentLogger, sid: "budget-2" }),
     });
-    expect(promptSize(llm, 0)).toBe(messages.length);
+    expect(promptSize(llm, 0)).toBeLessThan(messages.length);
+    expect(promptSize(llm, 0)).toBeGreaterThan(0);
   });
 
   test("the forced final answer still fires on a step the budget also trimmed", async () => {

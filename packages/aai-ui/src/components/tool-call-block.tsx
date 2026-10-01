@@ -23,7 +23,7 @@ function formatResult(result: string): string {
  * and a row starts closed — so computing this in the parent meant every row
  * paid `JSON.parse` + `JSON.stringify(_, null, 2)` over its whole result, and
  * then RETAINED the pretty string, for a panel nobody clicked. The burst case
- * is `history.restored`, which mounts up to `DEFAULT_MAX_HISTORY` rows in one
+ * is `history.restored`, which mounts up to `MAX_CLIENT_MESSAGES` rows in one
  * commit.
  *
  * Creating this element is free; React only runs the body once it is mounted.

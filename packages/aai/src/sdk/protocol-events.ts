@@ -50,9 +50,9 @@
 
 import { z } from "zod";
 import {
-  DEFAULT_MAX_HISTORY,
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_MESSAGES,
   MAX_ERROR_MESSAGE_CHARS,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
@@ -442,7 +442,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
           content: z.string().max(MAX_TRANSCRIPT_CHARS),
         }),
       )
-      .max(DEFAULT_MAX_HISTORY),
+      .max(MAX_CLIENT_MESSAGES),
     /**
      * The tool calls interleaved through those messages.
      *
@@ -456,7 +456,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
      * did. A call with no completion stays `pending` — it may really have been in
      * flight when the process died.
      */
-    toolCalls: z.array(RestoredToolCallSchema).max(DEFAULT_MAX_HISTORY),
+    toolCalls: z.array(RestoredToolCallSchema).max(MAX_CLIENT_MESSAGES),
   }),
 ]);
 
