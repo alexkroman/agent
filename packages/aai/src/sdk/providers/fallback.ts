@@ -21,9 +21,6 @@ import type { LlmProvider, SttProvider, TtsProvider } from "../providers.ts";
 /** The `kind` of a fallback descriptor, reserved at every stage. */
 export const FALLBACK_KIND = "fallback" as const;
 
-/** A non-empty pair or more — a fallback of one member is not a fallback. */
-type AtLeastTwo<D> = readonly [D, D, ...D[]];
-
 /**
  * Try `providers` in order, failing over to the next when one cannot serve.
  *
@@ -63,14 +60,21 @@ type AtLeastTwo<D> = readonly [D, D, ...D[]];
  * deploy) demands each one, because a fallback whose secondary has no key fails
  * at the moment it is needed.
  *
+ * The list is typed as two or more: a fallback of one member is not a fallback.
  * Members are flattened, so a fallback inside a fallback is one list. Each
  * member keeps its own options; the descriptors must all be the same stage.
  *
  * @public
  */
-export function fallback(providers: AtLeastTwo<SttProvider>): SttProvider;
-export function fallback(providers: AtLeastTwo<LlmProvider>): LlmProvider;
-export function fallback(providers: AtLeastTwo<TtsProvider>): TtsProvider;
+export function fallback(
+  providers: readonly [SttProvider, SttProvider, ...SttProvider[]],
+): SttProvider;
+export function fallback(
+  providers: readonly [LlmProvider, LlmProvider, ...LlmProvider[]],
+): LlmProvider;
+export function fallback(
+  providers: readonly [TtsProvider, TtsProvider, ...TtsProvider[]],
+): TtsProvider;
 export function fallback(
   providers: readonly (SttProvider | LlmProvider | TtsProvider)[],
 ): SttProvider | LlmProvider | TtsProvider {
