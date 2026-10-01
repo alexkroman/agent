@@ -46,7 +46,7 @@ is not a `composePreparers(…)` call; a new concern is a new stage.
 silence nudge, `injectTurn`), and at the bound a bare pop would lose what the
 push evicted. A push records what it evicted and the pop that undoes THAT push
 restores it. Argued at `PushUndo`: one slot PER VIEW, recorded only for a
-single-message push, consumed by IDENTITY; a tool pair `evictLlm` took whole
+single-message push, consumed by IDENTITY; a tool pair `canLeadLlm` took whole
 counts as part of the eviction. Oracle:
 `../../../integration/pipeline-history-rollback.integration.test.ts` (driven at
 a small `retainTokens`), plus two pins in `history.test.ts`.

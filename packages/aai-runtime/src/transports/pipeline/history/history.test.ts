@@ -420,7 +420,7 @@ describe("createPipelineHistory — dropTrailingUser", () => {
     expect(h.conversation).toEqual(full);
   });
 
-  test("restores the whole tool pair `evictLlm` took at the LLM bound", () => {
+  test("restores the whole tool pair `canLeadLlm` took at the LLM bound", () => {
     const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
     for (let i = 0; llmTokens(h.llm) < RETAIN; i++) {
       h.pushLlm(toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));

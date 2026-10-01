@@ -39,8 +39,7 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { estimateTokenCount } from "tokenx";
-import { LARGEST_CONTEXT_TOKEN_BUDGET, MESSAGE_TOKEN_OVERHEAD } from "./context-budget.ts";
+import { estimateFramedTokens, LARGEST_CONTEXT_TOKEN_BUDGET } from "./context-budget.ts";
 
 /** How many of the largest request budget a session's record retains. */
 export const HISTORY_RETAIN_FACTOR = 2;
@@ -51,21 +50,17 @@ export const HISTORY_RETAIN_FACTOR = 2;
  */
 export const HISTORY_RETAIN_TOKENS = HISTORY_RETAIN_FACTOR * LARGEST_CONTEXT_TOKEN_BUDGET;
 
-/** Per-message estimates for the TEXT view, keyed by the message object. */
-const estimates = new WeakMap<Message, number>();
+/** The text a conversation message contributes: its content, already a string. */
+const conversationText = (message: Message): string => message.content;
 
 /**
  * Estimated tokens for one conversation (`ctx.messages`) message, memoized.
  *
- * The same estimator and per-message framing charge the request budget uses for
- * a `ModelMessage` (`estimateMessageTokens`), over the text this view holds.
+ * The same memoized estimator the request budget charges a `ModelMessage`
+ * with (`estimateFramedTokens`), over the text this view holds.
  */
 export function estimateConversationTokens(message: Message): number {
-  const cached = estimates.get(message);
-  if (cached !== undefined) return cached;
-  const estimate = estimateTokenCount(message.role + message.content) + MESSAGE_TOKEN_OVERHEAD;
-  estimates.set(message, estimate);
-  return estimate;
+  return estimateFramedTokens(message, conversationText);
 }
 
 /**
@@ -82,15 +77,18 @@ export function estimateConversationTokens(message: Message): number {
  *   remainder is measured AFTER skipping them — healing a split pair can never
  *   take the record below `retain` either.
  * - **At least one message stays**, however large.
+ *
+ * `total`, when given, is what `arr` already costs, so the caller that keeps a
+ * running count ({@link createRetainedView}) is not re-summed on every push.
  */
 export function evictBeyondRetention<T>(
   arr: T[],
   retain: number,
   estimate: (message: T) => number,
   canLead: (message: T) => boolean = () => true,
+  total?: number,
 ): T[] {
-  let rest = 0;
-  for (const message of arr) rest += estimate(message);
+  let rest = total ?? sumEstimates(arr, estimate);
   if (rest <= retain) return [];
   let start = 0;
   for (;;) {
@@ -107,4 +105,56 @@ export function evictBeyondRetention<T>(
     rest = after;
   }
   return start === 0 ? [] : arr.splice(0, start);
+}
+
+function sumEstimates<T>(messages: readonly T[], estimate: (message: T) => number): number {
+  let total = 0;
+  for (const message of messages) total += estimate(message);
+  return total;
+}
+
+/** One view retained by {@link createRetainedView}, with its running cost. */
+export interface RetainedView<T> {
+  /**
+   * Account for `added` — already appended to the view — and retain it,
+   * answering what came off the front (oldest first). O(added) when nothing
+   * needs evicting. `null` says the view was rewritten rather than appended
+   * to (a repair spliced it), so it is recounted whole first.
+   */
+  push(added: readonly T[] | null): T[];
+  /**
+   * Re-measure the view whole: after any write that is not an append (a
+   * rewrite, a restore, a repair that spliced it, a clear).
+   */
+  recount(): void;
+}
+
+/**
+ * {@link evictBeyondRetention} over one array the caller owns, with the
+ * array's estimated cost kept as a running total — added on push, subtracted
+ * on eviction — so the common push that evicts nothing never re-sums the view.
+ *
+ * Every write to `arr` that is not an append through {@link RetainedView.push}
+ * must be followed by {@link RetainedView.recount}, or the total drifts.
+ */
+export function createRetainedView<T>(
+  arr: () => T[],
+  retain: number,
+  estimate: (message: T) => number,
+  canLead?: (message: T) => boolean,
+): RetainedView<T> {
+  let total = sumEstimates(arr(), estimate);
+  return {
+    push(added) {
+      total =
+        added === null ? sumEstimates(arr(), estimate) : total + sumEstimates(added, estimate);
+      if (total <= retain) return [];
+      const evicted = evictBeyondRetention(arr(), retain, estimate, canLead, total);
+      total -= sumEstimates(evicted, estimate);
+      return evicted;
+    },
+    recount() {
+      total = sumEstimates(arr(), estimate);
+    },
+  };
 }

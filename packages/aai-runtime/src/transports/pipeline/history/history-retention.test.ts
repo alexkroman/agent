@@ -19,7 +19,7 @@ import { createPipelineHistory } from "./history.ts";
 // a naive cut could land between the two. Both providers reject an orphaned
 // `tool` message outright (OpenAI: "messages with role 'tool' must be a
 // response to a preceding message with 'tool_calls'"), which fails every
-// remaining turn of a long call — see evictLlm in pipeline-history.ts.
+// remaining turn of a long call — see canLeadLlm in history.ts.
 describe("createPipelineHistory — LLM history retention and tool-call pairing", () => {
   test("evicting an assistant tool-call takes the result it would orphan", () => {
     const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
@@ -74,7 +74,7 @@ describe("createPipelineHistory — LLM history retention and tool-call pairing"
   /**
    * Whether a NAIVE token cut over `pre` — the plain "drop the front while the
    * rest still reaches `RETAIN`", with no regard for pairs — would land on a
-   * `tool` message: the state where `evictLlm`'s pair rule is what decides.
+   * `tool` message: the state where `canLeadLlm`'s pair rule is what decides.
    */
   function naiveCutIsTool(pre: readonly ModelMessage[]): boolean {
     let rest = llmTokens(pre);

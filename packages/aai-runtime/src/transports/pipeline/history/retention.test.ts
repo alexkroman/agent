@@ -13,6 +13,7 @@ import {
   trimToTokenBudget,
 } from "./context-budget.ts";
 import {
+  createRetainedView,
   estimateConversationTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_FACTOR,
@@ -81,6 +82,39 @@ describe("evictBeyondRetention", () => {
     const m = { role: "user" as const, content: "hello there" };
     expect(estimateConversationTokens(m)).toBe(estimateConversationTokens(m));
     expect(estimateConversationTokens(m)).toBeGreaterThan(0);
+  });
+});
+
+describe("createRetainedView", () => {
+  test("a running total evicts exactly what a full re-sum would, push by push", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.array(fc.integer({ min: 1, max: 20 }), { minLength: 1, maxLength: 3 }), {
+          maxLength: 30,
+        }),
+        fc.integer({ min: 1, max: 60 }),
+        (pushes, retain) => {
+          const viewed: number[] = [];
+          const reference: number[] = [];
+          const view = createRetainedView(() => viewed, retain, weigh);
+          for (const added of pushes) {
+            viewed.push(...added);
+            reference.push(...added);
+            expect(view.push(added)).toEqual(evictBeyondRetention(reference, retain, weigh));
+            expect(viewed).toEqual(reference);
+          }
+        },
+      ),
+    );
+  });
+
+  test("recount re-measures after a write that is not an append", () => {
+    const arr = [5, 5, 5];
+    const view = createRetainedView(() => arr, 12, weigh);
+    arr.length = 0;
+    view.recount();
+    arr.push(5, 5);
+    expect(view.push([5, 5])).toEqual([]);
   });
 });
 
