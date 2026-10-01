@@ -71,8 +71,8 @@
  * ```
  */
 
+import { globalSlot } from "./_boundary.ts";
 import { concatBytes } from "./_bytes.ts";
-import { globalSlot } from "./_global-slot.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 
 /**
@@ -116,7 +116,7 @@ export type StepFetchInit = {
 };
 
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
-const STEP_FETCH_SLOT = globalSlot<StepFetch>("@alexkroman1/aai.stepFetch");
+const STEP_FETCH_SLOT = globalSlot<StepFetch>("stepFetch");
 
 /**
  * Publish the HTTP/1.1 fetch for this process's steps.

@@ -76,6 +76,7 @@
  * nothing else closes it.
  */
 
+import { globalSlot } from "./_boundary.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { ToolSet } from "./tool-def.ts";
 
@@ -118,9 +119,7 @@ export type StepMcp = {
 export type StepMcpFn = (servers: McpServers, options: StepMcpOptions) => Promise<StepMcp>;
 
 /** Registry-wide, for the reason `step-delegate.ts`'s slot is. */
-const STEP_MCP_SLOT = Symbol.for("@alexkroman1/aai.stepMcp");
-
-type StepMcpSlot = { [STEP_MCP_SLOT]?: StepMcpFn };
+const STEP_MCP_SLOT = globalSlot<StepMcpFn>("stepMcp");
 
 /**
  * Publish the connector this process's steps reach MCP servers through.
@@ -129,9 +128,7 @@ type StepMcpSlot = { [STEP_MCP_SLOT]?: StepMcpFn };
  * @internal
  */
 export function publishStepMcp(connector: StepMcpFn | undefined): void {
-  const slot = globalThis as StepMcpSlot;
-  if (connector === undefined) delete slot[STEP_MCP_SLOT];
-  else slot[STEP_MCP_SLOT] = connector;
+  STEP_MCP_SLOT.set(connector);
 }
 
 /**
@@ -146,7 +143,7 @@ export function publishStepMcp(connector: StepMcpFn | undefined): void {
  * @public
  */
 export function stepMcp(servers: McpServers, options: StepMcpOptions = {}): Promise<StepMcp> {
-  const connector = (globalThis as StepMcpSlot)[STEP_MCP_SLOT];
+  const connector = STEP_MCP_SLOT.get();
   if (!connector) {
     return Promise.reject(
       new Error(
@@ -174,8 +171,7 @@ export function stubStepMcp(tools: ToolSet = {}): {
   restore(): void;
 } {
   const calls: { keys: string[]; options: StepMcpOptions }[] = [];
-  const slot = globalThis as StepMcpSlot;
-  const previous = slot[STEP_MCP_SLOT];
+  const previous = STEP_MCP_SLOT.get();
   publishStepMcp(async (servers, options) => {
     const keys = Object.keys(servers).sort();
     calls.push({ keys, options });

@@ -55,14 +55,14 @@
  * at the mint, with a message naming the configuration.
  */
 
-import { globalSlot } from "./_global-slot.ts";
+import { globalSlot } from "./_boundary.ts";
 
 /**
  * The registry-wide slot. Prefixed with the package name so a second copy of
  * this SDK in the same process (a linked workspace, a mismatched install) shares
  * it rather than shadowing it.
  */
-const STEP_WEBHOOK_SLOT = globalSlot<StepWebhookMinter>("@alexkroman1/aai.stepWebhookUrl");
+const STEP_WEBHOOK_SLOT = globalSlot<StepWebhookMinter>("stepWebhookUrl");
 
 /**
  * What a published minter does with one token: answer the absolute URL a third

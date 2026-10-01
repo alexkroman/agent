@@ -56,6 +56,36 @@ security:
 The guest harness runs **Node** inside each Modal Sandbox, loading the agent's
 ESM bundle directly; the Modal sandbox is the security boundary.
 
+## The bundle/runtime boundary: two SDK copies, one registry
+
+**An agent bundle inlines its own copy of this SDK, and a host can run it under
+a runtime holding another** — `aai dev` (`buildWorker({ runtime: false })`),
+`aai start` and every `aai build --target` entry (the deploy artifact under the
+project's `createAgentServer`), and `aai build`/`aai deploy`'s in-CLI preflight.
+So module identity is never a contract between them.
+
+- **Every cross-copy key is registered in `sdk/_boundary.ts`**
+  (`BOUNDARY_KEYS`: the brands a value carries out — `clientTool`,
+  `routeResponse`, `routeError`, `stepError`, … — and the `globalThis` slots a
+  host publishes into). Reach one by NAME: `globalSlot("stepEnv")`,
+  `setBrand`/`readBrand`. `Symbol.for` is called nowhere else in this package,
+  and no source here or in `aai-runtime` spells a registered key —
+  `_boundary.test.ts` and `aai-runtime`'s `sdk-boundary.test.ts` are the gate.
+- **What crosses is plain data the reader re-validates** (`readBrand` answers
+  `unknown`; `clientToolBrand`, `readRouteResponse`, `readRouteError`,
+  `FatalError.is` check the shape).
+- **Never `instanceof` an SDK class, or read a module-level `Map`/`WeakMap`,
+  across the boundary.** Copy-local state is fine only where each copy reading
+  its own is correct (a memo, a warn-once set, `_slot-owners.ts`' collision
+  detector, which therefore misses a collision between a host-declared and a
+  bundle-declared slot).
+- **Externalizing the SDK from the bundle was rejected**: the guest would then
+  supply the SDK (the platform drift "User-shipped runtime" in
+  `packages/aai-guest/CLAUDE.md` rules out), or the self-hosted artifact would
+  differ from the uploaded one. The runtime's own `Symbol.for` slots (two copies
+  of `aai-runtime`) are a separate seam — "A deployed guest has TWO copies of
+  this package" in `packages/aai-runtime/CLAUDE.md`.
+
 ## Package exports
 
 Twenty-three code subpaths, twenty mapped below, plus one CONFIG export:
