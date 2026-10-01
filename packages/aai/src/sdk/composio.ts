@@ -182,7 +182,7 @@ export function composio<K extends string = "default">(
   function sessionId(ctx: EnvContext, user: string, kind: string): Promise<string> {
     const key = `${kind}:${user}`;
     const held = sessions.get(key);
-    if (held) return held;
+    if (held !== undefined) return held;
     configOf(kind);
     // Without the caller's signal — see the module doc.
     const id = createSession({ env: ctx.env }, user, kind);

@@ -121,6 +121,13 @@ the dialog actually is instead of firing a transition the conversation has left.
   `forceFinalAnswer` keeps its override of `toolChoice` on the reserved answering
   step, so a state pinning a tool cannot un-reserve the one step that exists so
   the model has no move left but to speak.
+- **A demanding `toolChoice` lets go once a step obeys it, for the rest of the
+  reply** (`createPinRelease` in `src/_prepare-step.ts`; a persona's pin too).
+  The AI SDK fails a step sent with a demand that answers in text
+  (`ToolChoiceViolationError`), so a pin held after its tool ran would leave a
+  compliant model nothing to do but call it again until `forceFinalAnswer`.
+  Only a step SENT with the pin counts, so the call that moved the dialog into a
+  `"required"` state does not satisfy it; each reply re-arms it.
 - **`voice`** — impossible. `TtsOpenOptions` carries no voice: it is baked into
   the DESCRIPTOR that produced the opener, and the open happens once per session.
   Changing it mid-call means closing the socket and dialling a new one, which is

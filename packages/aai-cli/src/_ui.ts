@@ -59,12 +59,12 @@ export function outputSilenced(): boolean {
  * Unwrap a clack prompt result, exiting cleanly if the user cancelled.
  * `message` lets the caller name what was cancelled (e.g. "Setup cancelled").
  */
-export function unwrapCancel<T>(result: T | symbol, message = "Cancelled"): T {
+export function unwrapCancel<T>(result: T, message = "Cancelled"): Exclude<T, symbol> {
   if (p.isCancel(result)) {
     p.cancel(message);
     process.exit(0);
   }
-  return result as T;
+  return result as Exclude<T, symbol>;
 }
 
 /** Format a URL for display. */

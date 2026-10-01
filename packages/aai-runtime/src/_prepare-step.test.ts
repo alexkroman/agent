@@ -7,6 +7,7 @@ import type { ModelMessage, PrepareStepFunction, ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import {
   composePreparers,
+  createPinRelease,
   forceFinalAnswer,
   isFailedToolResult,
   PREPARER_ORDER,
@@ -217,6 +218,51 @@ describe("resetToolChoiceAfterFirstStep", () => {
     // `stepNumber`, but the seam between them is typed and stays typed.
     expect(await composed(step({ stepNumber: 1 }))).toEqual({ toolChoice: "auto" });
     expect(await composed(step({ stepNumber: 2 }))).toEqual({ toolChoice: "none" });
+  });
+});
+
+describe("createPinRelease", () => {
+  const lookup = { type: "tool", toolName: "lookup" } as const;
+  const called = (...names: string[]) => ({ toolCalls: names.map((toolName) => ({ toolName })) });
+
+  test("a named pin holds until a step under it calls the tool, then lets go for the reply", () => {
+    // Held after that, a compliant model's only move is to call it again every
+    // step; the AI SDK fails a pinned step that answers in text.
+    const release = createPinRelease();
+    expect(release(lookup, { stepNumber: 0, steps: [] })).toEqual(lookup);
+    expect(release(lookup, { stepNumber: 1, steps: [called("lookup")] })).toBeUndefined();
+    expect(release(lookup, { stepNumber: 2, steps: [called("lookup"), called()] })).toBeUndefined();
+  });
+
+  test("a call made BEFORE the pin applied does not satisfy it", () => {
+    // The tool that moved the dialog into a `"required"` state ran under the
+    // previous state's knobs.
+    const release = createPinRelease();
+    expect(release(undefined, { stepNumber: 0, steps: [] })).toBeUndefined();
+    expect(release("required", { stepNumber: 1, steps: [called("advance")] })).toBe("required");
+    expect(release("required", { stepNumber: 2, steps: [called("advance"), called("x")] })).toBe(
+      undefined,
+    );
+  });
+
+  test("a different pin later in the reply is enforced afresh", () => {
+    const release = createPinRelease();
+    const other = { type: "tool", toolName: "dispatch" } as const;
+    expect(release(lookup, { stepNumber: 0, steps: [] })).toEqual(lookup);
+    expect(release(other, { stepNumber: 1, steps: [called("lookup")] })).toEqual(other);
+  });
+
+  test("a new reply re-arms it", () => {
+    const release = createPinRelease();
+    release(lookup, { stepNumber: 0, steps: [] });
+    expect(release(lookup, { stepNumber: 1, steps: [called("lookup")] })).toBeUndefined();
+    expect(release(lookup, { stepNumber: 0, steps: [] })).toEqual(lookup);
+  });
+
+  test('"auto" and "none" are not demands and pass through', () => {
+    const release = createPinRelease();
+    expect(release("none", { stepNumber: 0, steps: [] })).toBe("none");
+    expect(release("auto", { stepNumber: 1, steps: [called("lookup")] })).toBe("auto");
   });
 });
 

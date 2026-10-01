@@ -114,6 +114,7 @@ function fakeResponse(): { res: ServerResponse; body: () => string } {
   const written: string[] = [];
   const decoder = new TextDecoder();
   const res = {
+    setHeaders: () => res,
     writeHead: () => res,
     write: (chunk: Uint8Array) => {
       written.push(decoder.decode(chunk));

@@ -220,7 +220,7 @@ export function createFakeS2sLink(): FakeS2sLink {
     endReply: (status, callIds) => {
       for (const id of callIds) {
         const record = state.calls.get(id);
-        if (record?.replyEnded === null) record.replyEnded = status;
+        if (record) record.replyEnded ??= status;
       }
     },
     markSurvivedResume: (callIds) => {

@@ -54,7 +54,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "use-stick-to-bottom": "catalog:",
-    "use-sync-external-store": "^1.6.0",
+    "use-sync-external-store": "^1.7.0",
     "xstate": "catalog:"
   },
   "devDependencies": {
@@ -63,7 +63,7 @@
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@types/use-sync-external-store": "^1.5.0",
+    "@types/use-sync-external-store": "^1.7.0",
     "@vitejs/plugin-react": "catalog:",
     "fast-check": "catalog:",
     "jsdom": "catalog:",

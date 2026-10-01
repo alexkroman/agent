@@ -62,27 +62,27 @@
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-runtime": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
-    "@clack/prompts": "^1.7.0",
+    "@clack/prompts": "^1.8.1",
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
     "env-paths": "^4.0.0",
     "execa": "^10.0.1",
     "get-port": "^7.2.0",
     "ofetch": "^1.5.1",
-    "p-debounce": "^5.1.0",
+    "p-debounce": "^5.1.1",
     "p-timeout": "catalog:",
     "vite": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "aai-templates": "workspace:*",
-    "playwright": "^1.62.1",
+    "playwright": "^1.63.0",
     "tsdown": "catalog:",
-    "verdaccio": "^6.10.1",
+    "verdaccio": "^6.10.4",
     "vitest": "catalog:"
   },
   "peerDependencies": {
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.1"
   },
   "peerDependenciesMeta": {
     "vitest": {
