@@ -86,7 +86,7 @@ expect.extend({
 });
 
 declare module "vitest" {
-  interface Assertion<T> {
+  interface Matchers<R, T> {
     toBeValidSessionEvent(): void;
     toContainEvent(type: string, fields?: Record<string, unknown>): void;
   }
