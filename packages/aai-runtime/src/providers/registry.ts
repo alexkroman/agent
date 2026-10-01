@@ -146,29 +146,42 @@ const TTS_OPENERS: { readonly [K in TtsKind]: AnyOpenerEntry<TtsOpener>["open"] 
     ),
 };
 
-/** Join a stage's catalog definitions to its openers, credential from the definition. */
-function bind<Opener>(
+/**
+ * Join a stage's catalog definitions to its host halves (an opener, an LLM
+ * client), in catalog order, through `join`. A definition with no host half is
+ * left out.
+ */
+export function bind<Client, Entry>(
   definitions: readonly ProviderDefinition[],
-  openers: Readonly<Record<string, AnyOpenerEntry<Opener>["open"]>>,
-): Record<string, AnyOpenerEntry<Opener>> {
-  const registry: Record<string, AnyOpenerEntry<Opener>> = {};
+  clients: Readonly<Record<string, Client>>,
+  join: (definition: ProviderDefinition, client: Client) => Entry,
+): Record<string, Entry> {
+  const registry: Record<string, Entry> = {};
   for (const definition of definitions) {
-    const open = openers[definition.kind];
-    if (open !== undefined) registry[definition.kind] = { envVar: definition.envVar, open };
+    const client = clients[definition.kind];
+    if (client !== undefined) registry[definition.kind] = join(definition, client);
   }
   return registry;
 }
+
+/** An opener's registry entry: its credential variable from the definition. */
+const openerEntry = <Opener>(
+  definition: ProviderDefinition,
+  open: AnyOpenerEntry<Opener>["open"],
+): AnyOpenerEntry<Opener> => ({ envVar: definition.envVar, open });
 
 /** The STT registry — mutable, because `registerSttKind` writes it. */
 export const STT_REGISTRY: Record<string, AnyOpenerEntry<SttOpener>> = bind(
   STT_PROVIDERS,
   STT_OPENERS,
+  openerEntry<SttOpener>,
 );
 
 /** The TTS registry — mutable, because `registerTtsKind` writes it. */
 export const TTS_REGISTRY: Record<string, AnyOpenerEntry<TtsOpener>> = bind(
   TTS_PROVIDERS,
   TTS_OPENERS,
+  openerEntry<TtsOpener>,
 );
 
 /**

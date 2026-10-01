@@ -30,7 +30,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import { type FailoverListener, failoverOf } from "./_failover.ts";
+import { advanceFailover, type FailoverListener } from "./_failover.ts";
 import type { DeferredModel } from "./_lazy-model.ts";
 
 type Member = { readonly model: DeferredModel; readonly kind: string };
@@ -83,17 +83,11 @@ export function withFailoverListener(
 }
 
 function build(members: readonly Member[], onFailover: FailoverListener): DeferredModel {
-  const primary = members[0];
-  if (primary === undefined || members.length < 2) {
-    throw new Error("LLM fallback needs at least two providers to fail over between.");
-  }
-  /** Report the switch past member `i`, or say there is none to switch to. */
-  const advance = (i: number, cause: unknown, aborted: boolean): boolean => {
-    const next = members[i + 1];
-    if (aborted || next === undefined) return false;
-    onFailover(failoverOf("llm", members[i]?.kind ?? "", next.kind, cause));
-    return true;
-  };
+  // `resolveMembers` hands over at least two members, and `advanceFailover`
+  // moves on only to one that exists — so every `members[i]` below is one.
+  const primary = members[0] as Member;
+  const advance = (i: number, cause: unknown, aborted: boolean): boolean =>
+    advanceFailover("llm", members, i, cause, aborted, onFailover);
 
   const model: DeferredModel = {
     specificationVersion: "v4",
@@ -106,8 +100,7 @@ function build(members: readonly Member[], onFailover: FailoverListener): Deferr
     },
     async doGenerate(options) {
       for (let i = 0; ; i++) {
-        const member = members[i];
-        if (member === undefined) throw new Error("LLM fallback: no member left to try.");
+        const member = members[i] as Member;
         try {
           return await member.model.doGenerate(options);
         } catch (err) {
@@ -118,9 +111,7 @@ function build(members: readonly Member[], onFailover: FailoverListener): Deferr
     async doStream(options) {
       const aborted = (): boolean => options.abortSignal?.aborted === true;
       for (let i = 0; ; i++) {
-        const member = members[i];
-        if (member === undefined) throw new Error("LLM fallback: no member left to try.");
-        const attempt = await streamFrom(member, options);
+        const attempt = await streamFrom(members[i] as Member, options);
         if (attempt.ok) return attempt.result;
         // Throw (open failure) or forward (stream failure) when there is no
         // next member or the call was aborted — the lone provider's behaviour.
@@ -156,7 +147,7 @@ async function streamFrom(
   const reader = result.stream.getReader();
   const prefix: StreamPart[] = [];
   const outcome = await peek(reader, prefix);
-  const forwarded = { ...result, stream: resume(reader, prefix, outcome) };
+  const forwarded = { ...result, stream: resume(result.stream, reader, prefix) };
   return outcome instanceof StreamFailure
     ? { ok: false, cause: outcome.cause, result: forwarded }
     : { ok: true, result: forwarded };
@@ -189,33 +180,25 @@ async function peek(
   }
 }
 
-/** The stream a consumer reads: the buffered prefix, then the rest of `reader`. */
+/**
+ * The stream a consumer reads: the buffered prefix, then the rest of the
+ * member's stream piped straight through — no per-part hop of our own on a
+ * healthy stream. The source's end, error (a LAST member's stream that
+ * rejected without an `error` part) and a consumer's cancel all carry across
+ * the pipe, as they would from that member alone.
+ */
 function resume(
+  source: ReadableStream<StreamPart>,
   reader: ReadableStreamDefaultReader<StreamPart>,
   prefix: readonly StreamPart[],
-  outcome: "content" | "done" | StreamFailure,
 ): ReadableStream<StreamPart> {
-  return new ReadableStream<StreamPart>({
+  const forwarded = new TransformStream<StreamPart, StreamPart>({
     start(controller) {
       for (const part of prefix) controller.enqueue(part);
-      if (outcome === "done") controller.close();
-      else if (outcome instanceof StreamFailure && prefix.at(-1)?.type !== "error") {
-        // The LAST member's stream rejected (no `error` part to forward): the
-        // consumer sees the rejection, as it would have from that member alone.
-        controller.error(outcome.cause);
-      }
-    },
-    async pull(controller) {
-      try {
-        const read = await reader.read();
-        if (read.done) controller.close();
-        else controller.enqueue(read.value);
-      } catch (err) {
-        controller.error(err);
-      }
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
     },
   });
+  reader.releaseLock();
+  // The pipe's own rejection mirrors an error or cancel the consumer already sees.
+  source.pipeTo(forwarded.writable).catch(() => undefined);
+  return forwarded.readable;
 }

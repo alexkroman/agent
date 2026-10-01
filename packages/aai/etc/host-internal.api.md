@@ -1612,6 +1612,12 @@ export type SpeechSynthesizer = (request: {
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @public
+export function stageMembers<D>(descriptor: D | undefined): (D | {
+    kind: string;
+    options: Record<string, unknown>;
+})[];
+
+// @public
 export interface StandardSchemaIssue {
     readonly errors?: unknown;
     readonly issues?: unknown;

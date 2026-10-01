@@ -36,10 +36,11 @@
 
 import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { createNanoEvents } from "nanoevents";
 import {
+  advanceFailover,
   type FailoverAwareOpener,
   type FailoverListener,
-  failoverOf,
   type ProviderFailover,
 } from "./_failover.ts";
 import {
@@ -63,29 +64,6 @@ export type FallbackMember<Opener> = {
   readonly kind: string;
 };
 
-/** Any event map's handlers — `never[]` parameters, so every concrete handler fits. */
-type Handlers = Record<string, (...args: never[]) => void>;
-
-/** A listener table — the wrapper's own `on`, independent of which member is live. */
-function listenerTable<E extends Handlers>(): {
-  on<K extends keyof E>(event: K, fn: E[K]): Unsubscribe;
-  emit<K extends keyof E>(event: K, call: (fn: E[K]) => void): void;
-} {
-  const table = new Map<keyof E, Set<unknown>>();
-  return {
-    on(event, fn) {
-      const set = table.get(event) ?? new Set();
-      table.set(event, set);
-      set.add(fn);
-      return () => set.delete(fn);
-    },
-    emit(event, call) {
-      // Each set holds only the handlers `on` stored under this same key.
-      for (const fn of [...(table.get(event) ?? [])]) call(fn as E[typeof event]);
-    },
-  };
-}
-
 /** The key member `i` opens with. */
 function keyFor(
   member: { envVar: string },
@@ -104,23 +82,18 @@ async function openFrom<M extends { readonly kind: string }, Session>(
   start: number,
   open: (member: M) => Promise<Session>,
   signal: AbortSignal,
-  report: (failover: ProviderFailover) => void,
+  report: FailoverListener,
   stage: ProviderFailover["stage"],
 ): Promise<{ session: Session; index: number }> {
-  let lastError: unknown = new Error(`${stage.toUpperCase()} fallback has no member to open.`);
-  for (let i = start; i < members.length; i++) {
-    const member = members[i];
-    if (member === undefined) break;
+  for (let i = start; ; i++) {
+    // `start` names a member, and `advanceFailover` moves on only to one that exists.
+    const member = members[i] as M;
     try {
       return { session: await open(member), index: i };
     } catch (err) {
-      lastError = err;
-      const next = members[i + 1];
-      if (signal.aborted || next === undefined) break;
-      report(failoverOf(stage, member.kind, next.kind, err));
+      if (!advanceFailover(stage, members, i, err, signal.aborted, report)) throw err;
     }
   }
-  throw lastError;
 }
 
 /** What a stage tells the core about one adopted member's events. */
@@ -175,13 +148,11 @@ async function openFailoverCore<
         produced = true;
       },
       error: (err, forward) => {
-        const next = members[index + 1];
-        if (produced || closed || signal.aborted || next === undefined) {
-          forward();
-          return;
-        }
-        onFailover(failoverOf(stage, members[index]?.kind ?? "", next.kind, err));
-        void switchFrom(session, index + 1);
+        // After output or close, an error is forwarded as a lone provider's would be.
+        const settled = produced || closed || signal.aborted;
+        if (advanceFailover(stage, members, index, err, settled, onFailover)) {
+          void switchFrom(session, index + 1);
+        } else forward();
       },
     });
     args.adopted?.(session);
@@ -251,23 +222,22 @@ export function createFallbackSttOpener(
   env: ProviderEnv | undefined,
 ): SttOpener & FailoverAwareOpener<SttOpenOptions, SttSession> {
   return fallbackOpener(members, async (options: SttOpenOptions, onFailover) => {
-    const out = listenerTable<SttEvents>();
+    const out = createNanoEvents<SttEvents>();
     const core = await openFailoverCore({
       stage: "stt",
       ...membersOf(members, env, options, onFailover),
       wire: (session, hooks) => [
         session.on("partial", (text, meta) => {
           hooks.output();
-          out.emit("partial", (fn) => fn(text, meta));
+          out.emit("partial", text, meta);
         }),
         session.on("final", (text, meta) => {
           hooks.output();
-          out.emit("final", (fn) => fn(text, meta));
+          out.emit("final", text, meta);
         }),
-        session.on("error", (err) => hooks.error(err, () => out.emit("error", (fn) => fn(err)))),
+        session.on("error", (err) => hooks.error(err, () => out.emit("error", err))),
       ],
-      connectError: (message) =>
-        out.emit("error", (fn) => fn(createSttError("stt_connect_failed", message))),
+      connectError: (message) => out.emit("error", createSttError("stt_connect_failed", message)),
     });
     const wrapper: SttSession = {
       sendAudio: (pcm) => core.current()?.sendAudio(pcm),
@@ -298,7 +268,7 @@ export function createFallbackTtsOpener(
   env: ProviderEnv | undefined,
 ): TtsOpener & FailoverAwareOpener<TtsOpenOptions, TtsSession> {
   return fallbackOpener(members, async (options: TtsOpenOptions, onFailover) => {
-    const out = listenerTable<TtsEvents>();
+    const out = createNanoEvents<TtsEvents>();
     // Everything sent since the session opened, until the first audio: what a
     // member that failed before speaking never got to say.
     const pending: TtsCall[] = [];
@@ -309,11 +279,11 @@ export function createFallbackTtsOpener(
         session.on("audio", (pcm) => {
           hooks.output();
           pending.length = 0;
-          out.emit("audio", (fn) => fn(pcm));
+          out.emit("audio", pcm);
         }),
-        session.on("words", (words) => out.emit("words", (fn) => fn(words))),
-        session.on("done", () => out.emit("done", (fn) => fn())),
-        session.on("error", (err) => hooks.error(err, () => out.emit("error", (fn) => fn(err)))),
+        session.on("words", (words) => out.emit("words", words)),
+        session.on("done", () => out.emit("done")),
+        session.on("error", (err) => hooks.error(err, () => out.emit("error", err))),
       ],
       adopted: (session) => {
         for (const call of pending) {
@@ -321,8 +291,7 @@ export function createFallbackTtsOpener(
           else session.flush();
         }
       },
-      connectError: (message) =>
-        out.emit("error", (fn) => fn(createTtsError("tts_connect_failed", message))),
+      connectError: (message) => out.emit("error", createTtsError("tts_connect_failed", message)),
     });
     const record = (call: TtsCall): void => {
       if (!core.produced()) pending.push(call);

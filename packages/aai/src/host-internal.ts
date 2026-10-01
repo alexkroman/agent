@@ -195,6 +195,7 @@ export {
   FALLBACK_KIND,
   fallbackMembers,
   isFallbackDescriptor,
+  stageMembers,
 } from "./sdk/providers/fallback.ts";
 /**
  * The LLM stage's host half: the AssemblyAI kind, key variable and gateway

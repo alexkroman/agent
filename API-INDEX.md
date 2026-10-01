@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 235 names
-- [Framework internals](#framework-internals) — 426 names
+- [Framework internals](#framework-internals) — 427 names
 
 ## Agent authoring
 
@@ -1630,6 +1630,7 @@ trace or a type error can be traced back to something.
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ssrfSafeFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `stageMembers` | function | `@alexkroman1/aai/host-internal` |  | A stage field as the descriptors it dials: a fallback's members, else itself, and nothing for an unset stage. |
 | `stampSessionEvent` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `staticSystemPrompt` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `systemPromptResolver` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
