@@ -36,9 +36,18 @@
  * handler that answers every `agent-transcript.committed` with a `say` answers
  * its own line too, and the call never ends:
  *
- * ```ts no-check
- * // LOOPS: the line this says is itself an agent-transcript.committed.
- * "agent-transcript.committed": (_event, ctx) => ctx.speech.say("Anything else?"),
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "Never stops",
+ *   events: {
+ *     // LOOPS: the line this says is itself an agent-transcript.committed.
+ *     "agent-transcript.committed": (_event, ctx) => {
+ *       ctx.speech.say("Anything else?");
+ *     },
+ *   },
+ * });
  * ```
  *
  * The emitter's re-entry guard does not catch it, because the line is spoken
