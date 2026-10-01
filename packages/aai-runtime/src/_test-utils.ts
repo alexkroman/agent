@@ -23,13 +23,14 @@ import { type Mock, vi } from "vitest";
 import { createRuntimeWithSeams } from "./runtime.ts";
 import { type LogFn, type Logger, type LogLevel, silentLogger } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s/index.ts";
-import type { ServerSession } from "./session-core.ts";
+import type { ServerSession } from "./session/index.ts";
 import {
   createSessionEmitter,
+  createSessionEventStream,
   type SessionEmitter,
   type SessionEventHookDeps,
-} from "./session-emitter.ts";
-import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
+  type SessionEventStream,
+} from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 import { createUsageMeter, type UsageMeter, type UsageSnapshot } from "./usage-meter.ts";
@@ -189,7 +190,7 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
  * Create a ServerSession-shaped mock with all methods as vi.fn() spies.
  *
  * Nine spies, where there were twenty-four. The session's inbound surface is two
- * vocabularies plus two audio paths now (see `session-core.ts`), so this stub
+ * vocabularies plus two audio paths now (see `session/core.ts`), so this stub
  * cannot go stale against an added command or event the way a per-name one did —
  * which is the whole reason a double cast to `ServerSession` was tempting here, and
  * a cast is exactly what stops reporting when a field is ADDED.

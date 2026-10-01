@@ -25,7 +25,6 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { HostConfig } from "@alexkroman1/aai/protocol";
 import { HostConfigMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
-import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./providers/resolve.ts";
 import { createRuntimeWithSeams, type SessionStartOptions } from "./runtime.ts";
@@ -33,8 +32,12 @@ import type { Logger, S2sConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { usesAssemblyS2s } from "./runtime-transport.ts";
 import type { HostRuntimeOptions, Runtime } from "./runtime-types.ts";
-import { stampSessionEvent } from "./session-event-stream.ts";
-import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
+import {
+  type SessionWebSocket,
+  safeSend,
+  stampSessionEvent,
+  UNPACED_AUDIO_LEAD_MS,
+} from "./session/index.ts";
 
 /**
  * Default `maxSteps` for a host agent. Host tasks (e.g. tau2 simulations) may

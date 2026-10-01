@@ -36,17 +36,19 @@
  * the same live session would double its own turns.
  *
  * Only this session's OWN log counts as a resume "finding" something: the
- * greeting decision (`session-resume-found.ts`) is about whether `?sessionId=`
+ * greeting decision (`session/resume-found.ts`) is about whether `?sessionId=`
  * named a real conversation, and a client's history does not answer that.
  */
 
 import type { SessionEvent } from "@alexkroman1/aai";
 import type { SessionMemory } from "./runtime-session-memory.ts";
-import { SessionRefusedError } from "./session-attach-end.ts";
-import type { ServerSession } from "./session-core.ts";
-import { historyFromEvents } from "./session-event-history.ts";
-import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./session-event-stream.ts";
-import type { ResumeFindings } from "./session-resume-found.ts";
+import type { ResumeFindings, ServerSession } from "./session/index.ts";
+import {
+  historyFromEvents,
+  SESSION_EVENT_READ_LIMIT,
+  type SessionEventStream,
+  SessionRefusedError,
+} from "./session/index.ts";
 
 /**
  * Read a session's whole log, one page at a time.
@@ -96,7 +98,7 @@ export function attachSessionStream(
     /**
      * Where "this resume restored a conversation" is recorded, so the greeting
      * can tell a real resume from an id that named nothing — see
-     * `session-resume-found.ts`.
+     * `session/resume-found.ts`.
      */
     findings?: ResumeFindings | undefined;
     /** Client binding, `sessionContext`, prior sessions and `onSessionEnd`. */

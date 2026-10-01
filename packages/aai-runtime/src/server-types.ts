@@ -4,7 +4,7 @@
  *
  * `server.ts` sat at the 500-line cap and these four exported types are ~135
  * of those lines with no behaviour in them — the same seam
- * `session-core-types.ts` takes, for the same reason. `server.ts` re-exports
+ * `session/core-types.ts` takes, for the same reason. `server.ts` re-exports
  * all four, so every existing import path is unchanged.
  */
 

@@ -44,7 +44,7 @@ import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
-import type { SessionWebSocket } from "../ws-frames.ts";
+import type { SessionWebSocket } from "../session/index.ts";
 import { type CarrierCodec, type CarrierInbound, isMulawFormat } from "./carriers.ts";
 import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
 import { createResampler, type Resampler } from "./resample.ts";
@@ -230,7 +230,7 @@ export function createTelephonyBridge(
     const message = safeJsonParse(text);
     if (!isRecord(message)) return;
     const type = message.type;
-    // `session.configured`, which is what `session-core.ts` EMITS. This branch
+    // `session.configured`, which is what `../session/core.ts` EMITS. This branch
     // tested `"config"` — the one `config` in the protocol is
     // `HostConfigMessageSchema`, a client-to-SERVER host-mode frame that no
     // session ever sends outbound — so `configure()` never ran on any call: both
@@ -257,7 +257,7 @@ export function createTelephonyBridge(
     // The reset event is `session.reset` on the wire, not `reset`: this branch
     // spent its life testing a type no runtime emits, so a `reset` command left
     // the carrier playing out a conversation the session had already discarded.
-    // `ws-client-sink.ts` clears the pacer on exactly this pair.
+    // `../session/ws-client-sink.ts` clears the pacer on exactly this pair.
     if (type === "reply.cancelled" || type === "session.reset") {
       sendToCarrier(carrier.clear(streamId));
       return;

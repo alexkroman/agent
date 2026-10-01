@@ -3,7 +3,7 @@
 import type { SessionEvent } from "@alexkroman1/aai";
 import { setSessionClient } from "@alexkroman1/aai/host-internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { stampSessionEvent } from "../session-event-stream.ts";
+import { stampSessionEvent } from "../session/index.ts";
 import {
   type ClientEventFeed,
   feedClientEvent,

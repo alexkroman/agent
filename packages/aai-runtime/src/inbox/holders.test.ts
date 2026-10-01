@@ -9,7 +9,7 @@ import { setSessionClient } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
-import { stampSessionEvent } from "../session-event-stream.ts";
+import { stampSessionEvent } from "../session/index.ts";
 import {
   answerNotice as answer,
   connectDevice,

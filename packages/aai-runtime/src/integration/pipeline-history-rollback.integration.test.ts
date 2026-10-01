@@ -11,7 +11,7 @@
  * before the push.
  *
  * That equality was FALSE at exactly one depth, and it was found by the
- * differential in `session-history-replay-equivalence.test.ts` (whose module doc
+ * differential in `../session/history-replay-equivalence.test.ts` (whose module doc
  * recorded it) rather than by either module's unit suite. `pushConversation`
  * bounds the window, trimming from the FRONT when it is full; `dropTrailingUser`
  * POPS from the back. So a rollback landing at the bound undid the append and
@@ -144,7 +144,7 @@ const noReached = (): Reached => ({
  * A TTS session that records and synthesizes nothing.
  *
  * Written out rather than cast, for the reason the sibling property in
- * `session-history-replay-equivalence.test.ts` gives: the interface is five
+ * `../session/history-replay-equivalence.test.ts` gives: the interface is five
  * members and a cast stops reporting the moment one is added.
  */
 function inertTts(): TtsSession {

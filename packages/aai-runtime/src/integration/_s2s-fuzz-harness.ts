@@ -27,9 +27,12 @@ import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { silentLogger } from "../runtime-config.ts";
-import { createSessionCore, type ServerSession } from "../session-core.ts";
-import { createSessionEmitter } from "../session-emitter.ts";
-import { createSessionEventStream } from "../session-event-stream.ts";
+import {
+  createSessionCore,
+  createSessionEmitter,
+  createSessionEventStream,
+  type ServerSession,
+} from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";

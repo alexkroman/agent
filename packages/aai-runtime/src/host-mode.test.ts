@@ -7,7 +7,6 @@ import { assemblyAIS2s } from "@alexkroman1/aai/s2s";
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { flush, makeConfig, makeEmitter, makeLogger, silentLogger } from "./_test-utils.ts";
-import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import {
   buildHostAgent,
   DEFAULT_HOST_MAX_STEPS,
@@ -19,12 +18,15 @@ import {
 import { createRelayExecuteTool } from "./host-relay.ts";
 import type { Runtime, runtimeBrand } from "./runtime.ts";
 import type { HostRuntimeOptions } from "./runtime-types.ts";
-import { createSessionCore } from "./session-core.ts";
-import { createSessionDirectory } from "./session-directory.ts";
+import type { SessionWebSocket } from "./session/index.ts";
+import {
+  createSessionCore,
+  createSessionDirectory,
+  UNPACED_AUDIO_LEAD_MS,
+  wireSessionSocket,
+} from "./session/index.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
-import type { SessionWebSocket } from "./ws-handler.ts";
-import { wireSessionSocket } from "./ws-handler.ts";
 
 const TOOL_SCHEMA: ToolSchema = {
   type: "function",

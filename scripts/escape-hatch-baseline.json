@@ -40,7 +40,7 @@
     "packages/aai-runtime/src/transports/pipeline/openai-replay.test.ts": 2,
     "packages/aai-runtime/src/transports/pipeline/llm/smooth.test.ts": 1,
     "packages/aai-runtime/src/transports/s2s-transport.test.ts": 2,
-    "packages/aai-runtime/src/ws-frames.ts": 1,
+    "packages/aai-runtime/src/session/ws-frames.ts": 1,
     "packages/aai-server/src/modal/harness-image.test.ts": 1,
     "packages/aai-server/src/serve-lifecycle.ts": 2,
     "packages/aai-server/src/test-utils.ts": 1,

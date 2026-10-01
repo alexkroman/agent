@@ -34,7 +34,7 @@
  * target — the seam that IS right is the one below the wire.
  *
  * The cost of that is stated rather than papered over: this does not exercise
- * `ws-handler.ts`, the audio pacer, or frame ordering. Those have unit and
+ * `../session/ws-handler.ts`, the audio pacer, or frame ordering. Those have unit and
  * scenario coverage; what had none was "given this utterance, did the agent do
  * the right thing".
  *
@@ -64,7 +64,7 @@ import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime.ts";
 import { silentLogger } from "../runtime-config.ts";
-import { SessionRefusedError } from "../session-attach-end.ts";
+import { SessionRefusedError } from "../session/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
@@ -299,7 +299,7 @@ async function openWithFakes(
     stopped ??= session.stop();
     return stopped;
   };
-  // Claimed right after the session is built, where `session-attach.ts` claims
+  // Claimed right after the session is built, where `../session/attach.ts` claims
   // a real connection's — see `_session-end.ts`.
   const ending = watchSessionEnd(sessionId, stopSession);
   end = ending;
@@ -433,7 +433,7 @@ async function openWithFakes(
  *
  * The refusal is the runtime's own (`runtime-session-stream.ts` throws it
  * before the transport starts); this only turns it into a value, and stops the
- * session as `session-attach.ts` does for a refused connection. Any other
+ * session as `../session/attach.ts` does for a refused connection. Any other
  * failure to start is still a throw.
  */
 async function startOrRefusal(

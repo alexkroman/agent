@@ -4,8 +4,11 @@ import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "./_test-utils.ts";
 import type { SessionMemory } from "./runtime-session-memory.ts";
 import { attachSessionStream, readAllEvents } from "./runtime-session-stream.ts";
-import { createSessionEventStream, SESSION_EVENT_READ_LIMIT } from "./session-event-stream.ts";
-import { createResumeFindings } from "./session-resume-found.ts";
+import {
+  createResumeFindings,
+  createSessionEventStream,
+  SESSION_EVENT_READ_LIMIT,
+} from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 
 const SID = "s-1";

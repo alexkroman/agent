@@ -52,7 +52,7 @@ import type { TransportCapabilities } from "./capabilities.ts";
  * one — for a change this package did not make. The exclusions are declared once,
  * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
  * (with the reason each is there), so a new event is reportable by default — and
- * `handleReport` in `session-core.ts` then fails to COMPILE until it is
+ * `handleReport` in `../session/core.ts` then fails to COMPILE until it is
  * classified: every name here has its own `case`, either acted on or listed as
  * forwarded, and the `default` is `satisfies never`.
  *
@@ -84,7 +84,7 @@ export type TransportCallbacks = {
    * - **`reply.completed` is the PROVIDER's claim, not the turn's end.** A
    *   provider sends its `reply.done` more than once per turn, so the session
    *   decides whether this one closes the turn and may emit nothing at all —
-   *   see `session-reply-done.ts`, which is entirely about the three ways it is
+   *   see `../session/reply-done.ts`, which is entirely about the three ways it is
    *   not the end.
    * - **`agentTranscript.committed` vs `.updated` replaces a boolean.** The old
    *   `onAgentTranscript(text, interrupted)` plus a separate
@@ -308,7 +308,7 @@ export interface Transport {
    * `modelView`, when given, is what the MODEL's own list is seeded with in
    * place of `messages` — the same conversation with each prior tool call as a
    * real `tool-call`/`tool-result` pair (`modelHistoryOf` in
-   * `session-event-history.ts`), because a lone `tool` result is an orphan the
+   * `../session/event-history.ts`), because a lone `tool` result is an orphan the
    * provider rejects and a call rendered as TEXT is one the model imitates.
    * `messages` still seeds the tool-facing view whole.
    */

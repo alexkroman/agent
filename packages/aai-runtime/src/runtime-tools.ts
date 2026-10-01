@@ -18,9 +18,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
-import type { SessionDirectory } from "./session-directory.ts";
-import type { SessionEmitter } from "./session-emitter.ts";
-import type { SpeechDirectory } from "./session-speech.ts";
+import type { SessionDirectory, SessionEmitter, SpeechDirectory } from "./session/index.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import type { ClientToolBroker } from "./tools/index.ts";
@@ -102,7 +100,7 @@ type ToolSetupDeps = {
   notifier?: RunNotifier | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
   /**
-   * The runtime's live sessions by id (`session-directory.ts`), read per CALL:
+   * The runtime's live sessions by id (`session/directory.ts`), read per CALL:
    *
    * - the EMITTER, so `ctx.send` and a `syncState` push are recorded in the
    *   session's event stream and seen by its hooks like any other event — they

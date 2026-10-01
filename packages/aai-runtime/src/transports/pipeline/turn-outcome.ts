@@ -52,13 +52,13 @@
  * This module can only decline to push; it cannot stop a reader that sees the
  * committed transcript from recording it, and for a long time two of them did.
  * `agentTranscript.committed` was the same event for a reply and for an
- * apology, so `../../session-core.ts`'s live dispatch appended the phrase to
+ * apology, so `../../session/core.ts`'s live dispatch appended the phrase to
  * `ctx.messages` on the same call the caller heard it, and
  * `messagesFromEvents` handed it back to the model on the first reconnect —
  * compounding, since every reconnect re-seeds. Both phrases therefore carry
  * `recovery` (`AgentTranscriptRecovery`, `sdk/protocol-events.ts`), the
  * only thing on the wire that says an utterance was SPOKEN and is not part of
- * the record, and `historyMessageOf` (`../../session-event-history.ts`) is the one
+ * the record, and `historyMessageOf` (`../../session/event-history.ts`) is the one
  * reader of it. Adding a third phrase means tagging it: an untagged committed
  * transcript is a reply, by definition and by every older log.
  */

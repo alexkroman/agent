@@ -29,15 +29,15 @@ import {
 } from "./_test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks } from "./s2s/index.ts";
+import { asSessionWebSocket } from "./session/index.ts";
 import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
-import { asSessionWebSocket } from "./ws-handler.ts";
 
 /**
  * An already-open socket for `startSession`. `MockWebSocket` rather than the
  * three-property literal this file used to hold: that one recorded no frames
  * and needed an `as never` per call. `asSessionWebSocket` is the repo's ONE
- * narrowing seam for this type (see `ws-frames.ts`).
+ * narrowing seam for this type (see `session/ws-frames.ts`).
  */
 function openMockWs(): MockWebSocket {
   const ws = new MockWebSocket("ws://test");

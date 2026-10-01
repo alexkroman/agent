@@ -10,8 +10,7 @@ import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "./_test-utils.ts";
 import { openSessionMemory } from "./runtime-session-memory.ts";
-import { bindClientSession } from "./session-client-history.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import { bindClientSession, createSessionEventStream } from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 
 /** A fresh session id per case: the client map it reads is process-global. */

@@ -195,7 +195,7 @@ export {
 // Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
 // their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
 // subpath and capability. A server option names only the opaque `SessionAuth`.
-export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
+export type { SessionEventPage, SessionEventStream, SessionWebSocket } from "./session/index.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
 // a host closing a surface has to be able to spell the variable that closes it, and
@@ -286,4 +286,3 @@ export {
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow/uploads.ts";
-export type { SessionWebSocket } from "./ws-handler.ts";

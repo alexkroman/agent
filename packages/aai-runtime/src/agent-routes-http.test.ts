@@ -22,7 +22,7 @@ import { compileAgentRoutes } from "./agent-routes.ts";
 import { MAX_ROUTE_BODY_BYTES } from "./agent-routes-http.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
 import { type AgentServer, createRuntimeServer, type SessionRuntime } from "./server.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import { createSessionEventStream } from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 
 let server: AgentServer | undefined;

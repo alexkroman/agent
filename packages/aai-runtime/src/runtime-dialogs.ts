@@ -214,7 +214,7 @@ export function openSessionDialogs(
    * the slot when — and only when — the active state handled the event, and it
    * returns the position either way, so comparing positions cannot tell a
    * self-transition from a no-op. It is the same instrument
-   * `session-emitter.ts` uses on a hook's context and for the same reason: the
+   * `session/emitter.ts` uses on a hook's context and for the same reason: the
    * commit is what a move costs, and the overwhelming majority of session events
    * reach a dialog that declares no transition on them.
    *

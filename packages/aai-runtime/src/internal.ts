@@ -196,27 +196,31 @@ export { isPathInside } from "./server-static.ts";
 // shape a host supplies — is contracted, on the root barrel. The socket's
 // options are the transport-neutral lifecycle's plus its own, so that type is
 // named here beside the function whose signature carries it.
-export type { AttachSessionOptions } from "./session-attach.ts";
 // The SERVER session one socket bridges, for `aai-server`'s `ws.scenario.test.ts`,
 // which drives the platform's socket handler against a stand-in session. It was
 // the `session` capability's, where nothing published could hand one out: the
 // constructor is `createSessionCore`, which is unexported, and the one method
 // that returned one (`Runtime.createSession`) was a testing seam. The two
 // `TransportEvent*` types are what its `report` takes, so they travel with it.
-export type { ServerSession } from "./session-core.ts";
+export type {
+  AttachSessionOptions,
+  ServerSession,
+  SessionEmitter,
+  SpeechDirectory,
+} from "./session/index.ts";
 // The live-session directory `wireSessionSocket` claims into — a host wiring
-// its own socket server builds one per runtime (`session-directory.ts`).
-export {
-  createSessionDirectory,
-  type SessionDirectory,
-  type SessionWiring,
-} from "./session-directory.ts";
-export type { SessionEmitter } from "./session-emitter.ts";
+// its own socket server builds one per runtime (`session/directory.ts`).
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel.
-export { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
-export type { SpeechDirectory } from "./session-speech.ts";
+export {
+  createSessionDirectory,
+  createSessionEventStream,
+  type SessionDirectory,
+  type SessionWiring,
+  stampSessionEvent,
+  wireSessionSocket,
+} from "./session/index.ts";
 // Session state's PLATFORM backend — the HTTP client `aai-server` serves on
 // `POST /:slug/session-state`. Here for the same reason `createPlatformJournal`
 // below is, and it is the same arm: `session-state-conformance-platform.scenario.test.ts`
@@ -379,7 +383,6 @@ export {
   type UploadBackend,
   type UploadStore,
 } from "./workflow/uploads.ts";
-export { wireSessionSocket } from "./ws-handler.ts";
 
 /**
  * The {@link JournalStore} CONFORMANCE suite, loaded on demand.

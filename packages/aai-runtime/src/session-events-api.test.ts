@@ -3,7 +3,7 @@
 import { requestPath } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
-import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
+import { createSessionEventStream, type SessionEventStream } from "./session/index.ts";
 import {
   createSessionEventsApi,
   SESSION_EVENTS_PATH,

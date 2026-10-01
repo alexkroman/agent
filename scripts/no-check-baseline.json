@@ -15,7 +15,7 @@
     "packages/aai-runtime/src/providers/stt/_assemblyai-test-utils.ts": 1,
     "packages/aai-runtime/src/workflow/notify.ts": 1,
     "packages/aai-runtime/src/workflow/replay/divergence.ts": 2,
-    "packages/aai-runtime/src/ws-session-lifecycle.ts": 1,
+    "packages/aai-runtime/src/session/ws-lifecycle.ts": 1,
     "packages/aai-templates/scaffold/CLAUDE.md": 29,
     "packages/aai-ui/README.md": 1,
     "packages/aai-ui/src/components/upload-progress.tsx": 1,

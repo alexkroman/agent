@@ -12,8 +12,8 @@
  * - **Hanging up.** A tool's `endSession(ctx)` lets the goodbye PLAY and then
  *   closes the carrier's stream, as a normal stop.
  *
- * The pieces have their own specs (`carriers.test.ts`, `session-context.test.ts`,
- * `paced-client-sink.test.ts`, `session-end.test.ts` in the SDK); this one pins
+ * The pieces have their own specs (`carriers.test.ts`, `../session/context.test.ts`,
+ * `../session/paced-client-sink.test.ts`, `session-end.test.ts` in the SDK); this one pins
  * the wiring between them.
  */
 

@@ -42,8 +42,8 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
-import { type ClientHistoryDeps, readClientTranscript } from "./session-client-history.ts";
-import type { SpeechDirectory } from "./session-speech.ts";
+import type { SpeechDirectory } from "./session/index.ts";
+import { type ClientHistoryDeps, readClientTranscript } from "./session/index.ts";
 
 /**
  * The methods a route key may name — also what `SERVER_ROUTES.api` declares, so

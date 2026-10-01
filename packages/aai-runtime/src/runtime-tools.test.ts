@@ -25,8 +25,11 @@ import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-t
 import { makeAgent, makeSpeech, makeUsageMeter, tick } from "./_test-utils.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
-import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import {
+  createSessionEmitter,
+  createSessionEventStream,
+  type SessionEmitter,
+} from "./session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { createClientToolBroker, executeToolCall } from "./tools/index.ts";
 import type { UsageMeter } from "./usage-meter.ts";
@@ -100,7 +103,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
  *
  * Every event carries a `meta` now, and these cases are about WHICH SOCKET saw
  * a push — so the id and timestamp are noise here. Read `meta` where it is the
- * subject (`session-event-stream.test.ts`), not here.
+ * subject (`session/event-stream.test.ts`), not here.
  */
 const stateEvents = (events: SessionEvent[]): unknown[] =>
   events.filter((e) => e.type === "state.updated").map(({ meta: _meta, ...body }) => body);

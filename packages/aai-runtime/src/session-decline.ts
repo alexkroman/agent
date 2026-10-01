@@ -15,8 +15,7 @@
 
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import type { SessionRuntime } from "./server.ts";
-import { stampSessionEvent } from "./session-event-stream.ts";
-import { safeSend } from "./ws-handler.ts";
+import { safeSend, stampSessionEvent } from "./session/index.ts";
 
 /**
  * A {@link SessionRuntime} that turns every session away with a protocol error

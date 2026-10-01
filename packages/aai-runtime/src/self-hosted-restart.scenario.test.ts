@@ -16,7 +16,7 @@
  *   survives a new process, at its own indices". That is the STORE and the
  *   STREAM: append, flush, a second stream, hydrate, read. It stops at the
  *   events, and says nothing about them becoming a CONVERSATION.
- * - `session-core-history.test.ts` — `restoreHistory` appends to the model's
+ * - `session/core-history.test.ts` — `restoreHistory` appends to the model's
  *   copy. That is the far end, against an in-memory core, with nothing durable
  *   under it.
  * - `session-resume.scenario.test.ts` / `-state` — a really-severed socket
@@ -54,7 +54,7 @@
  * unwinds, and session stop is itself a flush point — so an orderly restart here
  * loses nothing, including a turn that never completed, which the last case pins.
  * The "a crash loses at most the events since the last flush" bound in
- * `session-event-stream.ts` is about a process that dies WITHOUT unwinding, and
+ * `session/event-stream.ts` is about a process that dies WITHOUT unwinding, and
  * producing one needs a real subprocess to kill (`aai-cli`'s e2e tier). Do not
  * read the last case as evidence about a crash.
  */
@@ -324,7 +324,7 @@ describeWithPg("a self-hosted agent's conversation across a process restart", ()
     // This case was written the other way round first, asserting that the
     // unfinished turn was LOST, and it failed — correctly. That is worth recording
     // rather than quietly inverting: the "a crash loses at most the events since
-    // the last flush" bound in `session-event-stream.ts` is about an ABRUPT death,
+    // the last flush" bound in `session/event-stream.ts` is about an ABRUPT death,
     // and `server.close()` is the opposite of one. Nothing in this tier can
     // produce the abrupt case — killing a process without unwinding it needs a
     // real subprocess, which is `aai-cli`'s e2e tier — so the honest thing to pin

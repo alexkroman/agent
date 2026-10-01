@@ -4,7 +4,7 @@
  * a real socket that is really cut.
  *
  * This exists because the two halves of the resume contract were each covered
- * and never together. `ws-handler-resume.test.ts` drives the real machinery
+ * and never together. `session/ws-handler-resume.test.ts` drives the real machinery
  * (id reuse, a delayed stop not evicting a resumed session, the superseded-session
  * eviction) against a MOCKED socket; `session-resume.scenario.test.ts` drives a
  * really-severed socket against a FAKE runtime. A defect needing both to be real
@@ -31,7 +31,7 @@
  * - `sinkMap.claim(id, client)` is exercised incidentally — the snapshot arrives
  *   on the new socket, so the claim worked — but the ownership hazard it exists
  *   for (an old session's late `stop()` evicting the resumed session's entry) is
- *   `ws-handler-resume.test.ts`'s, which can schedule that race deterministically.
+ *   `session/ws-handler-resume.test.ts`'s, which can schedule that race deterministically.
  *
  * The transport is the one thing faked, through the seam `createFixtureSession`
  * uses (`_internals.connectS2s`): a real S2S session would mean credentials and a

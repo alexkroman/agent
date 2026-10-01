@@ -150,7 +150,7 @@ import {
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StreamTextOnChunkCallback, TextStreamPart, ToolSet } from "ai";
 import type { Logger } from "../runtime-config.ts";
-import { stampSessionEvent } from "../session-event-stream.ts";
+import { stampSessionEvent } from "../session/index.ts";
 import type { UsageSnapshot } from "../usage-meter.ts";
 
 /** What a text agent reports, one stamped event at a time. */

@@ -2,23 +2,23 @@
 /**
  * `connectSession` — a session over a caller-owned {@link ClientSink}.
  *
- * The public adapter over `session-attach.ts`, beside the WebSocket one in
- * `ws-handler.ts`. It adds two things a socket adapter gets elsewhere: the
- * real-time pacing wrapper (`ws-client-sink.ts` applies it for a socket), and a
+ * The public adapter over `session/attach.ts`, beside the WebSocket one in
+ * `session/ws-handler.ts`. It adds two things a socket adapter gets elsewhere: the
+ * real-time pacing wrapper (`session/ws-client-sink.ts` applies it for a socket), and a
  * self-detach when the RUNTIME closes the sink, since a caller-owned sink has
  * no close event of its own to report back with.
  */
 
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { createPacedClientSink } from "./paced-client-sink.ts";
 import type { Runtime, SessionConnection, SessionConnectOptions } from "./runtime-types.ts";
+import type { ServerSession } from "./session/index.ts";
 import {
   type AttachedSession,
   type AttachSessionOptions,
   attachSession,
-} from "./session-attach.ts";
-import type { ServerSession } from "./session-core.ts";
+  createPacedClientSink,
+} from "./session/index.ts";
 
 /** What the runtime supplies a connection. */
 export type ConnectDeps = Pick<AttachSessionOptions, "sessions" | "readyConfig" | "logger"> & {

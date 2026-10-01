@@ -26,7 +26,7 @@ import {
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, makeMockHandle, silentLogger, tick } from "./_test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
-import { MAX_SESSION_GREETING_CHARS, SESSION_CONTEXT_TIMEOUT_MS } from "./session-context.ts";
+import { MAX_SESSION_GREETING_CHARS, SESSION_CONTEXT_TIMEOUT_MS } from "./session/index.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 
 const AGENT_GREETING = "Hello there.";

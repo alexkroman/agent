@@ -104,7 +104,7 @@ export const STATE_RULES = [
     // `.get(` scan would collide with the many unrelated `sessions` maps
     // (slot state, the event stream) that are keyed by id too.
     re: `(OwnedMap|Map)<string, *(${SESSION_KEYED_VALUES.join("|")})>`,
-    paths: [...RUNTIME_EGRESS_PATHSPECS, ":!packages/aai-runtime/src/session-directory.ts"],
+    paths: [...RUNTIME_EGRESS_PATHSPECS, ":!packages/aai-runtime/src/session/directory.ts"],
     skipComments: true,
     samples: {
       matches: [
@@ -120,7 +120,7 @@ export const STATE_RULES = [
     },
     remedy:
       "Reach a live session through the runtime's `SessionDirectory`\n" +
-      "(`packages/aai-runtime/src/session-directory.ts`): `session(id)`,\n" +
+      "(`packages/aai-runtime/src/session/directory.ts`): `session(id)`,\n" +
       "`emitter(id)`, `meter(id)`, `speech.of/live/announce`, and `claim` /\n" +
       "`claimWiring` to register one. Take the narrowest `Pick<SessionDirectory,\n" +
       "…>` your module needs.\n" +

@@ -8,14 +8,14 @@
  *
  * - **Bind** the session to its client (`session-state/clients.ts`), so its
  *   events outlive the grace sweep and its client's next session can read them.
- * - **Ask `sessionContext`** (`session-context.ts`) once, bounded, and install
+ * - **Ask `sessionContext`** (`session/context.ts`) once, bounded, and install
  *   its `instructions` as the prompt's stable context block and its `location`
  *   as the session's (over the socket's `?location=`). Concurrently with
  *   the bind: neither needs the other, and both are on the start path. A
  *   `refuse` installs nothing and is left on {@link SessionMemory.refused} for
  *   the stream to act on; a `greeting` is left on {@link SessionMemory.greeting}
  *   for the transport, which reads it when the greeting fires.
- * - **Load the client's prior sessions** (`session-client-history.ts`), narrowed
+ * - **Load the client's prior sessions** (`session/client-history.ts`), narrowed
  *   by the context's `historySince`, and hand them to
  *   `runtime-session-stream.ts`, which restores them together with a resume's
  *   own log in ONE `restoreHistory` — so a connect produces one
@@ -25,7 +25,7 @@
  * it starts reads the session's last words rather than racing their write.
  *
  * The client id is read from `sessionClientId` rather than passed down, because
- * that is where the socket recorded it (`ws-handler.ts`, before the session
+ * that is where the socket recorded it (`session/ws-handler.ts`, before the session
  * was built) and where a resume that named no client keeps the one it had. A
  * direct `runtime.createSession()` caller that recorded none gets no client
  * memory, and `sessionContext` without a `clientId` — which is the honest answer.
@@ -49,8 +49,8 @@ import {
   bindClientSession,
   type ClientHistoryDeps,
   loadClientHistory,
-} from "./session-client-history.ts";
-import { resolveSessionContext } from "./session-context.ts";
+  resolveSessionContext,
+} from "./session/index.ts";
 
 /** What `attachSessionStream` calls on the way in and on the way out. */
 export type SessionMemory = {
@@ -103,7 +103,7 @@ export function openSessionMemory(deps: {
   const { agent, env, sessionId, logger } = deps;
   const sid = sessionId.slice(0, 8);
   const clientOf = (): string | undefined => sessionClientId({ sessionId });
-  // Read where the socket recorded it, like the client id: `ws-handler.ts` sets
+  // Read where the socket recorded it, like the client id: `session/ws-handler.ts` sets
   // it before the session is built, from the carrier's `start` frame.
   const callOf = (): SessionCall | undefined => sessionCall({ sessionId });
   let refused: string | undefined;

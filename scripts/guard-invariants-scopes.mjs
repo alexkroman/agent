@@ -49,13 +49,13 @@ export const TOOL_CONTEXT_PATHS = ["packages/aai/src/sdk/tool-context.ts"];
 export const CHANNEL_MESSAGE_PATHS = ["packages/aai/src/sdk/channels/shared/channel-types.ts"];
 
 export const SESSION_SURFACE_PATHS = [
-  "packages/aai-runtime/src/session-core.ts",
-  "packages/aai-runtime/src/session-commands.ts",
+  "packages/aai-runtime/src/session/core.ts",
+  "packages/aai-runtime/src/session/commands.ts",
   "packages/aai-runtime/src/transports/types.ts",
   "packages/aai-runtime/src/runtime-types.ts",
   "packages/aai-runtime/src/runtime-session-callbacks.ts",
   "packages/aai-runtime/src/runtime.ts",
-  "packages/aai-runtime/src/ws-handler.ts",
+  "packages/aai-runtime/src/session/ws-handler.ts",
   // The doubles. A per-name callback surface has a MULTIPLIER: every harness
   // standing in for the thing that fires a callback has to satisfy its whole
   // shape, and 78 of the original 157 occurrences were exactly that.

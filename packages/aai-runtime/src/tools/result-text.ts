@@ -31,7 +31,7 @@ const warnedOversizedTools = new Set<string>();
  * does not apply to the copy that matters.
  *
  * `MAX_TOOL_RESULT_CHARS` bounds the CLIENT's `tool.completed` frame
- * (`capToolResult`, in `../session-tool-steps.ts` and the pipeline stream) and
+ * (`capToolResult`, in `../session/tool-steps.ts` and the pipeline stream) and
  * nothing else. The string this module returns goes to the provider WHOLE and
  * is appended to the conversation, so it is re-sent on every later turn of the
  * call: an unshaped `await res.json()` is the whole response, in the prompt,

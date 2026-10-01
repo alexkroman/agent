@@ -389,7 +389,7 @@ describe("createRuntimeServer telephony route", () => {
   /**
    * A runtime that echoes, and the frame it opens with is the point.
    *
-   * `session.configured` is what `session-core.ts` emits. This fake sent
+   * `session.configured` is what `session/core.ts` emits. This fake sent
    * `{ type: "config" }` — a client-to-SERVER host-mode shape no session
    * produces — and so did the bridge's own spec, which is how "carries a call in
    * both directions" passed while a real call carried nothing in either: the

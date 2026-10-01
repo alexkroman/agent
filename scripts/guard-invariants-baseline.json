@@ -13,11 +13,11 @@
     "packages/aai-runtime/src/runtime-session-callbacks.ts": 2,
     "packages/aai-runtime/src/runtime-types.ts": 5,
     "packages/aai-runtime/src/runtime.ts": 1,
-    "packages/aai-runtime/src/session-commands.ts": 1,
-    "packages/aai-runtime/src/session-core.ts": 3,
+    "packages/aai-runtime/src/session/commands.ts": 1,
+    "packages/aai-runtime/src/session/core.ts": 3,
     "packages/aai-runtime/src/transports/_transport-recorder.ts": 2,
     "packages/aai-runtime/src/transports/types.ts": 3,
-    "packages/aai-runtime/src/ws-handler.ts": 3
+    "packages/aai-runtime/src/session/ws-handler.ts": 3
   },
   "rule17_openCodedRecordGuard": {
     "packages/aai-evals/src/assertions.ts": 1,

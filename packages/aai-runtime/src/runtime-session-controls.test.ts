@@ -14,7 +14,7 @@ import { makeAgent, makeClientSink, makeConfig, makeLogger, makeSpeech } from ".
 import { openSessionWiring } from "./runtime-session-controls.ts";
 import type { RuntimeSessionState } from "./runtime-session-state.ts";
 import { createSystemPromptResolver } from "./runtime-system-prompt.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import { createSessionEventStream } from "./session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { createStateSweeps } from "./session-state/sweeps.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";

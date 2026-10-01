@@ -11,11 +11,13 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import type { Logger } from "./runtime-config.ts";
-import { type ClientHistoryDeps, publishClientTranscripts } from "./session-client-history.ts";
-import type { ServerSession } from "./session-core.ts";
-import type { SessionEmitter } from "./session-emitter.ts";
-import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
-import type { ResumeFindings } from "./session-resume-found.ts";
+import type { ResumeFindings, ServerSession, SessionEmitter } from "./session/index.ts";
+import {
+  type ClientHistoryDeps,
+  createSessionEventStream,
+  publishClientTranscripts,
+  type SessionEventStream,
+} from "./session/index.ts";
 import {
   createPlatformStateBackend,
   type PlatformSessionStateOptions,
@@ -45,7 +47,7 @@ export type RuntimeSessionState = {
   /**
    * The backend and stream a CLIENT's log is read through — bound, loaded into
    * a new session, and read by `stepClientTranscript`. See
-   * `session-client-history.ts`.
+   * `session/client-history.ts`.
    */
   history: ClientHistoryDeps;
   /**
@@ -174,7 +176,7 @@ export function attachSessionState(
     pushStateSnapshot?: ((sessionId: string, emitter: SessionEmitter) => void) | undefined;
     /**
      * Where "this resume hydrated real state" is recorded — see
-     * `session-resume-found.ts`. The same question `pushStateSnapshot` gates on,
+     * `session/resume-found.ts`. The same question `pushStateSnapshot` gates on,
      * read one line later so the greeting can use the answer too.
      */
     findings?: ResumeFindings | undefined;

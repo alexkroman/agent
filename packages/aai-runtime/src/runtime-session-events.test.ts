@@ -2,8 +2,8 @@
 /**
  * `agent({ events })` end to end, through a real runtime.
  *
- * The unit specs for the pieces are `session-emitter.test.ts` (ordering, the
- * non-fatal rule) and `session-event-stream.test.ts` (recording, reading). What
+ * The unit specs for the pieces are `session/emitter.test.ts` (ordering, the
+ * non-fatal rule) and `session/event-stream.test.ts` (recording, reading). What
  * this file asserts is the WIRING an author depends on: that declaring handlers
  * on the agent is enough, that they see the events a session really emits, and
  * that the same events are readable back off the runtime.

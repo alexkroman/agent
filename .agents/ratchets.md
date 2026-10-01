@@ -261,7 +261,7 @@ bar any future diff-scoped gate has to clear, not as a precedent for skipping.
   produced duplicate modules, which is the shape to expect when a hot file has
   no headroom.
 
-  **And `aai-runtime/src/session-history-replay-equivalence.test.ts` is at
+  **And `aai-runtime/src/session/history-replay-equivalence.test.ts` is at
   exactly 700/700**, so the next line added there forces a split. Recorded
   rather than pre-split: the seam is not obvious and the split should belong to
   whoever next needs the room.

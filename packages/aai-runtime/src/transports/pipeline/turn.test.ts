@@ -548,7 +548,7 @@ describe("PipelineTransport — a tool reads what an earlier tool answered", () 
 
   test("a resumed conversation gives a tool the same history a live one does", async () => {
     // `seedHistory` is what a reconnect hands the transport, rebuilt from the
-    // session's own event log (`../../session-event-history.ts`). Its `tool` messages
+    // session's own event log (`../../session/event-history.ts`). Its `tool` messages
     // reach `ctx.messages` and NOT the LLM view.
     const seen: (readonly Message[])[] = [];
     const { opts, stt, callbacks } = makeOpts({

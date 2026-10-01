@@ -82,7 +82,7 @@ function readAssemblyS2sOptions(options: Record<string, unknown> | undefined): {
  *
  * Both members are THUNKS, resolved when the greeting fires: the transport is
  * built before `sessionContext` answers (`runtime-session-memory.ts`) and before
- * the resume lookups run (`session-resume-found.ts`). An empty or absent result
+ * the resume lookups run (`session/resume-found.ts`). An empty or absent result
  * means "do not greet".
  *
  * Two members rather than one because the resume skip is scoped to a

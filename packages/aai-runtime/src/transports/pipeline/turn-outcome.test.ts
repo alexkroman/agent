@@ -8,7 +8,7 @@
  * failure phrase from a reply, so every reader of the retained stream had to
  * treat one as the other. `recovery` is that distinction, and the claim it makes
  * is asserted at the EMITTER here and at both readers
- * (`../../session-core-history.test.ts`, `../../session-event-history.test.ts`).
+ * (`../../session/core-history.test.ts`, `../../session/event-history.test.ts`).
  */
 
 import type { SessionEventBody } from "@alexkroman1/aai";

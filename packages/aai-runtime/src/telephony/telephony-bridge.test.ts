@@ -162,7 +162,7 @@ describe("createTelephonyBridge", () => {
     connect(fixture);
     fixture.socket.sent.length = 0;
 
-    // `session.reset` is what `session-commands.ts` emits — the spelling this
+    // `session.reset` is what `../session/commands.ts` emits — the spelling this
     // spec used to feed the bridge (`reset`) is one no runtime produces, so it
     // passed while the branch it covered was dead.
     fixture.bridge.send(JSON.stringify({ type: "session.reset" }));

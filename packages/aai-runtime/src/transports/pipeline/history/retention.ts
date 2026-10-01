@@ -32,7 +32,7 @@
  * second keeps `ctx.messages` — which reads the record, not the request —
  * from losing context the moment a request first trims.
  *
- * The full EVENT LOG (`../../../session-event-stream.ts`) stays the source of truth for
+ * The full EVENT LOG (`../../../session/event-stream.ts`) stays the source of truth for
  * resume and is not bounded here; a resume reads it back through
  * `historyFromEvents`, which applies this same retention, so a resumed session
  * comes back holding what a live one would have.

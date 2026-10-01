@@ -19,13 +19,11 @@ import {
   silentLogger,
 } from "./_test-utils.ts";
 import { setupTools } from "./runtime-tools.ts";
-import { createSessionCore } from "./session-core.ts";
-import { createSessionDirectory } from "./session-directory.ts";
+import { createSessionCore, createSessionDirectory, wireSessionSocket } from "./session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
 import { createClientToolBroker } from "./tools/index.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./transports/capabilities.ts";
 import type { Transport } from "./transports/types.ts";
-import { wireSessionSocket } from "./ws-handler.ts";
 
 function makeFakeTransport(): Transport {
   return {

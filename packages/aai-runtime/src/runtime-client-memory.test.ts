@@ -5,8 +5,8 @@
  * seeded with what the first one said, told what `sessionContext` answered,
  * and the first one's stop reached `onSessionEnd`.
  *
- * The pieces have their own specs (`session-client-history.test.ts`,
- * `session-context.test.ts`, `runtime-session-memory.test.ts`); this one
+ * The pieces have their own specs (`session/client-history.test.ts`,
+ * `session/context.test.ts`, `runtime-session-memory.test.ts`); this one
  * asserts only the WIRING — that declaring the two hooks on `agent()` and
  * naming a client on the socket is all it takes.
  */

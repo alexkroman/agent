@@ -26,12 +26,11 @@
  *
  * `tool.completed` follows the same rule from the other end: pipeline in-process
  * publishes it so a UI can flip a tool row from pending to done, S2S never reports
- * one (the session emits its own from `session-tool-steps.ts`), and relay
+ * one (the session emits its own from `session/tool-steps.ts`), and relay
  * suppresses it because the client already has the result it computed.
  */
 
-import type { ServerSession } from "./session-core.ts";
-import type { SessionEmitter } from "./session-emitter.ts";
+import type { ServerSession, SessionEmitter } from "./session/index.ts";
 import type { TransportCallbacks, TransportEventBody } from "./transports/types.ts";
 
 /** What the wiring needs to know about the session being built. */

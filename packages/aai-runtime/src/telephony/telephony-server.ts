@@ -34,7 +34,7 @@ import pTimeout from "p-timeout";
 import type { WebSocketServer } from "ws";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { SessionRuntime } from "../server.ts";
-import { asSessionWebSocket, type SessionWebSocket } from "../ws-frames.ts";
+import { asSessionWebSocket, type SessionWebSocket } from "../session/index.ts";
 import { type CarrierCodec, type CarrierName, carrierByName } from "./carriers.ts";
 import { type CarrierStart, createTelephonyBridge } from "./telephony-bridge.ts";
 

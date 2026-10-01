@@ -44,7 +44,7 @@ import {
   createRuntimeSessionState,
   type RuntimeSessionState,
 } from "./runtime-session-state.ts";
-import { createSessionEventStream } from "./session-event-stream.ts";
+import { createSessionEventStream } from "./session/index.ts";
 import {
   createMemoryStateBackend,
   createSessionStateStore,

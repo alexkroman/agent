@@ -38,13 +38,18 @@ import type {
   runtimeBrand,
   SessionStartOptions,
 } from "./runtime-types.ts";
-import { createSessionCore, type ServerSession } from "./session-core.ts";
-import { createSessionDirectory } from "./session-directory.ts";
-import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
+import {
+  composeSessionGreeting,
+  createResumeFindings,
+  createSessionCore,
+  createSessionDirectory,
+  type ServerSession,
+  type SessionWebSocket,
+  wireSessionSocket,
+} from "./session/index.ts";
 import { createClientToolBroker } from "./tools/index.ts";
 import { platformGuestOptions } from "./workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
-import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
   AgentRuntime,
@@ -165,7 +170,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // whose line is deliberately not the pipeline one. See `runtime-providers.ts`.
   // Every live session by id — the session, its sink, emitter and meter, and
   // `say`/`announce` — resolved per call, so a resume's takeover is honoured by
-  // every reach for the id. `session-directory.ts` is the one place it lives.
+  // every reach for the id. `session/directory.ts` is the one place it lives.
   const sessions = createSessionDirectory();
   const { speech } = sessions;
   // Where a `clientTool` call waits for the page's `tool_result`.
@@ -305,7 +310,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
 
     // What this resume recovered; must exist BEFORE the transport, and
-    // `session-resume-found.ts` owns the decision `skipGreeting` becomes.
+    // `session/resume-found.ts` owns the decision `skipGreeting` becomes.
     const findings = createResumeFindings();
     const { id, skipGreeting, resumed } = sessionOpts;
     // Before the transport, which reads the greeting `sessionContext` answered.
