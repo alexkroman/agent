@@ -21,8 +21,8 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 591 names
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
-- [Hosting and tooling](#hosting-and-tooling) — 245 names
-- [Framework internals](#framework-internals) — 412 names
+- [Hosting and tooling](#hosting-and-tooling) — 235 names
+- [Framework internals](#framework-internals) — 426 names
 
 ## Agent authoring
 
@@ -997,9 +997,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ClientSink` | interface | `@alexkroman1/aai/protocol` | `aai:protocol` | Typed interface for pushing session events to a connected client. |
 | `CloseableDb` | type | `@alexkroman1/aai-runtime` | `aai-runtime:db` | A `Db` whose underlying connection pool the caller owns and must close. |
 | `DEFAULT_LISTEN_HOST` | const | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Default bind address. |
-| `DEFAULT_LOG_BUFFER_LINES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | 2,000 lines: enough that a boot plus a few turns fits, small enough that the whole ring serialises well under the platform's response budget even with every … |
-| `DEFAULT_LOG_LINE_BYTES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | 4 KiB per line. |
-| `DEFAULT_LOG_PAGE_LINES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Lines one read returns unless the caller asks for fewer. |
 | `DEFAULT_SERVICE_NAME` | const | `@alexkroman1/aai-runtime/tracing` | `aai-runtime:tracing` | What a span says it came from when the operator did not say. |
 | `DEFAULT_START_PORT` | const | `@alexkroman1/aai-cli/start` |  | The port `aai start` binds when neither an argument nor `PORT` says otherwise. |
 | `DEFAULT_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | How many runs a keyed or keyless lookup returns when the caller names no limit. |
@@ -1022,15 +1019,10 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `InboxServerFrameSchema` | const | `@alexkroman1/aai/protocol` | `aai:protocol` | Zod schema for `InboxServerFrame`. |
 | `LOCAL_ONLY_FILES` | const | `@alexkroman1/aai/workspace-files` |  | Files that exist only on a developer's machine and must never reach a workspace row: secrets (`.env` rides the secret routes) and lockfiles. |
 | `LOCKFILES` | const | `@alexkroman1/aai/workspace-files` |  | Package-manager lockfiles — a resolved tree, not source. |
-| `LOG_LINE_TRUNCATED` | const | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Appended to a line cut at `LogBufferOptions.maxLineBytes`. |
 | `LlmRegistryEntry` | type | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | One registry entry per LLM provider — adding a provider is one entry here. |
-| `LogBuffer`, `LogBufferOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | The ring `createLogBuffer` returns. |
 | `LogContext` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:logging` | Structured context attached to a log line. |
 | `LogFn` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:logging` | A single log method: message plus optional structured context. |
 | `LogLevel` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:logging` | Log severity levels a `Logger` implements. |
-| `LogLine` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One captured line. |
-| `LogPage` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | One read. |
-| `LogStream` | type | `@alexkroman1/aai-runtime` | `aai-runtime:logging` | Which of a process's two streams a line came from. |
 | `Logger` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`) | `aai-runtime:logging` | Structured logger interface. |
 | `MAX_WORKFLOW_FIND_LIMIT` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Ceiling on `FindOptions.limit`, so one lookup cannot scan a whole history. |
 | `MAX_WORKFLOW_INPUT_BYTES` | const | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Largest `POST /workflows/runs` body. |
@@ -1157,7 +1149,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `connectSession` | function | `@alexkroman1/aai-runtime` | `aai-runtime:runtime` | Run a session over your OWN audio I/O — anything that is not a WebSocket. |
 | `createAgentServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create an HTTP + WebSocket server running one agent — the self-hosting entry point, and the same server `aai dev` runs. |
 | `createHostServer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:server` | Create a multi-tenant host server: an HTTP + WebSocket server whose voice sessions run agents supplied by their callers. |
-| `createLogBuffer` | function | `@alexkroman1/aai-runtime` | `aai-runtime:logging` |  |
 | `createMemoryKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in this process's memory, for `aai dev`. |
 | `createPostgresDb`, `CreatePostgresDbOptions` | function | `@alexkroman1/aai-runtime` | `aai-runtime:db` | Create a `Db` backed by a Postgres connection pool. |
 | `createPostgresKeyStore` | function | `@alexkroman1/aai-runtime` | `aai-runtime:keys` | An index in the workflow database. |
@@ -1281,6 +1272,9 @@ trace or a type error can be traced back to something.
 | `DEFAULT_IDLE_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `idleTimeoutMs` (ms of user silence before the session is closed). |
 | `DEFAULT_INTERRUPTION_BACKOFF_MS` | const | `@alexkroman1/aai/internal` |  | How long agent audio stays blocked after a REAL interruption, in ms. |
 | `DEFAULT_INTERRUPTION_MIN_DURATION_MS` | const | `@alexkroman1/aai/internal` |  |  |
+| `DEFAULT_LOG_BUFFER_LINES` | const | `@alexkroman1/aai/host-internal` |  | 2,000 lines: enough that a boot plus a few turns fits, small enough that the whole ring serialises well under the platform's response budget even with every … |
+| `DEFAULT_LOG_LINE_BYTES` | const | `@alexkroman1/aai/host-internal` |  | 4 KiB per line. |
+| `DEFAULT_LOG_PAGE_LINES` | const | `@alexkroman1/aai/host-internal` |  | Lines one read returns unless the caller asks for fewer. |
 | `DEFAULT_MAX_STEPS` | const | `@alexkroman1/aai/internal` |  | Max TOOL-CALLING steps per reply — bounds runaway tool loops. |
 | `DEFAULT_MAX_TURN_SILENCE_MS` | const | `@alexkroman1/aai/internal` |  | Maximum silence (ms) before AssemblyAI force-ends a turn regardless of content (`max_turn_silence`). |
 | `DEFAULT_MIN_BARGE_IN_WORDS` | const | `@alexkroman1/aai/internal` |  | Minimum number of words in an interim STT transcript before a barge-in aborts the agent's in-flight turn (pipeline mode). |
@@ -1311,8 +1305,11 @@ trace or a type error can be traced back to something.
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `FALLBACK_KIND` | const | `@alexkroman1/aai/host-internal` |  | The `kind` of a fallback descriptor, reserved at every stage. |
+| `GUEST_HOST` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `GUEST_HOST_VERSION` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `GatewayModelInfo` | type | `@alexkroman1/aai/host-internal` |  |  |
 | `GlobalSlot` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `GuestHost` | interface · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `HEARD_AUDIO_LAG_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `HostCredentialEnv` | type | `@alexkroman1/aai/host-internal` |  | An env record that may carry host/shell provider credentials. |
 | `HttpUploadBackendOptions` | type | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1324,7 +1321,12 @@ trace or a type error can be traced back to something.
 | `KnownLlmProvider` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `LLM_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The LLM vendors with a built-in resolver, keyed by `llm({ provider })` — TOTAL over `KnownLlmProvider`, so a literal added to `LlmProviderName` is a compile … |
 | `LOCAL_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `LOG_LINE_TRUNCATED` | const | `@alexkroman1/aai/host-internal` |  | Appended to a line cut at `LogBufferOptions.maxLineBytes`. |
 | `LOG_PREVIEW_CHARS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `LogBuffer`, `LogBufferOptions` | type | `@alexkroman1/aai/host-internal` |  | The ring `createLogBuffer` returns. |
+| `LogLine` | type | `@alexkroman1/aai/host-internal` |  | One captured line. |
+| `LogPage` | type | `@alexkroman1/aai/host-internal` |  | One read. |
+| `LogStream` | type | `@alexkroman1/aai/host-internal` |  | Which of a process's two streams a line came from. |
 | `MAX_CLIENT_EVENT_NAME_LENGTH` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event` event name (`ctx.send` → client). |
 | `MAX_CLIENT_EVENT_PAYLOAD_BYTES` | const | `@alexkroman1/aai/internal` |  | Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents memory abuse via `ctx.send`. |
 | `MAX_CLIENT_MESSAGES` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1514,6 +1516,7 @@ trace or a type error can be traced back to something.
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createHttpUploadBackend` | function | `@alexkroman1/aai-runtime/internal` |  | `UploadBackend` over Supabase Storage's REST API. |
+| `createLogBuffer` | function | `@alexkroman1/aai/host-internal` |  |  |
 | `createMemoryJournal` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `createMemoryUploadBackend` | function | `@alexkroman1/aai-runtime/internal` |  | An in-memory `UploadBackend`, for specs and for a platform with no bucket. |
 | `createOwnedMap` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1542,6 +1545,7 @@ trace or a type error can be traced back to something.
 | `globalSlot` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `handleWorkflowRequest` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `invariant` | function | `@alexkroman1/aai/internal` |  | Throw unless `condition` holds. |
+| `isBlankSecret` | function | `@alexkroman1/aai/host-internal` |  | Is `secret` a value no caller can ever legitimately PRESENT? |
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
 | `isFallbackDescriptor` | function | `@alexkroman1/aai/host-internal` |  | Is `descriptor` a `fallback`? |
 | `isInvariantViolation` | function | `@alexkroman1/aai/internal` |  | Is `value` a broken invariant of ours, however deeply wrapped? |
@@ -1561,7 +1565,7 @@ trace or a type error can be traced back to something.
 | `normalizeRunLabel` | function | `@alexkroman1/aai-runtime/internal` |  | The label a run is stored with, or `undefined` for none — see the module doc for each rule. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
 | `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
-| `parseBearer` | function | `@alexkroman1/aai-runtime/internal` |  | Token from an `Authorization: Bearer <token>` header value. |
+| `parseBearer` | function | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Token from an `Authorization: Bearer <token>` header value. |
 | `parseJsonText` | function | `@alexkroman1/aai/host-internal` |  | `text` parsed as JSON, boxed so a body of `null` is told apart from one that is not JSON — `undefined` for an empty body or one that does not parse (a form … |
 | `parsePlatformFrame` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `parseRouteKey` | function | `@alexkroman1/aai/host-internal` |  | Split `key` into its optional method and where it answers. |

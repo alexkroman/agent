@@ -30,14 +30,15 @@
  * registers an OTLP sink itself, so a self-hoster, `aai dev` and a deployed
  * guest export metrics with no code at all — see `tracing.ts`.
  *
- * ## The registry is keyed on `globalThis`
+ * ## The registry is a cross-copy slot — the one runtime registry that is
  *
- * A deployed guest holds TWO copies of this package: the harness's, which
- * starts the exporter at boot, and the agent bundle's, which runs the sessions
- * (`packages/aai-runtime/CLAUDE.md`, "A deployed guest has TWO copies of this
- * package"). A module-level list would put the sink in one copy and the frames
- * in the other, and the collector would receive nothing with nothing failing.
- * `Symbol.for` is the one key both copies resolve to.
+ * The server and the sessions are one copy of this package in every host, but a
+ * sink is registered by AUTHOR code too, and a self-hosted host (`aai start`,
+ * `aai dev`, a `--target` entry) runs an agent bundle that inlines its own copy:
+ * a `registerMetricsSink` (or a `createTextAgent`) from the agent's code lands in
+ * the bundle's copy while the exporter lives in the host's. So this registry
+ * stays on `globalThis`, under the SDK's registered `metricsSinks` slot
+ * (`aai/src/sdk/_boundary.ts`), and the collector hears both.
  *
  * ## A sink cannot hurt a session
  *
@@ -49,6 +50,8 @@
  */
 
 import type { MetricsCollectedEvent } from "@alexkroman1/aai";
+import { globalSlot } from "@alexkroman1/aai/internal";
+import { recordRuntimeInstance } from "./_instance-check.ts";
 
 /**
  * Which session a frame came from. `agent` is the agent's `name`; a sink that
@@ -69,15 +72,20 @@ export interface MetricsSink {
   record(event: MetricsCollectedEvent, context: MetricsContext): void;
 }
 
-const REGISTRY = Symbol.for("aai.runtime.metrics-sinks");
+const SINKS_SLOT = globalSlot<Set<MetricsSink>>("metricsSinks");
 
-type Registry = { sinks: Set<MetricsSink> };
-
-function registry(): Registry {
-  const g = globalThis as { [REGISTRY]?: Registry };
-  g[REGISTRY] ??= { sinks: new Set() };
-  return g[REGISTRY];
+/** The process's sinks — adopted from a sibling copy, or published by this one. */
+function sinks(): Set<MetricsSink> {
+  const existing = SINKS_SLOT.get();
+  if (existing) return existing;
+  const created = new Set<MetricsSink>();
+  SINKS_SLOT.set(created);
+  return created;
 }
+
+// Every copy says where it was loaded from; see `_instance-check.ts`. Here,
+// because every runtime that runs a session loads this module.
+recordRuntimeInstance(import.meta.url);
 
 /**
  * Add a sink for every session in this process. Answers the function that
@@ -85,10 +93,10 @@ function registry(): Registry {
  * @public
  */
 export function registerMetricsSink(sink: MetricsSink): () => void {
-  const { sinks } = registry();
-  sinks.add(sink);
+  const registered = sinks();
+  registered.add(sink);
   return () => {
-    sinks.delete(sink);
+    registered.delete(sink);
   };
 }
 
@@ -97,7 +105,7 @@ export function registerMetricsSink(sink: MetricsSink): () => void {
  * @internal
  */
 export function recordSessionMetrics(event: MetricsCollectedEvent, context: MetricsContext): void {
-  for (const sink of registry().sinks) {
+  for (const sink of sinks()) {
     try {
       sink.record(event, context);
     } catch {

@@ -85,10 +85,11 @@ describe("studioBundleAccess", () => {
     const access = studioBundleAccess(state);
     const loaded = await access.loadBundle(
       `export const __aaiConfig = { name: "Loaded", toolSchemas: [] };
-export const __aaiCreateRuntime = () => ({
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
+export const __aaiCreateRuntime = Object.assign(() => ({
   startSession: () => undefined,
   shutdown: () => Promise.resolve(),
-});
+}), { host: GUEST_HOST });
 export default { name: "Loaded", systemPrompt: "p", greeting: "g", tools: {} };
 `,
     );

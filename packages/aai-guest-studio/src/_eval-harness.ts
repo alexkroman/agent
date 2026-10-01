@@ -258,6 +258,7 @@ export function credentialProbe(): ReturnType<typeof createStudioAgent> {
     ...studioBundleAccess({
       agent: null,
       createRuntime: null,
+      host: null,
       env: Object.freeze({}),
       runtime: null,
       activeSessions: 0,
@@ -380,6 +381,7 @@ async function runStudioCase(run: StudioCaseRun): Promise<void> {
     const state = {
       agent: null,
       createRuntime: null,
+      host: null,
       env: Object.freeze({}),
       runtime: null,
       activeSessions: 0,

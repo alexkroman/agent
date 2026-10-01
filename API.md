@@ -2549,6 +2549,9 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 // @internal
 export function createDetachedSlotStore(): SlotStore;
 
+// @public (undocumented)
+export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
+
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -2582,6 +2585,15 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
+
+// @public
+export const DEFAULT_LOG_BUFFER_LINES = 2000;
+
+// @public
+export const DEFAULT_LOG_LINE_BYTES = 4096;
+
+// @public
+export const DEFAULT_LOG_PAGE_LINES = 500;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -2802,6 +2814,9 @@ interface InterruptionTuning {
 }
 
 // @public
+export function isBlankSecret(secret: string | null | undefined): boolean;
+
+// @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 
 // @public
@@ -2869,8 +2884,44 @@ interface LocalSttOptions extends ProviderCredentialOptions {
     url?: string;
 }
 
+// @public
+export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
+
+// @public @sealed
+export type LogBuffer = {
+    append(stream: LogStream, chunk: string): void;
+    read(after?: number, limit?: number): LogPage;
+    tail(): number;
+};
+
+// @public (undocumented)
+export type LogBufferOptions = {
+    maxLines?: number;
+    maxLineBytes?: number;
+    maxPageLines?: number;
+    now?: () => number;
+};
+
+// @public
+export type LogLine = {
+    seq: number;
+    at: number;
+    stream: LogStream;
+    text: string;
+};
+
+// @public
+export type LogPage = {
+    lines: LogLine[];
+    cursor: number;
+    dropped: number;
+};
+
+// @public
+export type LogStream = "stdout" | "stderr";
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -2971,6 +3022,9 @@ export type OpenUpload = {
 
 // @public
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
+
+// @public
+export function parseBearer(header: string | null | undefined): string;
 
 // @public
 export function parseJsonText(text: string | undefined): {
@@ -6003,6 +6057,8 @@ export const BOUNDARY_KEYS: {
         readonly clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed";
         readonly clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults";
         readonly clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader";
+        readonly metricsSinks: "@alexkroman1/aai-runtime.metricsSinks";
+        readonly runtimeInstances: "@alexkroman1/aai-runtime.instances";
         readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
         readonly sessionClients: "@alexkroman1/aai.sessionClients";
         readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
@@ -15756,9 +15812,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer;
 // @public
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
-// @public (undocumented)
-export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
-
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
@@ -15797,15 +15850,6 @@ export function createToolCallRepair(model: LanguageModel, log: Logger, getAbort
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
-
-// @public
-export const DEFAULT_LOG_BUFFER_LINES = 2000;
-
-// @public
-export const DEFAULT_LOG_LINE_BYTES = 4096;
-
-// @public
-export const DEFAULT_LOG_PAGE_LINES = 500;
 
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
@@ -15888,24 +15932,6 @@ export type LlmRegistryEntry = {
 };
 
 // @public
-export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
-
-// @public @sealed
-export type LogBuffer = {
-    append(stream: LogStream, chunk: string): void;
-    read(after?: number, limit?: number): LogPage;
-    tail(): number;
-};
-
-// @public (undocumented)
-export type LogBufferOptions = {
-    maxLines?: number;
-    maxLineBytes?: number;
-    maxPageLines?: number;
-    now?: () => number;
-};
-
-// @public
 export type LogContext = Record<string, unknown>;
 
 // @public
@@ -15925,24 +15951,6 @@ export interface Logger {
 
 // @public
 export type LogLevel = "info" | "warn" | "error" | "debug";
-
-// @public
-export type LogLine = {
-    seq: number;
-    at: number;
-    stream: LogStream;
-    text: string;
-};
-
-// @public
-export type LogPage = {
-    lines: LogLine[];
-    cursor: number;
-    dropped: number;
-};
-
-// @public
-export type LogStream = "stdout" | "stderr";
 
 // @public
 export const MAX_WORKFLOW_FIND_LIMIT = 100;
@@ -16484,12 +16492,15 @@ import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
 import type { DelegateResult } from '@alexkroman1/aai';
+import { Duplex } from 'node:stream';
 import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
+import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { Message } from '@alexkroman1/aai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
+import { parseBearer } from '@alexkroman1/aai/host-internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
 import { publishStepEnv } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
@@ -16517,6 +16528,38 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { z } from 'zod';
+
+// @public
+type AgentRuntime = {
+    startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
+    shutdown(): Promise<void>;
+    readonly readyConfig: ReadyConfig;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
+    readonly sessionEvents?: SessionEventStream | undefined;
+    readonly serveRoute?: ((call: {
+        method: string;
+        path: string;
+        query: Readonly<Record<string, string>>;
+        headers?: Readonly<Record<string, string>> | undefined;
+        body: unknown;
+        rawBody?: string | undefined;
+        clientId?: string | undefined;
+        signal: AbortSignal;
+    }) => Promise<{
+        status: number;
+        body: unknown;
+        headers?: Readonly<Record<string, string>> | undefined;
+    }>) | undefined;
+};
+
+// @public @sealed
+type AgentServer = {
+    listen(port?: number, host?: string): Promise<void>;
+    close(): Promise<void>;
+    port: number | undefined;
+    node: http.Server;
+};
 
 // @internal
 export function agentServerEnv(env: Record<string, string>): Record<string, string>;
@@ -16547,6 +16590,9 @@ export type AttachSessionOptions = {
 
 // @public
 export const CARRIER_PARAM = "carrier";
+
+// @public
+type CarrierName = string;
 
 // @public
 export type ClientSessionLog = {
@@ -16620,6 +16666,12 @@ export function createPostgresStateBackend(options: {
     db: Db;
 }): SessionStateBackend;
 
+// @public
+function createRuntimeServer(options: RuntimeServerOptions): AgentServer;
+
+// @public
+function createSessionAuth(options: SessionAuthOptions): SessionAuth;
+
 // @internal
 export function createSessionDirectory(): SessionDirectory;
 
@@ -16637,10 +16689,9 @@ export function createSessionStateStore(options: {
 
 // @internal
 export function createUploadStore(options: {
-    db?: Db | undefined;
+    home: StorageHome;
     blobs?: UploadBackend | undefined;
     localDir?: string | undefined;
-    platform?: PlatformUploadRecordsOptions | undefined;
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
@@ -16675,6 +16726,30 @@ type ExecuteToolCallOptions = {
 
 // @internal
 export function firstWriteWins<T>(attempt: () => Promise<T | undefined>, vanished: () => string): Promise<T>;
+
+// @internal
+export const GUEST_HOST: GuestHost;
+
+// @internal
+export const GUEST_HOST_VERSION = 1;
+
+// @internal
+export interface GuestHost {
+    readonly agentServerEnv: typeof agentServerEnv;
+    readonly createRuntimeServer: typeof createRuntimeServer;
+    readonly createSessionAuth: typeof createSessionAuth;
+    readonly handleWorkflowRequest: typeof handleWorkflowRequest;
+    // (undocumented)
+    readonly platformSessionSecret: typeof platformSessionSecret;
+    readonly publishWorkflowWebhookUrl: typeof publishWorkflowWebhookUrl;
+    // (undocumented)
+    readonly SESSION_SECRET_ENV: typeof SESSION_SECRET_ENV;
+    readonly startTracingDetached: typeof startTracingDetached;
+    // (undocumented)
+    readonly verifySessionToken: typeof verifySessionToken;
+    // (undocumented)
+    readonly version: typeof GUEST_HOST_VERSION;
+}
 
 // @internal
 export function handleWorkflowRequest(req: IncomingMessage, res: ServerResponse, url: string, method: string, options?: {
@@ -16802,8 +16877,7 @@ export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
-// @public
-export function parseBearer(header: string | null | undefined): string;
+export { parseBearer }
 
 // @internal
 export function parsePlatformFrame<T>(schema: z.ZodType<T>, text: string): T | undefined;
@@ -16903,9 +16977,6 @@ export type PlatformTicketInput = {
 };
 
 // @public
-type PlatformUploadRecordsOptions = PlatformEndpoint;
-
-// @public
 export type ProviderEnvVarsQuery = {
     stt?: object | undefined;
     llm?: object | undefined;
@@ -16952,6 +17023,23 @@ type RunRecord = {
 
 // @public
 type RunStatus = WorkflowRunStatus;
+
+// @public
+type RuntimeServerOptions = {
+    runtime: SessionRuntime;
+    name?: string;
+    clientDir?: string;
+    logger?: Logger | undefined;
+    env?: Record<string, string>;
+    hostBaseAgent?: AgentDef;
+    greeting?: string;
+    uploadBroker?: string;
+    upgrade?: ServerUpgradeHook | undefined;
+    request?: ServerRequestHook | undefined;
+    page?: "voice" | "static";
+    telephony?: boolean | readonly CarrierName[];
+    auth?: SessionAuth | undefined;
+};
 
 export { safeFetch }
 
@@ -17010,6 +17098,9 @@ export const SERVER_ROUTES: {
     };
 };
 
+// @public
+type ServerRequestHook = (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+
 // @internal
 export type ServerRoute = {
     readonly transport: "http";
@@ -17043,14 +17134,35 @@ export type ServerSession = {
     onAudioChunk(bytes: Uint8Array): void;
 };
 
+// @public
+type ServerUpgradeHook = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
+
 // @internal
 export const SESSION_CLIENT_TABLE = "aai_client_sessions";
 
 // @internal
 export const SESSION_EVENT_TABLE = "aai_session_events";
 
+// @public
+const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
+
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
+
+// @public @sealed
+type SessionAuth = {
+    readonly [sessionAuthBrand]: true;
+};
+
+// @public
+const sessionAuthBrand: unique symbol;
+
+// @public
+type SessionAuthOptions = {
+    secret?: string | undefined;
+    verify?: SessionVerifier | undefined;
+    allowedOrigins?: readonly string[] | undefined;
+};
 
 // @internal
 export type SessionDirectory = {
@@ -17089,6 +17201,32 @@ type SessionEventStream = {
     discard(sessionId: string): void;
     clear(): void;
     readonly durable: boolean;
+};
+
+// @public
+type SessionIdentity = {
+    sub: string;
+    sessionId?: string;
+    claims?: Record<string, unknown>;
+};
+
+// @public
+type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute">;
+
+// @public
+type SessionStartOptions = {
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
+    call?: SessionCall;
+    logContext?: Record<string, string>;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    audioLeadMs?: number;
 };
 
 // @public
@@ -17134,6 +17272,9 @@ export type SessionStateStore = {
     clear(): void;
     readonly backend: Pick<SessionStateBackend, "name" | "durable">;
 };
+
+// @public
+type SessionVerifier = (token: string, req: http.IncomingMessage) => SessionIdentity | null | undefined | Promise<SessionIdentity | null | undefined>;
 
 // @public
 type SessionWebSocket = {
@@ -17186,6 +17327,9 @@ export type SpeechDirectory = {
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @public
+function startTracingDetached(env?: NodeJS.ProcessEnv): void;
+
+// @public
 export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
@@ -17215,6 +17359,17 @@ interface StepUsage {
     // (undocumented)
     totalTokens?: number | undefined;
 }
+
+// @internal
+type StorageHome<D = Db> = {
+    kind: "platform";
+    platform: PlatformEndpoint;
+} | {
+    kind: "postgres";
+    db: D;
+} | {
+    kind: "local";
+};
 
 // @public
 export type StoredSessionEvent = {
@@ -17308,6 +17463,15 @@ export interface UsageSnapshot {
     steps: number;
     totalTokens: number;
 }
+
+// @public
+function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
+
+// @public
+type VerifySessionTokenOptions = {
+    secret: string;
+    now?: number;
+};
 
 // @internal
 export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOptions): void;

@@ -25,10 +25,10 @@
  *
  * ## The slot is keyed on `globalThis`
  *
- * A deployed guest holds two copies of this package: the harness's builds the
- * server (and so the inbox), the agent bundle's runs the sessions. A
- * module-level feed would sit in one copy with the events in the other — the
- * shape `../metrics-sink.ts` argues — so it is a `Symbol.for` slot both resolve.
+ * The server (and so the inbox) and the sessions are one copy of this package in
+ * every host, but a self-hosted agent's own code runs in its bundle's inlined
+ * copy — a `createTextAgent` there emits events too — so the feed is a
+ * registered slot both resolve, the shape `../metrics-sink.ts` argues.
  * The last inbox built wins, which under `aai dev` is the newest server's.
  *
  * ## It cannot hurt a session

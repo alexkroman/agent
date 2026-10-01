@@ -58,18 +58,15 @@
  * DEADLINES forward rather than pushing an answer — which is what keeps the
  * paragraph above true of it. Its own doc carries the argument.
  *
- * ## It rendezvouses on `globalThis`, and it has to
+ * ## The registries are module-level, because there is one copy
  *
- * A deployed guest has TWO copies of this package (see "A deployed guest has
- * TWO copies of this package" in this package's guide), and the three loops are
- * split across them: `createRuntimeServer` — hence the wait loop and the event stream
- * — comes from the HARNESS's copy, while `createRunNotifier` is built by
- * `createRuntime` inside the BUNDLE's. Both hold the same `WorkflowClient`
- * OBJECT, so a per-reader registry unifies them — but a module-level registry
- * is one per copy, and the notifier would then poll on a timer of its own
- * beside the streams it was supposed to join. That is the same failure
- * `workflow/run-context.ts` documents, arrived at by a different route, so it
- * takes the same remedy: a `Symbol.for` slot on `globalThis`.
+ * The three loops live in different places — `createRuntimeServer` holds the
+ * wait loop and the event stream, `createRuntime` builds `createRunNotifier` —
+ * but they are one module instance (see "The server and the sessions are ONE copy"
+ * in this package's guide), and all hold the same `WorkflowClient` OBJECT, so a
+ * per-reader registry unifies them. While a guest's harness served from a copy
+ * of its own this needed a `globalThis` slot, or the notifier polled on a timer of
+ * its own beside the streams it was supposed to join.
  */
 
 import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/internal";
@@ -111,11 +108,8 @@ export type RunReads = {
 };
 
 function closedError(): Error {
-  // A MARKER PROPERTY, not a subclass and not `instanceof`: this module has one
-  // instance per copy of the package, so a class declared here would have two
-  // identities and the harness's copy could not recognise an error the bundle's
-  // copy threw — which is the same cross-copy trap the registry below is keyed
-  // on `globalThis` to avoid.
+  // A MARKER PROPERTY rather than a subclass: it is read through
+  // `isRunWatchClosed`, which is the one spelling every loop uses.
   return Object.assign(new Error("Run watch closed"), { runWatchClosed: true });
 }
 
@@ -136,21 +130,14 @@ export function isRunWatchClosed(err: unknown): boolean {
  * Every live watch's "read now", by run id — the other half of
  * {@link signalRunSettled}.
  *
- * On `globalThis` for the reason the reader registry below is: a deployed guest
- * has two copies of this package, and the process that WALKS a run (the bundle's
- * engine) is not the one holding the `wait=` request (the harness's server). A
- * module-level map would put the signal and every listener in separate halves of
- * the same process, where the accelerator would be dead code that looks wired.
+ * The process that WALKS a run (the engine) is not the code holding the `wait=`
+ * request (the server), and this map is where the two meet — one map, because
+ * there is one copy of this module (see the module doc).
  *
- * A `Set` per run and not one entry, because those two copies each keep their
- * own {@link RunReads} and both may be watching the same run.
+ * A `Set` per run and not one entry, because each reader keeps its own
+ * {@link RunReads} and two may be watching the same run.
  */
-type SettleSlot = { [RUN_SETTLED_SLOT]?: Map<string, Set<() => void>> };
-const RUN_SETTLED_SLOT = Symbol.for("@alexkroman1/aai-runtime.workflowRunSettled");
-
-const settledSlot = globalThis as SettleSlot;
-settledSlot[RUN_SETTLED_SLOT] ??= new Map<string, Set<() => void>>();
-const settleListeners: Map<string, Set<() => void>> = settledSlot[RUN_SETTLED_SLOT];
+const settleListeners = new Map<string, Set<() => void>>();
 
 /**
  * Hear about {@link signalRunSettled} for one run until the returned function is
@@ -409,25 +396,13 @@ export function createRunReads(reader: RunReader): RunReads {
 }
 
 /**
- * The one registry for the process — and "the process" needs saying carefully:
- * see the note on `globalThis` in this module's header, and
- * `workflow/run-context.ts` for the deployment that paid for the lesson.
+ * The one registry for the process (see the module doc).
  *
  * WEAK, keyed by the reader: a `WorkflowClient` is rebuilt on every `aai dev`
  * file save and one per agent in host mode, so a strong map would retain every
- * runtime a long-lived process ever built. The key is an OBJECT identity, which
- * is what lets two copies of this package agree on an entry without agreeing on
- * a string.
+ * runtime a long-lived process ever built.
  */
-type ReadsSlot = { [RUN_READS_SLOT]?: WeakMap<RunReader, RunReads> };
-const RUN_READS_SLOT = Symbol.for("@alexkroman1/aai-runtime.workflowRunReads");
-
-// Not `??=` in one expression: an assignment inside an expression is a lint
-// error here, and the two-step form reads as what it is — adopt the registry a
-// sibling copy already published, or be the copy that publishes it.
-const readsSlot = globalThis as ReadsSlot;
-readsSlot[RUN_READS_SLOT] ??= new WeakMap<RunReader, RunReads>();
-const sharedReads: WeakMap<RunReader, RunReads> = readsSlot[RUN_READS_SLOT];
+const sharedReads = new WeakMap<RunReader, RunReads>();
 
 /**
  * Watch `runId` through `reader`'s shared reads, joining any watcher already

@@ -16,8 +16,8 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
+import { isBlankSecret, parseBearer } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
-import { isBlankSecret, parseBearer } from "../../bearer.ts";
 
 /**
  * The response members a JSON reply touches, named rather than taken whole.

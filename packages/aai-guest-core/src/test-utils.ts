@@ -214,8 +214,10 @@ export function makeState(overrides?: Partial<HarnessState>): HarnessState {
 }
 
 /** The factory export every real bundle carries; the fixture is inert. */
-export const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = () =>
-  ({ startSession: () => undefined, shutdown: () => Promise.resolve() });`;
+export const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = Object.assign(
+  () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
+  { host: { version: 1, publishWorkflowWebhookUrl: () => undefined } },
+);`;
 
 /** A one-shot trial's options: no env at all. */
 export const TRIAL_OPTS = { env: Object.freeze({}) };

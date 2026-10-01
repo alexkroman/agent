@@ -26,9 +26,8 @@
  */
 
 import { readFile, rm } from "node:fs/promises";
+import { globalSlot } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { createRuntimeServer } from "@alexkroman1/aai-runtime";
-import { agentServerEnv } from "@alexkroman1/aai-runtime/internal";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "aai-guest-core/bundle";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS } from "aai-guest-core/limits";
 import { bundleSourceOf, readVerifiedBundle } from "./bundle-source.ts";
@@ -204,6 +203,14 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   const boot = await readAgentBoot();
 
   await loadBundle(state, { code: boot.code, env: boot.env });
+  // Every runtime capability below comes from the BUNDLE's copy — the harness
+  // carries none ("User-shipped runtime" in this package's guide). Non-null once
+  // `loadBundle` resolved: it refuses a bundle without a readable host surface.
+  const bundleHost = state.host;
+  if (bundleHost === null) throw new Error("agent bundle loaded without a host surface");
+  // Span export, if an operator configured a collector: through the bundle's
+  // copy, so its sessions' metrics reach the sinks it registers.
+  bundleHost.startTracingDetached();
 
   // A draining guest is detached from the broker, but a client holding its
   // old sessionUrl can still dial the tunnel directly — refuse with a "try
@@ -212,7 +219,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
   });
 
-  const server = createRuntimeServer({
+  const server = bundleHost.createRuntimeServer({
     runtime,
     // The agent's own env, and its ABSENCE here was a bug with three symptoms.
     // `createRuntimeServer` reads four things out of it, and a deployed agent got none:
@@ -235,10 +242,10 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     // definition, a session ticket is all that guards `/websocket`, and
     // the sandbox tunnel URL is public — so a TENANT setting one secret would be
     // handing a stranger their own provider credentials.
-    env: agentServerEnv(boot.env),
+    env: bundleHost.agentServerEnv(boot.env),
     // Sessions open only for a ticket: the platform broker's (keyed off this
     // sandbox's bearer) or the author's own. See `session-tickets.ts`.
-    auth: guestSessionAuth(token, boot.env),
+    auth: guestSessionAuth(bundleHost, token, boot.env),
     // The platform's own origin plus this agent's slug, translated from one `AAI_*`
     // key exactly as `ensureRuntime` translates `AAI_PUBLIC_BASE_URL` for
     // `publicWebhookUrl`. A SECOND key carrying the same value, because the two claims
@@ -271,6 +278,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
       telephony: state.agent?.telephony,
     }),
     request: createAgentRequestHandler({
+      handleWorkflowRequest: bundleHost.handleWorkflowRequest,
       manage: {
         token,
         activeSessions: () => state.activeSessions,
@@ -287,6 +295,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // See `harness.ts`'s twin line: the version is the copy BESIDE the harness,
   // which is the one this agent's own runtime came from.
   console.error(`agent-mode harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
+  warnOnSecondRuntime();
 
   // The world start that used to follow this line is gone with the DevKit, and
   // the ordering it needed is worth recording because it was subtle: `start()`
@@ -301,4 +310,28 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   // arrives on `POST /workflow-queue`, which this server is listening for by the
   // time the platform can reach it, and `claimAttempt` is taken inside the walk
   // rather than by a queue racing the bind.
+}
+
+/**
+ * Say so when this process holds more than ONE runtime copy.
+ *
+ * The bundle's runtime is the only one an agent-mode guest should load: the
+ * harness carries none and reaches the bundle's through `__aaiCreateRuntime.host`.
+ * Every copy records its module URL as it loads (`aai-runtime/_instance-check.ts`);
+ * two here means one of them is ours, and the registries it holds — the run
+ * context, the shared run reads, the app pool — would split from the sessions'.
+ * `harness/externals.test.ts` rules it out at build time; this is the runtime
+ * half, for an image whose artifact was built some other way.
+ *
+ * @internal
+ */
+export function warnOnSecondRuntime(
+  instances: readonly string[] = [...(globalSlot<Set<string>>("runtimeInstances").get() ?? [])],
+): boolean {
+  if (instances.length <= 1) return false;
+  console.error(
+    `agent-mode guest loaded ${instances.length} copies of @alexkroman1/aai-runtime (` +
+      `${instances.join(", ")}); the harness must carry none of its own`,
+  );
+  return true;
 }

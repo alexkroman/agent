@@ -18,6 +18,10 @@
  */
 
 export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undici.ts";
+// Two host-side helpers the guest harness needs BEFORE (or without) a runtime:
+// the harness holds no copy of `aai-runtime` — it drives the agent through the
+// runtime its bundle carries — so what it uses on its own lives here.
+export { isBlankSecret, parseBearer } from "./host/bearer.ts";
 export { RUN_CODE_REFUSAL, type RunCodeExecutor } from "./host/builtin-run-code.ts";
 export {
   type BuiltinToolOptions,
@@ -46,6 +50,18 @@ export {
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
+export {
+  createLogBuffer,
+  DEFAULT_LOG_BUFFER_LINES,
+  DEFAULT_LOG_LINE_BYTES,
+  DEFAULT_LOG_PAGE_LINES,
+  LOG_LINE_TRUNCATED,
+  type LogBuffer,
+  type LogBufferOptions,
+  type LogLine,
+  type LogPage,
+  type LogStream,
+} from "./host/log-buffer.ts";
 export { getSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";

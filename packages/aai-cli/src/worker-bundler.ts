@@ -185,7 +185,12 @@ function wrapperEntrySource(
 
   return `import def from "../agent.ts";
 import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
-${runtime ? `import { createRuntime } from "@alexkroman1/aai-runtime";` : ""}
+${
+  runtime
+    ? `import { createRuntime } from "@alexkroman1/aai-runtime";
+import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";`
+    : ""
+}
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
 // A tool's name is its file name. The map is built here rather than written in
@@ -209,8 +214,12 @@ export const __aaiConfig = {
 };
 ${
   runtime
-    ? `export const __aaiCreateRuntime = (options: Record<string, unknown>) =>
-  createRuntime({ ...options, agent: __aaiAgent });
+    ? `// The factory, and (\`host\`) the rest of THIS copy of the runtime the guest
+// harness drives the agent through — it carries no runtime of its own.
+export const __aaiCreateRuntime = Object.assign(
+  (options: Record<string, unknown>) => createRuntime({ ...options, agent: __aaiAgent }),
+  { host: GUEST_HOST },
+);
 `
     : ""
 }`;

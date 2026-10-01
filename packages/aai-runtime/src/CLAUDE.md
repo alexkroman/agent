@@ -10,7 +10,7 @@ read_when: >-
 
 # aai-runtime `src/`
 
-Package-wide rules (barrels, seams, two copies, invariants) are in the package
+Package-wide rules (barrels, seams, one copy, invariants) are in the package
 guide, [`../CLAUDE.md`](../CLAUDE.md).
 
 ## A directory with an `index.ts` is a MODULE
@@ -43,7 +43,8 @@ keeps each index a list of named re-exports.
 (a published subpath names each file); `runtime-config.ts` and the small
 leaves every directory imports (`_timer`, `_pcm`, `_base64`, `_ws`,
 `_audio-gate`, `_get-or-create`, `_ensure-once`, `_path-decode`,
-`_compact-records`, `usage-meter`); `bearer.ts`, `_egress-*`, `app-db.ts` and
+`_compact-records`, `usage-meter`); `guest-host.ts` (the surface `/internal`
+hands the guest); `_egress-*`, `app-db.ts` and
 `postgres-db.ts`, which `workflow/` imports and so cannot sit behind `server/`
 or `runtime/` without a cycle; `subagent.ts`, whose model resolution would
 pull the provider registry into the `tools/` index (and back into the
@@ -70,8 +71,8 @@ baseline JSONs) — see "Layout" in [`../CLAUDE.md`](../CLAUDE.md).
 - **`?events=1`** adds `inbox/event-feed.ts`'s frames — committed transcripts,
   `tool.called`, reply boundaries, `session_ended`; never results or audio —
   fire-and-forget, dropped past `INBOX_EVENT_BUFFER_LIMIT_BYTES`. The feed is a
-  `Symbol.for` slot ("A deployed guest has TWO copies of this package" in
-  `../CLAUDE.md`).
+  registered cross-copy slot ("The server and the sessions are ONE copy of this
+  package" in `../CLAUDE.md`).
 
 ## Subagents: `ctx.delegate` is a second tool loop
 
@@ -162,8 +163,9 @@ producers already take (`transports/pipeline/llm/trace.ts`, `transports/pipeline
   it**; a partial is forgotten when its utterance closes.
 - **Tokens are the meter's DELTA across the reply**, so `ctx.generate` counts.
 - Readers: the client, `agent({ events })`, and process-wide sinks in
-  `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), `Symbol.for`-keyed for
-  the two-copies reason. `startTracing` registers `otelMetricsSink`
+  `metrics-sink.ts` (`registerMetricsSink`, `/metrics`), on the registered
+  `metricsSinks` slot because an agent's own code may register one from the
+  bundle's copy. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
 - S2S and text mode emit no frame yet (the `turnMetrics` capability row in
   `transports/CLAUDE.md`).

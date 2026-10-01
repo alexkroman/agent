@@ -50,9 +50,11 @@
     "dropped": {}
   },
   "logging": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The guest log ring (createLogBuffer and its types/constants) left the runtime's root barrel for @alexkroman1/aai/host-internal: its only user is the guest harness, which now carries no copy of the runtime. A host importing it from @alexkroman1/aai-runtime no longer compiles."
+    }
   },
   "metrics": {
     "current": 1,

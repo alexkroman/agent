@@ -75,8 +75,18 @@ import type { SessionStateArm } from "./session-state/conformance-slots.ts";
 // a name here owes an importer. A consumer that wants it can have the line.
 import type { JournalArm } from "./workflow/journal/conformance-cases.ts";
 
+// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
+// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
+// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
+// guest gate through it — and all of them matched the scheme case-sensitively.
+// `aai-server` cannot be imported by the other two, so this is the narrowest home
+// that reaches all three; it is now the ONLY copy, that module having deleted its
+// own once it turned out it could import this subpath (it already does in five
+// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
+// outside this package, `guest/bearer.ts`, is safe by its own ordering.
 export {
   CONTAINED_ENV,
+  parseBearer,
   publishClientInboxDefaults,
   publishStepEnv,
   resolveAllBuiltins,
@@ -113,16 +123,10 @@ export type { StateSyncSession } from "./_state-sync.ts";
  * and the log line cannot come to disagree about what a header means.
  */
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
-// Parsing an `Authorization: Bearer <token>` header. Here because FOUR
-// byte-identical copies existed — the guest's gate (`aai-guest/harness-auth.ts`),
-// `bearerMatches` in this package, `aai-server/_bearer.ts`, and the platform's
-// guest gate through it — and all of them matched the scheme case-sensitively.
-// `aai-server` cannot be imported by the other two, so this is the narrowest home
-// that reaches all three; it is now the ONLY copy, that module having deleted its
-// own once it turned out it could import this subpath (it already does in five
-// others). `isBlankSecret` beside it is deliberately NOT exported: the one caller
-// outside this package, `guest/bearer.ts`, is safe by its own ordering.
-export { parseBearer } from "./bearer.ts";
+// The surface an agent bundle hands the guest harness, which carries no runtime
+// of its own (see `guest-host.ts`). The worker wrapper attaches it to
+// `__aaiCreateRuntime`.
+export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,

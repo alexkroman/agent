@@ -16,7 +16,7 @@
 
 import type http from "node:http";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { WORKFLOW_QUEUE_PATH } from "@alexkroman1/aai-runtime/internal";
+import { handleWorkflowRequest, WORKFLOW_QUEUE_PATH } from "@alexkroman1/aai-runtime/internal";
 import { GUEST_CONTRACT_VERSION } from "aai-guest-core/limits";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -272,6 +272,7 @@ describe("createAgentRequestHandler", () => {
     const walking = Promise.withResolvers<string>();
     const activity = createWorkflowActivity();
     const handler = createAgentRequestHandler({
+      handleWorkflowRequest,
       manage,
       deliverWorkflow: () => async () => await walking.promise,
       activity,
@@ -300,6 +301,7 @@ describe("createAgentRequestHandler", () => {
     const walking = Promise.withResolvers<string>();
     const activity = createWorkflowActivity();
     const handler = createAgentRequestHandler({
+      handleWorkflowRequest,
       manage,
       deliverWorkflow: () => async () => await walking.promise,
       activity,
@@ -327,7 +329,12 @@ describe("createAgentRequestHandler", () => {
     // A claimed request is not work. This answers 400 before the walker is even
     // resolved, and the response-keyed counter credited it a full idle window.
     const activity = createWorkflowActivity();
-    const handler = createAgentRequestHandler({ manage, deliverWorkflow, activity });
+    const handler = createAgentRequestHandler({
+      handleWorkflowRequest,
+      manage,
+      deliverWorkflow,
+      activity,
+    });
     const out = fakeRes();
     expect(handler(queueReq("__wkf_step_r1"), out.res, WORKFLOW_QUEUE_PATH, "POST")).toBe(true);
     await vi.waitFor(() => expect(out.statusCode).toBe(400));
@@ -336,7 +343,12 @@ describe("createAgentRequestHandler", () => {
 
   test("does not count manage or unclaimed requests", () => {
     const activity = createWorkflowActivity();
-    const handler = createAgentRequestHandler({ manage, deliverWorkflow, activity });
+    const handler = createAgentRequestHandler({
+      handleWorkflowRequest,
+      manage,
+      deliverWorkflow,
+      activity,
+    });
 
     expect(handler(fakeReq("Bearer secret-token"), fakeRes().res, MANAGE_STATUS_PATH, "GET")).toBe(
       true,
@@ -346,7 +358,8 @@ describe("createAgentRequestHandler", () => {
   });
 
   describe("workflow-API proxy gate", () => {
-    const handler = () => createAgentRequestHandler({ manage, deliverWorkflow });
+    const handler = () =>
+      createAgentRequestHandler({ handleWorkflowRequest, manage, deliverWorkflow });
     const withProxyToken = (token: string, url: string, method = "POST") =>
       fakeReq(undefined, url, { method, headers: { [GUEST_PROXY_TOKEN_HEADER]: token } });
 
@@ -380,7 +393,8 @@ describe("createAgentRequestHandler", () => {
      * COMPARISON too, and fail closed.
      */
     describe("a blank token", () => {
-      const blank = () => createAgentRequestHandler({ manage: { ...manage, token: "" } });
+      const blank = () =>
+        createAgentRequestHandler({ handleWorkflowRequest, manage: { ...manage, token: "" } });
 
       test.each([
         ["an empty header", ""],
@@ -409,7 +423,10 @@ describe("createAgentRequestHandler", () => {
         // `isBlankSecret` draws, and it stops there: a PADDED token is left alone.
         const out = fakeRes();
         const url = "/workflows/runs";
-        const padded = createAgentRequestHandler({ manage: { ...manage, token: "  " } });
+        const padded = createAgentRequestHandler({
+          handleWorkflowRequest,
+          manage: { ...manage, token: "  " },
+        });
         expect(padded(withProxyToken("  ", url), out.res, url, "POST")).toBe(true);
         expect(out.statusCode).toBe(401);
       });

@@ -611,6 +611,9 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 // @internal
 export function createDetachedSlotStore(): SlotStore;
 
+// @public (undocumented)
+export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
+
 // @internal
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
@@ -644,6 +647,15 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
+
+// @public
+export const DEFAULT_LOG_BUFFER_LINES = 2000;
+
+// @public
+export const DEFAULT_LOG_LINE_BYTES = 4096;
+
+// @public
+export const DEFAULT_LOG_PAGE_LINES = 500;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -864,6 +876,9 @@ interface InterruptionTuning {
 }
 
 // @public
+export function isBlankSecret(secret: string | null | undefined): boolean;
+
+// @public
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1;
 
 // @public
@@ -931,8 +946,44 @@ interface LocalSttOptions extends ProviderCredentialOptions {
     url?: string;
 }
 
+// @public
+export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
+
 // @internal
 export const LOG_PREVIEW_CHARS = 200;
+
+// @public @sealed
+export type LogBuffer = {
+    append(stream: LogStream, chunk: string): void;
+    read(after?: number, limit?: number): LogPage;
+    tail(): number;
+};
+
+// @public (undocumented)
+export type LogBufferOptions = {
+    maxLines?: number;
+    maxLineBytes?: number;
+    maxPageLines?: number;
+    now?: () => number;
+};
+
+// @public
+export type LogLine = {
+    seq: number;
+    at: number;
+    stream: LogStream;
+    text: string;
+};
+
+// @public
+export type LogPage = {
+    lines: LogLine[];
+    cursor: number;
+    dropped: number;
+};
+
+// @public
+export type LogStream = "stdout" | "stderr";
 
 // @internal
 export function mapStream<T, R>(source: AsyncIterable<T> | Iterable<T>, width: number, run: (item: T, index: number) => Promise<R> | R): AsyncGenerator<R>;
@@ -1033,6 +1084,9 @@ export type OpenUpload = {
 
 // @public
 export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string;
+
+// @public
+export function parseBearer(header: string | null | undefined): string;
 
 // @public
 export function parseJsonText(text: string | undefined): {

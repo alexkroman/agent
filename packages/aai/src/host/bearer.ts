@@ -11,12 +11,10 @@
  * shared: neither of the other two may import that package. This is the "one
  * layer down" its module doc points at.
  *
- * It lives in `aai-runtime` rather than in `@alexkroman1/aai/host-internal`
- * because that is the NARROWEST home that reaches both remaining call sites —
- * `workflow/api/http.ts` is in this package, and `aai-guest` already depends on
- * it and imports nine other names from `@alexkroman1/aai-runtime/internal`.
- * Putting it in the SDK would publish it to every package in the repo, including
- * the two browser bundles that have no `Authorization` header to parse.
+ * It lives in the SDK's `/host-internal` (Node-side, no browser bundle imports
+ * that subpath) because the guest harness needs it and holds no copy of
+ * `aai-runtime`: the harness drives the agent through the runtime its bundle
+ * carries, so a helper it calls on its own must come from the SDK.
  *
  * @module bearer
  */

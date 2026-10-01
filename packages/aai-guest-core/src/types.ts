@@ -3,8 +3,11 @@
 // Shared type definitions for the Node guest harness.
 //
 // Split out of `harness.ts` to keep that entrypoint focused on the
-// dispatch loop. Like the harness, this file has ZERO workspace imports —
-// it is bundled into the self-contained guest artifact.
+// dispatch loop. Like the harness, this file has ZERO workspace VALUE imports —
+// it is bundled into the self-contained guest artifact. The one import below is
+// TYPE-only and erased: the bundle's host surface, declared by the runtime.
+
+import type { GuestHost } from "@alexkroman1/aai-runtime/internal";
 
 // ---- Tool / agent shapes ----------------------------------------------------
 
@@ -167,11 +170,22 @@ export type GuestRuntime = {
  * `publicUrl` makes `ctx.workflows.publicWebhookUrl` throw, which is the designed
  * answer). `GUEST_CONTRACT_VERSION` records each addition.
  */
-export type CreateGuestRuntime = (opts: {
+export type CreateGuestRuntime = ((opts: {
   env: Record<string, string>;
   runCode?: (code: string) => Promise<string | { error: string }>;
   publicUrl?: string;
-}) => GuestRuntime;
+}) => GuestRuntime) & {
+  /**
+   * The rest of the bundle's runtime the harness drives the agent through — the
+   * server shell, the delivery door, tracing, the session gate — because the
+   * harness carries no runtime of its own. A TYPED contract
+   * (`GuestHost`, `aai-runtime/guest-host.ts`), checked by `version` at load;
+   * the type import is erased, so it adds no runtime copy.
+   */
+  host: GuestHost;
+};
+
+export type { GuestHost } from "@alexkroman1/aai-runtime/internal";
 
 /**
  * What the studio coding agent borrows from the harness itself: the two

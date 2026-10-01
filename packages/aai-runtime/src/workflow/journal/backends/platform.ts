@@ -53,9 +53,8 @@
  * workflow-queue-reconcile.ts` — server-side, on an indexed query over the
  * platform's own `workflow_runs`, with a grace window and a per-run throttle a
  * guest could not implement. Declaring it here would put a SECOND recovery
- * mechanism beside that one, racing it, and a deployed guest has two copies of
- * this package (see that package's guide) — so "a sandbox boot per copy per boot"
- * is the cost, for a run the queue already has scheduled.
+ * mechanism beside that one, racing it — "a sandbox boot per boot" is the cost,
+ * for a run the queue already has scheduled.
  *
  * The absence is therefore a claim rather than a gap, which is what makes the
  * boot sweep's warning safe to be loud: the one journal that skips it skips it on
@@ -139,9 +138,9 @@ const CONFLICT_METHODS = new Set(["claimHook"]);
  * decomposes that log per method for free, at zero added log volume.
  *
  * The BODY keeps it because the two ends of this wire are deployed
- * independently: a user's bundle carries its own copy of this package (see "A
- * deployed guest has TWO copies of this package" in this package's guide), so a
- * bundle older than the path form has to keep working against a newer platform,
+ * independently: a user's bundle carries its own copy of this package ("User-shipped
+ * runtime" in `packages/aai-guest/CLAUDE.md`), so a bundle older than the path
+ * form has to keep working against a newer platform,
  * and the platform reads the path first and falls back to the body
  * (`aai-server/workflow-journal-handler.ts`). A newer guest against an older
  * platform is the same question from the other side and is why the legacy route

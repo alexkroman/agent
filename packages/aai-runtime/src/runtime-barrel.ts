@@ -67,23 +67,6 @@ export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/ho
 // What every way of RUNNING an agent definition takes — `RuntimeOptions`,
 // `TextAgentOptions` and the two eval option bags all extend it.
 export type { HostAgentOptions } from "./host-agent-options.ts";
-// The guest's own stdout/stderr ring, and the platform's client of it. Shared
-// rather than guest-local because both ends of one wire read this shape: the
-// guest fills it (`aai-guest/harness-logs.ts`) and the platform serialises what
-// it reads back out (`aai-server/agent-logs.ts`). One definition, or the two
-// sides can disagree about what a cursor means.
-export {
-  createLogBuffer,
-  DEFAULT_LOG_BUFFER_LINES,
-  DEFAULT_LOG_LINE_BYTES,
-  DEFAULT_LOG_PAGE_LINES,
-  LOG_LINE_TRUNCATED,
-  type LogBuffer,
-  type LogBufferOptions,
-  type LogLine,
-  type LogPage,
-  type LogStream,
-} from "./log-buffer.ts";
 export type { McpDrift, McpInputSchema, McpTrust } from "./mcp/index.ts";
 // MCP tool discovery — the other source of tools a host assembles before it
 // builds a runtime, and the only one that reaches a third party. HTTP only; the

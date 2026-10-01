@@ -13,11 +13,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
+import { publishStepEnv } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionRuntime } from "@alexkroman1/aai-runtime";
-import { publishStepEnv, publishWorkflowWebhookUrl } from "@alexkroman1/aai-runtime/internal";
 import { runCode } from "./trial.ts";
-import type { AgentDef, CreateGuestRuntime, GuestRuntime, StudioSession } from "./types.ts";
+import type {
+  AgentDef,
+  CreateGuestRuntime,
+  GuestHost,
+  GuestRuntime,
+  StudioSession,
+} from "./types.ts";
+
+/**
+ * The `GuestHost` contract version this harness reads (`aai-runtime/guest-host.ts`).
+ *
+ * A literal rather than the runtime's `GUEST_HOST_VERSION`: importing the value
+ * would put a copy of the runtime in the harness, which is the one thing the
+ * harness must not carry. `bundle.test.ts` pins the two equal.
+ */
+export const SUPPORTED_GUEST_HOST_VERSION = 1;
 
 // ---- Bundle loading ----------------------------------------------------------
 
@@ -141,6 +156,12 @@ export type HarnessState = {
    * by the CLI's wrapper, which always exports it.
    */
   createRuntime: CreateGuestRuntime | null;
+  /**
+   * The loaded bundle's host surface — its copy of the runtime's server shell,
+   * delivery door, tracing and session gate. The harness drives the agent
+   * through this and holds no runtime of its own.
+   */
+  host: GuestHost | null;
   env: Readonly<Record<string, string>>;
   /**
    * The live runtime, created lazily on the first `/websocket` session upgrade —
@@ -164,6 +185,7 @@ export function emptyHarnessState(): HarnessState {
   return {
     agent: null,
     createRuntime: null,
+    host: null,
     env: Object.freeze({}),
     runtime: null,
     activeSessions: 0,
@@ -214,13 +236,23 @@ export async function loadBundle(
   const createRuntime = (mod as { __aaiCreateRuntime?: unknown }).__aaiCreateRuntime;
   if (typeof createRuntime !== "function") {
     throw new Error(
-      "Agent bundle does not export __aaiCreateRuntime (the bundle-shipped SDK runtime) — " +
+      "Agent bundle does not export __aaiCreateRuntime (the bundle-shipped runtime) — " +
         "rebuild it with a current @alexkroman1/aai-cli",
+    );
+  }
+
+  const host = (createRuntime as { host?: unknown }).host as Partial<GuestHost> | undefined;
+  if (host?.version !== SUPPORTED_GUEST_HOST_VERSION) {
+    throw new Error(
+      `Agent bundle's runtime host surface is version ${String(host?.version)}, and this ` +
+        `harness reads version ${SUPPORTED_GUEST_HOST_VERSION} — rebuild it with a current ` +
+        "@alexkroman1/aai-cli",
     );
   }
 
   state.agent = agent;
   state.createRuntime = createRuntime as CreateGuestRuntime;
+  state.host = host as GuestHost;
   state.env = Object.freeze({ ...params.env });
 
   // The same env the runtime resolves credentials from, reachable from a
@@ -244,7 +276,7 @@ export async function loadBundle(
   // it — `ensureRuntime` is too late, being lazy and possibly never called for a
   // static app. Absent, it UNPUBLISHES, so a repeat load in a process that lost
   // the variable cannot leave a stale origin behind.
-  publishWorkflowWebhookUrl(publicBaseUrl());
+  state.host.publishWorkflowWebhookUrl(publicBaseUrl());
 
   const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
   return config === undefined ? {} : { config };

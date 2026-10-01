@@ -37,6 +37,8 @@ export const BOUNDARY_KEYS: {
         readonly clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed";
         readonly clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults";
         readonly clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader";
+        readonly metricsSinks: "@alexkroman1/aai-runtime.metricsSinks";
+        readonly runtimeInstances: "@alexkroman1/aai-runtime.instances";
         readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
         readonly sessionClients: "@alexkroman1/aai.sessionClients";
         readonly sessionEnders: "@alexkroman1/aai.sessionEnders";

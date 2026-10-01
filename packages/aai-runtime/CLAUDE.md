@@ -218,25 +218,31 @@ harness.
 - konsistent's `template-eval-runtime-subpaths` holds a template eval to the
   one door (it refuses `/eval` and the SDK's `/testing` subpaths there).
 
-## A deployed guest has TWO copies of this package
+## The server and the sessions are ONE copy of this package
 
-The harness bundles its own `aai-runtime` and calls `createRuntimeServer` from
-it; the agent's runtime is built by the BUNDLE's `__aaiCreateRuntime`
-(`packages/aai-guest/CLAUDE.md`, "User-shipped runtime"). Both load in one
-process, so **anything used to rendezvous between them must be keyed on
-`globalThis` (`Symbol.for`), never a module-level value.** A single-value slot is
-`globalSlot(name)` from `@alexkroman1/aai/internal` — a name registered in the
-SDK's `BOUNDARY_KEYS` (`aai/src/sdk/_boundary.ts`) — not a hand-written
-`delete (globalThis as S)[SYM]` pair. The SDK's own two-copies seam (bundle vs
-host) is "The bundle/runtime boundary" in `packages/aai/CLAUDE.md`.
+A worker bundle inlines this package (`__aaiCreateRuntime`, "User-shipped
+runtime" in `packages/aai-guest/CLAUDE.md`), and **the guest harness carries no
+copy of its own**: it drives the agent through the bundle's, reached as
+`__aaiCreateRuntime.host` — the typed `GuestHost` surface (`guest-host.ts`:
+`createRuntimeServer`, the delivery door, tracing, the session gate), checked by
+`version` at load. A self-hosted host (`aai dev`, `aai start`, a `--target`
+entry) builds both the server and the runtime from its own copy. So in every
+host the server shell, the engine and the sessions share one module instance,
+and **their state is module-level**: the run context, the shared run reads, the
+app pool registry, and `WorkflowRequestError` (an `instanceof`).
 
-The workflow run context (`workflow/run-context.ts`) and the metrics sink
-registry (`metrics-sink.ts`) are both `Symbol.for`-keyed for this reason; a
-module-level `AsyncLocalStorage` gives one store per COPY, and the symptom is an
-empty context `{}` on narration lines plus no streamed progress. **Test it with
-`vi.resetModules()`**, which yields a second copy in one process —
-`workflow/run-context.test.ts` loads two and asserts a context entered through
-one is visible through the other.
+- **What still crosses copies is registered** in the SDK's `BOUNDARY_KEYS`
+  (`aai/src/sdk/_boundary.ts`) and reached by `globalSlot(name)`: the metrics
+  sinks (an agent's own code — `registerMetricsSink`, a `createTextAgent` — runs
+  in the bundle's copy while a self-hosted exporter lives in the host's), the
+  client event feed, and the instance record. Never hand-write `Symbol.for`.
+- **Every copy records its module URL** (`_instance-check.ts`); an agent-mode
+  guest warns when it sees two (`warnOnSecondRuntime`), and
+  `harness/externals.test.ts` fails if the built harness defines a runtime
+  function or imports this package statically.
+- Adding a field to `GuestHost` is additive; removing or changing one bumps
+  `GUEST_HOST_VERSION` and the harness's `SUPPORTED_GUEST_HOST_VERSION`
+  (`aai-guest-core/bundle.ts`, pinned equal by its test).
 
 ## Runtime invariants
 

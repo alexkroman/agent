@@ -28,7 +28,7 @@
  * @module
  */
 
-import { pushCapped } from "@alexkroman1/aai/utils";
+import { pushCapped } from "../sdk/utils.ts";
 
 /** Which of a process's two streams a line came from. */
 export type LogStream = "stdout" | "stderr";

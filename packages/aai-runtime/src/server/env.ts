@@ -11,7 +11,7 @@
  * @module
  */
 
-import { isBlankSecret } from "../bearer.ts";
+import { isBlankSecret } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "../runtime-config.ts";
 
 /**

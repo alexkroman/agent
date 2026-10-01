@@ -25,10 +25,10 @@
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { handleWorkflowRequest } from "@alexkroman1/aai-runtime/internal";
 import { verifyBearer } from "aai-guest-core/auth";
 import { writeJson } from "aai-guest-core/http";
 import { GUEST_CONTRACT_VERSION } from "aai-guest-core/limits";
+import type { GuestHost } from "aai-guest-core/types";
 import { guestLogBuffer, parseLogQuery } from "./logs.ts";
 import { gateDirectWorkflowDial } from "./workflow-gate.ts";
 
@@ -274,6 +274,11 @@ function trackWalks(
 export function createAgentRequestHandler(deps: {
   manage: ManageDeps;
   /**
+   * The delivery door's HTTP half, from the loaded bundle's runtime
+   * (`GuestHost.handleWorkflowRequest`) — the harness carries no runtime of its own.
+   */
+  handleWorkflowRequest: GuestHost["handleWorkflowRequest"];
+  /**
    * `AgentRuntime.deliverWorkflow` — re-walk one run for a platform delivery.
    *
    * A GETTER for the reason `workflows` is one: the harness builds its runtime on
@@ -296,7 +301,7 @@ export function createAgentRequestHandler(deps: {
   const deliverWorkflow = trackWalks(deps.deliverWorkflow, deps.activity);
   return (req, res, url, method) => {
     if (
-      handleWorkflowRequest(req, res, url, method, {
+      deps.handleWorkflowRequest(req, res, url, method, {
         // The platform's queue-delivery door, vouched for by the same bearer the
         // rest of the manage surface uses — this IS a management operation the
         // platform performs on a guest, and `AAI_GUEST_TOKEN` is an HMAC over

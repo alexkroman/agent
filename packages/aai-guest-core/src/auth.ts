@@ -7,7 +7,7 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
-import { parseBearer } from "@alexkroman1/aai-runtime/internal";
+import { parseBearer } from "@alexkroman1/aai/host-internal";
 
 export function constantTimeEquals(a: string, b: string): boolean {
   const ab = Buffer.from(a);

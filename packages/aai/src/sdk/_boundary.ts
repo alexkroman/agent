@@ -41,9 +41,11 @@
  *   no older bundles to support, but a bundle and the host that runs it are
  *   built separately.
  *
- * The runtime's own `Symbol.for` slots (`app-db.ts`, `workflow/run-*.ts`,
- * `metrics-sink.ts`) are a different seam — two copies of `aai-runtime`, not of
- * the SDK — and are not registered here.
+ * Three keys belong to `aai-runtime` rather than the SDK — its client event
+ * feed, its metrics sinks and its instance record — and are registered here so that package spells no key
+ * either. Its other process-wide state is module-level: the server and the
+ * sessions are one runtime copy in every host (the guest harness builds its
+ * server from the bundle's runtime), so nothing else of it crosses.
  *
  * @module _boundary
  * @internal
@@ -81,6 +83,15 @@ export const BOUNDARY_KEYS = {
     clientEventFeed: "@alexkroman1/aai-runtime.clientEventFeed",
     clientInboxDefaults: "@alexkroman1/aai.clientInboxDefaults",
     clientTranscriptReader: "@alexkroman1/aai.clientTranscriptReader",
+    /**
+     * `aai-runtime`'s process-wide metrics sinks (`metrics-sink.ts`): the one
+     * runtime registry that still crosses copies — a self-hosted host's runtime
+     * serves while an agent bundle's inlined copy registers sinks or runs a
+     * `createTextAgent` of its own.
+     */
+    metricsSinks: "@alexkroman1/aai-runtime.metricsSinks",
+    /** Every `aai-runtime` copy loaded in this process, by module URL (`_instance-check.ts`). */
+    runtimeInstances: "@alexkroman1/aai-runtime.instances",
     sessionCalls: "@alexkroman1/aai.sessionCalls",
     sessionClients: "@alexkroman1/aai.sessionClients",
     sessionEnders: "@alexkroman1/aai.sessionEnders",

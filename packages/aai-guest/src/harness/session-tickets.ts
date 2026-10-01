@@ -22,20 +22,26 @@
  * @module
  */
 
-import {
-  createSessionAuth,
-  SESSION_SECRET_ENV,
-  type SessionAuth,
-  type SessionIdentity,
-  verifySessionToken,
-} from "@alexkroman1/aai-runtime/auth";
-import { platformSessionSecret } from "@alexkroman1/aai-runtime/internal";
+import type { SessionAuth, SessionIdentity } from "@alexkroman1/aai-runtime/auth";
+import type { GuestHost } from "aai-guest-core/types";
+
+/**
+ * The slice of the bundle's host surface the gate is built from. The ticket
+ * grammar and the key derivation are the RUNTIME's, so they come from the copy
+ * the agent's sessions run on — the harness carries none of its own.
+ */
+export type TicketHost = Pick<
+  GuestHost,
+  "createSessionAuth" | "verifySessionToken" | "platformSessionSecret" | "SESSION_SECRET_ENV"
+>;
 
 /** Check one presented ticket against the platform's key, then the author's. */
 export function guestTicketVerifier(
+  host: TicketHost,
   guestToken: string,
   agentEnv: Readonly<Record<string, string>>,
 ): (token: string) => SessionIdentity | undefined {
+  const { platformSessionSecret, SESSION_SECRET_ENV, verifySessionToken } = host;
   const keys = [platformSessionSecret(guestToken)];
   const authorSecret = agentEnv[SESSION_SECRET_ENV];
   if (authorSecret !== undefined && authorSecret.trim() !== "") keys.push(authorSecret);
@@ -49,8 +55,9 @@ export function guestTicketVerifier(
 
 /** The `auth` handle `createRuntimeServer` takes in a deployed guest. */
 export function guestSessionAuth(
+  host: TicketHost,
   guestToken: string,
   agentEnv: Readonly<Record<string, string>>,
 ): SessionAuth {
-  return createSessionAuth({ verify: guestTicketVerifier(guestToken, agentEnv) });
+  return host.createSessionAuth({ verify: guestTicketVerifier(host, guestToken, agentEnv) });
 }

@@ -41,10 +41,9 @@ export class JournalConflictError extends Error {
   }
 
   /**
-   * Is this value one? A static rather than `instanceof` at each site, because
-   * a deployed guest holds TWO copies of this package — see
-   * `packages/aai-runtime/CLAUDE.md`, "A deployed guest has TWO copies" — so a
-   * cross-copy `instanceof` is false for an error the other copy constructed.
+   * Is this value one? A static rather than `instanceof` at each site, so the
+   * test has one spelling — and it reads the NAME, which also survives a value
+   * that crossed a structured clone or a JSON-RPC boundary on its way here.
    */
   static is(value: unknown): value is JournalConflictError {
     return value instanceof Error && value.name === "JournalConflictError";

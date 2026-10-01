@@ -24,10 +24,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 // The minimal loadable bundle: the harness refuses one that ships no runtime
 // factory, and none of these tests needs a real runtime.
 const CODE = `
-  export const __aaiCreateRuntime = () => ({
+  import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";
+  export const __aaiCreateRuntime = Object.assign(() => ({
     startSession() {},
     shutdown: async () => {},
-  });
+  }), { host: GUEST_HOST });
   export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };`;
 
 // The slot is GLOBAL, so a filled one would leak into the next file. Through the

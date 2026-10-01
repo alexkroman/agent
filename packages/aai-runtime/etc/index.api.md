@@ -154,9 +154,6 @@ export function createAgentServer(options: AgentServerOptions): AgentServer;
 // @public
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
-// @public (undocumented)
-export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
-
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
@@ -195,15 +192,6 @@ export function createToolCallRepair(model: LanguageModel, log: Logger, getAbort
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
-
-// @public
-export const DEFAULT_LOG_BUFFER_LINES = 2000;
-
-// @public
-export const DEFAULT_LOG_LINE_BYTES = 4096;
-
-// @public
-export const DEFAULT_LOG_PAGE_LINES = 500;
 
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
@@ -286,24 +274,6 @@ export type LlmRegistryEntry = {
 };
 
 // @public
-export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
-
-// @public @sealed
-export type LogBuffer = {
-    append(stream: LogStream, chunk: string): void;
-    read(after?: number, limit?: number): LogPage;
-    tail(): number;
-};
-
-// @public (undocumented)
-export type LogBufferOptions = {
-    maxLines?: number;
-    maxLineBytes?: number;
-    maxPageLines?: number;
-    now?: () => number;
-};
-
-// @public
 export type LogContext = Record<string, unknown>;
 
 // @public
@@ -323,24 +293,6 @@ export interface Logger {
 
 // @public
 export type LogLevel = "info" | "warn" | "error" | "debug";
-
-// @public
-export type LogLine = {
-    seq: number;
-    at: number;
-    stream: LogStream;
-    text: string;
-};
-
-// @public
-export type LogPage = {
-    lines: LogLine[];
-    cursor: number;
-    dropped: number;
-};
-
-// @public
-export type LogStream = "stdout" | "stderr";
 
 // @public
 export const MAX_WORKFLOW_FIND_LIMIT = 100;

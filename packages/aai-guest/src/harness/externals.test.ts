@@ -42,7 +42,12 @@ const PKG = join(import.meta.dirname, "..", "..");
 const HARNESS = join(PKG, "dist/harness.mjs");
 
 /** The `neverBundle` patterns, as the source strings they match. */
-const NEVER_BUNDLE = ["@alexkroman1/aai-cli", "@vitejs/plugin-react", "@tailwindcss/vite"] as const;
+const NEVER_BUNDLE = [
+  "@alexkroman1/aai-runtime",
+  "@alexkroman1/aai-cli",
+  "@vitejs/plugin-react",
+  "@tailwindcss/vite",
+] as const;
 
 /**
  * The declared list, read off the real config rather than re-typed.
@@ -109,5 +114,24 @@ describe("the built harness", () => {
     for (const specifier of ["@vitejs/plugin-react", "@tailwindcss/vite"]) {
       expect(bundle, `${specifier} looks inlined`).toContain(specifier);
     }
+  });
+
+  test("holds NO copy of the runtime, and never loads one eagerly", () => {
+    // The gate behind "User-shipped runtime": a deployed agent runs the runtime
+    // its own bundle carries, reached through `__aaiCreateRuntime.host`, so the
+    // one runtime in an agent-mode guest is the bundle's. Definitions only the
+    // runtime has would mean a module of it was inlined here.
+    for (const definition of [
+      /function\s+createRuntimeServer\s*\(/,
+      /function\s+createTextAgent\s*\(/,
+      /function\s+registerMetricsSink\s*\(/,
+      /function\s+createRuntime\s*\(/,
+    ]) {
+      expect(bundle, `${definition} is defined inside the harness`).not.toMatch(definition);
+    }
+    // And no STATIC import of it: a top-level import would load the image's copy
+    // beside the bundle's in agent mode. Studio mode reaches it with `import()`.
+    expect(bundle).not.toMatch(/^\s*import\b[^;]*from\s*["']@alexkroman1\/aai-runtime/m);
+    expect(bundle).toMatch(/import\(\s*["']@alexkroman1\/aai-runtime/);
   });
 });
