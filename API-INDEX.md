@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 254 names
 - [Hosting and tooling](#hosting-and-tooling) — 235 names
-- [Framework internals](#framework-internals) — 426 names
+- [Framework internals](#framework-internals) — 428 names
 
 ## Agent authoring
 
@@ -1512,6 +1512,7 @@ trace or a type error can be traced back to something.
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `clientToolBrand` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `constantTimeEquals` | function | `@alexkroman1/aai/host-internal` |  | True when `a` and `b` are equal, without a data-dependent early exit — the one constant-time string comparison every host-side gate shares. |
 | `createCoalescingRunner` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `createDetachedSlotStore` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `createEpoch` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1639,3 +1640,4 @@ trace or a type error can be traced back to something.
 | `wireSessionSocket` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `withHostCredentialFallback` | function | `@alexkroman1/aai-runtime/internal` |  | Return `env` with any missing provider credential filled in from `hostEnv` (defaults to `process.env`). |
 | `workflowJournalDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `writeSessionEntry` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

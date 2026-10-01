@@ -606,6 +606,9 @@ type ClientTranscriptTool = {
 type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
 
 // @public
+export function constantTimeEquals(a: string, b: string): boolean;
+
+// @public
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 // @internal
@@ -2135,6 +2138,9 @@ type WorkflowSummary = {
     outputSchema?: unknown;
     uploads?: readonly string[];
 };
+
+// @internal
+export function writeSessionEntry<K, V>(map: Map<K, V>, key: K, entry: V, max: number): void;
 
 // @internal
 export const WS_NORMAL_CLOSURE = 1000;

@@ -489,8 +489,8 @@ export function platformSocketUrl(base: string): string;
 
 // @public
 export type PlatformTicketInput = {
-    guestToken: string;
-    previousGuestTokens?: readonly string[];
+    secret: string;
+    previousSecrets?: () => readonly string[];
     presented?: string | undefined;
     now?: number;
 };
