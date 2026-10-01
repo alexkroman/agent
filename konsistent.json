@@ -1062,14 +1062,6 @@
       }
     },
     {
-      "name": "runtime-directory-index-barrels",
-      "description": "In aai-runtime a directory's `index.ts` is its WHOLE surface: inside a bounded directory there is no underscore prefix, so 'private' means 'not re-exported from index.ts', and `module-boundaries.test.ts` refuses any import from outside the directory that names another module of it. That only means something if the index is a pure re-export list \u2014 a declaration in one is a symbol with no home module, and an `export *` re-exports everything and so makes nothing private. So each index is a barrel (this convention) and spells its names (`noReExportAll`). The indexes list exactly what the rest of the package imports; a name nothing outside imports is simply not on it.",
-      "paths": ["packages/aai-runtime/src/*/index.ts", "packages/aai-runtime/src/**/index.ts"],
-      "must": {
-        "areBarrelFiles": true
-      }
-    },
-    {
       "name": "pipeline-stage-heard",
       "description": "`transports/pipeline/heard/` is the heard cursor, its word alignment and playback clock, and the recovery latch: the one owner of 'what the caller actually heard', which history truncation and the resume anchor both READ and which therefore reads nothing back. It may import no other stage, always through that stage's `index.ts`, and never the assembly beside `transports/pipeline/index.ts` (`transport.ts`, `commands.ts`, `lifecycle.ts`, \u2026), which imports every stage. The stage directions together are one DAG \u2014 turn, heard and knobs at the bottom; output; history; reply; llm; speech; the assembly on top \u2014 and Biome's `noImportCycles` cannot hold it on its own: it sees a FILE cycle only once one closes, while a stage reaching 'down the wrong way' through an index is legal until the day the far side imports back, which is how a barrel turns one new import into a cycle across a dozen files. Specs are excluded because a stage's spec legitimately drives the whole assembled transport (`../transport.ts`, `../_transport-harness.ts`). The specifiers are matched RAW, which is exact here because every stage file sits one level below `transports/pipeline/`; the index-only half of the rule is `module-boundaries.test.ts` in aai-runtime, and the map is `transports/pipeline/CLAUDE.md`.",
       "paths": [
@@ -1896,6 +1888,36 @@
           "node:url",
           "node:fs"
         ]
+      }
+    },
+    {
+      "name": "module-dir-index-is-re-export-only",
+      "description": "A directory under aai-ui's or aai-runtime's `src/` that holds an `index.ts` (aai-ui's `session/`, `audio/`, `upload/`; aai-runtime's `session/`, `runtime/`, `server/`, `tools/`, `transports/pipeline/` and its stages, \u2026) is a MODULE: the index is its only import surface for the rest of the package, and a sibling of the index is private because nothing re-exports it (guard-invariants rule 37 fails an import from outside the directory that names any other file in it, and `MODULE_DIR_ROOTS` in `scripts/guard-invariants-module-dirs.mjs` lists the two roots). The index is therefore a pure re-export surface, held to the rule `*-barrel.ts` files are: a declaration in it would be a symbol with no home module inside the directory, an `export *` would make nothing private, and being a barrel is what lets `check-module-tests.mjs` treat these indexes as owing no test of their own. The directories replaced prefix families (aai-ui's `session-core-*.ts`, `audio-*.ts`, `_upload-*.ts`; aai-runtime's `pipeline-*`, `session-*`, `runtime-*`, `_upload-*`, `mcp-*`, `platform-*`) split out to stay under the 500-line cap; a prefix is a directory with no boundary.",
+      "paths": [
+        "packages/aai-ui/src/*/index.ts",
+        "packages/aai-runtime/src/*/index.ts",
+        "packages/aai-runtime/src/**/index.ts"
+      ],
+      "must": {
+        "areBarrelFiles": true
+      }
+    },
+    {
+      "name": "ui-audio-imports-no-session",
+      "description": "aai-ui's `audio/` is the device layer \u2014 the mic grant, the capture and playback worklet nodes, the `VoiceIO` and the pre-connect capture \u2014 and it knows nothing of a session: the session core drives it (`session/audio-setup.ts` opens it, `session/audio-state.ts` decides when), never the reverse. Two things depend on that direction. `audio/` is a LAZY chunk, reached only through a dynamic `import(\"../audio/index.ts\")`, so a session import from it would drag the session core's graph into the chunk and make the two load as one. And `audio/voice-io.test.ts` / `audio/fuzz-voiceio.test.ts` spec the audio path with no socket and no snapshot, which holds only while the module graph under them has none. `upload/` is denied too: a workflow page has no audio, and audio has no upload.",
+      "paths": ["packages/aai-ui/src/audio/*.ts", "packages/aai-ui/src/audio/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "mustNot": {
+        "importFrom": ["../session/*", "../upload/*"]
+      }
+    },
+    {
+      "name": "ui-upload-imports-no-session",
+      "description": "aai-ui's `upload/` is the workflow hooks' upload machinery (id claiming, the pause gate, the reload recall, report coalescing), and a workflow app is a web page over the workflow HTTP API with no session, WebSocket or audio (`src/CLAUDE.md`, \"Workflow apps\"). An import of `session/` or `audio/` from here would tie every workflow page that uploads a file to the voice client it has no use for.",
+      "paths": ["packages/aai-ui/src/upload/*.ts", "packages/aai-ui/src/upload/**/*.ts"],
+      "excludeFiles": ["**/*.test.ts"],
+      "mustNot": {
+        "importFrom": ["../session/*", "../audio/*"]
       }
     },
     {

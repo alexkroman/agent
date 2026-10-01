@@ -51,7 +51,7 @@
     "packages/aai-templates/templates/retail-orders-agent/store.ts": 1,
     "packages/aai-ui/src/_react-test-utils.ts": 1,
     "packages/aai-ui/src/_session-core-test-utils.ts": 2,
-    "packages/aai-ui/src/session-core-reconnect.ts": 1,
+    "packages/aai-ui/src/session/reconnect.ts": 1,
     "packages/aai/src/host/_test-utils.ts": 1,
     "packages/aai/src/host/_undici.ts": 2,
     "packages/aai/src/sdk/testing-generate.test.ts": 2,

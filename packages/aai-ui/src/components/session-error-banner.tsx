@@ -30,7 +30,7 @@ export type SessionErrorBannerProps = {
  * **This used to be four lines inside `ConsoleShell`, and that is why it is its
  * own component.** The banner was the reason `ConsoleShell` was published —
  * `role="alert"` is the one part of that component a reviewer cannot see is
- * missing, since per the `fatalError` latch in `session-core.ts` the banner is
+ * missing, since per the `fatalError` latch in `session/browser-session.ts` the banner is
  * the ONLY remaining signal a session died (the state eyebrow beside it goes
  * back to reading like a live session), and a screen reader is never told an
  * unannounced one appeared. But `ConsoleShell` is a whole FRAME: a centred

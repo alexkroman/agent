@@ -135,7 +135,7 @@
     "packages/aai-ui/src/default-client.test.tsx": 2,
     "packages/aai-ui/src/define-client.test.tsx": 1,
     "packages/aai-ui/src/page.test.tsx": 1,
-    "packages/aai-ui/src/session-core-audio-init.test.ts": 1,
+    "packages/aai-ui/src/session/audio-init.test.ts": 1,
     "packages/aai/src/host/coding-spawn.test.ts": 1,
     "packages/aai/src/host/ffmpeg.test.ts": 1,
     "packages/aai/src/host/step-files.disk-full.test.ts": 1

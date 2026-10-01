@@ -12,8 +12,8 @@ import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 import { SessionProvider, ThemeProvider } from "./context.ts";
-import { createBrowserSession } from "./session-core.ts";
-import type { BrowserSession } from "./session-core-types.ts";
+import type { BrowserSession } from "./session/index.ts";
+import { createBrowserSession } from "./session/index.ts";
 import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 
 // ─── Config types ─────────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ function DefaultShell({ name, icon, subtitle, buttonText, Sidebar, ...layout }: 
  * `mountClient({ name })` the request was issued and its answer thrown away — and on
  * the platform this endpoint is the BROKER, so the discarded request is one that
  * can boot a sandbox. The session's own per-attempt lookup
- * (`session-core.ts`'s URL provider) is a different question and deliberately
+ * (`session/browser-session.ts`'s URL provider) is a different question and deliberately
  * left alone: it re-brokers on every connection attempt, which is what makes a
  * reconnect land on a REPLACEMENT sandbox, so it may not be served from
  * anything this render already has.

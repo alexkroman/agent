@@ -269,8 +269,6 @@ export { type PhoneE164Options, phoneE164 } from "./phone.ts";
 // with `?client=` and the route's `{ error }` sentence. `useRoute` reads,
 // `useRouteMutation` writes, `useClientRuns` is `clientRunsRoutes()`' page half.
 export { type RouteFetchOptions, type RouteMethod, routeFetch } from "./route-fetch.ts";
-// Session core (for advanced use)
-export { createBrowserSession } from "./session-core.ts";
 export type {
   AgentCustomEvent,
   AgentStateFrame,
@@ -284,7 +282,9 @@ export type {
   // `session.userTurn` — push-to-talk's three edges, the `push-to-talk`
   // capability's beside `usePushToTalk`.
   UserTurnControls,
-} from "./session-core-types.ts";
+} from "./session/index.ts";
+// Session core (for advanced use)
+export { createBrowserSession } from "./session/index.ts";
 // A clipboard write that reports a REFUSED one instead of doing nothing
 // visible, keyed by the copied text so one row's "Copied" does not light up
 // every button. Built on `useFlash` below; three hand-rolled copies preceded

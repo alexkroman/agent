@@ -806,7 +806,7 @@ mountClient({
 
 // No `onSessionId`/`resumeSessionId` here any more, and their removal is a FIX
 // rather than a simplification. `createBrowserSession` remembers the id in
-// `sessionStorage` by default now — see `session-resume-store.ts`, whose doc
+// `sessionStorage` by default now — see `session/resume-store.ts`, whose doc
 // names this template as the one client of fourteen that had wired it by hand.
 // What it had wired was `localStorage`, which is the wrong store for a pointer
 // into a live call: it survives a new tab and a visit tomorrow, and presenting

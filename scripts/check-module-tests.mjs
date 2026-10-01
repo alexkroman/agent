@@ -66,6 +66,7 @@ import {
   updateBaseline,
   warnStale,
 } from "./_ratchet.mjs";
+import { MODULE_DIR_ROOTS } from "./guard-invariants-module-dirs.mjs";
 
 const GATE = "check-module-tests";
 const ROOT = repoRoot(import.meta.url);
@@ -115,12 +116,9 @@ const EXCLUSIONS = [
     match: (file) => path.basename(file).endsWith("-barrel.ts"),
   },
   {
-    // konsistent's `runtime-directory-index-barrels` holds every such index to it.
-    why: "a directory index in aai-runtime that only re-exports is that directory's barrel — decided by reading the file",
+    why: "a module directory's `index.ts` (guard-invariants rule 37's directories) is the same pure re-export surface — konsistent's `module-dir-index-is-re-export-only` holds it to that, over exactly these paths",
     match: (file) =>
-      file.startsWith("packages/aai-runtime/src/") &&
-      path.basename(file) === "index.ts" &&
-      isPureReExport(file),
+      file.endsWith("/index.ts") && MODULE_DIR_ROOTS.some((root) => file.startsWith(`${root}/`)),
   },
   {
     why: "test infrastructure IS a test file by role — every suite that imports it exercises it, and it has no behaviour of its own to claim",
@@ -175,26 +173,6 @@ function hasRuntimeExport(file) {
   return /^export\s+(?:async\s+function|function|const|let|var|class|abstract\s+class|enum|default|\*|\{)/m.test(
     code,
   );
-}
-
-/**
- * Whether a file is nothing but `export … from` clauses. Read the same way as
- * {@link hasRuntimeExport}, and conservative the same way: anything else left
- * over keeps the file in scope.
- */
-function isPureReExport(file) {
-  let source;
-  try {
-    source = readFileSync(path.join(ROOT, file), "utf8");
-  } catch {
-    return false;
-  }
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-  const rest = code.replace(
-    /export\s+(?:type\s+)?(?:\{[^}]*\}|\*(?:\s+as\s+\w+)?)\s+from\s+["'][^"']+["'];?/g,
-    "",
-  );
-  return code.trim() !== "" && rest.trim() === "";
 }
 
 /** The in-scope modules, and the ones with no co-located test. */

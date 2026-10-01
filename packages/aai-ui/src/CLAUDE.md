@@ -1,108 +1,53 @@
 ---
 summary: >-
-  The browser session core (statecharts, fatal latch, handshake guard,
-  client-config lookup), client identity and the inbox, the public hooks, the
-  fuzz harnesses, and the workflow-app hooks
-  (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads, reload recovery) over
-  the workflow HTTP API.
+  The module-directory rules (`session/`, `audio/`, `upload/` entered through
+  `index.ts` only, and their one-way edges), the client-config lookup, client
+  identity and the inbox, the public hooks, the fuzz harnesses, and the
+  workflow-app hooks (`useWorkflowRun`/`Submit`/`Stream`/`Progress`, uploads,
+  reload recovery) over the workflow HTTP API.
 read_when: >-
-  editing `session-core*.ts`, `client-config.ts`, `client-identity.ts`, the
-  inbox (`inbox*.ts`, `notice-player.ts`), `context.ts`, a `use-*.ts` hook, a
-  workflow/upload module, or a `fuzz-*.test.ts` harness.
+  adding a module directory or an import across one, editing
+  `client-config.ts`, `client-identity.ts`, the inbox (`inbox*.ts`,
+  `notice-player.ts`), `context.ts`, a `use-*.ts` hook, a workflow/upload
+  module, or a `fuzz-*.test.ts` harness.
 ---
 
-# `src/` — session core, hooks and workflow apps
+# `src/` — module directories, hooks and workflow apps
 
-Components are in `components/CLAUDE.md`, worklets in `worklets/CLAUDE.md`,
-capability contracts in `contracts/CLAUDE.md`.
+The session core is in `session/CLAUDE.md`, components in
+`components/CLAUDE.md`, worklets in `worklets/CLAUDE.md`, capability contracts
+in `contracts/CLAUDE.md`.
 
-## Session core
+## Module directories
 
-### A FATAL error survives the frames that follow it
+Three directories under `src/` are MODULES, each entered through its
+`index.ts` only: `session/` (the session core — its rules are in
+`session/CLAUDE.md`), `audio/` (the `VoiceIO`, the capture primitives and the
+pre-connect capture, beside `worklets/`) and `upload/` (the workflow hooks'
+upload id claiming, pause gate, recall and report coalescing).
 
-The host's fatal paths `terminate()`, which emits `cancelled` — so the frame
-announcing death must not wipe the banner. The fatal branch of
-`handleErrorEvent` latches; every recovery path is declined while latched;
-**only the next `config` frame clears it** (a completed handshake, per
-CONNECTION, so a retry reaching a healthy peer is not pinned to the old banner).
-A NON-fatal error (`fatal: false`) is still retired by later activity.
+- **A sibling of `index.ts` is private** — "not re-exported there" — and
+  guard-invariants rule 37 fails an import from outside the directory that
+  names one (specs and test helpers included). A directory opts in by holding
+  an `index.ts`, so a new one is covered on arrival.
+- **Inside a directory, names carry no prefix and no underscore**:
+  `session/dial.ts`, not `session-core-dial.ts`; privacy is the index's job.
+- **`index.ts` is re-export only** (konsistent
+  `module-dir-index-is-re-export-only`), which is why `check-module-tests`
+  does not ask it for a test.
+- **One-way edges**: `audio/` imports neither `session/` nor `upload/`
+  (`ui-audio-imports-no-session`) — the session drives the device layer, and
+  `audio/` is a lazy chunk the session reaches by dynamic `import()`. `upload/`
+  imports neither `session/` nor `audio/` (`ui-upload-imports-no-session`): a
+  workflow page has no session.
+- **Left flat**: `client-config.ts`, `client-identity.ts` and `types.ts` are
+  read by the session AND by the inbox, the mounts and the hooks;
+  `_session-core-test-utils.ts` is the socket double the inbox and mount specs
+  dial through too. The workflow hooks (`use-workflow-*.ts`, `_workflow-*.ts`,
+  `_run-controls.ts`, `_submission-state.ts`) stay at `src/` because the
+  `use-*.ts` konsistent conventions key on that path.
 
-- **`session-core-state.ts` owns `state` and `error`.** The seven `AgentState`
-  names are one region; the fatal latch is a SECOND region
-  (`stateIn({ fatal: "yes" })`), because it outlives the `error` phase
-  (`error → connecting → ready`). Callers send what HAPPENED (`LISTEN`,
-  `ACTIVITY`, `SPEAK`, `THINK`) and fold the projection into one `updateState`.
-  Never write `state`/`error` directly or guard a write by reading the snapshot
-  back.
-- **XState falls through to an ancestor's handler when a child's guard fails**,
-  so every handler that clears the banner carries the fatal guard.
-- A declined transition returns the position unchanged; `updateState` drops
-  snapshots that differ in nothing (pinned by `session-core-events.test.ts`).
-
-### The audio path is a statechart (`session-core-audio-state.ts`)
-
-`down` / `starting` / `up`; bring-up is an `invoke`, so hang-up, reconnect or a
-fatal frame STOPS it. `PROGRESS`/`IO_FAILED` carry the instance that fired them
-(a repeated `config` frame makes two bring-ups; the outgoing one must not tear
-down its replacement). `preInitAudio`/`preInitDone` are context cleared by
-entering `down`.
-
-- **Cancellation does not close a mic the browser already granted**: `bringUp`
-  checks its own `signal` after `open` settles and releases what it built. That
-  is the only "still wanted?" check — do not add generation counters or flags
-  back on `ConnState`.
-- The machine touches no socket or snapshot; effects are
-  `session-core-audio-effects.ts`, setup is `session-core-audio-setup.ts`, so
-  `session-core-audio-state.test.ts` specs it without a browser.
-
-### Pre-connect audio (`session-core-preconnect.ts`)
-
-The mic opens on `connect()`, not on `config`, so an opener spoken while the
-agent joins is buffered (latest `PRE_CONNECT_MAX_SECONDS`) and sent ahead of
-live audio. Opt out with `preConnectAudio: false`.
-
-- **It captures at a GUESSED rate (16 kHz)**: `createVoiceIO({ preConnect })`
-  adopts the context and node whole on a match, else keeps only the grant and
-  resamples the buffer with `OfflineAudioContext` (`audio-preconnect.ts`).
-- **The buffer reaches the wire before any live frame**: the flush and the sink
-  swap are synchronous, and the burst bypasses the mic's backpressure drop
-  (`sendBuffered`) while still honouring mute.
-- **Ownership**: the holder until the bring-up `take()`s it, then the bring-up
-  (every rejection in `openAudioPath` closes it). A reconnect BEFORE `config`
-  keeps it buffering; only terminal paths `release()` it.
-
-### Drain completion outlives the turn
-
-`done()` resolves when the worklet drains, which also happens when the
-AudioContext stops — possibly after the turn or session is over. Two guards:
-
-- **The turn epoch lives on `ConnState.turn`**, bumped by the audio path's
-  `endTurn` effect on every committed user turn, barge-in, reset — and on
-  entering `down`, since teardown is a turn boundary. Otherwise a late drain
-  writes `"listening"` over `"disconnected"`/`"error"`.
-- **The worklet's `stop` echoes its turn id** and `audio.ts` settles only the
-  matching wait (details in `worklets/CLAUDE.md`).
-
-The server side paces audio at a bounded lead (`aai/host/audio-pacer.ts`):
-`CLIENT_AUDIO_LEAD_MS` **must stay above `PLAYBACK_JITTER_MS`**; `audio_done` is
-queued BEHIND held audio; `cancelled`/`reset` DISCARD held audio.
-
-### A handshake is not a session (`session-core-handshake.ts`)
-
-An open socket proves only a `101`; the server sends `config` at zero RTT, and
-partysocket's `connectionTimeout` stops at `open`. Without a guard a wedged peer
-leaves the session on `"ready"` (painted as live) forever.
-`createHandshakeGuard` arms per `open`, disarms on `config` or close, re-dials
-on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
-
-- **Its budget is its own** — `reconnect()` resets partysocket's retry count, so
-  `RECONNECT_OPTIONS.maxRetries` cannot bound this.
-- **The budget is CONSECUTIVE**: `succeeded()` (a completed handshake) resets
-  it; `disarm()` (a socket closing) must NOT, or a wedged peer re-dials forever.
-- **The timer is a bare `setTimeout`**: disarm on `abort` explicitly, or a user
-  disconnect gets re-dialled.
-
-### Client config lookup (`client-config.ts`)
+## Client config lookup (`client-config.ts`)
 
 - **Every request the session makes needs its own deadline.** The lookup runs
   inside partysocket's URL provider, which arms no timeout until the URL
@@ -120,7 +65,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `component` ignores it.
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
-- **A session ticket is asked for per ATTEMPT** (`session-core-ticket.ts`):
+- **A session ticket is asked for per ATTEMPT** (`session/ticket.ts`):
   `VoiceSessionOptions.token` (told the session the attempt resumes), else the
   attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol`
   as `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
@@ -131,7 +76,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   rejects leaves partysocket with no `close`, so "connecting" forever); an
   injected `WebSocket` needs a synchronous one.
 - **The last server-issued ticket is the resume credential** on the platform:
-  stored beside the session id (`session-resume-store.ts`), presented in
+  stored beside the session id (`session/resume-store.ts`), presented in
   `SESSION_TICKET_HEADER` on a lookup that resumes, dropped by `forget()`. A
   bound ticket opens its own session, so a failed re-mint is a new session the
   `config` frame names, never a refusal.
@@ -166,7 +111,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold
   because of two things together**: `selectAgentState(slot)` is ONE stable
   selector per name, and the session core keeps an unchanged slot's value
-  object across pushes (`shareUnchangedSlots`, `session-core-messages.ts`).
+  object across pushes (`shareUnchangedSlots`, `session/messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
@@ -186,7 +131,7 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
   because of `exactOptionalPropertyTypes`.
 - **Session resume is on by default in `sessionStorage`**
-  (`session-resume-store.ts`). Do not wire `onSessionId`/`resumeSessionId` by
+  (`session/resume-store.ts`). Do not wire `onSessionId`/`resumeSessionId` by
   hand, and never into `localStorage` (a stale id suppresses the greeting and
   rejoins a dead context).
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
@@ -255,11 +200,11 @@ A run reaches the page after the call through `WS /inbox?client=` (server half:
 
 ## Fuzz harnesses
 
-`fuzz-session-core` (frames × controls × socket lifecycle), `fuzz-voiceio`
-(enqueue/done/flush/close × worklet stops), `fuzz-hooks` (exactly-once
-tool-call/event delivery), `fuzz-reconnect` (broker latch, resume ids, history
-replay); `worklets/audio-stress.test.ts` for the processors. They assert
-INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
+`session/fuzz-session` (frames × controls × socket lifecycle),
+`audio/fuzz-voiceio` (enqueue/done/flush/close × worklet stops), `fuzz-hooks`
+(exactly-once tool-call/event delivery), `session/fuzz-reconnect` (broker latch,
+resume ids, history replay); `worklets/audio-stress.test.ts` for the
+processors. They assert INVARIANTS. Beyond "Property tests run on fast-check" (`.agents/testing.md`):
 
 - **Check sensitivity** — revert the fix and confirm the harness fails. The
   audio mocks accumulate nodes across a test, so a harness can silently drive a
@@ -405,14 +350,14 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
 - **Pause/resume** (`pauseUpload`/`resumeUpload`, `UploadStatus.paused`) is an
   abort plus the minted id — no new storage. `submit()` stays unresolved
   across a pause; the run is untouched (its idle bound applies); `reset()`
-  ABANDONS with no error. `_upload-session.ts` keys off the ABORT, not
+  ABANDONS with no error. `upload/session.ts` keys off the ABORT, not
   `gate.paused` (a double-click reopens the gate before the rejection lands).
 
 ### Reload recovery
 
-- **Upload recall** (`_upload-recall.ts`, `sessionStorage`): keyed on a
+- **Upload recall** (`upload/recall.ts`, `sessionStorage`): keyed on a
   FINGERPRINT (size, lastModified, type, name) and written BEFORE the first
-  byte. A recalled id is a candidate: `claimId` (`_upload-files.ts`) reads
+  byte. A recalled id is a candidate: `claimId` (`upload/files.ts`) reads
   `uploadInfo` first — complete → skip the transfer; unfinished WITH windows →
   resume (`resume: true`); anything else, including unfinished with NO windows
   (a second `PUT` gets 409) → fresh id. Specs that want a second transfer need a

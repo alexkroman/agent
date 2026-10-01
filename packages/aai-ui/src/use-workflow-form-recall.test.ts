@@ -6,17 +6,17 @@
  *
  * Its own file rather than more of `use-workflow-form.test.ts`, which is within
  * 10% of the test cap: what is asserted here is one mechanism end to end — the
- * recall (`_upload-recall.ts`), the `uploadInfo` check that decides whether to
- * trust it (`claimId` in `_upload-files.ts`), and what the hook does with each
+ * recall (`upload/recall.ts`), the `uploadInfo` check that decides whether to
+ * trust it (`claimId` in `upload/files.ts`), and what the hook does with each
  * of the three answers. The store's own round-tripping is specced next door in
- * `_upload-recall.test.ts`.
+ * `upload/recall.test.ts`.
  */
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
-import { recallUploadId, rememberUploadId } from "./_upload-recall.ts";
 import type { TestWorkflow } from "./_workflow-test-defs.ts";
+import { recallUploadId, rememberUploadId } from "./upload/index.ts";
 import { useWorkflowSubmit } from "./use-workflow-form.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 

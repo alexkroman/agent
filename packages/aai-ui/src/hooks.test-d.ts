@@ -24,7 +24,7 @@ import {
   useToolCallStart,
   useToolResult,
 } from "./hooks.ts";
-import type { AgentStateFrame, BrowserSession, browserSessionBrand } from "./session-core-types.ts";
+import type { AgentStateFrame, BrowserSession, browserSessionBrand } from "./session/index.ts";
 import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";

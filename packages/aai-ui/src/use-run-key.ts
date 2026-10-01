@@ -44,8 +44,8 @@
  * `"session"` (the default) dies with the tab, which covers exactly the
  * interruption most pages have — a reload, a same-tab navigation, a crashed tab
  * — and is the same lifetime as this package's other two stores, the session
- * resume id (`session-resume-store.ts`) and the upload recall
- * (`_upload-recall.ts`), so both halves of a reload make the same promise.
+ * resume id (`session/resume-store.ts`) and the upload recall
+ * (`upload/recall.ts`), so both halves of a reload make the same promise.
  *
  * `"local"` is for a run that outlives all of that BY DESIGN — one that sleeps
  * between digests and may live a month, where closing the browser on Tuesday and
@@ -75,7 +75,7 @@
  * would have two agents scaffolded from the same template recover each other's
  * runs. The key is the page's own directory — resolved through `"./"`, which
  * drops the query and the hash, since a reload carrying `?foo` or `#bar` has to
- * find the same key. Same call `session-resume-store.ts` makes, for the same
+ * find the same key. Same call `session/resume-store.ts` makes, for the same
  * reason.
  *
  * One key per PAGE is right even for a page driving several workflows: `find` is

@@ -25,7 +25,7 @@
  *   than replacing their sockets.
  * - **A gated server checks a ticket here exactly as on `/websocket`**, so the
  *   inbox presents one the same way (`token`, asked per attempt, carried by
- *   `session-core-ticket.ts`). `useInbox()` passes the session's
+ *   `session/ticket.ts`). `useInbox()` passes the session's
  *   (`session.identity.ticket()`). A token answered synchronously (or none)
  *   dials at once; a Promise dials when it settles.
  * - **The URL is the agent's base URL + `inbox`**, like the session's
@@ -46,7 +46,7 @@ import {
   type InboxNotice,
   parseInboxEvent,
 } from "./inbox-protocol.ts";
-import { ticketCarriage } from "./session-core-ticket.ts";
+import { ticketCarriage } from "./session/index.ts";
 import type { VoiceSessionOptions, WebSocketConstructor } from "./types.ts";
 
 /** The first reconnect window; each failure doubles it. */
