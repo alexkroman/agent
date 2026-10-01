@@ -45,7 +45,7 @@ import {
   type ToolSet,
 } from "ai";
 import { jsonrepair } from "jsonrepair";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /** What {@link parseToolInput} returns for an object with no fields. */
 const EMPTY_ARGS = "{}";

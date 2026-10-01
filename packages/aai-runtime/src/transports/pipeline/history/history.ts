@@ -21,7 +21,7 @@
  * message that can lead). The conversation view has no pairs, so {@link PipelineHistory.seed} never maps a
  * resume's `tool` messages across; it takes pairs built from both halves.
  *
- * **The LLM view is re-PAIRED on every write** (`../../../tool-call-pairs.ts`), so
+ * **The LLM view is re-PAIRED on every write** (`../../../tools/call-pairs.ts`), so
  * `history` itself — not just one request built from it — stays valid.
  *
  * **Neither view is capped by message count, and neither decides what a
@@ -40,7 +40,7 @@ import type { Message } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import type { Logger } from "../../../runtime-config.ts";
-import { pairToolCallsInPlace } from "../../../tool-call-pairs.ts";
+import { pairToolCallsInPlace } from "../../../tools/index.ts";
 import { toModelMessage } from "../output/index.ts";
 import { estimateMessageTokens } from "./context-budget.ts";
 import {

@@ -26,7 +26,7 @@
  * step that ends on an unsafe finish reason (`length`, `other`, …) carries a
  * tool call the AI SDK refuses to run, and the only trace that used to leave
  * was `firstToolMs === totalMs` and a history that broke every later request
- * (`../../../tool-call-pairs.ts`). So the line carries `toolCalls`, and a step that
+ * (`../../../tools/call-pairs.ts`). So the line carries `toolCalls`, and a step that
  * finished with a call still unanswered adds `unexecutedToolCalls` plus the
  * step's finish reason — and a warn of its own, since that is a turn the caller
  * heard nothing from.

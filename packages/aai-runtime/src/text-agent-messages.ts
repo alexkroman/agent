@@ -8,14 +8,14 @@
  * does a TOOL see of this conversation — and the answer is the same three-role
  * `Message` union the pipeline and the session both produce, which is why the
  * `"tool"` arm goes through `toolResultMessage()` like every other producer of
- * it (see `_tool-result-message.ts`).
+ * it (see `tools/result-message.ts`).
  *
  * @module
  */
 
 import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage, ToolModelMessage, ToolResultPart } from "ai";
-import { toolResultMessage } from "./_tool-result-message.ts";
+import { toolResultMessage } from "./tools/index.ts";
 
 /**
  * What one `tool-result` part says, as the string a tool body would read.

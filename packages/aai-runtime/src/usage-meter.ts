@@ -89,7 +89,7 @@
  * would hear a dropped call rather than a limit; so the request in flight
  * finishes, and the next one is refused wherever it is about to be made: the
  * next turn (`transports/pipeline/turn-body.ts`, `text-agent.ts`), the next `ctx.generate`
- * (the forwarder in `tool-executor.ts`), the next delegated attempt
+ * (the forwarder in `tools/executor.ts`), the next delegated attempt
  * (`runUntilAccepted`).
  *
  * **Checking only at the turn was the other half of the under-counting bug.** A

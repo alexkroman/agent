@@ -3,8 +3,8 @@
 import { InvalidToolInputError, type ModelMessage, NoSuchToolError, parsePartialJson } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, test } from "vitest";
-import { makeLogger, silentLogger } from "./_test-utils.ts";
-import { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { createToolCallRepair, salvageJson } from "./call-repair.ts";
 
 /** Salvage a payload and parse it back to an object for shape assertions. */
 async function parsed(input: string): Promise<Record<string, unknown>> {

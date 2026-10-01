@@ -2,7 +2,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test } from "vitest";
-import { coerceToolArgs } from "./tool-arg-coercion.ts";
+import { coerceToolArgs } from "./arg-coercion.ts";
 
 const schema = (properties: Record<string, unknown>): JSONSchema7 =>
   ({ type: "object", properties }) as JSONSchema7;

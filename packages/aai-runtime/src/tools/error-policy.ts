@@ -21,7 +21,7 @@
  * depends on the throw arriving as a result, and the default is still the right
  * answer for a flaky upstream.
  *
- * Split out of `tool-executor.ts` rather than added to it: that file is the
+ * Split out of `executor.ts` rather than added to it: that file is the
  * CALL (validate, build the context, time it out, size the result) and this is
  * a policy over one of its outcomes, with three paragraphs of argument per
  * branch. Keeping them together put the executor within a few lines of the

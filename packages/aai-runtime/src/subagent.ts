@@ -60,9 +60,13 @@ import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } fro
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { composePreparers, forceFinalAnswer } from "./_prepare-step.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
-import { toVercelTools } from "./to-vercel-tools.ts";
-import { pairToolCallsLogged } from "./tool-call-pairs.ts";
-import { createToolDispatcher, executeToolCall, type SubagentRunner } from "./tool-executor.ts";
+import {
+  createToolDispatcher,
+  executeToolCall,
+  pairToolCallsLogged,
+  type SubagentRunner,
+  toVercelTools,
+} from "./tools/index.ts";
 import type { StepUsage, UsageMeter } from "./usage-meter.ts";
 
 /**
@@ -195,7 +199,7 @@ export function createSubagentRunner(options: CreateSubagentRunnerOptions): Suba
       // The PARENT's meter, off the bag the tool call already carried: a
       // delegated run spends on the session that delegated, which is the whole
       // reason it belongs on a session budget at all. `undefined` for a
-      // sessionless parent (`stepDelegate`) — see `usage-meter.ts`.
+      // sessionless parent (`stepDelegate`) — see `./usage-meter.ts`.
       ...omitUndefined({ usage: parent.usage }),
       task: delegateOptions.task,
     });
@@ -332,7 +336,7 @@ async function runUntilAccepted(run: GuardedRun): Promise<DelegateResult> {
     }
 
     // PAIRED, because the revision SENDS this: an attempt whose last step ended
-    // on an unexecuted tool call would refuse it outright (`tool-call-pairs.ts`).
+    // on an unexecuted tool call would refuse it outright (`tools/call-pairs.ts`).
     const kept = pairToolCallsLogged(result.responseMessages, logger, run.sessionId);
     messages.push(...kept, { role: "user", content: reviseRequest(complaint) });
     revisions += 1;

@@ -3,12 +3,12 @@
  * What a finished tool call contributes to `ctx.messages`.
  *
  * ONE statement of it, for the same reason `historyMessageOf`
- * (`session-event-history.ts`) is the one statement of what a TRANSCRIPT
+ * (`../session-event-history.ts`) is the one statement of what a TRANSCRIPT
  * contributes: four producers reach this shape from four different directions —
  * the pipeline's own tool runner (`to-vercel-tools.ts`), the text agent's
- * incoming `ToolModelMessage`s (`text-agent.ts`), the S2S session's tool steps
- * (`session-tool-steps.ts`), and a resume reading the session's event log
- * (`session-event-history.ts`) — and a tool must see the SAME history under
+ * incoming `ToolModelMessage`s (`../text-agent.ts`), the S2S session's tool steps
+ * (`../session-tool-steps.ts`), and a resume reading the session's event log
+ * (`../session-event-history.ts`) — and a tool must see the SAME history under
  * `aai dev`, in the sandbox and after a reconnect. Four literals is four
  * chances at a `toolName` that is present live and absent on resume.
  *

@@ -3,7 +3,7 @@
  * What a tool's RETURN VALUE becomes: the string the provider reads, and the
  * one warning the framework says about its size.
  *
- * Split out of `tool-executor.ts` when that file crossed the 500-line source
+ * Split out of `executor.ts` when that file crossed the 500-line source
  * cap, on the seam a reader already uses there — everything left is about
  * RUNNING a tool or classifying its failure, and this is about shaping what it
  * answered. `warnedOversizedTools` travels with the function that owns it, so
@@ -13,7 +13,7 @@
  */
 
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /**
  * Tool names already warned about by {@link warnOversizedResult}, so a chatty
@@ -31,7 +31,7 @@ const warnedOversizedTools = new Set<string>();
  * does not apply to the copy that matters.
  *
  * `MAX_TOOL_RESULT_CHARS` bounds the CLIENT's `tool.completed` frame
- * (`capToolResult`, in `session-tool-steps.ts` and the pipeline stream) and
+ * (`capToolResult`, in `../session-tool-steps.ts` and the pipeline stream) and
  * nothing else. The string this module returns goes to the provider WHOLE and
  * is appended to the conversation, so it is re-sent on every later turn of the
  * call: an unshaped `await res.json()` is the whole response, in the prompt,

@@ -2,8 +2,8 @@
 /**
  * The builtin tool surface merged with the tools a mode dispatches itself.
  *
- * Its own module because both tool paths read it (`runtime-tools.ts` for the
- * sandbox and self-hosted runtimes, `text-agent.ts` for text mode), and the
+ * Its own module because both tool paths read it (`../runtime-tools.ts` for the
+ * sandbox and self-hosted runtimes, `../text-agent.ts` for text mode), and the
  * collision policy it owns has to be the same rule on each.
  *
  * @module
@@ -13,7 +13,7 @@ import type { AgentDef, Toolset } from "@alexkroman1/aai";
 import { resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
 import { type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /**
  * Merge the agent's builtins with the tools a mode dispatches itself — the

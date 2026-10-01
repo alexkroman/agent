@@ -25,7 +25,7 @@ import { z } from "zod";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent, makeLogger } from "./_test-utils.ts";
 import { createRuntimeWithSeams } from "./runtime.ts";
-import { executeToolCall } from "./tool-executor.ts";
+import { executeToolCall } from "./tools/index.ts";
 
 describe("toAgentConfig", () => {
   test("maps name, systemPrompt, greeting from AgentDef", () => {
@@ -398,7 +398,7 @@ describe("executeToolCall", () => {
 
   // A "throws the no-database guidance when db is not provided" test stood here.
   // `ctx.db` is gone, so there is no guidance to throw: a tool reaching for it
-  // now gets a `TypeError`, which `tool-executor.test.ts` pins as the contract.
+  // now gets a `TypeError`, which `tools/executor.test.ts` pins as the contract.
 
   test("a sessionless call gets its own detached slot store", async () => {
     // Detached rather than shared: two such calls must not read each other's

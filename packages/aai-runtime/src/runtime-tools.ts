@@ -16,21 +16,21 @@ import { agentToolsets, agentToolsToSchemas, type ToolSchema } from "@alexkroman
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
-import type { ClientToolBroker } from "./client-tool-broker.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
-import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
 import type { SessionDirectory } from "./session-directory.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SpeechDirectory } from "./session-speech.ts";
 import type { SessionStateStore } from "./session-state/store.ts";
 import { createSubagentRunner } from "./subagent.ts";
+import type { ClientToolBroker } from "./tools/index.ts";
 import {
   createToolDispatcher,
   type ExecuteTool,
   executeToolCall,
+  mergeBuiltinSurface,
   type SubagentRunner,
-} from "./tool-executor.ts";
+} from "./tools/index.ts";
 import { type RunNotifier, withNotify } from "./workflow/notify.ts";
 
 /**

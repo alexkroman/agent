@@ -7,9 +7,11 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import { toVercelTools } from "../../to-vercel-tools.ts";
-import { createFatalToolLatch } from "../../tool-error-policy.ts";
-import { createToolSpeechController } from "../../tool-messages-runner.ts";
+import {
+  createFatalToolLatch,
+  createToolSpeechController,
+  toVercelTools,
+} from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
 import { createPipelineCommands } from "./commands.ts";
@@ -67,7 +69,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const usage = opts.usage;
   // One latch per SESSION, reset at the top of every turn: turns are serialized
   // by the turn chain, and the tool set below is built once. See
-  // `../../tool-error-policy.ts` for why the latch's signal is not the turn's.
+  // `../../tools/error-policy.ts` for why the latch's signal is not the turn's.
   const fatalTool = createFatalToolLatch();
   // Each reply's per-stage marks, reported as `metrics.collected` when it settles.
   const metrics = createTurnMetrics({ usage, now: opts.heardNow });
@@ -271,7 +273,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Built once per session, not per turn: per-call aborts still track the
   // owning turn because streamText forwards its own abortSignal into each
   // execute's options, which takes precedence in toVercelTools.
-  // Speaks whatever `messages` a tool declares — see `../../tool-messages-runner.ts`.
+  // Speaks whatever `messages` a tool declares — see `../../tools/messages-runner.ts`.
   // Session-scoped like the tool set; the turn binds its own speech channel.
   const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
 

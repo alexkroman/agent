@@ -183,7 +183,7 @@ describe("createPipelineHistory — LLM history retention and tool-call pairing"
   });
 
   // A step that ended on an unsafe finish reason: the SDK never ran the call,
-  // so the step's messages are the call ALONE (`../../../tool-call-pairs.ts`).
+  // so the step's messages are the call ALONE (`../../../tools/call-pairs.ts`).
   test("a pushed tool call with no result is answered on the way in, and reported", () => {
     const warn = vi.fn();
     const h = createPipelineHistory(undefined, { log: { warn }, sid: "s1" });

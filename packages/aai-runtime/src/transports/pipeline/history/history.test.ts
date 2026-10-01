@@ -3,7 +3,7 @@
 import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
-import { pairToolCalls } from "../../../tool-call-pairs.ts";
+import { pairToolCalls } from "../../../tools/index.ts";
 import {
   LONG_PROMPT,
   llmTokens,

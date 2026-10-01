@@ -6,7 +6,7 @@
 // step's messages held the call ALONE. Persisted into history, it refused every
 // later request with "Tool result is missing for tool call <id>." until the
 // caller hung up. These specs drive that turn and then the NEXT one, and assert
-// on what the model is actually sent — see `../../tool-call-pairs.ts`.
+// on what the model is actually sent — see `../../tools/call-pairs.ts`.
 //
 // The second block pins the other candidate paths (an invalid call, a fatal
 // tool error, a barge-in mid-execution), which already leave a paired history:
@@ -21,7 +21,7 @@ import { createFakeLanguageModel, type ScriptedPart } from "../../_pipeline-test
 import { makeLogger } from "../../_test-utils.ts";
 import { historyFromEvents, modelHistoryOf } from "../../session-event-history.ts";
 import { stampSessionEvent } from "../../session-event-stream.ts";
-import { FatalToolError } from "../../tool-error-policy.ts";
+import { FatalToolError } from "../../tools/index.ts";
 import {
   llmCalls,
   makeOpts,

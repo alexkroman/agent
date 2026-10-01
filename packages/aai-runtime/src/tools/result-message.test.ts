@@ -8,7 +8,7 @@
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
-import { toolResultMessage } from "./_tool-result-message.ts";
+import { toolResultMessage } from "./result-message.ts";
 
 describe("toolResultMessage", () => {
   test('is always role "tool", whatever else it carries', () => {

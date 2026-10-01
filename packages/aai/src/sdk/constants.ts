@@ -173,7 +173,7 @@ export const DEFAULT_BUILTIN_TOOLS = ["think"] as const satisfies readonly Built
  * (`ToolDef.execute`, the tools page) turned an unshaped `await res.json()`
  * into advice. Capping the provider's copy too would silently truncate results
  * an author may be relying on, so the framework WARNS instead — once per tool,
- * naming the size (`warnOversizedResult`, `aai-runtime/src/tool-executor.ts`).
+ * naming the size (`warnOversizedResult`, `aai-runtime/src/tools/executor.ts`).
  */
 export const MAX_TOOL_RESULT_CHARS = 16_000;
 

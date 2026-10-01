@@ -9,11 +9,11 @@ import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
-import { compactRecordsForModel } from "./_compact-records.ts";
-import { toolResultMessage } from "./_tool-result-message.ts";
-import { coerceToolArgs } from "./tool-arg-coercion.ts";
-import { type FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
-import type { ToolSpeechController } from "./tool-messages-runner.ts";
+import { compactRecordsForModel } from "../_compact-records.ts";
+import { coerceToolArgs } from "./arg-coercion.ts";
+import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
+import type { ToolSpeechController } from "./messages-runner.ts";
+import { toolResultMessage } from "./result-message.ts";
 
 interface ToVercelToolsContext {
   executeTool: ExecuteTool;
@@ -48,7 +48,7 @@ interface ToVercelToolsContext {
    */
   onFatalToolError?: (error: FatalToolError) => void;
   /**
-   * Speaks the tool's `messages` — see `tool-messages-runner.ts`.
+   * Speaks the tool's `messages` — see `messages-runner.ts`.
    *
    * Here rather than in the stream-part handler because two of the four kinds
    * can only be done from inside the call: a `blocking` start has to hold
@@ -155,7 +155,7 @@ export function toVercelTools(
         // `tool.completed` event both carry, while the line below records the
         // tool's OWN result — the same split the S2S arm makes on its failure
         // path. Record collections are rendered as rows in the MODEL's copy
-        // alone (`_compact-records.ts`, via `toModelOutput` above); the AI SDK
+        // alone (`../_compact-records.ts`, via `toModelOutput` above); the AI SDK
         // keeps that copy in the step's messages, so later turns read rows too.
         const shaped = compactRecordsForModel(result);
         const forModel = speech?.settled(shaped) ?? shaped;

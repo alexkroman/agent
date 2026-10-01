@@ -22,8 +22,7 @@ import {
   resetToolChoiceAfterFirstStep,
   toolErrorBudget,
 } from "../../../_prepare-step.ts";
-import { createToolCallRepair } from "../../../tool-call-repair.ts";
-import { withFatalSignal } from "../../../tool-error-policy.ts";
+import { createToolCallRepair, withFatalSignal } from "../../../tools/index.ts";
 import { resolveSystemPrompt } from "../../types.ts";
 import { createTtsTextCoalescer } from "../output/index.ts";
 import {

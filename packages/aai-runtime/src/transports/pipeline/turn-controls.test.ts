@@ -13,7 +13,7 @@ import { DEFAULT_ERROR_PHRASE } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
 import { makeSessionContext } from "../../_test-utils.ts";
-import { FatalToolError } from "../../tool-error-policy.ts";
+import { FatalToolError } from "../../tools/index.ts";
 import { createUsageMeter } from "../../usage-meter.ts";
 import {
   llmCalls,

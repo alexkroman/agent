@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { MAX_TOOL_RESULT_CHARS } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
-import { stringifyResult, warnOversizedResult } from "./_tool-result-text.ts";
+import { makeLogger } from "../_test-utils.ts";
+import { stringifyResult, warnOversizedResult } from "./result-text.ts";
 
 describe("stringifyResult", () => {
   // The provider is handed a string or nothing works, so every arm here is

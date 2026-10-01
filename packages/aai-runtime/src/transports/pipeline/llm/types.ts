@@ -25,8 +25,7 @@ import type {
   ToolSet,
 } from "ai";
 import type { Logger } from "../../../runtime-config.ts";
-import type { FatalToolLatch } from "../../../tool-error-policy.ts";
-import type { ToolSpeechController } from "../../../tool-messages-runner.ts";
+import type { FatalToolLatch, ToolSpeechController } from "../../../tools/index.ts";
 import type {
   EmitError,
   SendTtsText,
@@ -100,7 +99,7 @@ export interface ConsumeLlmStreamParams {
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
   /**
-   * The session's tool-message runner — see `../../../tool-messages-runner.ts`.
+   * The session's tool-message runner — see `../../../tools/messages-runner.ts`.
    *
    * Read here for two things only this layer can do. The turn BINDS its speech
    * channel to it (the TTS coalescer is per-turn, so a captured one would
@@ -147,7 +146,7 @@ export interface ConsumeLlmStreamParams {
    */
   adopted?: AdoptedLlmStream | undefined;
   /**
-   * The turn's fatal-tool latch — see `../../../tool-error-policy.ts`.
+   * The turn's fatal-tool latch — see `../../../tools/error-policy.ts`.
    *
    * Its signal is combined into the REQUEST's signal only, never the turn's, so
    * a tool that declares its failure unrecoverable stops the model mid-stream

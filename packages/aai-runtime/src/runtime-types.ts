@@ -21,7 +21,7 @@ import type { S2sConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s/index.ts";
 import type { ServerSession } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
-import type { ExecuteTool } from "./tool-executor.ts";
+import type { ExecuteTool } from "./tools/index.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import type { JournalStore } from "./workflow/journal/types.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";

@@ -139,8 +139,8 @@ export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
  *
  * ONE widening, in the package's test-helper module, rather than a cast per
  * assertion in each spec — the typed seam this repo asks for wherever a
- * suppression concentrates. Two specs reach it (`tool-error-policy.test.ts`
- * over the policy directly, `tool-executor.test.ts` over the whole call), and a
+ * suppression concentrates. Two specs reach it (`tools/error-policy.test.ts`
+ * over the policy directly, `tools/executor.test.ts` over the whole call), and a
  * third malformed shape goes through here too.
  */
 export function malformedOnError(handler: (err: unknown, ctx: never) => unknown): ToolErrorHandler {

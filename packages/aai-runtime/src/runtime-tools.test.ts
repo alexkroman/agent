@@ -23,13 +23,12 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createScriptedOneShotModel, registerFakeProviders } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeSpeech, makeUsageMeter, tick } from "./_test-utils.ts";
-import { createClientToolBroker } from "./client-tool-broker.ts";
 import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "./session-state/store.ts";
-import { executeToolCall } from "./tool-executor.ts";
+import { createClientToolBroker, executeToolCall } from "./tools/index.ts";
 import type { UsageMeter } from "./usage-meter.ts";
 
 /** The counter these cases bump — declared once, so both sinks project the same slot. */

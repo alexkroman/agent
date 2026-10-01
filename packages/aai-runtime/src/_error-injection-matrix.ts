@@ -193,7 +193,7 @@ export const SESSION_ERROR_SITES: readonly SessionErrorSite[] = [
       why:
         "the frame is minted by the RUNTIME's `onUncaught` wiring, not by the transport — " +
         "`PipelineTransportOptions.executeTool` is a seam a spec supplies, and a throw " +
-        "through it never reaches this code. `tool-executor.test.ts` covers the callback " +
+        "through it never reaches this code. `tools/executor.test.ts` covers the callback " +
         "and nothing covers the frame, which is a real gap rather than a division of " +
         "labour: driving it needs `createRuntime`, not `createPipelineTransport`.",
     },

@@ -4,18 +4,18 @@
 // throw reads as a result the model can retry against, a swallowed fatal verdict
 // reads as a turn that simply stopped, and a latch wired to the TURN's signal
 // reads as a barge-in. So this file states each rule as its own claim rather
-// than exercising the policy through the executor, which is `tool-executor.test.ts`.
+// than exercising the policy through the executor, which is `executor.test.ts`.
 
 import type { ToolFailure } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
-import { createMockToolContext, malformedOnError } from "./_test-utils.ts";
+import { createMockToolContext, malformedOnError } from "../_test-utils.ts";
 import {
   createFatalToolLatch,
   FatalToolError,
   isFatalToolError,
   resolveToolError,
   withFatalSignal,
-} from "./tool-error-policy.ts";
+} from "./error-policy.ts";
 
 const CTX = createMockToolContext();
 const BOOM = new Error("upstream 503");

@@ -3,10 +3,10 @@
  * Where a `clientTool` call waits for the browser — the `tool_result` a page's
  * `useClientTool` sends back, matched to the call by `toolCallId`.
  *
- * The self-hosted twin of `host-relay.ts`, and deliberately narrower: host mode
+ * The self-hosted twin of `../host-relay.ts`, and deliberately narrower: host mode
  * relays EVERY tool and so emits `tool.called` itself, where this sits under the
  * ordinary dispatcher. The session has already emitted `tool.called` (S2S from
- * `session-tool-steps.ts`, the pipeline from its stream parts) and will emit
+ * `../session-tool-steps.ts`, the pipeline from its stream parts) and will emit
  * `tool.completed`, so the broker owns only the wait. The deadline, the turn
  * signal, argument validation and `onError` all stay `executeToolCall`'s, which
  * is why it resolves a VALUE rather than a finished tool result string.

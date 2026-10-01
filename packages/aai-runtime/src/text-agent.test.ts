@@ -58,7 +58,7 @@ describe("createTextAgent", () => {
   test("a caller's history holding an unexecuted tool call still gets a reply", async () => {
     // A caller that appends each run's `response.messages` carries forward a
     // call the SDK declined to run (an unsafe finish reason). Sent verbatim, the
-    // SDK refuses the whole request — see `tool-call-pairs.ts`.
+    // SDK refuses the whole request — see `tools/call-pairs.ts`.
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
       agent: textAgent({ name: "Helper", mode: "text" }),

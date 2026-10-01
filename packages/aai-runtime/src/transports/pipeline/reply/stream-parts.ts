@@ -80,7 +80,7 @@ type StreamPartHandlerDeps = {
   callerSpeaking?: (() => boolean) | undefined;
   /**
    * Is a tool call speaking for itself right now? (`ToolDef.messages`, see
-   * `../../../tool-messages-runner.ts`.)
+   * `../../../tools/messages-runner.ts`.)
    *
    * Vapi disables its idle messages during a tool call for this reason and it
    * transfers exactly: a tool declaring a 3s delay rung and a session on the

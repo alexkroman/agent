@@ -16,7 +16,7 @@ import {
   type ScriptedTurn,
 } from "./_pipeline-test-fakes.ts";
 import { createSubagentRunner, NESTED_DELEGATE_MESSAGE } from "./subagent.ts";
-import type { ToolCallDefaults } from "./tool-executor.ts";
+import type { ToolCallDefaults } from "./tools/index.ts";
 
 let unregister: (() => void) | undefined;
 afterEach(() => {
@@ -472,7 +472,7 @@ describe("createSubagentRunner", () => {
       // The attempt's last step ended on an unsafe finish reason, so the SDK
       // declined the call and `responseMessages` holds it ALONE. Sent back as-is,
       // the revision request is refused ("Tool result is missing") before it
-      // reaches the model — see `tool-call-pairs.ts`.
+      // reaches the model — see `tools/call-pairs.ts`.
       const { model, descriptor, env } = setup([
         { call: { name: "lookup", input: { term: "rain" }, id: "c1" }, finishReason: "length" },
         { text: "Confirmed: yes." },

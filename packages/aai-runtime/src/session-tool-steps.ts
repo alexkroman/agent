@@ -29,9 +29,9 @@ import { capToolResult } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { compactRecordsForModel } from "./_compact-records.ts";
-import { toolResultMessage } from "./_tool-result-message.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import { toolResultMessage } from "./tools/index.ts";
 
 /** One settled tool call, awaiting the flush that hands it to the transport. */
 export type PendingTool = { callId: string; result: string };
@@ -121,7 +121,7 @@ export function runToolStep(
       // client silently drops the whole message and the UI tool-call block stays
       // "pending" forever. The asymmetry is deliberate and it is the one thing
       // about the cap an author gets wrong — `warnOversizedResult` in
-      // `tool-executor.ts` says so once per tool, since a result that arrives
+      // `tools/executor.ts` says so once per tool, since a result that arrives
       // here over the cap is re-sent to the provider on every later turn.
       //
       // The PROVIDER's copy renders record collections as rows

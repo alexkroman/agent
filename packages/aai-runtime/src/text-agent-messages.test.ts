@@ -165,7 +165,7 @@ describe("toContextMessages", () => {
   });
 
   test("the tool arm goes through toolResultMessage, so it is CAPPED like every other producer", () => {
-    // The reason `_tool-result-message.ts` exists: four producers, one shape,
+    // The reason `tools/result-message.ts` exists: four producers, one shape,
     // one cap — or a tool sees a different history live than after a resume.
     const [message] = toContextMessages([
       toolMessage(resultPart({ type: "text", value: "z".repeat(MAX_TOOL_RESULT_CHARS + 100) })),

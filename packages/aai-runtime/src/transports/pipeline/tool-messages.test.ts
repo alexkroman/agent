@@ -15,9 +15,7 @@ import { agentToolsToSchemas, type ToolSchema, toolset } from "@alexkroman1/aai/
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
 import { silentLogger } from "../../_test-utils.ts";
-import { toVercelTools } from "../../to-vercel-tools.ts";
-import { executeToolCall } from "../../tool-executor.ts";
-import { createToolSpeechController } from "../../tool-messages-runner.ts";
+import { createToolSpeechController, executeToolCall, toVercelTools } from "../../tools/index.ts";
 import { useVirtualTime } from "../_pipeline-transport-harness.ts";
 import { consumeLlmStream } from "./llm/index.ts";
 import { createStreamPartHandler } from "./reply/index.ts";

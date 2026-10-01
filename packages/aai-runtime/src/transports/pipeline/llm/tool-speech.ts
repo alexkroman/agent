@@ -8,11 +8,11 @@
  * together and nowhere else: both are about the ONE mechanism by which a tool's
  * own words reach the turn around it, from opposite ends — what goes out to the
  * caller, and what comes back to the model's view of the conversation. The
- * runner itself is `../../../tool-messages-runner.ts`.
+ * runner itself is `../../../tools/messages-runner.ts`.
  */
 
 import type { ModelMessage } from "ai";
-import { awaitSpokenEstimate, type ToolSpeechController } from "../../../tool-messages-runner.ts";
+import { awaitSpokenEstimate, type ToolSpeechController } from "../../../tools/index.ts";
 import type { StreamPartHandler } from "../reply/index.ts";
 import type { StepResult } from "./types.ts";
 

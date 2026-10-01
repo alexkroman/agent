@@ -44,7 +44,7 @@
  *   capped turn answers instead of stopping mid-chain (see
  *   {@link forceFinalAnswer} — the same rule and the same code as the voice
  *   pipeline);
- * - malformed tool arguments are repaired (see `tool-call-repair.ts`).
+ * - malformed tool arguments are repaired (see `tools/call-repair.ts`).
  *
  * **And a turn is OBSERVABLE without wrapping that result**, which is how the
  * two claims above coexist: `onEvent` reports the turn as the same typed
@@ -73,7 +73,6 @@ import {
 } from "./_prepare-step.ts";
 import { createGenerateFn } from "./generate.ts";
 import { resolveLlm } from "./providers/resolve.ts";
-import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createSubagentRunner } from "./subagent.ts";
 import { createTextAgentEvents } from "./text-agent-events.ts";
@@ -86,11 +85,17 @@ import type {
   TextTurnOptions,
   TextTurnResult,
 } from "./text-agent-types.ts";
-import { toVercelTools } from "./to-vercel-tools.ts";
-import { pairToolCallsLogged } from "./tool-call-pairs.ts";
-import { createToolCallRepair } from "./tool-call-repair.ts";
-import { createFatalToolLatch, type FatalToolLatch, withFatalSignal } from "./tool-error-policy.ts";
-import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
+import {
+  createFatalToolLatch,
+  createToolCallRepair,
+  createToolDispatcher,
+  executeToolCall,
+  type FatalToolLatch,
+  mergeBuiltinSurface,
+  pairToolCallsLogged,
+  toVercelTools,
+  withFatalSignal,
+} from "./tools/index.ts";
 import { createUsageMeter } from "./usage-meter.ts";
 
 /**
@@ -358,7 +363,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         // PAIRED: a caller that appends each run's `response.messages` carries
         // forward whatever the last step left, and a tool call that step never
         // executed (an unsafe finish reason) would refuse every later turn —
-        // see `tool-call-pairs.ts`. A no-op for a well-formed history.
+        // see `tools/call-pairs.ts`. A no-op for a well-formed history.
         messages: [...pairToolCallsLogged(turn.messages, logger, sessionId)],
         tools: turnTools,
         toolChoice,
@@ -389,7 +394,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
         // The caller's signal PLUS the fatal-tool latch, so a tool the author
         // declared unrecoverable stops the run instead of handing the model a
-        // `tool-error` part to retry against — see `tool-error-policy.ts`.
+        // `tool-error` part to retry against — see `tools/error-policy.ts`.
         ...omitUndefined({ abortSignal: withFatalSignal(turn.signal, fatalTool) }),
         onStepFinish: (step) => {
           usage.record(step.usage);

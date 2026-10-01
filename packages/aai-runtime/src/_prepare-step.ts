@@ -290,7 +290,7 @@ function canonicalJson(value: unknown): unknown {
  *   unknown call, a relay that could not dispatch — all resolve to the
  *   `serializeToolFailure` string `{"error":"..."}`, and an author's returned
  *   `toolFailure(...)` object is the same shape before it is serialized. That
- *   is the test `tool-messages-runner.ts` already uses to pick a `failed` line;
+ *   is the test `tools/messages-runner.ts` already uses to pick a `failed` line;
  * - a string that starts with `Error` (case-sensitive, after trimming) — the
  *   conventional shape of a tool's own error text;
  * - a model-message tool output (`{ type, value }`): `error-text` and

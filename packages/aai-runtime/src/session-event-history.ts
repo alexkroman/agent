@@ -36,7 +36,7 @@
  * {@link historyMessageOf}: that rule is shared with `session-core.ts`'s live
  * dispatch, which sees the pipeline's own `tool.completed` reports for a
  * session whose tools already recorded their results at the call site
- * (`to-vercel-tools.ts`), and appending there would record every pipeline
+ * (`tools/to-vercel-tools.ts`), and appending there would record every pipeline
  * result twice. The live producers and this one agree by sharing
  * {@link toolResultMessage} and the string the EVENT carries, rather than by
  * sharing a dispatch.
@@ -65,7 +65,7 @@ import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
-import { toolResultMessage } from "./_tool-result-message.ts";
+import { toolResultMessage } from "./tools/index.ts";
 import {
   estimateConversationTokens,
   evictBeyondRetention,
@@ -467,7 +467,7 @@ export function modelHistoryOf(
             toolCallId,
             toolName: call.name,
             // What `streamText` records for a tool whose `execute` returned a
-            // string, which every tool here does (`to-vercel-tools.ts`).
+            // string, which every tool here does (`tools/to-vercel-tools.ts`).
             output: { type: "text", value: seededToolResult(m.content) },
           },
         ],

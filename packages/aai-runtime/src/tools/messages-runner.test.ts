@@ -11,13 +11,13 @@ import type { ToolMessages } from "@alexkroman1/aai";
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeLogger, silentLogger } from "./_test-utils.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
 import {
   createToolSpeechController,
   estimateSpokenMs,
   TOOL_SYSTEM_HINT_LABEL,
   type ToolSpeechChannel,
-} from "./tool-messages-runner.ts";
+} from "./messages-runner.ts";
 
 type Sent = { text: string; record: boolean };
 

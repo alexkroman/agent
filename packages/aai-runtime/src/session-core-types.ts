@@ -20,9 +20,9 @@ import type {
   RestoredToolCall,
   SessionCommand,
 } from "@alexkroman1/aai/protocol";
-import type { ClientToolBroker } from "./client-tool-broker.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import type { ClientToolBroker } from "./tools/index.ts";
 import type { Transport, TransportEventBody } from "./transports/types.ts";
 
 /**

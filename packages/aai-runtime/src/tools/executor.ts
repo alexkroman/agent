@@ -11,7 +11,7 @@
  * is the one who can do something about them. The exception is a tool whose
  * {@link ToolDef.onError} threw: the author has declared that failure
  * unrecoverable, so there is nothing to hand back and the call rejects with a
- * `FatalToolError`. `tool-error-policy.ts` owns which is which.
+ * `FatalToolError`. `error-policy.ts` owns which is which.
  */
 
 import type {
@@ -48,14 +48,14 @@ import { composeToolsets } from "@alexkroman1/aai/manifest";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout, { TimeoutError } from "p-timeout";
-import { stringifyResult, warnOversizedResult } from "./_tool-result-text.ts";
-import type { HostGenerateFn } from "./generate.ts";
-import type { Logger } from "./runtime-config.ts";
-import { resolveToolError } from "./tool-error-policy.ts";
-import type { UsageMeter } from "./usage-meter.ts";
+import type { HostGenerateFn } from "../generate.ts";
+import type { Logger } from "../runtime-config.ts";
+import type { UsageMeter } from "../usage-meter.ts";
+import { resolveToolError } from "./error-policy.ts";
+import { stringifyResult, warnOversizedResult } from "./result-text.ts";
 
 export type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
-export { FatalToolError, isFatalToolError } from "./tool-error-policy.ts";
+export { FatalToolError, isFatalToolError } from "./error-policy.ts";
 
 /**
  * Everything one tool call is given EXCEPT the toolset — the bag a subagent's
@@ -68,7 +68,7 @@ export type ToolCallDefaults = Omit<ExecuteToolCallOptions, "toolset">;
 
 /**
  * Run a subagent to completion (`ctx.delegate`) — implemented by
- * `createSubagentRunner` in `subagent.ts`, which is the only caller of
+ * `createSubagentRunner` in `../subagent.ts`, which is the only caller of
  * {@link executeToolCall} that passes a bag it did not build itself.
  *
  * Declared HERE rather than beside its implementation because
@@ -121,7 +121,7 @@ type ExecuteToolCallOptions = {
    * `createGenerateFn` / `createSubagentRunner` (per RUNTIME, where a meter is
    * per SESSION), and because {@link ToolCallDefaults} is a subtraction, so a
    * delegated run carries it with nothing to forget. Absent for a sessionless
-   * caller means uncounted, not refused — see `usage-meter.ts`.
+   * caller means uncounted, not refused — see `../usage-meter.ts`.
    */
   usage?: UsageMeter | undefined;
   logger?: Logger | undefined;
@@ -147,7 +147,7 @@ type ExecuteToolCallOptions = {
    * nothing, so whoever is watching is the only one who will ever hear about
    * it. The SESSION is still alive either way, which is why neither maps to a
    * `fatal: true` error frame (that one releases the caller's microphone). A
-   * reporter that ignores `info` (`text-agent.ts`'s `toolFault`) stays assignable.
+   * reporter that ignores `info` (`../text-agent.ts`'s `toolFault`) stays assignable.
    */
   onUncaught?: ((message: string, info: { readonly fatal: boolean }) => void) | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
@@ -276,7 +276,7 @@ function buildToolContext(
  *
  * The three arms {@link resolveToolError} chooses between, plus the reporting
  * each one owes. Extracted from {@link executeToolCall}'s `catch` because the
- * classification is a decision with its own argument (see `tool-error-policy.ts`)
+ * classification is a decision with its own argument (see `error-policy.ts`)
  * and inlining it put that function over the complexity gate — the seam is the
  * one a reader already uses: everything above is about RUNNING the tool, and
  * everything here is about what its failure means.
@@ -389,7 +389,7 @@ export async function executeToolCall(
   // read below could not see one: a timeout reached `tool.onError` as though the
   // tool had faulted, and an `onError` written as "rethrow anything I do not
   // recognise" — the natural way to write one — turned a transient timeout into
-  // a `FatalToolError` that killed the turn. Rule 1 in `tool-error-policy.ts`
+  // a `FatalToolError` that killed the turn. Rule 1 in `error-policy.ts`
   // says the deadline is not a tool fault; this is what makes that true.
   //
   // A FLAG rather than an error minted up front and matched by identity: the

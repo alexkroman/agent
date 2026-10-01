@@ -16,9 +16,9 @@
 
 import { agent } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { createFakeLanguageModel } from "./_fake-llm.ts";
-import { silentLogger } from "./_test-utils.ts";
-import { createTextAgent } from "./text-agent.ts";
+import { createFakeLanguageModel } from "../_fake-llm.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { createTextAgent } from "../text-agent.ts";
 import { withToolsDir } from "./tools-dir.ts";
 
 /** As much of the model's prompt as the last spec reads a tool result out of. */
@@ -34,7 +34,7 @@ const partsOf = (message: PromptMessage): PromptPart[] =>
  * what a project looks like and what the diagnostics talk about.
  */
 const toolsDir = (project: string): URL =>
-  new URL(`./fixtures/tool-dirs/${project}/tools/`, import.meta.url);
+  new URL(`../fixtures/tool-dirs/${project}/tools/`, import.meta.url);
 
 const chatAgent = () => agent({ name: "Roller", mode: "text" });
 

@@ -14,7 +14,7 @@ import {
 } from "./_pipeline-test-fakes.ts";
 import { makeUsageMeter } from "./_test-utils.ts";
 import { createSubagentRunner } from "./subagent.ts";
-import type { ToolCallDefaults } from "./tool-executor.ts";
+import type { ToolCallDefaults } from "./tools/index.ts";
 
 let unregister: (() => void) | undefined;
 afterEach(() => {

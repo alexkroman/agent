@@ -231,17 +231,16 @@ export {
   type TextTurnOptions,
   type TextTurnResult,
 } from "./text-agent.ts";
+export type { ExecuteTool, ExecuteToolOptions } from "./tools/index.ts";
 // The repair both `streamText` loops share. Exported for a caller assembling
 // its own request against the same model (and because `salvageJson` is the
 // half that costs no tokens).
-export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
-export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
 // Directory tool discovery — the Node half of `toolRegistry`, and the only
 // source of one that reads a filesystem. A host with a bundler in its path (the
 // CLI's generated worker entry, a spec's `import.meta.glob`) already has its
 // modules; a plain `server.mjs` has neither, and without this the only way to
 // give a self-hosted agent a tool was the hand-written map `agent()` refuses.
-export { withToolsDir } from "./tools-dir.ts";
+export { createToolCallRepair, salvageJson, withToolsDir } from "./tools/index.ts";
 // `PipelineTransportOptions.skipGreeting` names this, and a caller passing the
 // THUNK form — which is how a resume that recovered nothing gets greeted —
 // would otherwise have a type to satisfy and no way to name it.

@@ -9,7 +9,7 @@
 // a turn DOES" reads end to end.
 
 import type { ModelMessage } from "ai";
-import type { FatalToolLatch } from "../../tool-error-policy.ts";
+import type { FatalToolLatch } from "../../tools/index.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import type { EmitError, SendTtsText } from "../types.ts";
 import type { HeardTracker } from "./heard/index.ts";
@@ -40,7 +40,7 @@ export function createTurnBody(deps: {
   guardrails: TurnGuardrails;
   /** The holdable funnel, so a blocked reply can be dropped unspoken. */
   speech: SpeechGate;
-  /** Reset per turn; read by the LLM runner. See `../../tool-error-policy.ts`. */
+  /** Reset per turn; read by the LLM runner. See `../../tools/error-policy.ts`. */
   fatalTool: FatalToolLatch;
   /** The session's token meter, when the host built one. */
   usage?: UsageMeter | undefined;

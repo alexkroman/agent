@@ -265,7 +265,7 @@ export {
 export { CARRIER_PARAM, TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
-export { executeToolCall } from "./tool-executor.ts";
+export { executeToolCall } from "./tools/index.ts";
 export type { TransportEventBody, TransportEventType } from "./transports/types.ts";
 // The session-scoped token meter. `RuntimeOptions.usage`,
 // `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,

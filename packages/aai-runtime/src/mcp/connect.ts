@@ -15,7 +15,7 @@
  * Three things decided it, and the middle one is the substantive one:
  *
  * - **The tools arrive in AI SDK shape.** `client.tools()` answers a `ToolSet`,
- *   the same type `streamText` and `../to-vercel-tools.ts` already speak, so the
+ *   the same type `streamText` and `../tools/to-vercel-tools.ts` already speak, so the
  *   listing → declaration path is the SDK's own rather than ~80 lines of
  *   hand-written mapping over a zod-inferred vendor type that is assignable to
  *   no JSON Schema type in either direction.

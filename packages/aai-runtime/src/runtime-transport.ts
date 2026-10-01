@@ -27,7 +27,7 @@ import {
 } from "./providers/resolve.ts";
 import type { Logger, S2sConfig } from "./runtime-config.ts";
 import type { HostRuntimeOptions, RuntimeOptions } from "./runtime-types.ts";
-import type { ExecuteTool } from "./tool-executor.ts";
+import type { ExecuteTool } from "./tools/index.ts";
 import { reportSessionCapabilities } from "./transports/capabilities.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import type {

@@ -265,7 +265,7 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     agentConfig: AGENT_CONFIG,
     transport,
     logger: silentLogger,
-    // Modelled on the REAL executor (`tool-executor.ts`), whose contract is
+    // Modelled on the REAL executor (`../tools/executor.ts`), whose contract is
     // narrower than `ExecuteTool`'s type suggests, in two ways that both bit
     // this harness:
     //

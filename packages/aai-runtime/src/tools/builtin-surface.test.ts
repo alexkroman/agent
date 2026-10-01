@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { makeAgent, makeLogger } from "./_test-utils.ts";
-import { mergeBuiltinSurface } from "./runtime-builtin-surface.ts";
+import { makeAgent, makeLogger } from "../_test-utils.ts";
+import { mergeBuiltinSurface } from "./builtin-surface.ts";
 
 const schema = (name: string) => ({
   type: "function" as const,

@@ -46,7 +46,7 @@
  */
 
 import type { ModelMessage, ToolModelMessage } from "ai";
-import type { Logger } from "./runtime-config.ts";
+import type { Logger } from "../runtime-config.ts";
 
 /** The error a synthetic result carries — the model reads this. */
 export const UNEXECUTED_TOOL_CALL_ERROR = "This tool call was not executed.";

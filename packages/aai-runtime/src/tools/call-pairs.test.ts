@@ -10,7 +10,7 @@ import {
   pairToolCallsInPlace,
   pairToolCallsLogged,
   UNEXECUTED_TOOL_CALL_ERROR,
-} from "./tool-call-pairs.ts";
+} from "./call-pairs.ts";
 
 const user = (content: string): ModelMessage => ({ role: "user", content });
 

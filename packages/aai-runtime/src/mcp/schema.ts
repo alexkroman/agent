@@ -17,7 +17,7 @@
  * ## Why the tools go through `ExecuteTool` at all
  *
  * The AI SDK tools `createMCPClient` returns would drop straight into
- * `streamText`, and that is exactly what this does NOT do. `../to-vercel-tools.ts`
+ * `streamText`, and that is exactly what this does NOT do. `../tools/to-vercel-tools.ts`
  * exists so that validation, the tool context, the per-call deadline, the
  * abort signal, the state commit and the relay observer have ONE
  * implementation; a tool set handed to `streamText` beside it would have none

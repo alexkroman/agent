@@ -14,7 +14,6 @@ import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { compileAgentRoutes } from "./agent-routes.ts";
 import { openAppDb } from "./app-db.ts";
-import { createClientToolBroker } from "./client-tool-broker.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { registerConnector } from "./runtime-connect.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
@@ -42,6 +41,7 @@ import type {
 import { createSessionCore, type ServerSession } from "./session-core.ts";
 import { createSessionDirectory } from "./session-directory.ts";
 import { composeSessionGreeting, createResumeFindings } from "./session-resume-found.ts";
+import { createClientToolBroker } from "./tools/index.ts";
 import { platformGuestOptions } from "./workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow/runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";

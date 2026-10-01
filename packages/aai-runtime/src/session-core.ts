@@ -24,7 +24,6 @@
 import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { ClientToolAnswer } from "./client-tool-broker.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 // Imported as well as re-exported below: a re-export does not bring the names
@@ -37,6 +36,7 @@ import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
 import { createSpeechVerbs } from "./session-speech.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
+import type { ClientToolAnswer } from "./tools/index.ts";
 import {
   estimateConversationTokens,
   evictBeyondRetention,

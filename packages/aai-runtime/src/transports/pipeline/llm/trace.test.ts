@@ -161,7 +161,7 @@ describe("createTurnTrace", () => {
   });
 
   // The production shape: the step FINISHED on an unsafe reason with its call
-  // still open, which the AI SDK declines to execute (`../../../tool-call-pairs.ts`).
+  // still open, which the AI SDK declines to execute (`../../../tools/call-pairs.ts`).
   test("a step that finished with a call unanswered names it, the finish reason, and warns", () => {
     const { info, warn, trace } = setup();
     trace.onPart("tool-call", { toolCallId: "c1", toolName: "get_order" });
