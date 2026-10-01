@@ -292,12 +292,14 @@ every `tool_result` in host mode).
   `consumeLlmStream` APPENDS it to the turn's messages; the latch is per TURN
   (`beginTurn()` clears it).
 - **Filler goes out `record: false`, and nothing here may abort anything.**
-  START/DELAYED lines use the dead-air flag that
-  `HeardTracker.spokeRecordable()` reads, so filler alone never makes a turn
-  interruptible. The runner owns no signal, cancels no TTS, flushes nothing; a
-  `blocking` wait is an ESTIMATE of spoken length bounded by `pTimeout`, never
-  a TTS acknowledgement (touching the reply's lifecycle is what once muted an
-  agent for 20+ s).
+  Every line goes through `ToolSpeechChannel.speak` → `speakInReply`
+  (`transports/pipeline-lines.ts`), the dead-air cover's placement, so it is
+  separated from the words around it. START/DELAYED lines use the dead-air
+  flag that `HeardTracker.spokeRecordable()` reads, so filler alone never
+  makes a turn interruptible. The runner owns no signal, cancels no TTS,
+  flushes nothing; a `blocking` wait is an ESTIMATE of spoken length bounded
+  by `pTimeout`, never a TTS acknowledgement (touching the reply's lifecycle
+  is what once muted an agent for 20+ s).
 - The generic dead-air cover stands down while a tool covers its own gap
   (`toolCovering` in `transports/pipeline-stream-parts.ts`).
 

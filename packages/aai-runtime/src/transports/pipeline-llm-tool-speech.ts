@@ -14,22 +14,20 @@
 import type { ModelMessage } from "ai";
 import { awaitSpokenEstimate, type ToolSpeechController } from "../tool-messages-runner.ts";
 import type { StepResult } from "./pipeline-llm-types.ts";
-import type { TtsTextCoalescer } from "./pipeline-stream.ts";
+import type { StreamPartHandler } from "./pipeline-stream-parts.ts";
 
 /**
  * Bind the turn's speech channel for whatever `ToolDef.messages` its tool
  * calls declare, and answer the thunk that unbinds it.
  *
- * The COALESCER is read through a thunk rather than captured, and that is the
- * load-bearing part: it is per-turn AND replaced outright on a
- * poisoned-adoption restart, so a captured one would send a tool's line into a
- * batch belonging to a run that was abandoned. One binding survives the
- * restart because every member reads the live one.
- *
- * `record` is passed straight through and never forced here. The runner's
- * `emitFiller` is the only producer of a `false` and a verbatim completion the
- * only producer of a `true`, which is why `record()` goes to `onDelta`: that
- * line IS the agent's answer and belongs in the turn's transcript.
+ * The stream-part HANDLER is read through a thunk rather than captured, and
+ * that is the load-bearing part: it is per-turn AND replaced outright on a
+ * poisoned-adoption restart (with the coalescer behind it), so a captured one
+ * would send a tool's line into a batch belonging to a run that was abandoned.
+ * One binding survives the restart because every member reads the live one.
+ * Speaking through the handler, not the coalescer, is what puts a tool's line
+ * on the same `speakInReply` placement as the dead-air cover — the separator
+ * and the transcript included (`pipeline-lines.ts`).
  *
  * **`callerSpeaking` is the ONLY suppressor the channel is given, and a
  * `bargeIn` one must not join it.** The argument is on
@@ -48,17 +46,14 @@ import type { TtsTextCoalescer } from "./pipeline-stream.ts";
 export function bindToolSpeech(
   toolSpeech: ToolSpeechController | undefined,
   deps: {
-    coalescer: () => TtsTextCoalescer;
-    onDelta: (delta: string) => void;
+    handler: () => StreamPartHandler | undefined;
     callerSpeaking: (() => boolean) | undefined;
   },
 ): () => void {
   if (toolSpeech === undefined) return () => undefined;
   toolSpeech.beginTurn();
   return toolSpeech.bind({
-    send: (text, opts) => deps.coalescer().send(text, { record: opts.record }),
-    boundary: () => deps.coalescer().boundary(),
-    record: (text) => deps.onDelta(text),
+    speak: (text, line) => deps.handler()?.speak(text, line),
     callerSpeaking: deps.callerSpeaking ?? ((): boolean => false),
     awaitSpoken: awaitSpokenEstimate,
   });

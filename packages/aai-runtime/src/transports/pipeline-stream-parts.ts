@@ -13,7 +13,11 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { APICallError, RetryError } from "ai";
 import type { Logger } from "../runtime-config.ts";
 import { createDeadAirCover } from "./pipeline-dead-air.ts";
+import { type InReplyLineFlags, speakInReply } from "./pipeline-lines.ts";
 import type { EmitError, SendTtsText } from "./types.ts";
+
+/** Dead-air filler's flags — see `pipeline-lines.ts`'s table. */
+const FILLER: InReplyLineFlags = { record: false, interruptible: true };
 
 /** A single `fullStream` part from `streamText`. */
 export type StreamPart = {
@@ -187,7 +191,19 @@ export type StreamPartHandler = {
    * error.
    */
   errored(): boolean;
+  /**
+   * Speak one code-initiated line inside this reply — `speakInReply`
+   * (`pipeline-lines.ts`), through this handler's separator and transcript.
+   * The dead-air cover and a tool's declared messages are its two callers.
+   */
+  speak(text: string, line: InReplyLineFlags): void;
 };
+
+/** `out`, with one space in front when a segment boundary needs it. */
+function separated(out: string, boundary: boolean, lastChar: string): string {
+  if (!boundary || lastChar === "" || /\s/.test(lastChar) || /^\s/.test(out)) return out;
+  return ` ${out}`;
+}
 
 /**
  * Stateful per-turn handler for `streamText` `fullStream` parts.
@@ -206,6 +222,13 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
+  // The same pair for the recorded transcript (`onDelta`) — see `emitText`.
+  let recordSeparator = false;
+  let lastRecordedChar = "";
+  const separate = (): void => {
+    pendingSeparator = true;
+    recordSeparator = true;
+  };
   // Has the model spoken any text this turn? Set by the first `text-delta`,
   // and what decides which filler fits the next gap (see the timer body).
   let spokeText = false;
@@ -234,14 +257,19 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    */
   function emitText(delta: string, record = true): void {
     if (delta.length === 0) return;
-    let out = delta;
-    if (pendingSeparator) {
-      pendingSeparator = false;
-      const boundaryHasSpace = lastChar === "" || /\s/.test(lastChar) || /^\s/.test(out);
-      if (!boundaryHasSpace) out = ` ${out}`;
-    }
+    const out = separated(delta, pendingSeparator, lastChar);
+    pendingSeparator = false;
     lastChar = out.slice(-1);
-    if (record) onDelta(out);
+    // The TRANSCRIPT is separated against its own last character: filler is
+    // heard and never recorded, so a recorded segment after it must not open
+    // with the space that separated it from the filler, and the filler itself
+    // is a boundary between the two recorded segments it sits between.
+    if (record) {
+      const recorded = separated(delta, recordSeparator, lastRecordedChar);
+      recordSeparator = false;
+      lastRecordedChar = recorded.slice(-1);
+      onDelta(recorded);
+    } else recordSeparator = true;
     sendTtsText(out, { record });
   }
 
@@ -255,20 +283,27 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     callerSpeaking,
     toolCovering,
     spokeText: () => spokeText,
-    // A filler is audible and never recorded, and it releases what is buffered:
-    // nothing else will arrive to flush the coalescer until the gap ends, and
-    // that silence is precisely what is being covered.
-    speak: (phrase) => {
-      emitText(phrase, false);
-      pendingSeparator = true;
-      ttsBoundary();
-    },
+    // A filler is audible and never recorded: `speak` below, with the flags
+    // `pipeline-lines.ts`'s table gives it.
+    speak: (phrase) => speak(phrase, FILLER),
     log,
     sid,
   });
 
   function dispose(): void {
     cover.dispose();
+  }
+
+  function speak(text: string, line: InReplyLineFlags): void {
+    speakInReply(
+      {
+        emit: emitText,
+        boundary: ttsBoundary,
+        separate,
+      },
+      text,
+      line,
+    );
   }
 
   function emitToolResult(part: StreamPart): void {
@@ -298,7 +333,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         return;
       }
       case "text-end":
-        pendingSeparator = true;
+        separate();
         // This segment is finished, so nothing more will arrive to batch with
         // what is buffered — release it now rather than across the gap that
         // usually follows (a tool call).
@@ -355,5 +390,5 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
   }
 
-  return { handle, dispose, errored: () => errored };
+  return { handle, dispose, errored: () => errored, speak };
 }

@@ -151,6 +151,16 @@ reply in flight or playing (reporting `reply.cancelled` BEFORE the
 the same path a final does, under either `turnDetection`. S2S omits the verb;
 the dispatcher warns once.
 
+## Every code-initiated line states `{ record, interruptible }`
+
+`LineFlags` (`types.ts`) is the pair `speech.say()` takes, and every word no
+model token produced states it. `pipeline-lines.ts`'s module table lists each
+line, its flags and its placement: a reply of its own (`createLineReply`), a
+failed turn's last words (`speakFixedLine`), or INSIDE the reply in flight
+(`speakInReply` — dead-air filler and tool messages, through the stream-part
+handler's separator and transcript). Never spell a send for a new line; pick a
+placement. The silence nudge and `notify` are model turns, not lines.
+
 ## `speakLine` is the greeting's path for any caller
 
 `Transport.speakLine(text, { signal, onStart })` (the SDK's `speech.say`) queues

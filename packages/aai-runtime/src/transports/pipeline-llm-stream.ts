@@ -305,8 +305,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   let handler: StreamPartHandler | undefined;
   // Where this turn's tool messages go — see `bindToolSpeech`.
   const unbindToolSpeech = bindToolSpeech(toolSpeech, {
-    coalescer: () => ttsText,
-    onDelta,
+    handler: () => handler,
     callerSpeaking,
   });
   // Hoisted rather than written at the handler below, where the conditional

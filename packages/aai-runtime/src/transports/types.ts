@@ -212,19 +212,34 @@ export type TransportSessionConfig = {
 };
 
 /**
+ * The two decisions every code-initiated line states — the SDK's `SayOptions`
+ * minus `interrupt` (which acts on the reply before the line, not on the line).
+ *
+ * Every code-initiated line in pipeline mode states both — the table in
+ * `pipeline-lines.ts` lists each line and its values.
+ *
+ * @internal
+ */
+export type LineFlags = {
+  /** On the record: history, `ctx.messages`, a committed transcript. */
+  readonly record: boolean;
+  /** A caller's barge-in may cut it. */
+  readonly interruptible: boolean;
+};
+
+/**
  * One {@link Transport.speakLine} call's controls: `signal` takes a still-queued
  * line back, and `onStart` fires as the line takes the floor, which is what
  * tells the session a later take-back must cut a reply rather than skip one.
  * `interruptible: false` holds the caller's barge-in off while the line plays;
- * `record: false` keeps it out of history. Both are the SDK's `SayOptions`.
+ * `record: false` keeps it out of history — the {@link LineFlags} every
+ * code-initiated line states.
  *
  * @internal
  */
-export type SpokenLine = {
+export type SpokenLine = LineFlags & {
   readonly signal: AbortSignal;
   readonly onStart: () => void;
-  readonly interruptible?: boolean | undefined;
-  readonly record?: boolean | undefined;
 };
 
 /**
