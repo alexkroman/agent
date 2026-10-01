@@ -930,7 +930,7 @@ export default agent({
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
-  minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
+  minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 1)
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
   deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 2400; 0 disables)
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
@@ -941,9 +941,9 @@ export default agent({
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
   minTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ENDS a user turn once the
-                                             // text reads complete (default 560)
+                                             // text reads complete (default 1600)
   maxTurnSilenceMs?: number;                 // pipeline only — pause (ms) that ends a turn REGARDLESS of
-                                             // content (default 1600). The endpointing knob to reach for:
+                                             // content (default 3500). The endpointing knob to reach for:
                                              // it bounds the utterances that never read as finished.
                                              // Both are shorthand for the same options on the default
                                              // assemblyAIStt() stage — invalid with an explicit `stt`.
@@ -2001,9 +2001,11 @@ sets the instruction. It is never a user transcript, and stops after 3
 unanswered nudges until the user speaks.
 
 **Voice-UX tuning (`PipelineVoiceTuning`, pipeline only):**
-`minBargeInWords` is how many words interrupt a reply (default 2, so a lone
-"yeah" doesn't); `interruptionMinDurationMs` adds a sustained-speech gate
-(default 500 ms; `0` disables; interims only — committed turns always land).
+`minBargeInWords` is how many words interrupt a reply (default 1, so a lone
+"Hello?" is heard — a word count cannot tell it from a "yeah");
+`interruptionMinDurationMs` adds the sustained-speech gate that filters a short
+backchannel (default 500 ms; `0` disables; interims only — committed turns
+always land).
 How long a pause ends a turn belongs to the STT provider:
 `assemblyAIStt({ minTurnSilenceMs })` (default 1600 ms) /
 `deepgramStt({ endpointing })` (default 1500 ms).
