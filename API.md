@@ -7970,6 +7970,9 @@ export const SESSION_EVENT_TYPES: ReadonlySet<string>;
 export const SESSION_PROTOCOL = "aai.session";
 
 // @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
+
+// @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 
 // @public
@@ -14931,6 +14934,9 @@ export const MAX_PLATFORM_SOCKET_FRAME_BYTES = 16777216;
 // @public
 export const MAX_WORKFLOW_RUN_LABEL_CHARS = 200;
 
+// @internal
+export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
+
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
 
@@ -14960,6 +14966,9 @@ export const PLATFORM_ROUTES: {
 
 // @internal
 export const PLATFORM_SOCKET_PATH = "/platform-socket";
+
+// @internal
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number;
 
 // @internal
 export type PlatformEndpoint = {
@@ -14997,6 +15006,9 @@ const PlatformReplyFrameSchema: z.ZodObject<{
 // @public
 export type PlatformRoute = (typeof PLATFORM_ROUTES)[keyof typeof PLATFORM_ROUTES];
 
+// @internal
+export function platformSessionSecret(guestToken: string): string;
+
 // @public
 type PlatformSessionStateOptions = PlatformEndpoint;
 
@@ -15019,6 +15031,14 @@ type PlatformSocketReply = {
 
 // @public
 export function platformSocketUrl(base: string): string;
+
+// @public
+export type PlatformTicketInput = {
+    guestToken: string;
+    previousGuestTokens?: readonly string[];
+    presented?: string | undefined;
+    now?: number;
+};
 
 // @public
 type PlatformUploadRecordsOptions = PlatformEndpoint;
@@ -17083,7 +17103,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;

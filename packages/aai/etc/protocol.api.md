@@ -329,6 +329,9 @@ export const SESSION_EVENT_TYPES: ReadonlySet<string>;
 export const SESSION_PROTOCOL = "aai.session";
 
 // @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
+
+// @public
 export type SessionCommand = z.infer<typeof SessionCommandSchema>;
 
 // @public
