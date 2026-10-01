@@ -35,10 +35,11 @@ The files beside this guide are the ASSEMBLY — `transport.ts`
   `guard-invariants` rule 37 enforces it for every importer, specs included —
   a spec that needs a private module lives beside it, and shared test
   scaffolding (`../_pipeline-transport-harness.ts`) lives outside.
-- **The stage directions are konsistent's `pipeline-stage-*` conventions**
-  (raw specifiers, so a stage file stays one level deep), and a stage never
-  imports the assembly. Biome's `noImportCycles` only sees a cycle once it
-  closes; these rules refuse the first wrong-way edge.
+- **The stage directions are `guard-invariants` rule 38**, whose
+  `PIPELINE_STAGES` table (`scripts/guard-invariants-module-dirs.mjs`) is the
+  "May import" column above; a stage spec is exempt, and a stage never imports
+  the assembly (any file directly in `pipeline/`). Biome's `noImportCycles`
+  only sees a cycle once it closes; the rule refuses the first wrong-way edge.
 - **An `index.ts` lists exactly what is imported from outside** and is a pure
   barrel of named re-exports (konsistent `module-dir-index-is-re-export-only`).
 - `speech/` reaches `llm/` only for speculation, and `history/` reaches
