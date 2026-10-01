@@ -111,7 +111,7 @@ const TEST_SUFFIXES = [
  */
 const EXCLUSIONS = [
   {
-    why: "a pure re-export surface (a `-barrel.ts`, a module directory's `index.ts`) has no behaviour of its own — decided by reading the file (see isPureReExport), so one that grows a declaration enters scope on its own",
+    why: "a file of nothing but `export … from` statements (a barrel, a module directory's `index.ts`) has no behaviour of its own to test — read, not guessed from the name, so one that grows a declaration enters scope on its own",
     match: (file) => isPureReExport(file),
   },
   {
@@ -185,18 +185,17 @@ const codeCache = new Map();
 
 /** A file's source with its comments stripped, read once; `undefined` if unreadable. */
 function codeOf(file) {
-  if (!codeCache.has(file)) codeCache.set(file, readCode(file));
-  return codeCache.get(file);
-}
-
-function readCode(file) {
+  if (codeCache.has(file)) return codeCache.get(file);
+  let code;
   try {
-    return readFileSync(path.join(ROOT, file), "utf8")
+    code = readFileSync(path.join(ROOT, file), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^[ \t]*\/\/.*$/gm, "");
   } catch {
-    return undefined;
+    // Unreadable (deleted but still listed): each caller decides what that means.
   }
+  codeCache.set(file, code);
+  return code;
 }
 
 /** The in-scope modules, and the ones with no co-located test. */
