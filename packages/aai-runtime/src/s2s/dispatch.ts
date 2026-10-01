@@ -2,27 +2,27 @@
 /**
  * Internal: the S2S wire-message → session-callback dispatch.
  *
- * Split from `s2s.ts`, which owns the CONNECTION (socket construction, the
+ * Split from `client.ts`, which owns the CONNECTION (socket construction, the
  * open race, resume, send gating, close handling). This module owns the pure
  * translation layer sitting on top of it: given a parsed `S2sServerMessage`
  * and the per-connection dedup/audit state, decide which `S2sCallbacks` fire.
  * It touches no socket and starts no I/O, which is what makes the turn-shaping
  * rules below testable without a connection.
  *
- * {@link S2sCallbacks} lives here rather than in `s2s.ts` because it IS this
- * module's contract — the set of things a wire message can cause. `s2s.ts`
- * re-exports it, so existing `from "./s2s.ts"` imports are unaffected.
+ * {@link S2sCallbacks} lives here rather than in `client.ts` because it IS this
+ * module's contract — the set of things a wire message can cause. `client.ts`
+ * re-exports it, so existing `from "./client.ts"` imports are unaffected.
  */
 
-import type { S2sServerMessage } from "./_s2s-messages.ts";
+import type { Logger } from "../runtime-config.ts";
+import type { S2sServerMessage } from "./messages.ts";
 import {
   appendReplyDelta,
   type ReplyAudit,
   replyAnomaly,
   replyAuditFields,
   resetReplyAudit,
-} from "./_s2s-reply.ts";
-import type { Logger } from "./runtime-config.ts";
+} from "./reply.ts";
 
 /** Callbacks fired into the owning session at construction time. */
 export type S2sCallbacks = {
@@ -66,7 +66,7 @@ function sidFields(ctx: DispatchContext): { sid?: string } {
  *
  * The audit fields are what make an empty-looking reply diagnosable: without
  * them a reply that streamed audio and sent no transcript is identical in the
- * log to one that produced nothing. See `_s2s-reply.ts`.
+ * log to one that produced nothing. See `reply.ts`.
  */
 function dispatchReplyDone(
   callbacks: S2sCallbacks,
@@ -83,7 +83,7 @@ function dispatchReplyDone(
   if (status === "interrupted") {
     // No salvage from deltas here, deliberately: the delta batch covers the
     // whole composed reply, so committing it would credit the agent with words
-    // the caller was talking over and never heard (see `_s2s-reply.ts`).
+    // the caller was talking over and never heard (see `reply.ts`).
     callbacks.onCancelled();
     return;
   }

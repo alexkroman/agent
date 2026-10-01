@@ -12,24 +12,24 @@ import {
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { errorMessage, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
-import { createAudioSendGate } from "./_audio-gate.ts";
-import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
-import {
-  type DispatchContext,
-  type DispatchState,
-  dispatchS2sMessage,
-  type S2sCallbacks,
-} from "./_s2s-dispatch.ts";
-import { parseS2sMessage } from "./_s2s-messages.ts";
-import { countReplyAudio, createReplyAudit } from "./_s2s-reply.ts";
+import { createAudioSendGate } from "../_audio-gate.ts";
+import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
   createWsOpenRace,
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
-} from "./_ws.ts";
-import type { Logger, S2sConfig } from "./runtime-config.ts";
-import { consoleLogger, debugLoggingEnabled } from "./runtime-config.ts";
+} from "../_ws.ts";
+import type { Logger, S2sConfig } from "../runtime-config.ts";
+import { consoleLogger, debugLoggingEnabled } from "../runtime-config.ts";
+import {
+  type DispatchContext,
+  type DispatchState,
+  dispatchS2sMessage,
+  type S2sCallbacks,
+} from "./dispatch.ts";
+import { parseS2sMessage } from "./messages.ts";
+import { countReplyAudio, createReplyAudit } from "./reply.ts";
 
 /**
  * One `session.update` audio-format block. `audio/pcm` is this service's own
@@ -131,11 +131,11 @@ export type S2sSessionConfig = {
 /**
  * Callbacks fired into the owning session at construction time.
  *
- * Defined in `_s2s-dispatch.ts` (it is that module's contract — the set of
+ * Defined in `dispatch.ts` (it is that module's contract — the set of
  * things a wire message can cause) and re-exported here, which is where every
  * consumer already imports it from.
  */
-export type { S2sCallbacks } from "./_s2s-dispatch.ts";
+export type { S2sCallbacks } from "./dispatch.ts";
 
 export type S2sHandle = {
   sendAudio(audio: Uint8Array): void;
@@ -331,7 +331,7 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     }
     if (obj.type === "reply.audio" && typeof obj.data === "string") {
       // The session's own logger, so a dropped reply frame is a line beside the
-      // rest of this session's — see `_base64.ts` for the rate and the default.
+      // rest of this session's — see `../_base64.ts` for the rate and the default.
       const bytes = base64ToUint8(obj.data, log);
       countReplyAudio(dispatchState.reply, bytes.length);
       callbacks.onAudio(bytes);

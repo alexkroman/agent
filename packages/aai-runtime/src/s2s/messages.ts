@@ -3,7 +3,7 @@
  * The S2S server-message vocabulary: the Zod union every inbound frame is
  * validated against, and the parse that turns an unknown object into one.
  *
- * Split from `s2s.ts` so that file stays the socket and the handle. The union
+ * Split from `client.ts` so that file stays the socket and the handle. The union
  * is the riskiest part of the protocol surface to get wrong, because a name
  * mismatch is SILENT — an unmatched frame is dropped as unrecognised rather
  * than raising — which is how live captions went missing in S2S mode.
@@ -45,7 +45,7 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
   // One WORD of the agent's reply, with its playback offsets. Unlike
   // `transcript.user.delta`, whose `text` is cumulative, this really is an
-  // increment and must be APPENDED — see the accumulator in `_s2s-reply.ts`.
+  // increment and must be APPENDED — see the accumulator in `reply.ts`.
   // `text` is accepted as an alias for the same reason `tool.call` accepts
   // `arguments`/`args`: a silent name mismatch here drops the frame.
   z

@@ -1,7 +1,7 @@
 import { S2S_MAX_RESUME_ATTEMPTS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockHandle, silentLogger, sleep } from "../_test-utils.ts";
-import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s.ts";
+import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s/client.ts";
 import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
 
@@ -533,7 +533,7 @@ describe("S2sTransport reconnect", () => {
   // the caller heard, so it enters history); an INTERRUPTED one is `.updated`
   // only, because the service trims it to what was actually spoken and history
   // records the heard prefix; and `transcript.agent.delta` DOES arrive from the
-  // live service (re-measured — see `_s2s-reply.ts`), forwarded as `.updated`
+  // live service (re-measured — see `../s2s/reply.ts`), forwarded as `.updated`
   // since it is the only carrier of text for a tool-preamble reply that sends no
   // final. This spec used to be titled "S2S never emits agent transcript
   // partials" and fired only the completed arm, so both `.updated` producers —

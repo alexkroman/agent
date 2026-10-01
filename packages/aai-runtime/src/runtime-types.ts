@@ -18,7 +18,7 @@ import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "./generate.ts";
 import type { HostAgentOptions } from "./host-agent-options.ts";
 import type { S2sConfig } from "./runtime-config.ts";
-import type { CreateS2sWebSocket } from "./s2s.ts";
+import type { CreateS2sWebSocket } from "./s2s/index.ts";
 import type { ServerSession } from "./session-core.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";

@@ -11,7 +11,7 @@ import {
   type S2sCallbacks,
   type S2sHandle,
   type S2sSessionConfig,
-} from "../s2s.ts";
+} from "../s2s/index.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "./capabilities.ts";
 import { createEmitError } from "./emit-error.ts";
 import { createS2sLifecycle } from "./s2s-lifecycle.ts";
@@ -267,7 +267,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
             text,
           }),
         // `transcript.agent.delta` DOES arrive — re-measured against the live
-        // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
+        // service, see `../s2s/reply.ts`. It is the only carrier of text for a reply
         // that sends no final `transcript.agent`, which is the ordinary shape of a
         // tool-preamble turn.
         onAgentTranscriptPartial: (text: string) =>

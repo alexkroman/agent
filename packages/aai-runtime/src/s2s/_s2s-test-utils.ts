@@ -4,9 +4,9 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
-import { makeLogger } from "./_test-utils.ts";
-import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
-import { connectS2s } from "./s2s.ts";
+import { makeLogger } from "../_test-utils.ts";
+import type { S2sCallbacks, S2sWebSocket } from "./client.ts";
+import { connectS2s } from "./client.ts";
 
 export function createWebSocketStub() {
   const target = new EventTarget();

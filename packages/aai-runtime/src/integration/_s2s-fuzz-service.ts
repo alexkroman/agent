@@ -6,7 +6,7 @@
  * The model is what the fast-check commands' `check()` consults, which is what
  * keeps generated frames LEGAL — no audio outside a reply, no `reply.started`
  * while the service awaits a `tool.result`, no `transcript.agent` on a tool-call
- * turn (measured behaviour, see `_s2s-reply.ts`). A generator that emits what no
+ * turn (measured behaviour, see `../s2s/reply.ts`). A generator that emits what no
  * real service would produces findings that cost real time to dismiss.
  *
  * Two rules for changing anything here:

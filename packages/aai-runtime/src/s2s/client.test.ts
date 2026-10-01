@@ -5,6 +5,7 @@
 
 import { DEFAULT_VOICE_FOCUS, DEFAULT_VOICE_FOCUS_THRESHOLD } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test } from "vitest";
+import { silentLogger } from "../_test-utils.ts";
 import {
   createWebSocketStub,
   emitMessage,
@@ -14,8 +15,7 @@ import {
   s2sConfig,
   setupHandle,
 } from "./_s2s-test-utils.ts";
-import { silentLogger } from "./_test-utils.ts";
-import { connectS2s } from "./s2s.ts";
+import { connectS2s } from "./client.ts";
 
 describe("connectS2s", () => {
   test("resolves with handle after open", async () => {

@@ -1064,10 +1064,7 @@
     {
       "name": "runtime-directory-index-barrels",
       "description": "In aai-runtime a directory's `index.ts` is its WHOLE surface: inside a bounded directory there is no underscore prefix, so 'private' means 'not re-exported from index.ts', and `module-boundaries.test.ts` refuses any import from outside the directory that names another module of it. That only means something if the index is a pure re-export list \u2014 a declaration in one is a symbol with no home module, and an `export *` re-exports everything and so makes nothing private. So each index is a barrel (this convention) and spells its names (`noReExportAll`). The indexes list exactly what the rest of the package imports; a name nothing outside imports is simply not on it.",
-      "paths": [
-        "packages/aai-runtime/src/transports/pipeline/index.ts",
-        "packages/aai-runtime/src/transports/pipeline/*/index.ts"
-      ],
+      "paths": ["packages/aai-runtime/src/*/index.ts", "packages/aai-runtime/src/**/index.ts"],
       "must": {
         "areBarrelFiles": true
       }

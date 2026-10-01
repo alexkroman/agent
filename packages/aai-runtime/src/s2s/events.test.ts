@@ -11,7 +11,7 @@ import {
   s2sConfig,
   setupHandle,
 } from "./_s2s-test-utils.ts";
-import { connectS2s } from "./s2s.ts";
+import { connectS2s } from "./client.ts";
 
 describe("connectS2s event dispatch", () => {
   test("session.ready dispatches 'onSessionReady' callback", async () => {
@@ -263,7 +263,7 @@ describe("connectS2s partial transcripts", () => {
 
   // `transcript.agent.delta` DOES arrive from the live service — this suite
   // previously asserted the opposite (that it was dropped as unrecognised).
-  // See `_s2s-reply.ts` for the re-measurement.
+  // See `reply.ts` for the re-measurement.
   test("transcript.agent.delta is not logged as an unrecognised message type", async () => {
     const { raw, logger } = await setupHandle();
 

@@ -58,7 +58,7 @@ import { z } from "zod";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
-import type { S2sCallbacks } from "./s2s.ts";
+import type { S2sCallbacks } from "./s2s/client.ts";
 import { createRuntimeServer } from "./server.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 
