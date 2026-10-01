@@ -165,9 +165,6 @@ export const DEFAULT_INTERRUPTION_BACKOFF_MS = 0;
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 
 // @public
-export const DEFAULT_MAX_HISTORY = 200;
-
-// @public
 export const DEFAULT_MAX_STEPS = 10;
 
 // @public
@@ -339,6 +336,9 @@ export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 
 // @public
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
+
+// @internal
+export const MAX_CLIENT_MESSAGES = 200;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;

@@ -34,9 +34,10 @@
  * `resetToolChoiceAfterFirstStep` puts a DEMANDING agent-level `toolChoice`
  * back to `"auto"` once the first step has run, and it shares this preparer's
  * one key. `ToolChoice`'s scope list puts the dialog state above the agent, so
- * the reset is composed first and this preparer overwrites it — see the
- * `prepareStep` composition in `pipeline-llm-stream.ts`, which spells the whole
- * order out. Composed the other way round the reset won from step 1 on, and a
+ * the reset is composed first and this preparer overwrites it — see
+ * `PREPARER_ORDER` in `../_prepare-step.ts`, which states the whole order once
+ * and which `composePreparers` applies whatever order a call site registers
+ * in. Composed the other way round the reset won from step 1 on, and a
  * state's pin quietly stopped applying after the first step of every turn on
  * any agent that declares a demanding `toolChoice` of its own.
  */
@@ -151,7 +152,7 @@ function readKnobs(
       source()?.interruptionMinDurationMs ?? base.interruptionMinDurationMs,
     // `undefined` rather than `{}` when the active state declares neither, so a
     // step the dialog has nothing to say about is prepared by exactly the
-    // preparers that shipped before this existed. `composePrepareStep` treats an
+    // preparers that shipped before this existed. `composePreparers` treats an
     // empty result as "no keys", so both are correct — but only one of them says
     // so at the call site.
     dialogStep: () => {

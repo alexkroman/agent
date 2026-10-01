@@ -1,11 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
-import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
 import { pairToolCalls } from "../tool-call-pairs.ts";
+import {
+  LONG_PROMPT,
+  llmTokens,
+  orphanToolResults,
+  RETAIN,
+  textTokens,
+  toolCallMsg,
+  toolResultMsg,
+} from "./_pipeline-history-test-fakes.ts";
 import { estimateMessageTokens, trimToTokenBudget } from "./pipeline-context-budget.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 
@@ -64,17 +71,34 @@ describe("createPipelineHistory", () => {
     expect(h.llm).toEqual([]);
   });
 
-  test("caps each view at DEFAULT_MAX_HISTORY (200), trimming oldest", () => {
-    const h = createPipelineHistory();
+  test("retains each view to `retainTokens`, trimming the oldest and never below it", () => {
+    const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
     for (let i = 0; i < 250; i++) {
       h.pushConversation({ role: "user", content: `m${i}` });
       h.pushLlm({ role: "user", content: `m${i}` });
     }
-    expect(h.conversation).toHaveLength(200);
-    expect(h.llm).toHaveLength(200);
-    // Oldest trimmed: m0..m49 gone, m249 retained.
-    expect(h.conversation[0]?.content).toBe("m50");
+    // At least the bound — what the request budget relies on — and no more
+    // than one message over it: one more eviction would go below.
+    expect(textTokens(h.conversation)).toBeGreaterThanOrEqual(RETAIN);
+    expect(textTokens(h.conversation.slice(1))).toBeLessThan(RETAIN);
+    expect(llmTokens(h.llm)).toBeGreaterThanOrEqual(RETAIN);
+    expect(llmTokens(h.llm.slice(1))).toBeLessThan(RETAIN);
+    // Oldest trimmed, newest retained.
+    expect(h.conversation[0]?.content).not.toBe("m0");
     expect(h.conversation.at(-1)?.content).toBe("m249");
+  });
+
+  test("has no message cap: an ordinary long call keeps every message", () => {
+    // The 200-message cap this replaced dropped the front of any call past 100
+    // turns, however short they were. A message count predicts neither memory
+    // nor request size; the request is budgeted in tokens per step.
+    const h = createPipelineHistory();
+    for (let i = 0; i < 1000; i++) {
+      h.pushConversation({ role: "user", content: `m${i}` });
+      h.pushLlm({ role: "user", content: `m${i}` });
+    }
+    expect(h.conversation).toHaveLength(1000);
+    expect(h.llm).toHaveLength(1000);
   });
 
   test("strips signature-less reasoning parts (avoids Anthropic replay warning)", () => {
@@ -185,16 +209,16 @@ describe("createPipelineHistory", () => {
     expect(h.revision.isCurrent(before)).toBe(true);
   });
 
-  test("pushToolResult caps the tool-facing view like every other push", () => {
-    const h = createPipelineHistory(
-      Array.from({ length: DEFAULT_MAX_HISTORY }, (_, i) => ({
-        role: "user" as const,
-        content: `m${i}`,
-      })),
-    );
-    h.pushToolResult({ role: "tool", content: "{}", toolCallId: "c1" });
-    expect(h.conversation).toHaveLength(DEFAULT_MAX_HISTORY);
-    expect(h.conversation[0]).toEqual({ role: "user", content: "m1" });
+  test("pushToolResult retains the tool-facing view like every other push", () => {
+    const seed = Array.from({ length: 200 }, (_, i) => ({
+      role: "user" as const,
+      content: `m${i}`,
+    }));
+    const h = createPipelineHistory(seed, { retainTokens: textTokens(seed) });
+    h.pushToolResult({ role: "tool", content: LONG_PROMPT, toolCallId: "c1" });
+    expect(h.conversation[0]).not.toEqual(seed[0]);
+    expect(h.conversation.at(-1)).toMatchObject({ role: "tool", toolCallId: "c1" });
+    expect(textTokens(h.conversation)).toBeGreaterThanOrEqual(textTokens(seed));
   });
 
   test("a seeded tool result reaches the tool-facing view only", () => {
@@ -263,8 +287,8 @@ describe("createPipelineHistory", () => {
     });
   });
 
-  test("a seed of pairs past the cap never leaves an orphan, wherever the cut lands", () => {
-    // A long resumed conversation is capped at `DEFAULT_MAX_HISTORY` on the way
+  test("a seed of pairs past the bound never leaves an orphan, wherever the cut lands", () => {
+    // A long resumed conversation is retained to the memory bound on the way
     // in, and a turn with one call is 4 messages. `shift` trailing replies move
     // the cut through every offset within a turn — including the one between a
     // call and its result.
@@ -274,15 +298,16 @@ describe("createPipelineHistory", () => {
       turns.push({ role: "assistant", content: `a${i}` });
     }
     const fronts = new Set<string>();
-    for (let shift = 0; shift < 4; shift++) {
+    for (let shift = 0; shift < 12; shift++) {
       const tail = Array.from({ length: shift }, (_, i) => ({
         role: "assistant" as const,
         content: `more ${i}`,
       }));
-      const h = createPipelineHistory();
+      const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
       h.seed([{ role: "user", content: "q0" }], [...turns, ...tail]);
       fronts.add(h.llm[0]?.role ?? "none");
-      expect(h.llm.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
+      expect(h.llm.length).toBeLessThan(turns.length);
+      expect(llmTokens(h.llm)).toBeGreaterThanOrEqual(RETAIN);
       expect(orphanToolResults(h.llm)).toEqual([]);
       expect(pairToolCalls(h.llm).repairs).toEqual([]);
     }
@@ -293,7 +318,7 @@ describe("createPipelineHistory", () => {
 
   test("the per-request token budget never splits a seeded pair, at any limit", () => {
     // The second trim a seeded history meets: `trimToTokenBudget` cuts the
-    // front of each REQUEST to the model's window, independently of the cap.
+    // front of each REQUEST to the model's window, independently of retention.
     const llm: ModelMessage[] = [];
     for (let i = 0; i < 6; i++) {
       llm.push({ role: "user", content: `q${i}` }, toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));
@@ -320,222 +345,6 @@ describe("createPipelineHistory", () => {
     ]);
     expect(h.conversation).toHaveLength(2);
     expect(h.llm).toEqual([{ role: "user", content: "hi" }]);
-  });
-});
-
-/** Tool-call ids that appear as a result with no preceding call. */
-function orphanToolResults(llm: readonly ModelMessage[]): string[] {
-  const called = new Set<string>();
-  const orphans: string[] = [];
-  for (const m of llm) {
-    if (!Array.isArray(m.content)) continue;
-    for (const part of m.content as { type?: string; toolCallId?: string }[]) {
-      if (part.type === "tool-call" && part.toolCallId !== undefined) called.add(part.toolCallId);
-      if (
-        part.type === "tool-result" &&
-        part.toolCallId !== undefined &&
-        !called.has(part.toolCallId)
-      ) {
-        orphans.push(part.toolCallId);
-      }
-    }
-  }
-  return orphans;
-}
-
-const toolCallMsg = (id: string): ModelMessage =>
-  ({
-    role: "assistant",
-    content: [{ type: "tool-call", toolCallId: id, toolName: "lookup", input: {} }],
-  }) as ModelMessage;
-
-const toolResultMsg = (id: string): ModelMessage =>
-  ({
-    role: "tool",
-    content: [
-      {
-        type: "tool-result",
-        toolCallId: id,
-        toolName: "lookup",
-        output: { type: "text", value: "ok" },
-      },
-    ],
-  }) as ModelMessage;
-
-// The LLM view holds tool-call/result PAIRS, and the cap is an index trim, so
-// its boundary can land between the two. Both providers reject an orphaned
-// `tool` message outright (OpenAI: "messages with role 'tool' must be a
-// response to a preceding message with 'tool_calls'"), which fails every
-// remaining turn of a long call — see capLlm in pipeline-history.ts.
-describe("createPipelineHistory — LLM history cap and tool-call pairing", () => {
-  test("trimming an assistant tool-call drops the result it orphaned", () => {
-    const h = createPipelineHistory();
-    // Put a tool pair at the very front of a full window.
-    h.pushLlm(toolCallMsg("c1"), toolResultMsg("c1"));
-    for (let i = 0; i < DEFAULT_MAX_HISTORY - 2; i++) {
-      h.pushLlm({ role: "assistant", content: `filler ${i}` });
-    }
-    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY);
-    expect(h.llm[0]?.role).toBe("assistant");
-    expect(h.llm[1]?.role).toBe("tool");
-
-    // One more message pushes the window past the tool-call.
-    h.pushLlm({ role: "user", content: "one more question" });
-
-    expect(h.llm[0]?.role).not.toBe("tool");
-    expect(orphanToolResults(h.llm)).toEqual([]);
-  });
-
-  // Turn sizes vary — a text-only turn is 2 messages, a one-tool turn 4, a tool
-  // chain more — so the window drifts out of alignment with turn boundaries on
-  // its own. A uniform turn size hides this entirely: 4 divides
-  // DEFAULT_MAX_HISTORY, so every trim lands on a turn boundary.
-  //
-  // A SHORT generated list of tool-call counts, consumed CYCLICALLY over a
-  // fixed number of turns (.agents/testing.md, "Property tests run on fast-check"). The
-  // run makes `TURNS` decisions, and generating one entry per decision would
-  // shrink to a wall of numbers rather than to a readable turn-shape cycle.
-  // This replaced a hand-rolled LCG over a single fixed walk, which forfeited
-  // shrinking on the one bug class the property exists for — a `capLlm` trim
-  // orphaning a `tool` message — so a hit reported "iteration 287" instead of
-  // the minimal cycle.
-  const turnShapesArb = fc.array(fc.integer({ min: 0, max: 3 }), {
-    minLength: 1,
-    maxLength: 10,
-  });
-  // Enough turns that the window (200) overflows several times over at every
-  // generated shape, including the all-text-turns cycle (2 messages/turn), and
-  // no more: this is a UNIT test on a 5s budget shared with 169 other files,
-  // and 400x40 timed out under `pnpm test` while passing in ~500 ms alone.
-  const TURNS = 120;
-  const NUM_RUNS = 25;
-
-  type Coverage = {
-    textOnlyTurn: number;
-    toolTurn: number;
-    multiToolTurn: number;
-    healedTrim: number;
-  };
-
-  /** One turn's messages. Returns the next tool-call id counter. */
-  function pushTurn(
-    h: ReturnType<typeof createPipelineHistory>,
-    turn: number,
-    toolCalls: number,
-    callNo: number,
-  ): number {
-    let next = callNo;
-    h.pushLlm({ role: "user", content: `question ${turn}` });
-    for (let k = 0; k < toolCalls; k++) {
-      const id = `c${next++}`;
-      h.pushLlm(toolCallMsg(id), toolResultMsg(id));
-    }
-    h.pushLlm({ role: "assistant", content: `reply ${turn}` });
-    return next;
-  }
-
-  function recordTurn(cov: Coverage, toolCalls: number, healed: boolean): void {
-    if (toolCalls === 0) cov.textOnlyTurn++;
-    else cov.toolTurn++;
-    if (toolCalls >= 2) cov.multiToolTurn++;
-    if (healed) cov.healedTrim++;
-  }
-
-  test("a long conversation of mixed turn shapes never orphans a tool result", () => {
-    // Coverage floors, per AGENTS.md: an all-green property proves nothing
-    // about a state the generator never entered, and `healedTrim` — a trim that
-    // actually landed between a call and its result, so `capLlm` had to shift a
-    // leading `tool` message off — is the only state this property is really
-    // about. Accumulated across every run (a floor is about the whole run).
-    const cov: Coverage = { textOnlyTurn: 0, toolTurn: 0, multiToolTurn: 0, healedTrim: 0 };
-    fc.assert(
-      fc.property(turnShapesArb, (shapes) => {
-        const h = createPipelineHistory();
-        let callNo = 0;
-        let pushed = 0;
-        let overCap = 0;
-        // Collected and asserted ONCE per run rather than per turn: shrinking
-        // re-runs the property dozens of times, and an `expect` per turn is
-        // most of the cost. Sliced on report, the way `pipeline-fuzz` does it —
-        // a systemic break should print a readable sample, not 150 lines of the
-        // same thing.
-        const orphans: string[] = [];
-        for (let turn = 0; turn < TURNS; turn++) {
-          const toolCalls = shapes[turn % shapes.length] ?? 0;
-          callNo = pushTurn(h, turn, toolCalls, callNo);
-          pushed += 2 + toolCalls * 2;
-          // Once the window is full it holds exactly DEFAULT_MAX_HISTORY unless
-          // the heal shifted a leading `tool` message off the front.
-          const healed = pushed >= DEFAULT_MAX_HISTORY && h.llm.length < DEFAULT_MAX_HISTORY;
-          recordTurn(cov, toolCalls, healed);
-          orphans.push(...orphanToolResults(h.llm));
-          if (h.llm.length > DEFAULT_MAX_HISTORY) overCap++;
-        }
-        expect(orphans.slice(0, 8)).toEqual([]);
-        expect(overCap).toBe(0);
-      }),
-      { numRuns: NUM_RUNS },
-    );
-
-    // `HISTORY_FUZZ_COVERAGE=1` prints the table, the way the pipeline and S2S
-    // properties do. It is how the actuals below were taken, and how the next
-    // person re-takes them.
-    if (process.env.HISTORY_FUZZ_COVERAGE === "1") console.log(JSON.stringify(cov));
-    // Floors ~3x below the lowest of seven measured runs (ranges in the trailing
-    // comments), on the same rule the other property suites here use:
-    // fast-check draws a fresh seed per run, so a floor is here to catch a
-    // generator that stopped reaching a state, never to pin a count.
-    expect(cov.textOnlyTurn, "no turn was ever text-only").toBeGreaterThan(170); // 511-984
-    expect(cov.toolTurn, "no turn ever called a tool").toBeGreaterThan(670); // 2016-2489
-    expect(cov.multiToolTurn, "no turn ever chained two tool calls").toBeGreaterThan(390); // 1180-1585
-    expect(cov.healedTrim, "no trim ever split a tool-call pair").toBeGreaterThan(200); // 609-1125
-  });
-
-  test("healing the split never strands a call whose result survived", () => {
-    // The trim only ever removes from the front, so a leading `tool` message is
-    // the one shape it can produce — a call is never separated from a result
-    // that comes after it.
-    const h = createPipelineHistory();
-    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
-      const id = `c${i}`;
-      h.pushLlm(toolCallMsg(id), toolResultMsg(id));
-      expect(orphanToolResults(h.llm)).toEqual([]);
-    }
-  });
-
-  // A step that ended on an unsafe finish reason: the SDK never ran the call,
-  // so the step's messages are the call ALONE (`../tool-call-pairs.ts`).
-  test("a pushed tool call with no result is answered on the way in, and reported", () => {
-    const warn = vi.fn();
-    const h = createPipelineHistory(undefined, { log: { warn }, sid: "s1" });
-    h.pushLlm({ role: "user", content: "look it up" });
-    h.pushLlm(toolCallMsg("c1"));
-    expect(h.llm.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
-    expect(h.llm[2]).toMatchObject({
-      content: [{ type: "tool-result", toolCallId: "c1", output: { type: "error-json" } }],
-    });
-    expect(warn).toHaveBeenCalledWith("Orphaned tool call repaired", {
-      sid: "s1",
-      toolCallId: "c1",
-      toolName: "lookup",
-    });
-    // Paired now, so the next write finds nothing to do.
-    h.pushLlm({ role: "user", content: "and?" });
-    expect(warn).toHaveBeenCalledOnce();
-  });
-
-  test("a rewrite that removes a call does not strand its result", () => {
-    const h = createPipelineHistory();
-    // Matched by identity against the message as STORED, which is what
-    // `pushLlm` answers.
-    const [, call] = h.pushLlm(
-      { role: "user", content: "q" },
-      toolCallMsg("c1"),
-      toolResultMsg("c1"),
-    );
-    if (call === undefined) throw new Error("nothing stored");
-    h.rewrite({ llm: new Map([[call, null]]) });
-    expect(h.llm.map((m) => m.role)).toEqual(["user"]);
   });
 });
 
@@ -594,36 +403,37 @@ describe("createPipelineHistory — dropTrailingUser", () => {
   // Two regression pins beside the property in
   // `pipeline-history-rollback.integration.test.ts`: a pin says "this shape still
   // works", the property says "no depth breaks it".
-  test("restores the message its own push trimmed at the text cap", () => {
-    const h = createPipelineHistory();
-    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) {
+  test("restores the messages its own push evicted at the text bound", () => {
+    const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
+    for (let i = 0; textTokens(h.conversation) < RETAIN; i++) {
       h.pushConversation({ role: "user", content: `turn ${i}` });
     }
-    h.pushConversation({ role: "user", content: "RESUME_PROMPT" });
-    // The push evicted the oldest turn to stay at the cap.
-    expect(h.conversation[0]).toEqual({ role: "user", content: "turn 1" });
+    const full = [...h.conversation];
+    h.pushConversation({ role: "user", content: LONG_PROMPT });
+    // The push evicted the oldest turns to stay at the bound.
+    expect(h.conversation[0]).not.toEqual({ role: "user", content: "turn 0" });
 
-    h.dropTrailingUser("RESUME_PROMPT");
+    h.dropTrailingUser(LONG_PROMPT);
 
-    // A rollback that undid the append and not the eviction would leave 199
-    // messages starting at `turn 1` — the oldest real turn gone for good.
-    expect(h.conversation).toHaveLength(DEFAULT_MAX_HISTORY);
-    expect(h.conversation[0]).toEqual({ role: "user", content: "turn 0" });
+    // A rollback that undid the append and not the eviction would leave the
+    // view starting past `turn 0` — the oldest real turns gone for good.
+    expect(h.conversation).toEqual(full);
   });
 
-  test("restores the tool-pair half `capLlm` healed at the LLM cap", () => {
-    const h = createPipelineHistory();
-    for (let i = 0; i < DEFAULT_MAX_HISTORY / 2; i++) {
+  test("restores the whole tool pair `evictLlm` took at the LLM bound", () => {
+    const h = createPipelineHistory(undefined, { retainTokens: RETAIN });
+    for (let i = 0; llmTokens(h.llm) < RETAIN; i++) {
       h.pushLlm(toolCallMsg(`c${i}`), toolResultMsg(`c${i}`));
     }
-    h.pushLlm({ role: "user", content: "RESUME_PROMPT" });
-    // The trim dropped `c0`'s call and exposed its result at the front, which
-    // `capLlm` then shifted as well: TWO messages left on this one push.
-    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY - 1);
+    const full = [...h.llm];
+    h.pushLlm({ role: "user", content: LONG_PROMPT });
+    // The eviction took `c0`'s call AND its result: the pair goes whole.
+    expect(h.llm[0]?.role).toBe("assistant");
+    expect(h.llm.length).toBeLessThan(full.length + 1);
 
-    h.dropTrailingUser("RESUME_PROMPT");
+    h.dropTrailingUser(LONG_PROMPT);
 
-    expect(h.llm).toHaveLength(DEFAULT_MAX_HISTORY);
+    expect(h.llm).toEqual(full);
     expect(orphanToolResults(h.llm)).toEqual([]);
   });
 });

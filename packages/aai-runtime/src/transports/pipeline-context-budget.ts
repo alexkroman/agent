@@ -1,16 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What one STEP is allowed to send the model, in tokens.
+ * What one STEP is allowed to send the model, in tokens — the ONLY bound on a
+ * request.
  *
- * `DEFAULT_MAX_HISTORY` bounds the number of MESSAGES a session remembers and
- * says nothing about their size, and the two do not correlate: a text-only turn
- * is a sentence, and a tool result carrying an agent's whole mutable state is
- * ~106 KB — the `retail-orders-agent` template writes one on nearly every tool call. Two
- * hundred of those is an order of magnitude past any model's context window,
- * and the failure lands mid-call, at the provider, on a live voice session:
- * every remaining turn fails and the caller hears `errorPhrase` instead of a
- * reply. Meanwhile `GatewayModelInfo.context` has carried a per-model window
- * all along and nothing read it.
+ * A message count says nothing about size, and the two do not correlate: a
+ * text-only turn is a sentence, and a tool result carrying an agent's whole
+ * mutable state is ~106 KB — the `retail-orders-agent` template writes one on
+ * nearly every tool call. Two hundred of those (the message cap this replaced)
+ * is an order of magnitude past any model's context window, and the failure
+ * lands mid-call, at the provider, on a live voice session: every remaining
+ * turn fails and the caller hears `errorPhrase` instead of a reply.
  *
  * **This trims the REQUEST, never the record.** It is a `prepareStep`
  * preparer — the AI SDK's own per-step hook, whose `messages` override is
@@ -18,8 +17,10 @@
  * step" — so `PipelineHistory` keeps everything and only what crosses to the
  * provider is bounded. That matters because the same history is replayed to the
  * client, persisted for resume, and handed to tools as `ctx.messages`: a trim
- * inside the history destroys all four to fix one. The message cap stays where
- * it is, as the guard on unbounded growth.
+ * inside the history destroys all four to fix one. The history's own MEMORY
+ * bound (`../_history-retention.ts`) is in tokens too, and is sized at a
+ * multiple of {@link LARGEST_CONTEXT_TOKEN_BUDGET} so that it can never reach
+ * into what this module would send.
  *
  * **The count is CALIBRATED against the provider's own number, not merely
  * estimated.** Every completed step carries `usage.inputTokens` — the measured
@@ -33,15 +34,19 @@
  * carries forward, and it is carried across TURNS as well as steps, because the
  * system prompt and the tool schemas are the same on the next turn.
  *
- * **The window comes from the model, and when it is unknown we do not guess.**
- * {@link ASSEMBLYAI_GATEWAY_MODELS} is the only per-model context window this
- * repo carries; an author-supplied provider, a custom `registerLlmKind`, or an
- * id the gateway does not advertise resolves to `undefined`, and
- * `contextTokenBudget` answers `undefined` in turn — at which point
- * {@link createContextBudget} returns a preparer that overrides nothing and the
- * session is bounded by `DEFAULT_MAX_HISTORY` alone, exactly as it was before
- * this module existed. A guessed window too large fails at the provider, which
- * is the bug; one too small amputates a working conversation.
+ * **The window comes from the model, and an unknown one is budgeted as the
+ * SMALLEST window the catalog carries.** {@link ASSEMBLYAI_GATEWAY_MODELS} is
+ * the only per-model context window this repo carries; an author-supplied
+ * provider, a custom `registerLlmKind`, or an id the gateway does not advertise
+ * resolves to `undefined` in {@link modelContextTokens}, and
+ * {@link contextTokenBudget} then budgets against
+ * {@link UNKNOWN_MODEL_CONTEXT_TOKENS}. That is a guess, and the direction is
+ * chosen: there is no other bound on a request any more (the 200-message cap
+ * that used to be the fallback is gone), so declining to guess would send an
+ * unknown model the whole conversation. Too large fails at the provider, which
+ * is the bug this module exists for; the smallest known window (32k today)
+ * holds hundreds of spoken turns, which is more than the message cap ever
+ * kept, so "too small" costs only the far end of a very long call.
  *
  * The lookup is by model ID alone and deliberately not by provider kind: a
  * window is a property of the model, so `openai({ model: "gpt-5.1" })` and the
@@ -136,9 +141,26 @@ const CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map(
 );
 
 /**
- * The model's context window in tokens, or `undefined` when it is not known.
- *
- * See the module doc: unknown is answered as unknown, never as a default.
+ * The window an unknown model is budgeted against: the SMALLEST the catalog
+ * carries, derived rather than written down so a regenerated catalog moves it.
+ * See the module doc for why an unknown window is guessed at all.
+ */
+export const UNKNOWN_MODEL_CONTEXT_TOKENS = Math.min(...CONTEXT_WINDOWS.values());
+
+/** The message budget a window of `context` tokens leaves after the reserve. */
+const budgetOf = (context: number): number => Math.floor(context * (1 - CONTEXT_WINDOW_RESERVE));
+
+/**
+ * The largest message budget any model can be given — the bound the history's
+ * memory retention is sized against (`../_history-retention.ts`), so that
+ * retention can never reach into a request this module would send.
+ */
+export const LARGEST_CONTEXT_TOKEN_BUDGET = budgetOf(Math.max(...CONTEXT_WINDOWS.values()));
+
+/**
+ * The model's advertised context window in tokens, or `undefined` when the
+ * catalog does not carry it. {@link contextTokenBudget} decides what an
+ * unknown window is budgeted as; this answers only what is KNOWN.
  */
 export function modelContextTokens(llm: LanguageModel): number | undefined {
   const id = typeof llm === "string" ? llm : llm.modelId;
@@ -146,13 +168,12 @@ export function modelContextTokens(llm: LanguageModel): number | undefined {
 }
 
 /**
- * Tokens one step's message list may occupy for this model, or `undefined` when
- * the model's window is unknown and nothing should be trimmed.
+ * Tokens one step's message list may occupy for this model — against its own
+ * window when the catalog knows it, against {@link UNKNOWN_MODEL_CONTEXT_TOKENS}
+ * when it does not. Never more than {@link LARGEST_CONTEXT_TOKEN_BUDGET}.
  */
-export function contextTokenBudget(llm: LanguageModel): number | undefined {
-  const context = modelContextTokens(llm);
-  if (context === undefined) return undefined;
-  return Math.floor(context * (1 - CONTEXT_WINDOW_RESERVE));
+export function contextTokenBudget(llm: LanguageModel): number {
+  return budgetOf(modelContextTokens(llm) ?? UNKNOWN_MODEL_CONTEXT_TOKENS);
 }
 
 /**
@@ -246,14 +267,9 @@ export type ContextBudgetPreparer = (
  * What resets per turn is the prefix bookkeeping, since the message list a new
  * `streamText` call starts from is not the one the last call ended with.
  */
-export function createContextBudget(
-  options: ContextBudgetOptions,
-): ContextBudgetPreparer | undefined {
+export function createContextBudget(options: ContextBudgetOptions): ContextBudgetPreparer {
+  // Always a number — an unknown window is budgeted too, see the module doc.
   const limit = contextTokenBudget(options.llm);
-  // An unknown window overrides NOTHING — see the module doc. Answering
-  // `undefined` rather than an inert preparer keeps that fact at the call site,
-  // where `composePrepareStep` skips it.
-  if (limit === undefined) return undefined;
   const { log, sid } = options;
   /**
    * Measured fixed cost of a request beyond its messages, or `undefined` until

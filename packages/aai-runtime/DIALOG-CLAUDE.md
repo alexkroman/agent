@@ -67,7 +67,7 @@ NESTED, so a phase that pins a voice and a barge-in together means them together
 and `toVoiceConfig` is deepest-DECLARATION for that reason. Two dialogs have no
 containment relation — neither is a special case of the other — so there is no
 "together" to preserve and per-key is the only merge with a meaning. Last writer
-wins is what `composePrepareStep` already does one layer down.
+wins is what `composePreparers` already does one layer down.
 
 ### The deadline clock runs from the dialog's last MOVE
 

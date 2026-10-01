@@ -11,7 +11,7 @@
  */
 
 import { type SessionEvent, SessionEventSchema, safeJsonParse } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
+import { MAX_CLIENT_MESSAGES, toArgsRecord } from "@alexkroman1/aai/internal";
 import { lenientParse } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { AudioPath } from "./session-core-audio-state.ts";
@@ -22,8 +22,8 @@ import type { SessionError } from "./types.ts";
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
 const MAX_CUSTOM_EVENTS = 200;
 
-/** Cap on `messages` retained in the session snapshot; matches the host-side history cap. */
-const MAX_MESSAGES = DEFAULT_MAX_HISTORY;
+/** Cap on `messages` retained in the session snapshot; the `history.restored` frame's own. */
+const MAX_MESSAGES = MAX_CLIENT_MESSAGES;
 
 /**
  * Snapshot fields cleared when a session's conversation state is wiped —

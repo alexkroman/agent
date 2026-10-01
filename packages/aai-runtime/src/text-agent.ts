@@ -67,7 +67,7 @@ import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
-  composePrepareStep,
+  composePreparers,
   forceFinalAnswer,
   resetToolChoiceAfterFirstStep,
 } from "./_prepare-step.ts";
@@ -377,17 +377,18 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
         // alternatives, not replacements — a wall-clock deadline must be able
         // to end a turn early and must never extend one past the step cap.
         stopWhen: [stepCountIs(maxSteps + 1), ...(turn.stopWhen ?? [])],
-        prepareStep: composePrepareStep(
-          turn.prepareStep,
-          // Before `forceFinalAnswer`, which owns the same key on the reserved
-          // step — see `_prepare-step.ts`.
-          resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+        prepareStep: composePreparers([
+          { stage: "caller", prepare: turn.prepareStep },
+          {
+            stage: "agent-tool-choice",
+            prepare: resetToolChoiceAfterFirstStep(toolChoice, agent.resetToolChoice ?? true),
+          },
           // No `toolErrorBudget` here, deliberately: it exists because a voice
           // caller hears every failed round trip as silence. A text caller is
           // code, often a coding loop whose next call is meant to follow a
           // failure, and it can install its own `prepareStep`.
-          forceFinal,
-        ),
+          { stage: "force-final-answer", prepare: forceFinal },
+        ]),
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
         // The caller's signal PLUS the fatal-tool latch, so a tool the author
         // declared unrecoverable stops the run instead of handing the model a

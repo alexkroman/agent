@@ -163,7 +163,7 @@ function fromBargeIn(bargeIn: DialogVoiceConfig["bargeIn"]): DialogTurnKnobs {
  * interruptible barge-in. Two dialogs have no containment relation at all —
  * neither is a special case of the other — so there is no "together" to
  * preserve, and per-key is the only merge with a meaning. Last writer wins is
- * the rule `composePrepareStep` already uses one layer down.
+ * the rule `composePreparers` already uses one layer down.
  *
  * `undefined` when nothing is declared, which is the common case on a call:
  * most states carry an instruction and no knobs, and the transport's thunks

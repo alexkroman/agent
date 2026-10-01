@@ -60,30 +60,45 @@ the final, and `system` cannot be amended mid-stream, so `take()` discards with
 `prompt-moved` (like `history-moved`). The controller resolves ONCE and hands
 the string to `start`.
 
-## A step's REQUEST is bounded in tokens; the message cap only guards growth
+## History is budgeted in TOKENS everywhere; there is no message cap
 
-`DEFAULT_MAX_HISTORY` counts messages, which does not predict request size.
-`pipeline-context-budget.ts` trims as a **`prepareStep` preparer**, so
-`PipelineHistory` keeps everything (replay, resume and `ctx.messages` read it)
-and only the request is trimmed. The window is
-`ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an unknown
-window yields NO preparer; the count is calibrated per SESSION against reported
-`usage.inputTokens`. The module doc carries the argument.
+- **The REQUEST** is bounded only by `pipeline-context-budget.ts`, a
+  **`prepareStep` preparer**, so `PipelineHistory` keeps everything (replay,
+  resume and `ctx.messages` read it) and only the request is trimmed. The window
+  is `ASSEMBLYAI_GATEWAY_MODELS.context` less `CONTEXT_WINDOW_RESERVE`; an
+  UNKNOWN window is budgeted as the smallest the catalog carries
+  (`UNKNOWN_MODEL_CONTEXT_TOKENS`), because nothing else bounds the request; the
+  count is calibrated per SESSION against reported `usage.inputTokens`.
+- **The RECORD** is bounded for memory only, also in tokens
+  (`../_history-retention.ts`, `HISTORY_RETAIN_TOKENS` = 2 x
+  `LARGEST_CONTEXT_TOKEN_BUDGET`), and that size is what makes it unable to
+  change a request: the budget sends a suffix no larger than its limit, and
+  retention always keeps a larger one (`_history-retention.test.ts` states it
+  as a property). The same bound applies in `session-core.ts` and to a resume
+  (`historyFromEvents`); the event log itself stays whole.
+- **The one count left is a DISPLAY bound**: `MAX_CLIENT_MESSAGES` caps what a
+  `history.restored` frame carries (`clientHistoryFrame`) and what `aai-ui`
+  keeps in its snapshot.
 
-**Preparers COMPOSE** (`../_prepare-step.ts`): the budget owns `messages`,
-`forceFinalAnswer` goes last and owns `toolChoice`. Writing either straight
-into the slot silently deletes the other.
+**Preparers REGISTER into one pipeline** (`../_prepare-step.ts`):
+`composePreparers([{ stage, prepare }, …])` layers them in `PREPARER_ORDER`
+(budget → agent reset → persona → dialog → error budget → `forceFinalAnswer`)
+whatever order a call site lists them in, last writer winning per key. Writing
+any preparer straight into the slot silently deletes the others, so
+`guard-invariants` rule 35 rejects a `prepareStep:` in this package whose value
+is not a `composePreparers(…)` call; a new concern is a new stage.
 
 ## A rollback must undo the eviction its push caused
 
-`pipeline-history.ts` keeps two capped views. `dropTrailingUser` rolls back an
-injected prompt (false-interruption resume, silence nudge, `injectTurn`), and at
-`DEFAULT_MAX_HISTORY` a bare pop would lose the message the push trimmed. A push
-records what it evicted and the pop that undoes THAT push restores it. Argued at
-`PushUndo`: one slot PER VIEW, recorded only for a single-message push,
-consumed by IDENTITY; `capLlm`'s healed tool-pair halves count as part of the
-eviction. Oracle: `../integration/pipeline-history-rollback.integration.test.ts`,
-plus two pins in `pipeline-history.test.ts`.
+`pipeline-history.ts` keeps two views, each retained to the token bound.
+`dropTrailingUser` rolls back an injected prompt (false-interruption resume,
+silence nudge, `injectTurn`), and at the bound a bare pop would lose what the
+push evicted. A push records what it evicted and the pop that undoes THAT push
+restores it. Argued at `PushUndo`: one slot PER VIEW, recorded only for a
+single-message push, consumed by IDENTITY; a tool pair `evictLlm` took whole
+counts as part of the eviction. Oracle:
+`../integration/pipeline-history-rollback.integration.test.ts` (driven at a small
+`retainTokens`), plus two pins in `pipeline-history.test.ts`.
 
 ## History records what was HEARD, not what was generated
 
