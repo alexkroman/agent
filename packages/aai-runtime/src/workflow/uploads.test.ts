@@ -20,6 +20,7 @@ import { fakeFetch } from "../_test-utils.ts";
 import type { UploadBackend } from "../_upload-blobs.ts";
 import { UPLOAD_WINDOW_CONCURRENCY } from "../_upload-store.ts";
 import { body, memoryStore, ramp, recordingDb } from "../_upload-store-test-utils.ts";
+import { resolveStorageHome } from "./storage-home.ts";
 import {
   createMemoryUploadBackend,
   createUnavailableUploadStore,
@@ -27,6 +28,7 @@ import {
   UPLOADS_TABLE,
   UploadIdTakenError,
   UploadTooLargeError,
+  uploadBytesAreRemote,
 } from "./uploads.ts";
 
 describe("the store", () => {
@@ -155,7 +157,7 @@ describe("a deployment with nowhere to put uploads", () => {
     // Nothing at all: no database, and no local directory to fall back into. Only a
     // caller that resolved neither reaches this — every host in this repo passes a
     // `localDir`, because `localWorkflowDataDir()` always answers one.
-    const store = createUploadStore({});
+    const store = createUploadStore({ home: { kind: "local" } });
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/DATABASE_URL/);
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
   });
@@ -167,7 +169,10 @@ describe("a deployment with nowhere to put uploads", () => {
     // is the thing that makes such a resume possible. So it refuses, and the remedy
     // it names is a durable byte store.
     const { db } = memoryStore();
-    const store = createUploadStore({ db, localDir: "/should/not/be/used" });
+    const store = createUploadStore({
+      home: { kind: "postgres", db },
+      localDir: "/should/not/be/used",
+    });
     const failed = await store
       .create({}, body(ramp(4)))
       .then(() => expect.fail("the store accepted an upload with nowhere durable to put it"))
@@ -178,7 +183,7 @@ describe("a deployment with nowhere to put uploads", () => {
 
   test("DIAGNOSES only the half that is missing", async () => {
     const { db } = memoryStore();
-    const store = createUploadStore({ db });
+    const store = createUploadStore({ home: { kind: "postgres", db } });
     const failed = await store
       .beginParts("abc", {}, 4)
       .then(() => expect.fail("the store accepted a claim it has nowhere to store"))
@@ -397,7 +402,7 @@ describe("a whole-file write", () => {
       },
     };
     return {
-      store: createUploadStore({ db: recorder.db, blobs }),
+      store: createUploadStore({ home: { kind: "postgres", db: recorder.db }, blobs }),
       started,
       /** Let the write that started `index`th finish. */
       release: (index: number) => gates[index]?.resolve(),
@@ -503,20 +508,24 @@ describe("where an upload's record lives", () => {
     return { fetch, methods: () => methods };
   }
 
-  test("a deployed guest uses the PLATFORM even when it also has a database", async () => {
-    // The correction, asserted as a preference rather than a fallback. Two homes
-    // chosen by different rules is how a run and its uploads end up in different
-    // places; `configureWorkflowWorld` makes the same choice for the world itself.
-    const { db } = memoryStore();
+  test("a deployed guest with a database still records on the PLATFORM", async () => {
+    // The preference itself is `resolveStorageHome`'s (`storage-home.test.ts`); this
+    // is the store honouring it: handed a platform home, the record goes there and
+    // the database an author also set is never touched.
+    const { db, sql } = memoryStore();
+    vi.stubEnv("AAI_PLATFORM_BASE_URL", "https://aai.example/a");
+    vi.stubEnv("AAI_GUEST_TOKEN", "t");
+    const home = resolveStorageHome(db);
+    vi.unstubAllEnvs();
+    expect(home.kind).toBe("platform");
     const { fetch, methods } = platformFetch();
     const store = createUploadStore({
-      db,
+      home: { kind: "platform", platform: { base: "https://aai.example/a", token: "t", fetch } },
       blobs: createMemoryUploadBackend(),
-      platform: { base: "https://aai.example/a", token: "t", fetch },
     });
     await store.create({ name: "clip.wav" }, body(ramp(4))).catch(() => undefined);
-    // The platform backend was the one that ran — `db` was not touched.
     expect(methods().length).toBeGreaterThan(0);
+    expect(sql).toEqual([]);
   });
 
   test("a deployed guest with NO database still gets a durable record home", async () => {
@@ -524,9 +533,9 @@ describe("where an upload's record lives", () => {
     // directory even though the platform was right there.
     const { fetch, methods } = platformFetch();
     const store = createUploadStore({
+      home: { kind: "platform", platform: { base: "https://aai.example/a", token: "t", fetch } },
       blobs: createMemoryUploadBackend(),
       localDir: "/should/not/be/used",
-      platform: { base: "https://aai.example/a", token: "t", fetch },
     });
     await store.create({ name: "clip.wav" }, body(ramp(4))).catch(() => undefined);
     expect(methods().length).toBeGreaterThan(0);
@@ -536,9 +545,29 @@ describe("where an upload's record lives", () => {
     // A durable record behind bytes that die with the container is the same failure
     // in reverse — and the record would then name an object nothing can produce.
     const store = createUploadStore({
+      home: { kind: "platform", platform: { base: "https://aai.example/a", token: "t" } },
       localDir: "/should/not/be/used",
-      platform: { base: "https://aai.example/a", token: "t" },
     });
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
+  });
+});
+
+describe("uploadBytesAreRemote — the `directParts` claim follows the store's HOME", () => {
+  const platform = { base: "https://aai.example/a", token: "t" };
+  const blobs = createMemoryUploadBackend();
+
+  test("a durable home with a bucket reads remote bytes — platform and postgres alike", () => {
+    // The platform arm with NO database is the case the old `db && blobs` predicate
+    // refused: a deployed guest records on the platform and reads the brokered bucket.
+    expect(uploadBytesAreRemote({ kind: "platform", platform }, blobs)).toBe(true);
+    expect(uploadBytesAreRemote({ kind: "postgres", db: memoryStore().db }, blobs)).toBe(true);
+  });
+
+  test("a local home never does, even with a bucket resolved — the store ignores it", () => {
+    expect(uploadBytesAreRemote({ kind: "local" }, blobs)).toBe(false);
+  });
+
+  test("no bucket, no remote bytes", () => {
+    expect(uploadBytesAreRemote({ kind: "platform", platform }, undefined)).toBe(false);
   });
 });

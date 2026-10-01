@@ -34,7 +34,7 @@ import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "./runtime-config.ts";
 import { ensureSessionStateSchema } from "./session-state/backends/postgres.ts";
 import { ensureWorkflowJournalSchema } from "./workflow/journal/schema.ts";
-import { platformGuestOptions } from "./workflow/platform-world.ts";
+import { resolveStorageHome } from "./workflow/storage-home.ts";
 
 /**
  * Which database this deployment owes tables to, or none.
@@ -48,7 +48,7 @@ import { platformGuestOptions } from "./workflow/platform-world.ts";
  * stores are the platform's own — `selectJournal` and `selectBackend` put it
  * first, ahead of any `DATABASE_URL` an author also set — so tables created here
  * would be read by nobody. Read from THIS PROCESS's environment like every other
- * platform pair; `platformGuestOptions` carries what a tenant read cost.
+ * platform pair, through the same `resolveStorageHome` the stores are built from.
  *
  * @internal
  */
@@ -56,8 +56,10 @@ export function ownedSchemaUrl(options: {
   env: ProviderEnv;
   providerEnv?: ProviderEnv | undefined;
 }): string | undefined {
-  if (platformGuestOptions()) return undefined;
-  return (options.providerEnv ?? options.env).DATABASE_URL?.trim() || undefined;
+  const home = resolveStorageHome(
+    (options.providerEnv ?? options.env).DATABASE_URL?.trim() || undefined,
+  );
+  return home.kind === "postgres" ? home.db : undefined;
 }
 
 /**

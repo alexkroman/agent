@@ -371,17 +371,19 @@ Rules:
 - The worked example is the `topic-briefing-agent` template (context isolation,
   parallel fan-out with `allSettled`, per-subagent tools and models).
 
-## An upload's bytes are OBJECTS, and its record has two homes
+## An upload's bytes are OBJECTS, and its record lives in the RUNS' home
 
 One store (`_upload-store-blobs.ts`) over `UploadRecords` (the record) and
 `UploadBackend` (one object per `UPLOAD_PART_BYTES` window). Bytes stay out of
 Postgres; `_upload-blobs.ts` carries why.
 
-- **The pairing follows the WORLD, off `DATABASE_URL`: an upload is at least as
-  durable as the runs that read it.** With a database the record goes there and
-  the bytes need a bucket (no bucket is the one refusal). Without one both go in
-  the local data directory (`_upload-files.ts`), and `installWorkflowSupport`
-  announces it once.
+- **The record's home is the `StorageHome` the journal is built from**
+  (`workflow/storage-home.ts`), so an upload is at least as durable as the runs
+  that read it: platform or postgres records need a bucket for the bytes (no
+  bucket is the one refusal); a local home puts both in the local data directory
+  (`_upload-files.ts`), and `installWorkflowSupport` announces it once.
+  `directParts` is `uploadBytesAreRemote(home, blobs)` — derived from the same
+  two inputs as the store, never from a database or the broker alone.
 - **A FINISHED upload is immutable, at both layers.** `assertUploadOpen` throws
   `UploadCompleteError` (409). The KIND refusal is checked first (a finished
   streamed upload keeps its 400), and a re-sent CLAIM naming only windows

@@ -501,7 +501,10 @@ describe("what a batched claim costs", () => {
         }
       },
     };
-    const store2 = createUploadStore({ db: memoryStore().db, blobs: counting });
+    const store2 = createUploadStore({
+      home: { kind: "postgres", db: memoryStore().db },
+      blobs: counting,
+    });
     await store2.beginParts("abc", {}, TOTAL);
     await store2.recordParts("abc", offsets);
     expect(peak).toBe(offsets.length);

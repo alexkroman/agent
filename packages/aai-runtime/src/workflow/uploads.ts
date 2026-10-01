@@ -15,24 +15,24 @@
  * a PARTS one arrives over several connections at once and publishes only its
  * contiguous prefix as `size`). Read it before changing the store.
  *
- * ## One store, two homes, and the rule that picks between them
+ * ## One store, its home is the RUNS' home
  *
  * `_upload-store-blobs.ts` is the only store, and it names neither half's home: a
  * RECORD through {@link UploadRecords}, BYTES through {@link UploadBackend}. What
  * this module owns is the pairing, and it follows ONE rule — **an upload must be at
- * least as durable as the runs that read it** — which makes it the same decision
- * `workflow-world.ts` already makes off the same input:
+ * least as durable as the runs that read it** — which is why the record's home is
+ * not chosen here at all: it is the {@link StorageHome} `resolveStorageHome`
+ * returns, the same value the run journal and the key index are built from.
  *
- * - **`DATABASE_URL` set** → the Postgres world. Runs outlive every process and
- *   every machine, so the record goes in the app's own database and the bytes in a
- *   bucket. With no bucket there is nowhere durable for them, and THAT is the one
- *   case with no store at all: {@link createUnavailableUploadStore} refuses every
- *   method, naming what is missing.
- * - **absent** → the LOCAL world, whose run state is a directory and whose queue is
+ * - **platform / postgres** → a durable record, and the bytes in a bucket. With no
+ *   bucket there is nowhere durable for them, and THAT is the one case with no
+ *   store at all: {@link createUnavailableUploadStore} refuses every method,
+ *   naming what is missing.
+ * - **local** → the LOCAL world, whose run state is a directory and whose queue is
  *   in memory. Record and bytes go in that same directory (`_upload-files.ts`), so
  *   the two lifetimes are equal by construction.
  *
- * That second arm looks like the file backend this store used to have, and the
+ * That last arm looks like the file backend this store used to have, and the
  * difference is exactly the rule above. The old one paired a DIRECTORY with runs
  * that lived in Postgres, so it stored a dev upload perfectly well and lost it by
  * the time a resumed run read it, with nothing reporting a thing. Pairing it with
@@ -46,7 +46,6 @@
  */
 
 import { MAX_WORKFLOW_UPLOAD_BYTES, type OpenUpload } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadBackend } from "../_upload-blobs.ts";
@@ -61,10 +60,8 @@ import { createFileUploadBlobs, createFileUploadRecords } from "../_upload-files
 import { createPostgresUploadRecords } from "../_upload-records.ts";
 import { type UploadStore, UploadsUnavailableError } from "../_upload-store.ts";
 import { createBlobUploadStore } from "../_upload-store-blobs.ts";
-import {
-  createPlatformUploadRecords,
-  type PlatformUploadRecordsOptions,
-} from "../uploads-platform.ts";
+import { createPlatformUploadRecords } from "../uploads-platform.ts";
+import { isDurableHome, type StorageHome } from "./storage-home.ts";
 
 export {
   createMemoryUploadBackend,
@@ -132,61 +129,60 @@ const UPLOAD_ENV_EXAMPLE = [
 /**
  * Whether this store's bytes live somewhere OTHER than the container serving it.
  *
- * The one question a CLAIM has to answer, and the reason it is a function rather
- * than a second reading of the same env: `directParts` tells a client to send its
+ * The one question a CLAIM has to answer: `directParts` tells a client to send its
  * windows straight to the platform's bucket and then ask this agent to RECORD
- * them, so it may only be advertised when {@link createUploadStore} really took
- * the arm that reads that bucket. Derived from the same two inputs that choose the
- * arm, so the claim and the store cannot disagree.
+ * them, so it may only be advertised when {@link createUploadStore} really took an
+ * arm that reads a bucket. Derived from the same two inputs that choose the arm —
+ * the {@link StorageHome} and the resolved byte backend — so the claim and the
+ * store cannot disagree.
  *
- * They did. `directParts` was derived from the broker URL alone, which the platform
- * sets for every agent it can name an origin for — including one with no database,
- * where the store deliberately ignores a resolved bucket and uses its own directory
- * (see below). Every parts upload on a databaseless agent therefore put its windows
- * in the bucket, asked the agent to record them, and got
- * `No bytes are stored for the part at <offset>` from a store looking at a directory
- * nobody had written to. That is every upload over one part (8 MiB) on the studio's
- * default configuration; a single-request upload was unaffected, because its bytes
- * go to the agent.
+ * They did, twice. First `directParts` was derived from the broker URL alone,
+ * which the platform sets for every agent it can name an origin for — including
+ * one whose store used its own directory — so every parts upload put its windows
+ * in the bucket and got `No bytes are stored for the part at <offset>` from a
+ * store looking at a directory nobody had written to. Then it was derived from
+ * `db && blobs`, which was the postgres arm's guard rather than the store's: a
+ * deployed guest with no `DATABASE_URL` takes the PLATFORM arm and reads the
+ * bucket, and was refused the direct path for want of a database it never needed.
  *
  * @internal
  */
-export function uploadBytesAreRemote<
-  T extends { db?: Db | undefined; blobs?: UploadBackend | undefined },
->(options: T): options is T & { db: Db; blobs: UploadBackend } {
-  return Boolean(options.db && options.blobs);
+export function uploadBytesAreRemote(home: StorageHome, blobs: UploadBackend | undefined): boolean {
+  return isDurableHome(home) && blobs !== undefined;
 }
 
 /**
- * Build the store for one server, choosing the home that matches its world.
+ * Build the store for one server, over the home its runs live in.
  *
- * `db` present is the DURABLE arm and needs a bucket to go with it; `db` absent is
- * the LOCAL arm and needs `localDir`, which is the local workflow world's own data
- * directory. See the module doc for the rule, and `_upload-files.ts` for why the
- * second arm is not the file backend this store used to have.
+ * The RECORD follows the {@link StorageHome} — the same answer the run journal and
+ * the key index are built from, so an upload is never less durable than the runs
+ * that read it:
  *
- * Passing neither is still a legitimate call — a bare `createRuntimeServer` with nothing
- * configured has to answer the upload routes somehow — and what it answers is a
- * refusal naming what it lacks.
+ * - **platform** → the platform's records (`POST /:slug/upload-records`), bytes in
+ *   the bucket `blobs` reaches.
+ * - **postgres** → the agent's own table, bytes in the bucket.
+ * - **local** → both halves in `localDir`, the local workflow world's own data
+ *   directory. See `_upload-files.ts` for why that is not the file backend this
+ *   store used to have.
+ *
+ * A durable home with NO byte backend is the one refusal: a durable record behind
+ * bytes that die with the container names an object nothing can produce, and the
+ * local arm would be a quieter version of the same loss rather than a fix. A local
+ * home with no `localDir` refuses too — a bare `createRuntimeServer` with nothing
+ * configured has to answer the upload routes somehow.
  *
  * @internal
  */
 export function createUploadStore(options: {
-  db?: Db | undefined;
+  /** Where the runs live — `resolveStorageHome` (`storage-home.ts`). */
+  home: StorageHome;
   blobs?: UploadBackend | undefined;
   /**
-   * Where the LOCAL workflow world keeps its run state, for a deployment with no
-   * database. Both halves of the store live under it, so an upload and the runs
-   * that read it share one filesystem lifetime.
+   * Where the LOCAL workflow world keeps its run state. Read only for a `local`
+   * home: both halves of the store live under it, so an upload and the runs that
+   * read it share one filesystem lifetime.
    */
   localDir?: string | undefined;
-  /**
-   * The PLATFORM's record home, when this guest is deployed on one: its public base
-   * URL and this sandbox's bearer, as `resolvePlatformQueue` reads them.
-   *
-   * Checked before `db`, deliberately — see the arm below.
-   */
-  platform?: PlatformUploadRecordsOptions | undefined;
   /** Key prefix for this deployment's objects. Defaults to {@link UPLOAD_KEY_PREFIX}. */
   prefix?: string | undefined;
   /** Cap for a body that names none. Defaults to `MAX_WORKFLOW_UPLOAD_BYTES`. */
@@ -194,78 +190,36 @@ export function createUploadStore(options: {
 }): UploadStore {
   const prefix = options.prefix ?? UPLOAD_KEY_PREFIX;
   const maxBytes = options.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES;
-  // THE PLATFORM's records win over a `DATABASE_URL`, and the order is the whole
-  // correction. This tree used to start at `db`, on the premise stated one arm
-  // down: "a database means durable runs, so the bytes have to be durable too."
-  // The workflow queue moving to the platform falsified it — a deployed app's runs
-  // are durable with no database of the author's — so the choice keyed off a signal
-  // that had stopped meaning durability, and a deployed guest with no
-  // `DATABASE_URL` got durable runs with their uploads in a directory that
-  // recycles. One sandbox filled its filesystem that way.
-  //
-  // Preferring the platform even when the author HAS a database is the same rule
-  // `configureWorkflowWorld` follows for the world itself: a deployed guest keeps
-  // its durable state where the platform keeps it, whether or not it happens to
-  // have a database of its own. Two homes chosen by different rules is how a run
-  // and its uploads end up in different places.
-  if (options.platform) {
-    // NOT `uploadBytesAreRemote`, and the difference is the point: that predicate
-    // requires a `db` because it is the db arm's guard, narrowing to
-    // `{ db, blobs }`. Reusing it here refuses the very case this arm exists for —
-    // a deployed guest with no `DATABASE_URL` — which is a bug this spec caught.
-    //
-    // The requirement is still real: a durable RECORD behind bytes that die with
-    // the container is the same failure in reverse, and worse, because the record
-    // then names an object nothing can produce.
-    if (!options.blobs) {
+  const { home, blobs } = options;
+  if (home.kind === "local") {
+    if (options.localDir === undefined) {
       return createUnavailableUploadStore(
-        `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
+        "a database (`DATABASE_URL`) and somewhere to put the bytes " +
+          `(\`${UPLOAD_STORAGE_URL_ENV}\`)`,
       );
     }
+    // The bucket is deliberately NOT used here, even when one resolved. Without a
+    // durable record nothing can name an object again, and there is no sweep that
+    // reclaims one (see `create`) — so bytes in a shared bucket behind a record that
+    // dies with the container are a permanent leak, where bytes in it are not.
     return createBlobUploadStore({
-      records: createPlatformUploadRecords(options.platform),
-      blobs: options.blobs,
+      records: createFileUploadRecords({ dir: options.localDir }),
+      blobs: createFileUploadBlobs({ dir: options.localDir }),
       prefix,
       maxBytes,
     });
   }
-  if (options.db) {
-    // A database means durable runs, so the bytes have to be durable too — a
-    // directory on this one machine cannot serve a run resumed by another process,
-    // which is the whole failure `_upload-files.ts` describes. Refused rather than
-    // downgraded: the local arm would be a QUIETER version of that bug, not a fix.
-    //
-    // Still reachable, and it is `aai dev` and a self-hosted server: no platform
-    // above them, a `DATABASE_URL` of the operator's own.
-    if (!uploadBytesAreRemote(options)) {
-      return createUnavailableUploadStore(
-        `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
-      );
-    }
-    return createBlobUploadStore({
-      records: createPostgresUploadRecords(options.db),
-      blobs: options.blobs,
-      prefix,
-      maxBytes,
-    });
-  }
-  // No database AND nowhere local to put anything. Reachable only from a caller
-  // that resolved neither — every host in this repo passes a `localDir`, because
-  // `localWorkflowDataDir()` always answers one — so the message names the two
-  // things a deployment can be given rather than guessing which was meant.
-  if (options.localDir === undefined) {
+  if (blobs === undefined) {
     return createUnavailableUploadStore(
-      "a database (`DATABASE_URL`) and somewhere to put the bytes " +
-        `(\`${UPLOAD_STORAGE_URL_ENV}\`)`,
+      `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
     );
   }
-  // The bucket is deliberately NOT used here, even when one resolved. Without a
-  // record nothing can name an object again, and there is no sweep that reclaims
-  // one (see `create`) — so bytes in a shared bucket behind a record that dies
-  // with the container are a permanent leak, where bytes in the container are not.
   return createBlobUploadStore({
-    records: createFileUploadRecords({ dir: options.localDir }),
-    blobs: createFileUploadBlobs({ dir: options.localDir }),
+    records:
+      home.kind === "platform"
+        ? createPlatformUploadRecords(home.platform)
+        : createPostgresUploadRecords(home.db),
+    blobs,
     prefix,
     maxBytes,
   });

@@ -16,8 +16,14 @@ the journal, a backend or the engine's walk. HTTP status rules are in
 
 ## A run's journal has THREE homes, and the order between them is a decision
 
-`selectJournal` (`runtime.ts`) picks **platform, then postgres, then memory**,
-and the boot line names the winner.
+**`resolveStorageHome` (`storage-home.ts`) decides it ONCE — platform, then
+postgres, then local** — and the run journal (`selectJournal`), the key index
+(`selectKeyStore`), the upload record (`createUploadStore`) and the owed DDL
+(`ownedSchemaUrl`) are each a `switch` over the `StorageHome` it returns. Never
+re-derive the order from `platformGuestOptions()`/`db` at a call site: two
+copies of it are how a run's journal and its uploads landed in different homes.
+The boot line names the winner. `wait-durability.scenario.test.ts` pins that a
+`ctx.sleep` outlives the process on the home a `DATABASE_URL` resolves.
 
 - **Platform first**: a deployed guest has no tenant database, and journaling
   into the sandbox dies with it after `AGENT_IDLE_EXIT_MS`.

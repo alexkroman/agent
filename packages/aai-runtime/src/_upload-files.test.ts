@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 /** A store over the shared directory — called twice where a restart is the point. */
-const localStore = () => createUploadStore({ localDir: dir });
+const localStore = () => createUploadStore({ home: { kind: "local" }, localDir: dir });
 
 describe("uploads with no database", () => {
   test("stores and reads back a whole file", async () => {

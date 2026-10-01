@@ -246,7 +246,7 @@ export function memoryStore(options: { refuse?: string; maxBytes?: number } = {}
     },
   };
   const store = createUploadStore({
-    db: recorder.db,
+    home: { kind: "postgres", db: recorder.db },
     blobs,
     ...omitUndefined({ maxBytes: options.maxBytes }),
   });
