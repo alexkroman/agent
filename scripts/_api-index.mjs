@@ -166,7 +166,9 @@ function* ownedNames(dir) {
     .sort()) {
     const capability = `${key}:${file.replace(/\.ts$/, "")}`;
     const text = readFileSync(join(entryDir, file), "utf8");
-    for (const [, clause, from] of text.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
+    for (const [, clause, from] of text.matchAll(
+      /export\s+(?:type\s+)?\{([^}]*)\}\s*from\s*"([^"]+)"/g,
+    )) {
       // Both groups are mandatory in the pattern, but `matchAll` types them
       // `string | undefined` under the scripts' strict checking.
       if (clause === undefined || from === undefined) continue;
