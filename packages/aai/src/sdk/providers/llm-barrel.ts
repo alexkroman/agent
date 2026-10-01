@@ -66,6 +66,10 @@ export type {
   LlmProvider,
   ProviderCredentialOptions,
 } from "../providers.ts";
+// One combinator for every pipeline stage — the same declaration on `/stt`,
+// `/llm` and `/tts`, so a failover list is imported beside the factories it
+// lists.
+export { fallback } from "./fallback.ts";
 export {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   type AssemblyAIReasoningEffort,

@@ -15,6 +15,8 @@ import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenAIS2sOptions } from "@alexkroman1/aai/s2s";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { LanguageModel } from "ai";
+import { type ProviderFailover, withOpenerFailoverListener } from "./providers/_failover.ts";
+import { withFailoverListener } from "./providers/_fallback-llm.ts";
 import type { SttOpener, TtsOpener } from "./providers/openers.ts";
 import {
   descriptorKind,
@@ -246,11 +248,15 @@ export function createTransportFactory(
     providers: ResolvedPipelineProviders,
   ): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
+    // A `fallback([...])` stage reports each switch into THIS session; every
+    // other provider is passed through by identity (`_failover.ts`).
+    const onFailover = (failover: ProviderFailover): void =>
+      callbacks.report({ type: "provider.failed-over", ...failover });
     return createPipelineTransport({
       sid: sessionOpts.id,
-      stt: providers.stt.opener,
-      llm: providers.llm,
-      tts: providers.tts.opener,
+      stt: withOpenerFailoverListener(providers.stt.opener, onFailover),
+      llm: withFailoverListener(providers.llm, onFailover),
+      tts: withOpenerFailoverListener(providers.tts.opener, onFailover),
       callbacks,
       // The LINE, not the opening: `reset()` re-greets through `greeting`, and the
       // resume skip must not reach it. The opening line is `skipGreeting`'s

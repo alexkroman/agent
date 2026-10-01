@@ -18,16 +18,27 @@
 // `"openai-realtime"`: it is a wire value in every deployed descriptor.
 
 import type { ProviderCredentialOptions, S2sProvider } from "../../providers.ts";
+import { defineProvider, describeProvider } from "../define-provider.ts";
+
+/** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
+export const OPENAI_S2S_PROVIDER = defineProvider({
+  kind: "openai-realtime",
+  stage: "s2s",
+  envVar: "OPENAI_API_KEY",
+  label: "OpenAI Realtime",
+  factory: "openAIS2s",
+  subpath: "s2s",
+});
 
 /** Kind tag recognised by the host-side resolver. */
-export const OPENAI_S2S_KIND = "openai-realtime" as const;
+export const OPENAI_S2S_KIND = OPENAI_S2S_PROVIDER.kind;
 
 /**
  * Env var holding this stage's credential — the same string as the OpenAI LLM
  * constant, under a name of its own so `apiKeyEnv` can repoint this stage
  * alone (the host-side resolver reads it).
  */
-export const OPENAI_S2S_API_KEY_ENV = "OPENAI_API_KEY";
+export const OPENAI_S2S_API_KEY_ENV: string = OPENAI_S2S_PROVIDER.envVar;
 
 /**
  * A voice id for the OpenAI Realtime API — one it accepted when this release
@@ -84,5 +95,5 @@ export interface OpenAIS2sOptions extends ProviderCredentialOptions {
  * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
  */
 export function openAIS2s(options: OpenAIS2sOptions = {}): S2sProvider {
-  return { kind: OPENAI_S2S_KIND, options: { ...options } };
+  return describeProvider(OPENAI_S2S_PROVIDER, options);
 }

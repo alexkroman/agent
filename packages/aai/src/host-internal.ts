@@ -149,7 +149,35 @@ export {
   TTS_CANCEL_ACK_TIMEOUT_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./sdk/pipeline-tuning-constants.ts";
+export { MAX_FAILOVER_REASON_CHARS } from "./sdk/protocol-events-accounting.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
+/**
+ * The provider catalog: one `defineProvider` record per vendor, per stage —
+ * kind, credential variable, label and how an author spells the factory. The
+ * runtime's opener tables are keyed to it, and the docs site's provider table
+ * is generated from it (`define-provider.ts` has the design).
+ */
+export {
+  LLM_PROVIDERS,
+  PROVIDER_CATALOG,
+  S2S_PROVIDERS,
+  type S2sKind,
+  STT_PROVIDERS,
+  type SttKind,
+  TTS_PROVIDERS,
+  type TtsKind,
+} from "./sdk/providers/catalog.ts";
+export {
+  defineProvider,
+  describeProvider,
+  type ProviderDefinition,
+  type ProviderStage,
+} from "./sdk/providers/define-provider.ts";
+export {
+  FALLBACK_KIND,
+  fallbackMembers,
+  isFallbackDescriptor,
+} from "./sdk/providers/fallback.ts";
 /**
  * The LLM stage's host half: the AssemblyAI kind, key variable and gateway
  * endpoints (`stepGenerate` dials the gateway itself, so these cannot live in

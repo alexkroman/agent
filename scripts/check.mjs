@@ -192,6 +192,12 @@ const GATES = [
     why: "The authoring guide also ships INSIDE the @alexkroman1/aai tarball, so a project that updated its SDK reads guidance matching the version it resolved rather than the copy `aai init` froze in. Same silent-staleness shape as the toolchain lockfile.",
   },
   {
+    script: "check:provider-table",
+    phase: "ratchets",
+    fatal: false,
+    why: "The docs site's provider table (which factory reads which key) is GENERATED from the SDK's provider catalog, the same defineProvider records the runtime registry and the credential preflight derive from. The hand-kept table drifted: a provider landed with its factory, registry and tests while the docs went on not listing it. Pure fs plus a type-stripped import, no build.",
+  },
+  {
     script: "check:studio-prompt",
     phase: "ratchets",
     fatal: false,
