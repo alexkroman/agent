@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets of lines jscpd reports inside a clone — see scripts/check-duplication.mjs. A file may hold FEWER than its number and may never hold more; --update lowers entries and refuses to raise one. Raising one is a hand edit a reviewer sees.",
+  "_description": "Per-file budgets of lines jscpd reports inside a clone \u2014 see scripts/check-duplication.mjs. A file may hold FEWER than its number and may never hold more; --update lowers entries and refuses to raise one. Raising one is a hand edit a reviewer sees.",
   "duplicatedLines": {
     "packages/aai-cli/src/_target-output.ts": 6,
     "packages/aai-cli/src/_vercel-output.ts": 6,
@@ -10,6 +10,7 @@
     "packages/aai-runtime/src/eval/stub-speech.ts": 10,
     "packages/aai-runtime/src/integration/_s2s-fuzz-commands.ts": 17,
     "packages/aai-runtime/src/runtime/dialog-knobs.ts": 20,
+    "packages/aai-runtime/src/testing-barrel.ts": 116,
     "packages/aai-runtime/tsdown.config.ts": 21,
     "packages/aai-server/src/_pg-test-utils.ts": 11,
     "packages/aai-server/src/_retry.ts": 6,
@@ -23,6 +24,7 @@
     "packages/aai-ui/src/use-workflow-stream.ts": 16,
     "packages/aai/src/host/_test-utils.ts": 16,
     "packages/aai/src/sdk/_dialog-events.ts": 13,
+    "packages/aai/src/sdk/testing-barrel.ts": 116,
     "packages/aai/src/sdk/tool-messages.ts": 21,
     "packages/aai/tsdown.config.ts": 21,
     "scripts/_api-contracts.mjs": 6,
