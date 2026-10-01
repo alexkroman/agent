@@ -14,11 +14,20 @@
  *
  * It used to be nineteen `on*` methods: five mirroring the five command names,
  * thirteen mirroring the event names, and `onAudio`. `ws-handler.ts` held a switch
- * to pick among the first five and `../runtime/session-callbacks.ts` a flat forward
- * for the other thirteen, so every name existed three times over — here, at the
+ * to pick among the first five and the runtime a flat forward for the other
+ * thirteen, so every name existed three times over — here, at the
  * transport boundary, and in whichever harness stood in for the thing that fired
  * it. None of that duplication decided anything; see `transports/types.ts` for the
  * argument in full.
+ *
+ * ## One core for every transport
+ *
+ * Nothing here asks WHICH transport it is driving. Where the transports differ,
+ * the session reads the transport's declared `capabilities` — `hostedTurn`
+ * decides whether a `tool.called` report is an observation (the host's own
+ * model loop ran the tool) or a request (the service is waiting on a result),
+ * and every other row is read the same way (`../transports/capabilities.ts`).
+ * The runtime's callbacks are a flat forward into `report`.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -113,17 +122,24 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   // Built once: everything here is fixed for the session's lifetime, and
   // `history` is a thunk precisely because the array is not.
+  const toolParameters = new Map((opts.toolSchemas ?? []).map((t) => [t.name, t.parameters]));
   const toolStepDeps = {
     sessionId: opts.id,
     agentConfig: opts.agentConfig,
-    executeTool: opts.executeTool,
+    // The shared per-call core's context (`../tools/run-tool-call.ts`) — the
+    // same coercion, snapshot and record the pipeline's tools run with.
+    toolCall: {
+      executeTool: opts.executeTool,
+      sessionId: opts.id,
+      messages: () => history,
+      parameters: (name: string) => toolParameters.get(name),
+      // Straight into the same window the transcripts land in, so a tool reads
+      // an earlier tool's result on the next call of the reply — see
+      // `ToolStepDeps.toolCall`.
+      recordToolResult: (message: Message) => pushMessages(message),
+    },
     emit,
     log,
-    history: () => history,
-    // Straight into the same window the transcripts land in, so a tool reads
-    // an earlier tool's result on the next call of the reply — see
-    // `ToolStepDeps.recordToolResult`.
-    recordToolResult: (message: Message) => pushMessages(message),
     relayed: Boolean(opts.onToolResult),
   };
 
@@ -209,6 +225,20 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
 
   /** One tool call the transport reported. See {@link ServerSession.report}. */
   function handleToolCalled(event: TransportEventBody<"tool.called">): void {
+    // WHAT a `tool.called` report means is the transport's declared fact, not a
+    // flag the runtime computes beside it. A transport whose HOST runs the model
+    // turn (`hostedTurn`: the pipeline) ran the tool already, inside its own
+    // model loop through the same call core (`../tools/run-tool-call.ts`), so
+    // the report is an OBSERVATION: publish it — unless a relay published it
+    // when it asked the client to run the tool, where a second frame is one the
+    // client runs twice — and go no further. Executing it here would run the
+    // tool a second time and then hang the turn on a result nobody asked for.
+    if (opts.transport.capabilities.hostedTurn) {
+      if (!toolStepDeps.relayed) emit(event);
+      return;
+    }
+    // Otherwise the SERVICE runs the turn and is waiting for a `tool.result`,
+    // so this session executes the call.
     resetIdle();
     // See onReplyStarted: a trailing tool.called during stop()'s transport
     // drain must not start tool work (guest RPC, ctx.generate)
@@ -300,8 +330,13 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
       case "audio.completed":
       case "metrics.collected":
       case "provider.failedOver":
-      case "speech.stopped":
       case "tool.completed":
+        // Only a hosted turn reports one (the session emits its own for the
+        // calls it runs, in `tool-steps.ts`); under a relay the client already
+        // has the result it computed.
+        if (toolStepDeps.relayed) return;
+        break;
+      case "speech.stopped":
       case "userTurn.exceeded":
         break;
       default: {

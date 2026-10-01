@@ -7,7 +7,7 @@
  *
  * This type used to carry one method per thing a transport observes — sixteen of
  * them, and its own comment said as much: "one per event the transport produces".
- * `ServerSession` then declared the same sixteen, `../runtime/session-callbacks.ts`
+ * `ServerSession` then declared the same sixteen, the runtime's session callbacks
  * forwarded each to its twin, and four test harnesses stubbed the whole set. So a
  * seventeenth thing worth observing cost a declaration in three places and a stub
  * in four, none of which DECIDED anything: the transport already knew what

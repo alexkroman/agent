@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Running a tool call: the executor and its toolset dispatcher (`executor.ts`),
+ * Running a tool call: the one per-call core every transport runs
+ * (`run-tool-call.ts`), the executor and its toolset dispatcher (`executor.ts`),
  * argument coercion and call repair, the error policy and its fatal latch, tool
  * speech (`messages-runner.ts`), the AI SDK adapter (`to-vercel-tools.ts`), the
  * builtin surface, the `role: "tool"` message shape (`result-message.ts`), the
@@ -28,5 +29,7 @@ export type { ToolSpeechController } from "./messages-runner.ts";
 export { awaitSpokenEstimate, createToolSpeechController } from "./messages-runner.ts";
 export { toolResultMessage } from "./result-message.ts";
 export { stringifyResult } from "./result-text.ts";
+export type { SettledToolCall, ToolCallContext, ToolCallRequest } from "./run-tool-call.ts";
+export { runToolCall } from "./run-tool-call.ts";
 export { toDeclaredTools, toVercelTools } from "./to-vercel-tools.ts";
 export { withToolsDir } from "./tools-dir.ts";

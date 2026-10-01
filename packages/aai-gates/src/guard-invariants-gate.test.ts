@@ -444,7 +444,7 @@ describe("guard-invariants gate", () => {
     // The floor is over the DERIVATION, not over one rule: a filter that stopped
     // recognising literal paths would otherwise assert nothing over an empty
     // list, which is the failure this whole test is about.
-    expect(literal.length, "no literal rule paths discovered").toBeGreaterThanOrEqual(14);
+    expect(literal.length, "no literal rule paths discovered").toBeGreaterThanOrEqual(13);
     expect(
       new Set(literal.map(({ id }) => id)).size,
       "fewer rules carry a literal path list than when this floor was written",

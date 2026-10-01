@@ -33,6 +33,22 @@ them first-wins, the same table the schemas were drawn from.
 - MCP attaches an `"mcp"` toolset after the agent's (`withMcpTools`), so a remote
   tool can never shadow an authored one; a subagent's map is a `"subagent"` set.
 
+### ONE call core runs every transport's tools
+
+`runToolCall` (`run-tool-call.ts`) is a single call: coerce the arguments to the
+declared schema, snapshot the history, run the `beforeExecute` hook, call
+`executeTool`, record the result, and return the model's copy (record
+collections as rows). The pipeline's `to-vercel-tools.ts` (inside `streamText`)
+and S2S's `../session/tool-steps.ts` (on `tool.called`) both call it. Never
+re-implement a step in a caller.
+
+- **A rejection is rethrown untouched, with nothing recorded.** What it BECOMES
+  depends on the transport (the `fatalTool` capability): the pipeline latches
+  it, and S2S answers the call with a serialized failure.
+- **`executeTool` starts synchronously when there is no hook.** An `await` on
+  nothing yields a microtask, and a barge-in in that gap would abort a signal
+  the tool never saw.
+
 ### Tool discovery off the platform
 
 `withToolsDir(def, dir)` (`tools-dir.ts`) turns a DIRECTORY into a tool

@@ -156,7 +156,7 @@ status-less reset (`sdk/step-fetch.ts` has the measurement).
 
 ## A reply's metrics are ONE frame, and every reader takes it from there
 
-`metrics.collected` is reported once per settled pipeline reply;
+`metrics.collected` is reported once per settled reply; for the pipeline,
 `transports/pipeline/turn/metrics.ts` assembles it from marks the existing
 producers already take (`transports/pipeline/llm/trace.ts`, `transports/pipeline/output/audio-out.ts`).
 
@@ -169,5 +169,9 @@ producers already take (`transports/pipeline/llm/trace.ts`, `transports/pipeline
   `metricsSinks` slot because an agent's own code may register one from the
   bundle's copy. `startTracing` registers `otelMetricsSink`
   (`_metrics-otel.ts`); a missing metrics peer is a warning, never a throw.
-- S2S and text mode emit no frame yet (the `turnMetrics` capability row in
-  `transports/CLAUDE.md`).
+- **S2S reports the round trip only** (`transports/s2s-turn-metrics.ts`, which
+  wraps both S2S transports' callbacks): `interrupted`, plus `latencyMs` from
+  the service's `speech.stopped` to the first audio. The mark goes to the first
+  reply that SPEAKS, so a silent tool-call reply cannot take it. The service
+  reports no boundary between stages, so `stt`/`llm`/`tts` are absent. Text mode
+  emits no frame yet.
