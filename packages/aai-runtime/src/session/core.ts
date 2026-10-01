@@ -361,11 +361,11 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
       // the check is the session's own flag rather than the transport's.
-      if (stopped || !opts.transport.capabilities.announce || !opts.transport.injectTurn) {
-        return false;
-      }
+      // The flag decides (`capabilities.test.ts` holds it to the verb); `?.`
+      // only narrows the optional member.
+      if (stopped || !opts.transport.capabilities.announce) return false;
       log.info("Session announcement", { sid: opts.id });
-      opts.transport.injectTurn(instruction);
+      opts.transport.injectTurn?.(instruction);
       return true;
     },
     restoreHistory(messages, toolCalls = []) {

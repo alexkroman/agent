@@ -66,7 +66,8 @@ export function createSpeechVerbs(deps: SpeechVerbDeps): SpeechVerbs {
   function say(text: string, options: SayOptions = {}): SpeechHandle {
     const line = text.trim();
     // A transport without `say` was said at SESSION START, once, from its
-    // capability row (`transports/capabilities.ts`) — not here per line.
+    // capability row (`transports/capabilities.ts`) — not here per line. The
+    // flag decides; `?.` only narrows the optional verb.
     const speakLine = transport.capabilities.say ? transport.speakLine?.bind(transport) : undefined;
     if (deps.stopped() || line === "" || !speakLine) return settledHandle("dropped");
     // Cut BEFORE queueing, so the line is chained after the epoch bump that
