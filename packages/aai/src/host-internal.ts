@@ -88,6 +88,8 @@ export {
 export {
   recordSessionIdentity,
   type SessionIdentity,
+  // The write side of every bounded insertion-order map keyed by session id.
+  writeSessionEntry,
 } from "./sdk/_session-identity-store.ts";
 // A context with no live session behind it: every `say` settles `"dropped"`.
 export { DETACHED_SESSION_SPEECH } from "./sdk/_session-speech-detached.ts";
