@@ -208,13 +208,19 @@ export function platformSessionSecret(guestToken: string): string {
 
 /** Input to {@link mintPlatformSessionTicket}. */
 export type PlatformTicketInput = {
-  /** The bearer of the sandbox the ticket is for. */
-  guestToken: string;
   /**
-   * Bearers a PRESENTED ticket may have been signed under besides `guestToken`'s
-   * — the previous deploy's, so a call survives a redeploy.
+   * The ticket key of the sandbox the ticket is for —
+   * {@link platformSessionSecret} of its bearer, derived by the caller so a
+   * broker can derive it once per deploy rather than once per request. It both
+   * checks a presented ticket and signs the minted one.
    */
-  previousGuestTokens?: readonly string[];
+  secret: string;
+  /**
+   * Keys a PRESENTED ticket may have been signed under besides `secret` — the
+   * previous deploy's, so a call survives a redeploy. A thunk, read only when a
+   * ticket was presented and `secret` did not prove it.
+   */
+  previousSecrets?: () => readonly string[];
   /** The ticket the browser presented (`SESSION_TICKET_HEADER`), if any. */
   presented?: string | undefined;
   /** Clock override for tests, in ms since the epoch. */
@@ -240,7 +246,7 @@ export type PlatformTicketInput = {
 export function mintPlatformSessionTicket(input: PlatformTicketInput): string {
   const sessionId = presentedSessionId(input) ?? randomUUID();
   return createSessionToken({
-    secret: platformSessionSecret(input.guestToken),
+    secret: input.secret,
     sub: `platform:${sessionId}`,
     sessionId,
     ...omitUndefined({ now: input.now }),
@@ -251,14 +257,13 @@ export function mintPlatformSessionTicket(input: PlatformTicketInput): string {
 function presentedSessionId(input: PlatformTicketInput): string | undefined {
   const presented = input.presented?.trim();
   if (!presented) return undefined;
-  for (const token of [input.guestToken, ...(input.previousGuestTokens ?? [])]) {
-    const identity = checkTicket(
-      presented,
-      platformSessionSecret(token),
-      input.now,
-      PLATFORM_TICKET_RESUME_GRACE_SECONDS,
-    );
-    if (identity?.sessionId !== undefined) return identity.sessionId;
+  const proven = (secret: string): string | undefined =>
+    checkTicket(presented, secret, input.now, PLATFORM_TICKET_RESUME_GRACE_SECONDS)?.sessionId;
+  const current = proven(input.secret);
+  if (current !== undefined) return current;
+  for (const secret of input.previousSecrets?.() ?? []) {
+    const previous = proven(secret);
+    if (previous !== undefined) return previous;
   }
   return undefined;
 }
