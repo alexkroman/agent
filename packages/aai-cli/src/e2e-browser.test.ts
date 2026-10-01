@@ -137,7 +137,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // session when asked; aai-ui's fuzz harnesses drive its reconnect against a
     // fake socket. Neither shows the real browser client redialling after a real
     // drop and carrying the id forward — partysocket's backoff, the
-    // `serverIsBroker` latch and the handshake guard all sit in that path.
+    // `configPerAttempt` latch and the handshake guard all sit in that path.
     //
     // Severed by DESTROYING the socket server-side, so the client sees 1006. A
     // clean close is the "user hung up" case aai-ui deliberately does not

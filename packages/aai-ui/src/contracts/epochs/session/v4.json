@@ -3,7 +3,7 @@
   "capability": "session",
   "epoch": 4,
   "rule": 2,
-  "sha256": "c833d62593786479293081d0fde9ce51c1113d0609e2ba3139a585d9989213e5",
+  "sha256": "40fc458dcec21644ff7754cd89fabc3a8ebec6a0c5f8d95c3a79bb274a64fd02",
   "exports": [
     "AGENT_STATE_LABELS",
     "AgentCustomEvent",
@@ -38,7 +38,7 @@
     "useUserTranscript"
   ],
   "rollup": "b2673909e5aa8b37733b5f2faf0d6058a8f48482de9b7aa017ed21167f691ef3",
-  "revision": 2,
+  "revision": 3,
   "revisions": [
     {
       "revision": 0,
@@ -56,6 +56,12 @@
       "revision": 2,
       "rule": 2,
       "sha256": "c833d62593786479293081d0fde9ce51c1113d0609e2ba3139a585d9989213e5",
+      "reason": "additive (checked): +SendTextOptions, +SessionIdentity, +browserClientId, +useClientId, +useSessionId"
+    },
+    {
+      "revision": 3,
+      "rule": 2,
+      "sha256": "40fc458dcec21644ff7754cd89fabc3a8ebec6a0c5f8d95c3a79bb274a64fd02",
       "reason": "additive (checked): +SendTextOptions, +SessionIdentity, +browserClientId, +useClientId, +useSessionId"
     }
   ]

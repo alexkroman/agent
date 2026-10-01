@@ -51,8 +51,11 @@ export class MockWebSocket {
   private _listeners = new Map<string, Set<(...args: unknown[]) => void>>();
 
   url: string;
-  constructor(url: string) {
+  /** The subprotocols the client offered — where a session ticket rides. */
+  protocols: string | string[] | undefined;
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     lastSocket = this;
   }
 

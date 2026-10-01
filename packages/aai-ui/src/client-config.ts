@@ -55,7 +55,7 @@ const AGENT_DEFAULT: ClientConfigResponse = { page: "voice" };
  * there long after the server is back. Reproduced: zero sockets opened.
  *
  * A timed-out attempt therefore degrades exactly like any other failed one —
- * `null`, so `serverIsBroker` stays unlatched and the attempt falls through
+ * `null`, so `configPerAttempt` stays unlatched and the attempt falls through
  * to the same-origin `websocket` path, whose failure re-enters the normal
  * backoff and re-fetches this on the next attempt.
  *

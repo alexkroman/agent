@@ -94,8 +94,9 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` (10 s) makes a hang degrade like a failure.
 - **The session's per-attempt lookup uses `loadClientConfig`** (`null` = no
   answer), never `fetchClientConfig` (`{}`). Only an ANSWERED lookup with no
-  `sessionUrl` may latch `serverIsBroker = false`; latching on a failure pins
-  the client to `/:slug/websocket`, whose redirect browsers do not follow.
+  `sessionUrl` and no `sessionToken` may latch `configPerAttempt = false`;
+  latching on a failure pins the client to `/:slug/websocket`, whose redirect
+  browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
   `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
@@ -103,6 +104,16 @@ on expiry, and after `MAX_HANDSHAKE_TIMEOUTS` surfaces a `connection` error.
   `component` ignores it.
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
+- **A session ticket is asked for per ATTEMPT** (`session-core-ticket.ts`):
+  `VoiceSessionOptions.token` (told the session the attempt resumes), else the
+  attempt's `client-config` `sessionToken`. It rides `Sec-WebSocket-Protocol`
+  as `aai.auth.<ticket>` AFTER the plain `aai.session` (both from
+  `@alexkroman1/aai/protocol`) — a browser fails a handshake that selects none
+  of its offers, and the server selects the plain one so the ticket is never
+  echoed. The URL provider STARTS an attempt and the protocol provider reads
+  the same one. A getter that throws dials without a ticket (a provider that
+  rejects leaves partysocket with no `close`, so "connecting" forever); an
+  injected `WebSocket` needs a synchronous one.
 - There is no text-only mode; `ChatView` always renders voice `Controls`. The
   endpoint itself is the SDK's ("Pre-connection client config" in
   `packages/aai/src/sdk/CLAUDE.md`).

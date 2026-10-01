@@ -17,6 +17,13 @@
 import { loadClientConfig } from "./client-config.ts";
 import { resolveReported } from "./client-identity.ts";
 import { openReconnectingSocket } from "./session-core-reconnect.ts";
+import {
+  resolveSessionToken,
+  resolveSessionTokenSync,
+  type SessionTokenOption,
+  type TicketCarriage,
+  ticketCarriage,
+} from "./session-core-ticket.ts";
 import { buildBrokeredWsUrl, buildWsUrl, type ClientReport } from "./session-core-url.ts";
 import {
   clearStoredSessionId,
@@ -38,7 +45,18 @@ export type DialOptions = {
   phone?: string | (() => string | undefined) | undefined;
   /** This client's device id — see `VoiceSessionOptions.client`. Read per attempt. */
   client?: string | (() => string | undefined) | undefined;
+  /** The session ticket — see `VoiceSessionOptions.token`. Asked per attempt. */
+  token?: SessionTokenOption;
 };
+
+/** One attempt's address and the subprotocols it offers. */
+type Attempt = { url: string; protocols: string[] | undefined };
+
+/** `url` with the `?token=` fallback applied when the ticket rides the URL. */
+function withQueryToken(url: URL, carriage: TicketCarriage): string {
+  if (carriage.queryToken !== undefined) url.searchParams.set("token", carriage.queryToken);
+  return url.toString();
+}
 
 export type Dialer = {
   /** A socket for this attempt. */
@@ -91,14 +109,15 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
   let hasConnected = false;
 
   /**
-   * Whether `platformUrl` is a broker (its `client-config` names a
-   * `sessionUrl`). A server is one or it isn't — it never flips mid-session — so
-   * once a non-broker is observed, later reconnects skip the `client-config`
-   * re-fetch that would only fall through to `buildWsUrl` (every reconnect on
-   * `aai dev` / self-hosted otherwise pays a wasted GET). `undefined` until the
-   * first fetch settles.
+   * Whether `platformUrl`'s `client-config` says anything per ATTEMPT: a
+   * `sessionUrl` (a broker) or a `sessionToken` (a server minting its own
+   * client's tickets — `aai dev` with `AAI_SESSION_SECRET`). A server does or it
+   * doesn't — it never flips mid-session — so once one that says neither is
+   * observed, later reconnects skip the `client-config` re-fetch that would only
+   * fall through to `buildWsUrl` (every reconnect on `aai dev` / self-hosted
+   * otherwise pays a wasted GET). `undefined` until the first fetch settles.
    */
-  let serverIsBroker: boolean | undefined;
+  let configPerAttempt: boolean | undefined;
 
   /** What the last `config` frame said — see `Dialer.sessionId`. */
   let confirmed: string | undefined;
@@ -124,8 +143,8 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
   }
 
   /**
-   * The WebSocket URL for the *next* connection attempt. Evaluated per attempt
-   * (partysocket takes it as an async URL provider):
+   * The WebSocket URL and subprotocols for the *next* connection attempt.
+   * Evaluated per attempt (partysocket takes async URL and protocol providers):
    *
    * - `GET client-config` is re-fetched every attempt. When it names a
    *   `sessionUrl` — the platform's broker pointing at the agent's live sandbox
@@ -138,37 +157,64 @@ export function createDialer(options: DialOptions, onSessionId?: () => void): Di
    *   and the server resumes the SAME session (id, tool state) instead of minting
    *   a new one. `resume=1` remains only as the greeting-suppression fallback for
    *   a server whose config carried no id.
+   * - The session ticket (`session-core-ticket.ts`) is the `token` option's,
+   *   asked for THIS attempt, else the `sessionToken` this attempt's
+   *   `client-config` issued.
    */
-  async function url(): Promise<string> {
-    // Known non-broker: skip the fetch and go straight to the same-origin path
-    // (the fetch could only return no `sessionUrl` again).
-    const cfg = serverIsBroker === false ? null : await loadClientConfig(options.platformUrl);
+  async function resolveAttempt(): Promise<Attempt> {
+    // Asked NOW, before the lookup, so a ticket fetch overlaps it — and on every
+    // attempt, so a short-lived ticket is fresh on each reconnect.
+    const ownToken = resolveSessionToken(options.token, { sessionId });
+    // Known to say nothing per attempt: skip the fetch and go straight to the
+    // same-origin path (the fetch could only return the same nothing again).
+    const cfg = configPerAttempt === false ? null : await loadClientConfig(options.platformUrl);
     // Only an ANSWERED lookup says anything about the server. A failed one (the
     // broker 503s while the sandbox boots, or a network blip) must not latch
-    // `serverIsBroker = false`: that skips brokering on every later attempt and
+    // `configPerAttempt = false`: that skips brokering on every later attempt and
     // pins the client to the platform's `/:slug/websocket` — browsers don't
     // follow its WebSocket redirect, so that route never recovers even after the
     // agent does. Only an answered lookup may latch.
-    if (cfg) serverIsBroker = cfg.sessionUrl !== undefined;
+    if (cfg) configPerAttempt = cfg.sessionUrl !== undefined || cfg.sessionToken !== undefined;
+    // The caller's own ticket wins over one the server issued.
+    const carriage = ticketCarriage((await ownToken) ?? cfg?.sessionToken);
     const next = cfg?.sessionUrl
       ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId, report())
       : buildWsUrl(options.platformUrl, hasConnected, sessionId, report());
     // The snapshot's `apiUrl` deliberately stays the long-living platform
     // endpoint set at construction — never the brokered sandbox tunnel URL,
     // which is ephemeral (dies on idle eviction/redeploy) and useless to share.
-    return next.toString();
+    return { url: withQueryToken(next, carriage), protocols: carriage.protocols };
   }
+
+  /**
+   * The attempt partysocket is dialling. It calls its URL and protocol providers
+   * back to back for each attempt and awaits them together, so the URL provider
+   * STARTS the attempt and the protocol provider reads that same one: a ticket
+   * and the address it was fetched beside belong to one attempt.
+   */
+  let current: Promise<Attempt> | undefined;
 
   return {
     open: () => {
       if (options.WebSocket) {
-        return new options.WebSocket(
-          buildWsUrl(options.platformUrl, hasConnected, sessionId, report()).toString(),
+        const carriage = ticketCarriage(resolveSessionTokenSync(options.token, { sessionId }));
+        const target = withQueryToken(
+          buildWsUrl(options.platformUrl, hasConnected, sessionId, report()),
+          carriage,
         );
+        return carriage.protocols
+          ? new options.WebSocket(target, carriage.protocols)
+          : new options.WebSocket(target);
       }
       // partysocket's reconnecting WebSocket — same interface, plus
-      // reconnect-on-close, re-reading `url` per attempt.
-      return openReconnectingSocket(url);
+      // reconnect-on-close, re-resolving the attempt per retry.
+      return openReconnectingSocket(
+        async () => {
+          current = resolveAttempt();
+          return (await current).url;
+        },
+        async () => (await (current ?? resolveAttempt())).protocols ?? null,
+      );
     },
     configured: (sid) => {
       if (sid) {

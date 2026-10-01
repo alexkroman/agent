@@ -134,7 +134,7 @@ describe("loadClientConfig", () => {
 
   it("reports null when that deadline fires, degrading like any other failure", async () => {
     // What a real fetch does when its timeout signal aborts. It has to reach
-    // the same `null` as a network error: `serverIsBroker` must stay
+    // the same `null` as a network error: `configPerAttempt` must stay
     // unlatched so the attempt falls through to the same-origin path and the
     // NEXT attempt re-fetches this.
     const fetchFn = vi.fn(async () => {
