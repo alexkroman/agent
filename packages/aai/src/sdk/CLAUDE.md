@@ -90,14 +90,14 @@ of the file it is in. Two packages because `aai` may not import `aai-runtime`
 (the engine and the eval harness are runtime), so the SDK cannot re-export
 them; the runtime re-exports the SDK's stubs instead.
 
-| File | Import from | For |
-| --- | --- | --- |
-| `vitest.config.ts` | `@alexkroman1/aai/testing/vite` | `defineAgentTestConfig` |
-| a unit spec (tool, step, hook, workflow body) | `@alexkroman1/aai/testing` | every fake and reader that installs nothing |
-| the same spec | `@alexkroman1/aai/testing/vitest` | every `install*` (installs and restores) |
-| a spec on the REAL engine or text loop | `@alexkroman1/aai-runtime/testing` | `runWorkflow`, `runTextAgent`, `scriptedTextModel` |
-| an eval (`*.eval.test.ts`) | `@alexkroman1/aai-runtime/eval/vitest` ONLY | the suite, readers, simulation, and the SDK stubs an eval composes with |
-| a harness that is not vitest | `@alexkroman1/aai-runtime/eval` | the runner-free half |
+| File                                          | Import from                                 | For                                                                     |
+| --------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------- |
+| `vitest.config.ts`                            | `@alexkroman1/aai/testing/vite`             | `defineAgentTestConfig`                                                 |
+| a unit spec (tool, step, hook, workflow body) | `@alexkroman1/aai/testing`                  | every fake and reader that installs nothing                             |
+| the same spec                                 | `@alexkroman1/aai/testing/vitest`           | every `install*` (installs and restores)                                |
+| a spec on the REAL engine or text loop        | `@alexkroman1/aai-runtime/testing`          | `runWorkflow`, `runTextAgent`, `scriptedTextModel`                      |
+| an eval (`*.eval.test.ts`)                    | `@alexkroman1/aai-runtime/eval/vitest` ONLY | the suite, readers, simulation, and the SDK stubs an eval composes with |
+| a harness that is not vitest                  | `@alexkroman1/aai-runtime/eval`             | the runner-free half                                                    |
 
 The eval row is enforced for templates (konsistent
 `template-eval-runtime-subpaths`); `/eval/vitest`'s re-exports are the same

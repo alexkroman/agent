@@ -27,7 +27,7 @@ re-exports.
 | Directory              | Holds                                                                    | Guide                                                   |
 | ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------- |
 | `runtime/`             | `createRuntime`, its types, and its per-session wiring                   | [`runtime/CLAUDE.md`](runtime/CLAUDE.md)                |
-| `server/`              | `createServerForRuntime`, `createAgentServer`, host mode, session auth      | [`server/CLAUDE.md`](server/CLAUDE.md)                  |
+| `server/`              | `createServerForRuntime`, `createAgentServer`, host mode, session auth   | [`server/CLAUDE.md`](server/CLAUDE.md)                  |
 | `session/`             | one session: attach lifecycle, socket adapter, core, emitter, event log  | [`session/CLAUDE.md`](session/CLAUDE.md)                |
 | `tools/`               | tool execution, tool speech, the builtin surface, the client-tool broker | [`tools/CLAUDE.md`](tools/CLAUDE.md)                    |
 | `transports/pipeline/` | the pipeline transport, one subdirectory per stage                       | [`transports/pipeline/`](transports/pipeline/CLAUDE.md) |
