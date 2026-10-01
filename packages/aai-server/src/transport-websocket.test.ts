@@ -1,10 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
+import { SESSION_TICKET_HEADER } from "@alexkroman1/aai/protocol";
+import { verifySessionToken } from "@alexkroman1/aai-runtime/auth";
+import { platformSessionSecret } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
+import { guestTokenFor } from "./guest/token.ts";
 import { createOrchestrator } from "./orchestrator.ts";
+import { agentSandboxName } from "./sandbox/directory.ts";
 import { createSlotCache, setSlot } from "./sandbox/slots.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
@@ -87,6 +92,7 @@ describe("handleAgentClientConfig", () => {
       name: "guest-agent",
       greeting: "hello from the bundle",
       sessionUrl: "wss://tunnel.test:443/websocket",
+      sessionToken: expect.any(String),
       page: "voice",
     });
     // The proxy dialed the sandbox's own origin, scheme swapped ws→http
@@ -108,7 +114,56 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       sessionUrl: "wss://tunnel.test:443/websocket",
+      sessionToken: expect.any(String),
       page: "voice",
+    });
+  });
+
+  describe("the session ticket", () => {
+    async function brokered(slug: string) {
+      const slots = createSlotCache();
+      const guestFetch: typeof globalThis.fetch = async () => Response.json({ page: "voice" });
+      const ctx = await createTestOrchestrator({ slots, guestFetch });
+      await seedResident(ctx.fetch, ctx.store, slots, slug);
+      const version = (await ctx.store.getAgentVersion(slug)) ?? 1;
+      // What the guest verifies with: a key derived from ITS bearer.
+      const secret = platformSessionSecret(guestTokenFor(agentSandboxName(slug, version)));
+      const lookup = async (presented?: string) => {
+        const res = await ctx.fetch(
+          `/${slug}/client-config`,
+          presented ? { headers: { [SESSION_TICKET_HEADER]: presented } } : {},
+        );
+        const body = (await res.json()) as { sessionToken: string };
+        const sessionId = verifySessionToken(body.sessionToken, { secret })?.sessionId;
+        return { res, ticket: body.sessionToken, sessionId };
+      };
+      return { ...ctx, lookup };
+    }
+
+    test("is one the sandbox can verify, bound to a new session, and never cached", async () => {
+      const { lookup } = await brokered("ticket-agent");
+      const first = await lookup();
+      expect(first.res.headers.get("cache-control")).toBe("no-store");
+      expect(first.sessionId).toEqual(expect.any(String));
+      expect((await lookup()).sessionId).not.toBe(first.sessionId);
+    });
+
+    test("presenting the last ticket re-mints for the SAME session", async () => {
+      const { lookup } = await brokered("ticket-agent");
+      const first = await lookup();
+      const again = await lookup(first.ticket);
+      expect(again.sessionId).toBe(first.sessionId);
+      expect(again.ticket).not.toBe(first.ticket);
+    });
+
+    test("another agent's ticket, or garbage, proves nothing", async () => {
+      const other = await brokered("other-agent");
+      const foreign = await other.lookup();
+      const { lookup } = await brokered("ticket-agent");
+      const viaForeign = await lookup(foreign.ticket);
+      expect(viaForeign.sessionId).toEqual(expect.any(String));
+      expect(viaForeign.sessionId).not.toBe(foreign.sessionId);
+      expect((await lookup("not-a-ticket")).sessionId).toEqual(expect.any(String));
     });
   });
 

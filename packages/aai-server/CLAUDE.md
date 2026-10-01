@@ -418,6 +418,29 @@ traps in `packages/aai-guest/CLAUDE.md`, "Guest network access".
   **Normalization is `slugifyName` in `@alexkroman1/aai/slugify`**, shared by
   CLI, studio and server — do not add a local slugifier.
 
+### A deployed agent's session opens only for a broker-minted ticket
+
+`GET /:slug/client-config` (`client-config-handler.ts`) answers with a
+`sessionToken` on every lookup, `Cache-Control: no-store`, and the guest's
+`WS /websocket` (and `/inbox`) refuses an upgrade without one (4401).
+
+- **What it proves is only that the holder fetched this agent's config**, a
+  minute ago (`mintPlatformSessionTicket`, `aai-runtime/session-ticket.ts`).
+  The platform knows no end user; `allowedOrigins` has no platform setting yet.
+- **Resume is by POSSESSION.** Every ticket is BOUND to one session id; a
+  lookup presenting the previous ticket (`aai-session-ticket` header) within
+  `PLATFORM_TICKET_RESUME_GRACE_SECONDS` (12 h) of its expiry gets one for the
+  same session, anything else a new id. Knowing a session id is not enough, and
+  the gate opens a bound ticket's own session whatever `?sessionId=` names.
+- **The key is DERIVED, never delivered**: `platformSessionSecret(bearer)`
+  over `guestTokenFor(agentSandboxName(slug, version))`, which the guest holds
+  as `AAI_GUEST_TOKEN` through its exec env. Nothing new reaches the agent env,
+  the bundle or the browser; the key does not reveal the bearer. A presented
+  ticket from the previous deploy (`version - 1`) still proves its session, so a
+  call survives a redeploy; minting is always for the current deploy.
+- The guest also accepts the AUTHOR's tickets when the agent env sets
+  `AAI_SESSION_SECRET` (`aai-guest/src/harness/session-tickets.ts`).
+
 ### The guest fetches its own bundle (signed Storage URL)
 
 A cold spawn never moves the worker bundle through this process:
