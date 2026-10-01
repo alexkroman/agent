@@ -110,7 +110,8 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
 /**
  * Transcribe one complete audio file.
  *
- * **From a step, prefer `stepTranscribeSyncOrFail` (`@alexkroman1/aai/step-errors`).**
+ * **From a step, prefer `orFail(stepTranscribeSync)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).**
  * It is this call plus `throwStepError`, and the engine decides its retry policy
  * from WHICH error a step throws: raw, a terminal failure burns every remaining
  * attempt and a rate limit backs off for one second while the delay the far side

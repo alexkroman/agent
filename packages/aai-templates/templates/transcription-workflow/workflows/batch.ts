@@ -54,12 +54,15 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
-import { stepReport, stepUploadInfo, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
-  stepTranscribePollOrFail,
-  stepTranscribeSubmitOrFail,
-  stepTranscribeUploadOrFail,
-} from "@alexkroman1/aai/step-errors";
+  stepReport,
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+  stepUploadInfo,
+  TRANSCRIBE_API,
+} from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 import type { Transcript } from "./transcribe.ts";
 
@@ -133,12 +136,12 @@ export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: st
   await stepReport(
     `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) to the async API.`,
   );
-  return await stepTranscribeUploadOrFail(uploadId);
+  return await orFail(stepTranscribeUpload)(uploadId);
 }
 
 /** Create the transcription job, and answer with the id that outlives this run. */
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
-  const job = await stepTranscribeSubmitOrFail(audioUrl);
+  const job = await orFail(stepTranscribeSubmit)(audioUrl);
   await stepReport(`Submitted — job ${job.id}.`);
   return job;
 }
@@ -156,7 +159,7 @@ export async function pollTranscript(
   id: string,
   startedAt: number,
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
-  const progress = await stepTranscribePollOrFail(id);
+  const progress = await orFail(stepTranscribePoll)(id);
   if (!progress.done) {
     await stepReport(`Transcript ${id} is ${progress.status}.`);
     return { done: false };

@@ -12,7 +12,8 @@
  */
 
 import type { TranscribeSyncOptions } from "@alexkroman1/aai/step";
-import { stepTranscribeSyncOrFail } from "@alexkroman1/aai/step-errors";
+import { stepTranscribeSync } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 /**
  * Transcribe one complete WAV.
@@ -22,7 +23,7 @@ import { stepTranscribeSyncOrFail } from "@alexkroman1/aai/step-errors";
  * stores headerless PCM on purpose (see `media.ts`) and puts a header back with
  * `encodeWav` for exactly this call.
  *
- * `stepTranscribeSyncOrFail` — the SDK's own `stepTranscribeSync` plus
+ * `orFail(stepTranscribeSync)` — the SDK's own `stepTranscribeSync` plus
  * `throwStepError`, and nothing else — is the whole of what this adds, and it is
  * where the three-way call is made: a `FatalError` stops the DevKit retrying something that
  * will answer the same way, a bare `RetryableError` retries in ONE SECOND (that
@@ -48,6 +49,6 @@ export async function transcribeSpan(
   bytes: Uint8Array,
   options: Required<Pick<TranscribeSyncOptions, "filename" | "label">>,
 ): Promise<string> {
-  const { text } = await stepTranscribeSyncOrFail(bytes, options);
+  const { text } = await orFail(stepTranscribeSync)(bytes, options);
   return text;
 }

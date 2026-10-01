@@ -29,17 +29,19 @@
  * tools and read as a model that refuses to act.
  */
 import agentDef from "virtual:aai/agent";
-import { dialogRefusalPattern, eventsOf, isEvent } from "@alexkroman1/aai/testing";
 import {
+  describeEval,
   describeTurn,
+  dialogRefusalPattern,
   type EvalSession,
   type EvalToolCall,
+  eventsOf,
+  isEvent,
   lastStateIn,
   toolCallsInTurns,
   toolNames,
   turnCalling,
-} from "@alexkroman1/aai-runtime/eval";
-import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
 

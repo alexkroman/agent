@@ -15,7 +15,7 @@
  * | {@link throwStepError} | you have caught something and want it classified |
  * | {@link toStepError} | same, as a value rather than a throw |
  * | {@link throwFatalStepError} | this one will never succeed — stop retrying |
- * | {@link stepFetchOrFail} | a `stepFetch` whose non-OK status should end the step |
+ * | {@link orFail} | a `/step` call whose failure should end or retry the step — `orFail(stepFetch)` |
  * | `FatalError` / `RetryableError` | constructing the verdict yourself |
  *
  * ```ts
@@ -32,12 +32,15 @@
  * }
  * ```
  *
- * The `*OrFail` callers on this subpath — the two `stepGenerate` halves, the
- * four transcription entry points and `sendToChannel` — are each the
- * underlying call plus `throwStepError` and nothing else. The raw calls stay
- * on `@alexkroman1/aai/step`: importing from HERE is the opt-in, because
- * whether a terminal failure burns a step's remaining attempts is the
- * caller's decision.
+ * {@link orFail} handed a function is that function plus {@link throwStepError}
+ * (and, for a call that resolves to a `Response`, the non-2xx branch). It is
+ * the one spelling for what eight `*OrFail` twins on this subpath used to
+ * spell one name each (`stepFetchOrFail`, `stepGenerateOrFail`, …), which are
+ * gone: `orFail(stepFetch)`, `orFail(stepGenerate)` and so on are the same
+ * call and the same verdict. The raw calls stay on
+ * `@alexkroman1/aai/step`: importing from HERE is the opt-in, because whether
+ * a terminal failure burns a step's remaining attempts is the caller's
+ * decision.
  *
  * ## Why this is not simply part of `@alexkroman1/aai/step`
  *
@@ -87,44 +90,33 @@
  * sites across eight templates** — every LLM and transcription call any of them
  * makes. Two had already wrapped it in a local `ask()` whose only content was
  * that `.catch`, each paying a doc block to say why, and the second one records
- * that two OTHER templates wrote the same mapping before it was extracted. So it
- * is hoisted one level further: {@link stepGenerateOrFail} and its
- * siblings are the `/step` call and {@link throwStepError}, nothing else.
+ * that two OTHER templates wrote the same mapping before it was extracted. It
+ * was hoisted into eight `*OrFail` twins, one per `/step` call — and then once
+ * more, into {@link orFail}, because eight names that each meant "this call
+ * plus `throwStepError`" were one combinator spelled eight times, and a ninth
+ * classifiable call would have owed a ninth.
  *
- * They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
- * `/step` names no verdict vocabulary at all, and whether a terminal failure should
- * burn a step's remaining attempts is the caller's decision — a `404` meaning
- * "already deleted" wants the raw call. The `OrFail` suffix keeps the `/step`
- * name intact, so a wrapper reads as the call it wraps.
+ * `orFail` is the SAME declaration the root barrel publishes for a tool's
+ * `T | ToolFailure` chains: handed a value it forwards a `ToolFailure`, handed a
+ * function it classifies that function's failure. One name, one meaning — "this,
+ * or fail the way the caller is owed" — rather than two names that read alike.
+ * It is on this subpath because IMPORTING FROM HERE IS THE OPT-IN: `/step` names
+ * no verdict vocabulary at all, and whether a terminal failure should burn a
+ * step's remaining attempts is the caller's decision — a `404` meaning "already
+ * deleted" wants the raw call. `orFail(stepX)` keeps the `/step` name intact,
+ * so the wrapped call reads as the call it wraps.
  *
  * @module step-errors
  */
 
-import { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
-import type { TranscribeRequestOptions } from "./_transcribe-shared.ts";
-import type { Channel, ChannelMessage } from "./channels/shared/channel-types.ts";
-import { sendToChannel } from "./channels/shared/send.ts";
+import { throwFatalStepError, throwStepError } from "./_step-verdict.ts";
 import { isRecord } from "./is-record.ts";
-import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
-import { type StepFetchInit, stepFetch } from "./step-fetch.ts";
-import { type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
-import { type StepGenerateJsonOptions, stepGenerateJson } from "./step-generate-json.ts";
-import {
-  stepTranscribePoll,
-  stepTranscribeSubmit,
-  stepTranscribeUpload,
-  type TranscribeProgress,
-  type TranscribeSubmitOptions,
-} from "./step-transcribe.ts";
-import { stepTranscribeSync, type TranscribeSyncOptions } from "./step-transcribe-sync.ts";
-import { responseErrorMessage } from "./utils.ts";
 
 // The verdict itself is one file over — see `_step-verdict.ts` for the seam and
 // why the dependency runs in that direction. The three names are part of THIS
 // subpath's surface, so they are re-exported rather than reached through a
-// second import path; they are imported above as well, because `stepFetchOrFail`,
-// the ffmpeg arm and the classified callers all CALL them and a
-// re-export brings nothing into this module's scope.
+// second import path; two are imported above as well, because the ffmpeg arm
+// CALLS them and a re-export brings nothing into this module's scope.
 export { throwFatalStepError, throwStepError, toStepError } from "./_step-verdict.ts";
 // The two classes the verdict RESOLVES TO. They were the DevKit's and are now
 // ours (`step-error-classes.ts` says why), and this subpath is where an author
@@ -138,63 +130,10 @@ export {
   RetryableError,
   type RetryableErrorOptions,
 } from "./step-error-classes.ts";
-
-/**
- * `stepFetch`, with the non-2xx branch every caller was writing by hand.
- *
- * A step whose job is one HTTP call ends up writing the same three lines —
- * make the request, check `ok`, hand the `Response` to {@link toStepError} —
- * and three templates had each arrived at their own copy of it: `meeting-recap-agent`
- * wrapped it in a local `request()`, `link-digest-workflow` inlined it, and
- * `podcast-digest-workflow` wrote a `fetchText` around it. This is that line, and the
- * argument for hoisting it is the one in this module's own doc: a snippet
- * copied verbatim into three places is a function that has not been written
- * yet.
- *
- * It answers a `Response` on 2xx, so nothing about the success path changes —
- * the caller still chooses `.text()`, `.json()` or the stream. It is only the
- * failure path that is taken over, and the takeover is worth having for two
- * reasons beyond the line count:
- *
- * - **The body reaches the error.** `responseErrorMessage` prefers a JSON
- *   `error` field when the far side sent one and falls back to the status with
- *   a bounded preview. Hand-written versions throw away the body — so a `400`
- *   that said exactly what was wrong with the request arrives as the number
- *   `400`, and whoever reads the run has to reproduce the call to find out.
- * - **The verdict stays with `toStepError`.** Transient by `isTransientStatus`,
- *   waiting out a `Retry-After` the server named rather than the default
- *   one-second delay. That distinction is the reason a step should never
- *   throw a bare `Error` on a bad response, and it is easy to forget in the
- *   fourth call site of a file.
- *
- * Reach for `stepFetch` directly where the failure is not simply a
- * failure: a `404` that means "already deleted", or a `4xx` whose body decides
- * which advice to print. `podcast-digest-workflow`'s Slack step is the worked example of
- * that second case.
- *
- * @example
- * ```ts
- * import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
- *
- * export async function readFeed(url: string): Promise<string> {
- *   return await (await stepFetchOrFail(url, { signal: AbortSignal.timeout(30_000) })).text();
- * }
- * ```
- *
- * @throws {Error} a `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export async function stepFetchOrFail(url: string, init?: StepFetchInit): Promise<Response> {
-  const response = await stepFetch(url, init);
-  if (response.ok) return response;
-  // The label is the REQUEST, because a run's log holds many of these and the
-  // status alone does not say which call answered. `responseErrorMessage`
-  // appends the status and the body preview.
-  throw toStepError(
-    response,
-    await responseErrorMessage(response, `${init?.method ?? "GET"} ${url}`),
-  );
-}
+// The combinator every classified call is written with — `orFail(stepFetch)`.
+// Declared once, in `tool-failure-flow.ts`, so this subpath and the root
+// publish one `orFail` rather than two; `_step-or-fail.ts` is its function arm.
+export { orFail } from "./tool-failure-flow.ts";
 
 /**
  * The verdict a failed ffmpeg run deserves: retry a `timeout` or an `aborted`,
@@ -267,155 +206,4 @@ export function throwFfmpegStepError(cause: unknown, message?: string): never {
 function ffmpegFailureKind(cause: unknown): string | undefined {
   if (!isRecord(cause) || cause.name !== "FfmpegError") return undefined;
   return typeof cause.kind === "string" ? cause.kind : undefined;
-}
-
-/**
- * `stepGenerate`, with its failure classified — the whole of what the wrapper
- * adds is {@link throwStepError}, and see this module's doc for why that is
- * worth an export rather than a line at each of the eight templates that wrote
- * it. `StepGenerateError` carries the gateway's own verdict AND its
- * `Retry-After`, so a rate-limited call waits the delay the gateway named
- * instead of the default one-second delay.
- *
- * None of them takes a `message`: a caller with a label worth attaching wants
- * the explicit `.catch((err) => throwStepError(err, …))`.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- *
- * @example
- * ```ts
- * import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
- *
- * export async function summarize(text: string): Promise<string> {
- *   return await stepGenerateOrFail(text, { system: "Summarize in two sentences." });
- * }
- * ```
- *
- * @public
- */
-export function stepGenerateOrFail(prompt: string, options?: StepGenerateOptions): Promise<string> {
-  return stepGenerate(prompt, options).catch(throwStepError);
-}
-
-/**
- * `stepGenerateJson`, with its failure classified — see
- * {@link stepGenerateOrFail}. The most-copied member of the family (**7 of the
- * 17 sites**): a workflow that asks a model for a SHAPE is the usual shape.
- *
- * Worth knowing what it does NOT flatten: a gateway refusal arrives as a
- * `StepGenerateError` carrying its own verdict, while a reply that was not JSON
- * or missed the schema throws a plain `Error`, which {@link toStepError} passes
- * through retryable — correctly, since a model that answered with prose may obey
- * next attempt.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export function stepGenerateJsonOrFail<S extends StandardSchemaV1>(
-  prompt: string,
-  options: StepGenerateJsonOptions<S>,
-): Promise<InferSchemaOutput<S>> {
-  return stepGenerateJson(prompt, options).catch(throwStepError);
-}
-
-/**
- * `stepTranscribeSync`, with its failure classified — see
- * {@link stepGenerateOrFail}.
- *
- * This is the arm where classifying earns the most. `TranscribeError` carries
- * `retryable`, and a refusal the PROVIDER decided — a recording with no speech in
- * it, a container it will not read — arrives with `retryable: false`. Unclassified,
- * a step re-uploads the same bytes until its attempts run out on a file that was
- * never going to transcribe.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export function stepTranscribeSyncOrFail(
-  bytes: Uint8Array | readonly Uint8Array[],
-  options?: TranscribeSyncOptions,
-): Promise<{ text: string }> {
-  return stepTranscribeSync(bytes, options).catch(throwStepError);
-}
-
-/**
- * `stepTranscribeUpload`, with its failure classified — see
- * {@link stepTranscribeSyncOrFail} for what a transcription verdict carries.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export function stepTranscribeUploadOrFail(
-  uploadId: string,
-  options?: TranscribeRequestOptions,
-): Promise<{ audioUrl: string }> {
-  return stepTranscribeUpload(uploadId, options).catch(throwStepError);
-}
-
-/**
- * `stepTranscribeSubmit`, with its failure classified — see
- * {@link stepTranscribeSyncOrFail}. Half of the async job API, whose other
- * half is {@link stepTranscribePollOrFail}; both are wrapped because a submit
- * and its poll are separate steps with separate attempt budgets — classify one
- * and not the other and the run gives up in one place and never in the other.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export function stepTranscribeSubmitOrFail(
-  audioUrl: string,
-  options?: TranscribeSubmitOptions,
-): Promise<{ id: string }> {
-  return stepTranscribeSubmit(audioUrl, options).catch(throwStepError);
-}
-
-/**
- * `stepTranscribePoll`, with its failure classified — see
- * {@link stepTranscribeSubmitOrFail}. A poll that answers is not a poll that
- * SUCCEEDED: an unfinished job comes back as a `TranscribeProgress` and only a
- * transport or API failure rejects, so this classifies the rejection and says
- * nothing about the job's own status.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- * @public
- */
-export function stepTranscribePollOrFail(
-  transcriptId: string,
-  options?: TranscribeRequestOptions,
-): Promise<TranscribeProgress> {
-  return stepTranscribePoll(transcriptId, options).catch(throwStepError);
-}
-
-/**
- * `sendToChannel` (`@alexkroman1/aai/channels`), with its failure classified —
- * see {@link stepGenerateOrFail} for the family, and this module's doc for
- * why the wrapper lives here rather than beside the call it wraps.
- *
- * `ChannelDeliveryError` carries the platform's verdict AND its `Retry-After`,
- * so a rate-limited post waits the delay the platform named rather than the
- * default one-second delay, and a 4xx — a revoked webhook, an unpublished
- * Slack workflow, a variable name that matches nothing — stops immediately
- * with the sentence a person can act on instead of burning three more attempts
- * on an answer that will not change.
- *
- * Reach for `sendToChannel` directly where the refusal is not simply a
- * failure: a body deciding to fall back to a second destination, or a run that
- * treats an unreachable channel as a warning rather than an outcome.
- *
- * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
- *
- * @example
- * ```ts
- * import { slackChannel } from "@alexkroman1/aai/channels";
- * import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
- *
- * export async function announce(webhookUrl: string, headline: string): Promise<string> {
- *   return await sendToChannelOrFail(slackChannel({ webhookUrl }), { text: headline });
- * }
- * ```
- *
- * @public
- */
-export function sendToChannelOrFail(channel: Channel, message: ChannelMessage): Promise<string> {
-  return sendToChannel(channel, message).catch(throwStepError);
 }

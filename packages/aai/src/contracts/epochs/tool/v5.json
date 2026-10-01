@@ -3,7 +3,7 @@
   "capability": "tool",
   "epoch": 5,
   "rule": 2,
-  "sha256": "a4594cb762b0a58a870253f09dfab2d411aa43a35393b603516784167997223d",
+  "sha256": "ae39d417d3d01641acbb3732d35e2e91e8698a061b24e3c6d618abd5e04adfef",
   "exports": [
     "ClientToolDef",
     "DefaultToolResult",
@@ -33,7 +33,7 @@
     "toolFailure"
   ],
   "rollup": "2976e3bb2f94220cad2af268e01619aa4833adb6abf5abe57107a7d0b20a7423",
-  "revision": 3,
+  "revision": 4,
   "revisions": [
     {
       "revision": 0,
@@ -57,6 +57,12 @@
       "revision": 3,
       "rule": 2,
       "sha256": "a4594cb762b0a58a870253f09dfab2d411aa43a35393b603516784167997223d",
+      "reason": "additive (checked): +ClientToolDef, +ToolSet, +clientTool"
+    },
+    {
+      "revision": 4,
+      "rule": 2,
+      "sha256": "ae39d417d3d01641acbb3732d35e2e91e8698a061b24e3c6d618abd5e04adfef",
       "reason": "additive (checked): +ClientToolDef, +ToolSet, +clientTool"
     }
   ]

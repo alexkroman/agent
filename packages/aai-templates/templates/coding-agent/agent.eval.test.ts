@@ -22,8 +22,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import agentDef from "virtual:aai/agent";
-import { toolNames } from "@alexkroman1/aai-runtime/eval";
-import { describeTextEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import { describeTextEval, toolNames } from "@alexkroman1/aai-runtime/eval/vitest";
 import { beforeEach, expect, vi } from "vitest";
 
 const workspace = vi.hoisted(() => {

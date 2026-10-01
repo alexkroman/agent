@@ -24,10 +24,16 @@
  * }
  * ```
  *
- * In a vitest project, reach for `describeEval` from
- * `@alexkroman1/aai-runtime/eval/vitest` instead — it owns the credential gate,
- * the scripted-model fallback and the per-case session, so a case is its
- * assertions and nothing else.
+ * **An eval FILE imports `@alexkroman1/aai-runtime/eval/vitest`, not this.**
+ * That subpath is the one author-facing entry point: it re-exports every name
+ * here, plus `describeEval` (the credential gate, the scripted-model fallback
+ * and the per-case session, so a case is its assertions and nothing else) and
+ * the `@alexkroman1/aai/testing` stubs a case composes with. This subpath is the
+ * RUNNER-FREE half that one is built on, for a harness that is not vitest — a
+ * load-test stub, a recording runner — and it stays importable without vitest
+ * installed. The simulated caller and the judge are here too ({@link simulateCall},
+ * {@link judgeCall}, {@link evalSimulation}), which used to have a subpath of
+ * their own.
  *
  * **What it does NOT measure**: everything below the audio boundary —
  * endpointing, splits and merges, barge-in, and the
@@ -118,6 +124,17 @@ export {
   toolResultIn,
   toolResultsIn,
 } from "./eval/events.ts";
+// A SIMULATED CALLER and a MODEL-GRADED judge — the `eval-simulate` capability,
+// which moves apart from the harness. On this subpath (it used to have its own,
+// `/eval/simulate`) because this is the whole RUNNER-FREE half: a harness that
+// is not vitest needs the second and third models too.
+export {
+  type CallVerdict,
+  type CriterionVerdict,
+  type JudgeCallOptions,
+  type JudgeInput,
+  judgeCall,
+} from "./eval/judge.ts";
 // A fake network that FAILS CLOSED: routes answer, the live model's hosts pass,
 // everything else is refused and logged. Public because every downstream suite
 // that evaluated a tool-calling agent hand-rolled one, open by default, and
@@ -146,8 +163,22 @@ export {
   evalCredentials,
   openEvalSession,
 } from "./eval/session.ts";
-// A SIMULATED CALLER and a MODEL-GRADED judge are `@alexkroman1/aai-runtime/eval/simulate`
-// (`eval-simulate-barrel.ts`) — their own subpath and capability.
+export {
+  DEFAULT_MAX_TURNS,
+  END_CALL_TOOL,
+  type SimulateCallOptions,
+  type SimulatedCall,
+  type SimulatedCaller,
+  type SimulatedTurn,
+  type SimulationMetrics,
+  type SimulationTarget,
+  simulateCall,
+} from "./eval/simulate.ts";
+export {
+  type EvalSimulationContext,
+  type EvalSimulationOptions,
+  evalSimulation,
+} from "./eval/simulation-context.ts";
 // The scripted model a keyless run falls back to. Public because the FALLBACK
 // is public policy: a suite that runs without a credential is checking wiring
 // rather than behaviour, and a harness of its own has to be able to say so.

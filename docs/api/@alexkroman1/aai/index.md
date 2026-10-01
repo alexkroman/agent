@@ -1423,36 +1423,74 @@ const config: { slug: string; name?: string; greeting?: string } = {
 
 ### orFail()
 
+The `T | ToolFailure` union's control flow, beside the guard and the
+constructor it belongs with: a tool body writes all three. Its own statement
+because `tool-failure-flow.ts` imports `sdk/utils.ts`, so re-exporting it
+from there would close a cycle.
+
+#### Call Signature
+
 ```ts
-function orFail<T>(value: ToolFailure | T): T;
+function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
 ```
 
-The value, or abandon the surrounding [failable](#failable) with the failure.
+The value, or abandon the surrounding [failable](#failable) with the failure —
+or, handed a FUNCTION, that function with its failure classified for the
+step engine.
 
-#### Type Parameters
+Two arms, one meaning — "this, or fail the way the caller is owed". In a
+tool, failing is answering a [ToolFailure](#toolfailure); in a step, it is throwing
+the verdict the engine retries on.
 
-##### T
+- **A value** (`orFail(lookup())`): the value, unless it is a `ToolFailure`,
+  which abandons the enclosing [failable](#failable) with that exact failure.
+- **A function** (`orFail(stepGenerate)`): the same function, except that
+  what it throws — or a non-2xx `Response` it resolves to — leaves as a
+  `FatalError`, or a `RetryableError` carrying the far side's own
+  `Retry-After` (`toStepError` on `@alexkroman1/aai/step-errors` is the
+  verdict; anything it cannot classify is rethrown unchanged). This is how a
+  `workflows/` step calls a `/step` primitive — `orFail(stepFetch)`,
+  `orFail(stepGenerateJson)`, `orFail(stepTranscribeSubmit)`,
+  `orFail(sendToChannel)` — and it replaced the eight `*OrFail` twins that
+  spelled it one name per call. A failure labelled by its request
+  (`GET https://…`) is the function arm's one special case: a call whose
+  first argument is a URL.
 
-`T`
+A `ToolFailure` is never a function, so the arms cannot be confused at run
+time. A function VALUE passed only to be handed back — a helper answering
+`(() => X) | ToolFailure` — now comes back wrapped; the wrapper calls through
+and answers in kind (sync stays sync).
 
-#### Parameters
+##### Type Parameters
 
-##### value
+###### A
 
-[`ToolFailure`](#toolfailure) \| `T`
+`A` *extends* readonly `unknown`[]
 
-#### Returns
+###### R
 
-`T`
+`R`
 
-#### Throws
+##### Parameters
 
-A private sentinel, caught by the enclosing [failable](#failable). Calling
-it outside one is a programming error and behaves like one — the throw
-escapes and the tool executor reports it — rather than being silently
-swallowed.
+###### call
 
-#### Example
+(...`args`: `A`) => `Promise`\<`R`\>
+
+##### Returns
+
+(...`args`: `A`) => `Promise`\<`R`\>
+
+##### Throws
+
+A private sentinel (value arm), caught by the enclosing
+[failable](#failable). Calling it outside one is a programming error and behaves
+like one — the throw escapes and the tool executor reports it — rather than
+being silently swallowed.
+
+##### Examples
+
+**A tool helper**
 
 ```ts
 import { failable, orFail, type ToolFailure } from "@alexkroman1/aai";
@@ -1463,6 +1501,48 @@ declare function findOrder(id: string): Order | ToolFailure;
 const orderTotal = failable((id: string) => orFail(findOrder(id)).total);
 // orderTotal("A1") is number | ToolFailure
 ```
+
+**A step**
+
+```ts
+import { stepFetch, stepGenerate } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
+
+export async function summarizeFeed(url: string): Promise<string> {
+  // A 404 stops the step; a 429 waits the Retry-After the server named.
+  const feed = await (await orFail(stepFetch)(url)).text();
+  return await orFail(stepGenerate)(feed, { system: "Summarize in two sentences." });
+}
+```
+
+#### Call Signature
+
+```ts
+function orFail<T>(value: ToolFailure | T): T;
+```
+
+The value arm of [orFail](#orfail): `value`, unless it is a [ToolFailure](#toolfailure),
+which abandons the enclosing [failable](#failable) with that exact failure.
+
+##### Type Parameters
+
+###### T
+
+`T`
+
+##### Parameters
+
+###### value
+
+[`ToolFailure`](#toolfailure) \| `T`
+
+##### Returns
+
+`T`
+
+##### Throws
+
+A private sentinel, caught by the enclosing [failable](#failable).
 
 ***
 

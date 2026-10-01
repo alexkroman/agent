@@ -15,7 +15,7 @@
 // number makes all three unreadable.
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { mapConcurrent, stepFetch } from "@alexkroman1/aai/step";
-import { stepFetchOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 /** One journaled step whose work is a fixed, tiny amount of CPU. */
 async function tick(index: number, spin: number) {
@@ -64,7 +64,7 @@ export async function chainFlow(
  * `classify` is the whole difference between two measurements, which is why it
  * is a flag rather than two step functions. Unclassified, a refusal is just a
  * status this step RETURNS, so a `--fail-rate` run measures throughput with the
- * far side's failures in it. Classified, `stepFetchOrFail` turns a 503 into the
+ * far side's failures in it. Classified, `orFail(stepFetch)` turns a 503 into the
  * DevKit's `RetryableError` carrying the far side's own `retry-after`, so the
  * same run measures the RETRY path — a `--retry-after=1` on a quarter of the
  * items adds a second to each of them, and that is the number worth having.
@@ -77,7 +77,7 @@ async function fetchOne(url: string, index: number, classify: boolean) {
   // A deadline of its own either way: a hung request inside a step is a run that
   // never finishes rather than one that retries.
   const init = { signal: AbortSignal.timeout(30_000) };
-  const res = classify ? await stepFetchOrFail(target, init) : await stepFetch(target, init);
+  const res = classify ? await orFail(stepFetch)(target, init) : await stepFetch(target, init);
   const body = await res.text();
   return { index, status: res.status, bytes: body.length };
 }

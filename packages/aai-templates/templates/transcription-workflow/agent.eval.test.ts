@@ -31,8 +31,11 @@
 // `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that really resumes a
 // run.
 import { encodeWav } from "@alexkroman1/aai/step";
-import { installStubTranscribe, installStubUploads } from "@alexkroman1/aai/testing/vitest";
-import { describeWorkflowEval } from "@alexkroman1/aai-runtime/eval/vitest";
+import {
+  describeWorkflowEval,
+  installStubTranscribe,
+  installStubUploads,
+} from "@alexkroman1/aai-runtime/eval/vitest";
 import { expect } from "vitest";
 import agentDef, { transcribe } from "./agent.ts";
 import { TRANSCRIPT_STREAM } from "./workflows/stitch.ts";

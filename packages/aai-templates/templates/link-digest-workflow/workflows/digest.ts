@@ -26,8 +26,8 @@
 
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { htmlToText, type PageMetadata, pageMetadata } from "@alexkroman1/aai/html";
-import { stepInfo, stepReport } from "@alexkroman1/aai/step";
-import { FatalError, stepFetchOrFail, stepGenerateJsonOrFail } from "@alexkroman1/aai/step-errors";
+import { stepFetch, stepGenerateJson, stepInfo, stepReport } from "@alexkroman1/aai/step";
+import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 
@@ -156,12 +156,12 @@ export async function fetchArticle(url: string): Promise<Article> {
   // reset with no HTTP status, which `toStepError` below has nothing to read.
   // It also reports a connection failure with its whole `cause` chain instead
   // of a bare `TypeError: fetch failed`. Redirects are followed by default.
-  // `stepFetchOrFail` rather than `stepFetch` + an `ok` check: it makes the
+  // `orFail(stepFetch)` rather than `stepFetch` + an `ok` check: it makes the
   // retryable/terminal split for us — a 404 or a 403 answers the same way on
   // the fourth attempt, while a rate limit is exactly what retries are for, and
   // its `Retry-After` reaches the engine's schedule instead of the default
   // backoff. It also puts the server's own error text in the message.
-  const response = await stepFetchOrFail(url, {
+  const response = await orFail(stepFetch)(url, {
     // Some sites answer a bare request with a challenge page; asking for HTML
     // at least says what we want. Nothing here defeats a real bot wall, and a
     // template pretending otherwise would be the dishonest version.
@@ -216,13 +216,13 @@ export async function summarize(article: Article): Promise<Digest> {
       : "Pulling out the claims worth keeping.",
   );
 
-  // `stepGenerateJsonOrFail` unwraps the fence a model puts around JSON,
+  // `orFail(stepGenerateJson)` unwraps the fence a model puts around JSON,
   // parses it, and validates it against `DigestReply` — and throws PLAINLY when
   // any of those misses, which is the whole retry policy in one distinction: a
   // model that answered with prose may answer correctly on the next attempt,
   // where a 401 will not. The `OrFail` suffix is what makes the 401 half
   // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
-  const parsed = await stepGenerateJsonOrFail(articlePrompt(article), {
+  const parsed = await orFail(stepGenerateJson)(articlePrompt(article), {
     schema: DigestReply,
     system:
       `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +

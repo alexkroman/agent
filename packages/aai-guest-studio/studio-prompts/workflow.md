@@ -631,11 +631,13 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts
    the agent's shape; an eval drives a real session and asserts what it did.
-   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one):
+   Cases live in `agent.eval.test.ts` (the `quickstart-agent` template ships one),
+   and EVERYTHING an eval needs — `describeEval`, the readers and claims,
+   `evalSimulation`, and stubs like `stubGatewayRoute` — is one import,
+   `@alexkroman1/aai-runtime/eval/vitest`:
 
    ```ts no-check
-   import { expectCalled } from "@alexkroman1/aai-runtime/eval";
-   import { describeEval } from "@alexkroman1/aai-runtime/eval/vitest";
+   import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/eval/vitest";
    import { expect } from "vitest";
    import agentDef from "./agent.ts";
 
@@ -1506,8 +1508,8 @@ A step has no `ctx`, so the two things tool code takes for granted come from
 root barrel would drag the whole SDK into that bundle.
 
 ```ts
-import { stepEnv } from "@alexkroman1/aai/step";
-import { stepGenerateOrFail } from "@alexkroman1/aai/step-errors";
+import { stepEnv, stepGenerate } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 async function summarize(text: string) {
   // The agent's env by name — the same values a tool reads from `ctx.env`.
@@ -1515,7 +1517,7 @@ async function summarize(text: string) {
   const style = stepEnv("DIGEST_STYLE") ?? "plain";
 
   // One model call, on the agent's own ASSEMBLYAI_API_KEY and default model.
-  return await stepGenerateOrFail(`${style} summary of:\n\n${text}`, {
+  return await orFail(stepGenerate)(`${style} summary of:\n\n${text}`, {
     system: "Reply with two sentences and nothing else.",
   });
 }
@@ -1527,29 +1529,35 @@ before and after a deploy. List what you read in `requiredEnv` and a deploy
 checks it for you. And **`stepGenerate` is not `ctx.generate`**: it is one
 request to the AssemblyAI LLM Gateway, with no tools and no structured output,
 because bundling the AI SDK into a step artifact costs megabytes on every
-deploy. Use `stepGenerateJsonOrFail` with a Zod `schema` if you need a shape.
+deploy. Use `orFail(stepGenerateJson)` with a Zod `schema` if you need a shape.
 
-### From a step, reach for the `OrFail` call
+### From a step, wrap the call in `orFail`
 
-`@alexkroman1/aai/step-errors` publishes a wrapper for every `/step` call that
-can fail against a remote service, and **inside a step the wrapper is the one to
-use**:
+`orFail` (`@alexkroman1/aai/step-errors`) wraps any `/step` call that can fail
+remotely, classifying its failure, and **inside a step the wrapped call is the one to use**:
 
-| Raw, on `@alexkroman1/aai/step`            | Use this instead, on `@alexkroman1/aai/step-errors` |
-| ------------------------------------------ | --------------------------------------------------- |
-| `stepGenerate`                             | `stepGenerateOrFail`                                |
-| `stepGenerateJson`                         | `stepGenerateJsonOrFail`                            |
-| `stepFetch`                                | `stepFetchOrFail`                                   |
-| `stepTranscribeSync`                       | `stepTranscribeSyncOrFail`                          |
-| `stepTranscribeUpload` / `Submit` / `Poll` | the matching `*OrFail`                              |
-| `sendToChannel` (`/channels`)              | `sendToChannelOrFail`                               |
+```ts
+import { stepFetch, stepGenerateJson, stepTranscribeSubmit } from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
+import { z } from "zod";
 
-`stepFetchOrFail` is the one that is not spelled `*OrFail`, and the name is the
-difference: the others turn an already-thrown failure into a classified one,
-while this also turns a NON-2XX RESPONSE into a throw — `stepFetch` resolves
-with a `404` rather than raising it. Two changes, so two names.
+const Reply = z.object({ headline: z.string() });
 
-The whole of what a wrapper adds is `throwStepError`, and that is worth having
+export async function digest(url: string, audioUrl: string) {
+  const page = await (await orFail(stepFetch)(url)).text(); // a 404 stops, a 503 retries
+  const reply = await orFail(stepGenerateJson)(page, { schema: Reply });
+  const job = await orFail(stepTranscribeSubmit)(audioUrl);
+  return { headline: reply.headline, transcriptId: job.id };
+}
+```
+
+It covers `stepGenerate`, `stepGenerateJson`, `stepFetch`, `stepTranscribeSync`,
+`stepTranscribeUpload` / `Submit` / `Poll` and `sendToChannel` (`/channels`) —
+and any call of your own that throws a `Response` or an error carrying
+`retryable`. Around `stepFetch` it also turns a NON-2XX RESPONSE into a throw:
+`stepFetch` resolves with a `404` rather than raising it.
+
+The whole of what `orFail` adds is `throwStepError`, and that is worth having
 because the engine's retry policy is decided by WHICH error a step throws. Raw,
 every failure looks the same to it: a bad API key is retried until the attempts
 run out, and a rate limit backs off for the engine's default one second while
@@ -1566,7 +1574,7 @@ stop outright, `toStepError(cause, message)` to build the error without throwing
 or `throwFfmpegStepError(err)` for a media failure, whose default runs the other
 way (only a `timeout` or an `aborted` is worth another attempt).
 
-**Why the split exists, since the wrapper is what you usually want:** this is
+**Why the split exists, since the wrapped call is what you usually want:** this is
 importing from here is the OPT-IN, and `/step` is not written only for a step —
 `mapConcurrent` bounds a rate-limited call anywhere, `stepFetch` is an ordinary
 HTTP client, and your specs drive exported steps directly. None of those callers
@@ -1582,8 +1590,8 @@ bundling rule as `/step` — import them there, never through the root barrel:
   recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
   `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
   the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Use the `OrFail`
-  wrappers above: a provider refusal — a container it will not read, a
+  lives on `/step` with the other step primitives.) Wrap each in `orFail`
+  as above: a provider refusal — a container it will not read, a
   recording with no speech — arrives
   with `retryable: false`, and unclassified a step re-uploads the same bytes
   until its attempts run out.
@@ -1619,19 +1627,19 @@ export async function measure(uploadId: string) {
 
 A run that finishes while nobody is on the line needs somewhere to put the
 result. `slackChannel({ webhookUrl })` (or `textbeltChannel({ key, to })`, an
-SMS) names a destination and `sendToChannelOrFail(channel, message)` posts to it:
+SMS) names a destination and `orFail(sendToChannel)(channel, message)` posts to it:
 
 ```ts no-check
-import { type ChannelMessage, slackChannel } from "@alexkroman1/aai/channels";
+import { type ChannelMessage, sendToChannel, slackChannel } from "@alexkroman1/aai/channels";
 import { requireStepEnv } from "@alexkroman1/aai/step";
-import { sendToChannelOrFail } from "@alexkroman1/aai/step-errors";
+import { orFail } from "@alexkroman1/aai/step-errors";
 
 export async function announce(headline: string, points: string[]) {
   const message: ChannelMessage = {
     text: headline,
     sections: points.map((point) => ({ body: point })),
   };
-  return await sendToChannelOrFail(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
+  return await orFail(sendToChannel)(slackChannel({ webhookUrl: requireStepEnv("SLACK_WEBHOOK_URL") }), message);
 }
 ```
 
