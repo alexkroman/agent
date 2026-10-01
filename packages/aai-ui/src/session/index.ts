@@ -19,8 +19,8 @@ export { createBrowserSession } from "./browser-session.ts";
 // The snapshot a session holds before its first frame. Exported for the
 // package's mock session (`_react-test-utils.ts`), which must start from it.
 export { CLEARED_SESSION_STATE } from "./messages.ts";
-// The inbox presents its ticket exactly as the session does.
-export { ticketCarriage } from "./ticket.ts";
+// The inbox asks for and presents its ticket exactly as the session does.
+export { resolveSessionToken, resolveSessionTokenSync, ticketCarriage } from "./ticket.ts";
 export type {
   AgentCustomEvent,
   AgentStateFrame,

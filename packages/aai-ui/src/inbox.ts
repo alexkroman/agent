@@ -46,7 +46,7 @@ import {
   type InboxNotice,
   parseInboxEvent,
 } from "./inbox-protocol.ts";
-import { ticketCarriage } from "./session/index.ts";
+import { resolveSessionToken, resolveSessionTokenSync, ticketCarriage } from "./session/index.ts";
 import type { VoiceSessionOptions, WebSocketConstructor } from "./types.ts";
 
 /** The first reconnect window; each failure doubles it. */
@@ -193,18 +193,25 @@ export function createInbox(options: CreateInboxOptions): Inbox {
     return target.toString();
   }
 
-  /** This attempt's ticket: a value now, a Promise, or none. Never throws. */
+  /**
+   * This attempt's ticket, through the session's own resolvers
+   * (`session/ticket.ts`): trimmed, and a getter that throws or rejects yields
+   * none, with the session's warning. A value answered synchronously stays
+   * synchronous, so it dials at once. Never throws.
+   */
   function askToken(): string | undefined | Promise<string | undefined> {
     const { token } = options;
-    if (typeof token !== "function") return token;
+    const attempt = { sessionId: undefined };
+    if (typeof token !== "function") return resolveSessionTokenSync(token, attempt);
+    let answer: ReturnType<typeof token>;
     try {
-      const answer = token({ sessionId: undefined });
-      return typeof answer === "string" || answer === undefined
-        ? answer
-        : answer.catch(() => undefined);
-    } catch {
-      return undefined;
+      answer = token(attempt);
+    } catch (err) {
+      answer = Promise.reject(err);
     }
+    return typeof answer === "string" || answer === undefined
+      ? resolveSessionTokenSync(answer, attempt)
+      : resolveSessionToken(() => answer, attempt);
   }
 
   function connect(): void {
@@ -226,7 +233,7 @@ export function createInbox(options: CreateInboxOptions): Inbox {
   }
 
   function dial(client: string, token: string | undefined): void {
-    const carriage = ticketCarriage(token?.trim() || undefined);
+    const carriage = ticketCarriage(token);
     const target = url(client, carriage.queryToken);
     const ws = carriage.protocols ? new Socket(target, carriage.protocols) : new Socket(target);
     ws.binaryType = "arraybuffer";
